@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "index_kind": "r42_codex_matched_replication_campaign_v3_checkpoint_unavailable",
+  "claim_id": "codex-gpt56-sol-matched-replication-campaign-v3",
+  "status": "completed_checkpoint_unavailable_no_retry",
+  "policy": {
+    "path": "spec/clean_start/codex-gpt56-sol-matched-replication-campaign-v3.json",
+    "canonical_sha256": "9760779927aa917e242e03364ec17cde0275f2e185aa7a75160149779b4f86a9"
+  },
+  "parent_policy": {
+    "path": "spec/clean_start/codex-gpt56-sol-matched-replication-campaign-v2.json",
+    "canonical_sha256": "5abe4029e64e981b5c88cb644db42fdc509cdca7e67736c62e01b3acf20c2c33"
+  },
+  "run_revision": "3f445b3a93fa8e45b665f8daf907701afb85f227",
+  "run_tree": "c8fa3f034cbb8194e9f291d4439a8a3404fccf8b",
+  "raw_archive": {
+    "path": "evidence/raw/r42-codex-matched-replication-campaign-v3",
+    "file_count": 308,
+    "total_size_bytes": 8778201,
+    "manifest_sha256": "19e719446f48caab90cf322a54bff32f24d9dac9ae2f7d723893d8ff2c8fcf35"
+  },
+  "campaign": {
+    "started_at": "2026-08-22T02:25:43.076061Z",
+    "completed_at": "2026-08-22T03:17:35.793394Z",
+    "execution_order": [
+      {"arm": "cake_ir", "repetition": 1},
+      {"arm": "cuda_ptx", "repetition": 1},
+      {"arm": "cuda_ptx", "repetition": 2},
+      {"arm": "cake_ir", "repetition": 2},
+      {"arm": "cake_ir", "repetition": 3},
+      {"arm": "cuda_ptx", "repetition": 3}
+    ],
+    "session_count": 6,
+    "completed_session_count": 6,
+    "candidate_evaluation_count": 15,
+    "unique_gpuq_job_count": 15,
+    "provider_tokens_total": 1673193,
+    "provider_process_invocations": 15,
+    "evaluator_attempts": 15,
+    "infrastructure_admission_resubmissions": 0,
+    "provider_automatic_retries": 0,
+    "candidate_or_measurement_retries": 0,
+    "replacement_sessions": 0,
+    "fallback_calls": 0
+  },
+  "evaluator_status_counts": {
+    "candidate_rejected": 1,
+    "qualified": 14
+  },
+  "checkpoint": {
+    "provider_tokens": 150000,
+    "cake_final_checkpoint_available_runs": 3,
+    "cuda_final_checkpoint_available_runs": 2,
+    "cuda_repetition_3": {
+      "turn_1_provider_tokens": 103579,
+      "turn_1_status": "candidate_rejected",
+      "turn_1_failed_stage": "correctness_preflight",
+      "turn_2_provider_tokens": 329934,
+      "turn_2_status": "qualified",
+      "turn_2_latency_ms": 5.05487,
+      "final_checkpoint_available": false
+    },
+    "representation_effect_available": false,
+    "reason": "cuda_ptx repetition 3 had no qualified completed candidate at or below the frozen 150000-token checkpoint"
+  },
+  "descriptive_results": {
+    "cake_final_checkpoint_median_best_latency_ms": 1.15492,
+    "cuda_available_run_final_checkpoint_median_best_latency_ms": 8.0657,
+    "paired_available_runs": [
+      {
+        "repetition": 1,
+        "cake_best_latency_ms": 1.15492,
+        "cuda_best_latency_ms": 12.270369,
+        "cake_speedup_vs_cuda": 10.624431995289719
+      },
+      {
+        "repetition": 2,
+        "cake_best_latency_ms": 1.155029,
+        "cuda_best_latency_ms": 3.861031,
+        "cake_speedup_vs_cuda": 3.3428000509078126
+      },
+      {
+        "repetition": 3,
+        "cake_best_latency_ms": 1.154517,
+        "cuda_best_latency_ms": null,
+        "cake_speedup_vs_cuda": null
+      }
+    ],
+    "causal_estimate": null
+  },
+  "offline_replay": {
+    "audit_id": "r42-matched-replication-audit-3bfb90eaf2b7993d98a3",
+    "all_raw_artifacts_replayed": true,
+    "all_sessions_completed": true,
+    "six_unique_provider_threads_observed": true,
+    "six_hmac_signatures_verified": true,
+    "terminal_event_forms": {
+      "single_exact": 15,
+      "duplicate_exact_bracketed": 0
+    },
+    "representation_effect_available": false
+  },
+  "decision": "close_r42_without_retry_or_replacement_checkpoint_unavailable",
+  "limitations": [
+    "r42 completed all six prescheduled independent sessions and every retained artifact replays, but completion alone cannot backfill a missing frozen checkpoint.",
+    "The CUDA/PTX repetition-3 turn-2 candidate is qualified at 329934 cumulative provider tokens and is therefore ineligible for the 150000-token checkpoint under the frozen turn-discrete projection.",
+    "The two available paired repetitions and arm-specific descriptive medians are retained but cannot be relabelled as the predeclared three-pair representation-effect estimand.",
+    "No r42 retry, replacement session, candidate retry, measurement retry, fallback, or infrastructure admission resubmission occurred or is authorized after observing this result.",
+    "No held-out-shape, dispatcher, serving, end-to-end, paper, or general authored-representation conclusion follows from r42."
+  ]
+}

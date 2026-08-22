@@ -1,0 +1,1 @@
+{"admitted":true,"counters":{"compiler_invocations":0,"fallback_calls":0,"kernel_calls":0,"module_loads":1,"preflight_calls":1,"timing_samples":0},"error":"evaluator_failed","failure_class":"ValueError","job_id":"gpuq-000000000000","mode":"exclusive","receipt":null,"schema_version":1}

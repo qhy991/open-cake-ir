@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "index_kind": "legacy_final_stage6_translation",
+  "source": {
+    "repository": "cake-repro",
+    "revision": "2fa79092c143fd8c2d9caa93fd84ad79a7504836",
+    "tree": "b02d730bb892629f250a20b8c5bd5869262e5c03",
+    "source_set_id": "cake-repro-final-stage6-2fa79092",
+    "manifest_sha256": "cc2592d8878ab2ac56a9a220c16b1b026d1b9c641e1ad755feeb2ad7f932ad7a",
+    "bundle_sha256": "d826124bf875d7eecef042a6c5402a5bf94413f38a8a3b7f2e38536325ad9ac8"
+  },
+  "observations": [
+    {
+      "stage": "r41",
+      "revision": "d15c69d66a54a2d882e0207c1a6ee42ba03b5322",
+      "terminal": "closed_protocol_and_infrastructure_failure",
+      "facts": {"sandbox_fix_effective": true, "completed_runs": 4, "prescheduled_runs": 6, "estimand_available": false},
+      "legacy_index_canonical_sha256": "ddd36bcd6795eb9ac169be041293ef8184b29bd93b6196966ca3cadabba8c789"
+    },
+    {
+      "stage": "r42",
+      "revision": "3f445b3a93fa8e45b665f8daf907701afb85f227",
+      "terminal": "completed_checkpoint_unavailable",
+      "facts": {"completed_runs": 6, "candidate_evaluations": 15, "qualified_candidates": 14, "final_checkpoint_tokens": 150000, "estimand_available": false},
+      "legacy_index_canonical_sha256": "4a716f12b220e41562b7a487e472b35fab0289541396beab2555046c92463c8b"
+    },
+    {
+      "stage": "r43",
+      "revision": "095536b053118c261630c7b690db7195f616fa64",
+      "terminal": "harness_source_layer_failure",
+      "facts": {"compiler_expanded_source_is_lowering_input": false, "kernel_result_available": false},
+      "legacy_index_canonical_sha256": "6b6daf31a570655d612df9c35b0866581518f5e5eaa16c9379e86d0d56e595bc"
+    },
+    {
+      "stage": "r44",
+      "revision": "6872b63c3c9ec98f3fe0bc05c9c0b26bbf02ddf5",
+      "terminal": "host_shape_contract_failure",
+      "facts": {"specialists_compiled": 3, "headline_correctness_passed": true, "heldout_correctness_available": false},
+      "legacy_index_canonical_sha256": "e5615e3f1c9b5f56c9077f7dd530655090615fb902b1d7edf335b0ce325ac348"
+    },
+    {
+      "stage": "r45",
+      "revision": "f2e65b1900eaa520026100ad9303f038cad13da9",
+      "terminal": "bounded_unstable_dispatcher_timing",
+      "facts": {
+        "specialist_correctness_supported": true,
+        "dispatcher_correctness_supported": true,
+        "stable_kernel_cases": ["headline_b32", "b32_smoke", "public_b1"],
+        "stable_dispatcher_cases": ["headline_b32"],
+        "unstable_dispatcher_cases": ["b32_smoke", "public_b1"],
+        "unstable_dispatcher_cohorts": 5,
+        "fallback_calls": 0,
+        "resampling": false
+      },
+      "legacy_index_canonical_sha256": "a0a449843ee76e493178edf3035ca34679f573c92ebde90de672d2736ddccd57"
+    }
+  ],
+  "claim_view": {
+    "representation_effect_available": false,
+    "heldout_correctness_supported_for_frozen_cases": true,
+    "stable_kernel_performance_supported_for_frozen_cases": true,
+    "stable_heldout_dispatcher_performance_supported": false,
+    "arbitrary_shape_generalization_supported": false,
+    "serving_supported": false,
+    "paper_result_reproduced": false
+  },
+  "legacy_claim_map_canonical_sha256": "7aae7a64a0638c0bf3ebfbffb88515ae6dce6329e6bb611d21c6052982ae2288",
+  "legacy_signature_semantics": "previously_verified_local_hmac_evidence_key_not_migrated"
+}

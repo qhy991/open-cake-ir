@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "index_kind": "flash_kmeans_r43_heldout_specialist_dispatcher_b200_v1_negative",
+  "claim_id": "flash-kmeans-r43-heldout-specialist-dispatcher",
+  "status": "closed_precorrectness_harness_failure_no_retry",
+  "contract": {
+    "path": "contracts/flash-kmeans-r43-heldout-specialist-dispatcher-b200-v1.json",
+    "canonical_sha256": "4cc9c16e914fcb1d3c6e90d44a6b85e82a7f68532d0cb5ee672014a267acd5c1"
+  },
+  "run_revision": "095536b053118c261630c7b690db7195f616fa64",
+  "archive": {
+    "path": "evidence/raw/flash-kmeans-r43-heldout-specialist-dispatcher-b200-v1-negative",
+    "result_path": "evidence/raw/flash-kmeans-r43-heldout-specialist-dispatcher-b200-v1-negative/result.json",
+    "result_file_sha256": "1835b9f85597e5e45fc81c92e039323769b67b96e98105ebf980a8fb9d586a54",
+    "result_canonical_sha256": "1e7c675567a6e6d6e72fe34862c51b8bba3c32d86a1ee33eba72da54b1eeed6d",
+    "generated_source_path": "evidence/raw/flash-kmeans-r43-heldout-specialist-dispatcher-b200-v1-negative/compile/headline_b32/generated.py",
+    "generated_source_sha256": "8ada1ce7daea50a11b6df58b2b2fe739abd48b93fc9edd0e5c60d1e2b3c38a9e",
+    "broker_record_path": "evidence/raw/flash-kmeans-r43-heldout-specialist-dispatcher-b200-v1-negative/broker-job.json",
+    "broker_record_canonical_sha256": "6b936194e96cddda6cfe79ecfeae1482f72642140b89c097ae28515628cedc11",
+    "audit_id": "r43-heldout-specialist-failure-audit-bdc25144db52b4c6b3f5",
+    "audit_implementation_path": "src/cakerepro/heldout_specialist_v1_failure.py",
+    "audit_implementation_sha256": "c0cba17463e8afce76cd4496cf99276e3719f230a64517c4a3361660428363fc",
+    "verifier_path": "tools/verify_heldout_specialist_v1_failure.py",
+    "verifier_sha256": "69ae337c8ca6be4b04da93172e360f7cfe12a50ab561b046fa1989f16b89f463"
+  },
+  "broker": {
+    "job_id": "gpuq-d825be7f9e4f",
+    "mode": "exclusive",
+    "gpu_id": 0,
+    "state": "failed",
+    "exit_code": 1,
+    "automatic_retries": 0
+  },
+  "observed_boundary": {
+    "failed_stage": "compile",
+    "error": "r43 compiled source bytes differ",
+    "compile_function_returned_before_failure": true,
+    "failure_owner": "r43_runner_source_artifact_assertion",
+    "specialist_compile_rejection_supported": false,
+    "compiler_invocations_recorded": 0,
+    "candidate_kernel_calls": 0,
+    "dispatcher_calls": 0,
+    "timed_calls": 0,
+    "fallback_calls": 0
+  },
+  "scope": {
+    "correctness_known": false,
+    "performance_measured": false,
+    "held_out_generalization": false,
+    "dispatcher_evidence": false,
+    "checkpoint_eligible": false,
+    "causal_evidence": false,
+    "serving_evidence": false,
+    "paper_result_reproduced": false
+  },
+  "decision": "close_r43_without_retry_and_freeze_one_delta_source_custody_successor",
+  "non_claims": [
+    "The compiler returned before the harness assertion, so this is not evidence that the first specialist failed compilation.",
+    "No specialist or dispatcher kernel was loaded or invoked, so correctness and held-out generalization remain unknown.",
+    "No CUPTI or dispatcher-inclusive host samples were collected, so no performance result exists.",
+    "A successor must preserve every experimental boundary and may only separate lowering-input custody from compiler-expanded source custody."
+  ]
+}

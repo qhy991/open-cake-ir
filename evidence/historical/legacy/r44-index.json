@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "index_kind": "flash_kmeans_r44_heldout_specialist_dispatcher_b200_v2_negative",
+  "claim_id": "flash-kmeans-r44-heldout-specialist-dispatcher",
+  "status": "closed_host_launch_contract_failure_no_retry",
+  "contract": {
+    "path": "contracts/flash-kmeans-r44-heldout-specialist-dispatcher-b200-v2.json",
+    "canonical_sha256": "98f7e8de523902e674ea4f005a05f88ee906978bbeda7266a29162cb7356c63e"
+  },
+  "run_revision": "6872b63c3c9ec98f3fe0bc05c9c0b26bbf02ddf5",
+  "archive": {
+    "path": "evidence/raw/flash-kmeans-r44-heldout-specialist-dispatcher-b200-v2-negative",
+    "result_path": "evidence/raw/flash-kmeans-r44-heldout-specialist-dispatcher-b200-v2-negative/result.json",
+    "result_file_sha256": "a59e52f02df5163a6f334dec679f9d0fa1a8db4ac0bf2cb2b19c7eb166874d87",
+    "result_canonical_sha256": "4b94e41bf605ff09a3a63c2dfca298660fd6a5aaf809df435ef7a7f639bedfb8",
+    "artifact_count": 21,
+    "broker_record_path": "evidence/raw/flash-kmeans-r44-heldout-specialist-dispatcher-b200-v2-negative/broker-jobs.json",
+    "broker_record_canonical_sha256": "e36a3efebee90c6db2c81e8292603f044bbe25fe4cf935d018362cbf12df4a0e",
+    "audit_id": "r44-heldout-specialist-failure-audit-b6adbd17c0574e236194",
+    "audit_implementation_path": "src/cakerepro/heldout_specialist_v2_failure.py",
+    "audit_implementation_sha256": "e379d264034ff72453d077317bcc82b4212e36132e94ab2cb1fc06ad47ac1f4d",
+    "verifier_path": "tools/verify_heldout_specialist_v2_failure.py",
+    "verifier_sha256": "1f7b5f3cfeef460596ed06f9b1adefc946b4d9637fe5d23b35480781cc3151b1"
+  },
+  "broker": {
+    "job_ids": [
+      "gpuq-18a09505b795",
+      "gpuq-e62538a9e38b"
+    ],
+    "prelaunch_failures": 1,
+    "formal_runs": 1,
+    "formal_mode": "exclusive",
+    "formal_gpu_id": 0,
+    "formal_state": "failed",
+    "formal_exit_code": 1,
+    "automatic_retries": 0
+  },
+  "observed_boundary": {
+    "failed_stage": "specialist_preflight",
+    "error": "CUDA Driver tokens shape differs",
+    "failure_owner": "shared_driver_headline_shape_contract",
+    "source_layers_archived_independently": true,
+    "compiler_invocations": 3,
+    "module_loads": 3,
+    "candidate_kernel_calls": 1,
+    "headline_correctness_passed": true,
+    "heldout_candidate_kernel_calls": 0,
+    "specialist_compile_failure_supported": false,
+    "heldout_kernel_failure_supported": false,
+    "dispatcher_calls": 0,
+    "timed_calls": 0,
+    "fallback_calls": 0
+  },
+  "scope": {
+    "correctness_known": false,
+    "performance_measured": false,
+    "held_out_generalization": false,
+    "dispatcher_evidence": false,
+    "checkpoint_eligible": false,
+    "causal_evidence": false,
+    "serving_evidence": false,
+    "paper_result_reproduced": false
+  },
+  "decision": "close_r44_without_retry_and_freeze_one_delta_shape_bound_launch_successor",
+  "non_claims": [
+    "All three specialists compiled and loaded, so the host rejection is not evidence of specialist compile failure.",
+    "The headline specialist passed one tie-aware correctness preflight, but no held-out specialist was invoked and portfolio correctness remains unknown.",
+    "No dispatcher route or timing cohort ran, so held-out generalization, dispatcher correctness, and performance remain unknown.",
+    "A successor may replace only the inherited headline-only tensor gate with an exact specialist-shape-bound Driver launch contract."
+  ]
+}

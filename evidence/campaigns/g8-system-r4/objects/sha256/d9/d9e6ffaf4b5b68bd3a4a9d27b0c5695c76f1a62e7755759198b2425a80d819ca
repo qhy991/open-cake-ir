@@ -1,0 +1,1 @@
+{"admitted":false,"counters":{"compiler_invocations":0,"fallback_calls":0,"kernel_calls":0,"module_loads":0,"preflight_calls":0,"timing_samples":0},"error":"gpu_admission_differs","failure_class":null,"job_id":"gpuq-000000000000","mode":"exclusive","receipt":null,"schema_version":1}

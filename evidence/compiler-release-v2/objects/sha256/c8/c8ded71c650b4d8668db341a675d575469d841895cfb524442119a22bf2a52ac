@@ -1,0 +1,331 @@
+{
+  "schema_version": 1,
+  "schedule_id": "tinygemm2-stage4-split-k-explicit-sm100a-v1",
+  "target": "sm_100a",
+  "grid": [
+    64,
+    1,
+    1
+  ],
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "name": "load_weight",
+      "warps": [
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "name": "load_activation",
+      "warps": [
+        8,
+        9,
+        10,
+        11
+      ]
+    }
+  ],
+  "allocations": [
+    {
+      "name": "smem",
+      "space": "shared",
+      "size_bytes": 52352
+    }
+  ],
+  "buffers": [
+    {
+      "name": "input",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        8,
+        1024
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "weight",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        1024,
+        1024
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "bias",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        1024
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "output",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        8,
+        1024
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "weight_stage",
+      "space": "shared",
+      "dtype": "bf16",
+      "shape": [
+        16,
+        256
+      ],
+      "mode": "scratch",
+      "allocation": "smem",
+      "byte_offset": 1024,
+      "stages": 4
+    },
+    {
+      "name": "activation_stage",
+      "space": "shared",
+      "dtype": "bf16",
+      "shape": [
+        8,
+        256
+      ],
+      "mode": "scratch",
+      "allocation": "smem",
+      "byte_offset": 33792,
+      "stages": 4
+    },
+    {
+      "name": "partial_accumulators",
+      "space": "shared",
+      "dtype": "fp32",
+      "shape": [
+        4,
+        16,
+        8
+      ],
+      "mode": "scratch",
+      "allocation": "smem",
+      "byte_offset": 50176
+    },
+    {
+      "name": "bias_stage",
+      "space": "shared",
+      "dtype": "bf16",
+      "shape": [
+        16
+      ],
+      "mode": "scratch",
+      "allocation": "smem",
+      "byte_offset": 52224
+    },
+    {
+      "name": "reduced_accumulator",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        16,
+        8
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "pipelines": [
+    {
+      "name": "main",
+      "stages": 4
+    }
+  ],
+  "barriers": [
+    {
+      "name": "weight_ready",
+      "count": 1,
+      "producers": [
+        "load_weight"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "pipeline": "main"
+    },
+    {
+      "name": "activation_ready",
+      "count": 1,
+      "producers": [
+        "load_activation"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "pipeline": "main"
+    },
+    {
+      "name": "partials_ready",
+      "count": 1,
+      "producers": [
+        "compute"
+      ],
+      "consumers": [
+        "compute"
+      ]
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_bias",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "bias"
+      ],
+      "writes": [
+        "bias_stage"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "load_weight",
+      "kind": "load",
+      "role": "load_weight",
+      "reads": [
+        "weight"
+      ],
+      "writes": [
+        "weight_stage"
+      ],
+      "signals": [
+        "weight_ready"
+      ],
+      "pipeline": "main",
+      "parameters": {
+        "movement": "tma"
+      }
+    },
+    {
+      "id": "load_activation",
+      "kind": "load",
+      "role": "load_activation",
+      "reads": [
+        "input"
+      ],
+      "writes": [
+        "activation_stage"
+      ],
+      "signals": [
+        "activation_ready"
+      ],
+      "pipeline": "main",
+      "parameters": {
+        "movement": "tma"
+      }
+    },
+    {
+      "id": "split_k_mma",
+      "kind": "mma",
+      "role": "compute",
+      "reads": [
+        "weight_stage",
+        "activation_stage"
+      ],
+      "writes": [
+        "partial_accumulators"
+      ],
+      "waits": [
+        "weight_ready",
+        "activation_ready"
+      ],
+      "signals": [
+        "partials_ready"
+      ],
+      "depends_on": [
+        "load_weight",
+        "load_activation"
+      ],
+      "pipeline": "main",
+      "parameters": {
+        "accumulator": "fp32"
+      }
+    },
+    {
+      "id": "reduce_partials",
+      "kind": "reduce_sum",
+      "role": "compute",
+      "reads": [
+        "partial_accumulators"
+      ],
+      "writes": [
+        "reduced_accumulator"
+      ],
+      "waits": [
+        "partials_ready"
+      ],
+      "depends_on": [
+        "split_k_mma"
+      ],
+      "parameters": {
+        "parts": 3,
+        "scope": "cta"
+      }
+    },
+    {
+      "id": "bias_epilogue",
+      "kind": "epilogue",
+      "role": "compute",
+      "reads": [
+        "reduced_accumulator",
+        "bias_stage"
+      ],
+      "writes": [
+        "output"
+      ],
+      "depends_on": [
+        "reduce_partials",
+        "load_bias"
+      ],
+      "parameters": {
+        "formula": "bias_add_bf16_round",
+        "coalesced": true
+      }
+    }
+  ],
+  "outputs": [
+    "output"
+  ],
+  "metadata": {
+    "profile": "tinygemm2_stage4_split_k",
+    "legacy_source": {
+      "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
+      "path": "examples/schedules/tinygemm2-stage4-split-k-explicit-v1.json",
+      "canonical_json_sha256": "024afdf636bed9a122493c2b91aea985db3e4691964bb47673cc7bfa20ec680b"
+    },
+    "shape": {
+      "output_features": 1024,
+      "batch": 8,
+      "input_features": 1024
+    },
+    "threads_per_cta": 384,
+    "pipeline_stages": 4,
+    "mma_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
+    "dtypes": {
+      "input": "bf16",
+      "accumulator": "fp32",
+      "output": "bf16"
+    }
+  }
+}

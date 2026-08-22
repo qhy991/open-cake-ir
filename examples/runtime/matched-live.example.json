@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "provider": {
+    "executable": "/absolute/path/to/qualified/codex",
+    "workspace_root": "/absolute/new/path/for/campaign-workspaces"
+  },
+  "toolchain": {
+    "nvcc": "/usr/local/cuda/bin/nvcc",
+    "cuobjdump": "/usr/local/cuda/bin/cuobjdump"
+  },
+  "broker": {
+    "command": ["gpu-run", "--label", "open-cake-evaluation", "--mode", "exclusive", "--gpu-count", "1", "--cwd", "/absolute/path/to/open-cake-ir", "--estimate", "10m", "--run-timeout", "30m", "/absolute/path/to/pinned/python", "/absolute/path/to/open-cake-ir/tools/evaluate_flash_candidate.py"],
+    "cwd": "/absolute/path/to/open-cake-ir",
+    "timeout_seconds": 1800,
+    "service_user": "gpuq",
+    "service_group": "gpuq-users"
+  }
+}

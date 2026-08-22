@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "compatibility_prefix": "// CAKE_REPRO_LAUNCH_V1 ",
+  "position": "first_utf8_source_line",
+  "canonical_json_required": true,
+  "manifest_fields": ["abi", "block", "dynamic_shared_memory_bytes", "grid", "kernel_name", "schema_version", "target"],
+  "abi": "flash_kmeans_assign_v1",
+  "target": "sm_100a",
+  "kernel_name": "valid_cuda_identifier",
+  "grid_limits": [[1, 2147483647], [1, 65535], [1, 65535]],
+  "block_threads_maximum": 1024,
+  "dynamic_shared_memory_bytes_maximum": 232448,
+  "explicit_arguments": ["tokens_bf16", "centroids_bf16", "centroid_sq_fp32", "assignments_int32"],
+  "hidden_null_pointer_parameters": 0,
+  "fallback": "forbidden"
+}

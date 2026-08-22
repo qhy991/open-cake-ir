@@ -1,0 +1,4 @@
+[gpu-run] accepted job gpuq-ceed55d5dff6 label=open-cake-g8-r6 mode=exclusive gpus=1
+[gpu-run] queued position=1/1 eta=0s
+[gpu-run] running on physical GPUs 0 (run limit 30m00s)
+[gpu-run] finished state=completed exit=0

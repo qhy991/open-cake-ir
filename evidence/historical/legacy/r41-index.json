@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "index_kind": "r41_codex_matched_replication_campaign_v2_invalid",
+  "claim_id": "codex-gpt56-sol-matched-replication-campaign-v2",
+  "status": "closed_gpu_admission_and_provider_protocol_failures_no_retry",
+  "policy": {
+    "path": "spec/clean_start/codex-gpt56-sol-matched-replication-campaign-v2.json",
+    "canonical_sha256": "5abe4029e64e981b5c88cb644db42fdc509cdca7e67736c62e01b3acf20c2c33"
+  },
+  "parent_policy": {
+    "path": "spec/clean_start/codex-gpt56-sol-matched-replication-campaign-v1.json",
+    "canonical_sha256": "1c98d4cdc2b852b0c1a4bbc6a805be87fa4c6866307268b940fd6f85f4a2f142"
+  },
+  "run_revision": "d15c69d66a54a2d882e0207c1a6ee42ba03b5322",
+  "run_tree": "3dff2424907ccbda450940b92f41f094420803b1",
+  "raw_archive": {
+    "path": "evidence/raw/r41-codex-matched-replication-campaign-v2-invalid",
+    "file_count": 255,
+    "total_size_bytes": 6745530,
+    "manifest_sha256": "41c8336e1c07ce9202f2e295516ad5dc12a7493d8149ca140b82733ef68124ac"
+  },
+  "campaign": {
+    "started_at": "2026-08-22T01:23:29.928829Z",
+    "completed_at": "2026-08-22T01:54:10.210950Z",
+    "execution_order": [
+      {"arm": "cake_ir", "repetition": 1},
+      {"arm": "cuda_ptx", "repetition": 1},
+      {"arm": "cuda_ptx", "repetition": 2},
+      {"arm": "cake_ir", "repetition": 2},
+      {"arm": "cake_ir", "repetition": 3},
+      {"arm": "cuda_ptx", "repetition": 3}
+    ],
+    "session_count": 6,
+    "completed_session_count": 4,
+    "terminal_failed_session_count": 2,
+    "candidate_evaluation_count": 13,
+    "unique_gpuq_job_count": 13,
+    "completed_turn_provider_tokens": 1401298,
+    "partial_provider_tokens": 66665,
+    "provider_process_invocations": 14,
+    "evaluator_attempts": 13,
+    "automatic_retries": 0,
+    "replacement_sessions": 0,
+    "fallback_calls": 0
+  },
+  "evaluator_status_counts": {
+    "compile_rejected": 2,
+    "evaluator_failed": 1,
+    "qualified": 9,
+    "unstable_timing": 1
+  },
+  "failures": [
+    {
+      "arm": "cake_ir",
+      "repetition": 1,
+      "turn": 3,
+      "classification": "exclusive_gpu_assigned_with_active_compute_process",
+      "gpuq_job_id": "gpuq-4df2336ce625",
+      "broker_mode": "exclusive",
+      "broker_gpu_count": 1,
+      "broker_exit_code": 1,
+      "retained_result_failed_stage": "source_custody",
+      "actual_error": "r40 evaluator GPU admission differs",
+      "initial_active_compute_processes": 1,
+      "initial_utilization_percent": 0,
+      "compiler_invocations": 0,
+      "module_loads": 0,
+      "candidate_kernel_calls": 0,
+      "timed_route_calls": 0,
+      "gpuq_scheduler_failure": true,
+      "candidate_or_kernel_failure": false
+    },
+    {
+      "arm": "cuda_ptx",
+      "repetition": 1,
+      "turn": 1,
+      "classification": "duplicate_identical_terminal_agent_message",
+      "thread_id": "01a02713-6061-7943-868b-081816af2a8b",
+      "event_count": 7,
+      "terminal_agent_messages": 2,
+      "file_changes": 1,
+      "candidate_sha256": "d5546aa9e5558d7558cd5b42f0abdc15ec707bcd9710af27312ab9d2f2bdf192",
+      "candidate_size_bytes": 4724,
+      "observed_provider_tokens": 66665,
+      "evaluator_attempts": 0,
+      "gpuq_scheduler_failure": false,
+      "candidate_or_kernel_failure": false
+    }
+  ],
+  "offline_replay": {
+    "audit_id": "r41-successor-failure-audit-57c12803be6b0324922e",
+    "all_raw_artifacts_replayed": true,
+    "all_sessions_terminal": true,
+    "four_sessions_completed": true,
+    "six_unique_provider_threads_observed": true,
+    "six_hmac_signatures_verified": true,
+    "signing_key_id": "hmac-sha256-2d4da244de11da11fe93",
+    "representation_effect_available": false
+  },
+  "decision": "close_r41_without_retry_or_replacement",
+  "bounded_successor": "Any successor must be separately designed and frozen before new authoring sessions. It may not reuse the two missing r41 observations as replacements and must explicitly resolve both clean-card infrastructure semantics and the duplicate-identical terminal-message event boundary while preserving representation symmetry.",
+  "limitations": [
+    "The r41 sandbox correction itself worked: multiple independent sessions completed resumed file updates, but that does not repair the two terminal failures.",
+    "Four completed sessions, nine qualified candidates, one timing-unstable candidate, and two compile rejections are retained but cannot produce the frozen six-run representation estimand.",
+    "The Cake-1 turn-3 result labels its stage source_custody because the evaluator did not advance the stage marker before GPU admission; the retained error and snapshots prove the actual boundary was exclusive-card admission.",
+    "The CUDA-1 candidate file exists, but its two identical terminal messages violate the frozen one-message event contract and no evaluator job was submitted.",
+    "No held-out, dispatcher, serving, end-to-end, paper, or representation-effect conclusion follows from r41."
+  ]
+}

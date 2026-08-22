@@ -1,0 +1,231 @@
+// CAKE_REPRO_LAUNCH_V1 {"abi":"flash_kmeans_assign_v1","block":[768,1,1],"dynamic_shared_memory_bytes":232448,"grid":[90,32,1],"kernel_name":"cake_flash_kmeans_assign","schema_version":1,"target":"sm_100a"}
+#include <cuda_bf16.h>
+#include <mma.h>
+#include <stdint.h>
+#include <vector_types.h>
+
+extern "C" __global__ __launch_bounds__(768, 1)
+void cake_flash_kmeans_assign(
+    const __nv_bfloat16* __restrict__ tokens,
+    const __nv_bfloat16* __restrict__ centroids,
+    const float* __restrict__ centroid_sq,
+    int32_t* __restrict__ assignments) {
+  using namespace nvcuda;
+
+  constexpr int kN = 65536;
+  constexpr int kD = 128;
+  constexpr int kK = 1024;
+
+  // Twenty-three consumer warps cover 736 tokens.  A final producer warp
+  // stages the next centroid tile while the consumers use the current tile.
+  constexpr int kConsumerWarps = 23;
+  constexpr int kProducerWarp = kConsumerWarps;
+  constexpr int kTokensPerWarp = 32;
+  constexpr int kTokensPerBlock = kConsumerWarps * kTokensPerWarp;
+
+  // Padding by one 16-byte vector rotates the shared-memory banks between
+  // adjacent rows for the WMMA loads.
+  constexpr int kSharedLd = 136;
+  constexpr int kTokenTileElements = kTokensPerBlock * kSharedLd;
+  constexpr int kCentroidTileElements = 16 * kSharedLd;
+  constexpr int kVectorsPerRow = kD / 8;
+
+  extern __shared__ __align__(32) unsigned char shared_bytes[];
+  __nv_bfloat16* token_tile =
+      reinterpret_cast<__nv_bfloat16*>(shared_bytes);
+  __nv_bfloat16* centroid_tiles = token_tile + kTokenTileElements;
+  float* score_tile = reinterpret_cast<float*>(
+      centroid_tiles + 2 * kCentroidTileElements);
+
+  const int tid = static_cast<int>(threadIdx.x);
+  const int warp = tid >> 5;
+  const int lane = tid & 31;
+  const int b = static_cast<int>(blockIdx.y);
+  const int block_token =
+      static_cast<int>(blockIdx.x) * kTokensPerBlock;
+  const long long token_base =
+      (static_cast<long long>(b) * kN + block_token) * kD;
+
+  // Load each token once.  Invalid rows only occur in the last CTA, where
+  // they are zero-filled so every WMMA load remains in bounds.
+  constexpr int kTokenVectors = kTokensPerBlock * kVectorsPerRow;
+  #pragma unroll 1
+  for (int q = tid; q < kTokenVectors; q += 768) {
+    const int row = q / kVectorsPerRow;
+    const int vec = q - row * kVectorsPerRow;
+    int4 value = {0, 0, 0, 0};
+    if (block_token + row < kN) {
+      value = reinterpret_cast<const int4*>(tokens + token_base)[q];
+    }
+    reinterpret_cast<int4*>(token_tile + row * kSharedLd)[vec] = value;
+  }
+
+  const long long centroid_batch_base =
+      static_cast<long long>(b) * kK * kD;
+
+  // All threads that are useful for the copy cooperatively seed tile zero.
+  // Each row's unused padding also owns that centroid's fp32 norm.
+  if (tid < 16 * kVectorsPerRow) {
+    const int row = tid / kVectorsPerRow;
+    const int vec = tid - row * kVectorsPerRow;
+    reinterpret_cast<int4*>(centroid_tiles + row * kSharedLd)[vec] =
+        reinterpret_cast<const int4*>(
+            centroids + centroid_batch_base)[tid];
+  }
+  if (tid < 16) {
+    *reinterpret_cast<float*>(centroid_tiles + tid * kSharedLd + kD) =
+        centroid_sq[static_cast<long long>(b) * kK + tid];
+  }
+  __syncthreads();
+
+  const int warp_token = warp * kTokensPerWarp;
+  const bool active_consumer =
+      warp < kConsumerWarps && block_token + warp_token < kN;
+
+  float best0 = 3.402823466e+38F;
+  float best1 = 3.402823466e+38F;
+  int best_k0 = 0;
+  int best_k1 = 0;
+
+  #pragma unroll 1
+  for (int k0 = 0; k0 < kK; k0 += 16) {
+    const int parity = (k0 >> 4) & 1;
+    const int next_k = k0 + 16;
+
+    // This warp stays one tile ahead.  Double buffering makes these stores
+    // independent of the WMMA reads in the consumer warps.
+    if (warp == kProducerWarp && next_k < kK) {
+      __nv_bfloat16* next_tile =
+          centroid_tiles + (parity ^ 1) * kCentroidTileElements;
+      const __nv_bfloat16* next_source =
+          centroids + centroid_batch_base +
+          static_cast<long long>(next_k) * kD;
+      #pragma unroll
+      for (int q = lane; q < 16 * kVectorsPerRow; q += 32) {
+        const int row = q / kVectorsPerRow;
+        const int vec = q - row * kVectorsPerRow;
+        reinterpret_cast<int4*>(next_tile + row * kSharedLd)[vec] =
+            reinterpret_cast<const int4*>(next_source)[q];
+      }
+      if (lane < 16) {
+        *reinterpret_cast<float*>(
+            next_tile + lane * kSharedLd + kD) =
+            centroid_sq[static_cast<long long>(b) * kK +
+                        next_k + lane];
+      }
+    }
+
+    if (active_consumer) {
+      const __nv_bfloat16* current_centroids =
+          centroid_tiles + parity * kCentroidTileElements;
+
+      wmma::fragment<wmma::accumulator, 16, 16, 16, float> acc0;
+      wmma::fragment<wmma::accumulator, 16, 16, 16, float> acc1;
+      wmma::fill_fragment(acc0, 0.0F);
+      wmma::fill_fragment(acc1, 0.0F);
+
+      #pragma unroll
+      for (int d0 = 0; d0 < kD; d0 += 16) {
+        wmma::fragment<wmma::matrix_a, 16, 16, 16,
+                       __nv_bfloat16, wmma::row_major> a;
+        wmma::fragment<wmma::matrix_b, 16, 16, 16,
+                       __nv_bfloat16, wmma::col_major> x;
+
+        wmma::load_matrix_sync(a, current_centroids + d0, kSharedLd);
+        wmma::load_matrix_sync(
+            x, token_tile + warp_token * kSharedLd + d0, kSharedLd);
+        wmma::mma_sync(acc0, a, x, acc0);
+        wmma::load_matrix_sync(
+            x,
+            token_tile + (warp_token + 16) * kSharedLd + d0,
+            kSharedLd);
+        wmma::mma_sync(acc1, a, x, acc1);
+      }
+
+      // A single 16x16 scratch tile per warp is enough.  Both half-warps
+      // scan eight centroid rows, then exchange their local minima.
+      float* warp_score = score_tile + warp * 16 * 16;
+      const int column = lane & 15;
+      const int first_row = (lane >> 4) * 8;
+
+      wmma::store_matrix_sync(
+          warp_score, acc0, 16, wmma::mem_row_major);
+      __syncwarp();
+
+      float local_best0 = best0;
+      int local_k0 = best_k0;
+      #pragma unroll
+      for (int rr = 0; rr < 8; ++rr) {
+        const int r = first_row + rr;
+        const float norm = *reinterpret_cast<const float*>(
+            current_centroids + r * kSharedLd + kD);
+        const float dot = warp_score[r * 16 + column];
+        const float candidate = norm - 2.0F * dot;
+        const int k = k0 + r;
+        if (candidate < local_best0) {
+          local_best0 = candidate;
+          local_k0 = k;
+        }
+      }
+      const float peer_best0 =
+          __shfl_xor_sync(0xffffffffU, local_best0, 16);
+      const int peer_k0 = __shfl_xor_sync(0xffffffffU, local_k0, 16);
+      if (peer_best0 < local_best0 ||
+          (peer_best0 == local_best0 && peer_k0 < local_k0)) {
+        local_best0 = peer_best0;
+        local_k0 = peer_k0;
+      }
+      best0 = local_best0;
+      best_k0 = local_k0;
+
+      __syncwarp();
+      wmma::store_matrix_sync(
+          warp_score, acc1, 16, wmma::mem_row_major);
+      __syncwarp();
+
+      float local_best1 = best1;
+      int local_k1 = best_k1;
+      #pragma unroll
+      for (int rr = 0; rr < 8; ++rr) {
+        const int r = first_row + rr;
+        const float norm = *reinterpret_cast<const float*>(
+            current_centroids + r * kSharedLd + kD);
+        const float dot = warp_score[r * 16 + column];
+        const float candidate = norm - 2.0F * dot;
+        const int k = k0 + r;
+        if (candidate < local_best1) {
+          local_best1 = candidate;
+          local_k1 = k;
+        }
+      }
+      const float peer_best1 =
+          __shfl_xor_sync(0xffffffffU, local_best1, 16);
+      const int peer_k1 = __shfl_xor_sync(0xffffffffU, local_k1, 16);
+      if (peer_best1 < local_best1 ||
+          (peer_best1 == local_best1 && peer_k1 < local_k1)) {
+        local_best1 = peer_best1;
+        local_k1 = peer_k1;
+      }
+      best1 = local_best1;
+      best_k1 = local_k1;
+    }
+
+    // This is simultaneously the consumers' release of the old tile and
+    // their wait for the producer's next tile.
+    if (next_k < kK) {
+      __syncthreads();
+    }
+  }
+
+  if (active_consumer && lane < 16) {
+    const int token0 = block_token + warp_token + lane;
+    const int token1 = token0 + 16;
+    const long long output_base = static_cast<long long>(b) * kN;
+    if (token0 < kN) {
+      assignments[output_base + token0] = best_k0;
+    }
+    if (token1 < kN) {
+      assignments[output_base + token1] = best_k1;
+    }
+  }
+}

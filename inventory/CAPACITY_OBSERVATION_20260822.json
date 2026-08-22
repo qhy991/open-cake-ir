@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-22T16:13:45Z",
+  "host": "verda-b200x4",
+  "path": "/home/qinhaiyan/open-cake-ir",
+  "filesystem_size_bytes": 1559055466496,
+  "filesystem_used_bytes": 1372800053248,
+  "filesystem_available_bytes": 25179754496,
+  "minimum_migration_headroom_bytes": 10737418240,
+  "migration_headroom_passed": true,
+  "live_run_recheck_required": false,
+  "source": "df -B1 --output=size,used,avail,pcent,target"
+}

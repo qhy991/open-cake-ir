@@ -1,0 +1,262 @@
+"""Content-bound release gate for an Open Cake Compiler Revision."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass
+from hashlib import sha256
+from pathlib import Path, PurePosixPath
+from typing import Mapping, cast
+
+from .core import Compiler, CompilerError
+
+
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _object(value: object, context: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise CompilerError(f"{context} must be an object")
+    return cast(Mapping[str, object], value)
+
+
+def _safe_path(root: Path, value: object, context: str) -> tuple[str, Path]:
+    if not isinstance(value, str) or not value:
+        raise CompilerError(f"{context} must be a non-empty string")
+    relative = PurePosixPath(value)
+    if relative.is_absolute() or ".." in relative.parts or "\\" in value:
+        raise CompilerError(f"{context} is unsafe")
+    path = (root / value).resolve(strict=True)
+    if root not in path.parents:
+        raise CompilerError(f"{context} escapes project root")
+    return value, path
+
+
+@dataclass(frozen=True)
+class CompilerRelease:
+    """Released Compiler Revision document and its canonical identity."""
+
+    document: Mapping[str, object]
+    canonical_sha256: str
+
+    def verify(self, project_root: str | Path) -> bool:
+        """Rehash every bound source and corpus object."""
+
+        root = Path(project_root).resolve(strict=True)
+        sources = self.document.get("sources")
+        if not isinstance(sources, list):
+            return False
+        for item in sources:
+            if not isinstance(item, Mapping):
+                return False
+            try:
+                _, path = _safe_path(root, item.get("path"), "release.sources.path")
+            except (CompilerError, OSError):
+                return False
+            payload = path.read_bytes()
+            if item.get("sha256") != sha256(payload).hexdigest() or item.get("size_bytes") != len(payload):
+                return False
+        corpus = self.document.get("corpus_manifest")
+        if not isinstance(corpus, Mapping):
+            return False
+        try:
+            _, corpus_path = _safe_path(root, corpus.get("path"), "release.corpus_manifest.path")
+            parsed = json.loads(corpus_path.read_text(encoding="utf-8"))
+        except (CompilerError, OSError, UnicodeError, json.JSONDecodeError):
+            return False
+        references = (self.document.get("corpus_gate"), self.document.get("release_approval"))
+        for reference in references:
+            if not isinstance(reference, Mapping):
+                return False
+            try:
+                _, reference_path = _safe_path(root, reference.get("path"), "release.reference.path")
+                reference_document = json.loads(reference_path.read_text(encoding="utf-8"))
+            except (CompilerError, OSError, UnicodeError, json.JSONDecodeError):
+                return False
+            if reference.get("canonical_sha256") != sha256(
+                _canonical_json_bytes(reference_document)
+            ).hexdigest():
+                return False
+        return (
+            corpus.get("canonical_sha256")
+            == sha256(_canonical_json_bytes(parsed)).hexdigest()
+            and self.canonical_sha256 == sha256(_canonical_json_bytes(self.document)).hexdigest()
+        )
+
+
+@dataclass(frozen=True)
+class CompilerGate:
+    """Persistent full-corpus observation awaiting explicit human approval."""
+
+    document: Mapping[str, object]
+    canonical_sha256: str
+
+
+def build_gate_report(
+    project_root: str | Path,
+    revision_path: str | Path,
+    source_set_path: str | Path,
+) -> CompilerGate:
+    """Build the complete review surface without promoting the draft Revision."""
+
+    root = Path(project_root).resolve(strict=True)
+    compiler = Compiler.load(root, revision_path)
+    if compiler.state != "draft":
+        raise CompilerError("Corpus Gate input must be a draft Compiler Revision")
+    gate = compiler.check_corpus()
+    proposal = _object(json.loads(Path(revision_path).read_text()), "compiler_revision")
+    source_set = _object(json.loads(Path(source_set_path).read_text()), "compiler_source_set")
+    paths = source_set.get("paths")
+    if (
+        set(source_set) != {"schema_version", "paths"}
+        or source_set.get("schema_version") != 1
+        or not isinstance(paths, list)
+        or not paths
+    ):
+        raise CompilerError("compiler source-set fields differ")
+    source_receipts: list[dict[str, object]] = []
+    observed_paths: set[str] = set()
+    for index, value in enumerate(paths):
+        relative, path = _safe_path(root, value, f"compiler_source_set.paths[{index}]")
+        if relative in observed_paths:
+            raise CompilerError(f"compiler source {relative!r} is duplicated")
+        observed_paths.add(relative)
+        payload = path.read_bytes()
+        source_receipts.append(
+            {"path": relative, "sha256": sha256(payload).hexdigest(), "size_bytes": len(payload)}
+        )
+    if not gate.passed:
+        failed = ", ".join(case.case_id for case in gate.cases if not case.matched)
+        raise CompilerError(f"compiler corpus gate failed: {failed}")
+    document: dict[str, object] = {
+        "schema_version": 1,
+        "decision": "awaiting_human_review",
+        "proposal": {
+            "path": Path(revision_path).resolve(strict=True).relative_to(root).as_posix(),
+            "canonical_sha256": sha256(_canonical_json_bytes(proposal)).hexdigest(),
+        },
+        "source_set": {
+            "path": Path(source_set_path).resolve(strict=True).relative_to(root).as_posix(),
+            "canonical_sha256": sha256(_canonical_json_bytes(source_set)).hexdigest(),
+        },
+        "sources": source_receipts,
+        "corpus_id": gate.corpus_id,
+        "compiler_revision_id": gate.compiler_revision_id,
+        "compiler_revision_sha256": gate.compiler_revision_sha256,
+        "case_count": gate.case_count,
+        "matched_case_count": sum(case.matched for case in gate.cases),
+        "cases": [asdict(case) for case in gate.cases],
+    }
+    return CompilerGate(document, sha256(_canonical_json_bytes(document)).hexdigest())
+
+
+def build_release(
+    project_root: str | Path,
+    revision_path: str | Path,
+    source_set_path: str | Path,
+    gate_report_path: str | Path,
+    approval_path: str | Path,
+) -> CompilerRelease:
+    """Build a released revision only after the complete declared Corpus passes."""
+
+    root = Path(project_root).resolve(strict=True)
+    observed_gate = build_gate_report(root, revision_path, source_set_path)
+    gate_report = _object(
+        json.loads(Path(gate_report_path).read_text(encoding="utf-8")),
+        "compiler_gate_report",
+    )
+    if sha256(_canonical_json_bytes(gate_report)).hexdigest() != observed_gate.canonical_sha256:
+        raise CompilerError("persistent Compiler Corpus Gate report differs")
+    approval = _object(
+        json.loads(Path(approval_path).read_text(encoding="utf-8")),
+        "compiler_release_approval",
+    )
+    if set(approval) != {
+        "schema_version",
+        "decision",
+        "gate_report",
+        "reviewer",
+        "approval_basis",
+    } or approval.get("schema_version") != 1 or approval.get("decision") != "approved":
+        raise CompilerError("Compiler release approval differs")
+    approval_gate = _object(approval.get("gate_report"), "compiler_release_approval.gate_report")
+    gate_relative, resolved_gate_path = _safe_path(
+        root, approval_gate.get("path"), "compiler_release_approval.gate_report.path"
+    )
+    if resolved_gate_path != Path(gate_report_path).resolve(strict=True) or approval_gate.get(
+        "canonical_sha256"
+    ) != observed_gate.canonical_sha256:
+        raise CompilerError("Compiler release approval does not bind this Gate report")
+    reviewer = approval.get("reviewer")
+    approval_basis = approval.get("approval_basis")
+    if not isinstance(reviewer, str) or not reviewer or not isinstance(approval_basis, str) or not approval_basis:
+        raise CompilerError("Compiler release approval identity differs")
+    compiler = Compiler.load(root, revision_path)
+    gate = compiler.check_corpus()
+
+    proposal = _object(
+        json.loads(Path(revision_path).read_text(encoding="utf-8")),
+        "compiler_revision",
+    )
+    source_set = _object(
+        json.loads(Path(source_set_path).read_text(encoding="utf-8")),
+        "compiler_source_set",
+    )
+    if set(source_set) != {"schema_version", "paths"} or source_set.get("schema_version") != 1:
+        raise CompilerError("compiler source-set fields differ")
+    paths = source_set.get("paths")
+    if not isinstance(paths, list) or not paths:
+        raise CompilerError("compiler source-set paths must be a non-empty list")
+    sources: list[dict[str, object]] = []
+    observed: set[str] = set()
+    for index, value in enumerate(paths):
+        relative, path = _safe_path(root, value, f"compiler_source_set.paths[{index}]")
+        if relative in observed:
+            raise CompilerError(f"compiler source {relative!r} is duplicated")
+        observed.add(relative)
+        payload = path.read_bytes()
+        sources.append(
+            {"path": relative, "sha256": sha256(payload).hexdigest(), "size_bytes": len(payload)}
+        )
+
+    corpus_relative, corpus_path = _safe_path(
+        root, proposal.get("corpus_manifest"), "compiler_revision.corpus_manifest"
+    )
+    corpus_document = json.loads(corpus_path.read_text(encoding="utf-8"))
+    proposal_id = proposal.get("revision_id")
+    if not isinstance(proposal_id, str) or not proposal_id:
+        raise CompilerError("compiler revision_id is invalid")
+    released_id = proposal_id.removesuffix("-draft")
+    document: dict[str, object] = {
+        "schema_version": 1,
+        "revision_id": released_id,
+        "state": "released",
+        "target_definitions": proposal.get("target_definitions"),
+        "calibration_coverage": proposal.get("calibration_coverage"),
+        "corpus_manifest": {
+            "path": corpus_relative,
+            "canonical_sha256": sha256(_canonical_json_bytes(corpus_document)).hexdigest(),
+        },
+        "corpus_gate": {
+            "path": gate_relative,
+            "canonical_sha256": sha256(_canonical_json_bytes(gate_report)).hexdigest(),
+            "case_count": gate.case_count,
+            "matched_case_count": sum(case.matched for case in gate.cases),
+        },
+        "release_approval": {
+            "path": Path(approval_path).resolve(strict=True).relative_to(root).as_posix(),
+            "canonical_sha256": sha256(_canonical_json_bytes(approval)).hexdigest(),
+        },
+        "sources": sources,
+    }
+    return CompilerRelease(
+        document=document,
+        canonical_sha256=sha256(_canonical_json_bytes(document)).hexdigest(),
+    )

@@ -1,0 +1,54 @@
+{
+  "schema_version": 2,
+  "observed_at": "2026-08-22T12:40:14Z",
+  "host": "verda-b200x4",
+  "gate": "G7",
+  "status": "passed",
+  "provider": {
+    "revision": "codex-cli-0.144.3-sha134063e133f0",
+    "executable": "/usr/local/bin/codex",
+    "executable_sha256": "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
+  },
+  "attempts": [
+    {
+      "run_id": "codex-cli-0.144.3-live",
+      "qualification_receipt_issued": false,
+      "integrity": true,
+      "protocol_adherence": "provider_fault",
+      "terminal_seal_sha256": "1c794540b2a8c7ec1516116f8680ea22be7030ec8d899368b491527220486f84",
+      "observed_error": "401 token_invalidated",
+      "resolution": "fresh-process authentication subsequently recovered; archive retained"
+    },
+    {
+      "run_id": "codex-cli-0.144.3-live-r2",
+      "qualification_receipt_issued": false,
+      "integrity": true,
+      "protocol_adherence": "provider_fault",
+      "terminal_seal_sha256": "f341b3a3598497f23c79a69c2120ee10c4a6ce0ab5f7e17065a32302e558f2dd",
+      "observed_error": "400 invalid_json_schema: const/enum properties required explicit type",
+      "resolution": "output schema corrected and all local contract tests passed; archive retained"
+    },
+    {
+      "run_id": "codex-cli-0.144.3-live-r3",
+      "qualification_receipt_issued": true,
+      "integrity": true,
+      "protocol_adherence": "adhered",
+      "terminal_seal_sha256": "f550edfacc5d889aa6f91c4da0b2dc73c39bc5dc0710daac09398c6242559d5c",
+      "qualification_receipt_sha256": "0ee3fa553ed9d6e0cf3670534a7e71b381fd9bd55220817f8f2a6edd2d44f31a",
+      "resolution": "superseded by r4 because the Study tool surface required an explicit feature denylist"
+    },
+    {
+      "run_id": "codex-cli-0.144.3-live-r4",
+      "qualification_receipt_issued": true,
+      "integrity": true,
+      "protocol_adherence": "adhered",
+      "terminal_seal_sha256": "742c10598c57d071fae90710b03bc25cc7db595d56016d7e9a9c1c48343da9e0",
+      "qualification_receipt_sha256": "86fb53a1f51845dee11e105eefe8bb01e5563dc0217cd7c9c7573d8199a0e707",
+      "resolution": "authoritative G7 receipt for the closed feature-denylist configuration"
+    }
+  ],
+  "current_output_schema_sha256": "5b3b813d98ddae93fe9ff5cf0f1568d64721fa31029cb77a0ad5f2dfc800ed18",
+  "evidence_class": "observed_diagnostic_projection_from_terminal_archives_and_local_codex_structured_log",
+  "authoritative_run_id": "codex-cli-0.144.3-live-r4",
+  "next_action": "requalify only if provider executable or bound configuration changes"
+}

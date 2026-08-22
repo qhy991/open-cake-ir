@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "provider": {
+    "executable": "/usr/local/bin/codex",
+    "workspace_root": "/home/qinhaiyan/open-cake-ir-workspaces/g8-system-r4"
+  },
+  "toolchain": {
+    "nvcc": "/usr/local/cuda/bin/nvcc",
+    "cuobjdump": "/usr/local/cuda/bin/cuobjdump"
+  },
+  "broker": {
+    "command": [
+      "/usr/local/bin/gpu-run",
+      "--label",
+      "open-cake-g8-r4",
+      "--mode",
+      "exclusive",
+      "--gpu-count",
+      "1",
+      "--cwd",
+      "/home/qinhaiyan/open-cake-ir",
+      "--estimate",
+      "20m",
+      "--queue-timeout",
+      "30m",
+      "--run-timeout",
+      "30m",
+      "/home/qinhaiyan/megakernel-exp/.venv-flashinfer/bin/python",
+      "/home/qinhaiyan/open-cake-ir/tools/evaluate_flash_candidate.py"
+    ],
+    "cwd": "/home/qinhaiyan/open-cake-ir",
+    "timeout_seconds": 1800,
+    "service_user": "gpuq",
+    "service_group": "gpuq-users"
+  }
+}

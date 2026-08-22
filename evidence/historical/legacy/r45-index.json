@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "index_kind": "flash_kmeans_r45_heldout_specialist_dispatcher_b200_v3",
+  "claim_id": "flash-kmeans-r45-heldout-specialist-dispatcher",
+  "status": "closed_stage6_bounded_unstable_dispatcher_timing",
+  "contract": {
+    "path": "contracts/flash-kmeans-r45-heldout-specialist-dispatcher-b200-v3.json",
+    "canonical_sha256": "ed03090039bd5187cd8bc2026586ff014e303ce9ba7d4e15645a176286511aa8"
+  },
+  "run_revision": "f2e65b1900eaa520026100ad9303f038cad13da9",
+  "archive": {
+    "path": "evidence/raw/flash-kmeans-r45-heldout-specialist-dispatcher-b200-v3",
+    "result_path": "evidence/raw/flash-kmeans-r45-heldout-specialist-dispatcher-b200-v3/result.json",
+    "result_file_sha256": "30cfb93234adb72cff8f790811ca03dc6575b3f301f46abda8fc19f42d0f08b8",
+    "result_canonical_sha256": "2eab2ad2c9e386195901cef861f26f2d0264aa3544df6d191039026b41294e32",
+    "artifact_count": 21,
+    "broker_record_path": "evidence/raw/flash-kmeans-r45-heldout-specialist-dispatcher-b200-v3/broker-job.json",
+    "broker_record_canonical_sha256": "b981d137153ccd5f179a1198e8d575b12167e399357680bee8e4c2bbb1a9b7e2",
+    "audit_id": "r45-heldout-specialist-archive-audit-935455c44a6a47d30dee",
+    "audit_implementation_path": "src/cakerepro/heldout_specialist_v3_archive.py",
+    "audit_implementation_sha256": "f5e41ce0d935a0d8f31343c5f99c29f67f2a9f662a42d1ab98e7bbcc4cf9346d",
+    "verifier_path": "tools/verify_heldout_specialist_v3_archive.py",
+    "verifier_sha256": "54f9756224a15d81410dbf9c0a176d8f8f9546f608057379fb6483f6cd9f476d"
+  },
+  "broker": {
+    "job_id": "gpuq-abbdd239d57f",
+    "mode": "exclusive",
+    "gpu_id": 0,
+    "state": "completed",
+    "exit_code": 0,
+    "automatic_retries": 0
+  },
+  "observed_boundary": {
+    "result_status": "unstable_timing",
+    "failed_stage": "timing_stability",
+    "compiler_invocations": 3,
+    "module_loads": 3,
+    "candidate_kernel_calls": 999,
+    "dispatcher_kernel_calls": 456,
+    "fallback_calls": 0,
+    "all_correctness_routes_passed": true,
+    "unsupported_shape_kernel_call_delta": 0,
+    "stable_kernel_cases": [
+      "headline_b32",
+      "b32_smoke",
+      "public_b1"
+    ],
+    "stable_dispatcher_cases": [
+      "headline_b32"
+    ],
+    "unstable_dispatcher_cases": [
+      "b32_smoke",
+      "public_b1"
+    ],
+    "unstable_dispatcher_cohorts": 5,
+    "pooled_medians_ms": {
+      "headline_b32": {
+        "kernel": 1.156062,
+        "dispatcher": 1.283412
+      },
+      "b32_smoke": {
+        "kernel": 0.023008,
+        "dispatcher": 0.151426
+      },
+      "public_b1": {
+        "kernel": 0.045088,
+        "dispatcher": 0.173412
+      }
+    }
+  },
+  "scope": {
+    "representation_effect_estimate_available": false,
+    "heldout_correctness_supported": true,
+    "dispatcher_correctness_supported": true,
+    "performance_measured": true,
+    "stable_dispatcher_performance_supported": false,
+    "positive_heldout_performance_claim": false,
+    "stage6_exit_evidence_complete": true,
+    "outcome_dependent_resampling": false,
+    "checkpoint_eligible": false,
+    "causal_evidence": false,
+    "serving_evidence": false,
+    "paper_result_reproduced": false
+  },
+  "decision": "close_stage6_without_resampling_and_stop_active_reproduction",
+  "non_claims": [
+    "The complete held-out and dispatcher correctness result covers only the two frozen held-out shapes and does not prove arbitrary-shape generalization.",
+    "All device-only kernel cohorts were stable, but five held-out dispatcher-inclusive cohorts exceeded the frozen CV limit, so stable held-out dispatcher performance is not supported.",
+    "The pooled medians are descriptive observations and cannot be promoted to a positive held-out performance or paper dispatcher claim.",
+    "No replacement or additional samples are authorized; Stage 7 serving and Stage 8 paper synthesis remain deferred."
+  ]
+}

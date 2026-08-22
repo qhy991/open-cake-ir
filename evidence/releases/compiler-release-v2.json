@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "kind": "compiler_release_evidence_index",
+  "run_id": "compiler-release-v2",
+  "evidence_root": "evidence/compiler-release-v2",
+  "compiler_revision_id": "open-cake-ir-sm100a-v2",
+  "authority_sha256": "dafc18995831c29f198abd25f7386a815f38bb1d3ad040f806e8b298be635843",
+  "source_count": 14,
+  "object_count": 15,
+  "immediate_audit_integrity": true,
+  "terminal_seal_sha256": "ae59c4e7353123b1b6be89300d0fdb1bdbe7b60d40642463bcb2b6ddb36106e7"
+}

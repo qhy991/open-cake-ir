@@ -1,0 +1,114 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from hashlib import sha256
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+CURRENT_EXECUTOR = ROOT / "runtime/executors/open-cake-ir-b200-v2.json"
+sys.path.insert(0, str(ROOT / "src"))
+
+from open_cake_ir.lab import ExecutorRevision  # noqa: E402
+
+
+class ExecutorRevisionContractTests(unittest.TestCase):
+    def test_released_executor_covers_the_complete_runtime_source_closure(self) -> None:
+        executor = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR)
+        self.assertEqual(executor.executor_id, "open-cake-ir-b200-v2")
+        self.assertEqual(
+            CURRENT_EXECUTOR.stat().st_mode & 0o444,
+            0o444,
+        )
+        observed = {
+            str(record["path"])
+            for record in executor.document["sources"]
+        }
+        expected = {
+            path.relative_to(ROOT).as_posix()
+            for directory in (
+                ROOT / "src/open_cake_ir/lab",
+                ROOT / "src/open_cake_ir/evaluation",
+                ROOT / "src/open_cake_ir/evidence",
+            )
+            for path in directory.glob("*.py")
+        } | {
+            "src/open_cake_ir/__init__.py",
+            "src/open_cake_ir/cli.py",
+            "tools/evaluate_flash_candidate.py",
+        }
+
+        self.assertEqual(observed, expected)
+        with self.assertRaises(TypeError):
+            executor.document["host_environment"]["packages"]["torch"] = "changed"
+
+    def test_g8_inventory_resolves_the_complete_historical_executor(self) -> None:
+        inventory = json.loads(
+            (ROOT / "inventory/G8_SYSTEM_QUALIFICATION_20260822.json").read_text()
+        )
+        reference = inventory["executor_revision"]
+        archive_root = ROOT / reference["archive_root"]
+        executor = ExecutorRevision.load(
+            archive_root,
+            archive_root / "runtime/executor.json",
+        )
+
+        self.assertEqual(executor.executor_id, reference["executor_id"])
+        self.assertEqual(executor.canonical_sha256, reference["canonical_sha256"])
+        self.assertEqual(
+            sha256((archive_root / "runtime/executor.json").read_bytes()).hexdigest(),
+            reference["descriptor_raw_sha256"],
+        )
+        self.assertEqual(len(executor.document["sources"]), reference["source_count"])
+        self.assertNotEqual(
+            executor.canonical_sha256,
+            ExecutorRevision.load(ROOT, CURRENT_EXECUTOR).canonical_sha256,
+        )
+
+    def test_executor_release_is_create_only_and_world_readable(self) -> None:
+        document = json.loads(CURRENT_EXECUTOR.read_text(encoding="utf-8"))
+        document["executor_id"] = "open-cake-ir-test-v1"
+        document["state"] = "draft"
+        document["sources"] = []
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            proposal = temporary / "proposal.json"
+            output = temporary / "released.json"
+            proposal.write_text(json.dumps(document), encoding="utf-8")
+            command = (
+                sys.executable,
+                str(ROOT / "tools/release_executor.py"),
+                "--project-root",
+                str(ROOT),
+                "--proposal",
+                str(proposal),
+                "--output",
+                str(output),
+            )
+
+            first = subprocess.run(command, capture_output=True, check=False)
+            self.assertEqual(first.returncode, 0, first.stderr.decode())
+            released = output.read_bytes()
+            self.assertEqual(output.stat().st_mode & 0o444, 0o444)
+
+            second = subprocess.run(command, capture_output=True, check=False)
+            self.assertNotEqual(second.returncode, 0)
+            self.assertEqual(output.read_bytes(), released)
+
+            document["executor_id"] = "open-cake-ir-b200-v2"
+            collision_proposal = temporary / "collision-proposal.json"
+            collision_output = temporary / "collision-release.json"
+            collision_proposal.write_text(json.dumps(document), encoding="utf-8")
+            collision = subprocess.run(
+                (*command[:-3], str(collision_proposal), "--output", str(collision_output)),
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(collision.returncode, 0)
+            self.assertFalse(collision_output.exists())
+
+if __name__ == "__main__":
+    unittest.main()

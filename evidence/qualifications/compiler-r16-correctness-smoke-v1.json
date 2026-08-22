@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "infrastructure_qualification_index",
+  "qualification_id": "open-cake-ir-compiler-r16-correctness-smoke-v1",
+  "run_id": "compiler-r16-correctness-smoke-v1",
+  "host": "verda-b200x4",
+  "evidence_root": "/home/qinhaiyan/open-cake-ir-evidence",
+  "authority_sha256": "bcb9861e27bcd7553c1a05f3650379c8a5060888edf28dbc2d070b0a4187fc49",
+  "gpuq_job_id": "gpuq-c2c8fa8a265b",
+  "terminal_record_sha256": "a4dda08b406261a6caa98626ee508fcb397b477ef22355502adb5b11810b86f0",
+  "objects": {
+    "contract": "059c4763b32308e63ec5b56093762bdb08be4bb996d65ef3235676e72721de90",
+    "result": "82a2237f845fd54cb612cbb4b0560b74ec3ad55cab608f8c4f9b83e16dbce76b",
+    "generated_source": "d037547705f14de0f70f477c584cbc3e7c9e352709543710f01c6d3fb48a15a6",
+    "compiler_revision_lock": "c5ff12b0584ace4920cf7c58189e806c296a0a55ef7feb7bda53bf8e5b4b3c92",
+    "workload_contract": "a6c184e4b34d0a757193c37be37ec5431897a858210fd5f724a3cf9308a6182a"
+  },
+  "disposition": "qualified_released_compiler_and_common_correctness_path",
+  "claim_authority": false,
+  "performance_measured": false
+}

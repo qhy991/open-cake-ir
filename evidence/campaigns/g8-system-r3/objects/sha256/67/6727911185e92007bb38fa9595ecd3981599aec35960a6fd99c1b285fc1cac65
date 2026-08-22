@@ -1,0 +1,208 @@
+// CAKE_REPRO_LAUNCH_V1 {"abi":"flash_kmeans_assign_v1","block":[64,1,1],"dynamic_shared_memory_bytes":0,"grid":[512,32,1],"kernel_name":"cake_flash_kmeans_assign","schema_version":1,"target":"sm_100a"}
+#include <cuda_bf16.h>
+#include <stdint.h>
+
+struct __align__(16) CakeU128 {
+  uint32_t x;
+  uint32_t y;
+  uint32_t z;
+  uint32_t w;
+};
+
+static __device__ __forceinline__ void cake_mma_m16n8k16(
+    float& d0,
+    float& d1,
+    float& d2,
+    float& d3,
+    uint32_t a0,
+    uint32_t a1,
+    uint32_t a2,
+    uint32_t a3,
+    uint32_t b0,
+    uint32_t b1) {
+  asm volatile(
+      "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
+      "{%0, %1, %2, %3}, "
+      "{%4, %5, %6, %7}, "
+      "{%8, %9}, "
+      "{%0, %1, %2, %3};\n"
+      : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3)
+      : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
+}
+
+extern "C" __global__ __launch_bounds__(64, 6)
+void cake_flash_kmeans_assign(
+    const __nv_bfloat16* __restrict__ tokens,
+    const __nv_bfloat16* __restrict__ centroids,
+    const float* __restrict__ centroid_sq,
+    int32_t* __restrict__ assignments) {
+  constexpr int kN = 65536;
+  constexpr int kD = 128;
+  constexpr int kK = 1024;
+  constexpr int kTokensPerBlock = 128;
+  constexpr int kTokensPerWarp = 64;
+  constexpr int kNTiles = 8;
+
+  // Eight bf16 values fit in one 128-bit vector.  One extra vector per
+  // token makes the word stride 68, so the eight token columns touched by
+  // an mma operand land in distinct shared-memory banks.
+  constexpr int kVecsPerToken = kD / 8;
+  constexpr int kPaddedVecsPerToken = kVecsPerToken + 1;
+  constexpr int kTokenWordStride = kPaddedVecsPerToken * 4;
+  __shared__ CakeU128
+      token_storage[kTokensPerBlock * kPaddedVecsPerToken];
+
+  const int b = static_cast<int>(blockIdx.y);
+  const int block_token = static_cast<int>(blockIdx.x) * kTokensPerBlock;
+  const long long token_base =
+      (static_cast<long long>(b) * kN + block_token) * kD;
+
+  const CakeU128* token_source =
+      reinterpret_cast<const CakeU128*>(tokens + token_base);
+  #pragma unroll 1
+  for (int i = static_cast<int>(threadIdx.x);
+       i < kTokensPerBlock * kVecsPerToken;
+       i += static_cast<int>(blockDim.x)) {
+    const int token = i / kVecsPerToken;
+    const int vec = i - token * kVecsPerToken;
+    token_storage[token * kPaddedVecsPerToken + vec] = token_source[i];
+  }
+  __syncthreads();
+
+  const uint32_t* token_words =
+      reinterpret_cast<const uint32_t*>(token_storage);
+  const __nv_bfloat16* centroid_batch =
+      centroids + static_cast<long long>(b) * kK * kD;
+  const float* norm_batch =
+      centroid_sq + static_cast<long long>(b) * kK;
+
+  const int warp = static_cast<int>(threadIdx.x) >> 5;
+  const int lane = static_cast<int>(threadIdx.x) & 31;
+  const int row_group = lane >> 2;
+  const int lane_in_group = lane & 3;
+  const int warp_token = warp * kTokensPerWarp;
+
+  // Each lane owns two output columns in every m16n8 tile, and two of the
+  // sixteen centroid rows.  Keeping a partial argmin per lane avoids a
+  // score-tile store and all per-K shared-memory traffic.
+  float best[kNTiles][2];
+  int best_k[kNTiles][2];
+  #pragma unroll
+  for (int t = 0; t < kNTiles; ++t) {
+    best[t][0] = 3.402823466e+38F;
+    best[t][1] = 3.402823466e+38F;
+    best_k[t][0] = 0;
+    best_k[t][1] = 0;
+  }
+
+  #pragma unroll 1
+  for (int k0 = 0; k0 < kK; k0 += 16) {
+    float acc[kNTiles][4];
+    #pragma unroll
+    for (int t = 0; t < kNTiles; ++t) {
+      acc[t][0] = 0.0F;
+      acc[t][1] = 0.0F;
+      acc[t][2] = 0.0F;
+      acc[t][3] = 0.0F;
+    }
+
+    #pragma unroll
+    for (int d0 = 0; d0 < kD; d0 += 16) {
+      const __nv_bfloat16* a_row0 =
+          centroid_batch + (k0 + row_group) * kD + d0;
+      const __nv_bfloat16* a_row1 =
+          centroid_batch + (k0 + row_group + 8) * kD + d0;
+      const uint32_t* a_words0 =
+          reinterpret_cast<const uint32_t*>(a_row0);
+      const uint32_t* a_words1 =
+          reinterpret_cast<const uint32_t*>(a_row1);
+
+      const uint32_t a0 = a_words0[lane_in_group];
+      const uint32_t a1 = a_words0[lane_in_group + 4];
+      const uint32_t a2 = a_words1[lane_in_group];
+      const uint32_t a3 = a_words1[lane_in_group + 4];
+
+      #pragma unroll
+      for (int t = 0; t < kNTiles; ++t) {
+        const int token = warp_token + t * 8 + row_group;
+        const uint32_t* b_words =
+            token_words + token * kTokenWordStride + (d0 >> 1);
+        const uint32_t b0 = b_words[lane_in_group];
+        const uint32_t b1 = b_words[lane_in_group + 4];
+        cake_mma_m16n8k16(
+            acc[t][0], acc[t][1], acc[t][2], acc[t][3],
+            a0, a1, a2, a3, b0, b1);
+      }
+    }
+
+    const int k_row0 = k0 + row_group;
+    const int k_row1 = k_row0 + 8;
+    const float norm0 = norm_batch[k_row0];
+    const float norm1 = norm_batch[k_row1];
+
+    #pragma unroll
+    for (int t = 0; t < kNTiles; ++t) {
+      float candidate = norm0 - 2.0F * acc[t][0];
+      if (candidate < best[t][0]) {
+        best[t][0] = candidate;
+        best_k[t][0] = k_row0;
+      }
+      candidate = norm0 - 2.0F * acc[t][1];
+      if (candidate < best[t][1]) {
+        best[t][1] = candidate;
+        best_k[t][1] = k_row0;
+      }
+      candidate = norm1 - 2.0F * acc[t][2];
+      if (candidate < best[t][0]) {
+        best[t][0] = candidate;
+        best_k[t][0] = k_row1;
+      }
+      candidate = norm1 - 2.0F * acc[t][3];
+      if (candidate < best[t][1]) {
+        best[t][1] = candidate;
+        best_k[t][1] = k_row1;
+      }
+    }
+  }
+
+  const long long output_base =
+      static_cast<long long>(b) * kN + block_token + warp_token;
+  #pragma unroll
+  for (int t = 0; t < kNTiles; ++t) {
+    float value0 = best[t][0];
+    float value1 = best[t][1];
+    int index0 = best_k[t][0];
+    int index1 = best_k[t][1];
+
+    // Lanes with the same lane_in_group own the same two output columns.
+    // Reduce their eight disjoint centroid-row streams, explicitly carrying
+    // the lower index for exact-score ties.
+    #pragma unroll
+    for (int offset = 16; offset >= 4; offset >>= 1) {
+      const float other_value0 =
+          __shfl_down_sync(0xffffffffU, value0, offset);
+      const float other_value1 =
+          __shfl_down_sync(0xffffffffU, value1, offset);
+      const int other_index0 =
+          __shfl_down_sync(0xffffffffU, index0, offset);
+      const int other_index1 =
+          __shfl_down_sync(0xffffffffU, index1, offset);
+      if (other_value0 < value0 ||
+          (other_value0 == value0 && other_index0 < index0)) {
+        value0 = other_value0;
+        index0 = other_index0;
+      }
+      if (other_value1 < value1 ||
+          (other_value1 == value1 && other_index1 < index1)) {
+        value1 = other_value1;
+        index1 = other_index1;
+      }
+    }
+
+    if (row_group == 0) {
+      const int column = lane_in_group * 2;
+      assignments[output_base + t * 8 + column] = index0;
+      assignments[output_base + t * 8 + column + 1] = index1;
+    }
+  }
+}

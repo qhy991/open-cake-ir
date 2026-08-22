@@ -1,0 +1,166 @@
+// CAKE_REPRO_LAUNCH_V1 {"abi":"flash_kmeans_assign_v1","block":[64,1,1],"dynamic_shared_memory_bytes":0,"grid":[512,32,1],"kernel_name":"cake_flash_kmeans_assign","schema_version":1,"target":"sm_100a"}
+#include <cuda_bf16.h>
+#include <mma.h>
+#include <stdint.h>
+
+extern "C" __global__ void cake_flash_kmeans_assign(
+    const __nv_bfloat16* __restrict__ tokens,
+    const __nv_bfloat16* __restrict__ centroids,
+    const float* __restrict__ centroid_sq,
+    int32_t* __restrict__ assignments) {
+  using namespace nvcuda;
+
+  constexpr int kN = 65536;
+  constexpr int kD = 128;
+  constexpr int kK = 1024;
+  constexpr int kTokensPerBlock = 128;
+  constexpr int kTokensPerWarp = 64;
+
+  // Each warp retains its 64-token operand for the full centroid sweep.  This
+  // removes the repeated shared-memory B-fragment loads from the K loop.
+  __shared__ float score_tile[2][4][16 * 16];
+
+  const int b = static_cast<int>(blockIdx.y);
+  const int block_token = static_cast<int>(blockIdx.x) * kTokensPerBlock;
+  const int warp = static_cast<int>(threadIdx.x) >> 5;
+  const int lane = static_cast<int>(threadIdx.x) & 31;
+  const int warp_token = warp * kTokensPerWarp;
+
+  const long long token_base =
+      (static_cast<long long>(b) * kN + block_token) * kD;
+  const __nv_bfloat16* warp_tokens =
+      tokens + token_base + warp_token * kD;
+  const __nv_bfloat16* batch_centroids =
+      centroids + static_cast<long long>(b) * kK * kD;
+  const float* batch_norms =
+      centroid_sq + static_cast<long long>(b) * kK;
+
+  using AFragment =
+      wmma::fragment<wmma::matrix_a, 16, 16, 16,
+                     __nv_bfloat16, wmma::row_major>;
+  using XFragment =
+      wmma::fragment<wmma::matrix_b, 16, 16, 16,
+                     __nv_bfloat16, wmma::col_major>;
+  using AccFragment =
+      wmma::fragment<wmma::accumulator, 16, 16, 16, float>;
+
+  XFragment x00, x01, x02, x03, x04, x05, x06, x07;
+  XFragment x10, x11, x12, x13, x14, x15, x16, x17;
+  XFragment x20, x21, x22, x23, x24, x25, x26, x27;
+  XFragment x30, x31, x32, x33, x34, x35, x36, x37;
+
+  wmma::load_matrix_sync(x00, warp_tokens + 0 * kD + 0, kD);
+  wmma::load_matrix_sync(x01, warp_tokens + 0 * kD + 16, kD);
+  wmma::load_matrix_sync(x02, warp_tokens + 0 * kD + 32, kD);
+  wmma::load_matrix_sync(x03, warp_tokens + 0 * kD + 48, kD);
+  wmma::load_matrix_sync(x04, warp_tokens + 0 * kD + 64, kD);
+  wmma::load_matrix_sync(x05, warp_tokens + 0 * kD + 80, kD);
+  wmma::load_matrix_sync(x06, warp_tokens + 0 * kD + 96, kD);
+  wmma::load_matrix_sync(x07, warp_tokens + 0 * kD + 112, kD);
+
+  wmma::load_matrix_sync(x10, warp_tokens + 16 * kD + 0, kD);
+  wmma::load_matrix_sync(x11, warp_tokens + 16 * kD + 16, kD);
+  wmma::load_matrix_sync(x12, warp_tokens + 16 * kD + 32, kD);
+  wmma::load_matrix_sync(x13, warp_tokens + 16 * kD + 48, kD);
+  wmma::load_matrix_sync(x14, warp_tokens + 16 * kD + 64, kD);
+  wmma::load_matrix_sync(x15, warp_tokens + 16 * kD + 80, kD);
+  wmma::load_matrix_sync(x16, warp_tokens + 16 * kD + 96, kD);
+  wmma::load_matrix_sync(x17, warp_tokens + 16 * kD + 112, kD);
+
+  wmma::load_matrix_sync(x20, warp_tokens + 32 * kD + 0, kD);
+  wmma::load_matrix_sync(x21, warp_tokens + 32 * kD + 16, kD);
+  wmma::load_matrix_sync(x22, warp_tokens + 32 * kD + 32, kD);
+  wmma::load_matrix_sync(x23, warp_tokens + 32 * kD + 48, kD);
+  wmma::load_matrix_sync(x24, warp_tokens + 32 * kD + 64, kD);
+  wmma::load_matrix_sync(x25, warp_tokens + 32 * kD + 80, kD);
+  wmma::load_matrix_sync(x26, warp_tokens + 32 * kD + 96, kD);
+  wmma::load_matrix_sync(x27, warp_tokens + 32 * kD + 112, kD);
+
+  wmma::load_matrix_sync(x30, warp_tokens + 48 * kD + 0, kD);
+  wmma::load_matrix_sync(x31, warp_tokens + 48 * kD + 16, kD);
+  wmma::load_matrix_sync(x32, warp_tokens + 48 * kD + 32, kD);
+  wmma::load_matrix_sync(x33, warp_tokens + 48 * kD + 48, kD);
+  wmma::load_matrix_sync(x34, warp_tokens + 48 * kD + 64, kD);
+  wmma::load_matrix_sync(x35, warp_tokens + 48 * kD + 80, kD);
+  wmma::load_matrix_sync(x36, warp_tokens + 48 * kD + 96, kD);
+  wmma::load_matrix_sync(x37, warp_tokens + 48 * kD + 112, kD);
+
+  float best0 = 3.402823466e+38F;
+  float best1 = 3.402823466e+38F;
+  int best_k0 = 0;
+  int best_k1 = 0;
+
+  const int column = lane & 15;
+  const int first_tile = lane >> 4;
+
+#define CAKE_MMA_STEP(D_OFFSET, X0, X1, X2, X3)                  \
+  do {                                                           \
+    AFragment a;                                                 \
+    wmma::load_matrix_sync(a, centroid_tile + (D_OFFSET), kD);  \
+    wmma::mma_sync(acc0, a, (X0), acc0);                        \
+    wmma::mma_sync(acc1, a, (X1), acc1);                        \
+    wmma::mma_sync(acc2, a, (X2), acc2);                        \
+    wmma::mma_sync(acc3, a, (X3), acc3);                        \
+  } while (0)
+
+#pragma unroll 1
+  for (int k0 = 0; k0 < kK; k0 += 16) {
+    AccFragment acc0;
+    AccFragment acc1;
+    AccFragment acc2;
+    AccFragment acc3;
+    wmma::fill_fragment(acc0, 0.0F);
+    wmma::fill_fragment(acc1, 0.0F);
+    wmma::fill_fragment(acc2, 0.0F);
+    wmma::fill_fragment(acc3, 0.0F);
+
+    const __nv_bfloat16* centroid_tile =
+        batch_centroids + k0 * kD;
+    CAKE_MMA_STEP(0, x00, x10, x20, x30);
+    CAKE_MMA_STEP(16, x01, x11, x21, x31);
+    CAKE_MMA_STEP(32, x02, x12, x22, x32);
+    CAKE_MMA_STEP(48, x03, x13, x23, x33);
+    CAKE_MMA_STEP(64, x04, x14, x24, x34);
+    CAKE_MMA_STEP(80, x05, x15, x25, x35);
+    CAKE_MMA_STEP(96, x06, x16, x26, x36);
+    CAKE_MMA_STEP(112, x07, x17, x27, x37);
+
+    wmma::store_matrix_sync(
+        &score_tile[warp][0][0], acc0, 16, wmma::mem_row_major);
+    wmma::store_matrix_sync(
+        &score_tile[warp][1][0], acc1, 16, wmma::mem_row_major);
+    wmma::store_matrix_sync(
+        &score_tile[warp][2][0], acc2, 16, wmma::mem_row_major);
+    wmma::store_matrix_sync(
+        &score_tile[warp][3][0], acc3, 16, wmma::mem_row_major);
+    __syncwarp();
+
+#pragma unroll
+    for (int r = 0; r < 16; ++r) {
+      const int k = k0 + r;
+      const float norm = batch_norms[k];
+      const float dot0 =
+          score_tile[warp][first_tile][r * 16 + column];
+      const float dot1 =
+          score_tile[warp][first_tile + 2][r * 16 + column];
+      const float candidate0 = norm - 2.0F * dot0;
+      const float candidate1 = norm - 2.0F * dot1;
+      if (candidate0 < best0) {
+        best0 = candidate0;
+        best_k0 = k;
+      }
+      if (candidate1 < best1) {
+        best1 = candidate1;
+        best_k1 = k;
+      }
+    }
+    __syncwarp();
+  }
+
+#undef CAKE_MMA_STEP
+
+  const long long output_base =
+      static_cast<long long>(b) * kN + block_token;
+  assignments[output_base + warp_token + lane] = best_k0;
+  assignments[output_base + warp_token + lane + 32] = best_k1;
+}

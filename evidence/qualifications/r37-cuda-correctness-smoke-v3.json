@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "kind": "infrastructure_qualification_index",
+  "qualification_id": "open-cake-ir-r37-cuda-correctness-smoke-v1",
+  "run_id": "r37-cuda-correctness-smoke-v3",
+  "host": "verda-b200x4",
+  "evidence_root": "/home/qinhaiyan/open-cake-ir-evidence",
+  "authority_sha256": "087decea9cc83d0068c6a210a3f67f480e44653eb669d3a62bc64d82574e468d",
+  "gpuq_job_id": "gpuq-3af5f0ebeea7",
+  "terminal_record_sha256": "e675b54fe0c792e587d136279a40c6e3249a9dc9ae4a0dd28337a06539c1295e",
+  "objects": {
+    "contract": "3576b376e19543b33353aa179b0f43b0119d6d77527e69dd8e7812a1d600c677",
+    "result": "d979c64d31cbdf0202654d28ee9341d5d292dc6252555cd1aef6a61e1817c16c",
+    "candidate_source": "0abb16224b8331ec808ac348648f5a68cc1542f013ebf921c6fca8ec786bd187",
+    "candidate_cubin": "7fa69b3be3b7c8bdca2b439563a9401ac17649455f82e889251660a658aa19ac"
+  },
+  "disposition": "qualified_common_correctness_and_host_driver_path",
+  "claim_authority": false,
+  "performance_measured": false
+}

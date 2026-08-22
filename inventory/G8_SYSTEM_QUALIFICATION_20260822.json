@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "gate": "G8",
+  "status": "passed",
+  "host": "verda-b200x4",
+  "study_id": "open-cake-ir-g8-verda-r6",
+  "claim_scope": "system_qualification_only",
+  "study": {
+    "path": "contracts/studies/matched-search-g8-verda-r6.json",
+    "canonical_sha256": "163d0a4adb86934cd0190e13330f50a85e6185f5c766e9373c272eb738397d58",
+    "raw_sha256": "2d402cacc956e1f63daab5c219418a8113effaf065454c8c0269c5373bb8d577"
+  },
+  "campaign_lock": {
+    "path": "runtime/g8-system-r6.campaign.lock.json",
+    "canonical_sha256": "4165a0a076b26547e4dbcbf3986b314c87b79feb251fb4ac8f91f5ebfb751ef5",
+    "raw_sha256": "b74301842ac113979a9815b1f134dc1067d6759c33e514116ec39b7ae582f265"
+  },
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v1",
+    "canonical_sha256": "5bdc9106fd13625eef5e89c4c2057114093081f9808347cbb88943e42ec62edd",
+    "archive_root": "evidence/executors/open-cake-ir-b200-v1-5bdc9106",
+    "descriptor_raw_sha256": "05ccde7fae15495e532e1e6f3d91baae238668c84ce160aafc6cdebd2da48b8a",
+    "source_count": 30
+  },
+  "provider_qualification": {
+    "run_id": "codex-cli-0.144.3-live-r4",
+    "canonical_receipt_sha256": "86fb53a1f51845dee11e105eefe8bb01e5563dc0217cd7c9c7573d8199a0e707",
+    "receipt_raw_sha256": "bdf7c37e0c1da473b1b1eedc5c5d30ee491becda2a7e436d295c95cb6d8f5525",
+    "anchor_raw_sha256": "1e28095480155e46a39cd2cbd6c0cbad4b5f4424c7b544c516b6576a46b7e984"
+  },
+  "runs": {
+    "open_cake-1": {
+      "terminal_seal_sha256": "ba3375e4a0933cece37812f701aac65bbb9aa16b1b6048ac8b2c2bfa51686d79",
+      "protocol_adherence": "adhered",
+      "evaluation_receipt_count": 2,
+      "gpu_job_ids": ["gpuq-c7e26ea63fde", "gpuq-793296188f37"]
+    },
+    "direct_cuda-1": {
+      "terminal_seal_sha256": "392ee79663a96fddb4fb843021d488fc61dca7354221024c9755dd4fa8f4f972",
+      "protocol_adherence": "adhered",
+      "evaluation_receipt_count": 2,
+      "gpu_job_ids": ["gpuq-61fd64e7c0da", "gpuq-ceed55d5dff6"]
+    }
+  },
+  "offline_audit": {
+    "path": "evidence/campaigns/g8-system-r6-offline-audit-v2.json",
+    "raw_sha256": "c6b91086b07d0180512d8ddc56a71d346073f2583594334756bbfb8812802d29",
+    "campaign_complete": true,
+    "archive_integrity_passed": true,
+    "semantic_replay_passed": true,
+    "system_qualification_passed": true
+  },
+  "scientific_fields": {
+    "estimand": null,
+    "estimand_available": false,
+    "estimate": null,
+    "uncertainty": null,
+    "comparative_statistics": "forbidden"
+  }
+}

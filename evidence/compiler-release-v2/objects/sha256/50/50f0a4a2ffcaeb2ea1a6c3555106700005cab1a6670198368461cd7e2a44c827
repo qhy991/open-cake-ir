@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "corpus_id": "open-cake-ir-sm100a-v1-draft",
+  "state": "draft",
+  "cases": [
+    {
+      "case_id": "flash-kmeans-r16-accepted",
+      "schedule": "corpus/schedules/flash-kmeans-b32-smoke.json",
+      "expected": {"accepted": true, "lowering_eligible": true, "finding_codes": [], "schedule_sha256": "08616072997f90e47963fcb71215d1417a7f4e9fd518d17eb1c15f232ce22ac2", "lowering_source_sha256": "d037547705f14de0f70f477c584cbc3e7c9e352709543710f01c6d3fb48a15a6"}
+    },
+    {
+      "case_id": "flash-kmeans-r16-shape-drift",
+      "schedule": "corpus/schedules/flash-kmeans-b32-smoke-shape-drift.json",
+      "expected": {"accepted": true, "lowering_eligible": false, "finding_codes": ["PROFILE_SHAPE_MISMATCH"], "schedule_sha256": "46174612b87977bf3351bc04b51123309d28705bca60446e8cd1cdf72c3a5170", "lowering_source_sha256": null}
+    },
+    {
+      "case_id": "flash-kmeans-r25-accepted",
+      "schedule": "corpus/schedules/flash-kmeans-assignment-full.json",
+      "expected": {"accepted": true, "lowering_eligible": true, "finding_codes": [], "schedule_sha256": "cc416f788fbd178612de8c09d17996cf8d6c2c4d00b883949da1f0db15770632", "lowering_source_sha256": "337f8b017b336453d8c2719ebe7edba248801c6558e3884334878722babe3134"}
+    },
+    {
+      "case_id": "flash-kmeans-r25-shape-drift",
+      "schedule": "corpus/schedules/flash-kmeans-assignment-full-shape-drift.json",
+      "expected": {"accepted": true, "lowering_eligible": false, "finding_codes": ["PROFILE_SHAPE_MISMATCH"], "schedule_sha256": "13c0958ba7ae569b8cb458168e92e177401bd3886f8f4afd076bbe4564ff1c7a", "lowering_source_sha256": null}
+    },
+    {
+      "case_id": "tinygemm2-r31-accepted",
+      "schedule": "corpus/schedules/tinygemm2-stage4-split-k.json",
+      "expected": {"accepted": true, "lowering_eligible": true, "finding_codes": [], "schedule_sha256": "f3107ffa5af4ccb5071ce42699d5eae2621561de1b2256b4c416c45d9323a1ab", "lowering_source_sha256": "84b9c6d66c145a61303555d38a075bf27177c5f56820e422331dec45f5f8e3eb"}
+    },
+    {
+      "case_id": "tinygemm2-r31-reduction-drift",
+      "schedule": "corpus/schedules/tinygemm2-stage4-split-k-reduction-drift.json",
+      "expected": {"accepted": false, "lowering_eligible": false, "finding_codes": ["REDUCE_SUM_SEMANTICS"], "schedule_sha256": "e5029a2f755bd18443d91cd64a110d8dd7127c5c14cf41c424e6bca43728af4b", "lowering_source_sha256": null}
+    }
+  ]
+}
