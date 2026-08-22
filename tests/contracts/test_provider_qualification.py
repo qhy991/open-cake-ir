@@ -24,6 +24,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         break_resumed_thread: bool = False,
         zero_usage: bool = False,
         exit_nonzero: bool = False,
+        tool_rich: bool = False,
     ) -> None:
         path.write_text(
             textwrap.dedent(
@@ -56,6 +57,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     raise SystemExit(32)
                 if 'approval_policy="never"' not in arguments:
                     raise SystemExit(33)
+                if {tool_rich!r} and "--disable" in arguments:
+                    raise SystemExit(36)
                 if resumed and arguments[-2] != thread_id:
                     raise SystemExit(34)
                 turn = 2 if resumed else 1
@@ -73,14 +76,16 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     ),
                     encoding="utf-8",
                 )
+                terminal_document = {{
+                    "arm": "open_cake",
+                    "candidate_written": True,
+                    "kind": "open_cake_ir_turn",
+                    "turn": turn,
+                }}
+                if not {tool_rich!r}:
+                    terminal_document["tool_calls"] = 1
                 terminal = json.dumps(
-                    {{
-                        "arm": "open_cake",
-                        "candidate_written": True,
-                        "kind": "open_cake_ir_turn",
-                        "tool_calls": 1,
-                        "turn": turn,
-                    }},
+                    terminal_document,
                     sort_keys=True,
                     separators=(",", ":"),
                 )
@@ -92,6 +97,24 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 events = [
                     {{"type": "thread.started", "thread_id": reported_thread_id}},
                     {{"type": "turn.started"}},
+                ]
+                if {tool_rich!r}:
+                    command_item = {{
+                        "id": "command_0",
+                        "type": "command_execution",
+                        "command": "pwd",
+                    }}
+                    events.extend([
+                        {{
+                            "type": "item.started",
+                            "item": {{**command_item, "status": "in_progress"}},
+                        }},
+                        {{
+                            "type": "item.completed",
+                            "item": {{**command_item, "status": "completed"}},
+                        }},
+                    ])
+                events.extend([
                     {{
                         "type": "item.started",
                         "item": {{**change_item, "status": "in_progress"}},
@@ -115,7 +138,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
                             "output_tokens": 0 if {zero_usage!r} else 20,
                         }},
                     }},
-                ]
+                ])
                 for event in events:
                     print(json.dumps(event, separators=(",", ":")))
                 """
@@ -131,6 +154,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         *,
         provider_revision: str,
         run_id: str,
+        feature_policy: str = "closed_research",
     ) -> tuple[subprocess.CompletedProcess[bytes], Path, Path, Path]:
         receipt_path = root / "provider-qualification.json"
         anchor_path = root / "provider-qualification-anchor.json"
@@ -144,7 +168,14 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 "--provider-revision",
                 provider_revision,
                 "--output-schema",
-                str(ROOT / "contracts/providers/codex-turn-output-schema-v1.json"),
+                str(
+                    ROOT
+                    / (
+                        "contracts/providers/codex-turn-output-schema-v2.json"
+                        if feature_policy == "provider_defaults_optimization"
+                        else "contracts/providers/codex-turn-output-schema-v1.json"
+                    )
+                ),
                 "--workspace",
                 str(root / "workspace"),
                 "--receipt-output",
@@ -155,6 +186,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 str(evidence_root),
                 "--run-id",
                 run_id,
+                "--feature-policy",
+                feature_policy,
             ],
             cwd=ROOT,
             stdin=subprocess.DEVNULL,
@@ -164,6 +197,34 @@ class ProviderQualificationContractTests(unittest.TestCase):
             timeout=30,
         )
         return completed, receipt_path, anchor_path, evidence_root
+
+    def test_tool_rich_qualification_binds_provider_defaults_and_auxiliary_events(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable, tool_rich=True)
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root,
+                executable,
+                provider_revision="codex-tool-rich-fixture-v1",
+                run_id="codex-provider-tool-rich",
+                feature_policy="provider_defaults_optimization",
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            receipt = ProviderQualificationReceipt.load(receipt_path)
+            self.assertEqual(receipt.scope, "live_two_turn_tool_rich_provider")
+            observed = next(
+                event
+                for event in EvidenceStore.open(evidence_root).replay_events(
+                    "codex-provider-tool-rich"
+                )
+                if event["kind"] == "provider_qualification_observed"
+            )
+            self.assertEqual(
+                observed["payload"]["initial_auxiliary_activity"][0]["item_type"],
+                "command_execution",
+            )
 
     def test_two_real_process_turns_issue_and_archive_the_live_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

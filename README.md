@@ -30,12 +30,16 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   externally anchored by the Terminal Archive seal.
 - The Lab implements two closed Study variants on the same control plane: `matched_search` and `portfolio`. The former
   owns provider Turns, resume, token checkpoints, candidate sealing and search/confirmatory Evaluation; the latter
-  reconstructs the final three-shape specialist/dispatcher boundary without a new runtime mode.
+  reconstructs the final three-shape specialist/dispatcher boundary without a new runtime mode. Within
+  `matched_search`, `artifact_optimization_only` restores provider-default features while forbidding scientific
+  comparison and promoting Candidates only through common confirmatory Evaluation.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
-- Current Executor Revision `open-cake-ir-b200-v2` binds the 30-source runtime closure and exact B200 host packages.
-  The G8 r6 path remains bound to its complete archived v1 source closure. Local and
-  remote contract suites pass 103 tests plus 13 subtests; remote host admission and compile-only Triton qualification
-  pass without launching a kernel.
+- Current Executor Revision `open-cake-ir-b200-v3` binds the 30-source runtime closure and exact B200 host packages;
+  v1 and v2 retain complete archived source closures. Local and remote contract suites pass 114 tests plus 13
+  subtests; remote host admission and compile-only Triton qualification pass without launching a kernel.
+- The pinned Codex 0.144.3 tool-rich qualification passes with no injected feature disables and observes shell
+  activity on both initial and resumed Turns. This restores provider-default capability exposure; account/admin
+  policy still determines the effective catalog, and external mutation or direct GPU measurement remains unauthorized.
 - The legacy source authority is the clean final Stage 6 revision `2fa79092...`, tree `b02d730b...`. It was initially
   observed 68 commits ahead; origin now carries the final revision and a verified complete-history bundle provides
   an independent recovery path under `migration/bundles/`.
@@ -56,10 +60,12 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 8. [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — the canonical matched and Portfolio execution paths.
 9. [`docs/adr/0003-rust-shadow-engine-after-v3.md`](docs/adr/0003-rust-shadow-engine-after-v3.md) — proposed
    language evolution after the Python v3 contract is frozen.
+10. [`docs/adr/0004-tool-rich-artifact-optimization.md`](docs/adr/0004-tool-rich-artifact-optimization.md) — accepted
+    full-feature artifact-optimization policy.
 
 ## Migration rule
 
 Migrate canonical facts, stable capabilities and immutable evidence—not the historical `rXX`/`vN` implementation
 topology. Active code has one current path; the verified legacy bundle exists only for historical recovery. A live
-provider/GPU system qualification has passed; sole-owner cutover still requires the explicit G9 approval and Git
-anchor in `docs/ACCEPTANCE_GATES.md`.
+provider/GPU system qualification has passed. The private GitHub origin is the sole source revision authority;
+legacy `cake-repro` remains read-only historical evidence under the G9 rollback contract.

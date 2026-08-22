@@ -553,6 +553,13 @@ def execute_matched_from_config(
             removed_environment=tuple(
                 str(value) for value in cast(list[object], provider_authority["removed_environment"])
             ),
+            disabled_features=tuple(
+                str(value)
+                for value in cast(list[object], provider_authority["disabled_features"])
+            ),
+            event_contract=str(
+                provider_authority.get("event_contract", "closed_file_change_v1")
+            ),
         )
     references_root.chmod(0o555)
     provider = CodexRunProvider(

@@ -1,7 +1,7 @@
 # Top-level design
 
-Status: accepted product shape; Compiler and two Study variants are implemented. G7 provider qualification and G8
-GPU system qualification pass; sole-owner cutover remains separately gated.
+Status: accepted product shape; Compiler and two Study variants are implemented. Closed G7, tool-rich G7F and GPU
+G8 qualifications pass; the private GitHub main revision completes sole-owner cutover.
 
 ## 1. Irreducible goal
 
@@ -198,6 +198,12 @@ strategy and any prespecified pooling rule. A `system_qualification_only` Study 
 Authoring Environment, declares no Estimand, forbids pooling and comparative statistics, and asks only whether every
 prescheduled Run is intact, adhered, semantically replayable and contains an Evaluation Receipt.
 
+An `artifact_optimization_only` Study also reuses `matched_search`, with one multi-Turn Run per Authoring
+Environment. Its Authoring Environment injects no Codex feature disables and admits tool-rich provider events, but
+its Analysis Plan can only promote one confirmatory-qualified Candidate per Run. It has no Estimand, arm comparison,
+pooling or scientific inclusion. Provider feature exposure is independent of Claim Scope: it changes authoring
+capability, never the authority of common Evaluation or Evidence.
+
 For the initial scientific matched-search reconstruction, the primary endpoint is explicitly two-part at budget `B`:
 
 1. whether a confirmatorily qualified candidate exists by `B`;
@@ -207,6 +213,10 @@ The scientific Study Report presents both rather than deleting Runs without a qu
 arbitrary performance value. It requires at least three Runs per arm; three Runs per arm support only a descriptive
 contrast for the pinned setup, not a broad population claim. These endpoint and replicate rules do not apply to the
 non-scientific G8 system qualification.
+
+`tool_surface` in each arm names the Candidate submission Interface (`submit_schedule` or `submit_cuda`), not the
+provider's auxiliary Apps/MCP/shell/browser/subagent catalog. The content-bound Provider Feature Policy owns that
+catalog and event contract.
 
 The second implemented closed variant is `portfolio`, justified by the real r43-r45 use case. It owns one
 pre-held-out KernelSeed, one anchor plus two held-out Workload cases, exact-shape/no-retune specialization, a

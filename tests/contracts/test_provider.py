@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.lab.providers import (  # noqa: E402
+    CODEX_DISABLED_FEATURES,
     CodexInvocationBuilder,
     CodexRunProvider,
     ProviderQualificationReceipt,
@@ -91,6 +92,30 @@ class ProviderContractTests(unittest.TestCase):
         self.assertNotIn("resume", initial.argv)
         self.assertIn("resume", resumed.argv)
 
+    def test_provider_default_features_emit_no_forced_disable_flags(self) -> None:
+        builder = CodexInvocationBuilder(
+            executable=ROOT / "pyproject.toml",
+            provider_revision="codex-fixture-full-v1",
+            model="gpt-5.6-sol",
+            reasoning_effort="max",
+            service_tier="default",
+            workspace=ROOT,
+            output_schema=ROOT / "contracts/providers/codex-turn-output-schema-v1.json",
+            removed_environment=("OPENAI_API_KEY", "CUDA_VISIBLE_DEVICES"),
+            disabled_features=(),
+            event_contract="tool_rich_candidate_v1",
+        )
+
+        invocation = builder.build("optimization prompt", thread_id=None)
+
+        self.assertEqual(builder.configuration["disabled_features"], [])
+        self.assertEqual(
+            builder.configuration["event_contract"],
+            "tool_rich_candidate_v1",
+        )
+        self.assertNotIn("--disable", invocation.argv)
+        self.assertTrue(set(CODEX_DISABLED_FEATURES))
+
     def test_single_and_bracketed_duplicate_terminal_forms_normalize_equally(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "candidate.json"
@@ -124,6 +149,144 @@ class ProviderContractTests(unittest.TestCase):
                     candidate_path=candidate,
                     expected_change="add",
                     expected_terminal_message='{"candidate_written":true}',
+                )
+
+    def test_tool_rich_turn_accepts_and_projects_an_mcp_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            candidate.write_text('{"schedule":1}')
+            events = [json.loads(line) for line in self._events(candidate, duplicate=False).splitlines()]
+            events[2:2] = [
+                {
+                    "type": "item.started",
+                    "item": {
+                        "id": "tool_0",
+                        "type": "mcp_tool_call",
+                        "server": "fixture",
+                        "tool": "read_reference",
+                        "arguments": {},
+                        "status": "in_progress",
+                    },
+                },
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "tool_0",
+                        "type": "mcp_tool_call",
+                        "server": "fixture",
+                        "tool": "read_reference",
+                        "arguments": {},
+                        "result": {"content": []},
+                        "status": "completed",
+                    },
+                },
+            ]
+            raw_events = b"".join(
+                json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                for event in events
+            )
+
+            turn = normalize_codex_turn(
+                raw_events,
+                candidate_path=candidate,
+                expected_change="add",
+                expected_terminal_message='{"candidate_written":true}',
+                event_contract="tool_rich_candidate_v1",
+            )
+
+        self.assertEqual(len(turn.tool_activity), 1)
+        self.assertEqual(turn.tool_activity[0].item_type, "mcp_tool_call")
+        self.assertEqual(turn.tool_activity[0].server, "fixture")
+        self.assertEqual(turn.tool_activity[0].tool, "read_reference")
+
+    def test_tool_rich_shell_write_uses_the_candidate_postcondition(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            candidate.write_text('{"schedule":1}')
+            events = [
+                {
+                    "type": "thread.started",
+                    "thread_id": "01234567-89ab-cdef-0123-456789abcdef",
+                },
+                {"type": "turn.started"},
+                {
+                    "type": "item.started",
+                    "item": {
+                        "id": "tool_0",
+                        "type": "command_execution",
+                        "command": "write candidate",
+                        "status": "in_progress",
+                    },
+                },
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "tool_0",
+                        "type": "command_execution",
+                        "command": "write candidate",
+                        "status": "completed",
+                    },
+                },
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "message_0",
+                        "type": "agent_message",
+                        "text": '{"candidate_written":true}',
+                    },
+                },
+                {
+                    "type": "turn.completed",
+                    "usage": {"input_tokens": 100, "output_tokens": 20},
+                },
+            ]
+            raw_events = b"".join(
+                json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                for event in events
+            )
+
+            turn = normalize_codex_turn(
+                raw_events,
+                candidate_path=candidate,
+                expected_change="add",
+                expected_terminal_message='{"candidate_written":true}',
+                event_contract="tool_rich_candidate_v1",
+            )
+
+        self.assertEqual(turn.candidate, b'{"schedule":1}')
+        self.assertEqual(turn.tool_activity[0].item_type, "command_execution")
+
+    def test_tool_rich_turn_rejects_an_incomplete_auxiliary_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            candidate.write_text('{"schedule":1}')
+            events = [json.loads(line) for line in self._events(candidate, duplicate=False).splitlines()]
+            events.insert(
+                2,
+                {
+                    "type": "item.started",
+                    "item": {
+                        "id": "tool_0",
+                        "type": "mcp_tool_call",
+                        "server": "fixture",
+                        "tool": "read_reference",
+                        "arguments": {},
+                        "status": "in_progress",
+                    },
+                },
+            )
+            raw_events = b"".join(
+                json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                for event in events
+            )
+
+            with self.assertRaisesRegex(ValueError, "auxiliary item lifecycle"):
+                normalize_codex_turn(
+                    raw_events,
+                    candidate_path=candidate,
+                    expected_change="add",
+                    expected_terminal_message='{"candidate_written":true}',
+                    event_contract="tool_rich_candidate_v1",
                 )
 
     def test_unadmitted_item_lifecycle_event_is_rejected(self) -> None:
@@ -203,6 +366,8 @@ class ProviderContractTests(unittest.TestCase):
                 scope="live_two_turn_current_provider",
             )
 
+            test_case = self
+
             class Adapter:
                 def __init__(self):
                     self.invocations = []
@@ -214,7 +379,9 @@ class ProviderContractTests(unittest.TestCase):
                     candidate_path,
                     expected_change,
                     expected_terminal_message,
+                    event_contract="closed_file_change_v1",
                 ):
+                    test_case.assertEqual(event_contract, "closed_file_change_v1")
                     self.invocations.append(invocation)
                     candidate_path.write_text(
                         json.dumps({"turn": len(self.invocations)})

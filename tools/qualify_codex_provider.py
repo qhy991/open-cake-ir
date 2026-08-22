@@ -36,15 +36,17 @@ def _canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
-def _terminal_message(turn: int) -> str:
+def _terminal_message(turn: int, event_contract: str) -> str:
+    document: dict[str, object] = {
+        "arm": "open_cake",
+        "candidate_written": True,
+        "kind": "open_cake_ir_turn",
+        "turn": turn,
+    }
+    if event_contract == "closed_file_change_v1":
+        document["tool_calls"] = 1
     return json.dumps(
-        {
-            "arm": "open_cake",
-            "candidate_written": True,
-            "kind": "open_cake_ir_turn",
-            "tool_calls": 1,
-            "turn": turn,
-        },
+        document,
         sort_keys=True,
         separators=(",", ":"),
     )
@@ -57,11 +59,10 @@ def _turn_prompt(
     reference_bundle_sha256: str,
     reference_bundle: str,
     reference_nonce: str,
+    prompt_template: Path,
 ) -> str:
     change = "add" if turn == 1 else "update"
-    template = (
-        ROOT / "contracts/providers/codex-qualification-prompt-v1.md"
-    ).read_text(encoding="utf-8")
+    template = prompt_template.read_text(encoding="utf-8")
     replacements = {
         "{{CANDIDATE_PATH_JSON}}": json.dumps(str(candidate.absolute())),
         "{{EXPECTED_CHANGE}}": change,
@@ -184,6 +185,11 @@ def main() -> int:
     parser.add_argument("--service-tier", default="default")
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument(
+        "--feature-policy",
+        choices=("closed_research", "provider_defaults_optimization"),
+        default="closed_research",
+    )
+    parser.add_argument(
         "--remove-env",
         action="append",
         dest="removed_environment",
@@ -199,6 +205,16 @@ def main() -> int:
     evidence_root = _new_path(args.evidence_root)
     anchor_output = _new_path(args.anchor_output)
     removed_environment = tuple(args.removed_environment or ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"))
+    if args.feature_policy == "closed_research":
+        disabled_features = CODEX_DISABLED_FEATURES
+        event_contract = "closed_file_change_v1"
+        prompt_template = ROOT / "contracts/providers/codex-qualification-prompt-v1.md"
+        receipt_scope = "live_two_turn_current_provider"
+    else:
+        disabled_features = ()
+        event_contract = "tool_rich_candidate_v1"
+        prompt_template = ROOT / "contracts/providers/codex-qualification-prompt-v2.md"
+        receipt_scope = "live_two_turn_tool_rich_provider"
     if (
         not executable.is_file()
         or not os.access(executable, os.X_OK)
@@ -223,7 +239,7 @@ def main() -> int:
     executable_sha256 = sha256(executable.read_bytes()).hexdigest()
     output_schema_sha256 = sha256(output_schema.read_bytes()).hexdigest()
     qualification_prompt_sha256 = sha256(
-        (ROOT / "contracts/providers/codex-qualification-prompt-v1.md").read_bytes()
+        prompt_template.read_bytes()
     ).hexdigest()
     reference_nonce = sha256(
         _canonical_json_bytes(
@@ -256,7 +272,9 @@ def main() -> int:
         "qualification_prompt_sha256": qualification_prompt_sha256,
         "removed_environment": list(removed_environment),
         "reference_bundle_sha256": reference_bundle_sha256,
-        "disabled_features": list(CODEX_DISABLED_FEATURES),
+        "disabled_features": list(disabled_features),
+        "event_contract": event_contract,
+        "feature_policy": args.feature_policy,
         "sandbox": "workspace-write",
         "cwd_policy": "same_new_empty_workspace",
         "turns": ["initial_add", "same_thread_resume_update"],
@@ -283,6 +301,8 @@ def main() -> int:
             workspace=workspace,
             output_schema=output_schema,
             removed_environment=removed_environment,
+            disabled_features=disabled_features,
+            event_contract=event_contract,
         )
         adapter = CodexProviderAdapter(timeout_seconds=args.timeout_seconds)
         initial_invocation = builder.build(
@@ -292,6 +312,7 @@ def main() -> int:
                 reference_bundle_sha256=reference_bundle_sha256,
                 reference_bundle=reference_bundle,
                 reference_nonce=reference_nonce,
+                prompt_template=prompt_template,
             ),
             thread_id=None,
         )
@@ -304,7 +325,8 @@ def main() -> int:
             initial_invocation,
             candidate_path=candidate,
             expected_change="add",
-            expected_terminal_message=_terminal_message(1),
+            expected_terminal_message=_terminal_message(1, event_contract),
+            event_contract=event_contract,
         )
         _validate_workspace(workspace, candidate)
         if json.loads(initial.candidate) != {
@@ -320,6 +342,7 @@ def main() -> int:
                 reference_bundle_sha256=reference_bundle_sha256,
                 reference_bundle=reference_bundle,
                 reference_nonce=reference_nonce,
+                prompt_template=prompt_template,
             ),
             thread_id=initial.thread_id,
         )
@@ -337,7 +360,8 @@ def main() -> int:
             resumed_invocation,
             candidate_path=candidate,
             expected_change="update",
-            expected_terminal_message=_terminal_message(2),
+            expected_terminal_message=_terminal_message(2, event_contract),
+            event_contract=event_contract,
         )
         _validate_workspace(workspace, candidate)
         if (
@@ -350,6 +374,19 @@ def main() -> int:
             or sha256(executable.read_bytes()).hexdigest() != executable_sha256
             or sha256(output_schema.read_bytes()).hexdigest() != output_schema_sha256
             or read_frozen_reference_bundle(references)[0] != reference_bundle_sha256
+            or (
+                event_contract == "tool_rich_candidate_v1"
+                and (
+                    not any(
+                        activity.item_type == "command_execution"
+                        for activity in initial.tool_activity
+                    )
+                    or not any(
+                        activity.item_type == "command_execution"
+                        for activity in resumed.tool_activity
+                    )
+                )
+            )
         ):
             raise ValueError("Codex two-Turn identity, usage, or candidate lifecycle differs")
 
@@ -361,7 +398,7 @@ def main() -> int:
             file_lifecycle_observed=True,
             usage_observed=True,
             qualified=True,
-            scope="live_two_turn_current_provider",
+            scope=receipt_scope,
         )
         objects = [
             evidence.put(initial.raw_events, media_type="application/x-ndjson").reference(
@@ -399,6 +436,12 @@ def main() -> int:
                 "resumed_candidate_sha256": resumed.candidate_sha256,
                 "objects": objects,
                 "reference_bundle_sha256": reference_bundle_sha256,
+                "initial_auxiliary_activity": [
+                    dict(activity.document) for activity in initial.tool_activity
+                ],
+                "resumed_auxiliary_activity": [
+                    dict(activity.document) for activity in resumed.tool_activity
+                ],
             },
         )
         ledger.seal(
@@ -415,6 +458,8 @@ def main() -> int:
                 "candidate_changed": True,
                 "reference_visibility_observed": True,
                 "gpu_execution_authorized": False,
+                "feature_policy": args.feature_policy,
+                "event_contract": event_contract,
             },
         )
     except Exception as error:

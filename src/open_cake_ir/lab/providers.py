@@ -150,6 +150,30 @@ class ProviderTurn:
     terminal_message: str
     terminal_message_count: int
     normalization: str
+    tool_activity: tuple["ProviderAuxiliaryActivity", ...] = ()
+
+
+@dataclass(frozen=True)
+class ProviderAuxiliaryActivity:
+    """One provider-emitted non-submission item retained from raw JSONL."""
+
+    item_id: str
+    item_type: str
+    status: str
+    server: str | None = None
+    tool: str | None = None
+
+    @property
+    def document(self) -> Mapping[str, object]:
+        """Return the deterministic replay projection of this auxiliary item."""
+
+        return {
+            "item_id": self.item_id,
+            "item_type": self.item_type,
+            "status": self.status,
+            "server": self.server,
+            "tool": self.tool,
+        }
 
 
 @dataclass(frozen=True)
@@ -158,10 +182,11 @@ class ParsedCodexTurnEvents:
 
     thread_id: str
     provider_tokens: int
-    candidate_path: str
-    change_kind: str
+    candidate_path: str | None
+    change_kind: str | None
     terminal_message_count: int
     normalization: str
+    tool_activity: tuple[ProviderAuxiliaryActivity, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -188,7 +213,11 @@ class ProviderQualificationReceipt:
                 for character in self.configuration_sha256
             )
             or self.scope
-            not in {"zero_gpu_contract_fixture_only", "live_two_turn_current_provider"}
+            not in {
+                "zero_gpu_contract_fixture_only",
+                "live_two_turn_current_provider",
+                "live_two_turn_tool_rich_provider",
+            }
         ):
             raise ValueError("provider qualification identity differs")
 
@@ -251,10 +280,14 @@ def parse_codex_turn_events(
     raw_events: bytes,
     *,
     expected_terminal_message: str,
+    event_contract: str = "closed_file_change_v1",
 ) -> ParsedCodexTurnEvents:
     """Parse the complete closed Codex JSONL Turn without reading its candidate."""
 
-    if not expected_terminal_message:
+    if not expected_terminal_message or event_contract not in {
+        "closed_file_change_v1",
+        "tool_rich_candidate_v1",
+    }:
         raise ValueError("provider terminal expectation differs")
     try:
         events = [json.loads(line) for line in raw_events.splitlines()]
@@ -268,11 +301,14 @@ def parse_codex_turn_events(
         "thread.started",
         "turn.started",
         "item.started",
+        "item.updated",
         "item.completed",
         "turn.completed",
     }
     if (
-        len(typed_events) not in {6, 7}
+        (event_contract == "closed_file_change_v1" and len(typed_events) not in {6, 7})
+        or (event_contract == "closed_file_change_v1" and "item.updated" in types)
+        or len(typed_events) < 6
         or any(event_type not in admitted_types for event_type in types)
         or types[0] != "thread.started"
         or types[1] != "turn.started"
@@ -294,9 +330,21 @@ def parse_codex_turn_events(
 
     file_events: list[tuple[int, Mapping[str, object], Mapping[str, object]]] = []
     messages: list[tuple[int, str]] = []
+    auxiliary_events: dict[
+        str, list[tuple[str, Mapping[str, object]]]
+    ] = {}
+    auxiliary_types = {
+        "reasoning",
+        "command_execution",
+        "mcp_tool_call",
+        "collab_tool_call",
+        "web_search",
+        "todo_list",
+        "error",
+    }
     for index, event in enumerate(typed_events[2:-1], start=2):
         event_type = event.get("type")
-        if event_type not in {"item.started", "item.completed"}:
+        if event_type not in {"item.started", "item.updated", "item.completed"}:
             raise ValueError("provider item lifecycle differs")
         item = event.get("item")
         if not isinstance(item, Mapping):
@@ -312,40 +360,105 @@ def parse_codex_turn_events(
             if not isinstance(item_id, str) or not item_id or not isinstance(text, str):
                 raise ValueError("provider terminal message differs")
             messages.append((index, text))
+        elif event_contract == "tool_rich_candidate_v1" and item_type in auxiliary_types:
+            item_id = item.get("id")
+            if not isinstance(item_id, str) or not item_id:
+                raise ValueError("provider auxiliary item identity differs")
+            auxiliary_events.setdefault(item_id, []).append(
+                (cast(str, event_type), cast(Mapping[str, object], item))
+            )
         else:
             raise ValueError("provider emitted an unadmitted item type")
 
-    if len(file_events) != 2:
+    tool_activity: list[ProviderAuxiliaryActivity] = []
+    for item_id, lifecycle in auxiliary_events.items():
+        event_types = [event_type for event_type, _ in lifecycle]
+        item_types = {item.get("type") for _, item in lifecycle}
+        if (
+            len(item_types) != 1
+            or not isinstance(next(iter(item_types)), str)
+            or event_types
+            not in (
+                ["item.completed"],
+                ["item.started", "item.completed"],
+            )
+            and not (
+                len(event_types) >= 3
+                and event_types[0] == "item.started"
+                and event_types[-1] == "item.completed"
+                and set(event_types[1:-1]) == {"item.updated"}
+            )
+        ):
+            raise ValueError("provider auxiliary item lifecycle differs")
+        first = lifecycle[0][1]
+        final = lifecycle[-1][1]
+        if any(
+            item.get("server") != first.get("server")
+            or item.get("tool") != first.get("tool")
+            for _, item in lifecycle
+        ):
+            raise ValueError("provider auxiliary item authority changed")
+        status = final.get("status", "completed")
+        if not isinstance(status, str) or not status:
+            raise ValueError("provider auxiliary item status differs")
+        server = final.get("server")
+        tool = final.get("tool")
+        if server is not None and not isinstance(server, str):
+            raise ValueError("provider auxiliary item server differs")
+        if tool is not None and not isinstance(tool, str):
+            raise ValueError("provider auxiliary item tool differs")
+        tool_activity.append(
+            ProviderAuxiliaryActivity(
+                item_id=item_id,
+                item_type=cast(str, next(iter(item_types))),
+                status=status,
+                server=cast(str | None, server),
+                tool=cast(str | None, tool),
+            )
+        )
+
+    candidate_path: str | None = None
+    change_kind: str | None = None
+    start_index = 2
+    stop_index = 1
+    if file_events:
+        if len(file_events) != 2:
+            raise ValueError("provider must emit at most one complete file-change lifecycle")
+        (start_index, start_event, start_item), (
+            stop_index,
+            stop_event,
+            stop_item,
+        ) = file_events
+        if (
+            set(start_item) != {"id", "type", "changes", "status"}
+            or set(stop_item) != {"id", "type", "changes", "status"}
+            or start_event.get("type") != "item.started"
+            or stop_event.get("type") != "item.completed"
+            or not isinstance(start_item.get("id"), str)
+            or not start_item.get("id")
+            or start_item.get("id") != stop_item.get("id")
+            or start_item.get("status") != "in_progress"
+            or stop_item.get("status") != "completed"
+            or start_item.get("changes") != stop_item.get("changes")
+        ):
+            raise ValueError("provider file-change lifecycle differs")
+        changes = start_item.get("changes")
+        if not isinstance(changes, list) or len(changes) != 1:
+            raise ValueError("provider candidate file-change differs")
+        change = changes[0]
+        if not isinstance(change, Mapping) or set(change) != {"path", "kind"}:
+            raise ValueError("provider candidate file-change differs")
+        candidate_path = cast(str | None, change.get("path"))
+        change_kind = cast(str | None, change.get("kind"))
+        if (
+            not isinstance(candidate_path, str)
+            or not candidate_path
+            or not Path(candidate_path).is_absolute()
+            or change_kind not in {"add", "update"}
+        ):
+            raise ValueError("provider candidate path or change kind differs")
+    elif event_contract == "closed_file_change_v1":
         raise ValueError("provider must emit one complete file-change lifecycle")
-    (start_index, start_event, start_item), (stop_index, stop_event, stop_item) = file_events
-    if (
-        set(start_item) != {"id", "type", "changes", "status"}
-        or set(stop_item) != {"id", "type", "changes", "status"}
-        or start_event.get("type") != "item.started"
-        or stop_event.get("type") != "item.completed"
-        or not isinstance(start_item.get("id"), str)
-        or not start_item.get("id")
-        or start_item.get("id") != stop_item.get("id")
-        or start_item.get("status") != "in_progress"
-        or stop_item.get("status") != "completed"
-        or start_item.get("changes") != stop_item.get("changes")
-    ):
-        raise ValueError("provider file-change lifecycle differs")
-    changes = start_item.get("changes")
-    if not isinstance(changes, list) or len(changes) != 1:
-        raise ValueError("provider candidate file-change differs")
-    change = changes[0]
-    if not isinstance(change, Mapping) or set(change) != {"path", "kind"}:
-        raise ValueError("provider candidate file-change differs")
-    candidate_path = change.get("path")
-    change_kind = change.get("kind")
-    if (
-        not isinstance(candidate_path, str)
-        or not candidate_path
-        or not Path(candidate_path).is_absolute()
-        or change_kind not in {"add", "update"}
-    ):
-        raise ValueError("provider candidate path or change kind differs")
 
     message_texts = [text for _, text in messages]
     if message_texts == [expected_terminal_message] and messages[0][0] > stop_index:
@@ -386,6 +499,7 @@ def parse_codex_turn_events(
         change_kind=cast(str, change_kind),
         terminal_message_count=len(messages),
         normalization=normalization,
+        tool_activity=tuple(tool_activity),
     )
 
 
@@ -395,6 +509,7 @@ def normalize_codex_turn(
     candidate_path: Path,
     expected_change: str,
     expected_terminal_message: str,
+    event_contract: str = "closed_file_change_v1",
 ) -> ProviderTurn:
     """Accept only the two terminal forms observed by the frozen r42 boundary."""
 
@@ -403,10 +518,14 @@ def normalize_codex_turn(
     parsed = parse_codex_turn_events(
         raw_events,
         expected_terminal_message=expected_terminal_message,
+        event_contract=event_contract,
     )
     if (
-        parsed.candidate_path != str(candidate_path.absolute())
-        or parsed.change_kind != expected_change
+        parsed.candidate_path is not None
+        and (
+            parsed.candidate_path != str(candidate_path.absolute())
+            or parsed.change_kind != expected_change
+        )
     ):
         raise ValueError("provider candidate path or change kind differs")
     candidate = _read_candidate_nofollow(candidate_path)
@@ -420,6 +539,7 @@ def normalize_codex_turn(
         terminal_message=expected_terminal_message,
         terminal_message_count=parsed.terminal_message_count,
         normalization=parsed.normalization,
+        tool_activity=parsed.tool_activity,
     )
 
 
@@ -438,6 +558,7 @@ class CodexProviderAdapter:
         candidate_path: Path,
         expected_change: str,
         expected_terminal_message: str,
+        event_contract: str = "closed_file_change_v1",
     ) -> ProviderTurn:
         """Run without shell expansion and remove every contract-declared environment name."""
 
@@ -473,6 +594,7 @@ class CodexProviderAdapter:
                 candidate_path=candidate_path,
                 expected_change=expected_change,
                 expected_terminal_message=expected_terminal_message,
+                event_contract=event_contract,
             )
         except (OSError, ValueError) as error:
             raise RunProtocolFault(
@@ -512,7 +634,11 @@ class CodexRunProvider:
     ) -> None:
         if (
             not qualification.qualified
-            or qualification.scope != "live_two_turn_current_provider"
+            or qualification.scope
+            not in {
+                "live_two_turn_current_provider",
+                "live_two_turn_tool_rich_provider",
+            }
             or not builders
             or set(reference_roots) != set(builders)
             or set(prompt_templates) != set(self._CANDIDATE_NAMES)
@@ -551,6 +677,9 @@ class CodexRunProvider:
         ).hexdigest()
         if configuration_sha256 != qualification.configuration_sha256:
             raise ValueError("Codex configuration differs from provider qualification")
+        self._event_contract = str(
+            self.configuration.get("event_contract", "closed_file_change_v1")
+        )
         self._references = {
             run_id: (path.resolve(strict=True), *read_frozen_reference_bundle(path))
             for run_id, path in reference_roots.items()
@@ -614,14 +743,16 @@ class CodexRunProvider:
         ):
             raise ValueError("Codex candidate lifecycle differs before invocation")
         prompt = self._render_prompt(request, candidate_path)
+        terminal_document: dict[str, object] = {
+            "arm": request.arm,
+            "candidate_written": True,
+            "kind": "open_cake_ir_turn",
+            "turn": request.turn,
+        }
+        if self._event_contract == "closed_file_change_v1":
+            terminal_document["tool_calls"] = 1
         terminal = json.dumps(
-            {
-                "arm": request.arm,
-                "candidate_written": True,
-                "kind": "open_cake_ir_turn",
-                "tool_calls": 1,
-                "turn": request.turn,
-            },
+            terminal_document,
             sort_keys=True,
             separators=(",", ":"),
         )
@@ -631,6 +762,7 @@ class CodexRunProvider:
             candidate_path=candidate_path,
             expected_change=expected_change,
             expected_terminal_message=terminal,
+            event_contract=self._event_contract,
         )
         if read_frozen_reference_bundle(reference_root)[0] != reference_sha256:
             raise RunProtocolFault("contamination", "provider references changed during Turn")
@@ -651,12 +783,24 @@ class CodexInvocationBuilder:
         workspace: Path,
         output_schema: Path,
         removed_environment: tuple[str, ...],
+        disabled_features: tuple[str, ...] = CODEX_DISABLED_FEATURES,
+        event_contract: str = "closed_file_change_v1",
     ) -> None:
         values = (provider_revision, model, reasoning_effort, service_tier)
         if any(not value for value in values) or not removed_environment:
             raise ValueError("Codex invocation authority fields are required")
         if len(set(removed_environment)) != len(removed_environment):
             raise ValueError("removed environment names must be unique")
+        if (
+            len(set(disabled_features)) != len(disabled_features)
+            or any(not isinstance(feature, str) or not feature for feature in disabled_features)
+        ):
+            raise ValueError("disabled feature names must be unique and non-empty")
+        if (disabled_features, event_contract) not in {
+            (CODEX_DISABLED_FEATURES, "closed_file_change_v1"),
+            ((), "tool_rich_candidate_v1"),
+        }:
+            raise ValueError("Codex feature and event contracts differ")
         self._executable = executable
         self._provider_revision = provider_revision
         self._model = model
@@ -665,6 +809,8 @@ class CodexInvocationBuilder:
         self._workspace = workspace.resolve(strict=True)
         self._output_schema = output_schema.resolve(strict=True)
         self._removed_environment = removed_environment
+        self._disabled_features = disabled_features
+        self._event_contract = event_contract
 
     @property
     def workspace(self) -> Path:
@@ -680,7 +826,7 @@ class CodexInvocationBuilder:
 
     @property
     def configuration(self) -> Mapping[str, object]:
-        return {
+        configuration: dict[str, object] = {
             "model": self._model,
             "reasoning_effort": self._reasoning_effort,
             "service_tier": self._service_tier,
@@ -689,8 +835,11 @@ class CodexInvocationBuilder:
             "sandbox": "workspace-write",
             "cwd_policy": "independent_empty_workspace",
             "reference_visibility": "embedded_frozen_bundle",
-            "disabled_features": list(CODEX_DISABLED_FEATURES),
+            "disabled_features": list(self._disabled_features),
         }
+        if self._event_contract != "closed_file_change_v1":
+            configuration["event_contract"] = self._event_contract
+        return configuration
 
     @property
     def configuration_sha256(self) -> str:
@@ -729,7 +878,7 @@ class CodexInvocationBuilder:
             str(self._output_schema),
         ) + tuple(
             value
-            for feature in CODEX_DISABLED_FEATURES
+            for feature in self._disabled_features
             for value in ("--disable", feature)
         )
         prefix = (

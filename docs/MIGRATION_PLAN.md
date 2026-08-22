@@ -6,9 +6,9 @@ The migration is a one-way cutover from a campaign-shaped legacy repository to a
 dependent Research Lab. The legacy repository remains a read-only evidence source. No formal run dual-writes and
 no legacy runner is copied for convenience.
 
-Implementation status: P0-P7 code/evidence paths are implemented in the new architecture, including the real r43-r45
-Portfolio and a non-scientific two-Run system Study. G7 r4 and G8 r6 pass on the remote B200 host; sole-owner Git
-cutover remains pending because this migration does not authorize an automatic commit or deletion of legacy history.
+Implementation status: P0-P8 are complete in the new architecture, including the real r43-r45 Portfolio, the G8 r6
+system Study and the private `qhy991/open-cake-ir` source authority. G7 r4/G8 r6 preserve the closed research path;
+the separately qualified tool-rich path supports final artifact optimization without changing their evidence.
 
 ## 2. What migrates
 
@@ -115,11 +115,18 @@ After the pilot and completion audit pass:
 
 A successor study adds contract data, not `r41_runner.py` or another runtime path.
 
+This cutover is complete: GitHub `main` is the source revision authority, the legacy tree is historical/rollback
+input only, and new Evidence has one writer under `open-cake-ir`.
+
 ### P9 — Claim-stage boundary
 
 A fixed-shape Study may emit a sealed Kernel Seed. The final remote run supplied the real inputs and endpoints for a
 closed `portfolio` Study, now implemented without adding a mode. Serving remains future work because no serving
 framework or endpoint was implemented remotely; portfolio correctness cannot satisfy that gate.
+
+Before an explicit KernelSeed freeze, `artifact_optimization_only` may expose provider-default features and promote
+one confirmatory-qualified Candidate per Run. That engineering Evidence has no Estimand and cannot enter a scientific
+comparison.
 
 ## 4. Deletion and compatibility rules
 

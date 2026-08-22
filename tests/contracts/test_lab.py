@@ -23,10 +23,12 @@ from open_cake_ir.evidence import EvidenceStore  # noqa: E402
 from open_cake_ir.lab import (  # noqa: E402
     CODEX_DISABLED_FEATURES,
     BoundedBrokerEvaluator,
+    CampaignLock,
     CommandBrokerSubmitter,
     EnvironmentResult,
     ExecutorRevision,
     Lab,
+    ProviderAuxiliaryActivity,
     ProviderTurn,
     RunProtocolFault,
     TurnObservation,
@@ -289,6 +291,24 @@ class FakeEvaluator:
 
 
 class LabContractTests(unittest.TestCase):
+    def test_historical_g8_r6_remains_a_non_scientific_replayable_qualification(self) -> None:
+        lab = Lab(ROOT)
+        lock = CampaignLock.load(ROOT / "runtime/g8-system-r6.campaign.lock.json")
+        report = lab.audit(
+            lab.reference_campaign(
+                lock,
+                ROOT / "evidence/campaigns/g8-system-r6",
+            )
+        )
+
+        self.assertTrue(report.system_qualification_passed)
+        self.assertTrue(report.campaign_complete)
+        self.assertTrue(report.archive_integrity_passed)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertIsNone(report.estimand)
+        self.assertIsNone(report.estimate)
+        self.assertIsNone(report.uncertainty)
+
     def test_system_qualification_preflight_binds_non_scientific_one_run_per_arm(self) -> None:
         lock = Lab(ROOT).preflight(
             ROOT / "contracts/studies/matched-search-system-qualification-v1.json"
@@ -297,6 +317,67 @@ class LabContractTests(unittest.TestCase):
         self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
         self.assertEqual(lock.claim_scope, "system_qualification_only")
         self.assertIsNone(lock.estimand)
+
+    def test_artifact_optimization_preflight_binds_full_features_without_an_estimand(self) -> None:
+        lock = Lab(ROOT).preflight(
+            ROOT / "contracts/studies/artifact-optimization-v1.json"
+        )
+
+        self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
+        self.assertEqual(lock.claim_scope, "artifact_optimization_only")
+        self.assertIsNone(lock.estimand)
+        providers = lock.document["resolved_inputs"]["arm_environments"]
+        for environment in providers.values():
+            provider = environment["provider"]
+            self.assertEqual(provider["disabled_features"], [])
+            self.assertEqual(provider["event_contract"], "tool_rich_candidate_v1")
+
+    def test_live_artifact_optimization_study_binds_the_tool_rich_qualification(self) -> None:
+        lock = Lab(ROOT).preflight(
+            ROOT / "contracts/studies/artifact-optimization-verda-v1.json"
+        )
+        provider = lock.document["resolved_inputs"]["arm_environments"]["open_cake"][
+            "provider"
+        ]
+
+        self.assertEqual(lock.claim_scope, "artifact_optimization_only")
+        self.assertEqual(
+            provider["qualification"]["canonical_sha256"],
+            "5a55787e42c3412ae8dc76653e1804faf205a9559dfc0b93cd62f609eaf0e0f6",
+        )
+        self.assertEqual(provider["disabled_features"], [])
+        self.assertEqual(provider["event_contract"], "tool_rich_candidate_v1")
+
+    def test_closed_provider_receipt_cannot_authorize_artifact_optimization(self) -> None:
+        study = json.loads(
+            (ROOT / "contracts/studies/artifact-optimization-v1.json").read_text()
+        )
+        for arm in study["arms"].values():
+            provider = arm["provider"]
+            provider["revision"] = "codex-cli-0.144.3-sha134063e133f0"
+            provider["executable_sha256"] = (
+                "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
+            )
+            provider["qualification"] = {
+                "path": "contracts/providers/codex-cli-0.144.3-live-r4.json",
+                "canonical_sha256": (
+                    "86fb53a1f51845dee11e105eefe8bb01e5563dc0217cd7c9c7573d8199a0e707"
+                ),
+            }
+            provider["qualification_anchor"] = {
+                "path": "evidence/qualifications/codex-cli-0.144.3-live-r4-anchor.json",
+                "canonical_sha256": (
+                    "aac57d142aa66ed8f94e1adcffa8c198bccfee7ec73d36991f42a587368fecbd"
+                ),
+            }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "study.json"
+            path.write_text(json.dumps(study))
+            with self.assertRaisesRegex(
+                ValueError,
+                "provider qualification bytes or capability differs",
+            ):
+                Lab(ROOT).preflight(path)
 
     def test_fixture_provider_qualification_forbids_an_external_anchor(self) -> None:
         study = json.loads(
@@ -429,6 +510,143 @@ class LabContractTests(unittest.TestCase):
             )
         )
 
+    def test_artifact_optimization_promotes_per_run_without_scientific_analysis(self) -> None:
+        class OptimizationProvider(FakeProvider):
+            provider_revision = "fixture-provider-optimization-v1"
+            qualification_sha256 = (
+                "a50dce88a272f217eb524cc611b1197a689b0b1d76e41e031465458ef273d386"
+            )
+            configuration = {
+                "model": "gpt-5.6-sol",
+                "reasoning_effort": "max",
+                "service_tier": "default",
+                "output_schema_sha256": (
+                    "c1166659951f1919b539a2a8a35b154ccff4c8a0121d233f7658e8dbc175a70a"
+                ),
+                "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
+                "sandbox": "workspace-write",
+                "cwd_policy": "independent_empty_workspace",
+                "reference_visibility": "embedded_frozen_bundle",
+                "disabled_features": [],
+                "event_contract": "tool_rich_candidate_v1",
+            }
+
+            def turn(self, request):
+                observed = super().turn(request)
+                events = [json.loads(line) for line in observed.raw_events.splitlines()]
+                events[2:2] = [
+                    {
+                        "type": "item.started",
+                        "item": {
+                            "id": f"command-{request.turn}",
+                            "type": "command_execution",
+                            "command": "pwd",
+                            "status": "in_progress",
+                        },
+                    },
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "id": f"command-{request.turn}",
+                            "type": "command_execution",
+                            "command": "pwd",
+                            "status": "completed",
+                        },
+                    },
+                ]
+                terminal = json.loads(events[-2]["item"]["text"])
+                terminal.pop("tool_calls")
+                events[-2]["item"]["text"] = json.dumps(
+                    terminal,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                raw_events = b"".join(
+                    json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                    for event in events
+                )
+                return ProviderTurn(
+                    thread_id=observed.thread_id,
+                    provider_tokens=observed.provider_tokens,
+                    candidate=observed.candidate,
+                    candidate_sha256=observed.candidate_sha256,
+                    raw_events=raw_events,
+                    raw_events_sha256=sha256(raw_events).hexdigest(),
+                    terminal_message=events[-2]["item"]["text"],
+                    terminal_message_count=1,
+                    normalization="single_exact",
+                    tool_activity=(
+                        ProviderAuxiliaryActivity(
+                            item_id=f"command-{request.turn}",
+                            item_type="command_execution",
+                            status="completed",
+                        ),
+                    ),
+                )
+
+        lab = Lab(ROOT)
+        lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-v1.json")
+        resolved = lock.document["resolved_inputs"]
+        protocol_sha256 = sha256(
+            json.dumps(
+                lock.document["evaluation_protocol"],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            campaign = lab.execute(
+                lock,
+                Path(directory).resolve() / "evidence",
+                provider=OptimizationProvider(),
+                environments={
+                    name: FakeEnvironment(name, document)
+                    for name, document in resolved["arm_environments"].items()
+                },
+                evaluator=FakeEvaluator(
+                    lock.document["evaluation_protocol"],
+                    protocol_sha256,
+                    lock.document["workload"]["canonical_sha256"],
+                ),
+            )
+            report = lab.audit(campaign)
+
+        self.assertTrue(report.campaign_complete)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertIsNone(report.estimand)
+        self.assertFalse(report.estimand_available)
+        self.assertIsNone(report.estimate)
+        self.assertIsNone(report.uncertainty)
+        self.assertTrue(report.descriptive["artifact_optimization_complete"])
+        self.assertEqual(
+            set(report.descriptive["promoted_artifacts"]),
+            {"open_cake-1", "direct_cuda-1"},
+        )
+        self.assertTrue(
+            all(
+                artifact["turn"] == 2
+                for artifact in report.descriptive["promoted_artifacts"].values()
+            )
+        )
+        self.assertIsNone(report.estimand)
+        self.assertFalse(report.estimand_available)
+        self.assertIsNone(report.estimate)
+        self.assertIsNone(report.uncertainty)
+        self.assertNotIn("qualification_rate", report.descriptive)
+        self.assertNotIn("median_confirmed_latency_ms", report.descriptive)
+        self.assertNotIn("paired_runs", report.descriptive)
+        self.assertEqual(
+            {item.reason for item in report.run_inclusion},
+            {"artifact_optimization_not_scientific_data"},
+        )
+        self.assertTrue(
+            all(
+                not item.qualification_endpoint_included
+                and not item.conditional_performance_included
+                for item in report.run_inclusion
+            )
+        )
+
     def test_system_qualification_requires_a_replayed_evaluation_in_every_run(self) -> None:
         class RejectingEnvironment(FakeEnvironment):
             def build(self, submission):
@@ -526,7 +744,7 @@ class LabContractTests(unittest.TestCase):
                 cwd=root,
                 executor=ExecutorRevision.load(
                     ROOT,
-                    ROOT / "runtime/executors/open-cake-ir-b200-v2.json",
+                    ROOT / "runtime/executors/open-cake-ir-b200-v3.json",
                 ),
                 service_user=pwd.getpwuid(os.geteuid()).pw_name,
                 service_group=grp.getgrgid(os.getegid()).gr_name,

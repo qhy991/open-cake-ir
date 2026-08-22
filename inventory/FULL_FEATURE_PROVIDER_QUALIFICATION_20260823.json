@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-23",
+  "host": "verda-b200x4",
+  "status": "passed",
+  "provider": {
+    "revision": "codex-cli-0.144.3-sha134063e133f0",
+    "executable_sha256": "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
+  },
+  "feature_policy": {
+    "kind": "provider_defaults_optimization",
+    "disabled_features": [],
+    "meaning": "open_cake_ir_injects_no_feature_disables",
+    "observation_source": "codex features list on the exact executable",
+    "observation_scope": "features disabled by the historical closed profile",
+    "limitations": [
+      "provider_defaults_and_admin_requirements_still_apply",
+      "feature_visibility_does_not_authorize_external_mutation_or_direct_gpu_measurement",
+      "only_observed_auxiliary_capabilities_are_attested"
+    ],
+    "effective_previously_disabled_features": {
+      "apps": true,
+      "auth_elicitation": true,
+      "browser_use": true,
+      "browser_use_external": true,
+      "browser_use_full_cdp_access": true,
+      "code_mode_host": true,
+      "computer_use": true,
+      "goals": true,
+      "guardian_approval": true,
+      "hooks": true,
+      "image_generation": true,
+      "in_app_browser": true,
+      "multi_agent": true,
+      "plugin_sharing": true,
+      "plugins": true,
+      "remote_plugin": true,
+      "shell_tool": true,
+      "skill_mcp_dependency_install": true,
+      "tool_call_mcp_elicitation": true,
+      "tool_suggest": true,
+      "workspace_dependencies": true
+    }
+  },
+  "event_contract": "tool_rich_candidate_v1",
+  "observed_auxiliary_activity": {
+    "initial": ["command_execution"],
+    "resumed": ["command_execution"]
+  },
+  "qualification": {
+    "path": "contracts/providers/codex-cli-0.144.3-tool-rich-v1.json",
+    "canonical_sha256": "5a55787e42c3412ae8dc76653e1804faf205a9559dfc0b93cd62f609eaf0e0f6",
+    "raw_sha256": "05e5e4f13921578c72c9e97dd9ef8076c680a8c8754803b876c4e6f5311f2668"
+  },
+  "anchor": {
+    "path": "evidence/qualifications/codex-cli-0.144.3-tool-rich-v1-anchor.json",
+    "canonical_sha256": "d9db6aa28e971112d49e221920b83255b6ba1e218e665e31d46eba5b0f2f6936",
+    "raw_sha256": "27c69cc0a3d7bc99952f8b0db42accb1b44efe5664a22682d592a6708d70a236",
+    "terminal_seal_sha256": "1390ac8a328e06c64b4e69baef9e963d88681fcf8f944d12c898c142ff56515a"
+  },
+  "live_study": {
+    "path": "contracts/studies/artifact-optimization-verda-v1.json",
+    "canonical_sha256": "98abd7eff4631674a85487a57ec26b37bc68ed0d4110b04ec92effbbea64023b",
+    "raw_sha256": "2725524072258e1fffa7cbf228a3e8855b6802fcf00805731079be376a7ec301",
+    "claim_scope": "artifact_optimization_only",
+    "estimand": null
+  }
+}

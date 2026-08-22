@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Freeze one live two-Run G8 Study from qualified host authorities."""
+"""Freeze one live non-scientific matched Study from qualified authorities."""
 
 from __future__ import annotations
 
@@ -72,17 +72,18 @@ def main() -> int:
     root = arguments.project_root.resolve(strict=True)
     output = arguments.output.absolute()
     if output.exists() or output.is_symlink() or not arguments.study_id:
-        raise ValueError("G8 Study output or identity differs")
+        raise ValueError("live Study output or identity differs")
     study = _object(
         json.loads(arguments.template.resolve(strict=True).read_text(encoding="utf-8")),
         "template",
     )
     if (
         study.get("kind") != "matched_search"
-        or study.get("claim_scope") != "system_qualification_only"
+        or study.get("claim_scope")
+        not in {"system_qualification_only", "artifact_optimization_only"}
         or study.get("state") != "frozen"
     ):
-        raise ValueError("G8 template policy differs")
+        raise ValueError("live matched Study template policy differs")
     qualification_path = arguments.qualification.resolve(strict=True)
     qualification_relative = _project_relative(
         root, qualification_path, "provider qualification"
@@ -90,8 +91,11 @@ def main() -> int:
     anchor_path = arguments.qualification_anchor.resolve(strict=True)
     anchor_relative = _project_relative(root, anchor_path, "provider qualification anchor")
     qualification = ProviderQualificationReceipt.load(qualification_path)
-    if not qualification.qualified or qualification.scope != "live_two_turn_current_provider":
-        raise ValueError("G8 requires a live provider qualification")
+    if not qualification.qualified or qualification.scope not in {
+        "live_two_turn_current_provider",
+        "live_two_turn_tool_rich_provider",
+    }:
+        raise ValueError("live Study requires a live provider qualification")
     anchor = _object(json.loads(anchor_path.read_text(encoding="utf-8")), "anchor")
     if anchor.get("qualification_receipt_sha256") != qualification.canonical_sha256:
         raise ValueError("provider qualification anchor differs")
@@ -183,8 +187,11 @@ def main() -> int:
         stream.write(_canonical_json_bytes(study) + b"\n")
     try:
         lock = Lab(root).preflight(temporary)
-        if lock.claim_scope != "system_qualification_only" or lock.estimand is not None:
-            raise ValueError("frozen G8 Study data policy differs")
+        if lock.claim_scope not in {
+            "system_qualification_only",
+            "artifact_optimization_only",
+        } or lock.estimand is not None:
+            raise ValueError("frozen live Study data policy differs")
         temporary.replace(output)
         output.chmod(0o644)
     except BaseException:

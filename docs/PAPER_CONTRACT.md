@@ -52,6 +52,10 @@ must define its endpoint, contrast, allocation, missingness and Estimand before 
 that quantity but cannot invent it afterward. A `system_qualification_only` Study instead declares no Estimand and
 forbids treatment comparison by contract.
 
+An `artifact_optimization_only` Study may expose provider-default authoring features and select one confirmed
+Candidate per Run, but its output is engineering Evidence: it has no scientific inclusion, arm contrast, estimate or
+uncertainty and cannot fill a paper Campaign cell.
+
 The paper fixes GPT-5.6-sol, reasoning effort xhigh, task, oracle, benchmark, target shape, B200 and reference
 policy; it reports three independent runs per arm at an 80M provider-token budget. For Flash-KMeans `assign`,
 the fixed cell is `B=32, N=65536, K=1024, D=128`, BF16 inputs with FP32 accumulation. It reports a tuned

@@ -9,7 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_EXECUTOR = ROOT / "runtime/executors/open-cake-ir-b200-v2.json"
+CURRENT_EXECUTOR = ROOT / "runtime/executors/open-cake-ir-b200-v3.json"
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.lab import ExecutorRevision  # noqa: E402
@@ -18,7 +18,7 @@ from open_cake_ir.lab import ExecutorRevision  # noqa: E402
 class ExecutorRevisionContractTests(unittest.TestCase):
     def test_released_executor_covers_the_complete_runtime_source_closure(self) -> None:
         executor = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR)
-        self.assertEqual(executor.executor_id, "open-cake-ir-b200-v2")
+        self.assertEqual(executor.executor_id, "open-cake-ir-b200-v3")
         self.assertEqual(
             CURRENT_EXECUTOR.stat().st_mode & 0o444,
             0o444,
@@ -67,6 +67,33 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             executor.canonical_sha256,
             ExecutorRevision.load(ROOT, CURRENT_EXECUTOR).canonical_sha256,
         )
+
+    def test_executor_revision_inventory_resolves_current_and_archived_closures(self) -> None:
+        inventory = json.loads(
+            (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
+        )
+        current = inventory["current"]
+        current_executor = ExecutorRevision.load(ROOT, ROOT / current["path"])
+        self.assertEqual(current_executor.executor_id, current["executor_id"])
+        self.assertEqual(current_executor.canonical_sha256, current["canonical_sha256"])
+        self.assertEqual(len(current_executor.document["sources"]), current["source_count"])
+        self.assertEqual(
+            sha256((ROOT / current["path"]).read_bytes()).hexdigest(),
+            current["descriptor_raw_sha256"],
+        )
+        for archived in inventory["archives"]:
+            archive_root = ROOT / archived["archive_root"]
+            executor = ExecutorRevision.load(
+                archive_root,
+                archive_root / "runtime/executor.json",
+            )
+            self.assertEqual(executor.executor_id, archived["executor_id"])
+            self.assertEqual(executor.canonical_sha256, archived["canonical_sha256"])
+            self.assertEqual(len(executor.document["sources"]), archived["source_count"])
+            self.assertEqual(
+                sha256((archive_root / "runtime/executor.json").read_bytes()).hexdigest(),
+                archived["descriptor_raw_sha256"],
+            )
 
     def test_executor_release_is_create_only_and_world_readable(self) -> None:
         document = json.loads(CURRENT_EXECUTOR.read_text(encoding="utf-8"))

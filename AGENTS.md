@@ -5,6 +5,9 @@
 - Workload Contract owns operator semantics and oracle. Study Contract owns treatment, estimand and analysis.
 - `matched_search` and the evidence-justified exact-shape `portfolio` variant share one Lab path. Serving remains a
   future artifact handoff, not a runtime mode.
+- `artifact_optimization_only` is a non-scientific Claim Scope on `matched_search`, not a mode. It may expose
+  provider-default features, but Candidate promotion still requires common confirmatory Evaluation and never forms
+  an arm comparison.
 - KernelSeed and Workload-case specialization are owned by Lab; Compiler accepts complete Schedules and must remain
   unaware of held-out roles or Study policy.
 - Compiler changes require a full Corpus Gate and human merge before producing a new Compiler Revision.

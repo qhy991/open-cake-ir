@@ -14,9 +14,15 @@ Study declares an Estimand; a system-qualification Study explicitly declares non
 _Avoid_: Experiment policy, campaign config
 
 **Claim Scope**:
-The content-bound data-use policy that permits either system qualification or a scientific Study Analysis, never
-both for the same Campaign.
+The content-bound data-use policy that permits system qualification, artifact optimization or scientific Study
+Analysis, never more than one for the same Campaign.
 _Avoid_: Report label, README disclaimer
+
+**Provider Feature Policy**:
+The Authoring Environment rule for feature overrides and provider-event interpretation. The closed research policy
+injects the exact historical denylist; provider-default optimization injects no disables and uses the tool-rich event
+contract. It describes exposure, not authority for external side effects.
+_Avoid_: Claim Scope, tool availability claim
 
 **Authoring Environment**:
 The complete assigned environment through which an agent authors, receives diagnostics and produces sealed candidates.
@@ -37,6 +43,11 @@ _Avoid_: Round, checkpoint
 **Candidate**:
 An immutable authored artifact identified by content and lineage.
 _Avoid_: Workspace file, current candidate
+
+**Artifact Promotion**:
+The per-Run selection of one confirmatory-qualified Candidate by declared latency rank and tie-break. It never forms
+an arm comparison and does not itself create a KernelSeed.
+_Avoid_: Estimand, winner, treatment effect
 
 **Evaluation Receipt**:
 An append-only observation of one Candidate under a named evaluation purpose, protocol and environment admission.
@@ -76,6 +87,9 @@ _Avoid_: Candidate status, performance claim
 - A scientific **Study Contract** declares an **Estimand** before execution; a later analysis only estimates it.
 - A `system_qualification_only` **Claim Scope** has exactly one Run per Authoring Environment, forbids comparative
   statistics and pooling, and keeps Estimand, estimate and uncertainty structurally absent.
+- An `artifact_optimization_only` **Claim Scope** has one multi-Turn Run per Authoring Environment and may perform
+  only per-Run **Artifact Promotion**; all scientific inclusion remains false.
+- A **Provider Feature Policy** belongs to the Authoring Environment, while Claim Scope owns only data use.
 - A **Kernel Seed** may be consumed by the closed `portfolio` Study variant but does not imply arbitrary-shape
   generalization.
 

@@ -13,10 +13,11 @@ supports a broader scientific claim.
 | G3 | passed | v3 six-case Corpus Gate, released Revision lock, complete source archive and external terminal-seal anchor |
 | G4 | passed for migrated evidence | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles and raw r45 replay pass |
 | G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay and matched/Portfolio semantic replay pass |
-| G6 | passed | 103 contract tests + 13 subtests; Lab authority, raw replay, G8 data policy and analysis contracts pass without GPU |
+| G6 | passed | 114 contract tests + 13 subtests; Lab authority, raw replay and all three matched Claim Scopes pass without GPU |
 | G7 | passed | r4 proves two-Turn add/update, thread/usage/sandbox/cwd/reference continuity and the closed feature denylist |
+| G7F | passed | tool-rich v1 injects no feature disables and replays shell activity on initial and resumed Turns |
 | G8 | passed | r6 has two adhered Runs, four replayed Evaluation Receipts and an independent offline system-qualification pass |
-| G9 | awaiting explicit transaction | non-Git preconditions are ready; no sole-owner commit or new remote Git anchor |
+| G9 | passed | private `qhy991/open-cake-ir` main is the source authority; legacy is read-only with pinned rollback |
 | G10 | historical projection only | r42 estimand unavailable and r45 bounded timing instability are preserved, not rerun |
 
 ## G0 — Legacy source set is durable
@@ -41,6 +42,7 @@ Require acceptance of:
   system qualification;
 - independent inner kernel loop and governed outer compiler loop;
 - `matched_search` plus the evidence-justified closed `portfolio` successor, with no additional runtime mode.
+- artifact optimization as a non-scientific Claim Scope on `matched_search`, not another mode.
 
 Any new ambiguity returns to top-level design and blocks further runtime change.
 
@@ -101,6 +103,8 @@ Tests through `preflight -> execute -> audit` must prove:
 - threshold-crossing Turns cannot backfill earlier Checkpoints;
 - a scientific Study Report estimates only the preregistered Estimand and reports availability/uncertainty, while a
   system-qualification report keeps those fields null;
+- artifact optimization promotes only a per-Run confirmatory-qualified Candidate and never emits treatment
+  statistics or scientific inclusion;
 - no source-string assertion substitutes for invoking a public Interface.
 
 Failure fixes the owning Module; it never creates a versioned successor runner.
@@ -117,6 +121,17 @@ The first two remote attempts remain intact negative archives: r1 observed trans
 r2 exposed an invalid response schema. r3 passed after the schema repair; r4 is authoritative because it additionally
 binds the closed Apps/MCP/browser/shell/subagent feature denylist. See
 `inventory/G7_PROVIDER_AUTH_OBSERVATION_20260822.json`.
+
+## G7F — Live tool-rich provider qualification passes
+
+**Settles:** whether the final engineering optimization loop can expose provider-default features without breaking
+Candidate custody or provider-event replay.
+
+The pinned Codex 0.144.3 successor injects no `--disable` flags, binds output schema v2 and the
+`tool_rich_candidate_v1` event contract, and observes a no-side-effect shell command on both initial and resumed
+Turns. Raw activity and the terminal archive replay with integrity. This attests only observed capabilities under the
+effective account/admin policy; it does not authorize external mutation, direct GPU measurement or scientific use.
+See `inventory/FULL_FEATURE_PROVIDER_QUALIFICATION_20260823.json`.
 
 ## G8 — Bounded end-to-end pilot passes
 
@@ -142,10 +157,9 @@ Require remote revision and Compiler Revision anchors, zero dual-writes, legacy-
 parity, disk-capacity gate, rollback to a pinned legacy checkout and explicit user approval. Only then may a full
 matched-search Study Contract be frozen.
 
-The pre-cutover review now has a current passing capacity observation, cache exclusions, frozen acceptance-evidence
-custody, status parity and the pinned rollback procedure in `docs/RUNBOOK.md`. G9 itself remains open until the user
-authorizes one transaction that creates and remotely anchors the independent Git revision and declares the new
-repository the sole runnable writer.
+The private GitHub repository `qhy991/open-cake-ir` now anchors the independent `main` revision. The legacy tree is
+retained only for historical replay and rollback; it is not a second writer. Capacity, cache exclusions, Evidence
+custody, status parity and the pinned rollback procedure remain part of every later cutover audit.
 
 ## G10 — Scientific completion is claim-specific
 

@@ -29,20 +29,22 @@ causal effect, serving and paper reproduction are not.
 - Compiler Revision `open-cake-ir-sm100a-v3` binds exact Target, public Schedule authoring contract, source closure,
   six-case Corpus Gate and approval. Its 16-source Evidence archive has an external terminal-seal anchor; v2 remains
   immutable in release history.
-- Current Executor Revision `open-cake-ir-b200-v2` binds 30 runtime sources plus the exact remote Python, Torch/Triton,
+- Current Executor Revision `open-cake-ir-b200-v3` binds 30 runtime sources plus the exact remote Python, Torch/Triton,
   CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission and no-GPU Triton-to-CUBIN
-  qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor. G8 r6 retains its exact
-  v1 descriptor and 30-source closure under `evidence/executors/open-cake-ir-b200-v1-5bdc9106/`.
+  qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor. G8 r6 retains its exact v1
+  closure, and the first private-Git baseline retains v2; `inventory/EXECUTOR_REVISIONS.json` resolves all three.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
 - Lab owns matched Turn/budget/checkpoint control and the exact-shape Portfolio handoff; Compiler does not own
   KernelSeed or held-out policy.
 - Common Evaluation has sealed artifact custody, bounded broker-attempt semantics, shape-bound persistent Driver
   loading, raw Portfolio cohorts and semantic replay.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The local and remote contract suite passes 103 tests plus 13 subtests. G7 r4 qualifies the real provider under a
+- The local and remote contract suite passes 114 tests plus 13 subtests. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
-  null. Legacy remains read-only and no sole-owner Git cutover is claimed.
+  null. The tool-rich successor injects no feature disables, observes shell activity across resume and freezes a live
+  `artifact_optimization_only` Study without executing it. Private `qhy991/open-cake-ir` is the sole source owner;
+  legacy remains read-only historical/rollback evidence.
 
 ## Migration classification
 
@@ -52,6 +54,7 @@ causal effect, serving and paper reproduction are not.
 | Workload inputs/oracles | Workload Contracts + Evaluation adapters | migrated |
 | r41/r42 Turn/resume/checkpoint controls | matched Lab path | implemented and live-qualified by G7/G8 |
 | r43-r45 seed/specialists/dispatcher/timing | portfolio Lab + Evaluation path | implemented; new B200 rerun pending |
+| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | implemented and live provider-qualified; Campaign not run |
 | Legacy raw/index/source bytes | final bundle + manifest + historical indexes | migrated by immutable reference |
 | rXX/vN runners and verifiers | legacy Git history | deliberately not active |
 | Provider credentials/HMAC key | external host custody | deliberately not migrated |

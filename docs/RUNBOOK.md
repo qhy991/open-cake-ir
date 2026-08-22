@@ -32,8 +32,10 @@ open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v1.js
 The checked-in scientific matched contract uses a zero-GPU fixture provider and intentionally cannot start a live
 provider. The checked-in `matched-search-system-qualification-v1.json` is the non-scientific G8 template. Freeze a
 live successor only after a real two-Turn qualification emits a receipt with
-`scope=live_two_turn_current_provider` and binds the exact executable, model, reasoning effort, service tier,
-output schema, prompt/scaffold bytes, removed environment and reference visibility.
+the matching closed or tool-rich scope and binds the exact executable, model, reasoning effort, service tier, output
+schema, prompt/scaffold bytes, removed environment, reference visibility, feature overrides and event contract.
+`artifact-optimization-v1.json` is the zero-GPU contract fixture; `artifact-optimization-verda-v1.json` binds the
+live tool-rich provider but authorizes no Campaign by itself.
 
 ## 3. Qualify the live provider without GPU
 
@@ -49,21 +51,38 @@ python tools/qualify_codex_provider.py \
   --receipt-output contracts/providers/<new-live-receipt>.json \
   --anchor-output evidence/qualifications/<new-live-anchor>.json \
   --evidence-root evidence/qualifications/<new-live-run> \
-  --run-id <new-live-run>
+  --run-id <new-live-run> \
+  --feature-policy closed_research
 ```
 
 Failure remains a sealed, externally anchored observation and issues no receipt. Reauthenticate before using a new
 Run id; never delete or rewrite the failed archive.
 
-Then freeze the two-Run G8 Study from the live receipt, its seal anchor and the exact runtime configuration:
+For artifact optimization, use output schema v2 and the provider-default feature policy. This injects no
+`--disable` flags and requires a real auxiliary shell lifecycle on both Turns:
 
 ```bash
-python tools/freeze_system_qualification.py \
+python tools/qualify_codex_provider.py \
+  --executable /absolute/path/to/codex \
+  --provider-revision codex-cli-<version>-sha<digest-prefix> \
+  --output-schema contracts/providers/codex-turn-output-schema-v2.json \
+  --workspace /new/external/path/tool-rich-qualification-workspace \
+  --receipt-output contracts/providers/<new-tool-rich-receipt>.json \
+  --anchor-output evidence/qualifications/<new-tool-rich-anchor>.json \
+  --evidence-root evidence/qualifications/<new-tool-rich-run> \
+  --run-id <new-tool-rich-run> \
+  --feature-policy provider_defaults_optimization
+```
+
+Then freeze either non-scientific Study from its matching receipt, seal anchor and exact runtime configuration:
+
+```bash
+python tools/freeze_live_matched_study.py \
   --project-root . \
   --template contracts/studies/matched-search-system-qualification-v1.json \
   --qualification contracts/providers/<new-live-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-live-anchor>.json \
-  --executor runtime/executors/<released-executor>.json \
+  --executor runtime/executors/open-cake-ir-b200-v3.json \
   --runtime-config /new/path/runtime.json \
   --study-id <new-g8-study-id> \
   --output contracts/studies/<new-g8-study>.json
@@ -71,7 +90,7 @@ open-cake-ir lab preflight contracts/studies/<new-g8-study>.json \
   --output /new/path/g8-campaign.lock.json
 ```
 
-## 4. Execute matched search or system qualification
+## 4. Execute matched search, system qualification or artifact optimization
 
 Copy `examples/runtime/matched-live.example.json`, replacing every absolute path. Run the CLI with effective
 `gpuq-users` access; the broker configuration must declare `service_user=gpuq` and
@@ -90,6 +109,13 @@ search/confirmatory promotion and terminal sealing.
 For `system_qualification_only`, exactly one Run per Authoring Environment executes. Its report can set only
 `system_qualification_passed`; `estimand`, `estimate`, and `uncertainty` remain null and comparative statistics are
 forbidden.
+
+For `artifact_optimization_only`, one multi-Turn Run per Authoring Environment uses the same command. Auxiliary
+Apps/MCP/shell/browser/plugin/subagent activity is retained in raw Evidence, so the operator must approve its source
+data for archival before launch. The provider may create workspace scratch files, but only the fixed Candidate path
+is sealed. Audit promotes the lowest-latency confirmatory-qualified Candidate per Run, with earliest Turn as
+tie-break; it never reports qualification rates, arm medians, ratios, uncertainty or scientific inclusion. External
+mutation and direct GPU measurement remain unauthorized even when those tools are visible.
 
 ## 5. Execute the exact-shape Portfolio
 

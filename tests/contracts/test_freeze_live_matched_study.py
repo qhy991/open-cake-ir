@@ -22,7 +22,7 @@ def _canonical_json_bytes(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
-class FreezeSystemQualificationContractTests(unittest.TestCase):
+class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
     def test_live_authorities_freeze_one_non_scientific_run_per_arm(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
@@ -96,7 +96,7 @@ class FreezeSystemQualificationContractTests(unittest.TestCase):
             output = project / "contracts/studies/live-system-qualification.json"
             command = [
                 sys.executable,
-                str(project / "tools/freeze_system_qualification.py"),
+                str(project / "tools/freeze_live_matched_study.py"),
                 "--project-root",
                 str(project),
                 "--template",
@@ -106,7 +106,7 @@ class FreezeSystemQualificationContractTests(unittest.TestCase):
                 "--qualification-anchor",
                 str(anchor_path),
                 "--executor",
-                str(project / "runtime/executors/open-cake-ir-b200-v2.json"),
+                str(project / "runtime/executors/open-cake-ir-b200-v3.json"),
                 "--runtime-config",
                 str(runtime_path),
                 "--study-id",

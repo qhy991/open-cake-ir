@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "provider_revision": "fixture-provider-optimization-v1",
+  "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "configuration_sha256": "e7c0822df8e6e5fb4b93fd94047f1c2dd956cf321acef743515f535f50d248e7",
+  "initial_and_resume_equivalent": true,
+  "file_lifecycle_observed": true,
+  "usage_observed": true,
+  "qualified": true,
+  "scope": "zero_gpu_contract_fixture_only"
+}

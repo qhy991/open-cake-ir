@@ -91,6 +91,28 @@ _SYSTEM_QUALIFICATION_ANALYSIS_PLAN = {
     "comparative_statistics": "forbidden",
     "pooling": "forbidden",
 }
+_ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN = {
+    "experimental_unit": "run",
+    "estimand": None,
+    "artifact_promotion": {
+        "scope": "per_run",
+        "eligibility": "adhered_and_confirmatory_receipt_qualifies",
+        "rank": "lowest_confirmed_latency_ms",
+        "tie_break": "earliest_turn",
+    },
+    "comparative_statistics": "forbidden",
+    "pooling": "forbidden",
+    "scientific_inclusion": "forbidden",
+}
+_MATCHED_CLAIM_SCOPES = {
+    "system_qualification_only",
+    "artifact_optimization_only",
+    "scientific_matched_search",
+}
+_ONE_RUN_PER_ARM_SCOPES = {
+    "system_qualification_only",
+    "artifact_optimization_only",
+}
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -692,6 +714,78 @@ def _receipt_latency_ms(receipt: EvaluationReceipt | None) -> float | None:
     return float(value)
 
 
+def _promoted_artifact(
+    evidence: EvidenceStore,
+    audit: RunAudit,
+) -> Mapping[str, object] | None:
+    """Select one per-Run confirmed artifact without constructing a treatment contrast."""
+
+    if not audit.integrity or audit.protocol_adherence != "adhered":
+        return None
+    eligible: list[tuple[float, int, str, str]] = []
+    for event in evidence.replay_events(audit.run_id):
+        if event.get("kind") != "candidate_evaluated":
+            continue
+        payload = _object(event.get("payload"), "candidate_evaluated.payload")
+        if payload.get("purpose") != "confirmatory":
+            continue
+        turn = payload.get("turn")
+        candidate_sha256 = payload.get("candidate_sha256")
+        objects = payload.get("objects")
+        if (
+            not isinstance(turn, int)
+            or isinstance(turn, bool)
+            or turn <= 0
+            or not isinstance(candidate_sha256, str)
+            or _DIGEST.fullmatch(candidate_sha256) is None
+            or not isinstance(objects, list)
+        ):
+            raise ValueError("artifact promotion Candidate evidence differs")
+        receipt_refs = [
+            cast(Mapping[str, object], item)
+            for item in objects
+            if isinstance(item, Mapping) and item.get("role") == "evaluation_receipt"
+        ]
+        if len(receipt_refs) != 1:
+            raise ValueError("artifact promotion receipt evidence differs")
+        receipt_bytes = evidence.read_object(receipt_refs[0])
+        receipt = _object(json.loads(receipt_bytes), "artifact promotion receipt")
+        timing = receipt.get("timing")
+        latency = timing.get("pooled_median_ms") if isinstance(timing, Mapping) else None
+        if (
+            receipt.get("candidate_sha256") != candidate_sha256
+            or receipt.get("correctness_passed") is not True
+            or receipt.get("kernel_calls") != 1
+            or receipt.get("fallback_calls") != 0
+            or not isinstance(timing, Mapping)
+            or timing.get("measurement_quality_passed") is not True
+            or not isinstance(latency, (int, float))
+            or isinstance(latency, bool)
+            or not math.isfinite(float(latency))
+            or float(latency) <= 0
+        ):
+            continue
+        eligible.append(
+            (
+                float(latency),
+                turn,
+                candidate_sha256,
+                sha256(receipt_bytes).hexdigest(),
+            )
+        )
+    if not eligible:
+        return None
+    latency, turn, candidate_sha256, receipt_sha256 = min(eligible)
+    return MappingProxyType(
+        {
+            "turn": turn,
+            "candidate_sha256": candidate_sha256,
+            "confirmed_latency_ms": latency,
+            "evaluation_receipt_sha256": receipt_sha256,
+        }
+    )
+
+
 @dataclass(frozen=True)
 class StudyContract:
     """Frozen matched-search or Portfolio execution and data-use authority."""
@@ -715,10 +809,7 @@ class StudyContract:
             raise ValueError("only frozen matched_search or portfolio studies are supported")
         study_id = _name(document.get("study_id"), "study.study_id")
         claim_scope = _name(document.get("claim_scope"), "study.claim_scope")
-        if kind == "matched_search" and claim_scope not in {
-            "system_qualification_only",
-            "scientific_matched_search",
-        }:
+        if kind == "matched_search" and claim_scope not in _MATCHED_CLAIM_SCOPES:
             raise ValueError("matched Study Contract claim scope differs")
         object_fields = (
             (
@@ -820,10 +911,7 @@ class CampaignLock:
         study_kind = _name(study.get("kind"), "campaign_lock.study.kind")
         claim_scope = _name(study.get("claim_scope"), "campaign_lock.study.claim_scope")
         if study_kind == "matched_search":
-            if claim_scope not in {
-                "system_qualification_only",
-                "scientific_matched_search",
-            }:
+            if claim_scope not in _MATCHED_CLAIM_SCOPES:
                 raise ValueError("matched Campaign Lock claim scope differs")
             if set(resolved) != {
                 "arm_environments",
@@ -867,7 +955,7 @@ class CampaignLock:
             )
             expected_arms = (
                 ["direct_cuda", "open_cake"]
-                if claim_scope == "system_qualification_only"
+                if claim_scope in _ONE_RUN_PER_ARM_SCOPES
                 else ["direct_cuda"] * 3 + ["open_cake"] * 3
             )
             if sorted(name.rsplit("-", 1)[0] for name in run_order) != expected_arms:
@@ -920,6 +1008,10 @@ class CampaignLock:
         if claim_scope == "system_qualification_only":
             if analysis != _SYSTEM_QUALIFICATION_ANALYSIS_PLAN:
                 raise ValueError("system qualification Campaign Lock Analysis Plan differs")
+            estimand = None
+        elif claim_scope == "artifact_optimization_only":
+            if analysis != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
+                raise ValueError("artifact optimization Campaign Lock Analysis Plan differs")
             estimand = None
         else:
             estimand = _name(raw_estimand, "campaign_lock.analysis_plan.estimand")
@@ -1157,7 +1249,7 @@ class Lab:
             raise ValueError("matched Authoring Environments differ in provider or scaffold")
         _digest(direct_cuda.get("toolchain_sha256"), "study.arms.direct_cuda.toolchain_sha256")
         provider = _object(open_cake.get("provider"), "study.arms.provider")
-        if set(provider) != {
+        provider_fields = {
             "revision",
             "qualification",
             "qualification_anchor",
@@ -1171,9 +1263,24 @@ class Lab:
             "cwd_policy",
             "reference_visibility",
             "disabled_features",
+        }
+        if frozenset(provider) not in {
+            frozenset(provider_fields),
+            frozenset(provider_fields | {"event_contract"}),
         }:
             raise ValueError("Study Contract provider configuration fields differ")
         provider_revision = _name(provider.get("revision"), "study.arms.provider.revision")
+        claim_scope = cast(str, study.document["claim_scope"])
+        expected_disabled_features = (
+            []
+            if claim_scope == "artifact_optimization_only"
+            else list(CODEX_DISABLED_FEATURES)
+        )
+        expected_event_contract = (
+            "tool_rich_candidate_v1"
+            if claim_scope == "artifact_optimization_only"
+            else "closed_file_change_v1"
+        )
         if (
             provider.get("model") != "gpt-5.6-sol"
             or provider.get("reasoning_effort") != "max"
@@ -1181,7 +1288,9 @@ class Lab:
             or provider.get("sandbox") != "workspace-write"
             or provider.get("cwd_policy") != "independent_empty_workspace"
             or provider.get("reference_visibility") != "embedded_frozen_bundle"
-            or provider.get("disabled_features") != list(CODEX_DISABLED_FEATURES)
+            or provider.get("disabled_features") != expected_disabled_features
+            or provider.get("event_contract", "closed_file_change_v1")
+            != expected_event_contract
             or provider.get("removed_environment")
             != ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
         ):
@@ -1219,6 +1328,11 @@ class Lab:
                         "cwd_policy": provider["cwd_policy"],
                         "reference_visibility": provider["reference_visibility"],
                         "disabled_features": provider["disabled_features"],
+                        **(
+                            {"event_contract": provider["event_contract"]}
+                            if "event_contract" in provider
+                            else {}
+                        ),
                     }
                 )
             ).hexdigest()
@@ -1396,16 +1510,15 @@ class Lab:
         if allocation.get("method") != "predeclared_balanced_blocks" or not isinstance(order, list):
             raise ValueError("Study Contract allocation differs")
         run_order = tuple(_name(value, "study.allocation.order[]") for value in order)
-        claim_scope = cast(str, study.document["claim_scope"])
         expected_arms = (
             ["direct_cuda", "open_cake"]
-            if claim_scope == "system_qualification_only"
+            if claim_scope in _ONE_RUN_PER_ARM_SCOPES
             else ["direct_cuda"] * 3 + ["open_cake"] * 3
         )
         if len(run_order) != len(set(run_order)) or sorted(
             name.rsplit("-", 1)[0] for name in run_order
         ) != expected_arms:
-            required = "one" if claim_scope == "system_qualification_only" else "three"
+            required = "one" if claim_scope in _ONE_RUN_PER_ARM_SCOPES else "three"
             raise ValueError(
                 f"Study Contract must predeclare {required} independent Run(s) per arm"
             )
@@ -1474,6 +1587,10 @@ class Lab:
         if claim_scope == "system_qualification_only":
             if analysis != _SYSTEM_QUALIFICATION_ANALYSIS_PLAN:
                 raise ValueError("system qualification Analysis Plan differs")
+            estimand = None
+        elif claim_scope == "artifact_optimization_only":
+            if analysis != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
+                raise ValueError("artifact optimization Analysis Plan differs")
             estimand = None
         else:
             if set(analysis) != {
@@ -1862,6 +1979,10 @@ class Lab:
             "reference_visibility": provider_document["reference_visibility"],
             "disabled_features": provider_document["disabled_features"],
         }
+        if "event_contract" in provider_document:
+            expected_provider_configuration["event_contract"] = provider_document[
+                "event_contract"
+            ]
         if (
             getattr(provider, "configuration", None) != expected_provider_configuration
             or qualification.canonical_sha256
@@ -1936,20 +2057,23 @@ class Lab:
                     )
                     if candidate_object.sha256 != provider_turn.candidate_sha256:
                         raise ValueError("provider candidate seal differs")
-                    ledger.append(
-                        "provider_turn_completed",
-                        {
-                            "turn": turn_number,
-                            "thread_id": thread_id,
-                            "turn_provider_tokens": provider_turn.provider_tokens,
-                            "cumulative_provider_tokens": cumulative_tokens,
-                            "normalization": provider_turn.normalization,
-                            "objects": [
-                                events_object.reference("provider_events"),
-                                candidate_object.reference("candidate_submission"),
-                            ],
-                        },
-                    )
+                    provider_payload: dict[str, object] = {
+                        "turn": turn_number,
+                        "thread_id": thread_id,
+                        "turn_provider_tokens": provider_turn.provider_tokens,
+                        "cumulative_provider_tokens": cumulative_tokens,
+                        "normalization": provider_turn.normalization,
+                        "objects": [
+                            events_object.reference("provider_events"),
+                            candidate_object.reference("candidate_submission"),
+                        ],
+                    }
+                    if "event_contract" in provider_document:
+                        provider_payload["auxiliary_activity"] = [
+                            dict(activity.document)
+                            for activity in provider_turn.tool_activity
+                        ]
+                    ledger.append("provider_turn_completed", provider_payload)
                     submission = CandidateSubmission.seal(
                         environment.media_type, provider_turn.candidate
                     )
@@ -2495,6 +2619,18 @@ class Lab:
         cumulative_by_turn: dict[int, int] = {}
         provider_candidate_by_turn: dict[int, str] = {}
         prior_cumulative = 0
+        arm = audit.run_id.rsplit("-", 1)[0]
+        resolved_inputs = _object(lock.document["resolved_inputs"], "resolved_inputs")
+        arm_environments = _object(
+            resolved_inputs["arm_environments"], "resolved_inputs.arm_environments"
+        )
+        provider_authority = _object(
+            _object(arm_environments[arm], f"arm_environments.{arm}")["provider"],
+            f"arm_environments.{arm}.provider",
+        )
+        event_contract = str(
+            provider_authority.get("event_contract", "closed_file_change_v1")
+        )
         for expected_turn, event in enumerate(provider_events, start=1):
             payload = _object(event.get("payload"), "provider_turn.payload")
             if payload.get("turn") != expected_turn:
@@ -2531,20 +2667,23 @@ class Lab:
                 != by_role["candidate_submission"].get("sha256")
             ):
                 return False
+            terminal_document: dict[str, object] = {
+                "arm": arm,
+                "candidate_written": True,
+                "kind": "open_cake_ir_turn",
+                "turn": expected_turn,
+            }
+            if event_contract == "closed_file_change_v1":
+                terminal_document["tool_calls"] = 1
             expected_terminal = json.dumps(
-                {
-                    "arm": audit.run_id.rsplit("-", 1)[0],
-                    "candidate_written": True,
-                    "kind": "open_cake_ir_turn",
-                    "tool_calls": 1,
-                    "turn": expected_turn,
-                },
+                terminal_document,
                 sort_keys=True,
                 separators=(",", ":"),
             )
             parsed = parse_codex_turn_events(
                 raw_events,
                 expected_terminal_message=expected_terminal,
+                event_contract=event_contract,
             )
             turn_tokens = payload.get("turn_provider_tokens")
             if (
@@ -2555,11 +2694,18 @@ class Lab:
                 return False
             expected_change = "add" if expected_turn == 1 else "update"
             expected_name = "candidate.json" if audit.run_id.startswith("open_cake-") else "candidate.cu"
-            if (
+            if parsed.candidate_path is not None and (
                 parsed.change_kind != expected_change
                 or Path(parsed.candidate_path).name != expected_name
-                or payload.get("normalization") != parsed.normalization
             ):
+                return False
+            if parsed.candidate_path is None and event_contract != "tool_rich_candidate_v1":
+                return False
+            if payload.get("normalization") != parsed.normalization:
+                return False
+            if "event_contract" in provider_authority and payload.get(
+                "auxiliary_activity"
+            ) != [dict(activity.document) for activity in parsed.tool_activity]:
                 return False
             threads.add(thread_id)
             cumulative_by_turn[expected_turn] = cumulative
@@ -2606,7 +2752,6 @@ class Lab:
         launchable_events = [
             event for event in events if event.get("kind") == "launchable_candidate_sealed"
         ]
-        arm = audit.run_id.rsplit("-", 1)[0]
         launchables_by_turn: dict[int, LaunchableCandidate] = {}
         for event in launchable_events:
             payload = _object(event.get("payload"), "launchable.payload")
@@ -2866,6 +3011,56 @@ class Lab:
             audit.endpoint_observation == "missing" or audit.protocol_adherence != "adhered"
             for audit in audits
         )
+        if campaign.lock.claim_scope == "artifact_optimization_only":
+            promoted_artifacts = (
+                {
+                    audit.run_id: _promoted_artifact(evidence, audit)
+                    for audit in audits
+                }
+                if semantic_replay_passed
+                else {audit.run_id: None for audit in audits}
+            )
+            artifact_optimization_complete = (
+                campaign_complete
+                and archive_integrity_passed
+                and semantic_replay_passed
+                and all(audit.protocol_adherence == "adhered" for audit in audits)
+                and all(
+                    promoted_artifacts.get(run_id) is not None
+                    for run_id in campaign.lock.run_order
+                )
+            )
+            inclusions = tuple(
+                AnalysisInclusion(
+                    audit.run_id,
+                    False,
+                    False,
+                    "artifact_optimization_not_scientific_data",
+                )
+                for audit in audits
+            )
+            return StudyReport(
+                study_id=campaign.lock.study_id,
+                claim_scope=campaign.lock.claim_scope,
+                system_qualification_passed=None,
+                estimand=None,
+                campaign_complete=campaign_complete,
+                archive_integrity_passed=archive_integrity_passed,
+                semantic_replay_passed=semantic_replay_passed,
+                estimand_available=False,
+                missing_run_count=sum(
+                    not audit.integrity or audit.protocol_adherence != "adhered"
+                    for audit in audits
+                ),
+                estimate=None,
+                uncertainty=None,
+                descriptive={
+                    "artifact_optimization_complete": artifact_optimization_complete,
+                    "promoted_artifacts": promoted_artifacts,
+                },
+                run_inclusion=inclusions,
+                run_audits=tuple(audits),
+            )
         if campaign.lock.claim_scope == "system_qualification_only":
             inclusions = tuple(
                 AnalysisInclusion(

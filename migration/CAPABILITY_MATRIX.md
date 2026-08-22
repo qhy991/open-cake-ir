@@ -18,6 +18,7 @@ exists behind one public Interface; live qualification is named separately where
 | r42 Turn/token/checkpoint control | Lab | `Lab.execute` + `project_checkpoints` | two-Turn zero-GPU test, actual r42 index | implemented, verified without GPU |
 | r42 unavailable Estimand | Analysis Plan | `Lab.audit` | actual r42 103579/329934 fixture | preserved, replayed projection |
 | provider/scaffold/model treatment | Authoring Environment | Campaign Lock + `CodexRunProvider` | G7 r4 closed-feature two-Turn qualification + G8 r6 | implemented, live qualified |
+| provider-default final optimization | Authoring Environment + artifact-only Claim Scope | tool-rich `CodexRunProvider` on the same Lab path | G7F two-Turn shell lifecycle + zero-GPU end-to-end contract | implemented, live qualified; Campaign not run |
 | Open Cake toolchain | Authoring Environment | `TritonToolchainBuilder` | external-anchored remote CUBIN qualification + G8 r6 receipts | implemented, live qualified |
 | direct CUDA toolchain | Authoring Environment | `NvccToolchainBuilder` | closed manifest/artifact contract + G8 r6 receipts | implemented, live qualified |
 | r43 frozen seed and three shapes | Lab → Compiler | `KernelSeed.schedule_for` then public Compiler | deterministic three-specialist test | implemented, verified |
@@ -36,5 +37,6 @@ exists behind one public Interface; live qualification is named separately where
 - New-source contract suite, Compiler release verification, legacy manifest regeneration and raw r45 semantic replay
   are local acceptance evidence.
 - G7 r4 qualifies the current provider boundary; G8 r6 qualifies the two-arm B200 system path without producing a
-  scientific comparison. The only remaining migration gate is the explicitly approved G9 Git/sole-owner cutover.
+  scientific comparison. G7F restores provider-default feature exposure for artifact-only optimization, and the
+  private GitHub `main` revision completes the G9 sole-owner cutover.
 - No legacy `rXX` runner, versioned verifier, registry or success/failure archive path is imported as active code.
