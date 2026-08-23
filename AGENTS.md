@@ -1,5 +1,41 @@
 # open-cake-ir local constraints
 
+## Cake IR design principles (arXiv:2608.12629v1, Appendix B.1)
+
+The paper states eight. They bind IR changes here; the global doctrine covers the rest.
+
+- **P1 Ergonomic** — keep the editing model familiar to NumPy/PyTorch users, and avoid
+  unnecessary destination-passing or grid bookkeeping.
+- **P2 Performance-transparent** — keep performance-relevant hardware decisions visible
+  and lowering behaviour inspectable.
+- **P3 Canonical** — prefer one canonical form for each operation over equivalent
+  alternative spellings.
+- **P4 Statically type-checked** — use typing rules to constrain lowering and reject
+  ill-typed programs during construction, not at emission.
+- **P5 Analysis-friendly** — expose the information the supported static analyses need.
+- **P6 Test-gated** — evaluate IR changes against the kernel-matrix tests.
+- **P7 Analysis-consistent** — accompany changes to the IR data model with the
+  corresponding analysis updates, in the same change.
+- **P8 Hardware-grounded** — document the intended hardware behaviour of each operation.
+
+## What the paper says not to do
+
+- Layout is deliberately **not** a first-class abstraction. Do not introduce a layout
+  algebra for an agent to manipulate. A Schedule records concrete storage and access
+  commitments -- an SMEM view offset, an operand byte offset, a TMEM column range -- and
+  the compiler verifies they stay mutually consistent. New primitives extend verification
+  coverage without an agent learning a second language.
+- Static analysis is a pre-compile gate **only within its modeled domain**. It does not
+  prove global GPU correctness or capture all microarchitectural behaviour, and both
+  false positives and false negatives occur. On-device measurement is the ground truth;
+  a cost estimate never replaces it.
+- Feedback to an author is localized correctness and performance diagnostics. A pass/fail
+  bit, or one latency number, is the failure mode this harness exists to avoid.
+- Timing-model coverage is evidence-gated per target. A target without its own calibration
+  reports a coverage limitation; it never inherits another target's estimates.
+- Human judgement gates compiler evolution. An automatic estimate does not authorize a
+  Revision.
+
 - The Compiler is the product core. It must not import Lab, provider, workload, campaign, evidence-store or claim code.
 - The Lab may depend on a frozen Compiler Revision; a campaign may never mutate that revision.
 - Workload Contract owns operator semantics and oracle. Study Contract owns treatment, estimand and analysis.
