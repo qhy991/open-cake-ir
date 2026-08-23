@@ -114,7 +114,7 @@
       "space": "shared",
       "dtype": "fp32",
       "shape": [
-        4,
+        3,
         16,
         8
       ],
@@ -279,7 +279,7 @@
         "split_k_mma"
       ],
       "parameters": {
-        "parts": 3,
+        "axis": 0,
         "scope": "cta"
       }
     },

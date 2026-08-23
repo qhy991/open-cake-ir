@@ -572,7 +572,11 @@ class CompilerContractTests(unittest.TestCase):
         schedule = json.loads(
             (ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json").read_text()
         )
-        schedule["operations"][4]["parameters"]["parts"] = 3
+        # The part count is the extent of the collapsed axis, so drift is expressed
+        # where that fact lives; the operation can no longer disagree with the buffer.
+        for buffer in schedule["buffers"]:
+            if buffer["name"] == "partial_accumulators":
+                buffer["shape"] = [3, 16, 8]
 
         assessment = compiler.assess(schedule)
 
@@ -580,7 +584,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(
             [(finding.code, finding.path) for finding in _decisive(assessment)],
-            [("REDUCE_SUM_SEMANTICS", "operations.reduce_partials.parameters.parts")],
+            [("REDUCE_SUM_SEMANTICS", "operations.reduce_partials.parameters.axis")],
         )
 
     def test_r31_lowering_uses_the_same_compiler_interface(self) -> None:

@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "e7eaf65cdfb495e54bf2e10ec402b5ea1c5aff3325add29c814549a64af330e8"
+    "canonical_sha256": "58aa8afb49f770c0ff9a7754460f28cc3723874797bbdf04f251ee3311be39e1"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "collapse the profile registry into one record; delete the unreachable template branch"
+  "approval_basis": "reduce_sum declares the axis it collapses; extent derives from the read buffer, and REDUCE_SHAPE_MISMATCH now checks the pair"
 }

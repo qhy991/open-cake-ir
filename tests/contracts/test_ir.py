@@ -88,7 +88,7 @@ class UnifiedVocabularyTest(unittest.TestCase):
         assert operation is not None
         self.assertIs(operation.kind, OperationKind.REDUCE_SUM)
         self.assertEqual(
-            operation.parameters, ReduceSumParameters(parts=4, scope=ReductionScope.CTA)
+            operation.parameters, ReduceSumParameters(axis=0, scope=ReductionScope.CTA)
         )
 
     def test_epilogue_keeps_its_kind_and_parameters(self) -> None:
@@ -298,9 +298,9 @@ class LocalizedDiagnosticTest(unittest.TestCase):
             ),
         )
         self.assertIn(
-            "parts must be a positive integer",
+            "axis must be a non-negative integer",
             self._message(
-                TINYGEMM, lambda d: d["operations"][4]["parameters"].update(parts=0)
+                TINYGEMM, lambda d: d["operations"][4]["parameters"].update(axis=-1)
             ),
         )
         # a load carries movement, never coalesced

@@ -723,7 +723,16 @@ class ReduceArgminParameters:
 
 @dataclass(frozen=True)
 class ReduceSumParameters:
-    parts: int
+    """A sum that collapses one declared axis of its input.
+
+    This declared how many partial accumulators to combine, which is the split-K use it
+    was written for and also a second statement of a fact the read buffer's shape already
+    carried. Declaring the axis instead makes the extent follow from that shape, so a sum
+    over any axis of any input is expressible, and the verifier gains an invariant it
+    could not state before: the written shape is the read shape with this axis removed.
+    """
+
+    axis: int
     scope: ReductionScope
 
 
@@ -842,9 +851,9 @@ def _operation_parameters(
         )
 
     if kind is OperationKind.REDUCE_SUM:
-        obj = _strict_object(value, required={"parts", "scope"}, context=context)
+        obj = _strict_object(value, required={"axis", "scope"}, context=context)
         return ReduceSumParameters(
-            _positive_int(obj["parts"], f"{context}.parts"),
+            _nonnegative_int(obj["axis"], f"{context}.axis"),
             _enum(ReductionScope, obj["scope"], f"{context}.scope"),
         )
 

@@ -220,17 +220,28 @@ def _tinygemm2_stage4_split_k_conformance(buffers, operations) -> list["Finding"
         if reduction is not None
         else {}
     )
+    # The part count is the extent of the axis the sum collapses, which the read buffer
+    # already declares. Reading it there keeps this profile rule and the Schedule from
+    # disagreeing about how many partials stage4 combines.
+    source = buffers.get(str(reduction.get("reads", [""])[0])) if reduction else None
+    shape = source.get("shape") if isinstance(source, Mapping) else None
+    axis = parameters.get("axis")
+    parts = (
+        shape[axis]
+        if isinstance(shape, list) and isinstance(axis, int) and 0 <= axis < len(shape)
+        else None
+    )
     if (
         reduction is not None
         and reduction.get("kind") == "reduce_sum"
-        and parameters.get("parts") == 4
+        and parts == 4
         and parameters.get("scope") == "cta"
     ):
         return []
     return [
         Finding(
             "REDUCE_SUM_SEMANTICS",
-            "operations.reduce_partials.parameters.parts",
+            "operations.reduce_partials.parameters.axis",
             "TinyGEMM2 stage4 requires a four-part CTA reduction",
         )
     ]
@@ -299,7 +310,7 @@ _PROFILES: Mapping[str, _Profile] = {
             "@@SCHEDULE_SHA256@@",
             "cake_tinygemm2_stage4_split_k",
         ),
-        closed_semantics="e6e1bcf2ab027e9e6fa8591843c605aa5601115c9104a4e512950b5cb330260c",
+        closed_semantics="70d5c3a06a9aa026a6da275accd79398e8a5e7909422cda6b5ffe091feacfece",
     ),
 }
 

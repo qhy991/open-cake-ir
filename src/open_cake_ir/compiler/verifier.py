@@ -1029,6 +1029,34 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     f"store destination {name!r} is {buffer.mode.value}, not an output",
                     category,
                 )
+    # A sum collapses one axis, so its result is its input with that axis dropped. The
+    # extent used to be restated in the operation, which put the same fact in two places
+    # and left the pair uncheckable; deriving it from the buffers makes disagreement
+    # between them a Finding instead of a kernel that reduces the wrong number of values.
+    if operation.kind is OperationKind.REDUCE_SUM and operation.reads and operation.writes:
+        source = buffers.get(operation.reads[0])
+        result = buffers.get(operation.writes[0])
+        axis = operation.parameters.axis
+        if source is not None and result is not None:
+            if axis >= len(source.shape):
+                out.add(
+                    "REDUCE_AXIS_OUT_OF_RANGE",
+                    f"{path}.parameters.axis",
+                    f"axis {axis} is outside {source.name!r}, which has "
+                    f"{len(source.shape)} dimension(s)",
+                    category,
+                )
+            else:
+                collapsed = source.shape[:axis] + source.shape[axis + 1 :]
+                if tuple(result.shape) != tuple(collapsed):
+                    out.add(
+                        "REDUCE_SHAPE_MISMATCH",
+                        f"{path}.writes",
+                        f"summing axis {axis} of {source.name!r} {list(source.shape)} "
+                        f"yields {list(collapsed)}, but {result.name!r} is "
+                        f"{list(result.shape)}",
+                        category,
+                    )
 
 
 def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:

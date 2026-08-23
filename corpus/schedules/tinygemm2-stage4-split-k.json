@@ -35,7 +35,7 @@
     {"id": "load_weight", "kind": "load", "role": "load_weight", "reads": ["weight"], "writes": ["weight_stage"], "signals": ["weight_ready"], "pipeline": "main", "parameters": {"movement": "tma"}},
     {"id": "load_activation", "kind": "load", "role": "load_activation", "reads": ["input"], "writes": ["activation_stage"], "signals": ["activation_ready"], "pipeline": "main", "parameters": {"movement": "tma"}},
     {"id": "split_k_mma", "kind": "mma", "role": "compute", "reads": ["weight_stage", "activation_stage"], "writes": ["partial_accumulators"], "waits": ["weight_ready", "activation_ready"], "signals": ["partials_ready"], "depends_on": ["load_weight", "load_activation"], "pipeline": "main", "parameters": {"accumulator": "fp32"}},
-    {"id": "reduce_partials", "kind": "reduce_sum", "role": "compute", "reads": ["partial_accumulators"], "writes": ["reduced_accumulator"], "waits": ["partials_ready"], "depends_on": ["split_k_mma"], "parameters": {"parts": 4, "scope": "cta"}},
+    {"id": "reduce_partials", "kind": "reduce_sum", "role": "compute", "reads": ["partial_accumulators"], "writes": ["reduced_accumulator"], "waits": ["partials_ready"], "depends_on": ["split_k_mma"], "parameters": {"axis": 0, "scope": "cta"}},
     {"id": "bias_epilogue", "kind": "epilogue", "role": "compute", "reads": ["reduced_accumulator", "bias_stage"], "writes": ["output"], "depends_on": ["reduce_partials", "load_bias"], "parameters": {"formula": "bias_add_bf16_round", "coalesced": true}}
   ],
   "outputs": ["output"],

@@ -126,7 +126,7 @@ _PARAMETERS = {
         {"across_loop": {"type": "boolean"}},
     ),
     OperationKind.REDUCE_SUM: _object(
-        {"parts": _POSITIVE, "scope": _enum(ReductionScope)}
+        {"axis": _NONNEGATIVE, "scope": _enum(ReductionScope)}
     ),
     OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),
     OperationKind.FENCE_PROXY: _object({}),
