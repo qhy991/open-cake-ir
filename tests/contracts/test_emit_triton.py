@@ -183,3 +183,83 @@ class UnderSpecificationTest(unittest.TestCase):
                 operation["parameters"]["instruction"]["contract"] = "triton.dot.fp8"
         with self.assertRaisesRegex(EmitError, "not admitted"):
             emit(Schedule.from_dict(document), TARGET)
+
+
+ROW_SUM_SCHEDULE = {
+    "schema_version": 1,
+    "schedule_id": "row-sum-contract-v1",
+    "target": "sm_100a",
+    "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+    "allocations": [],
+    "pipelines": [],
+    "barriers": [],
+    "buffers": [
+        {"name": "x", "space": "global", "dtype": "bf16", "shape": [32, 512, 128], "mode": "input"},
+        {"name": "y", "space": "global", "dtype": "fp32", "shape": [32, 512], "mode": "output"},
+        {"name": "x_tile", "space": "register", "dtype": "fp32", "shape": [256, 64], "mode": "scratch"},
+        {"name": "acc", "space": "register", "dtype": "fp32", "shape": [256], "mode": "scratch"},
+    ],
+    "operations": [
+        {"id": "load_x", "kind": "load", "role": "compute", "reads": ["x"],
+         "writes": ["x_tile"], "parameters": {"movement": "global"}},
+        {"id": "row_sum", "kind": "reduce_sum", "role": "compute", "reads": ["x_tile"],
+         "writes": ["acc"], "depends_on": ["load_x"], "parameters": {"axis": 1, "scope": "cta"}},
+        {"id": "store_y", "kind": "store", "role": "compute", "reads": ["acc"],
+         "writes": ["y"], "depends_on": ["row_sum"], "parameters": {"coalesced": True}},
+    ],
+    "outputs": ["y"],
+    "program_map": {"axes": [
+        {"name": "row_block", "axis": 0, "buffer": "x", "dimension": 1, "tile": 256},
+        {"name": "batch", "axis": 1, "buffer": "x", "dimension": 0, "tile": 1},
+    ]},
+    "tile_loops": [{"name": "feature_loop", "iterator": "feat_start", "buffer": "x",
+                    "dimension": 2, "tile": 64, "body": ["load_x", "row_sum"],
+                    "range_options": {"num_stages": 2, "loop_unroll_factor": 1,
+                                      "flatten": False, "warp_specialize": False,
+                                      "disallow_acc_multi_buffer": True,
+                                      "disable_licm": False}}],
+    "access_maps": [
+        {"operation": "load_x", "buffer": "x", "indices": [
+            {"source": "program", "name": "batch"},
+            {"source": "program_tile", "name": "row_block"},
+            {"source": "loop_tile", "name": "feat_start"}], "boundary": "mask_tiled_axes"},
+        {"operation": "store_y", "buffer": "y", "indices": [
+            {"source": "program", "name": "batch"},
+            {"source": "program_tile", "name": "row_block"}], "boundary": "mask_tiled_axes"},
+    ],
+    "metadata": {"profile": "row_sum_contract", "workload_contract_sha256": "0" * 64},
+}
+
+
+class OperatorShapeIndependenceTest(unittest.TestCase):
+    """The emitter must follow the Schedule, not the operator it was written against.
+
+    Both admitted profiles contract and then reduce, so the emitter could require an mma
+    and an argmin and still emit both correctly. A sum over an axis, with no contraction
+    at all, is the smallest Schedule that tells those two apart.
+    """
+
+    def setUp(self) -> None:
+        self.source = emit(Schedule.from_dict(ROW_SUM_SCHEDULE), TARGET).source
+
+    def test_a_schedule_that_never_contracts_still_lowers(self) -> None:
+        ast.parse(self.source)
+        self.assertIn("# CAKE_OP:row_sum", self.source)
+        self.assertNotIn("tl.dot", self.source)
+
+    def test_the_sum_collapses_the_declared_axis(self) -> None:
+        self.assertIn("acc += tl.sum(x_tile.to(tl.float32), axis=1)", self.source)
+        # The identity has to exist before the loop that accumulates into it.
+        self.assertLess(
+            self.source.index("acc = tl.zeros"), self.source.index("acc += tl.sum")
+        )
+
+    def test_a_two_axis_mask_is_parenthesized(self) -> None:
+        # `&` binds tighter than `<`, so a bare conjunction of comparisons becomes a
+        # chained comparison against a bitwise and, and the load silently reads out of
+        # bounds. Neither admitted profile masks two axes, so nothing caught this.
+        mask = next(line for line in self.source.splitlines() if "mask=" in line and "&" in line)
+        self.assertIn("(row_block_offsets[:, None] < N_ROW_BLOCK) &", mask)
+        parsed = ast.parse(mask.strip().removeprefix("mask=").rstrip(","), mode="eval")
+        self.assertIsInstance(parsed.body, ast.BinOp)
+        self.assertIsInstance(parsed.body.op, ast.BitAnd)

@@ -64,19 +64,24 @@ class _TritonEmitter:
         self.loop = schedule.tile_loops[0]
         self.role = schedule.roles[0]
 
-        self.mma = self._single(OperationKind.MMA, "mma")
-        self.reduce = self._single(OperationKind.REDUCE_ARGMIN, "reduce_argmin")
+        # A kernel must write something, so a store is required of every Schedule. An
+        # mma and a reduction are not: requiring them described the operator this backend
+        # was written for rather than anything Triton needs, and a Schedule that reduces
+        # without contracting was refused for missing a contraction it never claimed.
         self.store = self._single(OperationKind.STORE, "store")
-        instruction = self.mma.parameters.instruction
-        _require(instruction is not None, "the mma must name an instruction contract")
-        _require(
-            instruction.contract in target.instruction_contracts,
-            f"instruction {instruction.contract!r} is not admitted by {target.target_id!r}",
-        )
-        _require(
-            self.mma.parameters.formula is MmaFormula.SQUARED_EUCLIDEAN_XSQ_ELIDED,
-            "this backend emits the squared-euclidean formula only",
-        )
+        self.mma = self._at_most_one(OperationKind.MMA, "mma")
+        self.reduce = self._at_most_one(OperationKind.REDUCE_ARGMIN, "reduce_argmin")
+        if self.mma is not None:
+            instruction = self.mma.parameters.instruction
+            _require(instruction is not None, "the mma must name an instruction contract")
+            _require(
+                instruction.contract in target.instruction_contracts,
+                f"instruction {instruction.contract!r} is not admitted by {target.target_id!r}",
+            )
+            _require(
+                self.mma.parameters.formula is MmaFormula.SQUARED_EUCLIDEAN_XSQ_ELIDED,
+                "this backend emits the squared-euclidean formula only",
+            )
         for load in schedule.operations:
             if load.kind is OperationKind.LOAD:
                 _require(
@@ -90,6 +95,11 @@ class _TritonEmitter:
         matches = [op for op in self.schedule.operations if op.kind is kind]
         _require(len(matches) == 1, f"expected exactly one {label} operation")
         return matches[0]
+
+    def _at_most_one(self, kind: OperationKind, label: str):
+        matches = [op for op in self.schedule.operations if op.kind is kind]
+        _require(len(matches) <= 1, f"expected at most one {label} operation")
+        return matches[0] if matches else None
 
     def _extent(self, buffer_name: str, dimension: int) -> str:
         """Constexpr name for one global buffer dimension.
@@ -214,6 +224,12 @@ class _TritonEmitter:
             bound = self._bound(access, buffer, vector)
             if bound is not None:
                 masks.append(f"{vector}{self._broadcast(vector, vectors)} < {bound}")
+        # `&` binds tighter than `<` in Python, so an unparenthesized conjunction of
+        # comparisons silently becomes a chained comparison against a bitwise and. No
+        # existing profile masked two axes at once, so the emitted text was correct
+        # until an access map bounded more than one.
+        if len(masks) > 1:
+            return pointer, " & ".join(f"({mask})" for mask in masks)
         return pointer, " & ".join(masks)
 
     @staticmethod
@@ -341,16 +357,28 @@ class _TritonEmitter:
         self.line(f"{pad})")
 
     def _emit_reduction_state(self, pad: str) -> None:
-        """A reduction carried across the loop needs its identity before the loop."""
+        """A reduction carried across the loop needs its identity before the loop.
 
-        _require(
-            self.reduce.parameters.across_loop,
-            "this backend carries the reduction across the loop",
-        )
+        Which identity depends on the reduction the Schedule declares, so this reads the
+        operation rather than assuming the argmin the first profile happened to use.
+        """
+
         tile = self._tile(self._token_axis().name)
-        self.line(f"{pad}best_distance = tl.full(({tile},), float(\"inf\"), tl.float32)")
-        self.line(f"{pad}{self.reduce.writes[0]} = tl.zeros(({tile},), tl.int32)")
-        self.line()
+        if self.reduce is not None:
+            _require(
+                self.reduce.parameters.across_loop,
+                "this backend carries the reduction across the loop",
+            )
+            self.line(f"{pad}best_distance = tl.full(({tile},), float(\"inf\"), tl.float32)")
+            self.line(f"{pad}{self.reduce.writes[0]} = tl.zeros(({tile},), tl.int32)")
+            self.line()
+        for operation in self.schedule.operations:
+            if operation.kind is not OperationKind.REDUCE_SUM:
+                continue
+            if operation.op_id not in self.loop.body:
+                continue
+            self.line(f"{pad}{operation.writes[0]} = tl.zeros(({tile},), tl.float32)")
+            self.line()
 
     def _token_axis(self) -> ProgramAxis:
         assert self.schedule.program_map is not None
@@ -392,11 +420,33 @@ class _TritonEmitter:
                 self._emit_mma(operation, "        ")
             elif operation.kind is OperationKind.REDUCE_ARGMIN:
                 self._emit_argmin(operation, "        ")
+            elif operation.kind is OperationKind.REDUCE_SUM:
+                self._emit_sum(operation, "        ")
             else:
                 raise EmitError(
                     f"operation kind {operation.kind.value!r} has no Triton body emitter"
                 )
         self.line()
+
+    def _emit_sum(self, operation, pad: str) -> None:
+        """Sum the declared axis of the input and accumulate into the result.
+
+        The axis is what the operation declares and the extent follows from the read
+        buffer, so nothing here needs to know which operator asked for the reduction.
+        """
+
+        source = self.schedule.buffer(operation.reads[0])
+        _require(source is not None, f"sum reads unknown buffer {operation.reads[0]!r}")
+        axis = operation.parameters.axis
+        _require(
+            axis < len(source.shape),
+            f"sum axis {axis} is outside {source.name!r}",
+        )
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(
+            f"{pad}{operation.writes[0]} += tl.sum("
+            f"{operation.reads[0]}.to(tl.float32), axis={axis})"
+        )
 
     def _emit_mma(self, operation, pad: str) -> None:
         """`squared_euclidean_xsq_elided`: the norm term minus twice the cross product."""

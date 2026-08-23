@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "58aa8afb49f770c0ff9a7754460f28cc3723874797bbdf04f251ee3311be39e1"
+    "canonical_sha256": "e8c7c07fd19613a0d53051cb598be9cb52ec9ad827186114d51a962ab3dc1463"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "reduce_sum declares the axis it collapses; extent derives from the read buffer, and REDUCE_SHAPE_MISMATCH now checks the pair"
+  "approval_basis": "emitter dispatches on declared operations; reduce_sum body; parenthesize multi-axis masks"
 }
