@@ -236,7 +236,7 @@ graph LR
         direction TB
         T1["typed IR + construction checks"]
         T2["verifier hard gates"]
-        T3["cost-model ranking"]
+        T3["cost model:<br/>attribution, no estimate"]
         T4["deterministic lowering"]
     end
 
@@ -249,7 +249,7 @@ graph LR
     style T1 fill:#d4edda,stroke:#28a745
     style T2 fill:#d4edda,stroke:#28a745
     style T4 fill:#fff3cd,stroke:#b8860b
-    style T3 fill:#f8d7da,stroke:#c00
+    style T3 fill:#fff3cd,stroke:#b8860b
     style FIL fill:#f8d7da,stroke:#c00
     style W fill:#d4edda,stroke:#28a745
     style AE fill:#d4edda,stroke:#28a745
@@ -266,10 +266,17 @@ graph LR
 | Compile → external oracle → GPU measurement | implemented, B200-verified |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
 | Deterministic lowering | partial — `lower` generates the warp-specialized profile from its Schedule, verified on B200 at 128/128; the other two profiles still stamp a checked-in file |
-| Cost-model ranking | absent — `calibration_coverage` is empty |
+| Cost-model ranking | partial — the analysis names the resource that bounds residency; it estimates no time, because the Target declares no clock or bandwidth |
 | The filter stage | absent — one candidate per Turn leaves nothing to rank |
 
-The two red boxes are one problem. A cost model exists to order a candidate set; until a
-Turn produces more than one candidate there is nothing for it to order, and the paper's
-stated mechanism — *cheap analyses rank and filter candidates before they reach expensive
-GPU runs* — has no place in the control flow.
+The filter box stays red, and it is why the cost model can only go so far. A cost model
+exists to order a candidate set; a Turn authors exactly one candidate — the provider
+output schema pins `tool_calls` and `candidate_written` to constants — so there is
+nothing to order, and the paper's stated mechanism, *cheap analyses rank and filter
+candidates before they reach expensive GPU runs*, has no place in the control flow.
+Widening that is a change to the Study Contract's treatment definition, not an
+implementation detail.
+
+What the analysis does supply today is the report the harness owes the agent. For the
+Triton profile every matched Study uses, that report reads: registers bound residency to
+one CTA per multiprocessor, at 290 registers per thread.
