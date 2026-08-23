@@ -21,12 +21,12 @@ Ordered by how often the surveyed work exercised each axis.
 | # | Axis | Cake IR | Where it stands |
 | --- | --- | --- | --- |
 | 1 | Shape/route-driven config selection, opt-in contracts | NO | one Schedule is one kernel; no dispatch predicate |
-| 2 | CTA-to-tile rasterization / scheduler order | NO | `ProgramAxis` has `tile`, no traversal order |
-| 3 | CTAs per SM, persistent grid size | NO | `grid` is a static triple; occupancy is derived, never committed |
+| 2 | CTA-to-tile rasterization / scheduler order | YES | `ProgramMap.traversal`, meaningful only under persistence |
+| 3 | CTAs per SM, persistent grid size | YES | `residency.ctas_per_multiprocessor`, and `ProgramMap.persistent` sized from it |
 | 4 | Software-pipeline depth | ~ | one `Pipeline.stages`; real work tunes mainloop, accumulator and scheduler pipelines separately |
-| 5 | Register / TMEM / shared budget | ~ | TMEM and shared yes; registers derived only; no spill contract |
+| 5 | Register / TMEM / shared budget | YES | `residency.registers_per_thread` with `allow_spill`; reaches ptxas as `maxnreg` |
 | 6 | Tile geometry, thread-to-output mapping | YES | `MmaInstruction.shape`, `cta_group`, `tile`, `Role.warps` |
-| 7 | Global load width and cache policy | NO | `LoadParameters` is `movement` + `descriptor_box` |
+| 7 | Global load width and cache policy | ~ | `LoadParameters.reuse` states the intent; width left out, Triton derives it |
 | 8 | Buffer ownership, intermediate-copy elision | NO | buffers are input/output/scratch; no caller-provided destination |
 | 9 | On-chip staging and bank swizzle | ~ | `Buffer.swizzle` covers four CUTLASS modes, not a hand-derived layout |
 | 10 | Scheduler-metadata precomputation | NO | no work-tile table |
@@ -36,7 +36,22 @@ Ordered by how often the surveyed work exercised each axis.
 | 14 | Weight precision and scale granularity | NO | `fp8_e4m3` exists; scale tensors and group size do not |
 | 15 | GEMM orientation (transposed decode) | ~ | buffers can be declared transposed; scale-config major mode cannot |
 
-Two of fifteen fully expressible. Of the five most-exercised axes, four are `NO` or `~`.
+Five of fifteen fully expressible, one partial. Of the five most-exercised axes, three are now
+`YES`, one `~`, and one belongs to the portfolio stage rather than to a Schedule.
+
+Closed since this note was written, each with a hardware check that the declaration reaches
+the backend rather than stopping at the verifier:
+
+* Axis 3, then 2. The order in this note was wrong and implementing it said so: for a
+  non-persistent grid the axis-to-program-id assignment already decides which axis varies
+  fastest, so traversal is only a distinct decision once a scheduler walks more tiles than
+  there are CTAs. Persistence had to come first, and the persistent CTA count is derived
+  from the residency commitment rather than declared again.
+* Axis 5's register half. `maxnreg` appears in the compiled kernel's metadata where
+  declared and nowhere else, and `RESIDENCY_UNMET` names the resource that stopped a
+  commitment rather than reporting an occupancy number nobody can act on.
+* Axis 7's cache half. The first emission did not compile -- ptxas rejects `.cg` combined
+  with `.evict_first` -- which only surfaced on hardware.
 
 ## The constraint neither survey would have found alone
 
