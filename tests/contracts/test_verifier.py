@@ -19,7 +19,12 @@ from pathlib import Path
 
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import Target
-from open_cake_ir.compiler.verifier import Finding, FindingCategory, verify
+from open_cake_ir.compiler.verifier import (
+    Finding,
+    FindingCategory,
+    FindingSeverity,
+    verify,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
@@ -39,11 +44,15 @@ def _codes(findings: tuple[Finding, ...]) -> set[str]:
     return {finding.code for finding in findings}
 
 
+def _blocking(findings: tuple[Finding, ...]) -> tuple[Finding, ...]:
+    return tuple(finding for finding in findings if finding.blocks_lowering)
+
+
 class QuietOnValidScheduleTest(unittest.TestCase):
     def test_every_retained_schedule_verifies_clean(self) -> None:
         for path in CORPUS + [ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke.json"]:
             with self.subTest(schedule=path.name):
-                self.assertEqual(verify(Schedule.load(path), TARGET), ())
+                self.assertEqual(_blocking(verify(Schedule.load(path), TARGET)), ())
 
     def test_shape_drift_is_semantic_not_structural(self) -> None:
         """The drift corpus cases are wrong about shapes, not about structure.
@@ -58,7 +67,7 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         ):
             with self.subTest(schedule=name):
                 schedule = Schedule.load(ROOT / "corpus" / "schedules" / name)
-                self.assertEqual(verify(schedule, TARGET), ())
+                self.assertEqual(_blocking(verify(schedule, TARGET)), ())
 
     def test_findings_are_deterministically_ordered(self) -> None:
         schedule = _mutated(
@@ -67,7 +76,10 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         )
         first = verify(schedule, TARGET)
         self.assertEqual(first, verify(schedule, TARGET))
-        keys = [(f.category.value, f.code, f.path) for f in first]
+        keys = [
+            (f.severity is not FindingSeverity.BLOCKING, f.category.value, f.code, f.path)
+            for f in first
+        ]
         self.assertEqual(keys, sorted(keys))
 
     def test_verification_never_raises(self) -> None:
@@ -315,3 +327,143 @@ class CategoryCoverageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HardwareCommitmentTest(unittest.TestCase):
+    """The paper requires the agent to write down five concrete hardware commitments.
+
+    "an SMEM view offset, an operand byte offset, a TMEM column range, a swizzle tag, a
+    TMA descriptor coordinate" (arXiv:2608.12629v1 S2). The Schedule schema carried the
+    first two as `byte_offset`; the rest had no representation, so the backend chose and
+    the choice was neither inspectable nor verifiable. These rules report the gap.
+    """
+
+    def _advisory(self, path: Path) -> dict[str, Finding]:
+        return {
+            finding.code: finding
+            for finding in verify(Schedule.load(path), TARGET)
+            if not finding.blocks_lowering
+        }
+
+    def test_retained_schedules_report_their_missing_commitments(self) -> None:
+        advisory = self._advisory(ASSIGNMENT_FULL)
+        self.assertEqual(
+            set(advisory),
+            {
+                "ALLOCATION_TENSOR_COLUMNS_UNDECLARED",
+                "BUFFER_SWIZZLE_UNDECLARED",
+                "MMA_INSTRUCTION_UNDECLARED",
+                "MMA_TILE_UNDECLARED",
+            },
+        )
+        for finding in advisory.values():
+            self.assertIs(finding.severity, FindingSeverity.HINT)
+            self.assertIs(finding.category, FindingCategory.HARDWARE_CONFORMANCE)
+
+    def test_tensor_memory_is_reported_in_columns_not_bytes(self) -> None:
+        """The artifact allocates 512 columns for a 256-column accumulator.
+
+        `tmem.allocate(512)` takes the whole array while the Allocation is 131072 bytes,
+        which is 256 columns. Nothing related the two units, so the over-allocation --
+        and the halved TMEM occupancy it causes -- was invisible.
+        """
+
+        finding = self._advisory(ASSIGNMENT_FULL)["ALLOCATION_TENSOR_COLUMNS_UNDECLARED"]
+        self.assertIn("131072 bytes implies 256 columns", finding.message)
+
+    def test_a_declared_column_range_must_match_the_byte_size(self) -> None:
+        findings = verify(
+            _mutated(
+                ASSIGNMENT_FULL,
+                lambda d: d["allocations"][1].update(tensor_columns=512),
+            ),
+            TARGET,
+        )
+        mismatch = next(
+            f for f in findings if f.code == "ALLOCATION_TENSOR_COLUMNS_MISMATCH"
+        )
+        self.assertTrue(mismatch.blocks_lowering)
+        self.assertIn("512 columns but its 131072 bytes are 256 columns", mismatch.message)
+
+    def test_a_matching_column_range_clears_the_hint(self) -> None:
+        findings = verify(
+            _mutated(
+                ASSIGNMENT_FULL,
+                lambda d: d["allocations"][1].update(tensor_columns=256),
+            ),
+            TARGET,
+        )
+        self.assertNotIn("ALLOCATION_TENSOR_COLUMNS_UNDECLARED", _codes(findings))
+        self.assertNotIn("ALLOCATION_TENSOR_COLUMNS_MISMATCH", _codes(findings))
+        self.assertEqual(_blocking(findings), ())
+
+    def test_column_range_is_bounded_by_the_target(self) -> None:
+        def oversize(document: dict) -> None:
+            document["allocations"][1].update(
+                size_bytes=1024 * 128 * 4, tensor_columns=1024
+            )
+
+        findings = verify(_mutated(ASSIGNMENT_FULL, oversize), TARGET)
+        self.assertIn("TARGET_TENSOR_COLUMN_LIMIT", _codes(findings))
+
+    def test_declared_instruction_must_be_admitted_by_the_target(self) -> None:
+        good = verify(
+            _mutated(
+                ASSIGNMENT_FULL,
+                lambda d: d["operations"][2]["parameters"].update(
+                    instruction="tcgen05.mma.cta_group::1.kind::f16"
+                ),
+            ),
+            TARGET,
+        )
+        self.assertNotIn("MMA_INSTRUCTION_UNDECLARED", _codes(good))
+        self.assertNotIn("TARGET_INSTRUCTION_UNSUPPORTED", _codes(good))
+
+        bad = verify(
+            _mutated(
+                ASSIGNMENT_FULL,
+                lambda d: d["operations"][2]["parameters"].update(
+                    instruction="wgmma.mma_async.sync.aligned"
+                ),
+            ),
+            TARGET,
+        )
+        unsupported = next(
+            f for f in bad if f.code == "TARGET_INSTRUCTION_UNSUPPORTED"
+        )
+        self.assertTrue(unsupported.blocks_lowering)
+
+    def test_mma_tile_must_match_its_accumulator(self) -> None:
+        matching = verify(
+            _mutated(
+                ASSIGNMENT_FULL,
+                lambda d: d["operations"][2]["parameters"].update(
+                    tile_shape=[128, 256, 64]
+                ),
+            ),
+            TARGET,
+        )
+        self.assertEqual(_blocking(matching), ())
+
+        mismatched = verify(
+            _mutated(
+                ASSIGNMENT_FULL,
+                lambda d: d["operations"][2]["parameters"].update(
+                    tile_shape=[128, 128, 64]
+                ),
+            ),
+            TARGET,
+        )
+        finding = next(
+            f for f in mismatched if f.code == "MMA_TILE_ACCUMULATOR_MISMATCH"
+        )
+        self.assertIn("128x128 does not match accumulator", finding.message)
+
+    def test_swizzle_commitment_clears_its_hint(self) -> None:
+        def commit(document: dict) -> None:
+            for buffer in document["buffers"]:
+                if buffer["name"] in ("token_stage", "centroid_stage"):
+                    buffer["swizzle"] = "swizzle_128b"
+
+        findings = verify(_mutated(ASSIGNMENT_FULL, commit), TARGET)
+        self.assertNotIn("BUFFER_SWIZZLE_UNDECLARED", _codes(findings))

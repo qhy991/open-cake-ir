@@ -116,6 +116,28 @@ class ReductionScope(str, Enum):
     CTA = "cta"
 
 
+class Swizzle(str, Enum):
+    """Shared-memory swizzle commitment.
+
+    One of the concrete hardware commitments the paper's IR requires the agent to write
+    down (arXiv:2608.12629v1 S2). Without it the backend picks a swizzle and the choice
+    is neither inspectable nor verifiable.
+    """
+
+    NONE = "none"
+    B32 = "swizzle_32b"
+    B64 = "swizzle_64b"
+    B128 = "swizzle_128b"
+
+
+# Blackwell tensor memory is addressed as columns of `TMEM_LANES` 4-byte words. An
+# Allocation's byte size and its column range must agree; the two are declared
+# separately because the artifact allocates columns while buffers are sized in bytes.
+TMEM_LANES = 128
+TMEM_WORD_BYTES = 4
+TMEM_COLUMN_BYTES = TMEM_LANES * TMEM_WORD_BYTES
+
+
 class AccessIndexKind(str, Enum):
     """Legacy declared this as `class AccessIndexKind(str)` with a `VALUES` set."""
 
@@ -234,16 +256,28 @@ class Allocation:
     name: str
     space: MemorySpace
     size_bytes: int
+    tensor_columns: int | None
+
+    @property
+    def implied_tensor_columns(self) -> int:
+        """Columns `size_bytes` corresponds to, for a tensor-memory Allocation."""
+
+        return self.size_bytes // TMEM_COLUMN_BYTES
 
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "Allocation":
         obj = _strict_object(
-            value, required={"name", "space", "size_bytes"}, context=context
+            value,
+            required={"name", "space", "size_bytes"},
+            optional={"tensor_columns"},
+            context=context,
         )
+        columns = obj.get("tensor_columns")
         return cls(
             _string(obj["name"], f"{context}.name"),
             _enum(MemorySpace, obj["space"], f"{context}.space"),
             _positive_int(obj["size_bytes"], f"{context}.size_bytes"),
+            None if columns is None else _positive_int(columns, f"{context}.tensor_columns"),
         )
 
 
@@ -257,6 +291,7 @@ class Buffer:
     allocation: str | None
     byte_offset: int
     stages: int
+    swizzle: Swizzle | None
 
     @property
     def elements(self) -> int:
@@ -280,11 +315,12 @@ class Buffer:
         obj = _strict_object(
             value,
             required={"name", "space", "dtype", "shape", "mode"},
-            optional={"allocation", "byte_offset", "stages"},
+            optional={"allocation", "byte_offset", "stages", "swizzle"},
             context=context,
         )
         shape = _object_list(obj["shape"], f"{context}.shape", allow_empty=False)
         allocation = obj.get("allocation")
+        swizzle = obj.get("swizzle")
         return cls(
             _string(obj["name"], f"{context}.name"),
             _enum(MemorySpace, obj["space"], f"{context}.space"),
@@ -297,6 +333,7 @@ class Buffer:
             None if allocation is None else _string(allocation, f"{context}.allocation"),
             _nonnegative_int(obj.get("byte_offset", 0), f"{context}.byte_offset"),
             _positive_int(obj.get("stages", 1), f"{context}.stages"),
+            None if swizzle is None else _enum(Swizzle, swizzle, f"{context}.swizzle"),
         )
 
 
@@ -532,6 +569,8 @@ class LoadParameters:
 class MmaParameters:
     accumulator: DType
     formula: MmaFormula | None
+    instruction: str | None
+    tile_shape: tuple[int, int, int] | None
 
 
 @dataclass(frozen=True)
@@ -583,15 +622,32 @@ def _operation_parameters(
 
     if kind is OperationKind.MMA:
         obj = _strict_object(
-            value, required={"accumulator"}, optional={"formula"}, context=context
+            value,
+            required={"accumulator"},
+            optional={"formula", "instruction", "tile_shape"},
+            context=context,
         )
         accumulator = _enum(DType, obj["accumulator"], f"{context}.accumulator")
         if accumulator is not DType.FP32:
             raise ScheduleParseError(f"{context}.accumulator must be fp32")
         formula = obj.get("formula")
+        instruction = obj.get("instruction")
+        tile = obj.get("tile_shape")
+        if tile is not None:
+            tile_list = _object_list(tile, f"{context}.tile_shape")
+            if len(tile_list) != 3:
+                raise ScheduleParseError(
+                    f"{context}.tile_shape must declare exactly M, N and K"
+                )
+            tile = tuple(
+                _positive_int(extent, f"{context}.tile_shape[{index}]")
+                for index, extent in enumerate(tile_list)
+            )
         return MmaParameters(
             accumulator,
             None if formula is None else _enum(MmaFormula, formula, f"{context}.formula"),
+            None if instruction is None else _string(instruction, f"{context}.instruction"),
+            tile,
         )
 
     if kind is OperationKind.EPILOGUE:

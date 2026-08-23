@@ -24,6 +24,7 @@ from enum import Enum
 from typing import Iterable
 
 from .ir import (
+    TMEM_COLUMN_BYTES,
     AccessIndexKind,
     BufferMode,
     MemorySpace,
@@ -41,6 +42,19 @@ class FindingCategory(str, Enum):
     PROGRAM_SAFETY = "program_safety"
 
 
+class FindingSeverity(str, Enum):
+    """The three dispositions the paper's harness returns.
+
+    ``BLOCKING`` rejects the candidate with a localized reason, ``REPORT`` describes a
+    likely limit, and ``HINT`` suggests a non-blocking improvement. Only ``BLOCKING``
+    stops a Schedule from reaching the toolchain.
+    """
+
+    BLOCKING = "blocking"
+    REPORT = "report"
+    HINT = "hint"
+
+
 @dataclass(frozen=True)
 class Finding:
     """One localized violation: a repair target, not a backend error."""
@@ -49,25 +63,50 @@ class Finding:
     path: str
     message: str
     category: FindingCategory
+    severity: FindingSeverity = FindingSeverity.BLOCKING
+
+    @property
+    def blocks_lowering(self) -> bool:
+        return self.severity is FindingSeverity.BLOCKING
 
     def __str__(self) -> str:
-        return f"{self.code} at {self.path}: {self.message}"
+        return f"[{self.severity.value}] {self.code} at {self.path}: {self.message}"
+
+
+_SEVERITY_ORDER = {
+    FindingSeverity.BLOCKING: 0,
+    FindingSeverity.REPORT: 1,
+    FindingSeverity.HINT: 2,
+}
 
 
 class _Collector:
     def __init__(self) -> None:
         self._findings: list[Finding] = []
 
-    def add(self, code: str, path: str, message: str, category: FindingCategory) -> None:
-        self._findings.append(Finding(code, path, message, category))
-
-    semantics = staticmethod(FindingCategory.SCHEDULE_SEMANTICS)
+    def add(
+        self,
+        code: str,
+        path: str,
+        message: str,
+        category: FindingCategory,
+        severity: FindingSeverity = FindingSeverity.BLOCKING,
+    ) -> None:
+        self._findings.append(Finding(code, path, message, category, severity))
 
     def result(self) -> tuple[Finding, ...]:
-        # Stable order: category, then code, then path. Deterministic across runs so a
-        # Corpus Gate can pin the exact sequence.
+        # Stable order: severity, then category, code and path. Deterministic across
+        # runs so a Corpus Gate can pin the exact sequence.
         return tuple(
-            sorted(self._findings, key=lambda f: (f.category.value, f.code, f.path))
+            sorted(
+                self._findings,
+                key=lambda f: (
+                    _SEVERITY_ORDER[f.severity],
+                    f.category.value,
+                    f.code,
+                    f.path,
+                ),
+            )
         )
 
 
@@ -265,6 +304,11 @@ def _verify_hardware_conformance(
                 "allocated by the Schedule",
                 category,
             )
+        if allocation.space is MemorySpace.TENSOR:
+            _verify_tensor_columns(allocation, index, limits, out)
+
+    _verify_instruction_commitments(schedule, target, out)
+    _verify_swizzle_commitments(schedule, out)
 
     for index, buffer in enumerate(schedule.buffers):
         if buffer.space not in target.memory_spaces:
@@ -319,6 +363,143 @@ def _verify_hardware_conformance(
             "barrier synchronization contract",
             category,
         )
+
+
+def _verify_tensor_columns(allocation, index: int, limits, out: _Collector) -> None:
+    """Tensor memory is allocated in columns; the Schedule sizes it in bytes.
+
+    The artifact for the retained warp-specialized profile calls ``tmem.allocate(512)``
+    while its Allocation is 131072 bytes, which is 256 columns. Nothing related the two,
+    so the kernel reserved the whole array for a half-sized accumulator and halved TMEM
+    occupancy. A declared column range makes the two comparable.
+    """
+
+    category = FindingCategory.HARDWARE_CONFORMANCE
+    path = f"allocations[{index}]"
+    implied = allocation.implied_tensor_columns
+
+    if allocation.size_bytes % TMEM_COLUMN_BYTES:
+        out.add(
+            "ALLOCATION_TENSOR_GRANULARITY",
+            f"{path}.size_bytes",
+            f"{allocation.size_bytes} bytes is not a whole number of "
+            f"{TMEM_COLUMN_BYTES}-byte tensor-memory columns",
+            category,
+        )
+        return
+
+    if allocation.tensor_columns is None:
+        out.add(
+            "ALLOCATION_TENSOR_COLUMNS_UNDECLARED",
+            f"{path}.tensor_columns",
+            f"tensor Allocation {allocation.name!r} does not commit to a column range; "
+            f"{allocation.size_bytes} bytes implies {implied} columns, but the backend "
+            "is free to reserve more",
+            category,
+            FindingSeverity.HINT,
+        )
+        return
+
+    if allocation.tensor_columns != implied:
+        out.add(
+            "ALLOCATION_TENSOR_COLUMNS_MISMATCH",
+            f"{path}.tensor_columns",
+            f"Allocation {allocation.name!r} commits to {allocation.tensor_columns} "
+            f"columns but its {allocation.size_bytes} bytes are {implied} columns",
+            category,
+        )
+
+    capacity = limits.maximum_tensor_memory_bytes // TMEM_COLUMN_BYTES
+    if allocation.tensor_columns > capacity:
+        out.add(
+            "TARGET_TENSOR_COLUMN_LIMIT",
+            f"{path}.tensor_columns",
+            f"{allocation.tensor_columns} columns exceeds the Target limit of "
+            f"{capacity}",
+            category,
+        )
+
+
+def _verify_instruction_commitments(
+    schedule: Schedule, target: Target, out: _Collector
+) -> None:
+    category = FindingCategory.HARDWARE_CONFORMANCE
+    buffers = {buffer.name: buffer for buffer in schedule.buffers}
+
+    for index, operation in enumerate(schedule.operations):
+        if operation.kind is not OperationKind.MMA:
+            continue
+        path = f"operations[{index}].parameters"
+        instruction = getattr(operation.parameters, "instruction", None)
+        tile = getattr(operation.parameters, "tile_shape", None)
+
+        if instruction is None:
+            out.add(
+                "MMA_INSTRUCTION_UNDECLARED",
+                f"{path}.instruction",
+                f"operation {operation.op_id!r} does not name an instruction contract; "
+                "the backend selects one and the choice is not inspectable",
+                category,
+                FindingSeverity.HINT,
+            )
+        elif instruction not in target.instruction_contracts:
+            out.add(
+                "TARGET_INSTRUCTION_UNSUPPORTED",
+                f"{path}.instruction",
+                f"instruction {instruction!r} is not admitted by Target "
+                f"{target.target_id!r}",
+                category,
+            )
+
+        if tile is None:
+            out.add(
+                "MMA_TILE_UNDECLARED",
+                f"{path}.tile_shape",
+                f"operation {operation.op_id!r} does not commit to an M/N/K tile",
+                category,
+                FindingSeverity.HINT,
+            )
+            continue
+
+        for name in operation.writes:
+            accumulator = buffers.get(name)
+            if accumulator is None or len(accumulator.shape) != 2:
+                continue
+            if tuple(tile[:2]) != accumulator.shape:
+                out.add(
+                    "MMA_TILE_ACCUMULATOR_MISMATCH",
+                    f"{path}.tile_shape",
+                    f"tile M/N {tile[0]}x{tile[1]} does not match accumulator "
+                    f"{name!r} shape {accumulator.shape[0]}x{accumulator.shape[1]}",
+                    category,
+                )
+
+
+def _verify_swizzle_commitments(schedule: Schedule, out: _Collector) -> None:
+    """A shared operand feeding an MMA needs a declared swizzle to be reproducible."""
+
+    category = FindingCategory.HARDWARE_CONFORMANCE
+    buffers = {buffer.name: buffer for buffer in schedule.buffers}
+    operands = {
+        name
+        for operation in schedule.operations
+        if operation.kind is OperationKind.MMA
+        for name in operation.reads
+    }
+    for index, buffer in enumerate(schedule.buffers):
+        if (
+            buffer.name in operands
+            and buffer.space is MemorySpace.SHARED
+            and buffer.swizzle is None
+        ):
+            out.add(
+                "BUFFER_SWIZZLE_UNDECLARED",
+                f"buffers[{index}].swizzle",
+                f"shared MMA operand {buffer.name!r} does not commit to a swizzle; the "
+                "backend picks one and the layout is neither inspectable nor verifiable",
+                category,
+                FindingSeverity.HINT,
+            )
 
 
 # --------------------------------------------------------------- data consistency

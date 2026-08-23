@@ -195,7 +195,7 @@ class StrictStructureTest(unittest.TestCase):
     def test_unknown_fields_are_rejected_at_every_level(self) -> None:
         cases = {
             "schedule": lambda d: d.update(bogus=1),
-            "schedule.buffers[0]": lambda d: d["buffers"][0].update(swizzle="x"),
+            "schedule.buffers[0]": lambda d: d["buffers"][0].update(cache_policy="x"),
             "schedule.roles[0]": lambda d: d["roles"][0].update(priority=1),
             "schedule.operations[0]": lambda d: d["operations"][0].update(cost=1),
         }
