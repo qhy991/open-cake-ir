@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "0055794cdba65bd3a42b2edb3813e02d670e4b2fc09828a834a4481ed94f2d2e"
+    "canonical_sha256": "e7eaf65cdfb495e54bf2e10ec402b5ea1c5aff3325add29c814549a64af330e8"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "state the non-blocking Finding semantics the accepted path now returns"
+  "approval_basis": "collapse the profile registry into one record; delete the unreachable template branch"
 }

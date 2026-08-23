@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Mapping, Sequence, cast
+from typing import Callable, Mapping, Sequence, cast
 
 from .emit_cutedsl import EmitError, emit as emit_cutedsl
 from .emit_triton import emit as emit_triton
@@ -166,53 +166,141 @@ _SUPPORTED_OPERATION_KINDS = {
     "store",
     "fence_proxy",
 }
-_LOWERING_PROFILES = {
-    "flash_kmeans_b32_smoke",
-    "flash_kmeans_assignment_full",
-    "tinygemm2_stage4_split_k",
-}
-_LOWERING_ASSETS = {
-    "tinygemm2_stage4_split_k": (
-        "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
-        "@@SCHEDULE_SHA256@@",
-        "cake_tinygemm2_stage4_split_k",
-    ),
-}
-# A profile here is generated from its Schedule rather than read from a checked-in file.
-# The Schedule must determine the source; emission refuses to invent a decision, so an
-# under-declared Schedule is a Finding rather than a silently different kernel.
-_EMITTED_PROFILES = {
-    "flash_kmeans_assignment_full": emit_cutedsl,
-    "flash_kmeans_b32_smoke": emit_triton,
-}
 
-_TOOLCHAIN_REQUIREMENTS = {
-    "flash_kmeans_b32_smoke": {
-        "source_language": "python",
-        "compiler": "triton",
-        "entry_point": "cake_flash_kmeans_assign",
-        "target": "sm_100a",
-        "entry_abi": "four_cuda_tensors_current_stream",
-    },
-    "flash_kmeans_assignment_full": {
-        "source_language": "python",
-        "compiler": "cutlass_cute_dsl",
-        "entry_point": "cake_flash_kmeans_assignment_full",
-        "target": "sm_100a",
-        "entry_abi": "four_cuda_tensors_current_stream",
-    },
-    "tinygemm2_stage4_split_k": {
-        "source_language": "cuda_cpp",
-        "compiler": "nvcc",
-        "target": "sm_100a",
-        "entry_abi": "tinygemm2_tensor_map_v1",
-    },
-}
-# A whole-document digest pinned each profile whose lowering was a checked-in file: the
-# file only matched one Schedule, so nothing else could be admitted. A profile that
-# emits needs no pin, because the source follows the Schedule.
-_CLOSED_PROFILE_SEMANTICS = {
-    "tinygemm2_stage4_split_k": "e6e1bcf2ab027e9e6fa8591843c605aa5601115c9104a4e512950b5cb330260c",
+
+def _flash_kmeans_b32_smoke_conformance(buffers, operations) -> list["Finding"]:
+    tokens = _shape_of(buffers, "tokens")
+    centroids = _shape_of(buffers, "centroids")
+    coheres = (
+        tokens is not None
+        and len(tokens) == 3
+        and centroids is not None
+        and len(centroids) == 3
+        and tokens[0] == centroids[0]
+        and tokens[2] == centroids[2] == 128
+        and _shape_of(buffers, "centroid_sq") == (tokens[0], centroids[1])
+        and _shape_of(buffers, "assignments") == (tokens[0], tokens[1])
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.tokens.shape",
+            "Flash-KMeans external tensor shapes are inconsistent",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
+def _flash_kmeans_assignment_full_conformance(buffers, operations) -> list["Finding"]:
+    distance = buffers.get("distance_scratch")
+    shape = distance.get("shape") if distance is not None else None
+    if shape == [128, 1024]:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.distance_scratch.shape",
+            "full Flash-KMeans assignment requires distance_scratch shape [128, 1024]",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
+def _tinygemm2_stage4_split_k_conformance(buffers, operations) -> list["Finding"]:
+    reduction = next(
+        (operation for operation in operations if operation.get("id") == "reduce_partials"),
+        None,
+    )
+    parameters = (
+        _object(reduction.get("parameters"), "operations.reduce_partials.parameters")
+        if reduction is not None
+        else {}
+    )
+    if (
+        reduction is not None
+        and reduction.get("kind") == "reduce_sum"
+        and parameters.get("parts") == 4
+        and parameters.get("scope") == "cta"
+    ):
+        return []
+    return [
+        Finding(
+            "REDUCE_SUM_SEMANTICS",
+            "operations.reduce_partials.parameters.parts",
+            "TinyGEMM2 stage4 requires a four-part CTA reduction",
+        )
+    ]
+
+
+@dataclass(frozen=True)
+class _Profile:
+    """One admitted lowering profile and every fact that follows from admitting it.
+
+    These facts used to live in five dictionaries and an `elif` chain keyed by the same
+    profile string, so adding an operator meant finding all six and keeping them in step.
+    One record owns them, and a profile that omits one is a construction error rather than
+    a lookup that silently returns nothing.
+
+    `emitter` generates the source from the Schedule; `asset` is the older path that fills
+    a digest into a checked-in template, and only that path needs `closed_semantics` --
+    the file matches one Schedule, so a pin is what keeps a second one from reaching it.
+    """
+
+    toolchain: Mapping[str, object]
+    conformance: "Callable[[Mapping[str, object], Sequence[Mapping[str, object]]], list[Finding]]"
+    emitter: object | None = None
+    asset: tuple[str, str, str] | None = None
+    closed_semantics: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.emitter is None) == (self.asset is None):
+            raise CompilerError("a profile lowers through exactly one of emitter or asset")
+        if self.asset is None and self.closed_semantics is not None:
+            raise CompilerError("an emitted profile pins no closed semantics digest")
+
+
+_PROFILES: Mapping[str, _Profile] = {
+    "flash_kmeans_b32_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_flash_kmeans_assign",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_flash_kmeans_b32_smoke_conformance,
+        emitter=emit_triton,
+    ),
+    "flash_kmeans_assignment_full": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "cutlass_cute_dsl",
+            "entry_point": "cake_flash_kmeans_assignment_full",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_flash_kmeans_assignment_full_conformance,
+        emitter=emit_cutedsl,
+    ),
+    "tinygemm2_stage4_split_k": _Profile(
+        toolchain={
+            "source_language": "cuda_cpp",
+            "compiler": "nvcc",
+            "target": "sm_100a",
+            "entry_abi": "tinygemm2_tensor_map_v1",
+        },
+        conformance=_tinygemm2_stage4_split_k_conformance,
+        asset=(
+            "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
+            "@@SCHEDULE_SHA256@@",
+            "cake_tinygemm2_stage4_split_k",
+        ),
+        closed_semantics="e6e1bcf2ab027e9e6fa8591843c605aa5601115c9104a4e512950b5cb330260c",
+    ),
 }
 
 
@@ -1013,78 +1101,20 @@ class Compiler:
             )
         profile = _name(metadata.get("profile"), "metadata.profile")
         lowering_parameters: dict[str, int] = {}
-        if profile not in _LOWERING_PROFILES:
+        definition = _PROFILES.get(profile)
+        if definition is None:
             findings.append(
                 Finding("LOWERING_PROFILE_UNSUPPORTED", "metadata.profile", f"profile {profile!r} is unsupported")
             )
-        elif profile == "flash_kmeans_b32_smoke":
-            tokens_shape = _shape_of(buffer_by_name, "tokens")
-            centroids_shape = _shape_of(buffer_by_name, "centroids")
-            external_shapes_cohere = (
-                tokens_shape is not None
-                and len(tokens_shape) == 3
-                and centroids_shape is not None
-                and len(centroids_shape) == 3
-                and tokens_shape[0] == centroids_shape[0]
-                and tokens_shape[2] == centroids_shape[2] == 128
-                and _shape_of(buffer_by_name, "centroid_sq")
-                == (tokens_shape[0], centroids_shape[1])
-                and _shape_of(buffer_by_name, "assignments")
-                == (tokens_shape[0], tokens_shape[1])
-            )
-            if not external_shapes_cohere:
-                findings.append(
-                    Finding(
-                        "PROFILE_SHAPE_MISMATCH",
-                        "buffers.tokens.shape",
-                        "Flash-KMeans external tensor shapes are inconsistent",
-                        blocks_acceptance=False,
-                        blocks_lowering=True,
-                    )
-                )
-        elif profile == "flash_kmeans_assignment_full":
-            distance = buffer_by_name.get("distance_scratch")
-            distance_shape = distance.get("shape") if distance is not None else None
-            if distance_shape != [128, 1024]:
-                findings.append(
-                    Finding(
-                        "PROFILE_SHAPE_MISMATCH",
-                        "buffers.distance_scratch.shape",
-                        "full Flash-KMeans assignment requires distance_scratch shape [128, 1024]",
-                        blocks_acceptance=False,
-                        blocks_lowering=True,
-                    )
-                )
-        elif profile == "tinygemm2_stage4_split_k":
-            reduction = next(
-                (operation for operation in operations if operation.get("id") == "reduce_partials"),
-                None,
-            )
-            parameters = (
-                _object(reduction.get("parameters"), "operations.reduce_partials.parameters")
-                if reduction is not None
-                else {}
-            )
-            if (
-                reduction is None
-                or reduction.get("kind") != "reduce_sum"
-                or parameters.get("parts") != 4
-                or parameters.get("scope") != "cta"
-            ):
-                findings.append(
-                    Finding(
-                        "REDUCE_SUM_SEMANTICS",
-                        "operations.reduce_partials.parameters.parts",
-                        "TinyGEMM2 stage4 requires a four-part CTA reduction",
-                    )
-                )
-        if profile in _CLOSED_PROFILE_SEMANTICS:
+        else:
+            findings.extend(definition.conformance(buffer_by_name, operations))
+        if definition is not None and definition.closed_semantics is not None:
             semantic_sha = _semantic_schedule_sha256(schedule)
             known_delta = any(
                 finding.code in {"PROFILE_SHAPE_MISMATCH", "REDUCE_SUM_SEMANTICS"}
                 for finding in findings
             )
-            if semantic_sha != _CLOSED_PROFILE_SEMANTICS[profile] and not known_delta:
+            if semantic_sha != definition.closed_semantics and not known_delta:
                 findings.append(
                     Finding(
                         "PROFILE_SEMANTICS_MISMATCH",
@@ -1170,7 +1200,7 @@ class Compiler:
             emission = emitter(
                 schedule,
                 Target.from_dict(dict(definition.document)),
-                entry_point=_TOOLCHAIN_REQUIREMENTS[assessment.profile]["entry_point"],
+                entry_point=_PROFILES[assessment.profile].toolchain["entry_point"],
             )
         except EmitError as error:
             raise CompilerError(f"Schedule does not determine its source: {error}") from error
@@ -1188,7 +1218,7 @@ class Compiler:
             source_map=MappingProxyType(_source_map(source)),
             toolchain_requirements=MappingProxyType(
                 {
-                    **_TOOLCHAIN_REQUIREMENTS[assessment.profile],
+                    **_PROFILES[assessment.profile].toolchain,
                     **(emission.toolchain or {}),
                 }
             ),
@@ -1245,10 +1275,11 @@ class Compiler:
         if not assessment.lowering_eligible:
             codes = ", ".join(finding.code for finding in assessment.findings)
             raise CompilerError(f"assessment is not lowering eligible: {codes}")
-        emitter = _EMITTED_PROFILES.get(assessment.profile)
+        definition = _PROFILES[assessment.profile]
+        emitter = definition.emitter
         if emitter is not None:
             return self._emit(assessment, emitter)
-        asset = _LOWERING_ASSETS.get(assessment.profile)
+        asset = definition.asset
         if asset is None:
             raise CompilerError(f"lowering profile {assessment.profile!r} is not implemented")
         relative_path, placeholder, entry_point = asset
@@ -1258,37 +1289,7 @@ class Compiler:
             raise CompilerError(f"lowering template for {assessment.profile!r} has an invalid placeholder")
         source = template.replace(placeholder, assessment.schedule_sha256)
         source_map = _source_map(source)
-        requirements = dict(_TOOLCHAIN_REQUIREMENTS[assessment.profile])
-        if assessment.profile == "flash_kmeans_b32_smoke":
-            requirements.update(
-                {
-                    "kernel_entry_point": "_cake_flash_kmeans_assign_kernel",
-                    "signature": {
-                        "tokens": "*bf16",
-                        "centroids": "*bf16",
-                        "centroid_sq": "*fp32",
-                        "assignments": "*i32",
-                    },
-                    "compile_constants": {
-                        "B": assessment.lowering_parameters["batch"],
-                        "N": assessment.lowering_parameters["token_count"],
-                        "K": assessment.lowering_parameters["centroid_count"],
-                        "D": assessment.lowering_parameters["feature_count"],
-                        "BLOCK_N": assessment.lowering_parameters["block_n"],
-                        "BLOCK_K": assessment.lowering_parameters["block_k"],
-                        "NUM_STAGES": assessment.lowering_parameters["num_stages"],
-                    },
-                    "compile_options": {
-                        "num_warps": assessment.lowering_parameters["num_warps"],
-                        "num_stages": assessment.lowering_parameters["num_stages"],
-                    },
-                    "grid": [
-                        assessment.lowering_parameters["grid_x"],
-                        assessment.lowering_parameters["grid_y"],
-                        assessment.lowering_parameters["grid_z"],
-                    ],
-                }
-            )
+        requirements = dict(definition.toolchain)
         return Lowering(
             compiler_revision_id=self._revision_id,
             compiler_revision_sha256=self._revision_sha256,
