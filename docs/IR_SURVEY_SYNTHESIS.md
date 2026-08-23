@@ -88,9 +88,20 @@ the split, and because `setmaxnreg` redistributes a launch-time allocation rathe
 creating registers, the verifier holds the roles' total to the CTA allocation the residency
 commitment declares, refuses a split that does not span whole warpgroups, and refuses a
 partial one. The budget reaches the CuTe-DSL backend as `setmaxregister_increase` and
-`_decrease`. It is *not* hardware-verified: CuTe-DSL's compiled bindings are not installed
-on this host, so the check that the declaration survives to the device -- the one that
-caught a non-compiling cache modifier earlier -- could not be run. Per-operand load movement and the missing
+`_decrease`. It is now hardware-verified, and the verification produced a result worth keeping.
+
+Installing CuTe-DSL closed a larger gap first: the warp-specialised Blackwell backend --
+tcgen05 MMA, tensor memory, mbarriers, TMA -- had never been run. It compiles and matches
+a float32 reference exactly, so both backends now have hardware evidence rather than one.
+
+The register split itself compiles and runs. But the warpgroup-alignment rule was tested
+by emitting a Schedule past the verifier with three *different* budgets issued from one
+warpgroup, and that compiled and produced correct results too. That is not evidence the
+split is legal: `setmaxnreg.sync.aligned` executed by part of a warpgroup is undefined, and
+undefined behaviour routinely looks correct. What the run establishes is that the toolchain
+accepts the violation silently. A gate that only restates what the compiler already
+enforces adds nothing; this one catches what the compiler lets through, which is the
+argument for keeping it blocking. Per-operand load movement and the missing
 swizzle mode are each one kernel away from being needed. Pipeline kind and the carveout
 dependency are real design, not fields.
 

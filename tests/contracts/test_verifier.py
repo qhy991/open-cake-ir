@@ -721,8 +721,19 @@ class RoleRegisterSplitTest(unittest.TestCase):
                 )
 
     def test_a_budget_must_span_whole_warpgroups(self) -> None:
-        # setmaxnreg is issued by a whole warpgroup, so two roles sharing one would issue
-        # conflicting budgets from the same instruction.
+        """setmaxnreg is warpgroup-wide, so two roles sharing one conflict.
+
+        This rule was tested against hardware and the result is why it stays blocking.
+        A Schedule whose single-warp roles each issue a different budget from the same
+        warpgroup was emitted past the verifier, compiled on a B200, and produced correct
+        results. That is not evidence the split is legal: `setmaxnreg.sync.aligned`
+        executed by part of a warpgroup is undefined, and undefined behaviour routinely
+        looks correct. What the run does establish is that the toolchain accepts the
+        violation silently, so nothing downstream would catch it -- which is the argument
+        for gating it here rather than against it. Every surveyed library issues the
+        instruction warpgroup-aligned without exception.
+        """
+
         codes = self._codes(self._split(warps=([0, 1], [2, 3, 4, 5, 6, 7])))
         self.assertIn("ROLE_REGISTERS_NOT_WARPGROUP_ALIGNED", codes)
 
