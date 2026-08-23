@@ -150,10 +150,6 @@ class ResidualGapTest(unittest.TestCase):
     """
 
     RESIDUAL = {
-        "loop_nest": (
-            "for centroid_tile in range(4): for k_tile in range(2). tile_loops is a "
-            "flat list whose body names operations, so a nest cannot be expressed."
-        ),
         "cta_group": "tcgen05.CtaGroup.ONE -- one-SM versus two-SM cooperative MMA.",
         "operand_source": "tcgen05.OperandSource.SMEM -- operands from SMEM or TMEM.",
         "operand_major_mode": "OperandMajorMode.K for both A and B.",
@@ -164,13 +160,12 @@ class ResidualGapTest(unittest.TestCase):
         "tmem_load_atom": "tcgen05.Ld32x32bOp(Repetition.x64) -- the TMEM copy atom.",
     }
 
-    def test_the_residual_gap_is_six_decisions(self) -> None:
-        self.assertEqual(len(self.RESIDUAL), 6)
+    def test_the_residual_gap_is_five_decisions(self) -> None:
+        self.assertEqual(len(self.RESIDUAL), 5)
 
     def test_each_residual_decision_is_present_in_the_artifact(self) -> None:
         source = ARTIFACT.read_text(encoding="utf-8")
         markers = {
-            "loop_nest": "NUM_CENTROID_TILES",
             "cta_group": "tcgen05.CtaGroup.ONE",
             "operand_source": "tcgen05.OperandSource.SMEM",
             "operand_major_mode": "tcgen05.OperandMajorMode.K",
@@ -182,23 +177,34 @@ class ResidualGapTest(unittest.TestCase):
             with self.subTest(gap=key):
                 self.assertIn(marker, source)
 
-    def test_the_loop_nest_is_the_structural_one(self) -> None:
-        """A flat `tile_loops` cannot carry the artifact's two-deep nest.
+class LoopNestTest(unittest.TestCase):
+    """The nest was the structural gap; a loop body may now name a nested loop."""
 
-        The declared Schedule expresses only the inner loop. 1024 centroids in tiles of
-        256 and 128 features in tiles of 64 are the two extents the artifact hardcodes
-        as NUM_CENTROID_TILES and NUM_K_TILES.
-        """
+    def setUp(self) -> None:
+        self.schedule = Schedule.load(DECLARED)
+        self.source = ARTIFACT.read_text(encoding="utf-8")
 
-        schedule = Schedule.load(DECLARED)
-        self.assertEqual([loop.name for loop in schedule.tile_loops], ["k_loop"])
-        centroids = schedule.buffer("centroids")
-        assert centroids is not None
-        mma = schedule.operation("dot_mma")
-        assert mma is not None and mma.parameters.tile_shape is not None
-        self.assertEqual(centroids.shape[0] // mma.parameters.tile_shape[1], 4)
-        self.assertEqual(centroids.shape[1] // mma.parameters.tile_shape[2], 2)
-        self.assertEqual(schedule.tile_loops[0].tile, 64)
+    def test_the_nest_is_two_deep(self) -> None:
+        self.assertEqual(self.schedule.loop_parent(), {"k_loop": "centroid_loop"})
+        self.assertEqual(self.schedule.loop_depth("centroid_loop"), 0)
+        self.assertEqual(self.schedule.loop_depth("k_loop"), 1)
+
+    def test_a_body_may_mix_a_nested_loop_and_an_operation(self) -> None:
+        """The epilogue runs once per centroid tile, beside the inner loop."""
+
+        outer = self.schedule.tile_loop("centroid_loop")
+        assert outer is not None
+        self.assertEqual(outer.body, ("k_loop", "distance_epilogue"))
+
+    def test_the_artifact_extents_are_now_derived(self) -> None:
+        self.assertIn("NUM_CENTROID_TILES = 4", self.source)
+        self.assertIn("NUM_K_TILES = 2", self.source)
+        centroids = self.schedule.buffer("centroids")
+        outer = self.schedule.tile_loop("centroid_loop")
+        inner = self.schedule.tile_loop("k_loop")
+        assert centroids is not None and outer is not None and inner is not None
+        self.assertEqual(centroids.shape[outer.dimension] // outer.tile, 4)
+        self.assertEqual(centroids.shape[inner.dimension] // inner.tile, 2)
 
 
 if __name__ == "__main__":

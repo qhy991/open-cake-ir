@@ -189,6 +189,8 @@ def _verify_schedule_semantics(schedule: Schedule, out: _Collector) -> None:
                 category,
             )
 
+    _verify_loop_nest(schedule, out)
+
     for duplicate in _duplicates(loop.iterator for loop in schedule.tile_loops):
         out.add(
             "LOOP_DUPLICATE_ITERATOR",
@@ -226,6 +228,80 @@ def _verify_schedule_semantics(schedule: Schedule, out: _Collector) -> None:
                 category,
             )
         seen_edges.add(edge)
+
+
+def _verify_loop_nest(schedule: Schedule, out: _Collector) -> None:
+    """A loop body names operations and nested loops; both must resolve exactly once."""
+
+    category = FindingCategory.SCHEDULE_SEMANTICS
+    loops = {loop.name for loop in schedule.tile_loops}
+    operations = {operation.op_id for operation in schedule.operations}
+    order = {op.op_id: index for index, op in enumerate(schedule.operations)}
+
+    scope_of: dict[str, str] = {}
+    parent_of: dict[str, str] = {}
+    for index, loop in enumerate(schedule.tile_loops):
+        path = f"tile_loops[{index}].body"
+        positions: list[int] = []
+        for entry in loop.body:
+            if entry == loop.name:
+                out.add(
+                    "LOOP_NEST_SELF",
+                    path,
+                    f"loop {loop.name!r} contains itself",
+                    category,
+                )
+            elif entry in loops:
+                if entry in parent_of:
+                    out.add(
+                        "LOOP_NEST_MULTIPLE_PARENTS",
+                        path,
+                        f"loop {entry!r} is nested in both {parent_of[entry]!r} and "
+                        f"{loop.name!r}",
+                        category,
+                    )
+                else:
+                    parent_of[entry] = loop.name
+            elif entry in operations:
+                if entry in scope_of:
+                    out.add(
+                        "LOOP_OPERATION_MULTIPLE_SCOPE",
+                        path,
+                        f"operation {entry!r} is in both {scope_of[entry]!r} and "
+                        f"{loop.name!r}",
+                        category,
+                    )
+                else:
+                    scope_of[entry] = loop.name
+                positions.append(order[entry])
+            else:
+                out.add(
+                    "LOOP_BODY_UNKNOWN",
+                    path,
+                    f"{entry!r} is neither a declared operation nor a declared loop",
+                    category,
+                )
+        if positions != sorted(positions):
+            out.add(
+                "LOOP_BODY_ORDER",
+                path,
+                f"loop {loop.name!r} lists operations out of declaration order",
+                category,
+            )
+
+    for name in sorted(loops):
+        seen, cursor = {name}, name
+        while cursor in parent_of:
+            cursor = parent_of[cursor]
+            if cursor in seen:
+                out.add(
+                    "LOOP_NEST_CYCLE",
+                    "tile_loops",
+                    f"loop nesting cycle includes {name!r}",
+                    category,
+                )
+                break
+            seen.add(cursor)
 
 
 # ------------------------------------------------------------ hardware conformance

@@ -469,3 +469,56 @@ class HardwareCommitmentTest(unittest.TestCase):
 
         findings = verify(_mutated(ASSIGNMENT_FULL, commit), TARGET)
         self.assertNotIn("BUFFER_SWIZZLE_UNDECLARED", _codes(findings))
+
+
+class LoopNestRuleTest(unittest.TestCase):
+    DECLARED = ROOT / "examples" / "schedules" / "flash-kmeans-assignment-full-declared.json"
+
+    def _mutate(self, mutate) -> tuple[Finding, ...]:
+        document = json.loads(self.DECLARED.read_text(encoding="utf-8"))
+        mutate(document)
+        return verify(Schedule.from_dict(document), TARGET)
+
+    def test_the_declared_nest_is_accepted(self) -> None:
+        self.assertEqual(verify(Schedule.load(self.DECLARED), TARGET), ())
+
+    def test_a_body_entry_must_resolve(self) -> None:
+        findings = self._mutate(lambda d: d["tile_loops"][0]["body"].append("ghost"))
+        self.assertIn("LOOP_BODY_UNKNOWN", _codes(findings))
+
+    def test_a_loop_cannot_contain_itself(self) -> None:
+        findings = self._mutate(
+            lambda d: d["tile_loops"][0]["body"].append("centroid_loop")
+        )
+        self.assertIn("LOOP_NEST_SELF", _codes(findings))
+
+    def test_nesting_cycles_are_detected(self) -> None:
+        findings = self._mutate(
+            lambda d: d["tile_loops"][1]["body"].append("centroid_loop")
+        )
+        self.assertIn("LOOP_NEST_CYCLE", _codes(findings))
+
+    def test_a_loop_has_one_parent(self) -> None:
+        def two_parents(document: dict) -> None:
+            rival = dict(document["tile_loops"][0])
+            rival["name"] = "rival_loop"
+            rival["iterator"] = "rival_tile"
+            rival["body"] = ["k_loop"]
+            document["tile_loops"].append(rival)
+
+        findings = self._mutate(two_parents)
+        self.assertIn("LOOP_NEST_MULTIPLE_PARENTS", _codes(findings))
+
+    def test_an_operation_belongs_to_one_scope(self) -> None:
+        findings = self._mutate(
+            lambda d: d["tile_loops"][0]["body"].append("load_tokens")
+        )
+        self.assertIn("LOOP_OPERATION_MULTIPLE_SCOPE", _codes(findings))
+
+    def test_body_operations_follow_declaration_order(self) -> None:
+        findings = self._mutate(
+            lambda d: d["tile_loops"][1].update(
+                body=["dot_mma", "load_tokens", "load_centroids"]
+            )
+        )
+        self.assertIn("LOOP_BODY_ORDER", _codes(findings))

@@ -800,6 +800,38 @@ class Schedule:
     def operation(self, op_id: str) -> Operation | None:
         return next((item for item in self.operations if item.op_id == op_id), None)
 
+    def tile_loop(self, name: str) -> TileLoop | None:
+        return next((item for item in self.tile_loops if item.name == name), None)
+
+    def loop_parent(self) -> dict[str, str]:
+        """Child loop name -> enclosing loop name.
+
+        A `tile_loops` body lists what is inside the loop in order: operation ids, and
+        the names of loops nested within it. The artifact for the warp-specialized
+        profile is a two-deep nest, which a flat list of loops cannot carry.
+        """
+
+        names = {loop.name for loop in self.tile_loops}
+        parent: dict[str, str] = {}
+        for loop in self.tile_loops:
+            for entry in loop.body:
+                if entry in names:
+                    parent[entry] = loop.name
+        return parent
+
+    def loop_depth(self, name: str) -> int:
+        """Nesting depth of one loop, outermost being 0. Guards against cycles."""
+
+        parent = self.loop_parent()
+        depth, seen = 0, {name}
+        while name in parent:
+            name = parent[name]
+            if name in seen:
+                return depth
+            seen.add(name)
+            depth += 1
+        return depth
+
     def access_map(self, operation: str, buffer: str) -> AccessMap | None:
         return next(
             (

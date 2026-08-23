@@ -360,6 +360,25 @@
   },
   "tile_loops": [
     {
+      "name": "centroid_loop",
+      "iterator": "centroid_tile",
+      "buffer": "centroids",
+      "dimension": 0,
+      "tile": 256,
+      "body": [
+        "k_loop",
+        "distance_epilogue"
+      ],
+      "range_options": {
+        "num_stages": 1,
+        "loop_unroll_factor": 1,
+        "flatten": false,
+        "warp_specialize": true,
+        "disallow_acc_multi_buffer": true,
+        "disable_licm": false
+      }
+    },
+    {
       "name": "k_loop",
       "iterator": "k_tile",
       "buffer": "centroids",
