@@ -30,6 +30,7 @@ from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission
 from .executor import ExecutorRevision
 from .faults import RunProtocolFault
+from .routing import route_rejection
 from .portfolio import KernelSeed
 from .providers import (
     CODEX_DISABLED_FEATURES,
@@ -2148,10 +2149,16 @@ class Lab:
                             )
                         )
                         feedback = environment_result.feedback
+                        # A rejection that says only "refused" makes every failure the
+                        # candidate's fault, and the outer loop that turns recurring
+                        # failures into rules has nothing to accumulate.
+                        decision = route_rejection(feedback)
                         rejection_payload: dict[str, object] = {
                             "turn": turn_number,
                             "candidate_sha256": submission.sha256,
                             "feedback": dict(feedback),
+                            "routed_to": decision.destination,
+                            "routing_reason": decision.reason,
                         }
                         if environment_result.artifact_payloads:
                             references = []
