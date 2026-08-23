@@ -163,6 +163,18 @@ class BarrierMechanism(str, Enum):
     NAMED = "barrier.sync"
 
 
+class PipelineKind(str, Enum):
+    """The asynchronous agent pair a producer operation requires.
+
+    Pipeline depth is a declaration, but the two currently lowerable pipeline kinds are
+    already fixed by producer semantics: TMA feeds UMMA, or UMMA releases to threads.
+    Keeping that derivation typed gives the verifier and emitter one closed vocabulary.
+    """
+
+    TMA_TO_UMMA = "tma_to_umma"
+    UMMA_TO_THREAD = "umma_to_thread"
+
+
 class OperandSource(str, Enum):
     """Where an MMA reads its operands from."""
 
@@ -309,6 +321,12 @@ class Role:
         )
         if len(set(parsed)) != len(parsed):
             raise ScheduleParseError(f"{context}.warps repeats a warp index")
+        expected = tuple(range(parsed[0], parsed[0] + len(parsed)))
+        if parsed != expected:
+            raise ScheduleParseError(
+                f"{context}.warps must be one ascending contiguous interval; "
+                f"got {list(parsed)}"
+            )
         return cls(_string(obj["name"], f"{context}.name"), parsed)
 
 
@@ -1002,6 +1020,20 @@ class Operation:
     pipeline: str | None
     parameters: OperationParameters
 
+    @property
+    def produced_pipeline_kind(self) -> PipelineKind | None:
+        """The pipeline kind this producer can drive in the implemented subset."""
+
+        if (
+            self.kind is OperationKind.LOAD
+            and isinstance(self.parameters, LoadParameters)
+            and self.parameters.movement is LoadMovement.TMA
+        ):
+            return PipelineKind.TMA_TO_UMMA
+        if self.kind is OperationKind.MMA:
+            return PipelineKind.UMMA_TO_THREAD
+        return None
+
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "Operation":
         obj = _strict_object(
@@ -1049,20 +1081,20 @@ _SCHEDULE_OPTIONAL = {"grid", "program_map", "residency", "tile_loops", "access_
 class Residency:
     """What a Schedule commits to holding, rather than what it happens to need.
 
-    The analysis already derives how many CTAs a multiprocessor can hold and how many
-    registers a thread uses, and reports both. A report is a remark: nothing checks it and
-    nothing fails when it is wrong. The surveyed kernel work writes these same numbers down
-    as acceptance criteria -- at most forty-eight registers with no spill, two CTAs
-    resident, sixty-four TMEM columns so both fit -- in task prose and in template
-    assertions, because the Schedule has nowhere to put them.
+    The analysis derives an upper bound on resident CTAs and an optimistic lower bound on
+    logical register storage, and reports both. It does not claim ptxas's eventual register
+    allocation. The surveyed kernel work writes resource bounds -- at most forty-eight
+    registers with no spill, two CTAs resident, sixty-four TMEM columns so both fit -- in
+    task prose and template assertions because the Schedule otherwise has nowhere to put
+    them.
 
     Declaring one turns the same derivation into a gate: the Schedule states the residency
     it needs and the verifier holds it to it.
 
     `registers_per_thread` is a cap the backend enforces, which is a real choice -- capping
-    below what the body needs buys occupancy and pays in spills. `allow_spill` says whether
-    that trade was intended, so a Schedule that wants the cap without the spill is checked
-    rather than silently slowed.
+    below the logical storage lower bound cannot hold the declared values without a spill.
+    `allow_spill` says whether that trade was intended. Actual allocation and spill counts
+    remain toolchain evidence rather than facts inferred by the Schedule verifier.
     """
 
     ctas_per_multiprocessor: int | None

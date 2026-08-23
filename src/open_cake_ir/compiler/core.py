@@ -906,37 +906,11 @@ class Compiler:
             _objects(schedule.get("tile_loops", []), "tile_loops")
             _objects(schedule.get("access_maps", []), "access_maps")
 
-        used_warps: set[int] = set()
-        for index, role in enumerate(roles):
-            warps = role.get("warps")
-            if not isinstance(warps, list) or not warps:
-                raise CompilerError(f"roles[{index}].warps must be a non-empty list")
-            for warp in warps:
-                if not isinstance(warp, int) or isinstance(warp, bool) or warp < 0:
-                    raise CompilerError(f"roles[{index}].warps contains an invalid warp")
-                if warp in used_warps:
-                    findings.append(
-                        Finding("ROLE_WARP_OVERLAP", f"roles[{index}].warps", f"warp {warp} has multiple roles")
-                    )
-                used_warps.add(warp)
+        used_warps = {
+            warp for role in typed_schedule.roles for warp in role.warps
+        }
 
         if target_definition is not None:
-            if len(used_warps) > target_definition.maximum_warps_per_cta:
-                findings.append(
-                    Finding(
-                        "TARGET_WARP_LIMIT",
-                        "roles",
-                        "Schedule exceeds the Target warp limit",
-                    )
-                )
-            if len(used_warps) * 32 > target_definition.maximum_threads_per_cta:
-                findings.append(
-                    Finding(
-                        "TARGET_THREAD_LIMIT",
-                        "roles",
-                        "Schedule exceeds the Target thread limit",
-                    )
-                )
             for axis, (observed, maximum) in enumerate(zip(parsed_grid, target_definition.maximum_grid)):
                 if observed > maximum:
                     findings.append(

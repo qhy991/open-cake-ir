@@ -8,8 +8,8 @@ The Compiler owns four things, in the order a Schedule meets them:
   paper's harness reports, each finding naming a path and a violated contract.
 * `emit_cutedsl` -- lowering that derives what the artifact used to hardcode.
 
-`Compiler.assess` composes the first three; `Compiler.lower` is still a template stamp
-and the emitter is not yet on that path.
+`Compiler.assess` composes the first three; `Compiler.lower` dispatches accepted Schedules
+to deterministic target emitters.
 """
 
 from .core import (

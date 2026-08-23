@@ -5,9 +5,8 @@ decision, and each is now computed from the Schedule rather than typed by hand. 
 tests compare the emitter's derivation against those constants directly, so the two
 cannot drift apart silently.
 
-Scope: this fixes the derivation and the structural scaffolding. Operation bodies are
-still placeholders, so the emitted source is not yet a runnable kernel and no test here
-claims otherwise.
+Scope: this holds the deterministic lowering structure and the runnable operation bodies
+to the Schedule facts they consume. On-device correctness remains separate evidence.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ import unittest
 from pathlib import Path
 
 from open_cake_ir.compiler.emit_cutedsl import EmitError, emit
-from open_cake_ir.compiler.ir import BarrierMechanism, Schedule
+from open_cake_ir.compiler.ir import BarrierMechanism, PipelineKind, Schedule
 from open_cake_ir.compiler.target import Target
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -124,6 +123,7 @@ class StructureTest(unittest.TestCase):
                     self.assertIn(f"warp_idx == {role.name.upper()}_WARP", self.source)
                 else:
                     low, high = min(role.warps), max(role.warps)
+                    self.assertEqual(role.warps, tuple(range(low, high + 1)))
                     self.assertIn(f"{low} <= warp_idx <= {high}", self.source)
 
     def test_every_operation_is_marked(self) -> None:
@@ -228,10 +228,23 @@ class BodyEmissionTest(unittest.TestCase):
             },
         )
 
-    def test_pipeline_class_follows_from_who_signals_the_barrier(self) -> None:
+    def test_pipeline_class_is_one_typed_derived_fact(self) -> None:
         from open_cake_ir.compiler.emit_cutedsl import _Emitter
 
         emitter = _Emitter(self.schedule, TARGET)
+        kinds = {
+            operation.op_id: operation.produced_pipeline_kind
+            for operation in self.schedule.operations
+            if operation.produced_pipeline_kind is not None
+        }
+        self.assertEqual(
+            kinds,
+            {
+                "load_tokens": PipelineKind.TMA_TO_UMMA,
+                "load_centroids": PipelineKind.TMA_TO_UMMA,
+                "dot_mma": PipelineKind.UMMA_TO_THREAD,
+            },
+        )
         classes = {b.name: emitter._pipeline_class(b) for b in emitter._mbarriers()}
         self.assertEqual(
             classes,
@@ -240,6 +253,16 @@ class BodyEmissionTest(unittest.TestCase):
                 "accumulator_ready": "PipelineUmmaAsync",
             },
         )
+
+    def test_direct_emission_rejects_ambiguous_pipeline_producers(self) -> None:
+        document = json.loads(SCHEDULE.read_text(encoding="utf-8"))
+        barrier = next(b for b in document["barriers"] if b["name"] == "tiles_ready")
+        barrier["producers"].append("mma")
+        mma = next(o for o in document["operations"] if o["id"] == "dot_mma")
+        mma["signals"].append("tiles_ready")
+
+        with self.assertRaisesRegex(EmitError, "needs one lowerable pipeline kind"):
+            emit(Schedule.from_dict(document), TARGET)
 
     def test_a_cta_barrier_is_emitted_outside_the_warp_dispatch(self) -> None:
         """Emitting it inside one role's branch deadlocks the other six warps.

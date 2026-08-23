@@ -1,14 +1,15 @@
-"""Occupancy analysis over the typed IR.
+"""Static residency bounds over the typed IR.
 
 The paper's harness reports a `performance analysis` row as a *report*: a cost estimate
 plus bottleneck attribution. This module supplies the attribution half. It does not
 estimate time, because a Target declares no clock and no bandwidth, and a number derived
 from neither would be invented rather than analysed.
 
-What it does derive is which declared resource bounds residency. A CTA budget bounds one
-CTA; the Target's observed per-multiprocessor facts bound how many CTAs an SM can hold at
-once, and the smallest of those bounds is the binding resource. Every input is a
-declaration or a device observation recorded in the Target.
+What it derives is an upper bound on residency from declared storage and Target facts.
+Threads and explicit allocations are exact Schedule quantities. Register storage is an
+optimistic logical lower bound: it assumes same-shaped elementwise values can alias and
+does not claim to be ptxas's eventual allocation. Dividing Target capacity by those
+per-CTA quantities therefore gives a safe upper bound, not measured occupancy.
 """
 
 from __future__ import annotations
@@ -32,13 +33,16 @@ class ResidencyBound:
 
     @property
     def unit(self) -> str:
-        return {"threads": "threads", "registers": "registers"}.get(
-            self.resource, "bytes"
-        )
+        return {
+            "threads": "threads",
+            "logical_register_storage": "registers",
+        }.get(self.resource, "bytes")
 
 
 @dataclass(frozen=True)
-class Occupancy:
+class ResidencyUpperBound:
+    """Per-resource upper bounds on resident CTAs for one declared Schedule."""
+
     bounds: tuple[ResidencyBound, ...]
 
     @property
@@ -88,8 +92,8 @@ def _storage_classes(schedule: Schedule, registers) -> dict[str, str]:
     return {name: find(name) for name in registers}
 
 
-def _register_bytes(schedule: Schedule) -> int:
-    """Peak concurrently-live register bytes, not the sum of every declared tile.
+def _logical_register_bytes_lower_bound(schedule: Schedule) -> int:
+    """Optimistic lower bound on peak live logical register storage.
 
     Summing them charges a Schedule for every temporary it ever names, which reads the
     same whether two tiles overlap or one is dead before the other is written. That was
@@ -99,7 +103,9 @@ def _register_bytes(schedule: Schedule) -> int:
 
     A storage class is live from its first write to its last read in declared order.
     Anything the Schedule declares but never writes is charged for the whole program,
-    since nothing here can say when it dies.
+    since nothing here can say when it dies. Backend temporaries, allocation granularity,
+    and failed aliasing can only increase the physical register allocation; ptxas remains
+    the authority for that eventual number.
     """
 
     registers = {
@@ -150,8 +156,10 @@ def _allocation_bytes(schedule: Schedule, space: MemorySpace) -> int:
     )
 
 
-def occupancy(schedule: Schedule, target: Target) -> Occupancy | None:
-    """Residency bounds for one Schedule, or None when the Target declares no facts."""
+def residency_upper_bound(
+    schedule: Schedule, target: Target
+) -> ResidencyUpperBound | None:
+    """Static resident-CTA upper bounds, or None without Target capacity facts."""
 
     facts = target.occupancy
     if facts is None:
@@ -170,11 +178,11 @@ def occupancy(schedule: Schedule, target: Target) -> Occupancy | None:
             )
         )
 
-    registers = _register_bytes(schedule) // REGISTER_BYTES
+    registers = _logical_register_bytes_lower_bound(schedule) // REGISTER_BYTES
     if registers:
         bounds.append(
             ResidencyBound(
-                "registers",
+                "logical_register_storage",
                 registers,
                 facts.registers_per_multiprocessor,
                 facts.registers_per_multiprocessor // registers,
@@ -201,18 +209,21 @@ def occupancy(schedule: Schedule, target: Target) -> Occupancy | None:
             ResidencyBound("tensor_memory", tensor, capacity, capacity // tensor)
         )
 
-    return Occupancy(tuple(bounds))
+    return ResidencyUpperBound(tuple(bounds))
 
 
-def registers_per_thread(schedule: Schedule, target: Target) -> int | None:
-    """Registers each thread holds, from the declared register buffers.
+def logical_registers_per_thread_lower_bound(
+    schedule: Schedule, target: Target
+) -> int | None:
+    """Optimistic lower bound on registers needed by at least one CTA thread.
 
-    Reported rather than gated: the per-thread architectural ceiling is not among the
-    facts the Target declares, so a violation cannot be asserted from here.
+    This divides declared logical storage across every CTA thread and rounds up. It is a
+    safe gate only when even that optimistic distribution exceeds a declared ``maxnreg``
+    cap. It is not an estimate of ptxas's physical allocation.
     """
 
     threads = schedule.total_warp_extent * target.warp_size
     if not threads:
         return None
-    registers = _register_bytes(schedule) // REGISTER_BYTES
-    return registers // threads if registers else 0
+    registers = _logical_register_bytes_lower_bound(schedule) // REGISTER_BYTES
+    return (registers + threads - 1) // threads if registers else 0

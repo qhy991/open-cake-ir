@@ -146,7 +146,7 @@ graph TB
 For the retained warp-specialized Schedule the emitter derives all thirteen module
 constants its hand-written artifact hardcodes, and generates a kernel that runs correctly
 from those declarations alone. See
-[`tests/contracts/test_ir_sufficiency.py`](../tests/contracts/test_ir_sufficiency.py),
+[`tests/contracts/test_emit_cutedsl.py`](../tests/contracts/test_emit_cutedsl.py),
 which compares them directly.
 
 ---
@@ -266,7 +266,7 @@ graph LR
 | Compile → external oracle → GPU measurement | implemented, B200-verified |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
 | Deterministic lowering | partial — `lower` generates the warp-specialized profile from its Schedule, verified on B200 at 128/128; the other two profiles still stamp a checked-in file |
-| Cost-model ranking | partial — the analysis names the resource that bounds residency; it estimates no time, because the Target declares no clock or bandwidth |
+| Cost-model ranking | partial — the analysis derives static upper bounds on residency; logical register storage is an optimistic lower bound, not ptxas allocation, and no time is estimated because the Target declares no clock or bandwidth |
 | The filter stage | absent — one candidate per Turn leaves nothing to rank |
 
 The filter box stays red, and it is why the cost model can only go so far. A cost model
@@ -278,5 +278,6 @@ Widening that is a change to the Study Contract's treatment definition, not an
 implementation detail.
 
 What the analysis does supply today is the report the harness owes the agent. For the
-Triton profile every matched Study uses, that report reads: registers bound residency to
-one CTA per multiprocessor, at 290 registers per thread.
+Triton profile every matched Study uses, declared logical register storage bounds maximum
+possible residency to one CTA per multiprocessor, with an optimistic lower bound of 289
+registers per thread. Actual allocation and spills remain ptxas evidence.

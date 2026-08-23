@@ -12,7 +12,10 @@ import json
 import unittest
 from pathlib import Path
 
-from open_cake_ir.compiler.analysis import occupancy, registers_per_thread
+from open_cake_ir.compiler.analysis import (
+    logical_registers_per_thread_lower_bound,
+    residency_upper_bound,
+)
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.verifier import FindingSeverity, verify
@@ -52,23 +55,23 @@ class ObservedFactsTest(unittest.TestCase):
 
 class ResidencyTest(unittest.TestCase):
     def test_the_binding_resource_is_the_smallest_bound(self) -> None:
-        measured = occupancy(Schedule.load(ASSIGNMENT_FULL), TARGET)
-        assert measured is not None and measured.binding is not None
+        bound = residency_upper_bound(Schedule.load(ASSIGNMENT_FULL), TARGET)
+        assert bound is not None and bound.binding is not None
         self.assertEqual(
-            min(bound.ctas for bound in measured.bounds), measured.binding.ctas
+            min(item.ctas for item in bound.bounds), bound.binding.ctas
         )
-        self.assertEqual(measured.binding.resource, "shared_memory")
-        self.assertEqual(measured.binding.ctas, 2)
+        self.assertEqual(bound.binding.resource, "shared_memory")
+        self.assertEqual(bound.binding.ctas, 2)
 
     def test_registers_bind_the_triton_profile(self) -> None:
         """Declared register buffers, not shared memory, are what limits this one."""
 
         schedule = Schedule.load(B32)
-        measured = occupancy(schedule, TARGET)
-        assert measured is not None and measured.binding is not None
-        self.assertEqual(measured.binding.resource, "registers")
-        self.assertEqual(measured.binding.ctas, 1)
-        self.assertEqual(registers_per_thread(schedule, TARGET), 288)
+        bound = residency_upper_bound(schedule, TARGET)
+        assert bound is not None and bound.binding is not None
+        self.assertEqual(bound.binding.resource, "logical_register_storage")
+        self.assertEqual(bound.binding.ctas, 1)
+        self.assertEqual(logical_registers_per_thread_lower_bound(schedule, TARGET), 289)
 
     def test_a_smaller_tile_relaxes_the_bound(self) -> None:
         """Halving the token tile halves the register buffers and doubles residency."""
@@ -81,9 +84,9 @@ class ResidencyTest(unittest.TestCase):
         for buffer in document["buffers"]:
             if buffer["name"] in ("token_tile", "distance_tile", "best_index_tile"):
                 buffer["shape"][0] = 128
-        measured = occupancy(Schedule.from_dict(document), TARGET)
-        assert measured is not None and measured.binding is not None
-        self.assertEqual(measured.binding.ctas, 2)
+        bound = residency_upper_bound(Schedule.from_dict(document), TARGET)
+        assert bound is not None and bound.binding is not None
+        self.assertEqual(bound.binding.ctas, 2)
 
     def test_no_occupancy_facts_means_no_analysis(self) -> None:
         """A Target that declares nothing gets no invented answer."""
@@ -92,7 +95,9 @@ class ResidencyTest(unittest.TestCase):
             (ROOT / "compiler" / "targets" / "sm_100a.json").read_text(encoding="utf-8")
         )
         document.pop("occupancy")
-        self.assertIsNone(occupancy(Schedule.load(B32), Target.from_dict(document)))
+        self.assertIsNone(
+            residency_upper_bound(Schedule.load(B32), Target.from_dict(document))
+        )
 
 
 class ReportTest(unittest.TestCase):
@@ -121,12 +126,17 @@ class ReportTest(unittest.TestCase):
 
     def test_register_pressure_is_reported_where_it_binds(self) -> None:
         self.assertIn("REGISTER_PRESSURE", self._reports(B32))
-        self.assertIn("288 registers per thread", self._reports(B32)["REGISTER_PRESSURE"])
+        message = self._reports(B32)["REGISTER_PRESSURE"]
+        self.assertIn("optimistic lower bound of 289 registers per thread", message)
+        self.assertIn("not ptxas-measured allocation", message)
+        self.assertIn(
+            "36928 of 65536 registers", self._reports(B32)["RESIDENCY_BOUND"]
+        )
         self.assertNotIn("REGISTER_PRESSURE", self._reports(ASSIGNMENT_FULL))
 
     def test_the_report_names_the_runners_up(self) -> None:
         message = self._reports(ASSIGNMENT_FULL)["RESIDENCY_BOUND"]
-        self.assertIn("shared_memory bounds residency to 2 CTA", message)
+        self.assertIn("shared_memory bounds maximum possible residency to 2 CTA", message)
         self.assertIn("the next bounds are", message)
 
 

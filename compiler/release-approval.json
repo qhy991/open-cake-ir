@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "5cd1d7ff4bbfa58af469a40293125677fd70f244c2829e21952967910a164177"
+    "canonical_sha256": "1b198d78cfab51e851f9306ec0d32f6909aa5a63f898366a8cb74f7d1c53868e"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "operand reuse intent reaches the cache controls each backend uses"
+  "approval_basis": "typed pipeline kind derives from producer semantics; reject ambiguous or unsupported mbarrier producers"
 }

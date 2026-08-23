@@ -197,12 +197,14 @@ class DerivedViewTest(unittest.TestCase):
             )
 
     def test_warp_extent_uses_the_highest_index_not_the_count(self) -> None:
-        """`len(warps)` admits sparse or out-of-range warp ids; the extent does not."""
+        """A contiguous role can still begin beyond the Target's warp range."""
 
-        document = _mutated(B32, lambda d: d["roles"][0].update(warps=[0, 1, 2, 4096]))
+        document = _mutated(
+            B32, lambda d: d["roles"][0].update(warps=[4096, 4097, 4098, 4099])
+        )
         schedule = Schedule.from_dict(document)
         self.assertEqual(len(schedule.roles[0].warps), 4)
-        self.assertEqual(schedule.total_warp_extent, 4097)
+        self.assertEqual(schedule.total_warp_extent, 4100)
 
     def test_dtype_itemsize(self) -> None:
         self.assertEqual(DType.BF16.itemsize, 2)
@@ -215,6 +217,14 @@ class StrictStructureTest(unittest.TestCase):
         with self.assertRaises(ScheduleParseError) as caught:
             Schedule.from_dict(document)
         return str(caught.exception)
+
+    def test_role_warps_have_one_canonical_interval_form(self) -> None:
+        for warps in ([0, 2, 4, 6], [3, 2, 1, 0]):
+            with self.subTest(warps=warps):
+                message = self._reject(
+                    _mutated(B32, lambda d: d["roles"][0].update(warps=warps))
+                )
+                self.assertIn("must be one ascending contiguous interval", message)
 
     def test_unknown_fields_are_rejected_at_every_level(self) -> None:
         cases = {

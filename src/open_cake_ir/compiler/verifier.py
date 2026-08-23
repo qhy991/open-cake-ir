@@ -27,6 +27,7 @@ from .ir import (
     TMEM_COLUMN_BYTES,
     OperandSource,
     AccessIndexKind,
+    BarrierMechanism,
     BufferMode,
     LoadMovement,
     MemorySpace,
@@ -34,7 +35,10 @@ from .ir import (
     OperationKind,
     Schedule,
 )
-from .analysis import occupancy, registers_per_thread
+from .analysis import (
+    logical_registers_per_thread_lower_bound,
+    residency_upper_bound,
+)
 from .target import Target
 
 
@@ -190,6 +194,21 @@ def _verify_schedule_semantics(schedule: Schedule, out: _Collector) -> None:
                 f"duplicate {group[:-1]} name {duplicate!r}",
                 category,
             )
+
+    owner_by_warp: dict[int, str] = {}
+    for index, role in enumerate(schedule.roles):
+        for warp in role.warps:
+            previous = owner_by_warp.get(warp)
+            if previous is not None:
+                out.add(
+                    "ROLE_WARP_OVERLAP",
+                    f"roles[{index}].warps",
+                    f"warp {warp} belongs to both role {previous!r} and "
+                    f"role {role.name!r}",
+                    category,
+                )
+            else:
+                owner_by_warp[warp] = role.name
 
     _verify_loop_nest(schedule, out)
 
@@ -361,8 +380,8 @@ def _verify_hardware_conformance(
                     category,
                 )
 
-    # The budget is bounded by the highest warp index in use, not by how many warps
-    # were declared: warps [0, 1, 2, 4096] is four entries but needs 4097 slots.
+    # A role interval may begin above zero, so the budget is bounded by the highest
+    # warp index in use rather than by how many warps were declared.
     extent = schedule.total_warp_extent
     if extent > limits.maximum_warps_per_cta:
         out.add(
@@ -1471,6 +1490,36 @@ def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
                 f"barrier {barrier.name!r} is never waited on by any operation",
                 category,
             )
+        if barrier.mechanism is not BarrierMechanism.MBARRIER:
+            continue
+        producers = signallers.get(barrier.name, [])
+        unsupported = [
+            operation
+            for operation in producers
+            if operation.produced_pipeline_kind is None
+        ]
+        for operation in unsupported:
+            operation_index = schedule.operations.index(operation)
+            out.add(
+                "BARRIER_PIPELINE_PRODUCER_UNSUPPORTED",
+                f"operations[{operation_index}].signals",
+                f"operation {operation.op_id!r} cannot drive an mbarrier pipeline; "
+                "the implemented producer kinds are TMA load and MMA",
+                category,
+            )
+        kinds = {
+            operation.produced_pipeline_kind
+            for operation in producers
+            if operation.produced_pipeline_kind is not None
+        }
+        if len(kinds) > 1:
+            out.add(
+                "BARRIER_PIPELINE_KIND_AMBIGUOUS",
+                path,
+                f"mbarrier {barrier.name!r} is signalled by incompatible pipeline "
+                f"kinds {sorted(kind.value for kind in kinds)}",
+                category,
+            )
 
     # A cross-role read-after-write is a race unless a barrier orders it.
     #
@@ -1520,7 +1569,9 @@ def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
             )
 
 
-def _verify_residency_commitment(schedule, target: Target, measured, out: _Collector) -> None:
+def _verify_residency_commitment(
+    schedule, target: Target, upper_bound, out: _Collector
+) -> None:
     """Hold a Schedule to the residency it declared.
 
     Without a declaration the derivation is only a report. With one it is a check, and a
@@ -1536,27 +1587,30 @@ def _verify_residency_commitment(schedule, target: Target, measured, out: _Colle
 
     wanted = commitment.ctas_per_multiprocessor
     if wanted is not None:
-        achieved = measured.ctas_per_multiprocessor or 0
-        if achieved < wanted:
-            binding = measured.binding
+        maximum = upper_bound.ctas_per_multiprocessor or 0
+        if maximum < wanted:
+            binding = upper_bound.binding
             out.add(
                 "RESIDENCY_UNMET",
                 "residency.ctas_per_multiprocessor",
-                f"this Schedule commits to {wanted} CTA per multiprocessor but its own "
-                f"declarations admit {achieved}; {binding.resource} is what stops it "
-                f"({binding.per_cta} of {binding.per_multiprocessor} {binding.unit})",
+                f"this Schedule commits to {wanted} CTA per multiprocessor but its "
+                f"declarations admit at most {maximum}; {binding.resource} is the "
+                f"tightest static upper bound ({binding.per_cta} of "
+                f"{binding.per_multiprocessor} {binding.unit})",
                 category,
             )
 
     budget = commitment.registers_per_thread
     if budget is not None:
-        needed = registers_per_thread(schedule, target)
+        needed = logical_registers_per_thread_lower_bound(schedule, target)
         if needed is not None and needed > budget and not commitment.allow_spill:
             out.add(
                 "REGISTER_BUDGET_EXCEEDED",
                 "residency.registers_per_thread",
-                f"declared register buffers need {needed} per thread against a budget of "
-                f"{budget}; capping there spills, which this Schedule did not admit",
+                f"even with optimistic same-shape aliasing, declared logical register "
+                f"storage needs at least {needed} registers per thread against a cap of "
+                f"{budget}; it cannot fit without spill, which this Schedule did not "
+                "admit",
                 category,
             )
 
@@ -1572,11 +1626,11 @@ def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> No
     category = FindingCategory.HARDWARE_CONFORMANCE
     if schedule.target != target.target_id:
         return  # nothing to analyse against a Target this Schedule does not name
-    measured = occupancy(schedule, target)
-    if measured is None or measured.binding is None:
+    upper_bound = residency_upper_bound(schedule, target)
+    if upper_bound is None or upper_bound.binding is None:
         return
-    _verify_residency_commitment(schedule, target, measured, out)
-    binding = measured.binding
+    _verify_residency_commitment(schedule, target, upper_bound, out)
+    binding = upper_bound.binding
     if binding.ctas == 0:
         # A resource that admits no CTA at all is not a performance report. The Schedule
         # asks a multiprocessor for more than it has, so it cannot run as declared.
@@ -1590,27 +1644,29 @@ def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> No
         return
     others = ", ".join(
         f"{b.resource} {b.ctas}"
-        for b in sorted(measured.bounds, key=lambda b: b.ctas)
+        for b in sorted(upper_bound.bounds, key=lambda b: b.ctas)
         if b.resource != binding.resource
     )
     out.add(
         "RESIDENCY_BOUND",
         "allocations" if binding.resource.endswith("memory") else "roles",
-        f"{binding.resource} bounds residency to {binding.ctas} CTA per multiprocessor "
+        f"{binding.resource} bounds maximum possible residency to {binding.ctas} CTA "
+        "per multiprocessor "
         f"({binding.per_cta} of {binding.per_multiprocessor} {binding.unit})"
         + (f"; the next bounds are {others}" if others else ""),
         category,
         FindingSeverity.REPORT,
     )
 
-    per_thread = registers_per_thread(schedule, target)
-    if per_thread and binding.resource == "registers":
+    per_thread = logical_registers_per_thread_lower_bound(schedule, target)
+    if per_thread and binding.resource == "logical_register_storage":
         out.add(
             "REGISTER_PRESSURE",
             "buffers",
-            f"declared register buffers hold {per_thread} registers per thread across "
-            f"{schedule.total_warp_extent * target.warp_size} threads, which is what "
-            "bounds residency",
+            f"declared logical register storage has an optimistic lower bound of "
+            f"{per_thread} registers per thread across "
+            f"{schedule.total_warp_extent * target.warp_size} threads; this bounds "
+            "maximum possible residency but is not ptxas-measured allocation",
             category,
             FindingSeverity.REPORT,
         )

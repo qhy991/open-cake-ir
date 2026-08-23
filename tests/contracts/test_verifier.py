@@ -132,7 +132,7 @@ class QuietOnValidScheduleTest(unittest.TestCase):
     def test_findings_are_deterministically_ordered(self) -> None:
         schedule = _mutated(
             B32,
-            lambda d: d["roles"][0].update(warps=[0, 1, 4096, 99999]),
+            lambda d: d["roles"][0].update(warps=[4096, 4097, 4098, 4099]),
         )
         first = verify(schedule, TARGET)
         self.assertEqual(first, verify(schedule, TARGET))
@@ -151,19 +151,49 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         self.assertTrue(verify(schedule, TARGET))
 
 
+class ScheduleSemanticsTest(unittest.TestCase):
+    def test_a_warp_cannot_belong_to_two_roles(self) -> None:
+        findings = verify(
+            _mutated(
+                ASSIGNMENT_FULL,
+                lambda d: d["roles"][1].update(warps=[3]),
+            ),
+            TARGET,
+        )
+
+        overlaps = [f for f in findings if f.code == "ROLE_WARP_OVERLAP"]
+        self.assertEqual(len(overlaps), 1)
+        self.assertEqual(overlaps[0].category, FindingCategory.SCHEDULE_SEMANTICS)
+        self.assertEqual(overlaps[0].path, "roles[1].warps")
+        self.assertIn("both role 'epilogue' and role 'mma'", overlaps[0].message)
+
+
 class HardwareConformanceTest(unittest.TestCase):
     def test_warp_index_beyond_the_target_range_is_reported(self) -> None:
         """`len(warps)` treats a warp id as a count; the range check does not."""
 
         findings = verify(
-            _mutated(B32, lambda d: d["roles"][0].update(warps=[0, 1, 4096, 99999])),
+            _mutated(
+                B32,
+                lambda d: d["roles"][0].update(
+                    warps=[4096, 4097, 4098, 4099]
+                ),
+            ),
             TARGET,
         )
         self.assertIn("ROLE_WARP_RANGE", _codes(findings))
         self.assertIn("TARGET_WARP_LIMIT", _codes(findings))
         self.assertIn("TARGET_THREAD_LIMIT", _codes(findings))
         ranged = [f for f in findings if f.code == "ROLE_WARP_RANGE"]
-        self.assertEqual([f.path for f in ranged], ["roles[0].warps[2]", "roles[0].warps[3]"])
+        self.assertEqual(
+            [f.path for f in ranged],
+            [
+                "roles[0].warps[0]",
+                "roles[0].warps[1]",
+                "roles[0].warps[2]",
+                "roles[0].warps[3]",
+            ],
+        )
         self.assertIn("outside the Target CTA range [0, 32)", ranged[0].message)
 
     def test_shared_memory_budget(self) -> None:
@@ -367,12 +397,33 @@ class ProgramSafetyTest(unittest.TestCase):
         )
         self.assertIn("BARRIER_ROLE_UNKNOWN", _codes(findings))
 
+    def test_an_mbarrier_has_one_compatible_producer_kind(self) -> None:
+        def mix_pipeline_kinds(document: dict) -> None:
+            barrier = next(b for b in document["barriers"] if b["name"] == "tiles_ready")
+            barrier["producers"].append("mma")
+            mma = _op(document, "dot_mma")
+            mma["signals"].append("tiles_ready")
+
+        mixed = verify(_mutated(ASSIGNMENT_FULL, mix_pipeline_kinds), TARGET)
+        self.assertIn("BARRIER_PIPELINE_KIND_AMBIGUOUS", _codes(mixed))
+
+        def make_synchronous(document: dict) -> None:
+            parameters = _op(document, "load_tokens")["parameters"]
+            parameters["movement"] = "global"
+            parameters.pop("descriptor_box")
+
+        unsupported = verify(
+            _mutated(ASSIGNMENT_FULL, make_synchronous),
+            TARGET,
+        )
+        self.assertIn("BARRIER_PIPELINE_PRODUCER_UNSUPPORTED", _codes(unsupported))
+
 
 class CategoryCoverageTest(unittest.TestCase):
     def test_all_four_paper_contract_classes_are_reachable(self) -> None:
         observed = set()
         cases = [
-            (B32, lambda d: d["roles"][0].update(warps=[0, 4096])),
+            (B32, lambda d: d["roles"][0].update(warps=[4096, 4097])),
             (B32, lambda d: _op(d, "load_tokens").update(writes=["token_tile", "centroids"])),
             (ASSIGNMENT_FULL, ProgramSafetyTest._desynchronized),
             (B32, lambda d: d["roles"].append(dict(d["roles"][0]))),

@@ -28,6 +28,7 @@ from .ir import (
     LoadMovement,
     MemorySpace,
     OperationKind,
+    PipelineKind,
     Role,
     Schedule,
     Swizzle,
@@ -294,24 +295,30 @@ class _Emitter:
     # ---- derived pipeline and scope facts --------------------------------------
 
     def _pipeline_class(self, barrier: Barrier) -> str:
-        """Which CuTe pipeline realizes a handshake, from who is on each end.
+        """Which CuTe pipeline realizes a handshake, from typed producer semantics.
 
         A TMA producer feeding the MMA is a TmaUmma pipeline; the MMA producing an
-        accumulator for threads is UmmaAsync. Both follow from the barrier's declared
-        producers and the movement of the operations that signal it.
+        accumulator for threads is UmmaAsync. The verifier requires every signaller to
+        resolve to the same kind; direct emitter calls fail closed on the same condition.
         """
 
-        producers = set(barrier.producers)
         signallers = [
             op for op in self.schedule.operations if barrier.name in op.signals
         ]
-        if any(op.kind is OperationKind.LOAD for op in signallers):
-            return "PipelineTmaUmma"
-        if any(op.kind is OperationKind.MMA for op in signallers):
-            return "PipelineUmmaAsync"
-        raise EmitError(
-            f"barrier {barrier.name!r} has no lowerable producer among {sorted(producers)}"
-        )
+        kinds = {operation.produced_pipeline_kind for operation in signallers}
+        if None in kinds or len(kinds) != 1:
+            rendered = sorted(
+                "unsupported" if kind is None else kind.value for kind in kinds
+            )
+            raise EmitError(
+                f"barrier {barrier.name!r} needs one lowerable pipeline kind; got "
+                f"{rendered or ['none']}"
+            )
+        kind = kinds.pop()
+        return {
+            PipelineKind.TMA_TO_UMMA: "PipelineTmaUmma",
+            PipelineKind.UMMA_TO_THREAD: "PipelineUmmaAsync",
+        }[kind]
 
     def _participants(self, barrier: Barrier) -> tuple[str, str]:
         return f"{barrier.name}_producer", f"{barrier.name}_consumer"
