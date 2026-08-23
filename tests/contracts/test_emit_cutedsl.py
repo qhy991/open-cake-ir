@@ -205,3 +205,114 @@ class UnderSpecificationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BodyEmissionTest(unittest.TestCase):
+    """Each of these was a bug the B200 found, now derived rather than written."""
+
+    def setUp(self) -> None:
+        self.schedule = Schedule.load(DECLARED)
+        self.source = emit(self.schedule, TARGET).source
+
+    def test_loop_nesting_and_scope_come_from_the_schedule(self) -> None:
+        from open_cake_ir.compiler.emit_cutedsl import _Emitter
+
+        emitter = _Emitter(self.schedule, TARGET)
+        scopes = {
+            role.name: {
+                scope: [op.op_id for op in emitter._ops_in_scope(role, scope)]
+                for scope in [None] + [l.name for l in emitter._loops_for_role(role)]
+                if emitter._ops_in_scope(role, scope)
+            }
+            for role in self.schedule.roles
+        }
+        self.assertEqual(
+            scopes,
+            {
+                "tma": {"k_loop": ["load_tokens", "load_centroids"]},
+                "mma": {"k_loop": ["dot_mma"]},
+                "epilogue": {"centroid_loop": ["distance_epilogue"]},
+                "reduce": {None: ["argmin", "store_assignment"]},
+            },
+        )
+
+    def test_pipeline_class_follows_from_who_signals_the_barrier(self) -> None:
+        from open_cake_ir.compiler.emit_cutedsl import _Emitter
+
+        emitter = _Emitter(self.schedule, TARGET)
+        classes = {b.name: emitter._pipeline_class(b) for b in emitter._mbarriers()}
+        self.assertEqual(
+            classes,
+            {
+                "tiles_ready": "PipelineTmaUmma",
+                "accumulator_ready": "PipelineUmmaAsync",
+            },
+        )
+
+    def test_a_cta_barrier_is_emitted_outside_the_warp_dispatch(self) -> None:
+        """Emitting it inside one role's branch deadlocks the other six warps.
+
+        The B200 run that found this hit the job's wall clock with no output.
+        """
+
+        rendezvous = self.source.index("cute.arch.sync_threads()")
+        line_start = self.source.rindex("\n", 0, rendezvous) + 1
+        self.assertEqual(
+            self.source[line_start:rendezvous], "    ", "the rendezvous must be at kernel scope"
+        )
+        self.assertIn("distance_ready", self.source[:rendezvous].rsplit("\n", 2)[-2])
+
+    def test_only_a_thread_producer_commits(self) -> None:
+        """A TMA transaction completes its own barrier; a thread producer must commit."""
+
+        self.assertIn("accumulator_ready_empty.commit()", self.source)
+        self.assertNotIn("tiles_ready_empty.commit()", self.source)
+
+    def test_an_inner_operation_may_address_an_outer_axis(self) -> None:
+        """The B operand is tiled in N by the outer loop and read by an inner load."""
+
+        self.assertIn(
+            "tma_global_load_centroids[(None, centroid_tile, k_tile)]", self.source
+        )
+        self.assertIn("tma_global_load_tokens[(None, k_tile)]", self.source)
+        self.assertNotIn("for _ in cutlass.range", self.source)
+
+    def test_a_store_fed_by_a_reduction_lives_in_its_row_loop(self) -> None:
+        body = self.source[self.source.index("# CAKE_OP:argmin"):]
+        store = body.index("assignments[row] = best_index")
+        indent = body[body.rindex("\n", 0, store) + 1 : store]
+        self.assertEqual(len(indent), 12, "the store must be inside the row loop")
+
+    def test_the_allocating_role_releases_tensor_memory(self) -> None:
+        self.assertIn("tmem.allocate(TMEM_COLUMNS)", self.source)
+        self.assertIn("tmem.relinquish_alloc_permit()", self.source)
+
+    def test_every_operation_has_a_body(self) -> None:
+        self.assertNotIn("pass  # body for", self.source)
+        for operation in self.schedule.operations:
+            with self.subTest(operation=operation.op_id):
+                self.assertIn(f"# CAKE_OP:{operation.op_id}", self.source)
+
+
+class EmittedKernelObservationTest(unittest.TestCase):
+    """The retained B200 observation for the generated kernel.
+
+    Correctness only. No timing was taken and no comparison against the hand-written
+    artifact is claimed.
+    """
+
+    RECORD = ROOT / "inventory" / "EMITTED_KERNEL_OBSERVATION_20260823.json"
+
+    def test_the_observation_matches_what_the_emitter_produces_now(self) -> None:
+        import hashlib
+
+        record = json.loads(self.RECORD.read_text(encoding="utf-8"))
+        source = emit(Schedule.load(DECLARED), TARGET).source
+        self.assertEqual(
+            hashlib.sha256(source.encode()).hexdigest(), record["emitted_source_sha256"]
+        )
+        self.assertEqual(record["result"]["mismatch_count"], 0)
+        self.assertEqual(record["result"]["max_chosen_distance_excess"], 0.0)
+        self.assertTrue(record["result"]["passed"])
+        self.assertFalse(record["scientific_claim_authorized"])
+        self.assertFalse(record["performance_measured"])

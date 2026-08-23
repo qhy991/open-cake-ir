@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "fccf3202dc9b41232250ac49857f8e250371343c2788733bbc42df876bcbbf3c"
+    "canonical_sha256": "264fd61d1ba3beb8fc4a78765b1999fe5fa298308fcf62dfe27d57670900ad38"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "explicit user authorization to wire the reimplemented Compiler model into the product path; v4 makes the typed Schedule IR the single owner of structural admissibility, reports a structural violation as a localized Finding instead of an exception, adds the target-derived contract verifier to Compiler.assess, and binds the CuTe-DSL emitter as Compiler source. The six-case Corpus Gate matches v3 exactly, so retained Corpus behaviour is preserved. Lowering is unchanged and remains a template stamp on 2026-08-23"
+  "approval_basis": "explicit user authorization to continue the compiler-first reproduction; v5 lands CuTe-DSL emission that generates a complete warp-specialized Blackwell kernel from a Schedule, verified on an exclusive B200 at 128/128 exact assignments with zero distance excess. Compiler.lower is unchanged and still stamps a template on 2026-08-23"
 }

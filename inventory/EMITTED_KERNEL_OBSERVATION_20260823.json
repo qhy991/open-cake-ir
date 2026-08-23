@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-23T08:20:00Z",
+  "purpose": "emitted_kernel_correctness",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "host": "verda-b200x4",
+  "device": "NVIDIA B200",
+  "compute_capability": [
+    10,
+    0
+  ],
+  "toolchain": {
+    "cutlass": "4.7.0",
+    "torch": "2.13.0+cu130"
+  },
+  "schedule": {
+    "path": "examples/schedules/flash-kmeans-assignment-full-declared.json",
+    "schedule_id": "flash-kmeans-assignment-full-declared-v1"
+  },
+  "emitted_source_sha256": "caf578369f006866e81bb66a894d05dbe40e919027bedcfd136731f0236656fc",
+  "emitted_source_lines": 337,
+  "result": {
+    "compiled": true,
+    "launched": true,
+    "total_assignments": 128,
+    "mismatch_count": 0,
+    "max_chosen_distance_excess": 0.0,
+    "passed": true
+  },
+  "note": "The kernel was generated from the Schedule by emit_cutedsl, not selected from a checked-in template. Correctness only; no timing was taken and no comparison against the hand-written artifact is claimed."
+}

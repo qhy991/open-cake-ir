@@ -306,7 +306,10 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(release.document["state"], "released")
         self.assertEqual(release.document["corpus_gate"]["case_count"], 6)
         self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 6)
-        self.assertEqual(len(release.document["sources"]), 20)
+        self.assertEqual(
+            len(release.document["sources"]),
+            len(json.loads((ROOT / "compiler" / "source_set.json").read_text())["paths"]),
+        )
         self.assertTrue(release.verify(ROOT))
 
         with tempfile.TemporaryDirectory() as directory:
@@ -315,7 +318,12 @@ class CompilerContractTests(unittest.TestCase):
             released_compiler = Compiler.load(ROOT, path)
 
         released_gate = released_compiler.check_corpus()
-        self.assertEqual(released_gate.compiler_revision_id, "open-cake-ir-sm100a-v4")
+        # The released id advances with every Compiler change; assert against the lock
+        # rather than a literal, so a Revision bump is not a test edit.
+        released = json.loads(
+            (ROOT / "compiler" / "revision.lock.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(released_gate.compiler_revision_id, released["revision_id"])
         self.assertTrue(released_gate.passed)
 
     def test_full_compiler_corpus_gate_passes(self) -> None:

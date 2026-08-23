@@ -174,7 +174,10 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(result["accepted"])
         self.assertTrue(result["lowering_eligible"])
-        self.assertEqual(result["compiler_revision_id"], "open-cake-ir-sm100a-v4")
+        released = json.loads(
+            (ROOT / "compiler" / "revision.lock.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(result["compiler_revision_id"], released["revision_id"])
 
     def test_lab_preflight_emits_one_content_bound_campaign_lock(self) -> None:
         output = StringIO()

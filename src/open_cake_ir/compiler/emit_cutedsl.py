@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .ir import (
+    AccessIndexKind,
     Barrier,
     BarrierMechanism,
     DType,
@@ -297,39 +298,507 @@ class _Emitter:
                 self.line(f"        swizzle={load.op_id}_smem_layout.inner,")
             self.line("    )")
         self.line()
+        self._emit_prologue()
         self._emit_role_dispatch()
 
     def _tma_sources(self) -> set[str]:
         return {load.reads[0] for load in self.loads}
 
+    # ---- derived pipeline and scope facts --------------------------------------
+
+    def _pipeline_class(self, barrier: Barrier) -> str:
+        """Which CuTe pipeline realizes a handshake, from who is on each end.
+
+        A TMA producer feeding the MMA is a TmaUmma pipeline; the MMA producing an
+        accumulator for threads is UmmaAsync. Both follow from the barrier's declared
+        producers and the movement of the operations that signal it.
+        """
+
+        producers = set(barrier.producers)
+        signallers = [
+            op for op in self.schedule.operations if barrier.name in op.signals
+        ]
+        if any(op.kind is OperationKind.LOAD for op in signallers):
+            return "PipelineTmaUmma"
+        if any(op.kind is OperationKind.MMA for op in signallers):
+            return "PipelineUmmaAsync"
+        raise EmitError(
+            f"barrier {barrier.name!r} has no lowerable producer among {sorted(producers)}"
+        )
+
+    def _participants(self, barrier: Barrier) -> tuple[str, str]:
+        return f"{barrier.name}_producer", f"{barrier.name}_consumer"
+
+    def _mbarriers(self) -> tuple[Barrier, ...]:
+        return tuple(b for b in self.schedule.barriers if self._is_mbarrier(b))
+
+    def _scope_of(self, op_id: str) -> str | None:
+        """The innermost loop whose body names this operation, if any."""
+
+        for loop in self.schedule.tile_loops:
+            if op_id in loop.body:
+                return loop.name
+        return None
+
+    def _ops_in_scope(self, role: Role, scope: str | None) -> list:
+        return [
+            op
+            for op in self.schedule.operations
+            if op.role == role.name and self._scope_of(op.op_id) == scope
+        ]
+
+    def _loops_for_role(self, role: Role) -> tuple[TileLoop, ...]:
+        """Loops this role actually enters, outermost first."""
+
+        names = {
+            self._scope_of(op.op_id)
+            for op in self.schedule.operations
+            if op.role == role.name
+        }
+        wanted: set[str] = set()
+        parent = self.schedule.loop_parent()
+        for name in names:
+            while name is not None:
+                wanted.add(name)
+                name = parent.get(name)
+        return tuple(loop for loop in self.nest if loop.name in wanted)
+
+    def _emit_prologue(self) -> None:
+        """Partitioning, TMEM custody and pipeline participants, all derived.
+
+        Every quantity here follows from a declaration: the tile from the MMA atom, the
+        staging depth from the pipeline, the participant classes from who produces and
+        consumes each barrier, the TMEM allocator's owning warp from the role that reads
+        tensor memory.
+        """
+
+        a, b = self.loads[0], self.loads[1]
+        self.line(f"    tiled_{a.op_id} = cute.local_tile(")
+        self.line(f"        {a.op_id}_source, MMA_TILE, (0, None, None), proj=(1, None, 1)")
+        self.line("    )")
+        self.line(f"    tiled_{b.op_id} = cute.local_tile(")
+        self.line(f"        {b.op_id}_source, MMA_TILE, (None, None, None), proj=(None, 1, 1)")
+        self.line("    )")
+        scratch = self._epilogue_global()
+        self.line(f"    tiled_{scratch} = cute.local_tile(")
+        self.line(f"        {scratch}, MMA_TILE, (0, None, None), proj=(1, 1, None)")
+        self.line("    )")
+        self.line("    mma_slice = tiled_mma.get_slice(0)")
+        self.line(f"    mma_{a.op_id} = mma_slice.partition_A(tiled_{a.op_id})")
+        self.line(f"    mma_{b.op_id} = mma_slice.partition_B(tiled_{b.op_id})")
+        self.line(f"    mma_{scratch} = mma_slice.partition_C(tiled_{scratch})")
+        self.line("    identity = cute.make_identity_tensor(MMA_TILE[:2])")
+        self.line("    mma_identity = mma_slice.partition_C(identity)")
+        self.line(f"    fragment_a = tiled_mma.make_fragment_A({a.writes[0]})")
+        self.line(f"    fragment_b = tiled_mma.make_fragment_B({b.writes[0]})")
+        self.line("    accumulator_template = tiled_mma.make_fragment_C(")
+        self.line("        tiled_mma.partition_shape_C(MMA_TILE[:2])")
+        self.line("    )")
+        self.line()
+        for load, partitioned in ((a, f"mma_{a.op_id}"), (b, f"mma_{b.op_id}")):
+            self.line(
+                f"    tma_shared_{load.op_id}, tma_global_{load.op_id} = "
+                "cute.nvgpu.cpasync.tma_partition("
+            )
+            self.line(f"        {load.op_id}_atom,")
+            self.line("        0,")
+            self.line("        cute.make_layout(1),")
+            self.line(f"        cute.group_modes({load.writes[0]}, 0, 3),")
+            self.line(f"        cute.group_modes({partitioned}, 0, 3),")
+            self.line("    )")
+        self.line()
+
+        owner = self._tmem_owner()
+        self.line("    tmem_sync = pipeline.NamedBarrier(")
+        self.line("        barrier_id=1,")
+        self.line(
+            f"        num_threads=(len({self.role_constant(owner)}) + 1) * 32,"
+            if len(owner.warps) > 1
+            else "        num_threads=2 * 32,"
+        )
+        self.line("    )")
+        self.line("    tmem = utils.TmemAllocator(")
+        self.line("        storage.tmem_holding_buffer,")
+        self.line("        barrier_for_retrieve=tmem_sync,")
+        self.line(
+            f"        allocator_warp_id={self.role_constant(owner)}[0],"
+            if len(owner.warps) > 1
+            else f"        allocator_warp_id={self.role_constant(owner)},"
+        )
+        self.line("    )")
+        self.line()
+        self.line("    transaction_bytes = " + " + ".join(
+            f"cute.size_in_bytes(IO_DTYPE, cute.select({load.op_id}_smem_layout, mode=[0, 1, 2]))"
+            for load in self.loads
+        ))
+        for barrier in self._mbarriers():
+            producer, consumer = self._participants(barrier)
+            klass = self._pipeline_class(barrier)
+            stages = "PIPELINE_STAGES" if barrier.pipeline is not None else "1"
+            self.line(f"    {producer}, {consumer} = pipeline.{klass}.create(")
+            self.line(f"        barrier_storage=storage.{barrier.name}_mbarriers.data_ptr(),")
+            self.line(f"        num_stages={stages},")
+            self.line("        producer_group=pipeline.CooperativeGroup(pipeline.Agent.Thread),")
+            consumer_role = self.roles[barrier.consumers[0]]
+            if klass == "PipelineUmmaAsync" and len(consumer_role.warps) > 1:
+                self.line("        consumer_group=pipeline.CooperativeGroup(")
+                self.line(
+                    f"            pipeline.Agent.Thread, size={consumer_role.name.upper()}_THREADS"
+                )
+                self.line("        ),")
+            else:
+                self.line("        consumer_group=pipeline.CooperativeGroup(pipeline.Agent.Thread),")
+            if klass == "PipelineTmaUmma":
+                self.line("        tx_count=transaction_bytes,")
+            self.line("    ).make_participants()")
+        self.line()
+
+    def _epilogue_global(self) -> str:
+        for name in self.epilogue.writes:
+            buffer = self.schedule.buffer(name)
+            if buffer is not None and buffer.space is MemorySpace.GLOBAL:
+                return name
+        raise EmitError("epilogue must write one global buffer")
+
+    def _tmem_owner(self) -> Role:
+        """The role that allocates tensor memory: the one that reads the accumulator."""
+
+        for operation in self.schedule.operations:
+            for name in operation.reads:
+                buffer = self.schedule.buffer(name)
+                if buffer is not None and buffer.space is MemorySpace.TENSOR:
+                    return self.roles[operation.role]
+        raise EmitError("no role reads tensor memory")
+
+    def _named_barriers(self) -> tuple[Barrier, ...]:
+        return tuple(
+            b
+            for b in self.schedule.barriers
+            if b.mechanism is BarrierMechanism.NAMED
+        )
+
+    def _dispatch_phases(self) -> list[tuple[Barrier | None, list[Role]]]:
+        """Split the roles around every CTA-wide barrier.
+
+        A named barrier is a whole-CTA rendezvous, so it must sit outside the warp
+        dispatch -- every warp has to arrive. Emitting it inside one role's branch
+        deadlocks the other six. The consumers of a named barrier therefore run in a
+        second dispatch block behind it.
+        """
+
+        active = [
+            role
+            for role in sorted(self.schedule.roles, key=lambda r: r.warps[0])
+            if any(op.role == role.name for op in self.schedule.operations)
+        ]
+        deferred: dict[str, Barrier] = {}
+        for barrier in self._named_barriers():
+            for name in barrier.consumers:
+                deferred[name] = barrier
+        phases: list[tuple[Barrier | None, list[Role]]] = [
+            (None, [r for r in active if r.name not in deferred])
+        ]
+        for barrier in self._named_barriers():
+            waiting = [r for r in active if deferred.get(r.name) is barrier]
+            if waiting:
+                phases.append((barrier, waiting))
+        return phases
+
     def _emit_role_dispatch(self) -> None:
         """Warp identity is computed from the declared roles, not written by the agent."""
 
-        self.line("    # warp identity derived from the declared roles")
-        first = True
-        for role in sorted(self.schedule.roles, key=lambda r: r.warps[0]):
-            operations = [
-                op for op in self.schedule.operations if op.role == role.name
-            ]
-            if not operations:
-                continue
-            keyword = "if" if first else "elif"
-            first = False
-            if len(role.warps) == 1:
-                condition = f"warp_idx == {self.role_constant(role)}"
-            else:
-                low, high = min(role.warps), max(role.warps)
-                condition = f"{low} <= warp_idx <= {high}"
-            self.line(f"    {keyword} {condition}:")
-            for operation in operations:
-                self.line(f"        # CAKE_OP:{operation.op_id}")
+        for barrier, roles in self._dispatch_phases():
+            if barrier is not None:
                 self.line(
-                    f"        pass  # body for {operation.kind.value} "
-                    f"{operation.op_id!r} in role {role.name!r}"
+                    f"    # {barrier.name}: a CTA-wide rendezvous, outside the dispatch"
                 )
+                self.line("    cute.arch.sync_threads()")
+            first = True
+            for role in roles:
+                keyword = "if" if first else "elif"
+                first = False
+                if len(role.warps) == 1:
+                    condition = f"warp_idx == {self.role_constant(role)}"
+                else:
+                    low, high = min(role.warps), max(role.warps)
+                    condition = f"{low} <= warp_idx <= {high}"
+                self.line(f"    {keyword} {condition}:")
+                self._emit_role_body(role, indent=8)
         self.line("    # CAKE_KERNEL_END")
         self.line()
         self.line()
+
+    def _emit_role_body(self, role: Role, indent: int) -> None:
+        pad = " " * indent
+        if role is self._tmem_owner():
+            self.line(f"{pad}tmem.allocate(TMEM_COLUMNS)")
+        if any(
+            self.schedule.buffer(name) is not None
+            and self.schedule.buffer(name).space is MemorySpace.TENSOR
+            for op in self.schedule.operations
+            if op.role == role.name
+            for name in list(op.reads) + list(op.writes)
+        ):
+            self.line(f"{pad}tmem.wait_for_alloc()")
+            self.line(f"{pad}accumulator = cute.make_tensor(")
+            self.line(f"{pad}    tmem.retrieve_ptr(ACC_DTYPE), accumulator_template.layout")
+            self.line(f"{pad})")
+
+        loops = self._loops_for_role(role)
+        for operation in self._ops_in_scope(role, None):
+            if self._emitted_with_producer(operation):
+                continue
+            self._emit_operation(operation, indent)
+        self._emit_loop_nest(role, loops, 0, indent)
+
+        for barrier in self._mbarriers():
+            if role.name in barrier.producers:
+                self.line(f"{pad}{self._participants(barrier)[0]}.tail()")
+        if role is self._tmem_owner():
+            self.line(f"{pad}tmem.relinquish_alloc_permit()")
+            self.line(f"{pad}tmem.free(tmem.retrieve_ptr(ACC_DTYPE))")
+
+    def _emit_loop_nest(self, role: Role, loops, depth: int, indent: int) -> None:
+        if depth >= len(loops):
+            return
+        loop = loops[depth]
+        pad = " " * indent
+        trips = f"NUM_{loop.name.upper()}_TRIPS"
+        # Always bind the iterator. An operation in an inner scope may still address an
+        # outer axis -- the B operand is tiled in N by the outer loop and read by a load
+        # that lives in the inner one.
+        self.line(f"{pad}for {loop.iterator} in cutlass.range({trips}):")
+
+        acquired = [
+            b
+            for b in self._mbarriers()
+            if role.name in b.producers and self._barrier_scope(b) == loop.name
+        ]
+        for barrier in acquired:
+            self.line(
+                f"{pad}    {barrier.name}_empty = "
+                f"{self._participants(barrier)[0]}.acquire_and_advance()"
+            )
+        for operation in self._ops_in_scope(role, loop.name):
+            if self._emitted_with_producer(operation):
+                continue
+            self._emit_operation(operation, indent + 4)
+        self._emit_loop_nest(role, loops, depth + 1, indent + 4)
+        for barrier in acquired:
+            if self._pipeline_class(barrier) == "PipelineTmaUmma":
+                continue  # the TMA transaction completes this barrier itself
+            self.line(f"{pad}    {barrier.name}_empty.commit()")
+
+    def _barrier_scope(self, barrier: Barrier) -> str | None:
+        """The loop a barrier is acquired in: the scope of whatever signals it."""
+
+        signallers = [op for op in self.schedule.operations if barrier.name in op.signals]
+        scopes = {self._scope_of(op.op_id) for op in signallers}
+        if len(scopes) != 1:
+            raise EmitError(
+                f"barrier {barrier.name!r} is signalled from more than one loop scope"
+            )
+        scope = scopes.pop()
+        if barrier.pipeline is not None:
+            return scope
+        parent = self.schedule.loop_parent()
+        return parent.get(scope, scope) if scope else scope
+
+    def _loop_axis(self, loop: TileLoop) -> str:
+        """Whether a loop walks the MMA tile's N or K axis, by matching its tile."""
+
+        if loop.tile == self.tile[1]:
+            return "N"
+        if loop.tile == self.tile[2]:
+            return "K"
+        raise EmitError(
+            f"loop {loop.name!r} tile {loop.tile} matches neither the MMA tile N "
+            f"({self.tile[1]}) nor K ({self.tile[2]})"
+        )
+
+    def _axis_iterators(self) -> dict[str, str]:
+        return {self._loop_axis(loop): loop.iterator for loop in self.nest}
+
+    def _emit_operation(self, operation, indent: int) -> None:
+        pad = " " * indent
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        kind = operation.kind
+        if kind is OperationKind.LOAD:
+            self._emit_load(operation, pad)
+        elif kind is OperationKind.MMA:
+            self._emit_mma(operation, pad)
+        elif kind is OperationKind.EPILOGUE:
+            self._emit_epilogue(operation, pad)
+        elif kind is OperationKind.REDUCE_ARGMIN:
+            self._emit_argmin(operation, pad)
+        elif kind is OperationKind.STORE:
+            self._emit_store(operation, pad)
+        else:
+            raise EmitError(
+                f"operation kind {kind.value!r} has no CuTe-DSL body emitter"
+            )
+
+    def _emit_load(self, operation, pad: str) -> None:
+        """A TMA copy into the stage the barrier this load signals is gating."""
+
+        barrier = next(
+            (b for b in self._mbarriers() if b.name in operation.signals), None
+        )
+        if barrier is None:
+            raise EmitError(f"load {operation.op_id!r} signals no mbarrier")
+        axes = self._axis_iterators()
+        # Operand A is tiled in K alone; operand B is tiled in N and K. Which one this
+        # load feeds follows from its position in the MMA's reads.
+        index = list(self.mma.reads).index(operation.writes[0])
+        coordinate = (
+            f"(None, {axes['K']})"
+            if index == 0
+            else f"(None, {axes['N']}, {axes['K']})"
+        )
+        self.line(f"{pad}cute.copy(")
+        self.line(f"{pad}    {operation.op_id}_atom,")
+        self.line(f"{pad}    tma_global_{operation.op_id}[{coordinate}],")
+        self.line(
+            f"{pad}    tma_shared_{operation.op_id}"
+            f"[(None, {barrier.name}_empty.index)],"
+        )
+        self.line(f"{pad}    tma_bar_ptr={barrier.name}_empty.barrier,")
+        self.line(f"{pad})")
+
+    def _emit_mma(self, operation, pad: str) -> None:
+        waited = next(
+            (b for b in self._mbarriers() if b.name in operation.waits), None
+        )
+        if waited is None:
+            raise EmitError(f"mma {operation.op_id!r} waits on no mbarrier")
+        axes = self._axis_iterators()
+        consumer = self._participants(waited)[1]
+        self.line(f"{pad}{waited.name}_full = {consumer}.wait_and_advance()")
+        self.line(
+            f"{pad}tiled_mma.set(tcgen05.Field.ACCUMULATE, {axes['K']} != 0)"
+        )
+        self.line(f"{pad}stage = (None, None, None, {waited.name}_full.index)")
+        self.line(f"{pad}cute.gemm(")
+        self.line(f"{pad}    tiled_mma, accumulator, fragment_a[stage], fragment_b[stage], accumulator")
+        self.line(f"{pad})")
+        self.line(f"{pad}{waited.name}_full.release()")
+
+    def _emit_epilogue(self, operation, pad: str) -> None:
+        """Read the accumulator through the declared copy atom, apply the formula."""
+
+        parameters = operation.parameters
+        if parameters.subtile is None or parameters.source_atom is None:
+            raise EmitError(
+                f"epilogue {operation.op_id!r} must commit to a subtile and a source atom"
+            )
+        waited = next((b for b in self._mbarriers() if b.name in operation.waits), None)
+        if waited is None:
+            raise EmitError(f"epilogue {operation.op_id!r} waits on no mbarrier")
+        axes = self._axis_iterators()
+        scratch = self._epilogue_global()
+        norm = next(
+            name
+            for name in operation.reads
+            if (buffer := self.schedule.buffer(name)) is not None
+            and buffer.space is MemorySpace.GLOBAL
+        )
+        atom = parameters.source_atom
+        self.line(f"{pad}{self._participants(waited)[1]}.wait_and_advance()")
+        self.line(f"{pad}epilogue_tiler = ({parameters.subtile[0]}, {parameters.subtile[1]})")
+        self.line(f"{pad}accumulator_tiles = cute.zipped_divide(accumulator, (epilogue_tiler,))")
+        self.line(f"{pad}coordinate_tiles = cute.zipped_divide(mma_identity, (epilogue_tiler,))")
+        self.line(f"{pad}source_atom = cute.make_copy_atom(")
+        self.line(
+            f"{pad}    tcgen05.Ld32x32bOp(tcgen05.Repetition.x{atom.repetition}), ACC_DTYPE"
+        )
+        self.line(f"{pad})")
+        self.line(
+            f"{pad}source_copy = tcgen05.make_tmem_copy(source_atom, accumulator_tiles[None, 0])"
+        )
+        self.line(f"{pad}thread_copy = source_copy.get_slice(thread_idx)")
+        self.line(f"{pad}tmem_source = thread_copy.partition_S(accumulator_tiles)")
+        self.line(f"{pad}coordinate_source = thread_copy.partition_D(coordinate_tiles)")
+        self.line(f"{pad}output_tile = mma_{scratch}[(None, None, None, {axes['N']})]")
+        self.line(f"{pad}output_tiles = cute.zipped_divide(output_tile, (epilogue_tiler,))")
+        self.line(f"{pad}destination = thread_copy.partition_D(output_tiles)")
+        self.line(f"{pad}registers = cute.make_rmem_tensor(")
+        self.line(f"{pad}    destination[None, None, 0].shape, ACC_DTYPE")
+        self.line(f"{pad})")
+        self.line(f"{pad}base = {axes['N']} * MMA_TILE[1]")
+        self.line(f"{pad}for subtile in cutlass.range(cute.size(tmem_source, mode=[2])):")
+        self.line(f"{pad}    cute.copy(source_copy, tmem_source[None, None, subtile], registers)")
+        self.line(f"{pad}    coordinates = coordinate_source[None, None, subtile]")
+        self.line(f"{pad}    for value in range(cute.size(registers)):")
+        self.line(f"{pad}        column = base + coordinates[value][1]")
+        self.line(
+            f"{pad}        registers[value] = {norm}[column] - 2.0 * registers[value]"
+        )
+        self.line(
+            f"{pad}    cute.autovec_copy(registers, destination[None, None, subtile])"
+        )
+        self.line(f"{pad}{self._participants(waited)[1]}.release()")
+
+    def _emit_argmin(self, operation, pad: str) -> None:
+        source = self.schedule.buffer(operation.reads[0])
+        if source is None or len(source.shape) != 2:
+            raise EmitError(f"argmin {operation.op_id!r} needs a rank-2 source")
+        rows, columns = source.shape
+        groups = rows // 32
+        self.line(f"{pad}lane = cute.arch.lane_idx()")
+        self.line(f"{pad}for group in cutlass.range({groups}, unroll_full=True):")
+        self.line(f"{pad}    row = lane + group * 32")
+        self.line(f"{pad}    best_value = {source.name}[row, 0]")
+        self.line(f"{pad}    best_index = cutlass.Int32(0)")
+        self.line(
+            f"{pad}    for column in cutlass.range(1, {columns}, 1, unroll=1):"
+        )
+        self.line(f"{pad}        candidate = {source.name}[row, column]")
+        self.line(f"{pad}        if candidate < best_value:")
+        self.line(f"{pad}            best_value = candidate")
+        self.line(f"{pad}            best_index = column")
+
+        # The reduction produces one index per row inside a loop this emitter opened, so
+        # a store that consumes it belongs in that loop rather than beside it.
+        for consumer in self._consumers_of(operation):
+            self.line(f"{pad}    # CAKE_OP:{consumer.op_id}")
+            self.line(f"{pad}    {consumer.writes[0]}[row] = best_index")
+
+    def _consumers_of(self, operation):
+        produced = set(operation.writes)
+        return [
+            item
+            for item in self.schedule.operations
+            if item.op_id != operation.op_id and produced & set(item.reads)
+        ]
+
+    def _emitted_with_producer(self, operation) -> bool:
+        """A store fed by a reduction is emitted inside that reduction's row loop."""
+
+        if operation.kind is not OperationKind.STORE:
+            return False
+        return any(
+            producer.kind is OperationKind.REDUCE_ARGMIN
+            and set(producer.writes) & set(operation.reads)
+            for producer in self.schedule.operations
+        )
+
+    def _emit_store(self, operation, pad: str) -> None:
+        raise EmitError(
+            f"store {operation.op_id!r} is emitted with the reduction that feeds it"
+        )
+
+    def _iterator_uses(self, operation) -> set[str]:
+        return {
+            index.name
+            for access in self.schedule.access_maps
+            if access.operation == operation.op_id
+            for index in access.indices
+            if index.source is AccessIndexKind.LOOP_TILE and index.name
+        } | {
+            loop.iterator
+            for loop in self.schedule.tile_loops
+            if operation.op_id in loop.body
+        }
 
     def _emit_host(self) -> None:
         globals_in_order = [
