@@ -99,7 +99,10 @@ class UnifiedVocabularyTest(unittest.TestCase):
         self.assertEqual(
             operation.parameters,
             EpilogueParameters(
-                formula=EpilogueFormula.BIAS_ADD_BF16_ROUND, coalesced=True
+                formula=EpilogueFormula.BIAS_ADD_BF16_ROUND,
+                coalesced=True,
+                subtile=None,
+                source_atom=None,
             ),
         )
 

@@ -387,6 +387,7 @@ def _verify_hardware_conformance(
 
     _verify_instruction_commitments(schedule, target, out)
     _verify_descriptor_commitments(schedule, out)
+    _verify_epilogue_commitments(schedule, out)
     _verify_swizzle_commitments(schedule, out)
 
     for index, buffer in enumerate(schedule.buffers):
@@ -580,6 +581,60 @@ def _verify_instruction_commitments(
                     f"{name!r} shape {accumulator.shape[0]}x{accumulator.shape[1]}",
                     category,
                 )
+
+
+def _verify_epilogue_commitments(schedule: Schedule, out: _Collector) -> None:
+    """An epilogue's sub-tiling and its accumulator copy atom are scheduling choices."""
+
+    category = FindingCategory.HARDWARE_CONFORMANCE
+    buffers = {buffer.name: buffer for buffer in schedule.buffers}
+    for index, operation in enumerate(schedule.operations):
+        if operation.kind is not OperationKind.EPILOGUE:
+            continue
+        path = f"operations[{index}].parameters"
+        subtile = getattr(operation.parameters, "subtile", None)
+        atom = getattr(operation.parameters, "source_atom", None)
+
+        if subtile is None:
+            out.add(
+                "EPILOGUE_SUBTILE_UNDECLARED",
+                f"{path}.subtile",
+                f"operation {operation.op_id!r} does not commit to a sub-tiling of its "
+                "accumulator; the backend chooses one and its register cost is hidden",
+                category,
+                FindingSeverity.HINT,
+            )
+        else:
+            for name in operation.reads:
+                source = buffers.get(name)
+                if source is None or source.space is not MemorySpace.TENSOR:
+                    continue
+                if len(source.shape) == 2 and any(
+                    source.shape[axis] % subtile[axis] for axis in (0, 1)
+                ):
+                    out.add(
+                        "EPILOGUE_SUBTILE_MISMATCH",
+                        f"{path}.subtile",
+                        f"sub-tile {subtile[0]}x{subtile[1]} does not divide "
+                        f"accumulator {name!r} shape "
+                        f"{source.shape[0]}x{source.shape[1]}",
+                        category,
+                    )
+
+        reads_tensor = any(
+            (buffers.get(name) is not None)
+            and buffers[name].space is MemorySpace.TENSOR
+            for name in operation.reads
+        )
+        if reads_tensor and atom is None:
+            out.add(
+                "EPILOGUE_SOURCE_ATOM_UNDECLARED",
+                f"{path}.source_atom",
+                f"operation {operation.op_id!r} reads tensor memory without committing "
+                "to a copy atom",
+                category,
+                FindingSeverity.HINT,
+            )
 
 
 def _verify_descriptor_commitments(schedule: Schedule, out: _Collector) -> None:

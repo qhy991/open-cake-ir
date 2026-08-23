@@ -352,6 +352,8 @@ class HardwareCommitmentTest(unittest.TestCase):
             {
                 "ALLOCATION_TENSOR_COLUMNS_UNDECLARED",
                 "BUFFER_SWIZZLE_UNDECLARED",
+                "EPILOGUE_SOURCE_ATOM_UNDECLARED",
+                "EPILOGUE_SUBTILE_UNDECLARED",
                 "MMA_INSTRUCTION_UNDECLARED",
                 "MMA_TILE_UNDECLARED",
                 "TMA_DESCRIPTOR_UNDECLARED",

@@ -645,9 +645,38 @@ class MmaParameters:
 
 
 @dataclass(frozen=True)
+class CopyAtom:
+    """One copy-atom commitment, e.g. the TMEM load an epilogue uses.
+
+    The retained artifact writes `tcgen05.Ld32x32bOp(tcgen05.Repetition.x64)`. The op
+    and its repetition determine how many accumulator elements each thread moves per
+    step, so they belong to the schedule rather than to the backend.
+    """
+
+    op: str
+    repetition: int
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "CopyAtom":
+        obj = _strict_object(value, required={"op", "repetition"}, context=context)
+        return cls(
+            _string(obj["op"], f"{context}.op"),
+            _positive_int(obj["repetition"], f"{context}.repetition"),
+        )
+
+
+@dataclass(frozen=True)
 class EpilogueParameters:
     formula: EpilogueFormula
     coalesced: bool
+    subtile: tuple[int, int] | None
+    """The epilogue's sub-tiling of the accumulator.
+
+    The artifact derives it as `(size(acc, [0, 0]), size(acc, [0, 1]) // 4)`. The
+    divisor is a scheduling choice with a register-pressure consequence, not an
+    implementation detail, so it is declared rather than hidden.
+    """
+    source_atom: CopyAtom | None
 
 
 @dataclass(frozen=True)
@@ -742,11 +771,26 @@ def _operation_parameters(
 
     if kind is OperationKind.EPILOGUE:
         obj = _strict_object(
-            value, required={"formula", "coalesced"}, context=context
+            value,
+            required={"formula", "coalesced"},
+            optional={"subtile", "source_atom"},
+            context=context,
         )
+        subtile = obj.get("subtile")
+        if subtile is not None:
+            extents = _object_list(subtile, f"{context}.subtile")
+            if len(extents) != 2:
+                raise ScheduleParseError(f"{context}.subtile must declare two extents")
+            subtile = tuple(
+                _positive_int(extent, f"{context}.subtile[{index}]")
+                for index, extent in enumerate(extents)
+            )
+        atom = obj.get("source_atom")
         return EpilogueParameters(
             _enum(EpilogueFormula, obj["formula"], f"{context}.formula"),
             _boolean(obj["coalesced"], f"{context}.coalesced"),
+            subtile,
+            None if atom is None else CopyAtom.from_dict(atom, f"{context}.source_atom"),
         )
 
     if kind is OperationKind.REDUCE_ARGMIN:

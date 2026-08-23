@@ -48,7 +48,7 @@ class DeclaredScheduleTest(unittest.TestCase):
         findings = verify(Schedule.load(DECLARED), TARGET)
         self.assertEqual(findings, (), f"unexpected findings: {[str(f) for f in findings]}")
 
-    def test_the_retained_schedule_declines_seven_commitments(self) -> None:
+    def test_the_retained_schedule_declines_nine_commitments(self) -> None:
         findings = verify(Schedule.load(RETAINED), TARGET)
         self.assertEqual([f for f in findings if f.blocks_lowering], [])
         self.assertEqual(
@@ -57,6 +57,8 @@ class DeclaredScheduleTest(unittest.TestCase):
                 "ALLOCATION_TENSOR_COLUMNS_UNDECLARED",
                 "BUFFER_SWIZZLE_UNDECLARED",
                 "BUFFER_SWIZZLE_UNDECLARED",
+                "EPILOGUE_SOURCE_ATOM_UNDECLARED",
+                "EPILOGUE_SUBTILE_UNDECLARED",
                 "MMA_INSTRUCTION_UNDECLARED",
                 "MMA_TILE_UNDECLARED",
                 "TMA_DESCRIPTOR_UNDECLARED",
@@ -77,7 +79,13 @@ class DeclaredScheduleTest(unittest.TestCase):
             for buffer in document["buffers"]:
                 buffer.pop("swizzle", None)
             for operation in document["operations"]:
-                for field in ("instruction", "tile_shape", "descriptor_box"):
+                for field in (
+                    "instruction",
+                    "tile_shape",
+                    "descriptor_box",
+                    "subtile",
+                    "source_atom",
+                ):
                     operation["parameters"].pop(field, None)
         self.assertEqual(retained, declared)
 
@@ -159,34 +167,53 @@ class CommitmentsNowDerivableTest(unittest.TestCase):
                 self.assertEqual(operation.parameters.descriptor_box, staged.shape)
 
 
-class ResidualGapTest(unittest.TestCase):
-    """What the artifact still decides and no Schedule can currently say.
+class EpilogueCommitmentTest(unittest.TestCase):
+    """The last two decisions the artifact used to own alone."""
 
-    Pinned so the list shrinks deliberately rather than being forgotten. Each entry is
-    a decision present in the artifact with no representation in the IR.
+    def setUp(self) -> None:
+        self.schedule = Schedule.load(DECLARED)
+        self.source = ARTIFACT.read_text(encoding="utf-8")
+
+    def test_the_epilogue_subtile_is_declared(self) -> None:
+        self.assertIn("epilogue_tiler", self.source)
+        epilogue = self.schedule.operation("distance_epilogue")
+        assert epilogue is not None
+        accumulator = self.schedule.buffer("accumulator")
+        assert accumulator is not None
+        subtile = epilogue.parameters.subtile
+        self.assertEqual(subtile, (128, 64))
+        # the artifact derives this as (size(acc, [0, 0]), size(acc, [0, 1]) // 4)
+        self.assertEqual(subtile[0], accumulator.shape[0])
+        self.assertEqual(subtile[1], accumulator.shape[1] // 4)
+
+    def test_the_tmem_copy_atom_is_declared(self) -> None:
+        self.assertIn("Ld32x32bOp", self.source)
+        self.assertIn("Repetition.x64", self.source)
+        epilogue = self.schedule.operation("distance_epilogue")
+        assert epilogue is not None
+        atom = epilogue.parameters.source_atom
+        assert atom is not None
+        self.assertEqual(atom.op, "tcgen05.Ld32x32b")
+        self.assertEqual(atom.repetition, 64)
+
+
+class SufficiencyTest(unittest.TestCase):
+    """Every decision the artifact carries is now expressible in a Schedule.
+
+    This does not mean an emitter exists -- only that writing one is no longer blocked
+    on the representation. `lower()` is still a template stamp.
     """
 
-    RESIDUAL = {
-        "epilogue_tiler": (
-            "(size(acc, [0, 0]), size(acc, [0, 1]) // 4) -- the epilogue sub-tiling, "
-            "including a magic divisor."
-        ),
-        "tmem_load_atom": "tcgen05.Ld32x32bOp(Repetition.x64) -- the TMEM copy atom.",
-    }
+    def test_the_declared_schedule_leaves_nothing_to_the_backend(self) -> None:
+        findings = verify(Schedule.load(DECLARED), TARGET)
+        self.assertEqual(findings, (), f"residual: {[str(f) for f in findings]}")
 
-    def test_the_residual_gap_is_two_decisions(self) -> None:
-        self.assertEqual(len(self.RESIDUAL), 2)
+    def test_the_retained_schedule_shows_the_distance_travelled(self) -> None:
+        """Nine commitments separate the retained Schedule from a complete one."""
 
-    def test_each_residual_decision_is_present_in_the_artifact(self) -> None:
-        source = ARTIFACT.read_text(encoding="utf-8")
-        markers = {
-            "epilogue_tiler": "epilogue_tiler",
-            "tmem_load_atom": "Ld32x32bOp",
-        }
-        self.assertEqual(set(markers), set(self.RESIDUAL))
-        for key, marker in markers.items():
-            with self.subTest(gap=key):
-                self.assertIn(marker, source)
+        findings = verify(Schedule.load(RETAINED), TARGET)
+        self.assertEqual([f for f in findings if f.blocks_lowering], [])
+        self.assertEqual(len(findings), 9)
 
 class LoopNestTest(unittest.TestCase):
     """The nest was the structural gap; a loop body may now name a nested loop."""
