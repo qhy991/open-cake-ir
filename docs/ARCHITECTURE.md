@@ -76,14 +76,12 @@ graph LR
     style PROF fill:#fff3cd,stroke:#b8860b
 ```
 
-Amber marks the two stages that are still short of the paper. `lower` selects one of
-three checked-in files and stamps the Schedule digest into a comment. `emit_cutedsl.py`
-generates the warp-specialized kernel outright — warp dispatch, mbarrier storage and
-participants, TMA descriptors, TMEM custody, the loop nest and every operation body —
-and it runs: 128/128 exact assignments on a B200. It does not drive `lower` yet, because
-the corpus Schedule for that profile does not carry the commitments emission requires.
-`profile rules` pin a whole-document semantic digest, which is what a real verifier
-replaces.
+`lower` generates the warp-specialized profile from its Schedule — warp dispatch,
+mbarrier storage and participants, TMA descriptors, TMEM custody, the loop nest and every
+operation body — verified on a B200 at 128/128 exact assignments. The two remaining
+profiles still stamp a checked-in file, which is why the box is amber; each will follow
+once its Schedule carries the commitments emission requires. `profile rules` pin a
+whole-document digest for those two, and that pin disappears with the file it protects.
 
 ### Findings
 
@@ -267,7 +265,7 @@ graph LR
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
 | Compile → external oracle → GPU measurement | implemented, B200-verified |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
-| Deterministic lowering | partial — the emitter generates a correct warp-specialized kernel from a Schedule, verified on B200 at 128/128; `lower` does not yet drive it |
+| Deterministic lowering | partial — `lower` generates the warp-specialized profile from its Schedule, verified on B200 at 128/128; the other two profiles still stamp a checked-in file |
 | Cost-model ranking | absent — `calibration_coverage` is empty |
 | The filter stage | absent — one candidate per Turn leaves nothing to rank |
 
