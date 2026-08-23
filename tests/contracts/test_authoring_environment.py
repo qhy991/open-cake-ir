@@ -98,6 +98,45 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
             result.launchable.artifact_roles["lowered_source"],
         )
 
+    def test_built_candidate_reports_what_bounds_its_residency(self) -> None:
+        # The analysis attribution is derived for every candidate but only survives on
+        # the accepted path, because a bound that blocks is a rejection instead. Emitting
+        # an empty findings list here would compute the attribution and then discard it.
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        workload = WorkloadContract.load(
+            ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
+        )
+        study = json.loads(
+            (
+                ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+            ).read_text(encoding="utf-8")
+        )
+        environment = OpenCakeEnvironment(
+            compiler,
+            RecordingToolchain(),
+            authority_document=study["arms"]["open_cake"],
+            workload=workload,
+            case_id="headline_b32",
+        )
+        payload = json.dumps(
+            _headline_schedule(workload), sort_keys=True, separators=(",", ":")
+        ).encode()
+
+        result = environment.build(
+            CandidateSubmission.seal(
+                "application/vnd.open-cake.schedule+json", payload
+            )
+        )
+
+        self.assertEqual(result.disposition, "launchable")
+        self.assertEqual(result.feedback["stage"], "built")
+        findings = {item["code"]: item for item in result.feedback["findings"]}
+        self.assertIn("RESIDENCY_BOUND", findings)
+        self.assertIn("registers", findings["RESIDENCY_BOUND"]["message"])
+        # Nothing blocking can reach this path; a blocking finding here would mean the
+        # Environment accepted a candidate its own verifier refused.
+        self.assertFalse(any(item["blocking"] for item in findings.values()))
+
     def test_r25_schedule_is_rejected_by_r16_study_before_toolchain(self) -> None:
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
         workload = WorkloadContract.load(

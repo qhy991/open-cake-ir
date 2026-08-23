@@ -888,6 +888,67 @@ class LabContractTests(unittest.TestCase):
         self.assertAlmostEqual(report.estimate["ratio_of_arm_medians"], 2.0)
         self.assertEqual({item.reason for item in report.run_inclusion}, {"included"})
 
+    def test_accepted_candidate_carries_environment_findings_into_the_next_turn(self) -> None:
+        # A report is by construction attached to a candidate that builds, so the accepted
+        # path is the only way one can reach the agent. The Lab used to overwrite the
+        # Environment's feedback with the measurement alone, which left every report the
+        # verifier produced unobservable to the author that could act on it.
+        class ReportingEnvironment(FakeEnvironment):
+            def build(self, submission):
+                result = super().build(submission)
+                return EnvironmentResult(
+                    result.disposition,
+                    result.submission_sha256,
+                    result.launchable,
+                    {
+                        "stage": "built",
+                        "findings": [
+                            {
+                                "code": "RESIDENCY_BOUND",
+                                "path": "roles",
+                                "message": "registers bounds residency to 1 CTA",
+                                "blocking": False,
+                            }
+                        ],
+                    },
+                )
+
+        lab = Lab(ROOT)
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v4.json")
+        provider = FakeProvider()
+        arm_environments = lock.document["resolved_inputs"]["arm_environments"]
+        protocol_sha256 = sha256(
+            json.dumps(
+                lock.document["evaluation_protocol"],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        with tempfile.TemporaryDirectory() as parent:
+            lab.execute(
+                lock,
+                Path(parent).resolve() / "campaign-evidence",
+                provider=provider,
+                environments={
+                    arm: ReportingEnvironment(arm, arm_environments[arm])
+                    for arm in ("open_cake", "direct_cuda")
+                },
+                evaluator=FakeEvaluator(
+                    lock.document["evaluation_protocol"],
+                    protocol_sha256,
+                    lock.document["workload"]["canonical_sha256"],
+                ),
+            )
+
+        resumed = [request for request in provider.requests if request.thread_id is not None]
+        self.assertTrue(resumed)
+        for request in resumed:
+            self.assertEqual(request.feedback["kind"], "evaluation")
+            self.assertEqual(
+                [item["code"] for item in request.feedback["findings"]],
+                ["RESIDENCY_BOUND"],
+            )
+
     def test_semantic_replay_rejects_raw_broker_counter_that_differs_from_ledger(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(

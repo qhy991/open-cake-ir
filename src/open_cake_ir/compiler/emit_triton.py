@@ -14,7 +14,7 @@ handling from the operation, and the host-side contract from the global buffers.
 
 from __future__ import annotations
 
-from .emit_cutedsl import Emission, EmitError, _require
+from .emit import Emission, EmitError, require as _require
 from .ir import (
     AccessIndexKind,
     AccessMap,

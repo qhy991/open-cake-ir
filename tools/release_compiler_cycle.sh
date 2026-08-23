@@ -1,33 +1,73 @@
 #!/usr/bin/env bash
-# Release the next Compiler Revision after a compiler source edit.
+# Release the Compiler Revision that matches the current sources.
 #
-#   release_compiler.sh <next-version> "<approval basis>"
+#   release_compiler_cycle.sh "<approval basis>"
 #
 # Any edit to a Revision-bound source invalidates the released lock, which is the
-# governance working as designed. This drives the documented pipeline end to end:
-# archive the current release, bump the draft, regenerate the Corpus Gate, record the
-# approval, release, verify, and re-stamp the Study Contracts bound to the Revision.
-# A released ID is never reused for different bytes.
+# governance working as designed. This drives the documented pipeline end to end: settle
+# the id, run the Corpus Gate, record the approval, release, verify, and re-stamp the
+# Study Contracts bound to the Revision.
+#
+# The id is derived, not passed. A Revision that some sealed evidence run was produced
+# under is history and its bytes are immutable, so an edit after one of those must bump.
+# A Revision nothing was ever run under is a working artifact: bumping past it on every
+# edit manufactures a version history that records no fact, so it is replaced in place.
+# Expectations are never regenerated here — see tools/refresh_corpus_expectations.py.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONPATH=src
 
-NEXT="${1:?usage: release_compiler.sh <next-version> <approval-basis>}"
-BASIS="${2:?approval basis is required}"
+BASIS="${1:?usage: release_compiler_cycle.sh <approval-basis>}"
 
-CURRENT=$(python3 -c "import json;print(json.load(open('compiler/revision.lock.json'))['revision_id'].rsplit('-',1)[-1])")
-if [ "$CURRENT" = "$NEXT" ]; then
-  echo "refusing to reuse released id ${NEXT}: a released ID is never reused for different bytes" >&2
-  exit 1
+eval "$(python3 - <<'PY'
+import json, pathlib, re
+
+# A refused gate leaves no lock behind, so the draft is the fallback authority for the
+# current id. Without it a single failed cycle would strand the repository with no way to
+# name the Revision it was releasing.
+locked = pathlib.Path("compiler/revision.lock.json")
+source = locked if locked.exists() else pathlib.Path("compiler/revision.json")
+current = json.loads(source.read_text())["revision_id"].removesuffix("-draft").rsplit("-", 1)[-1]
+
+# A sealed evidence index is the only thing that makes a Revision id historical.
+witnessed = set()
+for path in pathlib.Path("evidence/releases").glob("*.json"):
+    document = json.loads(path.read_text())
+    identity = document.get("compiler_revision_id")
+    if isinstance(identity, str):
+        witnessed.add(identity.rsplit("-", 1)[-1])
+
+ordinal = lambda value: int(m.group(1)) if (m := re.fullmatch(r"v(\d+)", value)) else 0
+history = max((ordinal(value) for value in witnessed), default=0)
+
+print("STALE=")
+if current in witnessed:
+    print(f"NEXT=v{history + 1}")
+    print(f"ARCHIVE={current}")
+else:
+    # The working Revision's number carries no fact, so it sits directly above witnessed
+    # history rather than climbing once per edit. Numbers stranded there by earlier
+    # unwitnessed releases are reclaimed, so repeated edits keep releasing the same id.
+    stale = sorted(p.name for p in pathlib.Path("compiler/releases").glob("v*")
+                   if ordinal(p.name) > history)
+    print(f"NEXT=v{history + 1}")
+    print("ARCHIVE=")
+    print(f"STALE='{' '.join(stale)}'")
+PY
+)"
+
+if [ -n "$ARCHIVE" ]; then
+  echo "--- ${ARCHIVE} is witnessed by sealed evidence; archiving and bumping to ${NEXT} ---"
+  mkdir -p "compiler/releases/${ARCHIVE}"
+  cp compiler/revision.lock.json compiler/corpus-gate-report.json \
+     compiler/release-approval.json compiler/source_set.json "compiler/releases/${ARCHIVE}/"
+else
+  echo "--- no sealed evidence witnesses the working Revision; releasing it as ${NEXT} ---"
+  for stale in $STALE; do
+    echo "    reclaiming unwitnessed ${stale}"
+    rm -rf "compiler/releases/${stale}"
+  done
 fi
-if [ -d "compiler/releases/${NEXT}" ]; then
-  echo "refusing to release ${NEXT}: compiler/releases/${NEXT} already exists" >&2
-  exit 1
-fi
-echo "--- archive ${CURRENT} ---"
-mkdir -p "compiler/releases/${CURRENT}"
-cp compiler/revision.lock.json compiler/corpus-gate-report.json \
-   compiler/release-approval.json compiler/source_set.json "compiler/releases/${CURRENT}/"
 
 python3 - "$NEXT" <<'PY'
 import json, pathlib, sys
@@ -37,10 +77,13 @@ p.write_text(json.dumps(d, indent=2) + "\n")
 print(f"--- draft -> {d['revision_id']} ---")
 PY
 
-rm -f compiler/revision.lock.json compiler/corpus-gate-report.json
+# Gate before retiring the released lock. A refused gate must leave the last released
+# Revision standing, not strand the repository between two of them.
+rm -f compiler/corpus-gate-report.json
 python3 tools/release_compiler.py --project-root . \
   --proposal compiler/revision.json --source-set compiler/source_set.json \
   --output compiler/corpus-gate-report.json --prepare-gate
+rm -f compiler/revision.lock.json
 
 python3 - "$BASIS" <<'PY'
 import hashlib, json, pathlib, sys

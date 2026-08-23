@@ -2240,6 +2240,9 @@ class Lab:
                                 latency,
                             )
                         )
+                        # A measurement says what this candidate cost; the Environment's
+                        # surviving findings say which declared resource is what bounds
+                        # it. Only the pair is actionable, so the next Turn gets both.
                         feedback = MappingProxyType(
                             {
                                 "kind": "evaluation",
@@ -2248,6 +2251,9 @@ class Lab:
                                 "confirmed": qualified,
                                 "search_latency_ms": _receipt_latency_ms(search),
                                 "confirmed_latency_ms": latency,
+                                "findings": environment_result.feedback.get(
+                                    "findings", []
+                                ),
                             }
                         )
                     if cumulative_tokens >= cast(int, budget["limit"]):

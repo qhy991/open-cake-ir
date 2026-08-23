@@ -11,7 +11,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
-from open_cake_ir.compiler import Compiler, CompilerError
+from open_cake_ir.compiler import Assessment, Compiler, CompilerError
 from open_cake_ir.evaluation import (
     CudaLaunchManifest,
     LaunchableCandidate,
@@ -343,6 +343,26 @@ class OpenCakeEnvironment:
             ).encode()
         ).hexdigest()
 
+    @staticmethod
+    def _finding_rows(assessment: Assessment) -> list[dict[str, object]]:
+        """Project findings for the agent.
+
+        One shape for both dispositions. A rejection carries the blocking findings that
+        caused it; an acceptance carries the reports that survived it, which is where the
+        analysis attribution reaches the agent. Dropping them on acceptance would leave a
+        working candidate with no stated reason for the performance it got.
+        """
+
+        return [
+            {
+                "code": item.code,
+                "path": item.path,
+                "message": item.message,
+                "blocking": item.blocks_acceptance,
+            }
+            for item in assessment.findings
+        ]
+
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:
         if submission.media_type != self.media_type:
             raise ValueError("Open Cake candidate media type differs")
@@ -398,10 +418,7 @@ class OpenCakeEnvironment:
                 MappingProxyType(
                     {
                         "stage": "assessment",
-                        "findings": [
-                            {"code": item.code, "path": item.path, "message": item.message}
-                            for item in assessment.findings
-                        ],
+                        "findings": self._finding_rows(assessment),
                         "calibration_available": assessment.calibration_available,
                     }
                 ),
@@ -433,7 +450,9 @@ class OpenCakeEnvironment:
             "launchable",
             submission.sha256,
             launchable,
-            MappingProxyType({"stage": "built", "findings": []}),
+            MappingProxyType(
+                {"stage": "built", "findings": self._finding_rows(assessment)}
+            ),
         )
 
 

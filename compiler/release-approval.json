@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "200280db07f49dbb99f5e939366315cbfee30d38064f546bd330204d3ddd8806"
+    "canonical_sha256": "a4604e49c81fe4a8ff8ca00344b4f668193b212d61176594d61ec4b4ab6ae9c0"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "explicit user authorization to continue; v6 makes the Triton profile generate from its Schedule. src/open_cake_ir/compiler/emit_triton.py derives pointer arithmetic and masks from access_maps, the loop and its knobs from tile_loops, the reduction's tie handling from the operation, and the compile contract from the buffers. The generated kernel is verified on a B200 at 16384/16384 exact assignments with zero excess. Deleted with it: the 141-line template, _R16_STATIC_SEMANTICS_SHA256, the 31-line normalisation that computed it, and the 92-line parameter derivation. The digest pin admitted one shape of Schedule; emission admits a space, so the verifier gains RESIDENCY_IMPOSSIBLE, which refuses a Schedule asking a multiprocessor for more registers than it has. Corpus advances to open-cake-ir-sm100a-v4 on 2026-08-23"
+  "approval_basis": "extract shared emit vocabulary; carry analysis reports to the agent on the accepted path"
 }

@@ -18,7 +18,7 @@ reproducing them would mean hardcoding the thing this module exists to compute.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from .emit import Emission, EmitError, require as _require
 
 from .ir import (
     AccessIndexKind,
@@ -34,10 +34,6 @@ from .ir import (
     TileLoop,
 )
 from .target import Target
-
-
-class EmitError(ValueError):
-    """The Schedule does not determine the source to emit."""
 
 
 _CUTLASS_DTYPE = {
@@ -61,25 +57,6 @@ _SWIZZLE_BYTES = {
     Swizzle.B64: 64,
     Swizzle.B128: 128,
 }
-
-
-@dataclass(frozen=True)
-class Emission:
-    source: str
-    entry_point: str
-    constants: dict[str, object]
-    """Every value derived from the Schedule, so a test can compare them against the
-    module constants the hand-written artifact carries."""
-
-    toolchain: dict[str, object] | None = None
-    """What the backend needs to compile this source, when it is not implied by the
-    source alone. Triton compiles a kernel function against an explicit signature and
-    constexpr set; CuTe-DSL compiles the module."""
-
-
-def _require(condition: object, message: str) -> None:
-    if not condition:
-        raise EmitError(message)
 
 
 class _Emitter:
