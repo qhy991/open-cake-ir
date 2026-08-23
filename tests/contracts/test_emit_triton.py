@@ -254,6 +254,25 @@ class OperatorShapeIndependenceTest(unittest.TestCase):
             self.source.index("acc = tl.zeros"), self.source.index("acc += tl.sum")
         )
 
+    def test_an_operation_outside_the_loop_is_not_dropped(self) -> None:
+        # The skeleton used to emit prologue loads, the loop, then the store, so any
+        # other operation declared outside the loop produced no code and no complaint.
+        schedule = copy.deepcopy(ROW_SUM_SCHEDULE)
+        schedule["buffers"].append(
+            {"name": "scaled", "space": "register", "dtype": "fp32",
+             "shape": [256], "mode": "scratch"}
+        )
+        schedule["operations"].insert(2, {
+            "id": "halve", "kind": "elementwise", "role": "compute",
+            "reads": ["acc"], "writes": ["scaled"], "depends_on": ["row_sum"],
+            "parameters": {"op": "mul", "scalar": 0.5},
+        })
+        schedule["operations"][-1]["reads"] = ["scaled"]
+        schedule["operations"][-1]["depends_on"] = ["halve"]
+        source = emit(Schedule.from_dict(schedule), TARGET).source
+        self.assertIn("# CAKE_OP:halve", source)
+        self.assertIn("scaled = acc * 0.5", source)
+
     def test_a_two_axis_mask_is_parenthesized(self) -> None:
         # `&` binds tighter than `<`, so a bare conjunction of comparisons becomes a
         # chained comparison against a bitwise and, and the load silently reads out of
@@ -263,3 +282,122 @@ class OperatorShapeIndependenceTest(unittest.TestCase):
         parsed = ast.parse(mask.strip().removeprefix("mask=").rstrip(","), mode="eval")
         self.assertIsInstance(parsed.body, ast.BinOp)
         self.assertIsInstance(parsed.body.op, ast.BitAnd)
+
+
+class ComposedArithmeticTest(unittest.TestCase):
+    """A Schedule composes arithmetic rather than naming a whole operator's formula.
+
+    `MmaFormula` and `EpilogueFormula` each name one operator's math in a single token,
+    so a backend hardcodes that math and a new operator needs a new member and a new
+    emitted body per backend. RMSNorm needs none of that: square, a scalar chain, a
+    reciprocal square root and two broadcasts, all from the same five primitives.
+    """
+
+    def _rmsnorm(self, *, load_in_loop: bool) -> dict:
+        rows, features = 64, 128
+        body = ["load_x", "square", "sum_sq"] if load_in_loop else ["square", "sum_sq"]
+        feature_index = (
+            {"source": "loop_tile", "name": "feat"}
+            if load_in_loop
+            else {"source": "dimension", "dimension": 2}
+        )
+        register = lambda name, shape: {  # noqa: E731
+            "name": name, "space": "register", "dtype": "fp32",
+            "shape": shape, "mode": "scratch",
+        }
+        return {
+            "schema_version": 1, "schedule_id": "rmsnorm-contract-v1", "target": "sm_100a",
+            "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+            "allocations": [], "pipelines": [], "barriers": [],
+            "buffers": [
+                {"name": "x", "space": "global", "dtype": "fp32",
+                 "shape": [8, 512, features], "mode": "input"},
+                {"name": "gamma", "space": "global", "dtype": "fp32",
+                 "shape": [features], "mode": "input"},
+                {"name": "y", "space": "global", "dtype": "fp32",
+                 "shape": [8, 512, features], "mode": "output"},
+                register("x_tile", [rows, features]), register("sq", [rows, features]),
+                register("sumsq", [rows]), register("meansq", [rows]),
+                register("shifted", [rows]), register("inv_rms", [rows]),
+                register("gamma_tile", [features]),
+                register("normed", [rows, features]), register("y_tile", [rows, features]),
+            ],
+            "operations": [
+                {"id": "load_x", "kind": "load", "role": "compute", "reads": ["x"],
+                 "writes": ["x_tile"], "parameters": {"movement": "global"}},
+                {"id": "square", "kind": "elementwise", "role": "compute",
+                 "reads": ["x_tile"], "writes": ["sq"], "depends_on": ["load_x"],
+                 "parameters": {"op": "square"}},
+                {"id": "sum_sq", "kind": "reduce_sum", "role": "compute", "reads": ["sq"],
+                 "writes": ["sumsq"], "depends_on": ["square"],
+                 "parameters": {"axis": 1, "scope": "cta"}},
+                {"id": "mean", "kind": "elementwise", "role": "compute",
+                 "reads": ["sumsq"], "writes": ["meansq"], "depends_on": ["sum_sq"],
+                 "parameters": {"op": "mul", "scalar": 1.0 / features}},
+                {"id": "shift", "kind": "elementwise", "role": "compute",
+                 "reads": ["meansq"], "writes": ["shifted"], "depends_on": ["mean"],
+                 "parameters": {"op": "add", "scalar": 1e-6}},
+                {"id": "rsqrt", "kind": "elementwise", "role": "compute",
+                 "reads": ["shifted"], "writes": ["inv_rms"], "depends_on": ["shift"],
+                 "parameters": {"op": "rsqrt"}},
+                {"id": "load_gamma", "kind": "load", "role": "compute", "reads": ["gamma"],
+                 "writes": ["gamma_tile"], "parameters": {"movement": "global"}},
+                {"id": "scale", "kind": "elementwise", "role": "compute",
+                 "reads": ["x_tile", "inv_rms"], "writes": ["normed"],
+                 "depends_on": ["rsqrt"],
+                 "parameters": {"op": "mul", "broadcast_axis": 0}},
+                {"id": "weight", "kind": "elementwise", "role": "compute",
+                 "reads": ["normed", "gamma_tile"], "writes": ["y_tile"],
+                 "depends_on": ["scale", "load_gamma"],
+                 "parameters": {"op": "mul", "broadcast_axis": 1}},
+                {"id": "store_y", "kind": "store", "role": "compute", "reads": ["y_tile"],
+                 "writes": ["y"], "depends_on": ["weight"],
+                 "parameters": {"coalesced": True}},
+            ],
+            "outputs": ["y"],
+            "program_map": {"axes": [
+                {"name": "row_block", "axis": 0, "buffer": "x", "dimension": 1, "tile": rows},
+                {"name": "batch", "axis": 1, "buffer": "x", "dimension": 0, "tile": 1},
+            ]},
+            "tile_loops": [{"name": "feature_loop", "iterator": "feat", "buffer": "x",
+                            "dimension": 2, "tile": features, "body": body,
+                            "range_options": {"num_stages": 1, "loop_unroll_factor": 1,
+                                              "flatten": False, "warp_specialize": False,
+                                              "disallow_acc_multi_buffer": True,
+                                              "disable_licm": False}}],
+            "access_maps": [
+                {"operation": "load_x", "buffer": "x", "indices": [
+                    {"source": "program", "name": "batch"},
+                    {"source": "program_tile", "name": "row_block"},
+                    feature_index], "boundary": "mask_tiled_axes"},
+                {"operation": "load_gamma", "buffer": "gamma", "indices": [
+                    {"source": "dimension", "dimension": 0}], "boundary": "mask_tiled_axes"},
+                {"operation": "store_y", "buffer": "y", "indices": [
+                    {"source": "program", "name": "batch"},
+                    {"source": "program_tile", "name": "row_block"},
+                    {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+            ],
+            "metadata": {"profile": "rmsnorm", "workload_contract_sha256": "0" * 64},
+        }
+
+    def test_rmsnorm_lowers_without_a_formula_of_its_own(self) -> None:
+        source = emit(Schedule.from_dict(self._rmsnorm(load_in_loop=False)), TARGET).source
+        ast.parse(source)
+        self.assertIn("sq = x_tile * x_tile", source)
+        self.assertIn("inv_rms = tl.rsqrt(shifted)", source)
+        # Both broadcast directions, chosen by the declared axis rather than guessed
+        # from the shapes: a per-row scale spans axis 0, a per-column weight spans axis 1.
+        self.assertIn("normed = x_tile * inv_rms[:, None]", source)
+        self.assertIn("y_tile = normed * gamma_tile[None, :]", source)
+
+    def test_a_register_tile_may_not_outlive_the_loop_that_writes_it(self) -> None:
+        # Emitting this produced `NameError: x_tile is not defined` at Triton compile
+        # time, because a register value the loop writes does not survive the loop. It
+        # is a property of the declared Schedule, so the verifier answers it first.
+        from open_cake_ir.compiler.verifier import verify
+
+        findings = verify(Schedule.from_dict(self._rmsnorm(load_in_loop=True)), TARGET)
+        escapes = [f for f in findings if f.code == "BUFFER_ESCAPES_LOOP"]
+        self.assertTrue(escapes)
+        self.assertTrue(all(f.blocks_lowering for f in escapes))
+        self.assertIn("x_tile", escapes[0].message)

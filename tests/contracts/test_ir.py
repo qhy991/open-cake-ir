@@ -112,9 +112,11 @@ class UnifiedVocabularyTest(unittest.TestCase):
             {"centroid_sq_minus_two_dot", "bias_add_bf16_round"},
         )
 
-    def test_operation_vocabulary_is_the_union_of_the_legacy_enums(self) -> None:
-        self.assertEqual(
-            {member.value for member in OperationKind},
+    def test_operation_vocabulary_covers_the_legacy_enums(self) -> None:
+        # The migration must lose nothing, which is what this pins. It is a subset rather
+        # than an equality because the vocabulary has since grown a kind the legacy models
+        # had no equivalent for: arithmetic the formulas used to name whole-operator-wise.
+        self.assertLessEqual(
             {
                 "load",
                 "mma",
@@ -124,7 +126,9 @@ class UnifiedVocabularyTest(unittest.TestCase):
                 "store",
                 "fence_proxy",
             },
+            {member.value for member in OperationKind},
         )
+        self.assertIn("elementwise", {member.value for member in OperationKind})
 
     def test_warp_specialized_roles_carry_their_pipeline(self) -> None:
         schedule = Schedule.load(ASSIGNMENT_FULL)

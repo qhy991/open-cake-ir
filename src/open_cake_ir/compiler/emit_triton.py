@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from .emit import Emission, EmitError, require as _require
 from .ir import (
+    ElementwiseOp,
     AccessIndexKind,
     AccessMap,
     ArgminTieBreak,
@@ -329,16 +330,32 @@ class _TritonEmitter:
                         self.line(f"    {name} = tl.arange(0, {extent})")
         self.line()
 
-        prologue = [
-            op
-            for op in self.schedule.operations
-            if op.op_id not in self.loop.body and op.kind is OperationKind.LOAD
-        ]
-        for operation in prologue:
-            self._emit_load(operation, "    ")
-        self._emit_reduction_state("    ")
-        self._emit_loop()
-        self._emit_store("    ")
+        # Declared order is the authority. The loop is emitted where its body begins,
+        # and everything else is dispatched by kind at that point in the sequence. The
+        # previous shape emitted prologue loads, the loop, then the store, which silently
+        # dropped any other operation declared outside the loop.
+        emitted_loop = False
+        for operation in self.schedule.operations:
+            if operation.op_id in self.loop.body:
+                if not emitted_loop:
+                    self._emit_reduction_state("    ")
+                    self._emit_loop()
+                    emitted_loop = True
+                continue
+            if operation.kind is OperationKind.LOAD:
+                self._emit_load(operation, "    ")
+            elif operation.kind is OperationKind.ELEMENTWISE:
+                self._emit_elementwise(operation, "    ")
+                self.line()
+            elif operation.kind is OperationKind.STORE:
+                self._emit_store(operation, "    ")
+            else:
+                raise EmitError(
+                    f"operation {operation.op_id!r} of kind "
+                    f"{operation.kind.value!r} sits outside the loop and this backend "
+                    "has no body for it there"
+                )
+        _require(emitted_loop, "the declared tile loop names no operation")
         self.line("    # CAKE_KERNEL_END")
         self.line()
         self.line()
@@ -422,11 +439,61 @@ class _TritonEmitter:
                 self._emit_argmin(operation, "        ")
             elif operation.kind is OperationKind.REDUCE_SUM:
                 self._emit_sum(operation, "        ")
+            elif operation.kind is OperationKind.ELEMENTWISE:
+                self._emit_elementwise(operation, "        ")
             else:
                 raise EmitError(
                     f"operation kind {operation.kind.value!r} has no Triton body emitter"
                 )
         self.line()
+
+    _ELEMENTWISE_TEXT = {
+        ElementwiseOp.SQUARE: "{a} * {a}",
+        ElementwiseOp.RSQRT: "tl.rsqrt({a})",
+        ElementwiseOp.ADD: "{a} + {b}",
+        ElementwiseOp.SUB: "{a} - {b}",
+        ElementwiseOp.MUL: "{a} * {b}",
+    }
+
+    def _emit_elementwise(self, operation, pad: str) -> None:
+        """One arithmetic primitive, written once per backend rather than per operator.
+
+        A narrower operand is broadcast against the wider one along its leading axes.
+        The verifier has already held the pair to a legal broadcast, so the shapes here
+        are known to line up and this only has to say how.
+        """
+
+        parameters = operation.parameters
+        operands = [self._operand(name, operation) for name in operation.reads]
+        if parameters.scalar is not None:
+            operands.append(repr(parameters.scalar))
+        template = self._ELEMENTWISE_TEXT[parameters.op]
+        expression = template.format(
+            a=operands[0], b=operands[1] if len(operands) > 1 else ""
+        )
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{operation.writes[0]} = {expression}")
+
+    def _operand(self, name: str, operation) -> str:
+        """A read, indexed so it spans the declared axis of the wider operand."""
+
+        buffer = self.schedule.buffer(name)
+        _require(buffer is not None, f"elementwise reads unknown buffer {name!r}")
+        widest = max(
+            (
+                other.shape
+                for other in (self.schedule.buffer(read) for read in operation.reads)
+                if other is not None
+            ),
+            key=len,
+            default=(),
+        )
+        if len(buffer.shape) == len(widest):
+            return name
+        axis = operation.parameters.broadcast_axis
+        _require(axis is not None, f"operand {name!r} needs a declared broadcast axis")
+        index = ", ".join(":" if position == axis else "None" for position in range(len(widest)))
+        return f"{name}[{index}]"
 
     def _emit_sum(self, operation, pad: str) -> None:
         """Sum the declared axis of the input and accumulate into the result.
@@ -498,14 +565,14 @@ class _TritonEmitter:
         self.line(f"{pad}best_distance = tl.where(update, block_distance, best_distance)")
         self.line(f"{pad}{best} = tl.where(update, candidate_index, {best})")
 
-    def _emit_store(self, pad: str) -> None:
-        access = self.schedule.access_map(self.store.op_id, self.store.writes[0])
-        _require(access is not None, f"store {self.store.op_id!r} has no access map")
+    def _emit_store(self, operation, pad: str) -> None:
+        access = self.schedule.access_map(operation.op_id, operation.writes[0])
+        _require(access is not None, f"store {operation.op_id!r} has no access map")
         pointer, mask = self._address(access, pad)
-        self.line(f"{pad}# CAKE_OP:{self.store.op_id}")
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}tl.store(")
         self.line(f"{pad}    {pointer},")
-        self.line(f"{pad}    {self.store.reads[0]},")
+        self.line(f"{pad}    {operation.reads[0]},")
         if mask:
             self.line(f"{pad}    mask={mask},")
         self.line(f"{pad})")

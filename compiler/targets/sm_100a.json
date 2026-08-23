@@ -21,6 +21,7 @@
     "epilogue",
     "reduce_argmin",
     "reduce_sum",
+    "elementwise",
     "store",
     "fence_proxy"
   ],

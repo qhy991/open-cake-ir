@@ -904,6 +904,39 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
             )
         _verify_operation_shape(operation, path, buffers, out)
 
+    # ---- loop-carried lifetime --------------------------------------------
+    # A register value produced inside a tile loop does not survive it: registers hold
+    # the loop body's live values and the next trip overwrites them. Shared and tensor
+    # memory are allocations that outlive the loop, which is exactly how a warp-
+    # specialized Schedule hands a staged tile from a producer role to a consumer that
+    # reads it outside the loop, so the rule follows the declared space rather than the
+    # nesting alone. The exception in registers is a reduction's result, which the loop
+    # carries by construction.
+    for loop in schedule.tile_loops:
+        body = set(loop.body)
+        carried = {
+            name
+            for op_id in loop.body
+            if (op := schedule.operation(op_id)) is not None
+            and op.kind in (OperationKind.REDUCE_SUM, OperationKind.REDUCE_ARGMIN)
+            for name in op.writes
+        }
+        for name, producers in sorted(writers.items()):
+            if name in carried or not set(producers) <= body:
+                continue
+            if buffers[name].space is not MemorySpace.REGISTER:
+                continue
+            escaping = sorted(set(readers.get(name, ())) - body)
+            if escaping:
+                out.add(
+                    "BUFFER_ESCAPES_LOOP",
+                    f"buffers[{schedule.buffers.index(buffers[name])}]",
+                    f"buffer {name!r} is written only inside {loop.name!r} but read by "
+                    f"{', '.join(escaping)} outside it; only a reduction result is "
+                    "carried out of a loop",
+                    category,
+                )
+
     # ---- buffer roles ------------------------------------------------------
     # An input buffer that is written is the static form of the candidate mutating its
     # own inputs; downstream correctness compares against a reference recomputed from
@@ -1029,6 +1062,64 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     f"store destination {name!r} is {buffer.mode.value}, not an output",
                     category,
                 )
+    # An arithmetic primitive takes what its op says it takes. A binary op reads two
+    # buffers, or one buffer and a declared scalar; anything else is a Schedule asking
+    # for arithmetic whose operands are not all named.
+    if operation.kind is OperationKind.ELEMENTWISE:
+        parameters = operation.parameters
+        supplied = len(operation.reads) + (parameters.scalar is not None)
+        if supplied != parameters.arity_needed:
+            out.add(
+                "ELEMENTWISE_ARITY",
+                f"{path}.reads",
+                f"{parameters.op.value} takes {parameters.arity_needed} operand(s); "
+                f"{len(operation.reads)} read(s) and "
+                f"{'a' if parameters.scalar is not None else 'no'} scalar were given",
+                category,
+            )
+        elif len(operation.writes) == 1:
+            result = buffers.get(operation.writes[0])
+            reads = [buffers[name] for name in operation.reads if name in buffers]
+            if result is not None and len(reads) == len(operation.reads):
+                widest = max((r.shape for r in reads), key=len, default=())
+                if tuple(result.shape) != tuple(widest):
+                    out.add(
+                        "ELEMENTWISE_SHAPE_MISMATCH",
+                        f"{path}.writes",
+                        f"{parameters.op.value} over "
+                        f"{[list(r.shape) for r in reads]} yields {list(widest)}, but "
+                        f"{result.name!r} is {list(result.shape)}",
+                        category,
+                    )
+                for read in reads:
+                    if len(read.shape) == len(widest):
+                        if tuple(read.shape) != tuple(widest):
+                            out.add(
+                                "ELEMENTWISE_SHAPE_MISMATCH",
+                                f"{path}.reads",
+                                f"operand {read.name!r} {list(read.shape)} differs from "
+                                f"{list(widest)} and is not narrower",
+                                category,
+                            )
+                        continue
+                    axis = parameters.broadcast_axis
+                    if axis is None:
+                        out.add(
+                            "ELEMENTWISE_BROADCAST_UNDECLARED",
+                            f"{path}.parameters.broadcast_axis",
+                            f"operand {read.name!r} {list(read.shape)} is narrower than "
+                            f"{list(widest)}; the axis it spans must be declared",
+                            category,
+                        )
+                    elif len(read.shape) != 1 or axis >= len(widest) or read.shape[0] != widest[axis]:
+                        out.add(
+                            "ELEMENTWISE_BROADCAST",
+                            f"{path}.parameters.broadcast_axis",
+                            f"operand {read.name!r} {list(read.shape)} does not span "
+                            f"axis {axis} of {list(widest)}",
+                            category,
+                        )
+
     # A sum collapses one axis, so its result is its input with that axis dropped. The
     # extent used to be restated in the operation, which put the same fact in two places
     # and left the pair uncheckable; deriving it from the buffers makes disagreement

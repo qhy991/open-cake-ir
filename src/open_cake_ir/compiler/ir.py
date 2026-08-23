@@ -84,6 +84,7 @@ class OperationKind(str, Enum):
     EPILOGUE = "epilogue"
     REDUCE_ARGMIN = "reduce_argmin"
     REDUCE_SUM = "reduce_sum"
+    ELEMENTWISE = "elementwise"
     STORE = "store"
     FENCE_PROXY = "fence_proxy"
 
@@ -110,6 +111,29 @@ class EpilogueFormula(str, Enum):
 
     CENTROID_SQ_MINUS_TWO_DOT = "centroid_sq_minus_two_dot"
     BIAS_ADD_BF16_ROUND = "bias_add_bf16_round"
+
+
+class ElementwiseOp(str, Enum):
+    """The closed arithmetic vocabulary a Schedule composes.
+
+    `MmaFormula` and `EpilogueFormula` name a whole operator's math in one token, so each
+    backend hardcodes one operator's arithmetic and a new operator needs a new member and
+    a new emitted body per backend. These are the pieces those formulas are built from:
+    every admitted operator's epilogue decomposes into them, so an emitter implements
+    each once and a Schedule composes rather than asking for a new name.
+
+    Still closed, because the verifier gates on it. What changed is the granularity.
+    """
+
+    SQUARE = "square"
+    RSQRT = "rsqrt"
+    ADD = "add"
+    SUB = "sub"
+    MUL = "mul"
+
+    @property
+    def arity(self) -> int:
+        return 1 if self in (ElementwiseOp.SQUARE, ElementwiseOp.RSQRT) else 2
 
 
 class ReductionScope(str, Enum):
@@ -737,6 +761,30 @@ class ReduceSumParameters:
 
 
 @dataclass(frozen=True)
+class ElementwiseParameters:
+    """One arithmetic primitive over the operation's reads.
+
+    A binary op may name a `scalar` instead of a second read, which is what lets a
+    Schedule write `x * 2.0` or `x + eps` without declaring a buffer to hold a constant.
+    """
+
+    op: ElementwiseOp
+    scalar: float | None
+    broadcast_axis: int | None
+    """Which axis of the result a narrower operand spans.
+
+    Trailing-axis alignment is the array convention, but it only covers half the cases
+    here: a per-column bias spans the last axis of its accumulator while a per-row scale
+    spans the first. Inferring one from the shapes would pick wrong whenever they happen
+    to be equal, so the Schedule states it, as it states every other placement fact.
+    """
+
+    @property
+    def arity_needed(self) -> int:
+        return self.op.arity
+
+
+@dataclass(frozen=True)
 class StoreParameters:
     coalesced: bool
 
@@ -855,6 +903,25 @@ def _operation_parameters(
         return ReduceSumParameters(
             _nonnegative_int(obj["axis"], f"{context}.axis"),
             _enum(ReductionScope, obj["scope"], f"{context}.scope"),
+        )
+
+    if kind is OperationKind.ELEMENTWISE:
+        obj = _strict_object(
+            value,
+            required={"op"},
+            optional={"scalar", "broadcast_axis"},
+            context=context,
+        )
+        scalar = obj.get("scalar")
+        if scalar is not None and (
+            not isinstance(scalar, (int, float)) or isinstance(scalar, bool)
+        ):
+            raise ScheduleParseError(f"{context}.scalar must be a number")
+        axis = obj.get("broadcast_axis")
+        return ElementwiseParameters(
+            _enum(ElementwiseOp, obj["op"], f"{context}.op"),
+            float(scalar) if scalar is not None else None,
+            _nonnegative_int(axis, f"{context}.broadcast_axis") if axis is not None else None,
         )
 
     if kind is OperationKind.STORE:

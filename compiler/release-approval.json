@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "e8c7c07fd19613a0d53051cb598be9cb52ec9ad827186114d51a962ab3dc1463"
+    "canonical_sha256": "f8083fa792ad3d22fc13c58c955af7004d5069f581146c0b36a57a97b40ba3fb"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "emitter dispatches on declared operations; reduce_sum body; parenthesize multi-axis masks"
+  "approval_basis": "elementwise vocabulary; declared-order emission; BUFFER_ESCAPES_LOOP"
 }
