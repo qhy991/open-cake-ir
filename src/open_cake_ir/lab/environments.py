@@ -199,6 +199,7 @@ class NvccToolchainBuilder:
             "cuobjdump_sha256": sha256(self._cuobjdump.read_bytes()).hexdigest(),
             "target": "sm_100a",
             "nvcc_arguments": ["-std=c++17", "-O3", "-arch=sm_100a"],
+            "nvcc_cubin_arguments": ["-Xptxas=-v"],
             "cuobjdump_arguments": ["--dump-sass"],
             "timeout_seconds": self._timeout_seconds,
         }
@@ -206,7 +207,7 @@ class NvccToolchainBuilder:
             json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
 
-    def _run(self, arguments: list[str]) -> bytes:
+    def _run(self, arguments: list[str]) -> tuple[bytes, bytes]:
         try:
             completed = run_supervised(
                 arguments,
@@ -232,7 +233,7 @@ class NvccToolchainBuilder:
                     "toolchain_stderr": completed.stderr,
                 },
             )
-        return completed.stdout
+        return completed.stdout, completed.stderr
 
     def build(self, request: BuildRequest) -> LaunchableCandidate:
         if (
@@ -249,10 +250,24 @@ class NvccToolchainBuilder:
             source.write_bytes(request.source)
             common = [str(self._nvcc), "-std=c++17", "-O3", "-arch=sm_100a"]
             self._run(common + ["--ptx", str(source), "-o", str(ptx_path)])
-            self._run(common + ["--cubin", str(source), "-o", str(cubin_path)])
+            # ptxas reports registers, spills and shared memory for free on the assembly
+            # pass, and writes them to stderr. Discarding them left this arm's author
+            # blind to the resource facts its own toolchain had already measured.
+            _, assembler_output = self._run(
+                common + ["-Xptxas=-v", "--cubin", str(source), "-o", str(cubin_path)]
+            )
+            # ptxas also prints its own wall clock, which is a fact about this machine at
+            # this moment rather than about the candidate. Every other artifact role here
+            # is a function of the source alone, and this one must be too or the same
+            # candidate would seal under a different digest on every build.
+            resource_report = b"".join(
+                line + b"\n"
+                for line in assembler_output.splitlines()
+                if b"Compile time" not in line
+            )
             ptx = ptx_path.read_bytes()
             cubin = cubin_path.read_bytes()
-            sass = self._run([str(self._cuobjdump), "--dump-sass", str(cubin_path)])
+            sass, _ = self._run([str(self._cuobjdump), "--dump-sass", str(cubin_path)])
         if not cubin.startswith(b"\x7fELF"):
             raise ValueError("NVCC did not produce an ELF CUBIN")
         manifest_bytes = json.dumps(
@@ -265,6 +280,10 @@ class NvccToolchainBuilder:
             "sass": sass,
             "launch_manifest": manifest_bytes,
         }
+        # An artifact payload must carry bytes, so a silent assembler contributes no role
+        # rather than an empty one that would fail custody.
+        if resource_report:
+            payloads["toolchain_resource_report"] = resource_report
         return LaunchableCandidate(
             candidate_sha256=request.candidate_sha256,
             target=manifest.target,
@@ -275,6 +294,38 @@ class NvccToolchainBuilder:
             launch_spec_sha256=sha256(manifest_bytes).hexdigest(),
             artifact_payloads=payloads,
         )
+
+
+def _ptxas_finding_rows(
+    launchable: LaunchableCandidate,
+) -> list[dict[str, object]]:
+    """Project what ptxas measured, in the shape the Open Cake arm's findings use.
+
+    The arms are matched on one static channel each: the Compiler's verifier for a
+    Schedule, the CUDA toolchain's own assembler for authored source. Both report what
+    bounds the artifact before it runs, so an advantage measured between them is the
+    representation rather than one author having been told its register count.
+
+    Reported verbatim rather than parsed into fields. ptxas owns this text, and re-deriving
+    numbers from it here would make this a second, staler authority on the same fact.
+    """
+
+    report = launchable.artifact_payloads.get("toolchain_resource_report", b"")
+    lines = [
+        line.strip()
+        for line in report.decode("utf-8", errors="replace").splitlines()
+        if "ptxas info" in line or "bytes spill" in line or "bytes stack frame" in line
+    ]
+    if not lines:
+        return []
+    return [
+        {
+            "code": "TOOLCHAIN_RESOURCE_REPORT",
+            "path": launchable.entry_point,
+            "message": " ".join(lines),
+            "blocking": False,
+        }
+    ]
 
 
 @dataclass(frozen=True)
@@ -517,5 +568,7 @@ class DirectCudaEnvironment:
             "launchable",
             submission.sha256,
             launchable,
-            MappingProxyType({"stage": "built"}),
+            MappingProxyType(
+                {"stage": "built", "findings": _ptxas_finding_rows(launchable)}
+            ),
         )

@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "a4604e49c81fe4a8ff8ca00344b4f668193b212d61176594d61ec4b4ab6ae9c0"
+    "canonical_sha256": "0055794cdba65bd3a42b2edb3813e02d670e4b2fc09828a834a4481ed94f2d2e"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "extract shared emit vocabulary; carry analysis reports to the agent on the accepted path"
+  "approval_basis": "state the non-blocking Finding semantics the accepted path now returns"
 }

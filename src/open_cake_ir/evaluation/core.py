@@ -29,6 +29,7 @@ _ARTIFACT_ROLES = {
     "ptx",
     "cubin",
     "sass",
+    "toolchain_resource_report",
     "launch_manifest",
 }
 

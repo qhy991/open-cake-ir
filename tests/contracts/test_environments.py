@@ -21,6 +21,7 @@ from open_cake_ir.lab import (  # noqa: E402
     EnvironmentResult,
     NvccToolchainBuilder,
 )
+from open_cake_ir.lab.environments import _ptxas_finding_rows  # noqa: E402
 
 
 class EnvironmentContractTests(unittest.TestCase):
@@ -189,11 +190,17 @@ class EnvironmentContractTests(unittest.TestCase):
             root = Path(directory)
             nvcc = root / "nvcc"
             cuobjdump = root / "cuobjdump"
+            # ptxas reports resources on the assembly pass only, and writes them to
+            # stderr alongside its own wall clock.
             nvcc.write_text(
                 "#!/usr/bin/env python3\n"
                 "import pathlib,sys\n"
                 "out=pathlib.Path(sys.argv[sys.argv.index('-o')+1])\n"
-                "out.write_bytes(b'\\x7fELFcubin' if '--cubin' in sys.argv else b'.target sm_100a')\n"
+                "cubin='--cubin' in sys.argv\n"
+                "out.write_bytes(b'\\x7fELFcubin' if cubin else b'.target sm_100a')\n"
+                "if cubin:\n"
+                "    sys.stderr.write('ptxas info    : Used 96 registers, 33792 bytes smem\\n'\n"
+                "                     'ptxas info    : Compile time = 4.760 ms\\n')\n"
             )
             cuobjdump.write_text("#!/usr/bin/env python3\nprint('SASS')\n")
             nvcc.chmod(0o700)
@@ -215,8 +222,27 @@ class EnvironmentContractTests(unittest.TestCase):
 
         self.assertEqual(
             set(candidate.artifact_roles),
-            {"authored_source", "ptx", "cubin", "sass", "launch_manifest"},
+            {
+                "authored_source",
+                "ptx",
+                "cubin",
+                "sass",
+                "toolchain_resource_report",
+                "launch_manifest",
+            },
         )
+        # The arms are matched on one static channel each. Discarding what ptxas already
+        # measured left this arm's author blind to the resource facts the Open Cake arm
+        # reads off its Schedule before compiling at all.
+        report = candidate.artifact_payloads["toolchain_resource_report"]
+        self.assertIn(b"Used 96 registers", report)
+        # Compile time is a fact about the machine, not the candidate; keeping it would
+        # reseal the same source under a different digest on every build.
+        self.assertNotIn(b"Compile time", report)
+        rows = _ptxas_finding_rows(candidate)
+        self.assertEqual([row["code"] for row in rows], ["TOOLCHAIN_RESOURCE_REPORT"])
+        self.assertFalse(rows[0]["blocking"])
+        self.assertIn("33792 bytes smem", rows[0]["message"])
         self.assertEqual(set(candidate.artifact_payloads), set(candidate.artifact_roles))
         self.assertTrue(candidate.artifact_payloads["cubin"].startswith(b"\x7fELF"))
         manifest = json.loads(candidate.artifact_payloads["launch_manifest"])
