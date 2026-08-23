@@ -110,7 +110,20 @@ class GpuQuickstartContractTests(unittest.TestCase):
         self.assertEqual(inventory["status"], "passed")
         self.assertFalse(inventory["scientific_claim_authorized"])
         self.assertFalse(inventory["performance_measured"])
-        self.assertEqual(sha256(runner.read_bytes()).hexdigest(), inventory["runner"]["raw_sha256"])
+        # The runner moved with the Schedule when the packed mma form was retired. A
+        # superseded record keeps the bytes its run actually used, so what is checkable
+        # is that the record says so -- not that the tree still holds those bytes.
+        self.assertNotEqual(
+            sha256(runner.read_bytes()).hexdigest(), inventory["runner"]["raw_sha256"]
+        )
+        self.assertEqual(
+            inventory["superseded"]["observed_runner_raw_sha256"],
+            inventory["runner"]["raw_sha256"],
+        )
+        self.assertEqual(
+            inventory["superseded"]["current_runner_raw_sha256"],
+            sha256(runner.read_bytes()).hexdigest(),
+        )
         # The Schedule this run observed has since gained its hardware commitments, and
         # the broker on this host does not export GPUQ_JOB_ID, so the run cannot be
         # re-observed. The record says so rather than being restamped to bytes it never

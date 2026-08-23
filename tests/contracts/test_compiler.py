@@ -247,6 +247,10 @@ class CompilerContractTests(unittest.TestCase):
         buffers["token_tile"]["shape"][0] = 128
         buffers["distance_tile"]["shape"][0] = 128
         buffers["best_index_tile"]["shape"][0] = 128
+        # A coherent retiling reaches every tile the composition names, not only the
+        # ones the packed form happened to declare.
+        buffers["cross"]["shape"][0] = 128
+        buffers["scaled_cross"]["shape"][0] = 128
         for operation in schedule["operations"]:
             if operation["kind"] == "mma":
                 operation["parameters"]["tile_shape"][0] = 128
@@ -285,19 +289,22 @@ class CompilerContractTests(unittest.TestCase):
         )
         cases = (
             (
-                lambda schedule: schedule["operations"][2]["parameters"].update(
-                    {"formula": "unsupported_formula"}
+                # The arithmetic vocabulary took this position when the formula that
+                # named a whole operator's math was removed; what is pinned is that a
+                # closed vocabulary reports its path and its admitted values.
+                lambda schedule: schedule["operations"][4]["parameters"].update(
+                    {"op": "unsupported_op"}
                 ),
                 "SCHEDULE_STRUCTURE",
-                "schedule.operations[2].parameters.formula",
-                "squared_euclidean_xsq_elided",
+                "schedule.operations[4].parameters.op",
+                "square",
             ),
             (
-                lambda schedule: schedule["operations"][3]["parameters"].update(
+                lambda schedule: schedule["operations"][6]["parameters"].update(
                     {"tie_break": "highest_index"}
                 ),
                 "SCHEDULE_STRUCTURE",
-                "schedule.operations[3].parameters.tie_break",
+                "schedule.operations[6].parameters.tie_break",
                 "lowest_index",
             ),
             (
@@ -378,7 +385,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(assessment.analysis["grid"], (2, 32, 1))
         self.assertEqual(
             assessment.analysis["operation_counts"],
-            {"load": 2, "mma": 1, "reduce_argmin": 1, "store": 1},
+            {"load": 3, "mma": 1, "elementwise": 2, "reduce_argmin": 1, "store": 1},
         )
 
     def test_r16_workload_shape_drift_blocks_lowering(self) -> None:
@@ -410,7 +417,8 @@ class CompilerContractTests(unittest.TestCase):
         self.assertIn("[(2, 32, 1)]", lowering.source)
         self.assertEqual(
             set(lowering.source_map),
-            {"load_tokens", "load_centroids", "distance_mma", "argmin", "store_assignment"},
+            {"load_tokens", "load_centroids", "load_norm", "distance_mma",
+             "scale_cross", "distance", "argmin", "store_assignment"},
         )
         self.assertEqual(lowering.toolchain_requirements["target"], "sm_100a")
         self.assertEqual(

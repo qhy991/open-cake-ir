@@ -68,7 +68,7 @@ class ResidencyTest(unittest.TestCase):
         assert measured is not None and measured.binding is not None
         self.assertEqual(measured.binding.resource, "registers")
         self.assertEqual(measured.binding.ctas, 1)
-        self.assertEqual(registers_per_thread(schedule, TARGET), 290)
+        self.assertEqual(registers_per_thread(schedule, TARGET), 288)
 
     def test_a_smaller_tile_relaxes_the_bound(self) -> None:
         """Halving the token tile halves the register buffers and doubles residency."""
@@ -83,7 +83,7 @@ class ResidencyTest(unittest.TestCase):
                 buffer["shape"][0] = 128
         measured = occupancy(Schedule.from_dict(document), TARGET)
         assert measured is not None and measured.binding is not None
-        self.assertEqual(measured.binding.ctas, 3)
+        self.assertEqual(measured.binding.ctas, 2)
 
     def test_no_occupancy_facts_means_no_analysis(self) -> None:
         """A Target that declares nothing gets no invented answer."""
@@ -121,7 +121,7 @@ class ReportTest(unittest.TestCase):
 
     def test_register_pressure_is_reported_where_it_binds(self) -> None:
         self.assertIn("REGISTER_PRESSURE", self._reports(B32))
-        self.assertIn("290 registers per thread", self._reports(B32)["REGISTER_PRESSURE"])
+        self.assertIn("288 registers per thread", self._reports(B32)["REGISTER_PRESSURE"])
         self.assertNotIn("REGISTER_PRESSURE", self._reports(ASSIGNMENT_FULL))
 
     def test_the_report_names_the_runners_up(self) -> None:

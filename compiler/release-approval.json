@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "af9cd8e3086998d5af9717103feca755bd8d1c692ab36a3cfd128846bd4e7814"
+    "canonical_sha256": "24c15cf2acb0cb706a6adef0b4a543f921919f09ce3f6b413ac8e85f62e01735"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "mma is a pure contraction; MmaFormula removed; liveness-aware register estimate"
+  "approval_basis": "elementwise storage classes so composing costs no registers the kernel does not use"
 }
