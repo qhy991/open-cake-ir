@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import dataclasses
 import grp
 import json
 import os
@@ -1520,3 +1522,98 @@ class CandidateSetFilterTest(unittest.TestCase):
         # And every candidate was built, not only the survivor -- counted across the whole
         # campaign, because the recording environment is shared by every run and arm.
         self.assertEqual(len(built), 3 * campaign_wide)
+
+
+class AttributionAssayIntegrationTest(unittest.TestCase):
+    """A Study that declares attribution gets it; one that does not is unchanged.
+
+    Profiling costs device time, so it is declared rather than assumed. What must not
+    happen is the opposite -- a Campaign that declared it and silently did not run it
+    would leave the loop's third stage looking complete in the contract and absent in the
+    evidence.
+    """
+
+    def _run(self, *, declare_attribution: bool):
+        purposes: list[str] = []
+
+        class RecordingEvaluator(FakeEvaluator):
+            def evaluate(self, candidate, *, case_id, purpose):
+                purposes.append(purpose)
+                if purpose != "attribution":
+                    return super().evaluate(candidate, case_id=case_id, purpose=purpose)
+                launch = json.dumps(
+                    {"candidate_sha256": candidate.candidate_sha256, "purpose": purpose},
+                    sort_keys=True,
+                ).encode()
+                correctness = json.dumps(
+                    {"passed": True, "metrics": {"tie_aware_distance_match": True}},
+                    sort_keys=True,
+                ).encode()
+                receipt = EvaluationReceipt(
+                    candidate_sha256=candidate.candidate_sha256,
+                    workload_sha256=self.workload_sha256,
+                    evaluation_protocol_sha256=self.protocol_sha256,
+                    purpose="attribution",
+                    case_id=case_id,
+                    correctness_passed=True,
+                    correctness={"tie_aware_distance_match": True},
+                    kernel_calls=1,
+                    fallback_calls=0,
+                    launch_receipt_sha256=sha256(launch).hexdigest(),
+                    timing=None,
+                    artifact_payloads={
+                        "correctness_output": correctness,
+                        "launch_receipt": launch,
+                        "profile": b'{"launch__registers_per_thread": 95}',
+                    },
+                )
+                return LogicalEvaluationAttempt(
+                    candidate_sha256=candidate.candidate_sha256,
+                    purpose="attribution",
+                    case_id=case_id,
+                    broker_attempts=(),
+                    final_receipt=receipt,
+                )
+
+        lab = Lab(ROOT)
+        study_path = ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+        stack = contextlib.ExitStack()
+        with stack:
+            if declare_attribution:
+                # A successor Study declares it. Editing a Lock instead would be caught by
+                # the evidence store, which checks the authority bytes against the digest
+                # the Lock was sealed with -- the governance working as intended.
+                document = json.loads(study_path.read_text(encoding="utf-8"))
+                document["evaluation_protocol"]["attribution_evaluation"] = (
+                    "correctness_then_profile"
+                )
+                directory = stack.enter_context(tempfile.TemporaryDirectory())
+                study_path = Path(directory) / "successor.json"
+                study_path.write_text(
+                    json.dumps(document, sort_keys=True, separators=(",", ":")),
+                    encoding="utf-8",
+                )
+            lock = lab.preflight(study_path)
+        arms = lock.document["resolved_inputs"]["arm_environments"]
+        protocol_sha256 = sha256(
+            json.dumps(
+                lock.document["evaluation_protocol"], sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
+        with tempfile.TemporaryDirectory() as parent:
+            lab.execute(
+                lock,
+                Path(parent).resolve() / "campaign-evidence",
+                provider=FakeProvider(),
+                environments={arm: FakeEnvironment(arm, arms[arm]) for arm in arms},
+                evaluator=RecordingEvaluator(
+                    lock.document["evaluation_protocol"],
+                    protocol_sha256,
+                    lock.document["workload"]["canonical_sha256"],
+                ),
+            )
+        return purposes
+
+    def test_attribution_runs_only_when_the_study_declares_it(self) -> None:
+        self.assertNotIn("attribution", self._run(declare_attribution=False))
+        self.assertIn("attribution", self._run(declare_attribution=True))

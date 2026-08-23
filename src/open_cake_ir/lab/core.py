@@ -2286,6 +2286,39 @@ class Lab:
                             )
                         qualified = confirmed is not None and _receipt_qualifies(confirmed)
                         latency = _receipt_latency_ms(confirmed) if qualified else None
+                        # Attribution runs only after a candidate qualifies. Profiling one
+                        # that did not would spend device time to explain a result nobody
+                        # will act on, and the assay is declared by the Study rather than
+                        # assumed so a Campaign that cannot afford it simply omits it.
+                        if qualified and "attribution_evaluation" in evaluation_protocol:
+                            live_stage = "evaluation"
+                            attribution_attempt = evaluator.evaluate(
+                                launchable,
+                                case_id=case_id,
+                                purpose="attribution",
+                            )
+                            attribution = attribution_attempt.final_receipt
+                            if attribution is None:
+                                raise RuntimeError("attribution Evaluation has no final receipt")
+                            _validate_receipt_authority(
+                                attribution,
+                                candidate=launchable,
+                                workload_sha256=workload_sha256,
+                                protocol_sha256=expected_protocol_sha256,
+                                case_id=case_id,
+                                purpose="attribution",
+                            )
+                            ledger.append(
+                                "candidate_evaluated",
+                                {
+                                    "turn": turn_number,
+                                    "purpose": "attribution",
+                                    "candidate_sha256": launchable.candidate_sha256,
+                                    "objects": _archive_evaluation_receipt(
+                                        evidence, attribution
+                                    ),
+                                },
+                            )
                         observations.append(
                             TurnObservation(
                                 turn_number,
