@@ -274,9 +274,18 @@ class _TritonEmitter:
             "compile_constants": {
                 name: value for name, value in constants.items() if name != "NUM_WARPS"
             },
+            # A declared register budget is a cap the backend enforces, so it travels
+            # with the other compile options rather than staying a claim the verifier
+            # checked and then dropped.
             "compile_options": {
                 "num_warps": constants["NUM_WARPS"],
                 "num_stages": constants["NUM_STAGES"],
+                **(
+                    {"maxnreg": self.schedule.residency.registers_per_thread}
+                    if self.schedule.residency is not None
+                    and self.schedule.residency.registers_per_thread is not None
+                    else {}
+                ),
             },
             "grid": list(self.grid()),
         }
@@ -607,6 +616,9 @@ class _TritonEmitter:
                 self.line(f"        {name}={value},")
         self.line(f"        num_warps={constants['NUM_WARPS']},")
         self.line(f"        num_stages={constants['NUM_STAGES']},")
+        residency = self.schedule.residency
+        if residency is not None and residency.registers_per_thread is not None:
+            self.line(f"        maxnreg={residency.registers_per_thread},")
         self.line("    )")
         self.line("    return out")
 

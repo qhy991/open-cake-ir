@@ -978,7 +978,50 @@ _SCHEDULE_REQUIRED = {
     "outputs",
     "metadata",
 }
-_SCHEDULE_OPTIONAL = {"grid", "program_map", "tile_loops", "access_maps"}
+_SCHEDULE_OPTIONAL = {"grid", "program_map", "residency", "tile_loops", "access_maps"}
+
+
+@dataclass(frozen=True)
+class Residency:
+    """What a Schedule commits to holding, rather than what it happens to need.
+
+    The analysis already derives how many CTAs a multiprocessor can hold and how many
+    registers a thread uses, and reports both. A report is a remark: nothing checks it and
+    nothing fails when it is wrong. The surveyed kernel work writes these same numbers down
+    as acceptance criteria -- at most forty-eight registers with no spill, two CTAs
+    resident, sixty-four TMEM columns so both fit -- in task prose and in template
+    assertions, because the Schedule has nowhere to put them.
+
+    Declaring one turns the same derivation into a gate: the Schedule states the residency
+    it needs and the verifier holds it to it.
+
+    `registers_per_thread` is a cap the backend enforces, which is a real choice -- capping
+    below what the body needs buys occupancy and pays in spills. `allow_spill` says whether
+    that trade was intended, so a Schedule that wants the cap without the spill is checked
+    rather than silently slowed.
+    """
+
+    ctas_per_multiprocessor: int | None
+    registers_per_thread: int | None
+    allow_spill: bool
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "Residency":
+        obj = _strict_object(
+            value,
+            required=set(),
+            optional={"ctas_per_multiprocessor", "registers_per_thread", "allow_spill"},
+            context=context,
+        )
+        ctas = obj.get("ctas_per_multiprocessor")
+        registers = obj.get("registers_per_thread")
+        if ctas is None and registers is None:
+            raise ScheduleParseError(f"{context} declares no commitment")
+        return cls(
+            None if ctas is None else _positive_int(ctas, f"{context}.ctas_per_multiprocessor"),
+            None if registers is None else _positive_int(registers, f"{context}.registers_per_thread"),
+            _boolean(obj.get("allow_spill", False), f"{context}.allow_spill"),
+        )
 
 
 @dataclass(frozen=True)
@@ -988,6 +1031,7 @@ class Schedule:
     target: str
     grid: tuple[int, int, int] | None
     program_map: ProgramMap | None
+    residency: Residency | None
     roles: tuple[Role, ...]
     allocations: tuple[Allocation, ...]
     buffers: tuple[Buffer, ...]
@@ -1116,6 +1160,11 @@ class Schedule:
             program_map=(
                 ProgramMap.from_dict(obj["program_map"], "schedule.program_map")
                 if has_program_map
+                else None
+            ),
+            residency=(
+                Residency.from_dict(obj["residency"], "schedule.residency")
+                if "residency" in obj
                 else None
             ),
             roles=parse_list("roles", Role.from_dict),

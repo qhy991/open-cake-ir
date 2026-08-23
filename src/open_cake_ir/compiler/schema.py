@@ -201,6 +201,14 @@ def schedule_schema() -> dict[str, Any]:
                 "maxItems": 3,
                 "items": _POSITIVE,
             },
+            "residency": _object(
+                {},
+                {
+                    "ctas_per_multiprocessor": _POSITIVE,
+                    "registers_per_thread": _POSITIVE,
+                    "allow_spill": {"type": "boolean"},
+                },
+            ),
             "program_map": _object(
                 {
                     "axes": {

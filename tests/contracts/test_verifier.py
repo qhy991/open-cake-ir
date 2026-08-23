@@ -77,7 +77,21 @@ def _op(document: dict, op_id: str) -> dict:
 
 class QuietOnValidScheduleTest(unittest.TestCase):
     def test_every_retained_schedule_verifies_clean(self) -> None:
-        for path in CORPUS + [ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke-v2.json"]:
+        # The manifest says which cases are meant to be accepted. A case that exists to
+        # pin a rejection rule is not a counterexample to the retained ones being clean,
+        # and hardcoding the exceptions here would put that fact in a second place.
+        manifest = json.loads(
+            (ROOT / "corpus" / "manifest.json").read_text(encoding="utf-8")
+        )
+        accepted = {
+            ROOT / case["schedule"]
+            for case in manifest["cases"]
+            if case["expected"]["accepted"]
+        }
+        paths = sorted(accepted) + [
+            ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke-v2.json"
+        ]
+        for path in paths:
             with self.subTest(schedule=path.name):
                 self.assertEqual(_blocking(verify(Schedule.load(path), TARGET)), ())
 

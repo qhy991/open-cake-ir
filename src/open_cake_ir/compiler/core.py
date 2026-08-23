@@ -13,7 +13,13 @@ from typing import Callable, Mapping, Sequence, cast
 
 from .emit_cutedsl import EmitError, emit as emit_cutedsl
 from .emit_triton import emit as emit_triton
-from .ir import OperationKind, Schedule, ScheduleParseError
+from .ir import (
+    _SCHEDULE_OPTIONAL,
+    _SCHEDULE_REQUIRED,
+    OperationKind,
+    Schedule,
+    ScheduleParseError,
+)
 from .target import Target, TargetParseError
 from .verifier import FindingSeverity, verify as verify_contracts
 
@@ -142,20 +148,10 @@ class CorpusGateReport:
         return self.case_count - self.lowerable_case_count
 
 
-_REQUIRED_TOP_LEVEL_FIELDS = {
-    "schema_version",
-    "schedule_id",
-    "target",
-    "roles",
-    "allocations",
-    "buffers",
-    "pipelines",
-    "barriers",
-    "operations",
-    "outputs",
-    "metadata",
-}
-_OPTIONAL_TOP_LEVEL_FIELDS = {"grid", "program_map", "tile_loops", "access_maps"}
+# The IR owns the Schedule's field set. Restating it here meant a new top-level field
+# parsed cleanly and was then rejected as an unknown root field by this check.
+_REQUIRED_TOP_LEVEL_FIELDS = set(_SCHEDULE_REQUIRED)
+_OPTIONAL_TOP_LEVEL_FIELDS = set(_SCHEDULE_OPTIONAL)
 _DTYPE_BYTES = {"bf16": 2, "fp16": 2, "fp32": 4, "int32": 4, "int64": 8}
 # The IR's enum is what the compiler knows how to parse, so restating the list here
 # made a second authority that a new kind had to be added to as well -- and forgetting

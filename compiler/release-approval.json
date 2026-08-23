@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "24c15cf2acb0cb706a6adef0b4a543f921919f09ce3f6b413ac8e85f62e01735"
+    "canonical_sha256": "8094ea5b3d7faef16532abad946ca2d20ff99add4ed9eed99c32e4c8f6a6767c"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "elementwise storage classes so composing costs no registers the kernel does not use"
+  "approval_basis": "residency commitment: a Schedule declares the CTAs and registers it needs and the analysis checks it"
 }

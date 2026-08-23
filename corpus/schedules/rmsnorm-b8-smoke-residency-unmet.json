@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "schedule_id": "rmsnorm-b8-smoke-v1",
+  "schedule_id": "rmsnorm-b8-smoke-residency-unmet-v1",
   "target": "sm_100a",
   "roles": [
     {
@@ -406,7 +406,7 @@
     "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "residency": {
-    "ctas_per_multiprocessor": 4,
-    "registers_per_thread": 96
+    "ctas_per_multiprocessor": 16,
+    "registers_per_thread": 48
   }
 }

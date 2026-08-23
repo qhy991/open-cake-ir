@@ -1495,6 +1495,47 @@ def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
             )
 
 
+def _verify_residency_commitment(schedule, target: Target, measured, out: _Collector) -> None:
+    """Hold a Schedule to the residency it declared.
+
+    Without a declaration the derivation is only a report. With one it is a check, and a
+    Schedule that asks for two resident CTAs while its own buffers admit one is refused
+    with the resource that stopped it named -- which is the difference between telling an
+    author its occupancy and telling it which declaration to change.
+    """
+
+    commitment = schedule.residency
+    if commitment is None:
+        return
+    category = FindingCategory.HARDWARE_CONFORMANCE
+
+    wanted = commitment.ctas_per_multiprocessor
+    if wanted is not None:
+        achieved = measured.ctas_per_multiprocessor or 0
+        if achieved < wanted:
+            binding = measured.binding
+            out.add(
+                "RESIDENCY_UNMET",
+                "residency.ctas_per_multiprocessor",
+                f"this Schedule commits to {wanted} CTA per multiprocessor but its own "
+                f"declarations admit {achieved}; {binding.resource} is what stops it "
+                f"({binding.per_cta} of {binding.per_multiprocessor} {binding.unit})",
+                category,
+            )
+
+    budget = commitment.registers_per_thread
+    if budget is not None:
+        needed = registers_per_thread(schedule, target)
+        if needed is not None and needed > budget and not commitment.allow_spill:
+            out.add(
+                "REGISTER_BUDGET_EXCEEDED",
+                "residency.registers_per_thread",
+                f"declared register buffers need {needed} per thread against a budget of "
+                f"{budget}; capping there spills, which this Schedule did not admit",
+                category,
+            )
+
+
 def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> None:
     """Which declared resource bounds residency, and at what cost.
 
@@ -1509,6 +1550,7 @@ def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> No
     measured = occupancy(schedule, target)
     if measured is None or measured.binding is None:
         return
+    _verify_residency_commitment(schedule, target, measured, out)
     binding = measured.binding
     if binding.ctas == 0:
         # A resource that admits no CTA at all is not a performance report. The Schedule

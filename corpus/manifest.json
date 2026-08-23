@@ -96,8 +96,8 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "46807be688a86accf6095f0cdc089f51cdcabf42f5a8cc3c3ea96da71e10103a",
-        "lowering_source_sha256": "dfd6c66246b83f0f9a3d07d4581269cdf9a3a5a64933bed0e81e3f97fa2d7f44"
+        "schedule_sha256": "a25114dfffb83a296eb0c341b51339d9a068dca4da77114527d4df3f01e82cdb",
+        "lowering_source_sha256": "8ebff6cc246da50421b3424c5b48a427f5e131d642150bc8383a09e4a5e6faf3"
       }
     },
     {
@@ -111,7 +111,23 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "0336eee8c16adfbc12ab11ff9bf082a4d717c63f7da9ae5bb42d368872fc3ca1",
+        "schedule_sha256": "f1e415078c385bc23ca7cdaca3c2b4fbaf8c6b4dfeb0cc1fd409dc5e425829de",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "rmsnorm-residency-unmet",
+      "schedule": "corpus/schedules/rmsnorm-b8-smoke-residency-unmet.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "REGISTER_BUDGET_EXCEEDED",
+          "RESIDENCY_UNMET",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "13302fc4f0fa2d95aff13f2b254dd3563db13812021e92a85a6d1f5eb624a430",
         "lowering_source_sha256": null
       }
     }
