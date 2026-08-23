@@ -32,7 +32,9 @@ class ResidencyBound:
 
     @property
     def unit(self) -> str:
-        return "threads" if self.resource == "threads" else "bytes"
+        return {"threads": "threads", "registers": "registers"}.get(
+            self.resource, "bytes"
+        )
 
 
 @dataclass(frozen=True)

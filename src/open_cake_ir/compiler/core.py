@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Mapping, Sequence, cast
 
 from .emit_cutedsl import EmitError, emit as emit_cutedsl
+from .emit_triton import emit as emit_triton
 from .ir import Schedule, ScheduleParseError
 from .target import Target, TargetParseError
 from .verifier import FindingSeverity, verify as verify_contracts
@@ -171,11 +172,6 @@ _LOWERING_PROFILES = {
     "tinygemm2_stage4_split_k",
 }
 _LOWERING_ASSETS = {
-    "flash_kmeans_b32_smoke": (
-        "src/open_cake_ir/compiler/assets/flash_kmeans_b32_smoke.py.tmpl",
-        "__SCHEDULE_SHA256__",
-        "cake_flash_kmeans_assign",
-    ),
     "tinygemm2_stage4_split_k": (
         "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
         "@@SCHEDULE_SHA256@@",
@@ -185,18 +181,23 @@ _LOWERING_ASSETS = {
 # A profile here is generated from its Schedule rather than read from a checked-in file.
 # The Schedule must determine the source; emission refuses to invent a decision, so an
 # under-declared Schedule is a Finding rather than a silently different kernel.
-_EMITTED_PROFILES = {"flash_kmeans_assignment_full"}
+_EMITTED_PROFILES = {
+    "flash_kmeans_assignment_full": emit_cutedsl,
+    "flash_kmeans_b32_smoke": emit_triton,
+}
 
 _TOOLCHAIN_REQUIREMENTS = {
     "flash_kmeans_b32_smoke": {
         "source_language": "python",
         "compiler": "triton",
+        "entry_point": "cake_flash_kmeans_assign",
         "target": "sm_100a",
         "entry_abi": "four_cuda_tensors_current_stream",
     },
     "flash_kmeans_assignment_full": {
         "source_language": "python",
         "compiler": "cutlass_cute_dsl",
+        "entry_point": "cake_flash_kmeans_assignment_full",
         "target": "sm_100a",
         "entry_abi": "four_cuda_tensors_current_stream",
     },
@@ -213,7 +214,6 @@ _TOOLCHAIN_REQUIREMENTS = {
 _CLOSED_PROFILE_SEMANTICS = {
     "tinygemm2_stage4_split_k": "e6e1bcf2ab027e9e6fa8591843c605aa5601115c9104a4e512950b5cb330260c",
 }
-_R16_STATIC_SEMANTICS_SHA256 = "2cf2de9ffa78b319fe93a0002826b427c9c92b981b9d297dcec522bf25b8b41a"
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -449,38 +449,6 @@ def _semantic_schedule_sha256(schedule: Mapping[str, object]) -> str:
     return sha256(_canonical_json_bytes(semantic)).hexdigest()
 
 
-def _r16_static_semantics_sha256(schedule: Mapping[str, object]) -> str:
-    semantic = cast(dict[str, object], json.loads(_canonical_json_bytes(schedule)))
-    semantic.pop("schedule_id", None)
-    metadata = cast(dict[str, object], semantic["metadata"])
-    metadata.pop("legacy_source", None)
-    metadata.pop("workload_contract_sha256", None)
-    axes = cast(dict[str, object], semantic["program_map"])["axes"]
-    for axis in cast(list[dict[str, object]], axes):
-        if axis.get("name") == "token_block":
-            axis["tile"] = "__BLOCK_N__"
-    loop = cast(list[dict[str, object]], semantic["tile_loops"])[0]
-    loop["tile"] = "__BLOCK_K__"
-    cast(dict[str, object], loop["range_options"])["num_stages"] = "__NUM_STAGES__"
-    cast(list[dict[str, object]], semantic["roles"])[0]["warps"] = ["__WARPS__"]
-    buffers = {
-        cast(str, buffer["name"]): buffer
-        for buffer in cast(list[dict[str, object]], semantic["buffers"])
-    }
-    cast(list[object], buffers["tokens"]["shape"])[:] = ["__B__", "__N__", "__D__"]
-    cast(list[object], buffers["centroids"]["shape"])[:] = ["__B__", "__K__", "__D__"]
-    cast(list[object], buffers["centroid_sq"]["shape"])[:] = ["__B__", "__K__"]
-    cast(list[object], buffers["assignments"]["shape"])[:] = ["__B__", "__N__"]
-    cast(list[object], buffers["token_tile"]["shape"])[0] = "__BLOCK_N__"
-    cast(list[object], buffers["token_tile"]["shape"])[1] = "__D__"
-    cast(list[object], buffers["distance_tile"]["shape"])[0] = "__BLOCK_N__"
-    cast(list[object], buffers["best_index_tile"]["shape"])[0] = "__BLOCK_N__"
-    cast(list[object], buffers["centroid_tile"]["shape"])[0] = "__BLOCK_K__"
-    cast(list[object], buffers["centroid_tile"]["shape"])[1] = "__D__"
-    cast(list[object], buffers["distance_tile"]["shape"])[1] = "__BLOCK_K__"
-    return sha256(_canonical_json_bytes(semantic)).hexdigest()
-
-
 def _shape_of(
     buffers: Mapping[str, Mapping[str, object]],
     name: str,
@@ -492,100 +460,6 @@ def _shape_of(
     ):
         return None
     return tuple(cast(list[int], shape))
-
-
-def _r16_lowering_parameters(
-    schedule: Mapping[str, object],
-    roles: Sequence[Mapping[str, object]],
-    buffers: Mapping[str, Mapping[str, object]],
-    parsed_grid: tuple[int, int, int],
-) -> dict[str, int] | None:
-    program_map = _object(schedule.get("program_map"), "program_map")
-    axes = _objects(program_map.get("axes"), "program_map.axes")
-    tile_loops = _objects(schedule.get("tile_loops"), "tile_loops")
-    if len(axes) != 2 or len(tile_loops) != 1 or len(roles) != 1:
-        return None
-    axis_by_name = {axis.get("name"): axis for axis in axes}
-    token_axis = axis_by_name.get("token_block")
-    batch_axis = axis_by_name.get("batch")
-    loop = tile_loops[0]
-    options = _object(loop.get("range_options"), "tile_loops[0].range_options")
-    role_warps = roles[0].get("warps")
-    if (
-        token_axis is None
-        or batch_axis is None
-        or token_axis.get("axis") != 0
-        or token_axis.get("buffer") != "tokens"
-        or token_axis.get("dimension") != 1
-        or batch_axis.get("axis") != 1
-        or batch_axis.get("buffer") != "tokens"
-        or batch_axis.get("dimension") != 0
-        or batch_axis.get("tile") != 1
-        or loop.get("name") != "centroid_loop"
-        or loop.get("buffer") != "centroids"
-        or loop.get("dimension") != 1
-        or loop.get("body") != ["load_centroids", "distance_mma", "argmin"]
-        or not isinstance(role_warps, list)
-        or len(role_warps) not in {4, 8}
-        or role_warps != list(range(len(role_warps)))
-        or options.get("loop_unroll_factor") != 1
-        or options.get("flatten") is not False
-        or options.get("warp_specialize") is not False
-        or options.get("disallow_acc_multi_buffer") is not True
-        or options.get("disable_licm") is not False
-    ):
-        return None
-    block_n = token_axis.get("tile")
-    block_k = loop.get("tile")
-    num_stages = options.get("num_stages")
-    if (
-        not isinstance(block_n, int)
-        or isinstance(block_n, bool)
-        or block_n not in {64, 128, 256}
-        or not isinstance(block_k, int)
-        or isinstance(block_k, bool)
-        or block_k not in {32, 64, 128}
-        or not isinstance(num_stages, int)
-        or isinstance(num_stages, bool)
-        or not 1 <= num_stages <= 4
-    ):
-        return None
-    tokens_shape = _shape_of(buffers, "tokens")
-    if tokens_shape is None or len(tokens_shape) != 3:
-        return None
-    batch, token_count, feature_count = tokens_shape
-    centroids_shape = _shape_of(buffers, "centroids")
-    if centroids_shape is None or len(centroids_shape) != 3:
-        return None
-    centroid_batch, centroid_count, centroid_features = centroids_shape
-    if (
-        feature_count != 128
-        or centroid_batch != batch
-        or centroid_features != feature_count
-        or centroid_count % block_k != 0
-        or _shape_of(buffers, "centroid_sq") != (batch, centroid_count)
-        or _shape_of(buffers, "assignments") != (batch, token_count)
-        or _shape_of(buffers, "token_tile") != (block_n, feature_count)
-        or _shape_of(buffers, "centroid_tile") != (block_k, feature_count)
-        or _shape_of(buffers, "distance_tile") != (block_n, block_k)
-        or _shape_of(buffers, "best_index_tile") != (block_n,)
-        or parsed_grid != ((token_count + block_n - 1) // block_n, batch, 1)
-        or _r16_static_semantics_sha256(schedule) != _R16_STATIC_SEMANTICS_SHA256
-    ):
-        return None
-    return {
-        "block_n": block_n,
-        "block_k": block_k,
-        "num_stages": num_stages,
-        "num_warps": len(role_warps),
-        "batch": batch,
-        "token_count": token_count,
-        "centroid_count": centroid_count,
-        "feature_count": feature_count,
-        "grid_x": parsed_grid[0],
-        "grid_y": parsed_grid[1],
-        "grid_z": parsed_grid[2],
-    }
 
 
 class Compiler:
@@ -1168,22 +1042,6 @@ class Compiler:
                         blocks_lowering=True,
                     )
                 )
-            else:
-                parameters = _r16_lowering_parameters(
-                    schedule, roles, buffer_by_name, parsed_grid
-                )
-                if parameters is None:
-                    findings.append(
-                        Finding(
-                            "PROFILE_SEMANTICS_MISMATCH",
-                            "metadata.profile",
-                            "Flash-KMeans b32 Schedule commitments cannot be lowered coherently",
-                            blocks_acceptance=False,
-                            blocks_lowering=True,
-                        )
-                    )
-                else:
-                    lowering_parameters = parameters
         elif profile == "flash_kmeans_assignment_full":
             distance = buffer_by_name.get("distance_scratch")
             distance_shape = distance.get("shape") if distance is not None else None
@@ -1299,7 +1157,7 @@ class Compiler:
             schedule_bytes=_canonical_json_bytes(schedule),
         )
 
-    def _emit(self, assessment: Assessment) -> Lowering:
+    def _emit(self, assessment: Assessment, emitter) -> Lowering:
         """Generate the target source from the Schedule."""
 
         definition = self._target_definitions.get(assessment.target)
@@ -1309,7 +1167,11 @@ class Compiler:
             _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
         )
         try:
-            emission = emit_cutedsl(schedule, Target.from_dict(dict(definition.document)))
+            emission = emitter(
+                schedule,
+                Target.from_dict(dict(definition.document)),
+                entry_point=_TOOLCHAIN_REQUIREMENTS[assessment.profile]["entry_point"],
+            )
         except EmitError as error:
             raise CompilerError(f"Schedule does not determine its source: {error}") from error
         source = emission.source.replace("__SCHEDULE_SHA256__", assessment.schedule_sha256)
@@ -1325,7 +1187,10 @@ class Compiler:
             source_sha256=sha256(source.encode("utf-8")).hexdigest(),
             source_map=MappingProxyType(_source_map(source)),
             toolchain_requirements=MappingProxyType(
-                dict(_TOOLCHAIN_REQUIREMENTS[assessment.profile])
+                {
+                    **_TOOLCHAIN_REQUIREMENTS[assessment.profile],
+                    **(emission.toolchain or {}),
+                }
             ),
         )
 
@@ -1380,8 +1245,9 @@ class Compiler:
         if not assessment.lowering_eligible:
             codes = ", ".join(finding.code for finding in assessment.findings)
             raise CompilerError(f"assessment is not lowering eligible: {codes}")
-        if assessment.profile in _EMITTED_PROFILES:
-            return self._emit(assessment)
+        emitter = _EMITTED_PROFILES.get(assessment.profile)
+        if emitter is not None:
+            return self._emit(assessment, emitter)
         asset = _LOWERING_ASSETS.get(assessment.profile)
         if asset is None:
             raise CompilerError(f"lowering profile {assessment.profile!r} is not implemented")
@@ -1391,26 +1257,6 @@ class Compiler:
         if template.count(placeholder) != 1:
             raise CompilerError(f"lowering template for {assessment.profile!r} has an invalid placeholder")
         source = template.replace(placeholder, assessment.schedule_sha256)
-        if assessment.profile == "flash_kmeans_b32_smoke":
-            replacements = {
-                "__GRID_X__": assessment.lowering_parameters.get("grid_x"),
-                "__GRID_Y__": assessment.lowering_parameters.get("grid_y"),
-                "__GRID_Z__": assessment.lowering_parameters.get("grid_z"),
-                "__BLOCK_N__": assessment.lowering_parameters.get("block_n"),
-                "__BLOCK_K__": assessment.lowering_parameters.get("block_k"),
-                "__NUM_STAGES__": assessment.lowering_parameters.get("num_stages"),
-                "__NUM_WARPS__": assessment.lowering_parameters.get("num_warps"),
-                "__BATCH__": assessment.lowering_parameters.get("batch"),
-                "__TOKEN_COUNT__": assessment.lowering_parameters.get("token_count"),
-                "__CENTROID_COUNT__": assessment.lowering_parameters.get("centroid_count"),
-                "__FEATURE_COUNT__": assessment.lowering_parameters.get("feature_count"),
-            }
-            for token, replacement in replacements.items():
-                if not isinstance(replacement, int) or source.count(token) == 0:
-                    raise CompilerError(f"lowering parameter {token} is missing or unused")
-                source = source.replace(token, str(replacement))
-            if re.search(r"__[A-Z][A-Z0-9_]+__", source):
-                raise CompilerError("lowered r16 source retains an unresolved placeholder")
         source_map = _source_map(source)
         requirements = dict(_TOOLCHAIN_REQUIREMENTS[assessment.profile])
         if assessment.profile == "flash_kmeans_b32_smoke":

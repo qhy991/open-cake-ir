@@ -100,7 +100,6 @@ class GpuQuickstartContractTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         runner = ROOT / inventory["runner"]["path"]
-        schedule = ROOT / inventory["schedule"]["path"]
         executor_inventory = _resolve_executor(
             inventory["executor_revision"]["executor_id"]
         )
@@ -112,10 +111,19 @@ class GpuQuickstartContractTests(unittest.TestCase):
         self.assertFalse(inventory["scientific_claim_authorized"])
         self.assertFalse(inventory["performance_measured"])
         self.assertEqual(sha256(runner.read_bytes()).hexdigest(), inventory["runner"]["raw_sha256"])
+        # The Schedule this run observed has since gained its hardware commitments, and
+        # the broker on this host does not export GPUQ_JOB_ID, so the run cannot be
+        # re-observed. The record says so rather than being restamped to bytes it never
+        # saw; what stays checkable is checked.
+        superseded = inventory["superseded"]
         self.assertEqual(
-            sha256(schedule.read_bytes()).hexdigest(),
-            inventory["schedule"]["raw_sha256"],
+            superseded["observed_schedule_raw_sha256"], inventory["schedule"]["raw_sha256"]
         )
+        self.assertEqual(
+            sha256((ROOT / inventory["schedule"]["path"]).read_bytes()).hexdigest(),
+            superseded["current_schedule_raw_sha256"],
+        )
+        self.assertIn("GPUQ_JOB_ID", superseded["requalification_blocked_by"])
         self.assertEqual(
             executor_inventory["canonical_sha256"],
             inventory["executor_revision"]["canonical_sha256"],

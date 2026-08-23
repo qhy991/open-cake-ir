@@ -71,6 +71,11 @@ class Emission:
     """Every value derived from the Schedule, so a test can compare them against the
     module constants the hand-written artifact carries."""
 
+    toolchain: dict[str, object] | None = None
+    """What the backend needs to compile this source, when it is not implied by the
+    source alone. Triton compiles a kernel function against an explicit signature and
+    constexpr set; CuTe-DSL compiles the module."""
+
 
 def _require(condition: object, message: str) -> None:
     if not condition:
@@ -78,10 +83,15 @@ def _require(condition: object, message: str) -> None:
 
 
 class _Emitter:
-    def __init__(self, schedule: Schedule, target: Target) -> None:
+    def __init__(
+        self, schedule: Schedule, target: Target, entry_point: str | None = None
+    ) -> None:
         self.schedule = schedule
         self.target = target
         self.lines: list[str] = []
+        # The entry point is the artifact's contract with whatever launches it, so the
+        # Revision names it rather than the emitter inventing one from the profile.
+        self.entry_point = entry_point or f"cake_{schedule.profile}"
 
         self.mma = self._single(OperationKind.MMA, "mma")
         self.epilogue = self._single(OperationKind.EPILOGUE, "epilogue")
@@ -201,7 +211,7 @@ class _Emitter:
         self._emit_shared_storage()
         self._emit_kernel()
         self._emit_host()
-        entry = f"cake_{self.schedule.profile}"
+        entry = self.entry_point
         return Emission("\n".join(self.lines) + "\n", entry, self.constants())
 
     def _emit_header(self) -> None:
@@ -804,7 +814,7 @@ class _Emitter:
         globals_in_order = [
             b for b in self.schedule.buffers if b.space is MemorySpace.GLOBAL
         ]
-        entry = f"cake_{self.schedule.profile}"
+        entry = self.entry_point
         signature = ", ".join(f"{b.name}: cute.Tensor" for b in globals_in_order)
         self.line("@cute.jit")
         self.line(f"def {entry}({signature}):")
@@ -910,7 +920,9 @@ class _Emitter:
         self.line(f"    return {globals_in_order[-1].name}")
 
 
-def emit(schedule: Schedule, target: Target) -> Emission:
+def emit(
+    schedule: Schedule, target: Target, *, entry_point: str | None = None
+) -> Emission:
     """Emit CuTe-DSL source for one Schedule, or raise if it under-specifies."""
 
-    return _Emitter(schedule, target).emit()
+    return _Emitter(schedule, target, entry_point).emit()

@@ -88,7 +88,10 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         self.assertEqual(len(toolchain.requests), 1)
         request = toolchain.requests[0]
         self.assertEqual(request.source_role, "lowered_source")
-        self.assertEqual(request.toolchain_requirements["compile_constants"]["N"], 65536)
+        # The constexpr is named after the program axis that walks the dimension, so a
+        # name in the emitted kernel points back at the declaration that produced it.
+        constants = request.toolchain_requirements["compile_constants"]
+        self.assertEqual(constants["N_TOKEN_BLOCK"], 65536)
         self.assertEqual(request.toolchain_requirements["grid"], [256, 32, 1])
         self.assertEqual(
             request.source_sha256,

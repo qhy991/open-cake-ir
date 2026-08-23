@@ -1,0 +1,514 @@
+"""Emit Triton source from a Schedule.
+
+The second backend. Triton owns placement -- registers, swizzles, the shape of the
+tensor-core instruction it selects -- so a Schedule targeting it commits to the tiling
+and the operation semantics and stops there. `verifier._verify_atom_placement` is what
+keeps the two backends honest about that difference: a `tcgen05` contract must say where
+its operands live, and a `triton.dot` contract must not, because the backend would not
+honour the answer.
+
+Everything emitted here comes from a declaration. Pointer arithmetic and masks come from
+`access_maps`, the loop and its scheduling knobs from `tile_loops`, the reduction's tie
+handling from the operation, and the host-side contract from the global buffers.
+"""
+
+from __future__ import annotations
+
+from .emit_cutedsl import Emission, EmitError, _require
+from .ir import (
+    AccessIndexKind,
+    AccessMap,
+    ArgminTieBreak,
+    Buffer,
+    DType,
+    LoadMovement,
+    MemorySpace,
+    MmaFormula,
+    OperationKind,
+    ProgramAxis,
+    Schedule,
+    TileLoop,
+)
+from .target import Target
+
+_TL_DTYPE = {
+    DType.BF16: "tl.bfloat16",
+    DType.FP16: "tl.float16",
+    DType.FP32: "tl.float32",
+    DType.INT32: "tl.int32",
+}
+
+_TORCH_DTYPE = {
+    DType.BF16: "torch.bfloat16",
+    DType.FP16: "torch.float16",
+    DType.FP32: "torch.float32",
+    DType.INT32: "torch.int32",
+}
+
+
+class _TritonEmitter:
+    def __init__(
+        self, schedule: Schedule, target: Target, entry_point: str | None = None
+    ) -> None:
+        self.schedule = schedule
+        self.target = target
+        self.lines: list[str] = []
+        # The entry point is the artifact's contract with whatever launches it, so the
+        # Revision names it rather than the emitter inventing one from the profile.
+        self.entry_point = entry_point or f"cake_{schedule.profile}"
+
+        _require(schedule.program_map is not None, "a Triton Schedule maps its program")
+        _require(schedule.access_maps, "a Triton Schedule declares its access maps")
+        _require(len(schedule.tile_loops) == 1, "expected exactly one tile loop")
+        _require(len(schedule.roles) == 1, "expected exactly one role")
+        self.loop = schedule.tile_loops[0]
+        self.role = schedule.roles[0]
+
+        self.mma = self._single(OperationKind.MMA, "mma")
+        self.reduce = self._single(OperationKind.REDUCE_ARGMIN, "reduce_argmin")
+        self.store = self._single(OperationKind.STORE, "store")
+        instruction = self.mma.parameters.instruction
+        _require(instruction is not None, "the mma must name an instruction contract")
+        _require(
+            instruction.contract in target.instruction_contracts,
+            f"instruction {instruction.contract!r} is not admitted by {target.target_id!r}",
+        )
+        _require(
+            self.mma.parameters.formula is MmaFormula.SQUARED_EUCLIDEAN_XSQ_ELIDED,
+            "this backend emits the squared-euclidean formula only",
+        )
+        for load in schedule.operations:
+            if load.kind is OperationKind.LOAD:
+                _require(
+                    load.parameters.movement is LoadMovement.GLOBAL,
+                    f"load {load.op_id!r} must move from global memory on this backend",
+                )
+
+    # ---------------------------------------------------------------- derivation
+
+    def _single(self, kind: OperationKind, label: str):
+        matches = [op for op in self.schedule.operations if op.kind is kind]
+        _require(len(matches) == 1, f"expected exactly one {label} operation")
+        return matches[0]
+
+    def _extent(self, buffer_name: str, dimension: int) -> str:
+        """Constexpr name for one global buffer dimension.
+
+        Named after whichever axis or loop walks it, so a name in the emitted kernel
+        points at the declaration that produced it.
+        """
+
+        assert self.schedule.program_map is not None
+        for axis in self.schedule.program_map.axes:
+            if axis.buffer == buffer_name and axis.dimension == dimension:
+                return f"N_{axis.name.upper()}"
+        if self.loop.buffer == buffer_name and self.loop.dimension == dimension:
+            return f"N_{self.loop.name.upper()}"
+        return f"D_{buffer_name.upper()}_{dimension}"
+
+    def _tile(self, name: str) -> str:
+        return f"BLOCK_{name.upper()}"
+
+    def _axis(self, name: str) -> ProgramAxis:
+        assert self.schedule.program_map is not None
+        axis = self.schedule.program_map.axis(name)
+        _require(axis is not None, f"unknown program axis {name!r}")
+        return axis
+
+    def constants(self) -> dict[str, int]:
+        """Every constexpr the kernel takes, and where each one comes from."""
+
+        values: dict[str, int] = {}
+        for buffer in self.schedule.buffers:
+            if buffer.space is not MemorySpace.GLOBAL:
+                continue
+            for dimension, extent in enumerate(buffer.shape):
+                values.setdefault(self._extent(buffer.name, dimension), extent)
+        assert self.schedule.program_map is not None
+        for axis in self.schedule.program_map.axes:
+            if axis.is_tiled:
+                values[self._tile(axis.name)] = axis.tile
+        values[self._tile(self.loop.name)] = self.loop.tile
+        values["NUM_STAGES"] = self.loop.range_options.num_stages
+        values["NUM_WARPS"] = len(self.role.warps)
+        return values
+
+    def grid(self) -> tuple[int, int, int]:
+        assert self.schedule.program_map is not None
+        extents = [1, 1, 1]
+        for axis in self.schedule.program_map.axes:
+            buffer = self.schedule.buffer(axis.buffer)
+            _require(buffer is not None, f"axis {axis.name!r} names an unknown buffer")
+            extent = buffer.shape[axis.dimension]
+            extents[axis.axis] = (extent + axis.tile - 1) // axis.tile
+        return tuple(extents)  # type: ignore[return-value]
+
+    # ---- addressing ---------------------------------------------------------
+
+    def _components(self, access: AccessMap, buffer: Buffer) -> tuple[list[str], list[str]]:
+        """Per-dimension index expressions, and which of them carry a tile axis."""
+
+        expressions: list[str] = []
+        vectors: list[str] = []
+        for position, component in enumerate(access.indices):
+            if component.source is AccessIndexKind.PROGRAM:
+                expressions.append(str(component.name))
+            elif component.source is AccessIndexKind.PROGRAM_TILE:
+                name = f"{component.name}_offsets"
+                expressions.append(name)
+                vectors.append(name)
+            elif component.source is AccessIndexKind.LOOP_TILE:
+                name = f"{component.name}_offsets"
+                expressions.append(name)
+                vectors.append(name)
+            else:
+                name = f"{buffer.name}_d{component.dimension}_offsets"
+                expressions.append(name)
+                vectors.append(name)
+        return expressions, vectors
+
+    def _bound(self, access: AccessMap, buffer: Buffer, vector: str) -> str | None:
+        """The extent a masked tile axis is bounded by, if it is masked at all."""
+
+        for position, component in enumerate(access.indices):
+            if component.source is AccessIndexKind.PROGRAM_TILE and f"{component.name}_offsets" == vector:
+                axis = self._axis(component.name)
+                return self._extent(axis.buffer, axis.dimension)
+            if component.source is AccessIndexKind.LOOP_TILE and f"{component.name}_offsets" == vector:
+                return self._extent(self.loop.buffer, self.loop.dimension)
+        return None  # a full-dimension index spans its axis and needs no mask
+
+    def _address(self, access: AccessMap, pad: str) -> tuple[str, str]:
+        """Pointer expression and mask for one access map."""
+
+        buffer = self.schedule.buffer(access.buffer)
+        _require(buffer is not None, f"access map names unknown buffer {access.buffer!r}")
+        _require(
+            len(access.indices) == len(buffer.shape),
+            f"access map for {access.buffer!r} has the wrong rank",
+        )
+        expressions, vectors = self._components(access, buffer)
+        strides: list[int] = []
+        running = 1
+        for extent in reversed(buffer.shape):
+            strides.insert(0, running)
+            running *= extent
+        stride_names = [
+            "1"
+            if index == len(buffer.shape) - 1
+            else " * ".join(
+                self._extent(buffer.name, later)
+                for later in range(index + 1, len(buffer.shape))
+            )
+            for index in range(len(buffer.shape))
+        ]
+
+        terms = []
+        for expression, stride in zip(expressions, stride_names):
+            broadcast = self._broadcast(expression, vectors)
+            terms.append(expression + broadcast + ("" if stride == "1" else f" * {stride}"))
+        pointer = f"{buffer.name} + " + " + ".join(terms)
+
+        masks = []
+        for vector in vectors:
+            bound = self._bound(access, buffer, vector)
+            if bound is not None:
+                masks.append(f"{vector}{self._broadcast(vector, vectors)} < {bound}")
+        return pointer, " & ".join(masks)
+
+    @staticmethod
+    def _broadcast(expression: str, vectors: list[str]) -> str:
+        """Give each tile axis its own dimension, in declaration order."""
+
+        if expression not in vectors or len(vectors) < 2:
+            return ""
+        position = vectors.index(expression)
+        return "[" + ", ".join("None" if i != position else ":" for i in range(len(vectors))) + "]"
+
+    # ------------------------------------------------------------------- emission
+
+    def line(self, text: str = "") -> None:
+        self.lines.append(text)
+
+    def emit(self) -> Emission:
+        entry = self.entry_point
+        kernel = f"_{entry}_kernel"
+        self._emit_header()
+        self._emit_kernel(kernel)
+        self._emit_host(entry, kernel)
+        return Emission(
+            "\n".join(self.lines) + "\n",
+            entry,
+            dict(self.constants()),
+            self._toolchain(kernel),
+        )
+
+    _POINTER = {
+        DType.BF16: "*bf16",
+        DType.FP16: "*fp16",
+        DType.FP32: "*fp32",
+        DType.INT32: "*i32",
+    }
+
+    def _toolchain(self, kernel: str) -> dict[str, object]:
+        """The compile contract, derived rather than restated beside the source."""
+
+        constants = self.constants()
+        return {
+            "kernel_entry_point": kernel,
+            "signature": {
+                buffer.name: self._POINTER[buffer.dtype] for buffer in self._globals()
+            },
+            "compile_constants": {
+                name: value for name, value in constants.items() if name != "NUM_WARPS"
+            },
+            "compile_options": {
+                "num_warps": constants["NUM_WARPS"],
+                "num_stages": constants["NUM_STAGES"],
+            },
+            "grid": list(self.grid()),
+        }
+
+    def _emit_header(self) -> None:
+        self.line(f"# Generated by open-cake-ir from {self.schedule.schedule_id}; DO NOT EDIT.")
+        self.line("# schedule_sha256=__SCHEDULE_SHA256__")
+        self.line("from __future__ import annotations")
+        self.line()
+        self.line("import torch")
+        self.line("import triton")
+        self.line("import triton.language as tl")
+        self.line()
+        self.line()
+
+    def _globals(self) -> list[Buffer]:
+        return [b for b in self.schedule.buffers if b.space is MemorySpace.GLOBAL]
+
+    def _emit_kernel(self, kernel: str) -> None:
+        constants = self.constants()
+        self.line("@triton.jit")
+        self.line(f"def {kernel}(")
+        for buffer in self._globals():
+            self.line(f"    {buffer.name},")
+        for name in constants:
+            if name != "NUM_WARPS":
+                self.line(f"    {name}: tl.constexpr,")
+        self.line("):")
+
+        assert self.schedule.program_map is not None
+        for axis in self.schedule.program_map.axes:
+            self.line(f"    {axis.name} = tl.program_id({axis.axis})")
+        for axis in self.schedule.program_map.axes:
+            if axis.is_tiled:
+                tile = self._tile(axis.name)
+                self.line(
+                    f"    {axis.name}_offsets = {axis.name} * {tile} + tl.arange(0, {tile})"
+                )
+        for access in self.schedule.access_maps:
+            buffer = self.schedule.buffer(access.buffer)
+            for component in access.indices:
+                if component.source is AccessIndexKind.DIMENSION:
+                    name = f"{buffer.name}_d{component.dimension}_offsets"
+                    if f"    {name} = " not in "\n".join(self.lines):
+                        extent = self._extent(buffer.name, component.dimension)
+                        self.line(f"    {name} = tl.arange(0, {extent})")
+        self.line()
+
+        prologue = [
+            op
+            for op in self.schedule.operations
+            if op.op_id not in self.loop.body and op.kind is OperationKind.LOAD
+        ]
+        for operation in prologue:
+            self._emit_load(operation, "    ")
+        self._emit_reduction_state("    ")
+        self._emit_loop()
+        self._emit_store("    ")
+        self.line("    # CAKE_KERNEL_END")
+        self.line()
+        self.line()
+
+    def _emit_load(self, operation, pad: str) -> None:
+        access = self.schedule.access_map(operation.op_id, operation.reads[0])
+        _require(access is not None, f"load {operation.op_id!r} has no access map")
+        pointer, mask = self._address(access, pad)
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{operation.op_id}_ptrs = {pointer}")
+        self.line(f"{pad}{operation.writes[0]} = tl.load(")
+        self.line(f"{pad}    {operation.op_id}_ptrs,")
+        if mask:
+            self.line(f"{pad}    mask={mask},")
+            self.line(f"{pad}    other=0.0,")
+        self.line(f"{pad})")
+
+    def _emit_reduction_state(self, pad: str) -> None:
+        """A reduction carried across the loop needs its identity before the loop."""
+
+        _require(
+            self.reduce.parameters.across_loop,
+            "this backend carries the reduction across the loop",
+        )
+        tile = self._tile(self._token_axis().name)
+        self.line(f"{pad}best_distance = tl.full(({tile},), float(\"inf\"), tl.float32)")
+        self.line(f"{pad}{self.reduce.writes[0]} = tl.zeros(({tile},), tl.int32)")
+        self.line()
+
+    def _token_axis(self) -> ProgramAxis:
+        assert self.schedule.program_map is not None
+        for axis in self.schedule.program_map.axes:
+            if axis.is_tiled:
+                return axis
+        raise EmitError("no tiled program axis")
+
+    def _emit_loop(self) -> None:
+        options = self.loop.range_options
+        extent = self._extent(self.loop.buffer, self.loop.dimension)
+        tile = self._tile(self.loop.name)
+        knobs = [f"num_stages={options.num_stages}"]
+        if options.disallow_acc_multi_buffer:
+            knobs.append("disallow_acc_multi_buffer=True")
+        if options.flatten:
+            knobs.append("flatten=True")
+        if options.warp_specialize:
+            knobs.append("warp_specialize=True")
+        if options.disable_licm:
+            knobs.append("disable_licm=True")
+        if options.loop_unroll_factor != 1:
+            knobs.append(f"loop_unroll_factor={options.loop_unroll_factor}")
+        self.line(
+            f"    for {self.loop.iterator} in tl.range(0, {extent}, {tile}, "
+            + ", ".join(knobs)
+            + "):"
+        )
+        self.line(
+            f"        {self.loop.iterator}_offsets = "
+            f"{self.loop.iterator} + tl.arange(0, {tile})"
+        )
+        for op_id in self.loop.body:
+            operation = self.schedule.operation(op_id)
+            _require(operation is not None, f"loop body names unknown operation {op_id!r}")
+            if operation.kind is OperationKind.LOAD:
+                self._emit_load(operation, "        ")
+            elif operation.kind is OperationKind.MMA:
+                self._emit_mma(operation, "        ")
+            elif operation.kind is OperationKind.REDUCE_ARGMIN:
+                self._emit_argmin(operation, "        ")
+            else:
+                raise EmitError(
+                    f"operation kind {operation.kind.value!r} has no Triton body emitter"
+                )
+        self.line()
+
+    def _emit_mma(self, operation, pad: str) -> None:
+        """`squared_euclidean_xsq_elided`: the norm term minus twice the cross product."""
+
+        tiles = [
+            name
+            for name in operation.reads
+            if (buffer := self.schedule.buffer(name)) is not None
+            and buffer.space is not MemorySpace.GLOBAL
+        ]
+        _require(len(tiles) == 2, "the dot takes two staged operands")
+        norm = next(
+            name
+            for name in operation.reads
+            if (buffer := self.schedule.buffer(name)) is not None
+            and buffer.space is MemorySpace.GLOBAL
+        )
+        access = self.schedule.access_map(operation.op_id, norm)
+        _require(access is not None, f"mma {operation.op_id!r} has no access map for {norm!r}")
+        pointer, mask = self._address(access, pad)
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}cross = tl.dot({tiles[0]}, tl.trans({tiles[1]}))")
+        self.line(f"{pad}norm = tl.load(")
+        self.line(f"{pad}    {pointer},")
+        if mask:
+            self.line(f"{pad}    mask={mask},")
+            self.line(f"{pad}    other=float(\"inf\"),")
+        self.line(f"{pad})")
+        self.line(f"{pad}{operation.writes[0]} = norm[None, :] - 2.0 * cross")
+
+    def _emit_argmin(self, operation, pad: str) -> None:
+        source = operation.reads[0]
+        best = operation.writes[0]
+        lowest = operation.parameters.tie_break is ArgminTieBreak.LOWEST_INDEX
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}block_position = tl.argmin(")
+        self.line(f"{pad}    {source}, axis=1, tie_break_left={lowest},")
+        self.line(f"{pad})")
+        self.line(f"{pad}block_distance = tl.min({source}, axis=1)")
+        self.line(
+            f"{pad}candidate_index = {self.loop.iterator} + block_position"
+        )
+        self.line(f"{pad}better = block_distance < best_distance")
+        comparison = "<" if lowest else ">"
+        self.line(f"{pad}tie = (block_distance == best_distance) & (")
+        self.line(f"{pad}    candidate_index {comparison} {best}")
+        self.line(f"{pad})")
+        self.line(f"{pad}update = better | tie")
+        self.line(f"{pad}best_distance = tl.where(update, block_distance, best_distance)")
+        self.line(f"{pad}{best} = tl.where(update, candidate_index, {best})")
+
+    def _emit_store(self, pad: str) -> None:
+        access = self.schedule.access_map(self.store.op_id, self.store.writes[0])
+        _require(access is not None, f"store {self.store.op_id!r} has no access map")
+        pointer, mask = self._address(access, pad)
+        self.line(f"{pad}# CAKE_OP:{self.store.op_id}")
+        self.line(f"{pad}tl.store(")
+        self.line(f"{pad}    {pointer},")
+        self.line(f"{pad}    {self.store.reads[0]},")
+        if mask:
+            self.line(f"{pad}    mask={mask},")
+        self.line(f"{pad})")
+
+    def _emit_host(self, entry: str, kernel: str) -> None:
+        globals_in_order = self._globals()
+        inputs = [b for b in globals_in_order if b.mode.value == "input"]
+        output = next(b for b in globals_in_order if b.mode.value == "output")
+        names = ", ".join(b.name for b in inputs)
+        constants = self.constants()
+
+        self.line(f"def {entry}({names}, out=None):")
+        self.line("    for tensor, shape, dtype in (")
+        for buffer in inputs:
+            self.line(
+                f"        ({buffer.name}, {tuple(buffer.shape)}, {_TORCH_DTYPE[buffer.dtype]}),"
+            )
+        self.line("    ):")
+        self.line("        if tuple(tensor.shape) != shape:")
+        self.line("            raise ValueError(\"an input differs from the frozen shape\")")
+        self.line("        if tensor.dtype != dtype:")
+        self.line("            raise TypeError(\"an input differs from the frozen dtype\")")
+        self.line("        if not tensor.is_cuda or not tensor.is_contiguous():")
+        self.line("            raise ValueError(\"every input must be contiguous on CUDA\")")
+        self.line(f"    if any(t.device != {inputs[0].name}.device for t in ({names},)):")
+        self.line("        raise ValueError(\"every input must share one device\")")
+        self.line("    if out is None:")
+        self.line(
+            f"        out = torch.empty({tuple(output.shape)}, "
+            f"dtype={_TORCH_DTYPE[output.dtype]}, device={inputs[0].name}.device)"
+        )
+        self.line(
+            f"    if tuple(out.shape) != {tuple(output.shape)} "
+            f"or out.dtype != {_TORCH_DTYPE[output.dtype]}:"
+        )
+        self.line("        raise ValueError(\"out differs from the frozen output contract\")")
+        self.line(f"    if out.device != {inputs[0].name}.device or not out.is_contiguous():")
+        self.line("        raise ValueError(\"out must be contiguous on the input device\")")
+        self.line(f"    {kernel}[{self.grid()}](")
+        for buffer in globals_in_order:
+            self.line(f"        {'out' if buffer is output else buffer.name},")
+        for name, value in constants.items():
+            if name != "NUM_WARPS":
+                self.line(f"        {name}={value},")
+        self.line(f"        num_warps={constants['NUM_WARPS']},")
+        self.line(f"        num_stages={constants['NUM_STAGES']},")
+        self.line("    )")
+        self.line("    return out")
+
+
+def emit(
+    schedule: Schedule, target: Target, *, entry_point: str | None = None
+) -> Emission:
+    """Emit Triton source for one Schedule, or raise if it under-specifies."""
+
+    return _TritonEmitter(schedule, target, entry_point).emit()

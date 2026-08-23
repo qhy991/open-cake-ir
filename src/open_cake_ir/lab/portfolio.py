@@ -186,6 +186,19 @@ class KernelSeed:
         buffers["centroid_tile"]["shape"] = [self.block_k, shape.features]
         buffers["distance_tile"]["shape"] = [self.block_n, self.block_k]
         buffers["best_index_tile"]["shape"] = [self.block_n]
+        # The MMA tile is the accumulator's shape, so a seed that retiles the buffers has
+        # to retile it too. Keeping the two in step by hand across this boundary is the
+        # coupling that made a specialist silently disagree with its own accumulator.
+        for operation in cast(list[dict[str, object]], schedule["operations"]):
+            if operation.get("kind") != "mma":
+                continue
+            parameters = cast(dict[str, object], operation["parameters"])
+            if "tile_shape" in parameters:
+                parameters["tile_shape"] = [
+                    self.block_n,
+                    self.block_k,
+                    shape.features,
+                ]
         return schedule
 
 

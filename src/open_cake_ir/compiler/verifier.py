@@ -533,14 +533,23 @@ def _verify_instruction_commitments(
                     f"{target.target_id!r}",
                     category,
                 )
-            if tile is not None and tile[0] != instruction.shape[0]:
+            _verify_atom_placement(operation, instruction, path, out)
+            if (
+                instruction.shape is not None
+                and tile is not None
+                and tile[0] != instruction.shape[0]
+            ):
                 out.add(
                     "MMA_TILE_INSTRUCTION_MISMATCH",
                     f"{path}.tile_shape",
                     f"tile M {tile[0]} differs from atom M {instruction.shape[0]}",
                     category,
                 )
-            if tile is not None and tile[2] % instruction.shape[2]:
+            if (
+                instruction.shape is not None
+                and tile is not None
+                and tile[2] % instruction.shape[2]
+            ):
                 out.add(
                     "MMA_TILE_INSTRUCTION_MISMATCH",
                     f"{path}.tile_shape",
@@ -636,6 +645,42 @@ def _verify_epilogue_commitments(schedule: Schedule, out: _Collector) -> None:
                 category,
                 FindingSeverity.HINT,
             )
+
+
+# A tensor-core atom places its operands explicitly; a tile-level dot leaves that to the
+# backend. Requiring both to say the same things would force one of them to invent an
+# answer, so the requirement follows the contract.
+_PLACED_CONTRACT_PREFIXES = ("tcgen05.", "mma.sync.", "wgmma.")
+_PLACEMENT_FIELDS = ("shape", "cta_group", "operand_source", "operand_major")
+
+
+def _verify_atom_placement(operation, instruction, path: str, out: _Collector) -> None:
+    category = FindingCategory.HARDWARE_CONFORMANCE
+    placed = instruction.contract.startswith(_PLACED_CONTRACT_PREFIXES)
+    declared = [
+        field
+        for field in _PLACEMENT_FIELDS
+        if getattr(instruction, field, None) is not None
+    ]
+    if placed:
+        missing = [f for f in _PLACEMENT_FIELDS if f not in declared]
+        if missing:
+            out.add(
+                "MMA_PLACEMENT_UNDECLARED",
+                f"{path}.instruction",
+                f"instruction {instruction.contract!r} places its operands explicitly "
+                f"but {operation.op_id!r} leaves {', '.join(missing)} to the backend",
+                category,
+                FindingSeverity.HINT,
+            )
+    elif declared:
+        out.add(
+            "MMA_PLACEMENT_UNSUPPORTED",
+            f"{path}.instruction",
+            f"instruction {instruction.contract!r} does not place its operands, so "
+            f"{', '.join(declared)} would be a commitment the backend cannot honour",
+            category,
+        )
 
 
 def _verify_descriptor_commitments(schedule: Schedule, out: _Collector) -> None:
@@ -1084,6 +1129,47 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         category,
                     )
 
+    # A tile axis produces a staged extent. If the axis says 128 and the buffer it
+    # stages into says 256, the two disagree about the same tile and one of them is
+    # wrong; nothing downstream can tell which.
+    for index, access in enumerate(schedule.access_maps):
+        operation = op_by_id.get(access.operation)
+        if operation is None or not operation.writes:
+            continue
+        staged = buffers.get(operation.writes[0])
+        source = buffers.get(access.buffer)
+        if staged is None or source is None or source.space is not MemorySpace.GLOBAL:
+            continue
+        if len(staged.shape) != sum(1 for c in access.indices if c.is_vector):
+            continue
+        position = 0
+        for component in access.indices:
+            if not component.is_vector:
+                continue
+            if component.source is AccessIndexKind.PROGRAM_TILE:
+                axis = (
+                    schedule.program_map.axis(component.name)
+                    if schedule.program_map is not None
+                    else None
+                )
+                expected = axis.tile if axis is not None else None
+            elif component.source is AccessIndexKind.LOOP_TILE:
+                loop = next(
+                    (l for l in schedule.tile_loops if l.iterator == component.name), None
+                )
+                expected = loop.tile if loop is not None else None
+            else:
+                expected = source.shape[component.dimension] if component.dimension is not None else None
+            if expected is not None and staged.shape[position] != expected:
+                out.add(
+                    "ACCESS_TILE_MISMATCH",
+                    f"access_maps[{index}].indices[{position}]",
+                    f"tile axis {component.name or component.dimension} carries "
+                    f"{expected} but {staged.name!r} stages {staged.shape[position]}",
+                    category,
+                )
+            position += 1
+
     # Every global buffer an operation touches needs an addressing rule, otherwise
     # lowering has to invent one.
     if schedule.access_maps:
@@ -1283,6 +1369,17 @@ def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> No
     if measured is None or measured.binding is None:
         return
     binding = measured.binding
+    if binding.ctas == 0:
+        # A resource that admits no CTA at all is not a performance report. The Schedule
+        # asks a multiprocessor for more than it has, so it cannot run as declared.
+        out.add(
+            "RESIDENCY_IMPOSSIBLE",
+            "allocations" if binding.resource.endswith("memory") else "buffers",
+            f"declared {binding.resource} need {binding.per_cta} {binding.unit} per CTA "
+            f"but a multiprocessor has {binding.per_multiprocessor}; no CTA is resident",
+            category,
+        )
+        return
     others = ", ".join(
         f"{b.resource} {b.ctas}"
         for b in sorted(measured.bounds, key=lambda b: b.ctas)

@@ -207,7 +207,15 @@ class CompilerContractTests(unittest.TestCase):
         self.assertIn("SCHEDULE_OPERATIONS_EMPTY", [finding.code for finding in assessment.findings])
         self.assertIn("OUTPUT_UNWRITTEN", [finding.code for finding in assessment.findings])
 
-    def test_program_tile_drift_cannot_reuse_a_static_lowering_template(self) -> None:
+    def test_program_tile_drift_without_its_buffers_is_refused(self) -> None:
+        """There is no static template left to reuse, so the reason changed.
+
+        Retiling the program axis and leaving the accumulator behind used to be caught
+        because one file could serve one shape. It is caught now because the tile axis and the
+        buffer it stages into disagree, which is a fact about the Schedule rather than
+        about the file the Compiler happened to keep.
+        """
+
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
             (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
@@ -217,11 +225,15 @@ class CompilerContractTests(unittest.TestCase):
         assessment = compiler.assess(schedule)
 
         self.assertEqual(assessment.analysis["grid"], (4, 32, 1))
-        self.assertTrue(assessment.accepted)
+        # Not merely unlowerable: a Schedule whose tile axis and staged buffer disagree
+        # is internally inconsistent, so it is not accepted either. The shape-drift
+        # Corpus cases stay accepted-but-unlowerable, because a shape is a Workload
+        # question rather than a contradiction inside the Schedule.
+        self.assertFalse(assessment.accepted)
         self.assertFalse(assessment.lowering_eligible)
-        self.assertEqual(
+        self.assertIn(
+            "ACCESS_TILE_MISMATCH",
             [finding.code for finding in _decisive(assessment)],
-            ["PROFILE_SEMANTICS_MISMATCH"],
         )
 
     def test_coherent_program_tile_revision_changes_the_lowered_program(self) -> None:
@@ -235,6 +247,9 @@ class CompilerContractTests(unittest.TestCase):
         buffers["token_tile"]["shape"][0] = 128
         buffers["distance_tile"]["shape"][0] = 128
         buffers["best_index_tile"]["shape"][0] = 128
+        for operation in schedule["operations"]:
+            if operation["kind"] == "mma":
+                operation["parameters"]["tile_shape"][0] = 128
 
         assessment = compiler.assess(schedule)
         lowering = compiler.lower(assessment)
@@ -242,9 +257,10 @@ class CompilerContractTests(unittest.TestCase):
         self.assertTrue(assessment.accepted)
         self.assertTrue(assessment.lowering_eligible)
         self.assertEqual(assessment.analysis["grid"], (4, 32, 1))
-        self.assertEqual(assessment.lowering_parameters["block_n"], 128)
-        self.assertIn("grid = (4, 32, 1)", lowering.source)
-        self.assertIn("BLOCK_N=128", lowering.source)
+        # The tile now reaches the source through emission, not a parameter table.
+        self.assertIn("BLOCK_TOKEN_BLOCK=128", compiler.lower(assessment).source)
+        self.assertIn("[(4, 32, 1)]", lowering.source)
+        self.assertIn("BLOCK_TOKEN_BLOCK=128", lowering.source)
         self.assertNotEqual(
             lowering.source_sha256,
             compiler.lower(
@@ -390,22 +406,21 @@ class CompilerContractTests(unittest.TestCase):
         lowering = compiler.lower(assessment)
 
         self.assertEqual(lowering.entry_point, "cake_flash_kmeans_assign")
-        self.assertIn("N=512", lowering.source)
-        self.assertIn("grid = (2, 32, 1)", lowering.source)
+        self.assertIn("N_TOKEN_BLOCK=512", lowering.source)
+        self.assertIn("[(2, 32, 1)]", lowering.source)
         self.assertEqual(
             set(lowering.source_map),
             {"load_tokens", "load_centroids", "distance_mma", "argmin", "store_assignment"},
         )
         self.assertEqual(lowering.toolchain_requirements["target"], "sm_100a")
         self.assertEqual(
-            lowering.toolchain_requirements["compile_constants"],
-            {"B": 32, "N": 512, "K": 1024, "D": 128, "BLOCK_N": 256, "BLOCK_K": 64, "NUM_STAGES": 2},
+            lowering.toolchain_requirements["compile_constants"]["N_TOKEN_BLOCK"], 512
         )
 
     def test_frozen_seed_lowers_three_distinct_exact_shape_specialists(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1.json"
+            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v2.json"
         )
         workload = json.loads(
             (ROOT / "contracts/workloads/flash-kmeans-assign-v2.json").read_text()
@@ -433,7 +448,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_frozen_seed_rejects_a_non_exact_tail_without_retuning(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1.json"
+            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v2.json"
         )
 
         with self.assertRaisesRegex(ValueError, "exactly tiled"):

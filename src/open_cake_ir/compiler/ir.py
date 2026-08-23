@@ -616,41 +616,58 @@ class MmaInstruction:
     """
 
     contract: str
-    shape: tuple[int, int, int]
-    cta_group: int
-    operand_source: OperandSource
-    operand_major: tuple[OperandMajorMode, OperandMajorMode]
+    shape: tuple[int, int, int] | None
+    cta_group: int | None
+    operand_source: OperandSource | None
+    operand_major: tuple[OperandMajorMode, OperandMajorMode] | None
+    """Placement details a tensor-core atom commits to and a tile-level dot does not.
+
+    `tcgen05` takes a CTA group, an operand source and a major mode per operand;
+    `triton.dot` takes none of them, because the backend owns that placement. Which
+    contract needs which is a semantic question, so the verifier asks it -- the same
+    split that keeps an epilogue formula's operator family out of the parser.
+    """
 
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "MmaInstruction":
         obj = _strict_object(
             value,
-            required={"contract", "shape", "cta_group", "operand_source", "operand_major"},
+            required={"contract"},
+            optional={"shape", "cta_group", "operand_source", "operand_major"},
             context=context,
         )
-        shape = _object_list(obj["shape"], f"{context}.shape")
-        if len(shape) != 3:
-            raise ScheduleParseError(f"{context}.shape must declare exactly M, N and K")
-        major = _object_list(obj["operand_major"], f"{context}.operand_major")
-        if len(major) != 2:
-            raise ScheduleParseError(
-                f"{context}.operand_major must declare a mode for A and for B"
+        shape = obj.get("shape")
+        if shape is not None:
+            extents = _object_list(shape, f"{context}.shape")
+            if len(extents) != 3:
+                raise ScheduleParseError(f"{context}.shape must declare exactly M, N and K")
+            shape = tuple(
+                _positive_int(extent, f"{context}.shape[{index}]")
+                for index, extent in enumerate(extents)
             )
-        cta_group = _positive_int(obj["cta_group"], f"{context}.cta_group")
-        if cta_group not in (1, 2):
-            raise ScheduleParseError(f"{context}.cta_group must be 1 or 2")
+        major = obj.get("operand_major")
+        if major is not None:
+            modes = _object_list(major, f"{context}.operand_major")
+            if len(modes) != 2:
+                raise ScheduleParseError(
+                    f"{context}.operand_major must declare a mode for A and for B"
+                )
+            major = tuple(
+                _enum(OperandMajorMode, mode, f"{context}.operand_major[{index}]")
+                for index, mode in enumerate(modes)
+            )
+        cta_group = obj.get("cta_group")
+        if cta_group is not None:
+            cta_group = _positive_int(cta_group, f"{context}.cta_group")
+            if cta_group not in (1, 2):
+                raise ScheduleParseError(f"{context}.cta_group must be 1 or 2")
+        source = obj.get("operand_source")
         return cls(
             _string(obj["contract"], f"{context}.contract"),
-            tuple(
-                _positive_int(extent, f"{context}.shape[{index}]")
-                for index, extent in enumerate(shape)
-            ),
+            shape,
             cta_group,
-            _enum(OperandSource, obj["operand_source"], f"{context}.operand_source"),
-            tuple(
-                _enum(OperandMajorMode, mode, f"{context}.operand_major[{index}]")
-                for index, mode in enumerate(major)
-            ),
+            None if source is None else _enum(OperandSource, source, f"{context}.operand_source"),
+            major,
         )
 
 
