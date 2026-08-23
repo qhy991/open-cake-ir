@@ -63,7 +63,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v1.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v3.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -102,7 +102,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v1.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v3.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -139,7 +139,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v1.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v3.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()

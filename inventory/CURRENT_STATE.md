@@ -1,6 +1,6 @@
 # Current-state inventory
 
-Snapshot: 2026-08-22 after the remote Stage 6 run closed. The final legacy authority is clean revision
+Snapshot: 2026-08-23 after external Campaign custody and Executor v6 qualification. The final legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
 `migration/bundles/cake-repro-final-2fa79092.bundle` remains an independent complete-history copy. The 146-record
@@ -29,18 +29,19 @@ causal effect, serving and paper reproduction are not.
 - Compiler Revision `open-cake-ir-sm100a-v3` binds exact Target, public Schedule authoring contract, source closure,
   six-case Corpus Gate and approval. Its 16-source Evidence archive has an external terminal-seal anchor; v2 remains
   immutable in release history.
-- Current Executor Revision `open-cake-ir-b200-v5` binds 31 runtime sources, including the GPU teaching smoke, plus
+- Current Executor Revision `open-cake-ir-b200-v6` binds 32 runtime sources, including deterministic external
+  Campaign custody and the GPU teaching smoke, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
   and no-GPU Triton-to-CUBIN
   qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor. G8 r6 retains its exact v1
-  closure, while later source baselines retain v2–v4; `inventory/EXECUTOR_REVISIONS.json` resolves all five.
+  closure, while later source baselines retain v2–v5; `inventory/EXECUTOR_REVISIONS.json` resolves all six.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
 - Lab owns matched Turn/budget/checkpoint control and the exact-shape Portfolio handoff; Compiler does not own
   KernelSeed or held-out policy.
 - Common Evaluation has sealed artifact custody, bounded broker-attempt semantics, shape-bound persistent Driver
   loading, raw Portfolio cohorts and semantic replay.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The local and remote contract suite passes 120 tests plus 13 subtests. G7 r4 qualifies the real provider under a
+- The local and remote contract suite passes 123 tests plus 13 subtests. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
   null. The tool-rich successor injects no feature disables, observes shell activity across resume and freezes a live
@@ -49,6 +50,8 @@ causal effect, serving and paper reproduction are not.
 - The beginner `b32_smoke` path has a fresh B200 observation: one candidate kernel launch from the loaded CUBIN,
   16,384/16,384 exact assignments, no fallback, synchronized unload, and explicitly no performance or scientific
   claim.
+- New Campaign Locks and Evidence roots are create-only and must be outside the checkout; historical in-checkout
+  Campaigns remain read-only replay inputs.
 
 ## Migration classification
 

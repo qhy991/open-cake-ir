@@ -71,7 +71,7 @@ class GpuQuickstartContractTests(unittest.TestCase):
     def test_live_quickstart_inventory_binds_the_current_runner_and_executor(self) -> None:
         inventory = json.loads(
             (
-                ROOT / "inventory/GPU_QUICKSTART_QUALIFICATION_V2_20260823.json"
+                ROOT / "inventory/GPU_QUICKSTART_QUALIFICATION_V3_20260823.json"
             ).read_text(encoding="utf-8")
         )
         runner = ROOT / inventory["runner"]["path"]
@@ -110,6 +110,21 @@ class GpuQuickstartContractTests(unittest.TestCase):
                 sha256(path.read_bytes()).hexdigest(),
                 observation["raw_sha256"],
             )
+        prior_fault = inventory["prior_custody_fault"]
+        self.assertFalse(prior_fault["result_retained"])
+        self.assertIsNone(prior_fault["kernel_calls"])
+        self.assertFalse(prior_fault["candidate_conclusion_authorized"])
+        for observation in prior_fault["raw_observation"].values():
+            path = ROOT / observation["path"]
+            self.assertEqual(
+                sha256(path.read_bytes()).hexdigest(),
+                observation["raw_sha256"],
+            )
+        prior_stderr = (
+            ROOT / prior_fault["raw_observation"]["stderr"]["path"]
+        ).read_text(encoding="utf-8")
+        self.assertIn(prior_fault["job_id"], prior_stderr)
+        self.assertIn("PermissionError", prior_stderr)
         result = json.loads(
             (ROOT / inventory["raw_observation"]["result"]["path"]).read_text(
                 encoding="utf-8"

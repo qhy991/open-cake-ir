@@ -1,0 +1,15 @@
+[gpu-run] accepted job gpuq-97430218653f label=open-cake-ir-getting-started-evidence-v3 mode=exclusive gpus=1
+[gpu-run] queued position=1/1 eta=0s
+[gpu-run] running on physical GPUs 1 (run limit 15m00s)
+Traceback (most recent call last):
+  File "/home/qinhaiyan/open-cake-ir/examples/gpu/flash_kmeans_quickstart.py", line 309, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/qinhaiyan/open-cake-ir/examples/gpu/flash_kmeans_quickstart.py", line 301, in main
+    with output.open("x", encoding="utf-8") as stream:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 13] Permission denied: '/home/qinhaiyan/open-cake-ir-runs/gpu-quickstart-v3-20260823/result.json'
+[gpu-run] finished state=failed exit=1

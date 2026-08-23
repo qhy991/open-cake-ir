@@ -66,10 +66,10 @@
     "estimand": null
   },
   "current_successor_study": {
-    "path": "contracts/studies/artifact-optimization-verda-v3.json",
-    "canonical_sha256": "0b23cdbd1ae828e78dc13d11d0f465347fecd2acf63b35d820556dc1813b14b5",
-    "raw_sha256": "3c96dde3cddccfb16c5aef8ff301d46e66aa8296613e337c1bda4dc69c8e50ac",
-    "executor_id": "open-cake-ir-b200-v5",
+    "path": "contracts/studies/artifact-optimization-verda-v4.json",
+    "canonical_sha256": "0f67e28348901a5e88420e3bb24bc1903de45bb49bb93633179f5b4ed091494c",
+    "raw_sha256": "faa9e568203be89466dad8487f8c77f78b7ca2a20e32c507569fd77da3065f7a",
+    "executor_id": "open-cake-ir-b200-v6",
     "claim_scope": "artifact_optimization_only",
     "estimand": null
   }

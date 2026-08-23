@@ -14,7 +14,8 @@ authority. No process may dual-write a Run into the legacy repository and this r
 the current `ExecutorRevision` loader with its directory as `project_root`.
 `executors/open-cake-ir-b200-v3-1c18cbfb/` preserves the tool-rich cutover baseline.
 `executors/open-cake-ir-b200-v4-203b2d8f/` preserves the first GPU teaching-smoke runner.
-`runtime/executors/open-cake-ir-b200-v5.json` is the distinct current Revision and must never be substituted into a
+`executors/open-cake-ir-b200-v5-7f437598/` preserves the last pre-custody runtime closure.
+`runtime/executors/open-cake-ir-b200-v6.json` is the distinct current Revision and must never be substituted into a
 historical Campaign Lock.
 
 The unversioned `open_cake_turn.md` and `direct_cuda_turn.md` prompt bytes are likewise retained for historical G8
@@ -25,6 +26,8 @@ tool-rich prompts.
 It contains shell activity and may not be reused as scientific evidence. Future tool-rich traces can contain private
 auxiliary results; launching them requires explicit operator approval for raw Evidence retention.
 
-`inventory/GPU_QUICKSTART_QUALIFICATION_V2_20260823.json` binds the beginner teaching smoke's create-only result,
+`inventory/GPU_QUICKSTART_QUALIFICATION_V3_20260823.json` binds the current beginner teaching smoke's create-only result,
 stdout and parent `gpu-run` stderr. It proves one current B200 correctness path, not Campaign-level semantic replay,
-performance stability or a paper claim. The unversioned inventory remains the earlier reported v4 observation.
+performance stability or a paper claim. `gpu-quickstart-v3-attempt1/` preserves the preceding zero-result handoff
+permission fault. Its worker result was not retained, so kernel calls are unknown and no Candidate conclusion is
+authorized. Earlier inventories remain historical.

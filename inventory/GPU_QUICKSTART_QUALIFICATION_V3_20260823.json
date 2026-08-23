@@ -1,0 +1,96 @@
+{
+  "schema_version": 2,
+  "observed_at": "2026-08-23T14:11:16Z",
+  "ssh_alias": "verda-b200x4",
+  "hostname": "warm-sun-begins-fin-03",
+  "status": "passed",
+  "purpose": "teaching_smoke",
+  "evidence_class": "raw_parent_and_worker_observation",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "runner": {
+    "path": "examples/gpu/flash_kmeans_quickstart.py",
+    "raw_sha256": "2fc5851aa52ef4fe408859c867ba1310221e83296455d0c7d33e7a2fdf3a4660"
+  },
+  "schedule": {
+    "path": "examples/gpu/flash-kmeans-b32-smoke.json",
+    "schedule_id": "open-cake-ir-gpu-quickstart-v1",
+    "canonical_sha256": "036f8ddeb9f04dbd83e976d9a625788f0f3f0773eeeff9a4f83b1bbc51aa4129",
+    "raw_sha256": "e01fc26572c8ec6270ce2a9ccd4b296fa3ac6d8a0b88603b8567b99726e632a5"
+  },
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v3",
+    "canonical_sha256": "2447c9db2350c24814e5ca1f7ee7396bc3e007b1bd8da07476d9e48d14af4dd0"
+  },
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v6",
+    "canonical_sha256": "28ae0cd7f4c09f0b2f6d0335e674f56447d33ecef29a41a6a74835fce9d89f4a",
+    "descriptor_raw_sha256": "296d74b1add385b2a0236d04e57be446e7cef787bc3d404a7841ea489c610bee"
+  },
+  "candidate": {
+    "candidate_sha256": "e01fc26572c8ec6270ce2a9ccd4b296fa3ac6d8a0b88603b8567b99726e632a5",
+    "candidate_record_sha256": "79c4fa920d02895157126e70661e466513ccd99e835ccad5286252e083963e1f"
+  },
+  "workload": {
+    "workload_id": "flash-kmeans-assign-independent-v2",
+    "canonical_sha256": "37e0f57020d9807a6c77c5ef6e56c8c771274c11c745b58022ae85091d567c3a",
+    "case_id": "b32_smoke",
+    "shape": {"B": 32, "N": 512, "K": 1024, "D": 128}
+  },
+  "gpu": {
+    "job_id": "gpuq-5209de9fd52b",
+    "name": "NVIDIA B200",
+    "compute_capability": [10, 0],
+    "mode": "exclusive",
+    "exclusive_b200_preflight_passed": true
+  },
+  "build": {
+    "cubin_sha256": "e1e65c7335f022c9cc7f9450caa8ad9838e9524df04627f6907df9cc66fab647",
+    "cubin_size_bytes": 149792,
+    "lowering_source_sha256": "57f70284d2b2534328dc63ea646bf6e56a94deb1a798fd6f0c98aa8e41789300"
+  },
+  "evaluation": {
+    "evaluation_protocol_sha256": "5129ef0766a4b2558cb0c8f3e3b4931f2ff1415c36fa976b80f43b69f81af01d",
+    "evaluation_receipt_sha256": "8bbd21ca1ab7a3a7ef4fe785bb1e8d022a4c20e5ee9ffb1f2a830ff0cb3ab618",
+    "correctness_passed": true,
+    "exact_match": true,
+    "tie_aware_distance_match": true,
+    "mismatch_count": 0,
+    "total_assignments": 16384,
+    "kernel_calls": 1,
+    "fallback_calls": 0,
+    "module_unloaded": true
+  },
+  "prior_custody_fault": {
+    "observed_at": "2026-08-23T14:10:23Z",
+    "job_id": "gpuq-97430218653f",
+    "failure_class": "worker_output_handoff_permission",
+    "result_retained": false,
+    "kernel_calls": null,
+    "candidate_conclusion_authorized": false,
+    "raw_observation": {
+      "stdout": {
+        "path": "evidence/qualifications/gpu-quickstart-v3-attempt1/stdout.log",
+        "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "evidence/qualifications/gpu-quickstart-v3-attempt1/stderr.log",
+        "raw_sha256": "a637a0f4836295db1993be0f5beb5274e4865f2bac2d2cf1d0a73af17cda7aaa"
+      }
+    }
+  },
+  "raw_observation": {
+    "result": {
+      "path": "evidence/qualifications/gpu-quickstart-v3/result.json",
+      "raw_sha256": "884ef02335255a104a3caf8f1e88484eff73040676fdf717a9e68f2c20e2d8cf"
+    },
+    "stdout": {
+      "path": "evidence/qualifications/gpu-quickstart-v3/stdout.log",
+      "raw_sha256": "884ef02335255a104a3caf8f1e88484eff73040676fdf717a9e68f2c20e2d8cf"
+    },
+    "stderr": {
+      "path": "evidence/qualifications/gpu-quickstart-v3/stderr.log",
+      "raw_sha256": "8a1538fd0c0dec036e1ac679527cc7f179979be38525e721daa26c16552b487d"
+    }
+  }
+}

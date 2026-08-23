@@ -322,7 +322,22 @@ migration/legacy_manifest.jsonl
 ```
 
 Generated Campaigns live outside source and contain a resolved `campaign.lock.json`, event ledger, content-addressed
-objects and deletable reports.
+objects and deletable reports. The Lab enforces this custody rule for every new Campaign Lock and Evidence root;
+historical in-checkout Campaigns remain read-only replay inputs.
+
+Future repository material converges by lifecycle without moving released history:
+
+```text
+src/open_cake_ir/          # active Implementation
+definitions/<context>/     # immutable definitions with one canonical owner
+releases/compiler/         # released Compiler Revision descriptors
+releases/executors/        # released Executor Revision descriptors
+evidence/                  # immutable historical observations
+reports/current/           # deletable generated projections
+```
+
+See [ADR 0005](adr/0005-forward-compatible-lifecycle-layout.md). Executor v6 is the final transitional descriptor
+under `runtime/executors/`; its successor starts the new release layout.
 
 The public command families mirror the two products:
 

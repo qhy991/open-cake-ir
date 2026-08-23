@@ -133,14 +133,14 @@ id -nG
 ## 5. 真实验证结果
 
 2026-08-23 在 `verda-b200x4`（hostname `warm-sun-begins-fin-03`）上实际运行得到 GPUQ job
-`gpuq-59e5f5ba783f`。关键结果为：
+`gpuq-5209de9fd52b`。关键结果为：
 
 ```json
 {
   "status": "passed",
   "executor_revision": {
-    "executor_id": "open-cake-ir-b200-v5",
-    "canonical_sha256": "7f4375980f518548bb29f3a709aa5459fd628f39093e8a09f9d2a45f22623aef"
+    "executor_id": "open-cake-ir-b200-v6",
+    "canonical_sha256": "28ae0cd7f4c09f0b2f6d0335e674f56447d33ecef29a41a6a74835fce9d89f4a"
   },
   "candidate": {
     "candidate_record_sha256": "79c4fa920d02895157126e70661e466513ccd99e835ccad5286252e083963e1f"
@@ -175,7 +175,7 @@ id -nG
 
 验收权威是 `correctness_passed`，它由 Workload Contract 的 tie-aware 规则派生；`exact_match` 只是本次观察，
 不是额外发明的正确性规则。资格验证摘要及其绑定的原始结果/父进程日志位于
-[`inventory/GPU_QUICKSTART_QUALIFICATION_V2_20260823.json`](../inventory/GPU_QUICKSTART_QUALIFICATION_V2_20260823.json)。
+[`inventory/GPU_QUICKSTART_QUALIFICATION_V3_20260823.json`](../inventory/GPU_QUICKSTART_QUALIFICATION_V3_20260823.json)。
 该摘要绑定 create-only worker result、完整 stdout 和包含真实 job ID 的 `gpu-run` stderr。
 
 ## 6. 三条路径不要混淆

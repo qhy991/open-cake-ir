@@ -26,6 +26,7 @@ from open_cake_ir.evaluation import (
 from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from .checkpoints import TurnObservation, project_checkpoints
+from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission
 from .executor import ExecutorRevision
 from .faults import RunProtocolFault
@@ -1888,9 +1889,11 @@ class Lab:
     ) -> CampaignRef:
         """Own every Turn, budget, checkpoint, feedback and terminal decision."""
 
-        root = Path(evidence_root).absolute()
-        if root.exists() or root.is_symlink():
-            raise ValueError("Campaign evidence root must be new")
+        root = admit_new_campaign_path(
+            self._root,
+            evidence_root,
+            role="Campaign Evidence root",
+        )
         if set(environments) != {"open_cake", "direct_cuda"}:
             raise ValueError("Campaign Authoring Environment set differs")
         if lock.study_kind != "matched_search":
@@ -2326,9 +2329,11 @@ class Lab:
             _object(lock.document["execution"], "campaign_lock.execution"),
             "campaign_lock.execution",
         )
-        root = Path(evidence_root).absolute()
-        if root.exists() or root.is_symlink():
-            raise ValueError("Campaign evidence root must be new")
+        root = admit_new_campaign_path(
+            self._root,
+            evidence_root,
+            role="Campaign Evidence root",
+        )
         evidence = EvidenceStore.create(root)
         ledger = evidence.start_run(
             "portfolio-1",

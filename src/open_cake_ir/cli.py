@@ -16,6 +16,7 @@ from open_cake_ir.lab import (
     execute_matched_from_config,
     execute_portfolio_from_config,
 )
+from open_cake_ir.lab.custody import admit_new_campaign_path
 
 
 def _emit(value: object) -> None:
@@ -73,12 +74,21 @@ def _compiler(args: argparse.Namespace) -> int:
 def _lab(args: argparse.Namespace) -> int:
     lab = Lab(args.project_root)
     if args.lab_command == "preflight":
+        output_path = (
+            admit_new_campaign_path(
+                args.project_root,
+                args.output,
+                role="Campaign Lock output",
+            )
+            if args.output is not None
+            else None
+        )
         lock = lab.preflight(args.study)
-        if args.output is not None:
-            with args.output.absolute().open("x", encoding="utf-8") as stream:
+        if output_path is not None:
+            with output_path.open("x", encoding="utf-8") as stream:
                 json.dump(lock.document, stream, sort_keys=True, ensure_ascii=False)
                 stream.write("\n")
-            args.output.absolute().chmod(0o644)
+            output_path.chmod(0o644)
         _emit(
             {
                 "study_id": lock.study_id,
@@ -94,6 +104,15 @@ def _lab(args: argparse.Namespace) -> int:
             }
         )
         return 0
+    execution_evidence_root = (
+        admit_new_campaign_path(
+            args.project_root,
+            args.evidence_root,
+            role="Campaign Evidence root",
+        )
+        if args.lab_command == "execute"
+        else args.evidence_root
+    )
     lock = CampaignLock.load(args.lock)
     if args.lab_command == "execute":
         campaign = (
@@ -101,14 +120,14 @@ def _lab(args: argparse.Namespace) -> int:
                 args.project_root,
                 lock,
                 args.runtime_config,
-                args.evidence_root,
+                execution_evidence_root,
             )
             if lock.study_kind == "portfolio"
             else execute_matched_from_config(
                 args.project_root,
                 lock,
                 args.runtime_config,
-                args.evidence_root,
+                execution_evidence_root,
             )
         )
         report = (

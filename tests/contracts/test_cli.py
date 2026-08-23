@@ -17,6 +17,54 @@ from open_cake_ir.lab import CampaignLock  # noqa: E402
 
 
 class CliContractTests(unittest.TestCase):
+    def test_lab_execute_refuses_evidence_inside_the_checkout_before_loading_inputs(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(prefix=".campaign-custody-", dir=ROOT) as directory:
+            scratch = Path(directory)
+            evidence_root = scratch / "evidence"
+
+            with self.assertRaisesRegex(ValueError, "outside the project checkout"):
+                main(
+                    [
+                        "--project-root",
+                        str(ROOT),
+                        "lab",
+                        "execute",
+                        "--lock",
+                        str(scratch / "missing.lock.json"),
+                        "--runtime-config",
+                        str(scratch / "missing.runtime.json"),
+                        "--evidence-root",
+                        str(evidence_root),
+                    ]
+                )
+
+            self.assertFalse(evidence_root.exists())
+
+    def test_lab_preflight_refuses_a_campaign_lock_inside_the_checkout(self) -> None:
+        with tempfile.TemporaryDirectory(prefix=".campaign-custody-", dir=ROOT) as directory:
+            lock_path = Path(directory) / "campaign.lock.json"
+
+            with self.assertRaisesRegex(ValueError, "outside the project checkout"):
+                with redirect_stdout(StringIO()):
+                    main(
+                        [
+                            "--project-root",
+                            str(ROOT),
+                            "lab",
+                            "preflight",
+                            str(
+                                ROOT
+                                / "contracts/studies/matched-search-infrastructure-v2.json"
+                            ),
+                            "--output",
+                            str(lock_path),
+                        ]
+                    )
+
+            self.assertFalse(lock_path.exists())
+
     def test_system_qualification_preflight_projects_non_scientific_policy(self) -> None:
         output = StringIO()
         with redirect_stdout(output):
@@ -28,7 +76,7 @@ class CliContractTests(unittest.TestCase):
                     "preflight",
                     str(
                         ROOT
-                        / "contracts/studies/matched-search-system-qualification-v1.json"
+                        / "contracts/studies/matched-search-system-qualification-v3.json"
                     ),
                 ]
             )
@@ -67,7 +115,7 @@ class CliContractTests(unittest.TestCase):
                         str(ROOT),
                         "lab",
                         "preflight",
-                        str(ROOT / "contracts/studies/matched-search-infrastructure-v1.json"),
+                        str(ROOT / "contracts/studies/matched-search-infrastructure-v3.json"),
                         "--output",
                         str(lock_path),
                     ]
@@ -137,13 +185,13 @@ class CliContractTests(unittest.TestCase):
                     str(ROOT),
                     "lab",
                     "preflight",
-                    str(ROOT / "contracts/studies/matched-search-infrastructure-v1.json"),
+                    str(ROOT / "contracts/studies/matched-search-infrastructure-v3.json"),
                 ]
             )
 
         result = json.loads(output.getvalue())
         self.assertEqual(code, 0)
-        self.assertEqual(result["study_id"], "open-cake-ir-matched-search-contract-fixture-v1")
+        self.assertEqual(result["study_id"], "open-cake-ir-matched-search-contract-fixture-v3")
         self.assertEqual(len(result["campaign_lock_sha256"]), 64)
         self.assertEqual(len(result["run_order"]), 6)
 

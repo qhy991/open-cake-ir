@@ -17,3 +17,5 @@
 - Do not copy legacy `rXX`, `vN`, failure or archive runners. Historical implementation lives in pinned Git.
 - No formal provider or GPU experiment is authorized before all applicable acceptance gates pass.
 - Generated runs and secret bytes stay outside source. Cleanup of legacy data requires separate user authorization.
+- Every new Campaign Lock, Evidence root and report stays outside the checkout; historical in-checkout Campaigns are
+  read-only replay inputs. New lifecycle layout follows ADR 0005 only at successor Revision boundaries.

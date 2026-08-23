@@ -13,7 +13,7 @@ supports a broader scientific claim.
 | G3 | passed | v3 six-case Corpus Gate, released Revision lock, complete source archive and external terminal-seal anchor |
 | G4 | passed for migrated evidence | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles and raw r45 replay pass |
 | G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay and matched/Portfolio semantic replay pass |
-| G6 | passed | 120 contract tests + 13 subtests; Lab authority, GPU tutorial custody, raw replay and all three matched Claim Scopes pass |
+| G6 | passed | 123 contract tests + 13 subtests; external Campaign custody, Lab authority, GPU tutorial custody, raw replay and all three matched Claim Scopes pass |
 | G7 | passed | r4 proves two-Turn add/update, thread/usage/sandbox/cwd/reference continuity and the closed feature denylist |
 | G7F | passed | tool-rich v1 injects no feature disables and replays shell activity on initial and resumed Turns |
 | G8 | passed | r6 has two adhered Runs, four replayed Evaluation Receipts and an independent offline system-qualification pass |
