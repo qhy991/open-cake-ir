@@ -1,0 +1,122 @@
+# What four libraries agree the IR is missing
+
+The paper derives Cake IR bottom-up from CUTLASS, FlashInfer, FlashAttention-4,
+TensorRT-LLM, DeepGEMM, Alpha-MoE and TileLang. This repository skipped that step and grew
+its vocabulary one operator at a time. These are the surveys that step would have produced,
+run against four of those sources plus kernel work carried out on this machine.
+
+| Source | Axes | Fully expressible | Detail |
+| --- | ---: | ---: | --- |
+| Local kernel work (MoE sweep, PTX phases) | 15 | 5 | `IR_COVERAGE.md` |
+| CUTLASS 4.5.2 SM100 | 36 | 8 | `IR_COVERAGE_CUTLASS.md` |
+| FlashInfer attention | 26 | 2 | `IR_COVERAGE_ATTENTION.md` |
+| DeepGEMM quantized and grouped | 31 | 6 | `IR_COVERAGE_QUANTIZED.md` |
+| Megakernels and Kimi Delta Attention | 26 | 1 | `IR_COVERAGE_MEGAKERNEL.md` |
+
+The counts are not the finding. The finding is that the misses fall into three groups that
+need three different answers, and only one of them is a vocabulary problem.
+
+## Group one: the vocabulary is thin, and that is fixable
+
+CUTLASS and DeepGEMM mostly ask for *more of the same kind of thing*. A fifth swizzle mode.
+Load movement declared per operand rather than per load. A register budget that belongs to a
+Role instead of to the kernel -- every one of the four sources says this independently, and
+three of them ship kernels that deallocate to a small budget in one role so another can have
+more. A cluster shape between the grid and the CTA. Dtypes the IR does not list.
+
+These are additions to a vocabulary that basically works, and the evidence for each is a
+concrete kernel that cannot otherwise be written down.
+
+Three are structural rather than additive but still local:
+
+* **A pipeline's kind is semantic.** Nine pipeline classes appear in one CUTLASS kernel
+  family and they differ in who issues the consumer release -- a warp, or the asynchronous
+  MMA unit. Two barrier mechanisms cannot say that.
+* **Stage count is a residual**, computed from shared-memory capacity minus every other
+  pipeline's barrier storage. The IR treats stages and allocations as independent facts.
+* **Aliasing couples allocation to traversal.** Two accumulator stages sharing physical
+  columns forces both a different stage index and a reversed subtile order.
+
+## Group two: three resources have lifetimes the IR does not model
+
+Tensor memory is the clearest case and all three GPU-side sources hit it. It is not a size;
+it is a resource with an allocation lock whose release ordering lets the next CTA rasterize,
+a hardware legality map from warp index to subpartition, and -- in the megakernel -- a single
+allocation handed from one operator to the next through a phase-keyed semaphore. In
+DeepGEMM its columns are contended between accumulators and scales, and that contention is
+what prunes the tile search.
+
+Shared memory is the same story one level down. The megakernel refuses to have a
+`byte_offset` at all: thirteen pages, and each operator receives a permutation chosen so the
+pages it releases first are the ones the next operator needs first.
+
+And a scale tensor is a *relation*, not a buffer. Its shape is a padded function of the
+operand's, its major order is transposed against the operand's, and its granularity triple
+selects among three kernel families. Writing the numbers down as integers loses exactly the
+part that would let a verifier check them after a tile change.
+
+## Group three: the schedule is a runtime value, and that is not a field
+
+This is where the surveys converge hardest, and it is the same finding the local MoE work
+produced before any of them ran.
+
+* FlashInfer decides which tiles a CTA processes with a device array from a cost model --
+  sometimes bin-packed by a *GPU kernel* -- or an occupancy measurement, or a per-SM atomic
+  counter that lets a CTA choose at runtime which kernel body it is.
+* DeepGEMM re-reads per-group extents from a device pointer inside the block loop, and
+  names its host-sync boundary `has_synced_ks`. A whole alternative layout exists to remove
+  that sync, at the cost of over-allocating to a bound.
+* The megakernel's operation list *is* a device tensor, and the persistent loop's trip count
+  is its row count. Choosing more attention partitions creates an operator that otherwise
+  does not exist.
+* Kimi Delta Attention gathers its carried state's leading index from another buffer, into a
+  pool whose size is a runtime value.
+
+CUTLASS shows what this costs a type system that tries to absorb it: `is_integral` is
+specialised to `true_type` for a struct that carries a pointer, so a ragged extent can
+inhabit a shape tuple.
+
+Under this heading the IR's assumptions are load-bearing, not incidental. Every buffer shape
+is a static integer list; every loop bound derives from a declared dimension; `grid` is a
+static triple; one Schedule is one kernel with a fixed, statically ordered operation list.
+
+## What to do about each
+
+**Group one is work, and it should be ordered by evidence.** A register budget on `Role`
+is asked for by all four sources and is small. Per-operand load movement and the missing
+swizzle mode are each one kernel away from being needed. Pipeline kind and the carveout
+dependency are real design, not fields.
+
+**Group two needs a decision about what a resource is** before any field is added. The
+current model -- a static byte partition per kernel -- is what makes all three cases
+inexpressible, and adding a lock attribute to `Allocation` would not change that.
+
+**Group three is not a vocabulary question.** There are two coherent answers and this
+survey does not settle which:
+
+1. A Schedule stays one statically-shaped kernel, and ragged extents, device-computed work
+   lists and split-combine decomposition live above it -- which is where the paper already
+   puts dispatch and portfolio concerns, and consistent with what this repository's own
+   architecture says about the Compiler owning one kernel. Attention then becomes a family
+   of static Schedules plus a scheduler that is not a Schedule.
+2. A runtime extent enters the type system -- a declared bound with a device-resident actual
+   -- and the verifier reasons about the bound while the loop reads the actual. This is a
+   change to the type system, not the vocabulary, and it means re-examining every gate that
+   is shape arithmetic, which is most of them.
+
+The megakernel family is out of scope for either. A megakernel is an interpreter and its
+schedule is its input; the distance from a Schedule is not a field.
+
+## The finding in the other direction
+
+`reduce_argmin`, with its tie-break and NaN-policy vocabulary, appears in none of the four
+libraries. It is in the IR because Flash-KMeans needs it, which is legitimate -- an IR
+serves its corpus. It is worth recording that one operation is exercised by one operator
+while the gaps above are exercised by whole libraries, because that ratio is what a survey
+before the fact would have shown and a corpus of three families cannot.
+
+## Corpus coverage, restated
+
+Ten cases across three families, against the paper's roughly four hundred across
+twenty-eight. Attention, MoE, quantized GEMM and fused graph kernels -- the four families
+these surveys are about -- have no local representation at all.
