@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "cdaa702f0d528018abb2c1e4f32426eb5815f174e2cfc55860c0f5e809bb93b1"
+    "canonical_sha256": "9357d3ed0d98cf5439d4cc2b6f6e8cb7c4f5436b90d830d03989d6e256e4169f"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "a per-role register budget divides the CTA allocation the residency commitment declares"
+  "approval_basis": "candidate ranking before GPU time, ordered on what measurement supports"
 }

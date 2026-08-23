@@ -54,6 +54,29 @@ registers per thread in these two kernels. Worth recording rather than filing as
 because closing it means either measuring or modelling the backend, and the paper puts
 measurement at the end of the loop for exactly this reason.
 
+## The ranking, measured
+
+The ranking that filters candidates before GPU time was tested the same way: nine tilings
+of the Flash-KMeans schedule, all nine correct, timed as a median of twenty runs with the
+cache dropped between them.
+
+Twenty-nine of thirty-six pairs came out in the predicted order -- meaningfully better than
+the eighteen a coin would give, and well short of an oracle. The shape of the error matters
+more than the number. The model put the true best second and the true worst last, and its
+first and second choices were the measurement's second and first. It separates good from
+bad and does not resolve fine distinctions.
+
+That is the right capability for the stage it serves. A pre-GPU filter has to keep the
+winner in the surviving set, not name it; the paper leaves naming to measurement. Here the
+true best survives a cut at k=2. What must not be done with this number is to treat the
+order as a result -- reporting a ranked list as though position three were meaningfully
+worse than position two would be reading precision the model does not have.
+
+One thing the run exposed about the model rather than the kernels: every candidate at this
+shape fits in a single wave, so the wave term did no work and the whole order came from how
+much of the device the grid fills. A workload with more tiles than the device holds would
+exercise the term that is actually about tail waste, and has not been tested.
+
 ## Reproducing
 
 `docs/RUNBOOK.md` covers the broker. The profiling job runs exclusive per the shared-GPU

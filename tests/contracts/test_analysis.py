@@ -8,6 +8,7 @@ declares no clock and no bandwidth, so a predicted time would be invented.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import json
 import unittest
 from pathlib import Path
@@ -154,3 +155,74 @@ class NoCostEstimateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RankingTest(unittest.TestCase):
+    """Candidate ranking: a total order, advisory, and never a latency.
+
+    Measured on a B200 across nine tilings, twenty-nine of thirty-six pairs came out in the
+    predicted order and the true best survived a cut at k=2. It filters; it does not choose.
+    """
+
+    def _variants(self):
+        from open_cake_ir.compiler.ir import Schedule
+
+        base = json.loads(
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        for block_n, block_k in ((64, 64), (128, 64), (256, 64)):
+            document = json.loads(json.dumps(base))
+            buffers = {item["name"]: item for item in document["buffers"]}
+            document["schedule_id"] = f"bn{block_n}-bk{block_k}"
+            for axis in document["program_map"]["axes"]:
+                if axis["name"] == "token_block":
+                    axis["tile"] = block_n
+            document["tile_loops"][0]["tile"] = block_k
+            buffers["token_tile"]["shape"] = [block_n, 128]
+            buffers["centroid_tile"]["shape"] = [block_k, 128]
+            buffers["best_index_tile"]["shape"] = [block_n]
+            buffers["norm_tile"]["shape"] = [block_k]
+            for name in ("distance_tile", "cross", "scaled_cross"):
+                buffers[name]["shape"] = [block_n, block_k]
+            for operation in document["operations"]:
+                if operation["kind"] == "mma" and "tile_shape" in operation["parameters"]:
+                    operation["parameters"]["tile_shape"] = [block_n, block_k, 128]
+            yield Schedule.from_dict(document)
+
+    def test_the_order_is_total_and_independent_of_input_order(self) -> None:
+        from open_cake_ir.compiler import ranking
+
+        candidates = list(self._variants())
+        forward, _ = ranking.rank(candidates, TARGET)
+        backward, _ = ranking.rank(list(reversed(candidates)), TARGET)
+        self.assertEqual(
+            [c.schedule_id for c in forward], [c.schedule_id for c in backward]
+        )
+        # A ranking that depends on the order it was handed cannot be evidence.
+        self.assertEqual(len(forward), len(candidates))
+
+    def test_a_cost_carries_no_predicted_time(self) -> None:
+        from open_cake_ir.compiler import ranking
+
+        cost = ranking.cost(next(iter(self._variants())), TARGET)
+        assert cost is not None
+        fields = {f.name for f in dataclasses.fields(cost)}
+        # A Target declares no clock and no bandwidth, so any latency here would be
+        # invented rather than derived.
+        self.assertFalse({f for f in fields if "time" in f or "latency" in f or "cycle" in f})
+
+    def test_an_unscorable_candidate_is_named_not_dropped(self) -> None:
+        from open_cake_ir.compiler import ranking
+        from open_cake_ir.compiler.target import Target
+
+        document = json.loads(
+            (ROOT / "compiler/targets/sm_100a.json").read_text(encoding="utf-8")
+        )
+        document.pop("occupancy", None)
+        blind = Target.from_dict(document)
+        scored, unscored = ranking.rank(list(self._variants()), blind)
+        self.assertEqual(scored, ())
+        # Losing them silently would report a complete order over an incomplete set.
+        self.assertEqual(len(unscored), 3)
