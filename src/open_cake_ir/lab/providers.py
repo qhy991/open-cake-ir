@@ -143,8 +143,16 @@ class ProviderTurn:
 
     thread_id: str
     provider_tokens: int
-    candidate: bytes
-    candidate_sha256: str
+    candidates: tuple[bytes, ...]
+    """Every candidate this Turn wrote, in the order the provider wrote them.
+
+    A tuple rather than one, because the paper's loop generates structurally distinct
+    candidates and ranks them before spending GPU time. One candidate leaves the ranking
+    stage with nothing to rank. How many a Turn may write is declared by the Study
+    Contract and granted identically to both arms (`docs/adr/0006`).
+    """
+
+    candidate_sha256s: tuple[str, ...]
     raw_events: bytes
     raw_events_sha256: str
     terminal_message: str
@@ -532,8 +540,8 @@ def normalize_codex_turn(
     return ProviderTurn(
         thread_id=parsed.thread_id,
         provider_tokens=parsed.provider_tokens,
-        candidate=candidate,
-        candidate_sha256=sha256(candidate).hexdigest(),
+        candidates=(candidate,),
+        candidate_sha256s=(sha256(candidate).hexdigest(),),
         raw_events=raw_events,
         raw_events_sha256=sha256(raw_events).hexdigest(),
         terminal_message=expected_terminal_message,

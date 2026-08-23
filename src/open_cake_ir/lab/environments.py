@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Assessment, Compiler, CompilerError
+from open_cake_ir.compiler.ranking import Cost
 from open_cake_ir.evaluation import (
     CudaLaunchManifest,
     LaunchableCandidate,
@@ -337,6 +338,14 @@ class EnvironmentResult:
     launchable: LaunchableCandidate | None
     feedback: Mapping[str, object]
     artifact_payloads: Mapping[str, bytes] = field(default_factory=dict)
+    cost: Cost | None = None
+    """What the pre-GPU filter can say about this candidate's order, if anything.
+
+    Supplied by the environment because the environment owns the Compiler; the Lab only
+    sorts by it. An environment that has no cost model supplies none, and its candidates
+    are ordered by the order they were written -- which is the treatment asymmetry the
+    study measures, not an accident.
+    """
 
     def __post_init__(self) -> None:
         if self.disposition not in {"launchable", "rejected"}:
@@ -504,6 +513,7 @@ class OpenCakeEnvironment:
             MappingProxyType(
                 {"stage": "built", "findings": self._finding_rows(assessment)}
             ),
+            cost=next(iter(self._compiler.rank([assessment])[0]), None),
         )
 
 

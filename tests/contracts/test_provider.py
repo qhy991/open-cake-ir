@@ -134,7 +134,7 @@ class ProviderContractTests(unittest.TestCase):
             )
 
         self.assertEqual(single.provider_tokens, duplicate.provider_tokens, 120)
-        self.assertEqual(single.candidate_sha256, duplicate.candidate_sha256)
+        self.assertEqual(single.candidate_sha256s, duplicate.candidate_sha256s)
         self.assertEqual(single.terminal_message_count, 1)
         self.assertEqual(duplicate.terminal_message_count, 2)
         self.assertEqual(duplicate.normalization, "duplicate_exact_bracketed")
@@ -253,7 +253,7 @@ class ProviderContractTests(unittest.TestCase):
                 event_contract="tool_rich_candidate_v1",
             )
 
-        self.assertEqual(turn.candidate, b'{"schedule":1}')
+        self.assertEqual(turn.candidates, (b'{"schedule":1}',))
         self.assertEqual(turn.tool_activity[0].item_type, "command_execution")
 
     def test_tool_rich_turn_rejects_an_incomplete_auxiliary_lifecycle(self) -> None:
@@ -390,8 +390,8 @@ class ProviderContractTests(unittest.TestCase):
                     return ProviderTurn(
                         thread_id="01234567-89ab-cdef-0123-456789abcdef",
                         provider_tokens=100,
-                        candidate=payload,
-                        candidate_sha256=sha256(payload).hexdigest(),
+                        candidates=(payload,),
+                        candidate_sha256s=(sha256(payload).hexdigest(),),
                         raw_events=b'{"type":"fixture"}\n',
                         raw_events_sha256=sha256(b'{"type":"fixture"}\n').hexdigest(),
                         terminal_message=expected_terminal_message,
@@ -436,7 +436,7 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(len(adapter.invocations), 2)
         self.assertNotIn("resume", adapter.invocations[0].argv)
         self.assertIn("resume", adapter.invocations[1].argv)
-        self.assertNotEqual(first.candidate_sha256, second.candidate_sha256)
+        self.assertNotEqual(first.candidate_sha256s, second.candidate_sha256s)
 
 
 if __name__ == "__main__":

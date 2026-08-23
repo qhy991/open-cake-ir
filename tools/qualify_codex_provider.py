@@ -329,7 +329,7 @@ def main() -> int:
             event_contract=event_contract,
         )
         _validate_workspace(workspace, candidate)
-        if json.loads(initial.candidate) != {
+        if json.loads(initial.candidates[0]) != {
             "qualification_turn": 1,
             "reference_nonce": reference_nonce,
         }:
@@ -365,12 +365,12 @@ def main() -> int:
         )
         _validate_workspace(workspace, candidate)
         if (
-            json.loads(resumed.candidate)
+            json.loads(resumed.candidates[0])
             != {"qualification_turn": 2, "reference_nonce": reference_nonce}
             or resumed.thread_id != initial.thread_id
             or initial.provider_tokens <= 0
             or resumed.provider_tokens <= 0
-            or initial.candidate_sha256 == resumed.candidate_sha256
+            or initial.candidate_sha256s == resumed.candidate_sha256s
             or sha256(executable.read_bytes()).hexdigest() != executable_sha256
             or sha256(output_schema.read_bytes()).hexdigest() != output_schema_sha256
             or read_frozen_reference_bundle(references)[0] != reference_bundle_sha256
@@ -404,7 +404,7 @@ def main() -> int:
             evidence.put(initial.raw_events, media_type="application/x-ndjson").reference(
                 "initial_provider_events"
             ),
-            evidence.put(initial.candidate, media_type="application/json").reference(
+            evidence.put(initial.candidates[0], media_type="application/json").reference(
                 "initial_candidate"
             ),
             _put_json(evidence, _invocation_document(initial_invocation)).reference(
@@ -413,7 +413,7 @@ def main() -> int:
             evidence.put(resumed.raw_events, media_type="application/x-ndjson").reference(
                 "resumed_provider_events"
             ),
-            evidence.put(resumed.candidate, media_type="application/json").reference(
+            evidence.put(resumed.candidates[0], media_type="application/json").reference(
                 "resumed_candidate"
             ),
             _put_json(evidence, _invocation_document(resumed_invocation)).reference(
@@ -432,8 +432,8 @@ def main() -> int:
                 "resumed_provider_tokens": resumed.provider_tokens,
                 "initial_normalization": initial.normalization,
                 "resumed_normalization": resumed.normalization,
-                "initial_candidate_sha256": initial.candidate_sha256,
-                "resumed_candidate_sha256": resumed.candidate_sha256,
+                "initial_candidate_sha256": initial.candidate_sha256s[0],
+                "resumed_candidate_sha256": resumed.candidate_sha256s[0],
                 "objects": objects,
                 "reference_bundle_sha256": reference_bundle_sha256,
                 "initial_auxiliary_activity": [

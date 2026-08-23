@@ -2054,21 +2054,31 @@ class Lab:
                         provider_turn.raw_events,
                         media_type="application/x-ndjson",
                     )
-                    candidate_object = evidence.put(
-                        provider_turn.candidate,
-                        media_type=environment.media_type,
-                    )
-                    if candidate_object.sha256 != provider_turn.candidate_sha256:
-                        raise ValueError("provider candidate seal differs")
+                    # Every candidate is sealed, not only the one that reaches a GPU.
+                    # The set a Turn produced is what the pre-GPU filter acted on, so an
+                    # evidence root that kept only the survivor could not show what was
+                    # filtered or why the order was what it was.
+                    candidate_objects = []
+                    for payload, expected in zip(
+                        provider_turn.candidates, provider_turn.candidate_sha256s
+                    ):
+                        sealed = evidence.put(payload, media_type=environment.media_type)
+                        if sealed.sha256 != expected:
+                            raise ValueError("provider candidate seal differs")
+                        candidate_objects.append(sealed)
                     provider_payload: dict[str, object] = {
                         "turn": turn_number,
                         "thread_id": thread_id,
                         "turn_provider_tokens": provider_turn.provider_tokens,
                         "cumulative_provider_tokens": cumulative_tokens,
                         "normalization": provider_turn.normalization,
+                        "candidate_count": len(candidate_objects),
                         "objects": [
                             events_object.reference("provider_events"),
-                            candidate_object.reference("candidate_submission"),
+                            *(
+                                item.reference("candidate_submission")
+                                for item in candidate_objects
+                            ),
                         ],
                     }
                     if "event_contract" in provider_document:
@@ -2077,11 +2087,56 @@ class Lab:
                             for activity in provider_turn.tool_activity
                         ]
                     ledger.append("provider_turn_completed", provider_payload)
-                    submission = CandidateSubmission.seal(
-                        environment.media_type, provider_turn.candidate
-                    )
+                    # The pre-GPU filter runs on the whole set: every candidate is built,
+                    # which is the verifier and the toolchain but no device. Only then is
+                    # an order taken, and only the survivor reaches an Evaluation. This is
+                    # the stage the paper spends compile time on to avoid spending GPU
+                    # time, so building all of them is the point rather than a cost.
                     live_stage = "environment"
-                    environment_result = environment.build(submission)
+                    built = []
+                    for payload in provider_turn.candidates:
+                        entry = CandidateSubmission.seal(environment.media_type, payload)
+                        built.append((entry, environment.build(entry)))
+                    launchable_first = sorted(
+                        range(len(built)),
+                        key=lambda index: (
+                            built[index][1].disposition != "launchable",
+                            built[index][1].cost.order
+                            if built[index][1].cost is not None
+                            else (),
+                            index,
+                        ),
+                    )
+                    ledger.append(
+                        "candidate_set_filtered",
+                        {
+                            "turn": turn_number,
+                            "submitted": len(built),
+                            "launchable": sum(
+                                result.disposition == "launchable"
+                                for _, result in built
+                            ),
+                            "order": [
+                                {
+                                    "candidate_sha256": built[index][0].sha256,
+                                    "disposition": built[index][1].disposition,
+                                    "cost": (
+                                        {
+                                            "waves": built[index][1].cost.waves,
+                                            "last_wave_occupancy": round(
+                                                built[index][1].cost.last_wave_occupancy, 6
+                                            ),
+                                            "binding_resource": built[index][1].cost.binding_resource,
+                                        }
+                                        if built[index][1].cost is not None
+                                        else None
+                                    ),
+                                }
+                                for index in launchable_first
+                            ],
+                        },
+                    )
+                    submission, environment_result = built[launchable_first[0]]
                     if environment_result.disposition == "rejected":
                         observations.append(
                             TurnObservation(

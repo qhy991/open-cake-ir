@@ -173,8 +173,8 @@ class FakeProvider:
         return ProviderTurn(
             thread_id=thread_id,
             provider_tokens=80000,
-            candidate=payload,
-            candidate_sha256=sha256(payload).hexdigest(),
+            candidates=(payload,),
+            candidate_sha256s=(sha256(payload).hexdigest(),),
             raw_events=raw_events,
             raw_events_sha256=sha256(raw_events).hexdigest(),
             terminal_message=terminal,
@@ -478,8 +478,8 @@ class LabContractTests(unittest.TestCase):
                 return ProviderTurn(
                     thread_id=observed.thread_id,
                     provider_tokens=70000,
-                    candidate=observed.candidate,
-                    candidate_sha256=observed.candidate_sha256,
+                    candidates=observed.candidates,
+                    candidate_sha256s=observed.candidate_sha256s,
                     raw_events=raw_events,
                     raw_events_sha256=sha256(raw_events).hexdigest(),
                     terminal_message=observed.terminal_message,
@@ -604,8 +604,8 @@ class LabContractTests(unittest.TestCase):
                 return ProviderTurn(
                     thread_id=observed.thread_id,
                     provider_tokens=observed.provider_tokens,
-                    candidate=observed.candidate,
-                    candidate_sha256=observed.candidate_sha256,
+                    candidates=observed.candidates,
+                    candidate_sha256s=observed.candidate_sha256s,
                     raw_events=raw_events,
                     raw_events_sha256=sha256(raw_events).hexdigest(),
                     terminal_message=events[-2]["item"]["text"],
@@ -1005,8 +1005,8 @@ class LabContractTests(unittest.TestCase):
                 return ProviderTurn(
                     thread_id=observed.thread_id,
                     provider_tokens=observed.provider_tokens,
-                    candidate=observed.candidate,
-                    candidate_sha256=observed.candidate_sha256,
+                    candidates=observed.candidates,
+                    candidate_sha256s=observed.candidate_sha256s,
                     raw_events=raw_events,
                     raw_events_sha256=sha256(raw_events).hexdigest(),
                     terminal_message=observed.terminal_message,
@@ -1412,3 +1412,111 @@ class LabContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CandidateSetFilterTest(unittest.TestCase):
+    """Every candidate is built and sealed; one reaches an Evaluation.
+
+    This is the paper's pre-GPU filter. Compile time is spent on the whole set precisely
+    so that device time is not, so a Turn that writes three candidates must show three
+    builds and three sealed objects, and the one that runs must be the one the order put
+    first rather than the one written first.
+    """
+
+    def test_the_set_is_built_and_ordered_before_one_is_evaluated(self) -> None:
+        built: list[str] = []
+
+        class CostedEnvironment(FakeEnvironment):
+            def build(self, submission):
+                built.append(submission.sha256)
+                result = super().build(submission)
+                # The last candidate written is the cheapest, so ordering by cost and
+                # ordering by arrival disagree -- which is what makes the assertion mean
+                # something.
+                index = json.loads(submission.payload)["variant"]
+                from open_cake_ir.compiler.ranking import Cost
+
+                return EnvironmentResult(
+                    result.disposition,
+                    result.submission_sha256,
+                    result.launchable,
+                    result.feedback,
+                    result.artifact_payloads,
+                    cost=Cost(
+                        schedule_id=f"v{index}",
+                        ctas=1,
+                        ctas_per_multiprocessor=1,
+                        binding_resource="registers",
+                        waves=3 - index,
+                        last_wave_occupancy=0.5,
+                    ),
+                )
+
+        class SetProvider(FakeProvider):
+            def turn(self, request):
+                observed = super().turn(request)
+                payloads = tuple(
+                    json.dumps(
+                        {"run_id": request.run_id, "turn": request.turn, "variant": i},
+                        sort_keys=True,
+                    ).encode()
+                    for i in range(3)
+                )
+                return ProviderTurn(
+                    thread_id=observed.thread_id,
+                    provider_tokens=observed.provider_tokens,
+                    candidates=payloads,
+                    candidate_sha256s=tuple(sha256(p).hexdigest() for p in payloads),
+                    raw_events=observed.raw_events,
+                    raw_events_sha256=observed.raw_events_sha256,
+                    terminal_message=observed.terminal_message,
+                    terminal_message_count=observed.terminal_message_count,
+                    normalization=observed.normalization,
+                )
+
+        lab = Lab(ROOT)
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v4.json")
+        arms = lock.document["resolved_inputs"]["arm_environments"]
+        protocol_sha256 = sha256(
+            json.dumps(
+                lock.document["evaluation_protocol"], sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
+        with tempfile.TemporaryDirectory() as parent:
+            campaign = lab.execute(
+                lock,
+                Path(parent).resolve() / "campaign-evidence",
+                provider=SetProvider(),
+                environments={
+                    arm: CostedEnvironment(arm, arms[arm]) for arm in arms
+                },
+                evaluator=FakeEvaluator(
+                    lock.document["evaluation_protocol"],
+                    protocol_sha256,
+                    lock.document["workload"]["canonical_sha256"],
+                ),
+            )
+            store = EvidenceStore.open(campaign.evidence_root)
+            run_id = next(iter(lock.run_order))
+            events = [
+                event
+                for event in store.replay_events(run_id)
+                if event["kind"] == "candidate_set_filtered"
+            ]
+            campaign_wide = sum(
+                1
+                for identifier in lock.run_order
+                for event in store.replay_events(identifier)
+                if event["kind"] == "candidate_set_filtered"
+            )
+
+        self.assertTrue(events)
+        first = events[0]["payload"]
+        self.assertEqual(first["submitted"], 3)
+        self.assertEqual(first["launchable"], 3)
+        # Ordered by cost, so the cheapest -- written last -- leads.
+        self.assertEqual(first["order"][0]["cost"]["waves"], 1)
+        self.assertEqual([row["cost"]["waves"] for row in first["order"]], [1, 2, 3])
+        # And every candidate was built, not only the survivor -- counted across the whole
+        # campaign, because the recording environment is shared by every run and arm.
+        self.assertEqual(len(built), 3 * campaign_wide)
