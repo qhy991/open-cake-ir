@@ -36,6 +36,78 @@ The paper states eight. They bind IR changes here; the global doctrine covers th
 - Human judgement gates compiler evolution. An automatic estimate does not authorize a
   Revision.
 
+## What the harness must do (S3)
+
+- A blocking check names the affected program region and the class of contract violated.
+  The four classes are schedule semantics, hardware conformance, data consistency and
+  program safety; analysis may block only within them.
+- Correctness is decided against an external reference across different shapes and input
+  distributions. Final acceptance requires end-to-end evaluation in the target framework.
+- The cost model ranks and filters candidates *before* they reach GPU time. It never
+  decides acceptance.
+- The compiler requires an exact target match. It reports missing device or toolchain
+  support; it never steps a schedule down to another architecture.
+
+## Compiler evolution (S3, outer loop)
+
+- A proposal is checked against P1-P8 before it is implemented. A new primitive must be
+  performance-transparent and verification-friendly.
+- A primitive and its analyses evolve together. Syntax without effects and legality rules
+  makes the IR less analyzable, which is a reason to refuse it, not to defer them.
+- Changes are test-gated across the kernel corpus, and merged by human judgement.
+- Recurring failures are what become new verifier rules, IR primitives, cost-model
+  calibrations and reusable tactics. A one-off failure is not evidence for a rule.
+
+## The agent loop (S4)
+
+Four stages, in order. A campaign that collapses them is not running this loop.
+
+1. Generate **structurally distinct** candidates -- not variations of one shape.
+2. Filter before GPU time: IR construction checks, then verifier hard gates, then
+   cost-model ranking.
+3. Evaluate survivors against the external oracle, with benchmarking **and profiler**
+   evidence.
+4. Route each diagnosis to whichever of candidate, verifier, cost model or IR vocabulary
+   it belongs to.
+
+The Workload Contract is the stable authority throughout, fixing shapes, oracle,
+tolerances, hardware and permitted references. Retained results are what make decisions
+auditable and recurring findings reusable.
+
+## Reference access, per arm (S5)
+
+Each arm's authoring environment declares what its author may see. Getting this wrong
+invalidates the comparison, not just the run.
+
+- **Clean start / frontier synthesis** -- may inspect the mathematical specification,
+  evaluation contract, correctness oracle and high-level code. May **not** inspect a
+  low-level target implementation (CUDA, PTX, SASS, or equivalent generated source). An
+  external implementation may be run through the harness as a black-box baseline; its
+  internals stay unavailable.
+- **Known-kernel reproduction** -- may inspect the reference.
+- **Direct CUDA/PTX** -- may write low-level code, may not inspect an existing target
+  implementation.
+
+## Measurement and replication (S5)
+
+- On-GPU correctness checks and CUPTI timing on B200, with L2 flushed before every timed
+  sample. Every reported candidate is compiled, correctness-checked and benchmarked at
+  the listed shape.
+- A replicated clean start fixes the agent and scaffold, model and reasoning effort, task
+  statement, oracle, benchmark harness and the single target shape. Report median
+  [min, max] across the matched runs, and retain the stopping and timing accounting.
+- Model and scaffold are held fixed so a difference is attributable to the environment
+  rather than to model capability.
+
+## Portfolio generalization (S6)
+
+- Generalization begins only after strong per-shape seeds exist. Scoring the inner loop
+  on broad coverage weakens the signal it exists to produce.
+- An incorrect or slow seed returns to the inner loop. It is never hidden behind a
+  dispatcher predicate.
+- Portfolio validation covers representative and held-out inputs, boundary and tail
+  cases, overlapping or missing guards, and the fallback path.
+
 - The Compiler is the product core. It must not import Lab, provider, workload, campaign, evidence-store or claim code.
 - The Lab may depend on a frozen Compiler Revision; a campaign may never mutate that revision.
 - Workload Contract owns operator semantics and oracle. Study Contract owns treatment, estimand and analysis.
