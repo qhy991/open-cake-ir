@@ -1,0 +1,4 @@
+[gpu-run] accepted job gpuq-59e5f5ba783f label=open-cake-ir-getting-started-evidence-v2 mode=exclusive gpus=1
+[gpu-run] queued position=1/1 eta=0s
+[gpu-run] running on physical GPUs 1 (run limit 15m00s)
+[gpu-run] finished state=completed exit=0

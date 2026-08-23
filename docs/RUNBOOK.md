@@ -3,6 +3,9 @@
 This runbook describes capability, not authorization. A live run still requires a current provider qualification,
 new output roots and the applicable Acceptance Gates.
 
+This is an operator reference. New users should first run the single-kernel B200 tutorial in
+[`GETTING_STARTED.md`](GETTING_STARTED.md); it does not call a provider or start a Campaign.
+
 ## 1. Verify immutable inputs
 
 ```bash
@@ -25,17 +28,19 @@ requires a new Executor ID and output file; never turn a released descriptor bac
 ## 2. Resolve a Study
 
 ```bash
-open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v1.json \
+open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v2.json \
   --output /new/path/campaign.lock.json
 ```
 
-The checked-in scientific matched contract uses a zero-GPU fixture provider and intentionally cannot start a live
-provider. The checked-in `matched-search-system-qualification-v1.json` is the non-scientific G8 template. Freeze a
-live successor only after a real two-Turn qualification emits a receipt with
+The current checked-in scientific matched contract, `matched-search-infrastructure-v2.json`, uses a zero-GPU fixture
+provider and intentionally cannot start a live provider. The current non-scientific G8 template is
+`matched-search-system-qualification-v2.json`; both corresponding v1 files remain frozen historical records. Freeze
+a live successor only after a real two-Turn qualification emits a receipt with
 the matching closed or tool-rich scope and binds the exact executable, model, reasoning effort, service tier, output
 schema, prompt/scaffold bytes, removed environment, reference visibility, feature overrides and event contract.
-`artifact-optimization-v1.json` is the zero-GPU contract fixture; `artifact-optimization-verda-v1.json` binds the
-live tool-rich provider but authorizes no Campaign by itself.
+`artifact-optimization-v2.json` is the current zero-GPU contract fixture;
+`artifact-optimization-verda-v3.json` binds the current live tool-rich provider and Executor but authorizes no
+Campaign by itself. Earlier revisions remain historical.
 
 ## 3. Qualify the live provider without GPU
 
@@ -79,10 +84,10 @@ Then freeze either non-scientific Study from its matching receipt, seal anchor a
 ```bash
 python tools/freeze_live_matched_study.py \
   --project-root . \
-  --template contracts/studies/matched-search-system-qualification-v1.json \
+  --template contracts/studies/matched-search-system-qualification-v2.json \
   --qualification contracts/providers/<new-live-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-live-anchor>.json \
-  --executor runtime/executors/open-cake-ir-b200-v3.json \
+  --executor runtime/executors/open-cake-ir-b200-v5.json \
   --runtime-config /new/path/runtime.json \
   --study-id <new-g8-study-id> \
   --output contracts/studies/<new-g8-study>.json
@@ -96,7 +101,8 @@ Copy `examples/runtime/matched-live.example.json`, replacing every absolute path
 `gpuq-users` access; the broker configuration must declare `service_user=gpuq` and
 `service_group=gpuq-users`. Its command must be `gpu-run ... tools/evaluate_flash_candidate.py` so GPUQ owns
 `CUDA_VISIBLE_DEVICES`; the setgid handoff directory allows the service user to read sealed candidates and return
-raw results without weakening ownership checks.
+raw results without weakening ownership checks. Until the broker exports a real worker job ID, include
+`--env GPUQ_JOB_ID=gpuq-000000000000`; the parent normalizes the real ID from `gpu-run` stderr.
 
 ```bash
 sg gpuq-users -c 'open-cake-ir lab execute --lock /new/path/campaign.lock.json \

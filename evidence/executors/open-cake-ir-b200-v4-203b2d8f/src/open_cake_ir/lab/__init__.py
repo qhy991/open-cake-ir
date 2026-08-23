@@ -1,0 +1,97 @@
+"""Research Lab public Interface."""
+
+from .checkpoints import CheckpointObservation, TurnObservation, project_checkpoints
+from .compose import (
+    broker_execution_sha256,
+    execute_matched_from_config,
+    execute_portfolio_from_config,
+)
+from .core import (
+    AnalysisInclusion,
+    CampaignLock,
+    CampaignRef,
+    ClaimView,
+    Lab,
+    PortfolioAssay,
+    PortfolioStudyReport,
+    RunEvaluator,
+    RunProvider,
+    StudyContract,
+    StudyReport,
+    TurnRequest,
+)
+from .environments import (
+    AuthoringEnvironment,
+    BuildRequest,
+    CandidateSubmission,
+    DirectCudaEnvironment,
+    EnvironmentResult,
+    NvccToolchainBuilder,
+    OpenCakeEnvironment,
+    ToolchainBuilder,
+    TritonToolchainBuilder,
+)
+from .executor import ExecutorRevision
+from .faults import CandidateCompileRejected, RunProtocolFault
+from .portfolio import ExactShape, KernelSeed, SpecialistLowering, lower_specialists
+from .providers import (
+    CODEX_DISABLED_FEATURES,
+    CodexInvocationBuilder,
+    CodexProviderAdapter,
+    CodexRunProvider,
+    ProviderAuxiliaryActivity,
+    ProviderInvocation,
+    ProviderQualificationReceipt,
+    ProviderTurn,
+    normalize_codex_turn,
+)
+from .runtime import BoundedBrokerEvaluator, BrokerSubmitter, CommandBrokerSubmitter
+
+__all__ = [
+    "AnalysisInclusion",
+    "CampaignLock",
+    "CampaignRef",
+    "ClaimView",
+    "CheckpointObservation",
+    "Lab",
+    "PortfolioAssay",
+    "PortfolioStudyReport",
+    "RunEvaluator",
+    "RunProvider",
+    "StudyContract",
+    "StudyReport",
+    "TurnRequest",
+    "TurnObservation",
+    "project_checkpoints",
+    "AuthoringEnvironment",
+    "BuildRequest",
+    "CandidateSubmission",
+    "DirectCudaEnvironment",
+    "EnvironmentResult",
+    "ExecutorRevision",
+    "NvccToolchainBuilder",
+    "OpenCakeEnvironment",
+    "TritonToolchainBuilder",
+    "ToolchainBuilder",
+    "CodexInvocationBuilder",
+    "CODEX_DISABLED_FEATURES",
+    "CodexProviderAdapter",
+    "CodexRunProvider",
+    "ProviderAuxiliaryActivity",
+    "ProviderInvocation",
+    "ProviderQualificationReceipt",
+    "ProviderTurn",
+    "normalize_codex_turn",
+    "ExactShape",
+    "KernelSeed",
+    "SpecialistLowering",
+    "lower_specialists",
+    "BoundedBrokerEvaluator",
+    "BrokerSubmitter",
+    "CommandBrokerSubmitter",
+    "execute_matched_from_config",
+    "execute_portfolio_from_config",
+    "broker_execution_sha256",
+    "RunProtocolFault",
+    "CandidateCompileRejected",
+]

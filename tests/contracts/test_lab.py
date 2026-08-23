@@ -291,6 +291,23 @@ class FakeEvaluator:
 
 
 class LabContractTests(unittest.TestCase):
+    def test_current_study_successors_bind_executor_v5(self) -> None:
+        for name in (
+            "matched-search-infrastructure-v2.json",
+            "matched-search-system-qualification-v2.json",
+            "artifact-optimization-v2.json",
+            "artifact-optimization-verda-v3.json",
+            "flash-kmeans-r45-portfolio-reconstruction-v2.json",
+        ):
+            lock = Lab(ROOT).preflight(ROOT / "contracts/studies" / name)
+            executor = lock.document["execution"]["executor_revision"]
+            self.assertEqual(executor["executor_id"], "open-cake-ir-b200-v5", name)
+            self.assertEqual(
+                executor["canonical_sha256"],
+                "7f4375980f518548bb29f3a709aa5459fd628f39093e8a09f9d2a45f22623aef",
+                name,
+            )
+
     def test_historical_g8_r6_remains_a_non_scientific_replayable_qualification(self) -> None:
         lab = Lab(ROOT)
         lock = CampaignLock.load(ROOT / "runtime/g8-system-r6.campaign.lock.json")
@@ -320,7 +337,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_artifact_optimization_preflight_binds_full_features_without_an_estimand(self) -> None:
         lock = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/artifact-optimization-v1.json"
+            ROOT / "contracts/studies/artifact-optimization-v2.json"
         )
 
         self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
@@ -334,7 +351,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_live_artifact_optimization_study_binds_the_tool_rich_qualification(self) -> None:
         lock = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/artifact-optimization-verda-v1.json"
+            ROOT / "contracts/studies/artifact-optimization-verda-v3.json"
         )
         provider = lock.document["resolved_inputs"]["arm_environments"]["open_cake"][
             "provider"
@@ -350,7 +367,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_closed_provider_receipt_cannot_authorize_artifact_optimization(self) -> None:
         study = json.loads(
-            (ROOT / "contracts/studies/artifact-optimization-v1.json").read_text()
+            (ROOT / "contracts/studies/artifact-optimization-v2.json").read_text()
         )
         for arm in study["arms"].values():
             provider = arm["provider"]
@@ -585,7 +602,7 @@ class LabContractTests(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-v1.json")
+        lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-v2.json")
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
             json.dumps(
@@ -744,7 +761,7 @@ class LabContractTests(unittest.TestCase):
                 cwd=root,
                 executor=ExecutorRevision.load(
                     ROOT,
-                    ROOT / "runtime/executors/open-cake-ir-b200-v3.json",
+                    ROOT / "runtime/executors/open-cake-ir-b200-v5.json",
                 ),
                 service_user=pwd.getpwuid(os.geteuid()).pw_name,
                 service_group=grp.getgrgid(os.getegid()).gr_name,

@@ -64,5 +64,13 @@
     "raw_sha256": "2725524072258e1fffa7cbf228a3e8855b6802fcf00805731079be376a7ec301",
     "claim_scope": "artifact_optimization_only",
     "estimand": null
+  },
+  "current_successor_study": {
+    "path": "contracts/studies/artifact-optimization-verda-v3.json",
+    "canonical_sha256": "0b23cdbd1ae828e78dc13d11d0f465347fecd2acf63b35d820556dc1813b14b5",
+    "raw_sha256": "3c96dde3cddccfb16c5aef8ff301d46e66aa8296613e337c1bda4dc69c8e50ac",
+    "executor_id": "open-cake-ir-b200-v5",
+    "claim_scope": "artifact_optimization_only",
+    "estimand": null
   }
 }

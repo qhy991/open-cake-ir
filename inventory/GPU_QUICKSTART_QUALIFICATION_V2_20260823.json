@@ -1,0 +1,78 @@
+{
+  "schema_version": 2,
+  "observed_at": "2026-08-23T04:41:39Z",
+  "ssh_alias": "verda-b200x4",
+  "hostname": "warm-sun-begins-fin-03",
+  "status": "passed",
+  "purpose": "teaching_smoke",
+  "evidence_class": "raw_parent_and_worker_observation",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "runner": {
+    "path": "examples/gpu/flash_kmeans_quickstart.py",
+    "raw_sha256": "2fc5851aa52ef4fe408859c867ba1310221e83296455d0c7d33e7a2fdf3a4660"
+  },
+  "schedule": {
+    "path": "examples/gpu/flash-kmeans-b32-smoke.json",
+    "schedule_id": "open-cake-ir-gpu-quickstart-v1",
+    "canonical_sha256": "036f8ddeb9f04dbd83e976d9a625788f0f3f0773eeeff9a4f83b1bbc51aa4129",
+    "raw_sha256": "e01fc26572c8ec6270ce2a9ccd4b296fa3ac6d8a0b88603b8567b99726e632a5"
+  },
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v3",
+    "canonical_sha256": "2447c9db2350c24814e5ca1f7ee7396bc3e007b1bd8da07476d9e48d14af4dd0"
+  },
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v5",
+    "canonical_sha256": "7f4375980f518548bb29f3a709aa5459fd628f39093e8a09f9d2a45f22623aef",
+    "descriptor_raw_sha256": "f4423bc6083ab6411398dc8e8d35bd829190b12dd9fc050b2993e3c233728032"
+  },
+  "candidate": {
+    "candidate_sha256": "e01fc26572c8ec6270ce2a9ccd4b296fa3ac6d8a0b88603b8567b99726e632a5",
+    "candidate_record_sha256": "79c4fa920d02895157126e70661e466513ccd99e835ccad5286252e083963e1f"
+  },
+  "workload": {
+    "workload_id": "flash-kmeans-assign-independent-v2",
+    "canonical_sha256": "37e0f57020d9807a6c77c5ef6e56c8c771274c11c745b58022ae85091d567c3a",
+    "case_id": "b32_smoke",
+    "shape": {"B": 32, "N": 512, "K": 1024, "D": 128}
+  },
+  "gpu": {
+    "job_id": "gpuq-59e5f5ba783f",
+    "name": "NVIDIA B200",
+    "compute_capability": [10, 0],
+    "mode": "exclusive",
+    "exclusive_b200_preflight_passed": true
+  },
+  "build": {
+    "cubin_sha256": "e1e65c7335f022c9cc7f9450caa8ad9838e9524df04627f6907df9cc66fab647",
+    "cubin_size_bytes": 149792,
+    "lowering_source_sha256": "57f70284d2b2534328dc63ea646bf6e56a94deb1a798fd6f0c98aa8e41789300"
+  },
+  "evaluation": {
+    "evaluation_protocol_sha256": "5129ef0766a4b2558cb0c8f3e3b4931f2ff1415c36fa976b80f43b69f81af01d",
+    "evaluation_receipt_sha256": "8bbd21ca1ab7a3a7ef4fe785bb1e8d022a4c20e5ee9ffb1f2a830ff0cb3ab618",
+    "correctness_passed": true,
+    "exact_match": true,
+    "tie_aware_distance_match": true,
+    "mismatch_count": 0,
+    "total_assignments": 16384,
+    "kernel_calls": 1,
+    "fallback_calls": 0,
+    "module_unloaded": true
+  },
+  "raw_observation": {
+    "result": {
+      "path": "evidence/qualifications/gpu-quickstart-v2/result.json",
+      "raw_sha256": "22c097a053168def50357b045dfb347775d659e8d075d989a09b576a253dbbab"
+    },
+    "stdout": {
+      "path": "evidence/qualifications/gpu-quickstart-v2/stdout.log",
+      "raw_sha256": "22c097a053168def50357b045dfb347775d659e8d075d989a09b576a253dbbab"
+    },
+    "stderr": {
+      "path": "evidence/qualifications/gpu-quickstart-v2/stderr.log",
+      "raw_sha256": "b3bccd02648399ee92420c8f45d978ab01973e2f88c4448f389ea6f8c3cfd333"
+    }
+  }
+}

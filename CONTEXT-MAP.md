@@ -1,6 +1,17 @@
 # open-cake-ir context map
 
-`open-cake-ir` contains four contexts with strict dependency direction.
+`open-cake-ir` exposes two user-facing capabilities—the standalone Compiler and the dependent Research Lab—implemented
+by four contexts with strict dependency direction. Evaluation and Evidence are shared supporting contexts, not a
+third product.
+
+For intuition before the formal vocabulary:
+
+| Context | Beginner question |
+| --- | --- |
+| Compiler | Is this GPU execution plan valid, and what target source does it produce? |
+| Research Lab | How does an Agent improve Candidates under a frozen protocol? |
+| Evaluation | Is one sealed Candidate correct, and was its measurement valid? |
+| Evidence | Can the raw observations and terminal decision be independently replayed? |
 
 ## Contexts
 

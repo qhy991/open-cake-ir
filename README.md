@@ -4,16 +4,24 @@
 [CAKE: Compiler-Agent Co-Design for Frontier Kernel Evolution](https://arxiv.org/abs/2608.12629v1).
 It does not contain or claim to reproduce the unpublished CAKE implementation.
 
+**第一次接触编译器或 GPU kernel？请从
+[`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) 开始。** 它用一个已经在 B200 上验证的真实例子解释
+Schedule、Assessment、Lowering、CUBIN 和正确性检查，并提供可直接复制的命令。
+
+In plain language: you describe *how* a GPU should divide and order work in a typed JSON Schedule; the Compiler
+checks that plan and lowers it to inspectable target source. The optional Research Lab then lets agents improve
+Candidates under frozen evaluation and evidence rules.
+
 ## Product boundary
 
-The repository has one product core and one dependent research application:
+The repository has one product core and one dependent research application, supported by two shared Modules:
 
 1. **Open Cake Compiler** — typed hardware-explicit schedules, exact target definitions, localized findings,
    analysis, deterministic lowering, compiler revisions and corpus gates. It is usable without an agent campaign.
 2. **Research Lab** — freezes an Open Cake Compiler revision and evaluates complete authoring environments against
    common external correctness and performance protocols.
-3. **Evaluation and Evidence** — share Workload-owned assays across treatments, retain typed receipts, store immutable
-   observations, and replay Run integrity independently of the execution process.
+- **Evaluation and Evidence** — shared Modules that apply Workload-owned correctness/measurement rules, retain typed
+  receipts, store immutable observations, and replay Run integrity.
 
 The dependency direction is permanent:
 
@@ -34,9 +42,13 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   `matched_search`, `artifact_optimization_only` restores provider-default features while forbidding scientific
   comparison and promoting Candidates only through common confirmatory Evaluation.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
-- Current Executor Revision `open-cake-ir-b200-v3` binds the 30-source runtime closure and exact B200 host packages;
-  v1 and v2 retain complete archived source closures. Local and remote contract suites pass 114 tests plus 13
-  subtests; remote host admission and compile-only Triton qualification pass without launching a kernel.
+- Current Executor Revision `open-cake-ir-b200-v5` binds the 31-source runtime closure, including the GPU teaching
+  smoke, and exact B200 host packages; v1–v4 retain complete archived source closures. Local and remote contract
+  suites pass 120 tests plus 13 subtests; remote host admission and compile-only Triton qualification pass without
+  launching a kernel.
+- The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
+  16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
+  scientific claim.
 - The pinned Codex 0.144.3 tool-rich qualification passes with no injected feature disables and observes shell
   activity on both initial and resumed Turns. This restores provider-default capability exposure; account/admin
   policy still determines the effective catalog, and external mutation or direct GPU measurement remains unauthorized.
@@ -47,21 +59,27 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   system qualification pass on the remote B200 host. G8 produces no treatment comparison: estimand, estimate and
   uncertainty remain null. No scientific Campaign, serving integration or paper-result claim has been run here.
 
-## Read order
+## Read order by role
 
-1. [`CONTEXT-MAP.md`](CONTEXT-MAP.md) — compiler, lab and evidence domain language.
-2. [`docs/PAPER_CONTRACT.md`](docs/PAPER_CONTRACT.md) — paper facts, public artifacts and unknowns.
-3. [`docs/TOP_LEVEL_DESIGN.md`](docs/TOP_LEVEL_DESIGN.md) — system structure, owners and two feedback loops.
-4. [`docs/MIGRATION_PLAN.md`](docs/MIGRATION_PLAN.md) — compiler-first one-way migration.
-5. [`docs/ACCEPTANCE_GATES.md`](docs/ACCEPTANCE_GATES.md) — gates before code, pilot and cutover.
-6. [`docs/adr/0001-compiler-first-with-dependent-lab.md`](docs/adr/0001-compiler-first-with-dependent-lab.md) —
-   accepted product boundary.
-7. [`migration/CAPABILITY_MATRIX.md`](migration/CAPABILITY_MATRIX.md) — final r16-r45 feature/evidence-to-owner map.
-8. [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — the canonical matched and Portfolio execution paths.
-9. [`docs/adr/0003-rust-shadow-engine-after-v3.md`](docs/adr/0003-rust-shadow-engine-after-v3.md) — proposed
-   language evolution after the Python v3 contract is frozen.
-10. [`docs/adr/0004-tool-rich-artifact-optimization.md`](docs/adr/0004-tool-rich-artifact-optimization.md) — accepted
-    full-feature artifact-optimization policy.
+### New user
+
+1. [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) — real B200 teaching smoke and basic vocabulary.
+2. [`docs/contexts/compiler/CONTEXT.md`](docs/contexts/compiler/CONTEXT.md) — formal Compiler terms after the tutorial.
+3. [`compiler/AUTHORING_CONTRACT.md`](compiler/AUTHORING_CONTRACT.md) — rules for writing complete Schedules.
+
+### Researcher or experiment operator
+
+1. [`docs/PAPER_CONTRACT.md`](docs/PAPER_CONTRACT.md) — paper facts, public artifacts and unknowns.
+2. [`docs/TOP_LEVEL_DESIGN.md`](docs/TOP_LEVEL_DESIGN.md) — Modules, owners and two evolution loops.
+3. [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — provider, GPUQ, artifact optimization and Portfolio operations.
+
+### Maintainer or auditor
+
+1. [`CONTEXT-MAP.md`](CONTEXT-MAP.md) — canonical domain language.
+2. [`docs/ACCEPTANCE_GATES.md`](docs/ACCEPTANCE_GATES.md) — verified gates and claim boundaries.
+3. [`docs/MIGRATION_PLAN.md`](docs/MIGRATION_PLAN.md) and
+   [`migration/CAPABILITY_MATRIX.md`](migration/CAPABILITY_MATRIX.md) — migration provenance.
+4. [`docs/adr/`](docs/adr/) — durable architecture decisions, including Rust and tool-rich optimization.
 
 ## Migration rule
 

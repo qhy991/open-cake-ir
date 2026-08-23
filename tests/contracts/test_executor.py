@@ -9,7 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_EXECUTOR = ROOT / "runtime/executors/open-cake-ir-b200-v3.json"
+CURRENT_EXECUTOR = ROOT / "runtime/executors/open-cake-ir-b200-v5.json"
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.lab import ExecutorRevision  # noqa: E402
@@ -18,7 +18,7 @@ from open_cake_ir.lab import ExecutorRevision  # noqa: E402
 class ExecutorRevisionContractTests(unittest.TestCase):
     def test_released_executor_covers_the_complete_runtime_source_closure(self) -> None:
         executor = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR)
-        self.assertEqual(executor.executor_id, "open-cake-ir-b200-v3")
+        self.assertEqual(executor.executor_id, "open-cake-ir-b200-v5")
         self.assertEqual(
             CURRENT_EXECUTOR.stat().st_mode & 0o444,
             0o444,
@@ -36,6 +36,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             )
             for path in directory.glob("*.py")
         } | {
+            "examples/gpu/flash_kmeans_quickstart.py",
             "src/open_cake_ir/__init__.py",
             "src/open_cake_ir/cli.py",
             "tools/evaluate_flash_candidate.py",

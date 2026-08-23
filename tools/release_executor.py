@@ -14,6 +14,7 @@ _SOURCE_ROOTS = (
     "src/open_cake_ir/evidence",
 )
 _SOURCE_FILES = (
+    "examples/gpu/flash_kmeans_quickstart.py",
     "src/open_cake_ir/__init__.py",
     "src/open_cake_ir/cli.py",
     "tools/evaluate_flash_candidate.py",

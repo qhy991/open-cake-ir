@@ -9,7 +9,7 @@
     "cuobjdump": "/usr/local/cuda/bin/cuobjdump"
   },
   "broker": {
-    "command": ["gpu-run", "--label", "open-cake-evaluation", "--mode", "exclusive", "--gpu-count", "1", "--cwd", "/absolute/path/to/open-cake-ir", "--estimate", "10m", "--run-timeout", "30m", "/absolute/path/to/pinned/python", "/absolute/path/to/open-cake-ir/tools/evaluate_flash_candidate.py"],
+    "command": ["gpu-run", "--label", "open-cake-evaluation", "--mode", "exclusive", "--gpu-count", "1", "--cwd", "/absolute/path/to/open-cake-ir", "--estimate", "10m", "--run-timeout", "30m", "--env", "GPUQ_JOB_ID=gpuq-000000000000", "/absolute/path/to/pinned/python", "/absolute/path/to/open-cake-ir/tools/evaluate_flash_candidate.py"],
     "cwd": "/absolute/path/to/open-cake-ir",
     "timeout_seconds": 1800,
     "service_user": "gpuq",
