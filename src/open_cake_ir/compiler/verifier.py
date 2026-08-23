@@ -1105,6 +1105,9 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
 # ----------------------------------------------------------------- program safety
 
 
+TARGET_SYNC_HINT = {"mbarrier", "barrier.sync"}
+
+
 def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
     category = FindingCategory.PROGRAM_SAFETY
 
@@ -1136,6 +1139,15 @@ def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
                 path,
                 f"barrier {barrier.name!r} needs at least one producer and one consumer",
                 category,
+            )
+        if barrier.mechanism is None:
+            out.add(
+                "BARRIER_MECHANISM_UNDECLARED",
+                f"{path}.mechanism",
+                f"barrier {barrier.name!r} does not say how it is realized; the Target "
+                f"admits {', '.join(sorted(TARGET_SYNC_HINT))} and the backend chooses",
+                category,
+                FindingSeverity.HINT,
             )
         if barrier.pipeline is not None and barrier.pipeline not in pipelines:
             out.add(

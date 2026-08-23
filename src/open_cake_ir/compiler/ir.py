@@ -116,6 +116,19 @@ class ReductionScope(str, Enum):
     CTA = "cta"
 
 
+class BarrierMechanism(str, Enum):
+    """How a declared handshake is realized.
+
+    A Target admits several; `synchronization_contracts` names them. Writing the
+    emitter surfaced the gap: the retained artifact uses an mbarrier for its pipelined
+    handoffs and `cute.arch.sync_threads()` for the epilogue-to-reduce one, and nothing
+    in the Schedule said which.
+    """
+
+    MBARRIER = "mbarrier"
+    NAMED = "barrier.sync"
+
+
 class OperandSource(str, Enum):
     """Where an MMA reads its operands from."""
 
@@ -372,22 +385,27 @@ class Barrier:
     producers: tuple[str, ...]
     consumers: tuple[str, ...]
     pipeline: str | None
+    mechanism: BarrierMechanism | None
 
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "Barrier":
         obj = _strict_object(
             value,
             required={"name", "count", "producers", "consumers"},
-            optional={"pipeline"},
+            optional={"pipeline", "mechanism"},
             context=context,
         )
         pipeline = obj.get("pipeline")
+        mechanism = obj.get("mechanism")
         return cls(
             _string(obj["name"], f"{context}.name"),
             _positive_int(obj["count"], f"{context}.count"),
             _string_tuple(obj["producers"], f"{context}.producers"),
             _string_tuple(obj["consumers"], f"{context}.consumers"),
             None if pipeline is None else _string(pipeline, f"{context}.pipeline"),
+            None
+            if mechanism is None
+            else _enum(BarrierMechanism, mechanism, f"{context}.mechanism"),
         )
 
 

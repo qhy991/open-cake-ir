@@ -48,13 +48,16 @@ class DeclaredScheduleTest(unittest.TestCase):
         findings = verify(Schedule.load(DECLARED), TARGET)
         self.assertEqual(findings, (), f"unexpected findings: {[str(f) for f in findings]}")
 
-    def test_the_retained_schedule_declines_nine_commitments(self) -> None:
+    def test_the_retained_schedule_declines_twelve_commitments(self) -> None:
         findings = verify(Schedule.load(RETAINED), TARGET)
         self.assertEqual([f for f in findings if f.blocks_lowering], [])
         self.assertEqual(
             sorted(f.code for f in findings),
             [
                 "ALLOCATION_TENSOR_COLUMNS_UNDECLARED",
+                "BARRIER_MECHANISM_UNDECLARED",
+                "BARRIER_MECHANISM_UNDECLARED",
+                "BARRIER_MECHANISM_UNDECLARED",
                 "BUFFER_SWIZZLE_UNDECLARED",
                 "BUFFER_SWIZZLE_UNDECLARED",
                 "EPILOGUE_SOURCE_ATOM_UNDECLARED",
@@ -76,6 +79,8 @@ class DeclaredScheduleTest(unittest.TestCase):
             document.pop("tile_loops", None)
             for allocation in document["allocations"]:
                 allocation.pop("tensor_columns", None)
+            for barrier in document["barriers"]:
+                barrier.pop("mechanism", None)
             for buffer in document["buffers"]:
                 buffer.pop("swizzle", None)
             for operation in document["operations"]:
@@ -209,11 +214,11 @@ class SufficiencyTest(unittest.TestCase):
         self.assertEqual(findings, (), f"residual: {[str(f) for f in findings]}")
 
     def test_the_retained_schedule_shows_the_distance_travelled(self) -> None:
-        """Nine commitments separate the retained Schedule from a complete one."""
+        """Twelve commitments separate the retained Schedule from a complete one."""
 
         findings = verify(Schedule.load(RETAINED), TARGET)
         self.assertEqual([f for f in findings if f.blocks_lowering], [])
-        self.assertEqual(len(findings), 9)
+        self.assertEqual(len(findings), 12)
 
 class LoopNestTest(unittest.TestCase):
     """The nest was the structural gap; a loop body may now name a nested loop."""

@@ -165,7 +165,8 @@
       "consumers": [
         "mma"
       ],
-      "pipeline": "main"
+      "pipeline": "main",
+      "mechanism": "mbarrier"
     },
     {
       "name": "accumulator_ready",
@@ -175,7 +176,8 @@
       ],
       "consumers": [
         "epilogue"
-      ]
+      ],
+      "mechanism": "mbarrier"
     },
     {
       "name": "distance_ready",
@@ -185,7 +187,8 @@
       ],
       "consumers": [
         "reduce"
-      ]
+      ],
+      "mechanism": "barrier.sync"
     }
   ],
   "operations": [

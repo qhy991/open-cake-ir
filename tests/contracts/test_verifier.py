@@ -339,10 +339,13 @@ class HardwareCommitmentTest(unittest.TestCase):
     """
 
     def _advisory(self, path: Path) -> dict[str, Finding]:
+        """Advisory hardware-conformance findings; synchronization has its own test."""
+
         return {
             finding.code: finding
             for finding in verify(Schedule.load(path), TARGET)
             if not finding.blocks_lowering
+            and finding.category is FindingCategory.HARDWARE_CONFORMANCE
         }
 
     def test_retained_schedules_report_their_missing_commitments(self) -> None:
