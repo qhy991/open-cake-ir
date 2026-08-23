@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "6c2867b7e67b1c11a63191e15698ece19205c688d4e312b1a8126b737bdee189"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "explicit user authorization to wire the reimplemented Compiler model into the product path and to fix the analysed problems without growing the project. v4 is one Revision covering the whole change: the typed Schedule IR owns structural admissibility and reports a violation as a localized Finding; the target-derived contract verifier runs inside Compiler.assess; compiler/schedule.schema.json is a projection generated from the IR rather than a second hand-maintained authority; and Compiler.lower generates the flash_kmeans_assignment_full source from its Schedule, so that profile's 352-line template and its whole-document digest pin are deleted. Corpus advances to open-cake-ir-sm100a-v2 because the retained r25 Schedule now carries the commitments its artifact used to hardcode. The generated kernel is verified on an exclusive B200 at 128/128 exact assignments with zero distance excess on 2026-08-23"
+}

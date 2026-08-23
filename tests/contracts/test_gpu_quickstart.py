@@ -318,7 +318,14 @@ class GpuQuickstartContractTests(unittest.TestCase):
         self.assertEqual(summary["status"], "prepared")
         self.assertTrue(summary["assessment"]["accepted"])
         self.assertTrue(summary["assessment"]["lowering_eligible"])
-        self.assertEqual(summary["assessment"]["findings"], [])
+        # The teaching path shows what the compiler reports, and for this Schedule that
+        # includes why residency is bounded. Nothing here blocks acceptance.
+        self.assertEqual(
+            sorted(f["code"] for f in summary["assessment"]["findings"]),
+            ["REGISTER_PRESSURE", "RESIDENCY_BOUND"],
+        )
+        self.assertTrue(summary["assessment"]["accepted"])
+        self.assertTrue(summary["assessment"]["lowering_eligible"])
         self.assertEqual(summary["evaluation"], {"gpu_submitted": False})
 
 

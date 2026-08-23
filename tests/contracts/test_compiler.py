@@ -20,6 +20,18 @@ from open_cake_ir.evidence import EvidenceStore  # noqa: E402
 from open_cake_ir.lab import KernelSeed, lower_specialists  # noqa: E402
 
 
+
+def _decisive(assessment):
+    """Findings that decide acceptance or lowering.
+
+    An Assessment also carries reports -- bottleneck attribution that reaches the agent
+    without affecting either decision. Those have their own contract tests; a test about
+    a decision should not have to enumerate them.
+    """
+
+    return [f for f in assessment.findings if f.blocks_acceptance or f.blocks_lowering]
+
+
 class CompilerContractTests(unittest.TestCase):
     def test_release_archive_index_externally_anchors_the_terminal_seal(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -208,7 +220,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertTrue(assessment.accepted)
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(
-            [finding.code for finding in assessment.findings],
+            [finding.code for finding in _decisive(assessment)],
             ["PROFILE_SEMANTICS_MISMATCH"],
         )
 
@@ -365,7 +377,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertTrue(assessment.accepted)
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(
-            [(finding.code, finding.path) for finding in assessment.findings],
+            [(finding.code, finding.path) for finding in _decisive(assessment)],
             [("PROFILE_SHAPE_MISMATCH", "buffers.tokens.shape")],
         )
 
@@ -458,7 +470,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(assessment.findings[0].path, "schedule.buffers[0].space")
         self.assertIn(
             "SCHEDULE_STRUCTURE",
-            [finding.code for finding in assessment.findings],
+            [finding.code for finding in _decisive(assessment)],
         )
 
     def test_r25_schedule_is_accepted_and_lowering_eligible(self) -> None:
@@ -471,7 +483,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertTrue(assessment.accepted)
         self.assertTrue(assessment.lowering_eligible)
         self.assertEqual(assessment.target, "sm_100a")
-        self.assertEqual(assessment.findings, ())
+        self.assertEqual(tuple(_decisive(assessment)), ())
         self.assertEqual(
             assessment.analysis["operation_counts"],
             {
@@ -495,7 +507,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertTrue(assessment.accepted)
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(
-            [(finding.code, finding.path) for finding in assessment.findings],
+            [(finding.code, finding.path) for finding in _decisive(assessment)],
             [("PROFILE_SHAPE_MISMATCH", "buffers.distance_scratch.shape")],
         )
 
@@ -552,7 +564,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertFalse(assessment.accepted)
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(
-            [(finding.code, finding.path) for finding in assessment.findings],
+            [(finding.code, finding.path) for finding in _decisive(assessment)],
             [("REDUCE_SUM_SEMANTICS", "operations.reduce_partials.parameters.parts")],
         )
 

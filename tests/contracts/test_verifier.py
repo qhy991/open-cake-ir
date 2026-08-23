@@ -48,6 +48,16 @@ def _blocking(findings: tuple[Finding, ...]) -> tuple[Finding, ...]:
     return tuple(finding for finding in findings if finding.blocks_lowering)
 
 
+def _actionable(findings: tuple[Finding, ...]) -> tuple[Finding, ...]:
+    """Everything but reports.
+
+    A report is bottleneck attribution the Schedule cannot be "wrong" about, so a test
+    asserting that a Schedule has nothing to fix should not have to enumerate them.
+    """
+
+    return tuple(f for f in findings if f.severity is not FindingSeverity.REPORT)
+
+
 class QuietOnValidScheduleTest(unittest.TestCase):
     def test_every_retained_schedule_verifies_clean(self) -> None:
         for path in CORPUS + [ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke.json"]:
@@ -76,10 +86,8 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         )
         first = verify(schedule, TARGET)
         self.assertEqual(first, verify(schedule, TARGET))
-        keys = [
-            (f.severity is not FindingSeverity.BLOCKING, f.category.value, f.code, f.path)
-            for f in first
-        ]
+        order = {FindingSeverity.BLOCKING: 0, FindingSeverity.REPORT: 1, FindingSeverity.HINT: 2}
+        keys = [(order[f.severity], f.category.value, f.code, f.path) for f in first]
         self.assertEqual(keys, sorted(keys))
 
     def test_verification_never_raises(self) -> None:
@@ -358,7 +366,7 @@ class HardwareCommitmentTest(unittest.TestCase):
         return {
             finding.code: finding
             for finding in verify(Schedule.from_dict(document), TARGET)
-            if not finding.blocks_lowering
+            if finding.severity is FindingSeverity.HINT
             and finding.category is FindingCategory.HARDWARE_CONFORMANCE
         }
 
@@ -391,7 +399,7 @@ class HardwareCommitmentTest(unittest.TestCase):
         finding = self._advisory(ASSIGNMENT_FULL)["ALLOCATION_TENSOR_COLUMNS_UNDECLARED"]
         self.assertIn("131072 bytes implies 256 columns", finding.message)
         # and the Schedule as retained makes that commitment
-        self.assertEqual(verify(Schedule.load(ASSIGNMENT_FULL), TARGET), ())
+        self.assertEqual(_actionable(verify(Schedule.load(ASSIGNMENT_FULL), TARGET)), ())
 
     def test_a_declared_column_range_must_match_the_byte_size(self) -> None:
         findings = verify(
@@ -510,7 +518,7 @@ class LoopNestRuleTest(unittest.TestCase):
         return verify(Schedule.from_dict(document), TARGET)
 
     def test_the_retained_nest_is_accepted(self) -> None:
-        self.assertEqual(verify(Schedule.load(ASSIGNMENT_FULL), TARGET), ())
+        self.assertEqual(_actionable(verify(Schedule.load(ASSIGNMENT_FULL), TARGET)), ())
 
     def test_a_body_entry_must_resolve(self) -> None:
         findings = self._mutate(lambda d: d["tile_loops"][0]["body"].append("ghost"))

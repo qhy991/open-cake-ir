@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "corpus_id": "open-cake-ir-sm100a-v2",
+  "corpus_id": "open-cake-ir-sm100a-v3",
   "state": "draft",
   "cases": [
     {
@@ -9,7 +9,10 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "08616072997f90e47963fcb71215d1417a7f4e9fd518d17eb1c15f232ce22ac2",
         "lowering_source_sha256": "d037547705f14de0f70f477c584cbc3e7c9e352709543710f01c6d3fb48a15a6"
       }
@@ -21,7 +24,9 @@
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
-          "PROFILE_SHAPE_MISMATCH"
+          "PROFILE_SHAPE_MISMATCH",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "46174612b87977bf3351bc04b51123309d28705bca60446e8cd1cdf72c3a5170",
         "lowering_source_sha256": null
@@ -33,7 +38,9 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "9046dbf21ed3357063b15a968d45d6c6b9114bdde1ad40b4d43393f8eecc9f11",
         "lowering_source_sha256": "a24f980ae16a0704cf8e4d9563e2b5342880c8d24c31d9cf0dce922dd831ced6"
       }
@@ -45,7 +52,8 @@
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
-          "PROFILE_SHAPE_MISMATCH"
+          "PROFILE_SHAPE_MISMATCH",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "13c0958ba7ae569b8cb458168e92e177401bd3886f8f4afd076bbe4564ff1c7a",
         "lowering_source_sha256": null
@@ -57,7 +65,9 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "f3107ffa5af4ccb5071ce42699d5eae2621561de1b2256b4c416c45d9323a1ab",
         "lowering_source_sha256": "84b9c6d66c145a61303555d38a075bf27177c5f56820e422331dec45f5f8e3eb"
       }
@@ -69,7 +79,8 @@
         "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "REDUCE_SUM_SEMANTICS"
+          "REDUCE_SUM_SEMANTICS",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "e5029a2f755bd18443d91cd64a110d8dd7127c5c14cf41c424e6bca43728af4b",
         "lowering_source_sha256": null

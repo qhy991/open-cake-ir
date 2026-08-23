@@ -14,7 +14,7 @@ from typing import Mapping, Sequence, cast
 from .emit_cutedsl import EmitError, emit as emit_cutedsl
 from .ir import Schedule, ScheduleParseError
 from .target import Target, TargetParseError
-from .verifier import verify as verify_contracts
+from .verifier import FindingSeverity, verify as verify_contracts
 
 
 class CompilerError(ValueError):
@@ -306,7 +306,11 @@ def _load_target_definition(
         "synchronization_contracts",
         "citations",
     }
-    if set(document) != expected_fields or document.get("schema_version") != 1:
+    optional_fields = {"occupancy"}
+    if (
+        not expected_fields <= set(document) <= expected_fields | optional_fields
+        or document.get("schema_version") != 1
+    ):
         raise CompilerError(f"target definition {target_id!r} fields differ")
     if document.get("target_id") != target_id:
         raise CompilerError(f"target definition {target_id!r} identity differs")
@@ -1330,11 +1334,11 @@ class Compiler:
     ) -> list[Finding]:
         """Target-derived contract violations, as localized Findings.
 
-        Only blocking violations join the Assessment. The verifier also reports hints --
-        a commitment the Schedule declined to make, such as an undeclared swizzle -- and
-        those describe the Schedule's position rather than a defect, so they do not
-        affect acceptance. Surfacing them through the Assessment is a separate change to
-        the public Interface.
+        Blocking violations and reports both join the Assessment; a report carries
+        bottleneck attribution and reaches the agent through the Study's feedback
+        projection without affecting acceptance. Hints -- a commitment the Schedule
+        declined to make, such as an undeclared swizzle -- describe its position rather
+        than its behaviour, and stay out.
         """
 
         definition = self._target_definitions.get(target)
@@ -1344,11 +1348,21 @@ class Compiler:
             typed_target = Target.from_dict(dict(definition.document))
         except TargetParseError:
             return []
-        return [
-            Finding(item.code, item.path, item.message)
-            for item in verify_contracts(schedule, typed_target)
-            if item.blocks_lowering
-        ]
+        findings: list[Finding] = []
+        for item in verify_contracts(schedule, typed_target):
+            if item.blocks_lowering:
+                findings.append(Finding(item.code, item.path, item.message))
+            elif item.severity is FindingSeverity.REPORT:
+                findings.append(
+                    Finding(
+                        item.code,
+                        item.path,
+                        item.message,
+                        blocks_acceptance=False,
+                        blocks_lowering=False,
+                    )
+                )
+        return findings
 
     def lower(self, assessment: Assessment) -> Lowering:
         """Lower an eligible Assessment to deterministic inspectable target source."""

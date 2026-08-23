@@ -75,6 +75,34 @@ class ResourceLimits:
 
 
 @dataclass(frozen=True)
+class Occupancy:
+    """Per-multiprocessor facts, read from the device rather than asserted.
+
+    A CTA budget bounds one CTA; these bound how many CTAs an SM can hold at once,
+    which is what makes a resource the binding one.
+    """
+
+    multiprocessor_count: int
+    registers_per_multiprocessor: int
+    shared_memory_per_multiprocessor_bytes: int
+    maximum_threads_per_multiprocessor: int
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "Occupancy":
+        if not isinstance(value, Mapping):
+            raise TargetParseError(f"{context} must be an object")
+        fields = (
+            "multiprocessor_count",
+            "registers_per_multiprocessor",
+            "shared_memory_per_multiprocessor_bytes",
+            "maximum_threads_per_multiprocessor",
+        )
+        if set(value) != set(fields):
+            raise TargetParseError(f"{context} fields differ")
+        return cls(*(_int_field(value[name], f"{context}.{name}") for name in fields))
+
+
+@dataclass(frozen=True)
 class Target:
     target_id: str
     architecture: str
@@ -85,6 +113,7 @@ class Target:
     resource_limits: ResourceLimits
     instruction_contracts: frozenset[str]
     synchronization_contracts: frozenset[str]
+    occupancy: Occupancy | None
 
     @property
     def warp_size(self) -> int:
@@ -135,4 +164,9 @@ class Target:
             ),
             instruction_contracts=frozenset(string_tuple("instruction_contracts")),
             synchronization_contracts=frozenset(string_tuple("synchronization_contracts")),
+            occupancy=(
+                Occupancy.from_dict(value["occupancy"], "target.occupancy")
+                if "occupancy" in value
+                else None
+            ),
         )

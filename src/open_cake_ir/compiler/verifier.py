@@ -34,6 +34,7 @@ from .ir import (
     OperationKind,
     Schedule,
 )
+from .analysis import occupancy, registers_per_thread
 from .target import Target
 
 
@@ -1267,6 +1268,49 @@ def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
             )
 
 
+def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> None:
+    """Which declared resource bounds residency, and at what cost.
+
+    This is the attribution half of the paper's `performance analysis` report. There is
+    no cost estimate: a Target declares no clock and no bandwidth, so a predicted time
+    would be invented rather than analysed.
+    """
+
+    category = FindingCategory.HARDWARE_CONFORMANCE
+    if schedule.target != target.target_id:
+        return  # nothing to analyse against a Target this Schedule does not name
+    measured = occupancy(schedule, target)
+    if measured is None or measured.binding is None:
+        return
+    binding = measured.binding
+    others = ", ".join(
+        f"{b.resource} {b.ctas}"
+        for b in sorted(measured.bounds, key=lambda b: b.ctas)
+        if b.resource != binding.resource
+    )
+    out.add(
+        "RESIDENCY_BOUND",
+        "allocations" if binding.resource.endswith("memory") else "roles",
+        f"{binding.resource} bounds residency to {binding.ctas} CTA per multiprocessor "
+        f"({binding.per_cta} of {binding.per_multiprocessor} {binding.unit})"
+        + (f"; the next bounds are {others}" if others else ""),
+        category,
+        FindingSeverity.REPORT,
+    )
+
+    per_thread = registers_per_thread(schedule, target)
+    if per_thread and binding.resource == "registers":
+        out.add(
+            "REGISTER_PRESSURE",
+            "buffers",
+            f"declared register buffers hold {per_thread} registers per thread across "
+            f"{schedule.total_warp_extent * target.warp_size} threads, which is what "
+            "bounds residency",
+            category,
+            FindingSeverity.REPORT,
+        )
+
+
 def verify(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     """Return every contract violation, most-structural first. Never raises."""
 
@@ -1275,4 +1319,5 @@ def verify(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     _verify_hardware_conformance(schedule, target, out)
     _verify_data_consistency(schedule, out)
     _verify_program_safety(schedule, out)
+    _report_residency(schedule, target, out)
     return out.result()

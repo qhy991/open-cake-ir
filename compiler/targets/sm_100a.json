@@ -2,25 +2,71 @@
   "schema_version": 1,
   "target_id": "sm_100a",
   "architecture": "blackwell",
-  "device_names": ["NVIDIA B200"],
-  "compute_capability": [10, 0],
-  "memory_spaces": ["global", "shared", "tensor", "register"],
-  "operation_kinds": ["load", "mma", "epilogue", "reduce_argmin", "reduce_sum", "store", "fence_proxy"],
+  "device_names": [
+    "NVIDIA B200"
+  ],
+  "compute_capability": [
+    10,
+    0
+  ],
+  "memory_spaces": [
+    "global",
+    "shared",
+    "tensor",
+    "register"
+  ],
+  "operation_kinds": [
+    "load",
+    "mma",
+    "epilogue",
+    "reduce_argmin",
+    "reduce_sum",
+    "store",
+    "fence_proxy"
+  ],
   "resource_limits": {
     "maximum_threads_per_cta": 1024,
     "maximum_warps_per_cta": 32,
     "maximum_shared_memory_bytes": 232448,
     "maximum_tensor_memory_bytes": 262144,
-    "grid": {"x": 2147483647, "y": 65535, "z": 65535}
+    "grid": {
+      "x": 2147483647,
+      "y": 65535,
+      "z": 65535
+    }
   },
   "instruction_contracts": [
     "tcgen05.mma.cta_group::1.kind::f16",
     "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
     "triton.dot.bf16_fp32"
   ],
-  "synchronization_contracts": ["mbarrier", "barrier.sync", "triton_program_order"],
+  "synchronization_contracts": [
+    "mbarrier",
+    "barrier.sync",
+    "triton_program_order"
+  ],
   "citations": [
-    {"kind": "paper", "source": "arXiv:2608.12629v1 Appendix B.5", "locator": "Table 3 sm_100a"},
-    {"kind": "legacy_source", "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a", "path": "src/cakerepro/targets.py", "sha256": "b19d6179070e406b5dafcfd81f7e87b568335f342f2b05f29bf31927e2794273"}
-  ]
+    {
+      "kind": "paper",
+      "source": "arXiv:2608.12629v1 Appendix B.5",
+      "locator": "Table 3 sm_100a"
+    },
+    {
+      "kind": "legacy_source",
+      "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
+      "path": "src/cakerepro/targets.py",
+      "sha256": "b19d6179070e406b5dafcfd81f7e87b568335f342f2b05f29bf31927e2794273"
+    },
+    {
+      "kind": "device_observation",
+      "source": "cuDeviceGetAttribute and torch.cuda.get_device_properties on NVIDIA B200",
+      "locator": "occupancy block; observed 2026-08-23 on verda-b200x4 under gpu-run"
+    }
+  ],
+  "occupancy": {
+    "multiprocessor_count": 148,
+    "registers_per_multiprocessor": 65536,
+    "shared_memory_per_multiprocessor_bytes": 233472,
+    "maximum_threads_per_multiprocessor": 2048
+  }
 }
