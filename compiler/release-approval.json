@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "8094ea5b3d7faef16532abad946ca2d20ff99add4ed9eed99c32e4c8f6a6767c"
+    "canonical_sha256": "71494cc14703680dfac8a462e8f18c9b6406127f34db9012231e0e8d4a78a03a"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "residency commitment: a Schedule declares the CTAs and registers it needs and the analysis checks it"
+  "approval_basis": "persistent grid sized from the residency commitment; traversal order for the walk"
 }

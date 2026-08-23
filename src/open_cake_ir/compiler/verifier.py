@@ -202,6 +202,31 @@ def _verify_schedule_semantics(schedule: Schedule, out: _Collector) -> None:
         )
 
     if schedule.program_map is not None:
+        program_map = schedule.program_map
+        # A persistent grid launches multiprocessor_count * ctas_per_multiprocessor CTAs,
+        # so without the commitment there is no count to launch. Requiring the
+        # declaration keeps the grid size derived from one fact instead of restated.
+        if program_map.persistent and (
+            schedule.residency is None
+            or schedule.residency.ctas_per_multiprocessor is None
+        ):
+            out.add(
+                "PERSISTENT_WITHOUT_RESIDENCY",
+                "program_map.persistent",
+                "a persistent grid is sized from the residency this Schedule commits to; "
+                "declare residency.ctas_per_multiprocessor",
+                category,
+            )
+        if program_map.traversal is not None:
+            declared = [item.name for item in program_map.axes]
+            if sorted(program_map.traversal) != sorted(declared):
+                out.add(
+                    "TRAVERSAL_NOT_A_PERMUTATION",
+                    "program_map.traversal",
+                    f"traversal {list(program_map.traversal)} must order every declared "
+                    f"axis exactly once; the axes are {declared}",
+                    category,
+                )
         axes = schedule.program_map.axes
         for duplicate in _duplicates(axis.name for axis in axes):
             out.add(

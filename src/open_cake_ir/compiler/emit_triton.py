@@ -137,17 +137,46 @@ class _TritonEmitter:
         values[self._tile(self.loop.name)] = self.loop.tile
         values["NUM_STAGES"] = self.loop.range_options.num_stages
         values["NUM_WARPS"] = len(self.role.warps)
+        if self.schedule.program_map is not None and self.schedule.program_map.persistent:
+            values["TOTAL_TILES"] = self.total_tiles()
+            values["NUM_CTAS"] = self.grid()[0]
         return values
+
+    def _axis_tiles(self, axis) -> int:
+        buffer = self.schedule.buffer(axis.buffer)
+        _require(buffer is not None, f"axis {axis.name!r} names an unknown buffer")
+        return (buffer.shape[axis.dimension] + axis.tile - 1) // axis.tile
 
     def grid(self) -> tuple[int, int, int]:
         assert self.schedule.program_map is not None
+        program_map = self.schedule.program_map
+        if program_map.persistent:
+            # One CTA per resident slot, not one per tile. The count is the Target's
+            # multiprocessor count times the residency the Schedule committed to, so the
+            # launch and the commitment cannot disagree.
+            residency = self.schedule.residency
+            _require(
+                residency is not None and residency.ctas_per_multiprocessor is not None,
+                "a persistent grid is sized from residency.ctas_per_multiprocessor",
+            )
+            facts = self.target.occupancy
+            _require(
+                facts is not None,
+                f"Target {self.target.target_id!r} declares no multiprocessor count",
+            )
+            launched = facts.multiprocessor_count * residency.ctas_per_multiprocessor
+            return (min(launched, self.total_tiles()), 1, 1)
         extents = [1, 1, 1]
-        for axis in self.schedule.program_map.axes:
-            buffer = self.schedule.buffer(axis.buffer)
-            _require(buffer is not None, f"axis {axis.name!r} names an unknown buffer")
-            extent = buffer.shape[axis.dimension]
-            extents[axis.axis] = (extent + axis.tile - 1) // axis.tile
+        for axis in program_map.axes:
+            extents[axis.axis] = self._axis_tiles(axis)
         return tuple(extents)  # type: ignore[return-value]
+
+    def total_tiles(self) -> int:
+        assert self.schedule.program_map is not None
+        total = 1
+        for axis in self.schedule.program_map.axes:
+            total *= self._axis_tiles(axis)
+        return total
 
     # ---- addressing ---------------------------------------------------------
 
@@ -316,22 +345,27 @@ class _TritonEmitter:
         self.line("):")
 
         assert self.schedule.program_map is not None
-        for axis in self.schedule.program_map.axes:
-            self.line(f"    {axis.name} = tl.program_id({axis.axis})")
+        program_map = self.schedule.program_map
+        if program_map.persistent:
+            self._emit_persistent_header()
+        else:
+            for axis in program_map.axes:
+                self.line(f"    {axis.name} = tl.program_id({axis.axis})")
+        pad = self._body_pad()
         for axis in self.schedule.program_map.axes:
             if axis.is_tiled:
                 tile = self._tile(axis.name)
                 self.line(
-                    f"    {axis.name}_offsets = {axis.name} * {tile} + tl.arange(0, {tile})"
+                    f"{pad}{axis.name}_offsets = {axis.name} * {tile} + tl.arange(0, {tile})"
                 )
         for access in self.schedule.access_maps:
             buffer = self.schedule.buffer(access.buffer)
             for component in access.indices:
                 if component.source is AccessIndexKind.DIMENSION:
                     name = f"{buffer.name}_d{component.dimension}_offsets"
-                    if f"    {name} = " not in "\n".join(self.lines):
+                    if f"{name} = " not in "\n".join(self.lines):
                         extent = self._extent(buffer.name, component.dimension)
-                        self.line(f"    {name} = tl.arange(0, {extent})")
+                        self.line(f"{pad}{name} = tl.arange(0, {extent})")
         self.line()
 
         # Declared order is the authority. The loop is emitted where its body begins,
@@ -342,17 +376,17 @@ class _TritonEmitter:
         for operation in self.schedule.operations:
             if operation.op_id in self.loop.body:
                 if not emitted_loop:
-                    self._emit_reduction_state("    ")
+                    self._emit_reduction_state(self._body_pad())
                     self._emit_loop()
                     emitted_loop = True
                 continue
             if operation.kind is OperationKind.LOAD:
-                self._emit_load(operation, "    ")
+                self._emit_load(operation, self._body_pad())
             elif operation.kind is OperationKind.ELEMENTWISE:
-                self._emit_elementwise(operation, "    ")
+                self._emit_elementwise(operation, self._body_pad())
                 self.line()
             elif operation.kind is OperationKind.STORE:
-                self._emit_store(operation, "    ")
+                self._emit_store(operation, self._body_pad())
             else:
                 raise EmitError(
                     f"operation {operation.op_id!r} of kind "
@@ -362,6 +396,34 @@ class _TritonEmitter:
         _require(emitted_loop, "the declared tile loop names no operation")
         self.line("    # CAKE_KERNEL_END")
         self.line()
+        self.line()
+
+    def _body_pad(self) -> str:
+        """A persistent walk puts the whole body one level deeper."""
+
+        program_map = self.schedule.program_map
+        return "        " if program_map is not None and program_map.persistent else "    "
+
+    def _emit_persistent_header(self) -> None:
+        """Decompose one linear work index into the declared axes.
+
+        The traversal order is the order of division: the first axis named varies fastest,
+        which is what makes adjacent CTAs share a tile of whichever operand the author
+        wanted them to share.
+        """
+
+        program_map = self.schedule.program_map
+        assert program_map is not None
+        order = program_map.walk_order()
+        self.line("    for _work in tl.range(tl.program_id(0), TOTAL_TILES, NUM_CTAS):")
+        remainder = "_work"
+        for position, axis in enumerate(order):
+            extent = self._axis_tiles(axis)
+            if position + 1 == len(order):
+                self.line(f"        {axis.name} = {remainder}")
+            else:
+                self.line(f"        {axis.name} = {remainder} % {extent}")
+                remainder = f"({remainder} // {extent})"
         self.line()
 
     def _emit_load(self, operation, pad: str) -> None:
@@ -424,27 +486,27 @@ class _TritonEmitter:
         if options.loop_unroll_factor != 1:
             knobs.append(f"loop_unroll_factor={options.loop_unroll_factor}")
         self.line(
-            f"    for {self.loop.iterator} in tl.range(0, {extent}, {tile}, "
+            f"{self._body_pad()}for {self.loop.iterator} in tl.range(0, {extent}, {tile}, "
             + ", ".join(knobs)
             + "):"
         )
         self.line(
-            f"        {self.loop.iterator}_offsets = "
+            f"{self._body_pad()}    {self.loop.iterator}_offsets = "
             f"{self.loop.iterator} + tl.arange(0, {tile})"
         )
         for op_id in self.loop.body:
             operation = self.schedule.operation(op_id)
             _require(operation is not None, f"loop body names unknown operation {op_id!r}")
             if operation.kind is OperationKind.LOAD:
-                self._emit_load(operation, "        ")
+                self._emit_load(operation, self._body_pad() + "    ")
             elif operation.kind is OperationKind.MMA:
-                self._emit_mma(operation, "        ")
+                self._emit_mma(operation, self._body_pad() + "    ")
             elif operation.kind is OperationKind.REDUCE_ARGMIN:
-                self._emit_argmin(operation, "        ")
+                self._emit_argmin(operation, self._body_pad() + "    ")
             elif operation.kind is OperationKind.REDUCE_SUM:
-                self._emit_sum(operation, "        ")
+                self._emit_sum(operation, self._body_pad() + "    ")
             elif operation.kind is OperationKind.ELEMENTWISE:
-                self._emit_elementwise(operation, "        ")
+                self._emit_elementwise(operation, self._body_pad() + "    ")
             else:
                 raise EmitError(
                     f"operation kind {operation.kind.value!r} has no Triton body emitter"

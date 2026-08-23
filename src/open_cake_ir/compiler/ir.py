@@ -465,20 +465,61 @@ class ProgramAxis:
 @dataclass(frozen=True)
 class ProgramMap:
     axes: tuple[ProgramAxis, ...]
+    persistent: bool
+    """Launch a fixed CTA count and walk the work, instead of one CTA per tile.
+
+    The launched count is not a second number to declare: it is the Target's
+    multiprocessor count times the residency the Schedule already commits to. Declaring
+    it separately would let the grid and the commitment disagree.
+    """
+
+    traversal: tuple[str, ...] | None
+    """Axis names, fastest-varying first.
+
+    Only meaningful when persistent. Without persistence the axis-to-program-id
+    assignment already decides which axis varies fastest, so a second way to say it would
+    be an alternative spelling of a decision the Schedule has made. With a scheduler
+    walking more tiles than there are CTAs, the walk order is a separate decision and
+    this is where it goes.
+    """
 
     def axis(self, name: str) -> ProgramAxis | None:
         return next((axis for axis in self.axes if axis.name == name), None)
 
+    def walk_order(self) -> tuple[ProgramAxis, ...]:
+        """The axes in the order a persistent scheduler decomposes its work index."""
+
+        if self.traversal is None:
+            return tuple(sorted(self.axes, key=lambda item: item.axis))
+        # Unknown names are the verifier's to report; skipping them here keeps this a
+        # view rather than a second place that decides what a legal traversal is.
+        return tuple(
+            axis for axis in (self.axis(name) for name in self.traversal) if axis is not None
+        )
+
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "ProgramMap":
-        obj = _strict_object(value, required={"axes"}, context=context)
-        axes = _object_list(obj["axes"], f"{context}.axes", allow_empty=False)
-        return cls(
-            tuple(
-                ProgramAxis.from_dict(item, f"{context}.axes[{index}]")
-                for index, item in enumerate(axes)
-            )
+        obj = _strict_object(
+            value,
+            required={"axes"},
+            optional={"persistent", "traversal"},
+            context=context,
         )
+        axes = _object_list(obj["axes"], f"{context}.axes", allow_empty=False)
+        parsed = tuple(
+            ProgramAxis.from_dict(item, f"{context}.axes[{index}]")
+            for index, item in enumerate(axes)
+        )
+        persistent = _boolean(obj.get("persistent", False), f"{context}.persistent")
+        traversal = obj.get("traversal")
+        if traversal is not None:
+            traversal = _string_tuple(traversal, f"{context}.traversal")
+            if not persistent:
+                raise ScheduleParseError(
+                    f"{context}.traversal orders a persistent walk; without persistence "
+                    "the axis numbering already decides which axis varies fastest"
+                )
+        return cls(parsed, persistent, traversal)
 
 
 @dataclass(frozen=True)
