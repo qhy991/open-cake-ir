@@ -11,6 +11,10 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Mapping, Sequence, cast
 
+from .ir import Schedule, ScheduleParseError
+from .target import Target, TargetParseError
+from .verifier import verify as verify_contracts
+
 
 class CompilerError(ValueError):
     """Raised when compiler authority or Schedule syntax cannot be interpreted."""
@@ -81,6 +85,9 @@ class TargetDefinition:
     instruction_contracts: frozenset[str]
     synchronization_contracts: frozenset[str]
     citations: tuple[Mapping[str, object], ...]
+    document: Mapping[str, object]
+    """The Revision-bound source document, retained so the contract verifier can build
+    its own typed Target from the same bytes this definition was parsed from."""
 
 
 @dataclass(frozen=True)
@@ -370,6 +377,7 @@ def _load_target_definition(
             )
         ),
         citations=tuple(MappingProxyType(dict(item)) for item in citations),
+        document=MappingProxyType(dict(document)),
     )
 
 
@@ -850,6 +858,18 @@ class Compiler:
             raise CompilerError("schedule root fields or schema_version differ")
         if ("grid" in schedule) == ("program_map" in schedule):
             raise CompilerError("schedule must define exactly one of grid or program_map")
+
+        # Structural admissibility has one owner: the typed IR. It is stricter than the
+        # checks below -- closed vocabularies are enums and unknown fields are refused --
+        # so a document that reaches the rest of this method is known to be well formed.
+        #
+        # A structural violation is a Finding, not an exception. The agent needs a repair
+        # target, and an exception crossing the Authoring Environment becomes a harness
+        # fault rather than candidate feedback.
+        try:
+            typed_schedule = Schedule.from_dict(schedule)
+        except ScheduleParseError as error:
+            return self._structural_rejection(schedule, error)
         schedule_id = _name(schedule.get("schedule_id"), "schedule.schedule_id")
         target = _name(schedule.get("target"), "schedule.target")
         findings: list[Finding] = []
@@ -1210,6 +1230,8 @@ class Compiler:
                     )
                 )
 
+        findings.extend(self._contract_findings(typed_schedule, target))
+
         accepted = not any(finding.blocks_acceptance for finding in findings)
         lowering_eligible = accepted and not any(
             finding.blocks_lowering for finding in findings
@@ -1238,6 +1260,62 @@ class Compiler:
             calibration_available=profile in self._calibration_coverage,
             schedule_bytes=_canonical_json_bytes(schedule),
         )
+
+    def _structural_rejection(
+        self, schedule: Mapping[str, object], error: ScheduleParseError
+    ) -> Assessment:
+        """One Assessment carrying the localized reason a Schedule is not well formed."""
+
+        message = str(error)
+        path, _, detail = message.partition(" ")
+        metadata = schedule.get("metadata")
+        profile = ""
+        if isinstance(metadata, Mapping) and isinstance(metadata.get("profile"), str):
+            profile = cast(str, metadata["profile"])
+        schedule_id = schedule.get("schedule_id")
+        target = schedule.get("target")
+        return Assessment(
+            compiler_revision_id=self._revision_id,
+            compiler_revision_sha256=self._revision_sha256,
+            schedule_id=schedule_id if isinstance(schedule_id, str) else "",
+            schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
+            target=target if isinstance(target, str) else "",
+            profile=profile,
+            accepted=False,
+            lowering_eligible=False,
+            findings=(
+                Finding("SCHEDULE_STRUCTURE", path, detail.strip() or message),
+            ),
+            analysis=MappingProxyType({}),
+            lowering_parameters=MappingProxyType({}),
+            calibration_available=False,
+            schedule_bytes=_canonical_json_bytes(schedule),
+        )
+
+    def _contract_findings(
+        self, schedule: Schedule, target: str
+    ) -> list[Finding]:
+        """Target-derived contract violations, as localized Findings.
+
+        Only blocking violations join the Assessment. The verifier also reports hints --
+        a commitment the Schedule declined to make, such as an undeclared swizzle -- and
+        those describe the Schedule's position rather than a defect, so they do not
+        affect acceptance. Surfacing them through the Assessment is a separate change to
+        the public Interface.
+        """
+
+        definition = self._target_definitions.get(target)
+        if definition is None:
+            return []
+        try:
+            typed_target = Target.from_dict(dict(definition.document))
+        except TargetParseError:
+            return []
+        return [
+            Finding(item.code, item.path, item.message)
+            for item in verify_contracts(schedule, typed_target)
+            if item.blocks_lowering
+        ]
 
     def lower(self, assessment: Assessment) -> Lowering:
         """Lower an eligible Assessment to deterministic inspectable target source."""

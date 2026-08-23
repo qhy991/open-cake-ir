@@ -76,7 +76,7 @@ class CliContractTests(unittest.TestCase):
                     "preflight",
                     str(
                         ROOT
-                        / "contracts/studies/matched-search-system-qualification-v3.json"
+                        / "contracts/studies/matched-search-system-qualification-v4.json"
                     ),
                 ]
             )
@@ -115,7 +115,7 @@ class CliContractTests(unittest.TestCase):
                         str(ROOT),
                         "lab",
                         "preflight",
-                        str(ROOT / "contracts/studies/matched-search-infrastructure-v3.json"),
+                        str(ROOT / "contracts/studies/matched-search-infrastructure-v4.json"),
                         "--output",
                         str(lock_path),
                     ]
@@ -174,7 +174,7 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(result["accepted"])
         self.assertTrue(result["lowering_eligible"])
-        self.assertEqual(result["compiler_revision_id"], "open-cake-ir-sm100a-v3")
+        self.assertEqual(result["compiler_revision_id"], "open-cake-ir-sm100a-v4")
 
     def test_lab_preflight_emits_one_content_bound_campaign_lock(self) -> None:
         output = StringIO()
@@ -185,13 +185,13 @@ class CliContractTests(unittest.TestCase):
                     str(ROOT),
                     "lab",
                     "preflight",
-                    str(ROOT / "contracts/studies/matched-search-infrastructure-v3.json"),
+                    str(ROOT / "contracts/studies/matched-search-infrastructure-v4.json"),
                 ]
             )
 
         result = json.loads(output.getvalue())
         self.assertEqual(code, 0)
-        self.assertEqual(result["study_id"], "open-cake-ir-matched-search-contract-fixture-v3")
+        self.assertEqual(result["study_id"], "open-cake-ir-matched-search-contract-fixture-v4")
         self.assertEqual(len(result["campaign_lock_sha256"]), 64)
         self.assertEqual(len(result["run_order"]), 6)
 

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "65d14b4694a85e85ac44ee7c0fb82a8e882af3cd8b273bf0275fc51bc2c73300"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "explicit user authorization to complete the compiler-first migration; v3 adds public authoring contracts and closes assessment/Target invariants on 2026-08-22"
+}

@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "65d14b4694a85e85ac44ee7c0fb82a8e882af3cd8b273bf0275fc51bc2c73300"
+    "canonical_sha256": "fccf3202dc9b41232250ac49857f8e250371343c2788733bbc42df876bcbbf3c"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "explicit user authorization to complete the compiler-first migration; v3 adds public authoring contracts and closes assessment/Target invariants on 2026-08-22"
+  "approval_basis": "explicit user authorization to wire the reimplemented Compiler model into the product path; v4 makes the typed Schedule IR the single owner of structural admissibility, reports a structural violation as a localized Finding instead of an exception, adds the target-derived contract verifier to Compiler.assess, and binds the CuTe-DSL emitter as Compiler source. The six-case Corpus Gate matches v3 exactly, so retained Corpus behaviour is preserved. Lowering is unchanged and remains a template stamp on 2026-08-23"
 }

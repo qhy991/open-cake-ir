@@ -243,32 +243,56 @@ class CompilerContractTests(unittest.TestCase):
         )
 
     def test_unlowered_operation_and_access_commitments_fail_closed(self) -> None:
+        """Each violation names its own path instead of one opaque profile code.
+
+        Every one of these used to report `PROFILE_SEMANTICS_MISMATCH` at
+        `metadata.profile` -- true, but no repair target. A closed-vocabulary violation
+        is now a structural Finding at the offending path, and an access map naming an
+        axis that does not exist is a contract Finding from the verifier.
+        """
+
         compiler = Compiler.load(ROOT, REVISION_PATH)
         original = json.loads(
             (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
         )
-        mutations = (
-            lambda schedule: schedule["operations"][2]["parameters"].update(
-                {"formula": "unsupported_formula"}
+        cases = (
+            (
+                lambda schedule: schedule["operations"][2]["parameters"].update(
+                    {"formula": "unsupported_formula"}
+                ),
+                "SCHEDULE_STRUCTURE",
+                "schedule.operations[2].parameters.formula",
+                "squared_euclidean_xsq_elided",
             ),
-            lambda schedule: schedule["operations"][3]["parameters"].update(
-                {"tie_break": "highest_index"}
+            (
+                lambda schedule: schedule["operations"][3]["parameters"].update(
+                    {"tie_break": "highest_index"}
+                ),
+                "SCHEDULE_STRUCTURE",
+                "schedule.operations[3].parameters.tie_break",
+                "lowest_index",
             ),
-            lambda schedule: schedule["access_maps"][0]["indices"][0].update(
-                {"name": "wrong_batch"}
+            (
+                lambda schedule: schedule["access_maps"][0]["indices"][0].update(
+                    {"name": "wrong_batch"}
+                ),
+                "ACCESS_PROGRAM_AXIS_UNKNOWN",
+                "access_maps[0].indices[0]",
+                "wrong_batch",
             ),
         )
-        for mutate in mutations:
-            with self.subTest(mutate=mutate):
+        for mutate, code, path, detail in cases:
+            with self.subTest(code=code, path=path):
                 schedule = json.loads(json.dumps(original))
                 mutate(schedule)
                 assessment = compiler.assess(schedule)
-                self.assertTrue(assessment.accepted)
+                self.assertFalse(assessment.accepted)
                 self.assertFalse(assessment.lowering_eligible)
-                self.assertIn(
-                    "PROFILE_SEMANTICS_MISMATCH",
-                    [finding.code for finding in assessment.findings],
+                finding = next(
+                    item for item in assessment.findings if item.code == code
                 )
+                self.assertEqual(finding.path, path)
+                self.assertIn(detail, finding.message)
 
     def test_passing_corpus_builds_a_content_bound_compiler_release(self) -> None:
         release = build_release(
@@ -282,7 +306,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(release.document["state"], "released")
         self.assertEqual(release.document["corpus_gate"]["case_count"], 6)
         self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 6)
-        self.assertEqual(len(release.document["sources"]), 16)
+        self.assertEqual(len(release.document["sources"]), 20)
         self.assertTrue(release.verify(ROOT))
 
         with tempfile.TemporaryDirectory() as directory:
@@ -291,7 +315,7 @@ class CompilerContractTests(unittest.TestCase):
             released_compiler = Compiler.load(ROOT, path)
 
         released_gate = released_compiler.check_corpus()
-        self.assertEqual(released_gate.compiler_revision_id, "open-cake-ir-sm100a-v3")
+        self.assertEqual(released_gate.compiler_revision_id, "open-cake-ir-sm100a-v4")
         self.assertTrue(released_gate.passed)
 
     def test_full_compiler_corpus_gate_passes(self) -> None:
@@ -418,10 +442,14 @@ class CompilerContractTests(unittest.TestCase):
         schedule = json.loads(
             (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
         )
+        # A space outside the IR vocabulary is a structural violation, reported at the
+        # offending path. TARGET_MEMORY_SPACE_UNSUPPORTED remains reachable for a Target
+        # that admits fewer spaces than the vocabulary; sm_100a admits all four.
         schedule["buffers"][0]["space"] = "unknown_space"
         assessment = compiler.assess(schedule)
+        self.assertEqual(assessment.findings[0].path, "schedule.buffers[0].space")
         self.assertIn(
-            "TARGET_MEMORY_SPACE_UNSUPPORTED",
+            "SCHEDULE_STRUCTURE",
             [finding.code for finding in assessment.findings],
         )
 
