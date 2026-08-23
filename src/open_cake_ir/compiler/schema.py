@@ -27,7 +27,6 @@ from .ir import (
     EpilogueFormula,
     LoadMovement,
     MemorySpace,
-    MmaFormula,
     OperandMajorMode,
     OperandSource,
     OperationKind,
@@ -85,7 +84,6 @@ _PARAMETERS = {
     OperationKind.MMA: _object(
         {"accumulator": {"const": DType.FP32.value}},
         {
-            "formula": _enum(MmaFormula),
             "tile_shape": _mnk("The tile this operation walks, as M, N and K."),
             "instruction": _object(
                 {

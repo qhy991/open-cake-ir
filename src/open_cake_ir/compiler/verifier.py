@@ -1062,6 +1062,28 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     f"store destination {name!r} is {buffer.mode.value}, not an output",
                     category,
                 )
+    # A contraction reads its two operands and nothing else. It used to be able to name
+    # a third, which a formula then folded in, so the arithmetic after the dot lived
+    # inside the same operation. With that arithmetic declared separately a third read
+    # has no meaning, and an emitter that simply contracts the first two would drop it
+    # and produce a kernel that computes something else without saying so.
+    if operation.kind is OperationKind.MMA:
+        staged = [
+            name
+            for name in operation.reads
+            if (buffer := buffers.get(name)) is not None
+            and buffer.space is not MemorySpace.GLOBAL
+        ]
+        if len(operation.reads) != 2 or len(staged) != 2:
+            out.add(
+                "MMA_OPERAND_COUNT",
+                f"{path}.reads",
+                f"a contraction reads exactly two staged operands, got "
+                f"{list(operation.reads)}; arithmetic over its result is a separate "
+                "operation",
+                category,
+            )
+
     # An arithmetic primitive takes what its op says it takes. A binary op reads two
     # buffers, or one buffer and a declared scalar; anything else is a Schedule asking
     # for arithmetic whose operands are not all named.

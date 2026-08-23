@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "d1d81e9c046b68ddbae039ca367ef368e317cc756f7ea0bd86b955db9f8fc1de"
+    "canonical_sha256": "af9cd8e3086998d5af9717103feca755bd8d1c692ab36a3cfd128846bd4e7814"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "admit rmsnorm_b8_smoke; derive the operation vocabulary from the IR enum"
+  "approval_basis": "mma is a pure contraction; MmaFormula removed; liveness-aware register estimate"
 }

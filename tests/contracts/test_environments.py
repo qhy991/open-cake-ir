@@ -83,7 +83,7 @@ class EnvironmentContractTests(unittest.TestCase):
                 "--revision",
                 str(ROOT / "compiler/revision.lock.json"),
                 "--schedule",
-                str(ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json"),
+                str(ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json"),
                 "--evidence-root",
                 str(evidence_root),
                 "--anchor-output",

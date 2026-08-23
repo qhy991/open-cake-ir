@@ -53,11 +53,51 @@ class Occupancy:
 
 
 def _register_bytes(schedule: Schedule) -> int:
-    return sum(
-        buffer.size_bytes
+    """Peak concurrently-live register bytes, not the sum of every declared tile.
+
+    Summing them charges a Schedule for every temporary it ever names, which reads the
+    same whether two tiles overlap or one is dead before the other is written. That was
+    close enough while an operation carried a whole formula and named few intermediates.
+    Composing arithmetic from primitives names one buffer per step, and under a sum a
+    decomposition that changes no kernel reports as no longer resident.
+
+    A register buffer is live from its first write to its last read in declared order.
+    Anything the Schedule declares but never writes is charged for the whole program,
+    since nothing here can say when it dies.
+    """
+
+    registers = {
+        buffer.name: buffer
         for buffer in schedule.buffers
         if buffer.space is MemorySpace.REGISTER
-    )
+    }
+    if not registers:
+        return 0
+
+    first_write: dict[str, int] = {}
+    last_read: dict[str, int] = {}
+    for position, operation in enumerate(schedule.operations):
+        for name in operation.writes:
+            if name in registers:
+                first_write.setdefault(name, position)
+        for name in operation.reads:
+            if name in registers:
+                last_read[name] = position
+
+    total = len(schedule.operations)
+    peak = 0
+    for position in range(total):
+        live = 0
+        for name, buffer in registers.items():
+            birth = first_write.get(name)
+            if birth is None:
+                live += buffer.size_bytes
+                continue
+            death = last_read.get(name, total)
+            if birth <= position <= max(death, birth):
+                live += buffer.size_bytes
+        peak = max(peak, live)
+    return peak
 
 
 def _allocation_bytes(schedule: Schedule, space: MemorySpace) -> int:

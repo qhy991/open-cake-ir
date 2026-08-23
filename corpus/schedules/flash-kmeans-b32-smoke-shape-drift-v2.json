@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "schedule_id": "open-cake-ir-gpu-quickstart-v1",
+  "schedule_id": "flash-kmeans-b32-smoke-schedule-v2-v2",
   "target": "sm_100a",
   "roles": [
     {
@@ -21,7 +21,7 @@
       "dtype": "bf16",
       "shape": [
         32,
-        512,
+        768,
         128
       ],
       "mode": "input"
@@ -95,6 +95,35 @@
         256
       ],
       "mode": "scratch"
+    },
+    {
+      "name": "norm_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "cross",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        256,
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "scaled_cross",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        256,
+        64
+      ],
+      "mode": "scratch"
     }
   ],
   "pipelines": [],
@@ -129,32 +158,74 @@
       }
     },
     {
+      "id": "load_norm",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "centroid_sq"
+      ],
+      "writes": [
+        "norm_tile"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
       "id": "distance_mma",
       "kind": "mma",
       "role": "compute",
       "reads": [
         "token_tile",
-        "centroid_tile",
-        "centroid_sq"
+        "centroid_tile"
       ],
       "writes": [
-        "distance_tile"
+        "cross"
       ],
       "depends_on": [
         "load_tokens",
         "load_centroids"
       ],
       "parameters": {
-        "accumulator": "fp32",
-        "formula": "squared_euclidean_xsq_elided",
-        "instruction": {
-          "contract": "triton.dot.bf16_fp32"
-        },
-        "tile_shape": [
-          256,
-          64,
-          128
-        ]
+        "accumulator": "fp32"
+      }
+    },
+    {
+      "id": "scale_cross",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "cross"
+      ],
+      "writes": [
+        "scaled_cross"
+      ],
+      "depends_on": [
+        "distance_mma"
+      ],
+      "parameters": {
+        "op": "mul",
+        "scalar": 2.0
+      }
+    },
+    {
+      "id": "distance",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "norm_tile",
+        "scaled_cross"
+      ],
+      "writes": [
+        "distance_tile"
+      ],
+      "depends_on": [
+        "scale_cross",
+        "load_norm"
+      ],
+      "parameters": {
+        "op": "sub",
+        "broadcast_axis": 1
       }
     },
     {
@@ -224,7 +295,10 @@
       "tile": 64,
       "body": [
         "load_centroids",
+        "load_norm",
         "distance_mma",
+        "scale_cross",
+        "distance",
         "argmin"
       ],
       "range_options": {
@@ -277,7 +351,7 @@
       "boundary": "mask_tiled_axes"
     },
     {
-      "operation": "distance_mma",
+      "operation": "load_norm",
       "buffer": "centroid_sq",
       "indices": [
         {
@@ -309,6 +383,11 @@
   ],
   "metadata": {
     "profile": "flash_kmeans_b32_smoke",
-    "workload_contract_sha256": "37e0f57020d9807a6c77c5ef6e56c8c771274c11c745b58022ae85091d567c3a"
+    "legacy_source": {
+      "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
+      "path": "examples/schedules/flash-kmeans-b32-smoke-v2.json",
+      "canonical_json_sha256": "8f20df203140758594c28e9cf0dd5f1ef22b39b551f74fc9012a86e2f7a44dce"
+    },
+    "workload_contract_sha256": "f0528da2eda9cdbb23129a0b89bfe779a5e052596cc84c7186e3880fe8880015"
   }
 }

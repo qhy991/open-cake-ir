@@ -102,10 +102,6 @@ class NaNPolicy(str, Enum):
     REJECT_INPUT = "reject_input"
 
 
-class MmaFormula(str, Enum):
-    SQUARED_EUCLIDEAN_XSQ_ELIDED = "squared_euclidean_xsq_elided"
-
-
 class EpilogueFormula(str, Enum):
     """Union of the two legacy `EpilogueFormula` enums, which had disjoint members."""
 
@@ -698,7 +694,6 @@ class MmaInstruction:
 @dataclass(frozen=True)
 class MmaParameters:
     accumulator: DType
-    formula: MmaFormula | None
     instruction: MmaInstruction | None
     tile_shape: tuple[int, int, int] | None
 
@@ -830,13 +825,12 @@ def _operation_parameters(
         obj = _strict_object(
             value,
             required={"accumulator"},
-            optional={"formula", "instruction", "tile_shape"},
+            optional={"instruction", "tile_shape"},
             context=context,
         )
         accumulator = _enum(DType, obj["accumulator"], f"{context}.accumulator")
         if accumulator is not DType.FP32:
             raise ScheduleParseError(f"{context}.accumulator must be fp32")
-        formula = obj.get("formula")
         instruction = obj.get("instruction")
         def mnk(field: str):
             raw = obj.get(field)
@@ -854,7 +848,6 @@ def _operation_parameters(
 
         return MmaParameters(
             accumulator,
-            None if formula is None else _enum(MmaFormula, formula, f"{context}.formula"),
             None
             if instruction is None
             else MmaInstruction.from_dict(instruction, f"{context}.instruction"),

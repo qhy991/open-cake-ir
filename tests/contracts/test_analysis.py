@@ -19,7 +19,7 @@ from open_cake_ir.compiler.verifier import FindingSeverity, verify
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
-B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke.json"
+B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 ASSIGNMENT_FULL = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
 
 
@@ -104,7 +104,12 @@ class ReportTest(unittest.TestCase):
         }
 
     def test_every_retained_schedule_reports_its_bound(self) -> None:
-        for path in sorted((ROOT / "corpus" / "schedules").glob("*.json")):
+        for path in sorted(
+            ROOT / case["schedule"]
+            for case in json.loads(
+                (ROOT / "corpus" / "manifest.json").read_text(encoding="utf-8")
+            )["cases"]
+        ):
             with self.subTest(schedule=path.name):
                 self.assertIn("RESIDENCY_BOUND", self._reports(path))
 

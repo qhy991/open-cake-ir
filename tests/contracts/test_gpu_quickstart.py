@@ -286,7 +286,7 @@ class GpuQuickstartContractTests(unittest.TestCase):
             workload=workload,
             case_id="b32_smoke",
         )
-        schedule = (ROOT / "examples/gpu/flash-kmeans-b32-smoke.json").read_bytes()
+        schedule = (ROOT / "examples/gpu/flash-kmeans-b32-smoke-v2.json").read_bytes()
 
         result = environment.build(
             CandidateSubmission.seal(

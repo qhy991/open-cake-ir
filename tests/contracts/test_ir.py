@@ -33,8 +33,15 @@ from open_cake_ir.compiler.ir import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-CORPUS = sorted((ROOT / "corpus" / "schedules").glob("*.json"))
-B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke.json"
+# The manifest is what the Corpus is; the directory also holds schedules
+# retained as history that the current Revision no longer admits.
+CORPUS = sorted(
+    ROOT / case["schedule"]
+    for case in json.loads(
+        (ROOT / "corpus" / "manifest.json").read_text(encoding="utf-8")
+    )["cases"]
+)
+B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 TINYGEMM = ROOT / "corpus" / "schedules" / "tinygemm2-stage4-split-k.json"
 ASSIGNMENT_FULL = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
 
@@ -49,6 +56,16 @@ def _mutated(path: Path, mutate) -> dict:
     return document
 
 
+def _op(document: dict, op_id: str) -> dict:
+    """Address an operation by name.
+
+    Index-addressed mutations silently retarget when a Schedule gains an operation, so
+    the composed distance turned several of these into assertions about a different one.
+    """
+
+    return next(o for o in document["operations"] if o["id"] == op_id)
+
+
 class RetainedScheduleTest(unittest.TestCase):
     def test_every_corpus_schedule_parses(self) -> None:
         self.assertEqual(len(CORPUS), 8)
@@ -61,7 +78,7 @@ class RetainedScheduleTest(unittest.TestCase):
                 self.assertTrue(schedule.outputs)
 
     def test_gpu_quickstart_schedule_parses(self) -> None:
-        schedule = Schedule.load(ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke.json")
+        schedule = Schedule.load(ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke-v2.json")
         self.assertEqual(schedule.profile, "flash_kmeans_b32_smoke")
 
     def test_grid_and_program_map_are_exclusive(self) -> None:
@@ -204,7 +221,7 @@ class StrictStructureTest(unittest.TestCase):
             "schedule": lambda d: d.update(bogus=1),
             "schedule.buffers[0]": lambda d: d["buffers"][0].update(cache_policy="x"),
             "schedule.roles[0]": lambda d: d["roles"][0].update(priority=1),
-            "schedule.operations[0]": lambda d: d["operations"][0].update(cost=1),
+            "schedule.operations[0]": lambda d: _op(d, "load_tokens").update(cost=1),
         }
         for path, mutate in cases.items():
             with self.subTest(path=path):
@@ -251,10 +268,10 @@ class LocalizedDiagnosticTest(unittest.TestCase):
         cases = [
             (
                 B32,
-                lambda d: d["operations"][3]["parameters"].update(
+                lambda d: _op(d, "argmin")["parameters"].update(
                     tie_break="highest_index"
                 ),
-                "schedule.operations[3].parameters.tie_break",
+                "schedule.operations[6].parameters.tie_break",
                 "lowest_index",
             ),
             (
@@ -271,7 +288,7 @@ class LocalizedDiagnosticTest(unittest.TestCase):
             ),
             (
                 B32,
-                lambda d: d["operations"][1].update(kind="tma_load"),
+                lambda d: _op(d, "load_centroids").update(kind="tma_load"),
                 "schedule.operations[1].kind",
                 "epilogue, fence_proxy, load, mma, reduce_argmin, reduce_sum, store",
             ),
@@ -298,20 +315,20 @@ class LocalizedDiagnosticTest(unittest.TestCase):
         self.assertIn(
             "must be fp32",
             self._message(
-                B32, lambda d: d["operations"][2]["parameters"].update(accumulator="bf16")
+                B32, lambda d: _op(d, "distance_mma")["parameters"].update(accumulator="bf16")
             ),
         )
         self.assertIn(
             "axis must be a non-negative integer",
             self._message(
-                TINYGEMM, lambda d: d["operations"][4]["parameters"].update(axis=-1)
+                TINYGEMM, lambda d: _op(d, "reduce_partials")["parameters"].update(axis=-1)
             ),
         )
         # a load carries movement, never coalesced
         self.assertIn(
             "unknown fields",
             self._message(
-                B32, lambda d: d["operations"][0]["parameters"].update(coalesced=True)
+                B32, lambda d: _op(d, "load_tokens")["parameters"].update(coalesced=True)
             ),
         )
 
@@ -328,7 +345,7 @@ class UnificationCostTest(unittest.TestCase):
     def test_cross_family_epilogue_formula_is_structurally_admissible(self) -> None:
         document = _mutated(
             TINYGEMM,
-            lambda d: d["operations"][5]["parameters"].update(
+            lambda d: _op(d, "bias_epilogue")["parameters"].update(
                 formula="centroid_sq_minus_two_dot"
             ),
         )
