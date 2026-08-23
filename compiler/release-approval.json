@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "d1d81e9c046b68ddbae039ca367ef368e317cc756f7ea0bd86b955db9f8fc1de"
+    "canonical_sha256": "24c15cf2acb0cb706a6adef0b4a543f921919f09ce3f6b413ac8e85f62e01735"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "admit rmsnorm_b8_smoke; derive the operation vocabulary from the IR enum"
+  "approval_basis": "elementwise storage classes so composing costs no registers the kernel does not use"
 }

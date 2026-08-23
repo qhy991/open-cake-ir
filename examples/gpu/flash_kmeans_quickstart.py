@@ -284,7 +284,7 @@ def main() -> int:
     schedule_path = (
         arguments.schedule.resolve(strict=True)
         if arguments.schedule is not None
-        else project_root / "examples/gpu/flash-kmeans-b32-smoke.json"
+        else project_root / "examples/gpu/flash-kmeans-b32-smoke-v2.json"
     )
     schedule_bytes = schedule_path.read_bytes()
     summary = _summary(project_root, schedule_bytes)

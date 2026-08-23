@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .ir import MemorySpace, Schedule
+from .ir import MemorySpace, OperationKind, Schedule
 from .target import Target
 
 REGISTER_BYTES = 4
@@ -52,12 +52,94 @@ class Occupancy:
         return self.binding.ctas if self.binding else None
 
 
+def _storage_classes(schedule: Schedule, registers) -> dict[str, str]:
+    """Group register buffers that share one physical set of registers.
+
+    An elementwise primitive reads a tile and writes a tile of the same shape, which a
+    backend performs in place -- there is no reason to hold both. Charging for each is
+    what made composing arithmetic from primitives cost registers the kernel never uses,
+    and it charged exactly the schedules that follow the canonical form (P3). A dot or a
+    reduction is different: it genuinely needs its operands and its result at once, so
+    only the elementwise chain is unioned.
+    """
+
+    parent = {name: name for name in registers}
+
+    def find(name: str) -> str:
+        while parent[name] != name:
+            parent[name] = parent[parent[name]]
+            name = parent[name]
+        return name
+
+    for operation in schedule.operations:
+        if operation.kind is not OperationKind.ELEMENTWISE:
+            continue
+        if len(operation.writes) != 1:
+            continue
+        written = operation.writes[0]
+        if written not in registers:
+            continue
+        for name in operation.reads:
+            # Only a same-shaped operand can be overwritten in place; a broadcast
+            # operand is narrower and outlives the step that reads it.
+            if name in registers and registers[name].shape == registers[written].shape:
+                parent[find(name)] = find(written)
+                break
+    return {name: find(name) for name in registers}
+
+
 def _register_bytes(schedule: Schedule) -> int:
-    return sum(
-        buffer.size_bytes
+    """Peak concurrently-live register bytes, not the sum of every declared tile.
+
+    Summing them charges a Schedule for every temporary it ever names, which reads the
+    same whether two tiles overlap or one is dead before the other is written. That was
+    close enough while an operation carried a whole formula and named few intermediates.
+    Composing arithmetic from primitives names one buffer per step, and under a sum a
+    decomposition that changes no kernel reports as no longer resident.
+
+    A storage class is live from its first write to its last read in declared order.
+    Anything the Schedule declares but never writes is charged for the whole program,
+    since nothing here can say when it dies.
+    """
+
+    registers = {
+        buffer.name: buffer
         for buffer in schedule.buffers
         if buffer.space is MemorySpace.REGISTER
-    )
+    }
+    if not registers:
+        return 0
+
+    classes = _storage_classes(schedule, registers)
+    size: dict[str, int] = {}
+    for name, buffer in registers.items():
+        root = classes[name]
+        size[root] = max(size.get(root, 0), buffer.size_bytes)
+
+    first_write: dict[str, int] = {}
+    last_read: dict[str, int] = {}
+    for position, operation in enumerate(schedule.operations):
+        for name in operation.writes:
+            if name in registers:
+                first_write.setdefault(classes[name], position)
+        for name in operation.reads:
+            if name in registers:
+                last_read[classes[name]] = position
+
+    total = len(schedule.operations)
+    peak = 0
+    for position in range(total):
+        live = 0
+        for root, extent in size.items():
+            birth = first_write.get(root)
+            if birth is None:
+                live += extent
+                continue
+            death = last_read.get(root, total)
+            if birth <= position <= max(death, birth):
+                live += extent
+        peak = max(peak, live)
+    return peak
 
 
 def _allocation_bytes(schedule: Schedule, space: MemorySpace) -> int:

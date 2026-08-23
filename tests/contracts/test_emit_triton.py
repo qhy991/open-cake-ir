@@ -23,7 +23,7 @@ from open_cake_ir.compiler.target import Target
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
-SCHEDULE = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke.json"
+SCHEDULE = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 DRAFT = ROOT / "compiler" / "revision.json"
 
 
@@ -45,6 +45,12 @@ def _variant(**changes) -> dict:
     buffers["centroid_tile"]["shape"] = [block_k, 128]
     buffers["distance_tile"]["shape"] = [block_n, block_k]
     buffers["best_index_tile"]["shape"] = [block_n]
+    # the composed distance names its intermediates, and a seed retiles all of them
+    for name in ("cross", "scaled_cross"):
+        if name in buffers:
+            buffers[name]["shape"] = [block_n, block_k]
+    if "norm_tile" in buffers:
+        buffers["norm_tile"]["shape"] = [block_k]
     for operation in document["operations"]:
         if operation["kind"] == "mma":
             operation["parameters"]["tile_shape"] = [block_n, block_k, 128]

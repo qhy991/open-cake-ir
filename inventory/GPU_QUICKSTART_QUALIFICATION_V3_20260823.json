@@ -102,9 +102,11 @@
     }
   },
   "superseded": {
-    "reason": "the observed Schedule has since gained the hardware commitments emission requires, so its bytes no longer match this record",
+    "reason": "the observed Schedule has since gained the hardware commitments emission requires, and the runner was repointed when the packed mma form was retired, so neither matches this record; the record keeps the bytes the run actually used",
     "observed_schedule_raw_sha256": "e01fc26572c8ec6270ce2a9ccd4b296fa3ac6d8a0b88603b8567b99726e632a5",
     "current_schedule_raw_sha256": "225ac138b66855d6edc536d6b8a2e36aaee0d71dee33d719d6f789b3cf3824d3",
-    "requalification_blocked_by": "the GPU broker does not export GPUQ_JOB_ID, which evaluation.admission.observe_exclusive_b200 requires, so this cannot be re-observed on this host without changing the admission contract"
+    "requalification_blocked_by": "the GPU broker does not export GPUQ_JOB_ID, which evaluation.admission.observe_exclusive_b200 requires, so this cannot be re-observed on this host without changing the admission contract",
+    "observed_runner_raw_sha256": "2fc5851aa52ef4fe408859c867ba1310221e83296455d0c7d33e7a2fdf3a4660",
+    "current_runner_raw_sha256": "0e8cad6691488062943f0c47174ae597d27d039a915df549002c3a62bc7508f4"
   }
 }

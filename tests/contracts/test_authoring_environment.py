@@ -40,7 +40,7 @@ class RecordingToolchain:
 
 def _headline_schedule(workload: WorkloadContract) -> dict[str, object]:
     schedule = json.loads(
-        (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text(
+        (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text(
             encoding="utf-8"
         )
     )

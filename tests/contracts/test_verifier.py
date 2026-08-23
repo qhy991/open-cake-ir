@@ -28,8 +28,15 @@ from open_cake_ir.compiler.verifier import (
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
-CORPUS = sorted((ROOT / "corpus" / "schedules").glob("*.json"))
-B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke.json"
+# The manifest is what the Corpus is; the directory also holds schedules
+# retained as history that the current Revision no longer admits.
+CORPUS = sorted(
+    ROOT / case["schedule"]
+    for case in json.loads(
+        (ROOT / "corpus" / "manifest.json").read_text(encoding="utf-8")
+    )["cases"]
+)
+B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 TINYGEMM = ROOT / "corpus" / "schedules" / "tinygemm2-stage4-split-k.json"
 ASSIGNMENT_FULL = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
 
@@ -58,9 +65,19 @@ def _actionable(findings: tuple[Finding, ...]) -> tuple[Finding, ...]:
     return tuple(f for f in findings if f.severity is not FindingSeverity.REPORT)
 
 
+def _op(document: dict, op_id: str) -> dict:
+    """Address an operation by name.
+
+    Index-addressed mutations silently retarget when a Schedule gains an operation, so
+    the composed distance turned several of these into assertions about a different one.
+    """
+
+    return next(o for o in document["operations"] if o["id"] == op_id)
+
+
 class QuietOnValidScheduleTest(unittest.TestCase):
     def test_every_retained_schedule_verifies_clean(self) -> None:
-        for path in CORPUS + [ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke.json"]:
+        for path in CORPUS + [ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke-v2.json"]:
             with self.subTest(schedule=path.name):
                 self.assertEqual(_blocking(verify(Schedule.load(path), TARGET)), ())
 
@@ -91,7 +108,7 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         """
 
         for name in (
-            "flash-kmeans-b32-smoke-shape-drift.json",
+            "flash-kmeans-b32-smoke-shape-drift-v2.json",
             "flash-kmeans-assignment-full-shape-drift.json",
         ):
             with self.subTest(schedule=name):
@@ -113,7 +130,7 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         schedule = _mutated(
             B32,
             lambda d: (
-                d["operations"][0].update(role="ghost", reads=["nope"], writes=["nope"]),
+                _op(d, "load_tokens").update(role="ghost", reads=["nope"], writes=["nope"]),
                 d.update(outputs=["absent"]),
             ),
         )
@@ -181,7 +198,7 @@ class DataConsistencyTest(unittest.TestCase):
         findings = verify(
             _mutated(
                 B32,
-                lambda d: d["operations"][0].update(writes=["token_tile", "centroids"]),
+                lambda d: _op(d, "load_tokens").update(writes=["token_tile", "centroids"]),
             ),
             TARGET,
         )
@@ -191,7 +208,7 @@ class DataConsistencyTest(unittest.TestCase):
 
     def test_declared_output_must_be_written_and_exported(self) -> None:
         unwritten = verify(
-            _mutated(B32, lambda d: d["operations"][4].update(writes=[])), TARGET
+            _mutated(B32, lambda d: _op(d, "store_assignment").update(writes=[])), TARGET
         )
         self.assertIn("OUTPUT_UNWRITTEN", _codes(unwritten))
         unexported = verify(_mutated(B32, lambda d: d.update(outputs=[])), TARGET)
@@ -206,7 +223,7 @@ class DataConsistencyTest(unittest.TestCase):
 
     def test_load_source_must_be_global(self) -> None:
         findings = verify(
-            _mutated(B32, lambda d: d["operations"][0].update(reads=["token_tile"])),
+            _mutated(B32, lambda d: _op(d, "load_tokens").update(reads=["token_tile"])),
             TARGET,
         )
         self.assertIn("OP_LOAD_SOURCE", _codes(findings))
@@ -342,7 +359,7 @@ class CategoryCoverageTest(unittest.TestCase):
         observed = set()
         cases = [
             (B32, lambda d: d["roles"][0].update(warps=[0, 4096])),
-            (B32, lambda d: d["operations"][0].update(writes=["token_tile", "centroids"])),
+            (B32, lambda d: _op(d, "load_tokens").update(writes=["token_tile", "centroids"])),
             (ASSIGNMENT_FULL, ProgramSafetyTest._desynchronized),
             (B32, lambda d: d["roles"].append(dict(d["roles"][0]))),
         ]
@@ -459,7 +476,7 @@ class HardwareCommitmentTest(unittest.TestCase):
         good = verify(
             _mutated(
                 ASSIGNMENT_FULL,
-                lambda d: d["operations"][2]["parameters"].update(
+                lambda d: _op(d, "dot_mma")["parameters"].update(
                     instruction={
                         "contract": "tcgen05.mma.cta_group::1.kind::f16",
                         "shape": [128, 256, 16],
@@ -477,7 +494,7 @@ class HardwareCommitmentTest(unittest.TestCase):
         bad = verify(
             _mutated(
                 ASSIGNMENT_FULL,
-                lambda d: d["operations"][2]["parameters"].update(
+                lambda d: _op(d, "dot_mma")["parameters"].update(
                     instruction={
                         "contract": "wgmma.mma_async.sync.aligned",
                         "shape": [64, 128, 16],
@@ -498,7 +515,7 @@ class HardwareCommitmentTest(unittest.TestCase):
         matching = verify(
             _mutated(
                 ASSIGNMENT_FULL,
-                lambda d: d["operations"][2]["parameters"].update(
+                lambda d: _op(d, "dot_mma")["parameters"].update(
                     tile_shape=[128, 256, 64]
                 ),
             ),
@@ -509,7 +526,7 @@ class HardwareCommitmentTest(unittest.TestCase):
         mismatched = verify(
             _mutated(
                 ASSIGNMENT_FULL,
-                lambda d: d["operations"][2]["parameters"].update(
+                lambda d: _op(d, "dot_mma")["parameters"].update(
                     tile_shape=[128, 128, 64]
                 ),
             ),

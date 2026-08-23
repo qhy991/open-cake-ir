@@ -174,7 +174,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_target_mismatch_and_missing_calibration_are_explicit(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         schedule["target"] = "sm_90"
 
@@ -187,7 +187,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_lower_rejects_a_forged_assessment_projection(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         assessment = compiler.assess_file(
-            ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json"
+            ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json"
         )
 
         with self.assertRaisesRegex(ValueError, "canonical Schedule replay"):
@@ -196,7 +196,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_profile_cannot_generate_a_kernel_from_missing_schedule_semantics(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         schedule["operations"] = []
 
@@ -218,7 +218,7 @@ class CompilerContractTests(unittest.TestCase):
 
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         schedule["program_map"]["axes"][0]["tile"] = 128
 
@@ -239,7 +239,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_coherent_program_tile_revision_changes_the_lowered_program(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         schedule["schedule_id"] = "flash-kmeans-b32-smoke-block128"
         schedule["program_map"]["axes"][0]["tile"] = 128
@@ -247,6 +247,10 @@ class CompilerContractTests(unittest.TestCase):
         buffers["token_tile"]["shape"][0] = 128
         buffers["distance_tile"]["shape"][0] = 128
         buffers["best_index_tile"]["shape"][0] = 128
+        # A coherent retiling reaches every tile the composition names, not only the
+        # ones the packed form happened to declare.
+        buffers["cross"]["shape"][0] = 128
+        buffers["scaled_cross"]["shape"][0] = 128
         for operation in schedule["operations"]:
             if operation["kind"] == "mma":
                 operation["parameters"]["tile_shape"][0] = 128
@@ -265,7 +269,7 @@ class CompilerContractTests(unittest.TestCase):
             lowering.source_sha256,
             compiler.lower(
                 compiler.assess_file(
-                    ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json"
+                    ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json"
                 )
             ).source_sha256,
         )
@@ -281,23 +285,26 @@ class CompilerContractTests(unittest.TestCase):
 
         compiler = Compiler.load(ROOT, REVISION_PATH)
         original = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         cases = (
             (
-                lambda schedule: schedule["operations"][2]["parameters"].update(
-                    {"formula": "unsupported_formula"}
+                # The arithmetic vocabulary took this position when the formula that
+                # named a whole operator's math was removed; what is pinned is that a
+                # closed vocabulary reports its path and its admitted values.
+                lambda schedule: schedule["operations"][4]["parameters"].update(
+                    {"op": "unsupported_op"}
                 ),
                 "SCHEDULE_STRUCTURE",
-                "schedule.operations[2].parameters.formula",
-                "squared_euclidean_xsq_elided",
+                "schedule.operations[4].parameters.op",
+                "square",
             ),
             (
-                lambda schedule: schedule["operations"][3]["parameters"].update(
+                lambda schedule: schedule["operations"][6]["parameters"].update(
                     {"tie_break": "highest_index"}
                 ),
                 "SCHEDULE_STRUCTURE",
-                "schedule.operations[3].parameters.tie_break",
+                "schedule.operations[6].parameters.tie_break",
                 "lowest_index",
             ),
             (
@@ -370,7 +377,7 @@ class CompilerContractTests(unittest.TestCase):
         compiler = Compiler.load(ROOT, REVISION_PATH)
 
         assessment = compiler.assess_file(
-            ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json"
+            ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json"
         )
 
         self.assertTrue(assessment.accepted)
@@ -378,13 +385,13 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(assessment.analysis["grid"], (2, 32, 1))
         self.assertEqual(
             assessment.analysis["operation_counts"],
-            {"load": 2, "mma": 1, "reduce_argmin": 1, "store": 1},
+            {"load": 3, "mma": 1, "elementwise": 2, "reduce_argmin": 1, "store": 1},
         )
 
     def test_r16_workload_shape_drift_blocks_lowering(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         schedule["buffers"][0]["shape"][1] = 768
 
@@ -400,7 +407,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_r16_lowering_is_available_through_the_same_interface(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         assessment = compiler.assess_file(
-            ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json"
+            ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json"
         )
 
         lowering = compiler.lower(assessment)
@@ -410,7 +417,8 @@ class CompilerContractTests(unittest.TestCase):
         self.assertIn("[(2, 32, 1)]", lowering.source)
         self.assertEqual(
             set(lowering.source_map),
-            {"load_tokens", "load_centroids", "distance_mma", "argmin", "store_assignment"},
+            {"load_tokens", "load_centroids", "load_norm", "distance_mma",
+             "scale_cross", "distance", "argmin", "store_assignment"},
         )
         self.assertEqual(lowering.toolchain_requirements["target"], "sm_100a")
         self.assertEqual(
@@ -475,7 +483,7 @@ class CompilerContractTests(unittest.TestCase):
         )
 
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         # A space outside the IR vocabulary is a structural violation, reported at the
         # offending path. TARGET_MEMORY_SPACE_UNSUPPORTED remains reachable for a Target

@@ -24,7 +24,6 @@ from .ir import (
     DType,
     LoadMovement,
     MemorySpace,
-    MmaFormula,
     OperationKind,
     ProgramAxis,
     Schedule,
@@ -78,10 +77,6 @@ class _TritonEmitter:
             _require(
                 instruction.contract in target.instruction_contracts,
                 f"instruction {instruction.contract!r} is not admitted by {target.target_id!r}",
-            )
-            _require(
-                self.mma.parameters.formula is MmaFormula.SQUARED_EUCLIDEAN_XSQ_ELIDED,
-                "this backend emits the squared-euclidean formula only",
             )
         for load in schedule.operations:
             if load.kind is OperationKind.LOAD:
@@ -516,7 +511,13 @@ class _TritonEmitter:
         )
 
     def _emit_mma(self, operation, pad: str) -> None:
-        """`squared_euclidean_xsq_elided`: the norm term minus twice the cross product."""
+        """The contraction, and nothing else.
+
+        This used to emit the dot and the distance formula together, because MmaFormula
+        named the pair as one thing. Two of the three admitted profiles already declared
+        a bare contraction with the arithmetic in a following operation; this is now the
+        only shape, so the same kernel is written down one way.
+        """
 
         tiles = [
             name
@@ -524,25 +525,12 @@ class _TritonEmitter:
             if (buffer := self.schedule.buffer(name)) is not None
             and buffer.space is not MemorySpace.GLOBAL
         ]
-        _require(len(tiles) == 2, "the dot takes two staged operands")
-        norm = next(
-            name
-            for name in operation.reads
-            if (buffer := self.schedule.buffer(name)) is not None
-            and buffer.space is MemorySpace.GLOBAL
+        _require(
+            len(operation.reads) == 2 and len(tiles) == 2,
+            "the dot takes exactly two staged operands and reads nothing else",
         )
-        access = self.schedule.access_map(operation.op_id, norm)
-        _require(access is not None, f"mma {operation.op_id!r} has no access map for {norm!r}")
-        pointer, mask = self._address(access, pad)
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
-        self.line(f"{pad}cross = tl.dot({tiles[0]}, tl.trans({tiles[1]}))")
-        self.line(f"{pad}norm = tl.load(")
-        self.line(f"{pad}    {pointer},")
-        if mask:
-            self.line(f"{pad}    mask={mask},")
-            self.line(f"{pad}    other=float(\"inf\"),")
-        self.line(f"{pad})")
-        self.line(f"{pad}{operation.writes[0]} = norm[None, :] - 2.0 * cross")
+        self.line(f"{pad}{operation.writes[0]} = tl.dot({tiles[0]}, tl.trans({tiles[1]}))")
 
     def _emit_argmin(self, operation, pad: str) -> None:
         source = operation.reads[0]

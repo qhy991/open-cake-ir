@@ -5,7 +5,7 @@
   "cases": [
     {
       "case_id": "flash-kmeans-r16-accepted",
-      "schedule": "corpus/schedules/flash-kmeans-b32-smoke.json",
+      "schedule": "corpus/schedules/flash-kmeans-b32-smoke-v2.json",
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
@@ -13,13 +13,13 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "4cdb3987b4cc3abd782fd3127bfdac6a894abc2e1e81d717aa85812266f70dd4",
-        "lowering_source_sha256": "6434b10bcec737e18062849b73d9da2fdb82ac17798ed41d4379bcb0c0a1b0e8"
+        "schedule_sha256": "38334142806284b691514031cbe18ea067cd09d8c84bf2582841fd39a5453eeb",
+        "lowering_source_sha256": "484f0ef9483cce8aa0649be6f3b74d1257abe2291a2075b936f0b1c74a1ed5a2"
       }
     },
     {
       "case_id": "flash-kmeans-r16-shape-drift",
-      "schedule": "corpus/schedules/flash-kmeans-b32-smoke-shape-drift.json",
+      "schedule": "corpus/schedules/flash-kmeans-b32-smoke-shape-drift-v2.json",
       "expected": {
         "accepted": true,
         "lowering_eligible": false,
@@ -28,7 +28,7 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "46174612b87977bf3351bc04b51123309d28705bca60446e8cd1cdf72c3a5170",
+        "schedule_sha256": "94a1b7323ef7fecec07448a7e46750944d01f2bf8f9940297f81ad217ec66200",
         "lowering_source_sha256": null
       }
     },

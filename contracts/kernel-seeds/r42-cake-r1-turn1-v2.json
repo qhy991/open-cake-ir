@@ -3,8 +3,8 @@
   "seed_id": "r42-cake-r1-turn1",
   "workload_sha256": "37e0f57020d9807a6c77c5ef6e56c8c771274c11c745b58022ae85091d567c3a",
   "base_schedule": {
-    "path": "corpus/schedules/flash-kmeans-b32-smoke.json",
-    "canonical_sha256": "4cdb3987b4cc3abd782fd3127bfdac6a894abc2e1e81d717aa85812266f70dd4"
+    "path": "corpus/schedules/flash-kmeans-b32-smoke-v2.json",
+    "canonical_sha256": "38334142806284b691514031cbe18ea067cd09d8c84bf2582841fd39a5453eeb"
   },
   "configuration": {
     "BLOCK_N": 256,
