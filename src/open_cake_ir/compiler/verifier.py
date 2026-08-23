@@ -27,6 +27,7 @@ from .ir import (
     TMEM_COLUMN_BYTES,
     AccessIndexKind,
     BufferMode,
+    LoadMovement,
     MemorySpace,
     Operation,
     OperationKind,
@@ -308,6 +309,7 @@ def _verify_hardware_conformance(
             _verify_tensor_columns(allocation, index, limits, out)
 
     _verify_instruction_commitments(schedule, target, out)
+    _verify_descriptor_commitments(schedule, out)
     _verify_swizzle_commitments(schedule, out)
 
     for index, buffer in enumerate(schedule.buffers):
@@ -451,6 +453,16 @@ def _verify_instruction_commitments(
                 category,
             )
 
+        if getattr(operation.parameters, "instruction_shape", None) is None:
+            out.add(
+                "MMA_INSTRUCTION_SHAPE_UNDECLARED",
+                f"{path}.instruction_shape",
+                f"operation {operation.op_id!r} does not commit to an atom M/N/K; the "
+                "instruction shape is not the tile shape and the backend picks it",
+                category,
+                FindingSeverity.HINT,
+            )
+
         if tile is None:
             out.add(
                 "MMA_TILE_UNDECLARED",
@@ -471,6 +483,51 @@ def _verify_instruction_commitments(
                     f"{path}.tile_shape",
                     f"tile M/N {tile[0]}x{tile[1]} does not match accumulator "
                     f"{name!r} shape {accumulator.shape[0]}x{accumulator.shape[1]}",
+                    category,
+                )
+
+
+def _verify_descriptor_commitments(schedule: Schedule, out: _Collector) -> None:
+    """`movement: tma` without a box is a flag, not a descriptor coordinate."""
+
+    category = FindingCategory.HARDWARE_CONFORMANCE
+    buffers = {buffer.name: buffer for buffer in schedule.buffers}
+    for index, operation in enumerate(schedule.operations):
+        if operation.kind is not OperationKind.LOAD:
+            continue
+        parameters = operation.parameters
+        if getattr(parameters, "movement", None) is not LoadMovement.TMA:
+            continue
+        box = getattr(parameters, "descriptor_box", None)
+        path = f"operations[{index}].parameters.descriptor_box"
+        if box is None:
+            out.add(
+                "TMA_DESCRIPTOR_UNDECLARED",
+                path,
+                f"operation {operation.op_id!r} moves by TMA without committing to a "
+                "descriptor box; the backend derives the tile it addresses",
+                category,
+                FindingSeverity.HINT,
+            )
+            continue
+        for name in operation.writes:
+            staged = buffers.get(name)
+            if staged is None:
+                continue
+            if len(box) != len(staged.shape):
+                out.add(
+                    "TMA_DESCRIPTOR_RANK",
+                    path,
+                    f"descriptor box has {len(box)} extents for rank-"
+                    f"{len(staged.shape)} destination {name!r}",
+                    category,
+                )
+            elif tuple(box) != staged.shape:
+                out.add(
+                    "TMA_DESCRIPTOR_MISMATCH",
+                    path,
+                    f"descriptor box {box} does not match staging buffer {name!r} "
+                    f"shape {staged.shape}",
                     category,
                 )
 

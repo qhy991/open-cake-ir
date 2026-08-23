@@ -563,6 +563,13 @@ class AccessMap:
 @dataclass(frozen=True)
 class LoadParameters:
     movement: LoadMovement
+    descriptor_box: tuple[int, ...] | None
+    """TMA descriptor box extents -- the coordinate commitment the paper requires.
+
+    Without it `movement: tma` is a flag: it says a bulk-tensor copy happens but not
+    what tile the descriptor addresses, so the backend derives a box and the choice is
+    not inspectable. Meaningless for `movement: global`.
+    """
 
 
 @dataclass(frozen=True)
@@ -571,6 +578,12 @@ class MmaParameters:
     formula: MmaFormula | None
     instruction: str | None
     tile_shape: tuple[int, int, int] | None
+    instruction_shape: tuple[int, int, int] | None
+    """The atom's M/N/K, which is not the tile's.
+
+    The retained artifact commits to MMA_INSTRUCTION_SHAPE (128, 256, 16) and
+    MMA_TILE (128, 256, 64): the tile is four instruction steps deep in K.
+    """
 
 
 @dataclass(frozen=True)
@@ -617,14 +630,28 @@ def _operation_parameters(
     kind: OperationKind, value: Any, context: str
 ) -> OperationParameters:
     if kind is OperationKind.LOAD:
-        obj = _strict_object(value, required={"movement"}, context=context)
-        return LoadParameters(_enum(LoadMovement, obj["movement"], f"{context}.movement"))
+        obj = _strict_object(
+            value, required={"movement"}, optional={"descriptor_box"}, context=context
+        )
+        movement = _enum(LoadMovement, obj["movement"], f"{context}.movement")
+        box = obj.get("descriptor_box")
+        if box is not None:
+            if movement is not LoadMovement.TMA:
+                raise ScheduleParseError(
+                    f"{context}.descriptor_box applies to tma movement only"
+                )
+            extents = _object_list(box, f"{context}.descriptor_box", allow_empty=False)
+            box = tuple(
+                _positive_int(extent, f"{context}.descriptor_box[{index}]")
+                for index, extent in enumerate(extents)
+            )
+        return LoadParameters(movement, box)
 
     if kind is OperationKind.MMA:
         obj = _strict_object(
             value,
             required={"accumulator"},
-            optional={"formula", "instruction", "tile_shape"},
+            optional={"formula", "instruction", "tile_shape", "instruction_shape"},
             context=context,
         )
         accumulator = _enum(DType, obj["accumulator"], f"{context}.accumulator")
@@ -632,22 +659,26 @@ def _operation_parameters(
             raise ScheduleParseError(f"{context}.accumulator must be fp32")
         formula = obj.get("formula")
         instruction = obj.get("instruction")
-        tile = obj.get("tile_shape")
-        if tile is not None:
-            tile_list = _object_list(tile, f"{context}.tile_shape")
-            if len(tile_list) != 3:
+        def mnk(field: str):
+            raw = obj.get(field)
+            if raw is None:
+                return None
+            extents = _object_list(raw, f"{context}.{field}")
+            if len(extents) != 3:
                 raise ScheduleParseError(
-                    f"{context}.tile_shape must declare exactly M, N and K"
+                    f"{context}.{field} must declare exactly M, N and K"
                 )
-            tile = tuple(
-                _positive_int(extent, f"{context}.tile_shape[{index}]")
-                for index, extent in enumerate(tile_list)
+            return tuple(
+                _positive_int(extent, f"{context}.{field}[{index}]")
+                for index, extent in enumerate(extents)
             )
+
         return MmaParameters(
             accumulator,
             None if formula is None else _enum(MmaFormula, formula, f"{context}.formula"),
             None if instruction is None else _string(instruction, f"{context}.instruction"),
-            tile,
+            mnk("tile_shape"),
+            mnk("instruction_shape"),
         )
 
     if kind is OperationKind.EPILOGUE:

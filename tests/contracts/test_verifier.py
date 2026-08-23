@@ -352,8 +352,10 @@ class HardwareCommitmentTest(unittest.TestCase):
             {
                 "ALLOCATION_TENSOR_COLUMNS_UNDECLARED",
                 "BUFFER_SWIZZLE_UNDECLARED",
+                "MMA_INSTRUCTION_SHAPE_UNDECLARED",
                 "MMA_INSTRUCTION_UNDECLARED",
                 "MMA_TILE_UNDECLARED",
+                "TMA_DESCRIPTOR_UNDECLARED",
             },
         )
         for finding in advisory.values():
