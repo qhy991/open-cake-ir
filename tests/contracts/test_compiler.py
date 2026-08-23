@@ -332,8 +332,8 @@ class CompilerContractTests(unittest.TestCase):
         )
 
         self.assertEqual(release.document["state"], "released")
-        self.assertEqual(release.document["corpus_gate"]["case_count"], 6)
-        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 6)
+        self.assertEqual(release.document["corpus_gate"]["case_count"], 8)
+        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 8)
         self.assertEqual(
             len(release.document["sources"]),
             len(json.loads((ROOT / "compiler" / "source_set.json").read_text())["paths"]),
@@ -360,11 +360,11 @@ class CompilerContractTests(unittest.TestCase):
         report = compiler.check_corpus()
 
         self.assertTrue(report.passed, report.cases)
-        self.assertEqual(report.case_count, 6)
-        self.assertEqual(report.accepted_case_count, 5)
+        self.assertEqual(report.case_count, 8)
+        self.assertEqual(report.accepted_case_count, 7)
         self.assertEqual(report.rejected_case_count, 1)
-        self.assertEqual(report.lowerable_case_count, 3)
-        self.assertEqual(report.nonlowerable_case_count, 3)
+        self.assertEqual(report.lowerable_case_count, 4)
+        self.assertEqual(report.nonlowerable_case_count, 4)
 
     def test_r16_program_map_schedule_uses_the_canonical_compiler(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)

@@ -51,7 +51,7 @@ def _mutated(path: Path, mutate) -> dict:
 
 class RetainedScheduleTest(unittest.TestCase):
     def test_every_corpus_schedule_parses(self) -> None:
-        self.assertEqual(len(CORPUS), 6)
+        self.assertEqual(len(CORPUS), 8)
         for path in CORPUS:
             with self.subTest(schedule=path.name):
                 schedule = Schedule.load(path)

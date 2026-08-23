@@ -7,6 +7,8 @@
     "corpus/schedules/flash-kmeans-assignment-full.json",
     "corpus/schedules/flash-kmeans-b32-smoke-shape-drift.json",
     "corpus/schedules/flash-kmeans-b32-smoke.json",
+    "corpus/schedules/rmsnorm-b8-smoke-shape-drift.json",
+    "corpus/schedules/rmsnorm-b8-smoke.json",
     "corpus/schedules/tinygemm2-stage4-split-k-reduction-drift.json",
     "corpus/schedules/tinygemm2-stage4-split-k.json",
     "src/open_cake_ir/compiler/__init__.py",

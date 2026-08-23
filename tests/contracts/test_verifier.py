@@ -64,6 +64,25 @@ class QuietOnValidScheduleTest(unittest.TestCase):
             with self.subTest(schedule=path.name):
                 self.assertEqual(_blocking(verify(Schedule.load(path), TARGET)), ())
 
+    def test_a_broadcast_axis_no_shape_rule_could_infer_is_checked(self) -> None:
+        """The one arithmetic fact shapes cannot settle.
+
+        A per-row scale spans axis 0 and a per-column weight spans axis 1. When the two
+        extents differ a rule over shapes alone could guess; when they are equal nothing
+        distinguishes them, so the Schedule declares which and this holds it to it.
+        """
+
+        import json
+
+        document = json.loads(
+            (ROOT / "corpus/schedules/rmsnorm-b8-smoke.json").read_text(encoding="utf-8")
+        )
+        for operation in document["operations"]:
+            if operation["id"] == "weight":
+                operation["parameters"]["broadcast_axis"] = 0
+        codes = {f.code for f in _blocking(verify(Schedule.from_dict(document), TARGET))}
+        self.assertIn("ELEMENTWISE_BROADCAST", codes)
+
     def test_shape_drift_is_semantic_not_structural(self) -> None:
         """The drift corpus cases are wrong about shapes, not about structure.
 

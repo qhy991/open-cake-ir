@@ -85,6 +85,35 @@
         "schedule_sha256": "5ab0ae637d8618df404c53f60c921183e7edeacaf64accbad7dae6ec86b62e40",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "rmsnorm-accepted",
+      "schedule": "corpus/schedules/rmsnorm-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "46807be688a86accf6095f0cdc089f51cdcabf42f5a8cc3c3ea96da71e10103a",
+        "lowering_source_sha256": "dfd6c66246b83f0f9a3d07d4581269cdf9a3a5a64933bed0e81e3f97fa2d7f44"
+      }
+    },
+    {
+      "case_id": "rmsnorm-shape-drift",
+      "schedule": "corpus/schedules/rmsnorm-b8-smoke-shape-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "PROFILE_SHAPE_MISMATCH",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "0336eee8c16adfbc12ab11ff9bf082a4d717c63f7da9ae5bb42d368872fc3ca1",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

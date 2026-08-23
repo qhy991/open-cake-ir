@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "f8083fa792ad3d22fc13c58c955af7004d5069f581146c0b36a57a97b40ba3fb"
+    "canonical_sha256": "d1d81e9c046b68ddbae039ca367ef368e317cc756f7ea0bd86b955db9f8fc1de"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "elementwise vocabulary; declared-order emission; BUFFER_ESCAPES_LOOP"
+  "approval_basis": "admit rmsnorm_b8_smoke; derive the operation vocabulary from the IR enum"
 }

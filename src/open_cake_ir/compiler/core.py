@@ -13,7 +13,7 @@ from typing import Callable, Mapping, Sequence, cast
 
 from .emit_cutedsl import EmitError, emit as emit_cutedsl
 from .emit_triton import emit as emit_triton
-from .ir import Schedule, ScheduleParseError
+from .ir import OperationKind, Schedule, ScheduleParseError
 from .target import Target, TargetParseError
 from .verifier import FindingSeverity, verify as verify_contracts
 
@@ -157,15 +157,11 @@ _REQUIRED_TOP_LEVEL_FIELDS = {
 }
 _OPTIONAL_TOP_LEVEL_FIELDS = {"grid", "program_map", "tile_loops", "access_maps"}
 _DTYPE_BYTES = {"bf16": 2, "fp16": 2, "fp32": 4, "int32": 4, "int64": 8}
-_SUPPORTED_OPERATION_KINDS = {
-    "load",
-    "mma",
-    "epilogue",
-    "reduce_argmin",
-    "reduce_sum",
-    "store",
-    "fence_proxy",
-}
+# The IR's enum is what the compiler knows how to parse, so restating the list here
+# made a second authority that a new kind had to be added to as well -- and forgetting
+# it rejected the Schedule as unsupported rather than saying anything about the gap.
+# What a Target admits is a separate question, and stays with the Target.
+_SUPPORTED_OPERATION_KINDS = {member.value for member in OperationKind}
 
 
 def _flash_kmeans_b32_smoke_conformance(buffers, operations) -> list["Finding"]:
@@ -247,6 +243,27 @@ def _tinygemm2_stage4_split_k_conformance(buffers, operations) -> list["Finding"
     ]
 
 
+def _rmsnorm_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
+    x = _shape_of(buffers, "x")
+    coheres = (
+        x is not None
+        and len(x) == 3
+        and _shape_of(buffers, "y") == x
+        and _shape_of(buffers, "gamma") == (x[2],)
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.x.shape",
+            "RMSNorm normalizes the last axis, so y matches x and gamma spans it",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
 @dataclass(frozen=True)
 class _Profile:
     """One admitted lowering profile and every fact that follows from admitting it.
@@ -296,6 +313,20 @@ _PROFILES: Mapping[str, _Profile] = {
         },
         conformance=_flash_kmeans_assignment_full_conformance,
         emitter=emit_cutedsl,
+    ),
+    # The first operator admitted after the registry became one record. It needed no
+    # emitter change, no formula of its own and no entry anywhere else: an operator is
+    # now one row plus the Schedules that claim it.
+    "rmsnorm_b8_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_rmsnorm_b8_smoke",
+            "target": "sm_100a",
+            "entry_abi": "three_cuda_tensors_current_stream",
+        },
+        conformance=_rmsnorm_b8_smoke_conformance,
+        emitter=emit_triton,
     ),
     "tinygemm2_stage4_split_k": _Profile(
         toolchain={
