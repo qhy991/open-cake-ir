@@ -21,6 +21,7 @@ from .ir import (
     ScheduleParseError,
 )
 from .target import Target, TargetParseError
+from .ranking import Cost, rank as rank_candidates
 from .verifier import FindingSeverity, verify as verify_contracts
 
 
@@ -1270,6 +1271,47 @@ class Compiler:
                     )
                 )
         return findings
+
+    def rank(
+        self, assessments: Sequence[Assessment]
+    ) -> tuple[tuple["Cost", ...], tuple[str, ...]]:
+        """Order eligible candidates best-first, before any of them reaches a GPU.
+
+        This is the paper's pre-GPU filter stage, and the boundary it keeps is the point:
+        an Assessment that the gates refused is not ranked at all. Ranking a rejected
+        candidate would let a good score argue against a hard gate, and the gates are what
+        the harness is for. Rejected and unscorable candidates come back named rather than
+        dropped, so a caller cannot mistake the order for a complete view of its set.
+
+        The order carries no predicted time. `compiler/ranking.py` says why, and
+        `docs/ANALYSIS_CALIBRATION.md` records what measurement says about the order that
+        is produced: it separates good from bad and does not resolve fine distinctions.
+        """
+
+        eligible: list[Schedule] = []
+        withheld: list[str] = []
+        for assessment in assessments:
+            if assessment.compiler_revision_id != self._revision_id:
+                raise CompilerError("assessment belongs to a different Compiler Revision")
+            if not assessment.lowering_eligible:
+                withheld.append(assessment.schedule_id)
+                continue
+            definition = self._target_definitions.get(assessment.target)
+            if definition is None:
+                withheld.append(assessment.schedule_id)
+                continue
+            eligible.append(
+                Schedule.from_dict(
+                    _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
+                )
+            )
+        if not eligible:
+            return (), tuple(withheld)
+        target = Target.from_dict(
+            dict(self._target_definitions[assessments[0].target].document)
+        )
+        scored, unscored = rank_candidates(eligible, target)
+        return scored, tuple(withheld) + unscored
 
     def lower(self, assessment: Assessment) -> Lowering:
         """Lower an eligible Assessment to deterministic inspectable target source."""

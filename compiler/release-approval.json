@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "9357d3ed0d98cf5439d4cc2b6f6e8cb7c4f5436b90d830d03989d6e256e4169f"
+    "canonical_sha256": "67e7e040115d125a6cd82c374571f50dc728639737d3e96d690be0d8c76e73bd"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "candidate ranking before GPU time, ordered on what measurement supports"
+  "approval_basis": "Compiler.rank: the pre-GPU filter stage, gated candidates only"
 }

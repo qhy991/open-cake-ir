@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import subprocess
@@ -14,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 REVISION_PATH = ROOT / "compiler/revision.lock.json"
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler import Compiler  # noqa: E402
+from open_cake_ir.compiler import Compiler, CompilerError  # noqa: E402
 from open_cake_ir.compiler.release import build_release  # noqa: E402
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
 from open_cake_ir.lab import KernelSeed, lower_specialists  # noqa: E402
@@ -620,3 +621,54 @@ class CompilerContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CandidateRankingTest(unittest.TestCase):
+    """The pre-GPU filter stage, and the boundary it must not cross.
+
+    The paper's loop ranks a set of candidates before spending GPU time. What matters as
+    much as the order is that ranking happens *after* the gates and never argues with them:
+    a candidate the verifier refused has no score, because a good score for a rejected
+    Schedule would put the cost model in a position to overrule a hard gate.
+    """
+
+    def _variant(self, block_n: int, schedule_id: str) -> dict:
+        document = json.loads(
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        buffers = {item["name"]: item for item in document["buffers"]}
+        document["schedule_id"] = schedule_id
+        for axis in document["program_map"]["axes"]:
+            if axis["name"] == "token_block":
+                axis["tile"] = block_n
+        buffers["token_tile"]["shape"] = [block_n, 128]
+        buffers["best_index_tile"]["shape"] = [block_n]
+        for name in ("distance_tile", "cross", "scaled_cross"):
+            buffers[name]["shape"] = [block_n, 64]
+        for operation in document["operations"]:
+            if operation["kind"] == "mma" and "tile_shape" in operation["parameters"]:
+                operation["parameters"]["tile_shape"] = [block_n, 64, 128]
+        return document
+
+    def test_a_refused_candidate_is_withheld_from_the_order(self) -> None:
+        compiler = Compiler.load(ROOT, REVISION_PATH)
+        assessments = [
+            compiler.assess(self._variant(64, "fits-a")),
+            compiler.assess(self._variant(128, "fits-b")),
+            compiler.assess(self._variant(512, "no-cta-is-resident")),
+        ]
+        self.assertFalse(assessments[2].lowering_eligible)
+
+        scored, withheld = compiler.rank(assessments)
+
+        self.assertEqual({c.schedule_id for c in scored}, {"fits-a", "fits-b"})
+        self.assertIn("no-cta-is-resident", withheld)
+
+    def test_ranking_refuses_an_assessment_from_another_revision(self) -> None:
+        compiler = Compiler.load(ROOT, REVISION_PATH)
+        assessment = compiler.assess(self._variant(64, "fits-a"))
+        foreign = dataclasses.replace(assessment, compiler_revision_id="other-revision")
+        with self.assertRaisesRegex(CompilerError, "different Compiler Revision"):
+            compiler.rank([foreign])
