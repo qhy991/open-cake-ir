@@ -25,6 +25,7 @@ from typing import Iterable
 
 from .ir import (
     TMEM_COLUMN_BYTES,
+    OperandSource,
     AccessIndexKind,
     BufferMode,
     LoadMovement,
@@ -515,29 +516,47 @@ def _verify_instruction_commitments(
             out.add(
                 "MMA_INSTRUCTION_UNDECLARED",
                 f"{path}.instruction",
-                f"operation {operation.op_id!r} does not name an instruction contract; "
-                "the backend selects one and the choice is not inspectable",
+                f"operation {operation.op_id!r} does not commit to an MMA atom: "
+                "contract, shape, CTA group, operand source and operand major mode are "
+                "all left to the backend and none of them is inspectable",
                 category,
                 FindingSeverity.HINT,
             )
-        elif instruction not in target.instruction_contracts:
-            out.add(
-                "TARGET_INSTRUCTION_UNSUPPORTED",
-                f"{path}.instruction",
-                f"instruction {instruction!r} is not admitted by Target "
-                f"{target.target_id!r}",
-                category,
-            )
-
-        if getattr(operation.parameters, "instruction_shape", None) is None:
-            out.add(
-                "MMA_INSTRUCTION_SHAPE_UNDECLARED",
-                f"{path}.instruction_shape",
-                f"operation {operation.op_id!r} does not commit to an atom M/N/K; the "
-                "instruction shape is not the tile shape and the backend picks it",
-                category,
-                FindingSeverity.HINT,
-            )
+        else:
+            if instruction.contract not in target.instruction_contracts:
+                out.add(
+                    "TARGET_INSTRUCTION_UNSUPPORTED",
+                    f"{path}.instruction.contract",
+                    f"instruction {instruction.contract!r} is not admitted by Target "
+                    f"{target.target_id!r}",
+                    category,
+                )
+            if tile is not None and tile[0] != instruction.shape[0]:
+                out.add(
+                    "MMA_TILE_INSTRUCTION_MISMATCH",
+                    f"{path}.tile_shape",
+                    f"tile M {tile[0]} differs from atom M {instruction.shape[0]}",
+                    category,
+                )
+            if tile is not None and tile[2] % instruction.shape[2]:
+                out.add(
+                    "MMA_TILE_INSTRUCTION_MISMATCH",
+                    f"{path}.tile_shape",
+                    f"tile K {tile[2]} is not a whole number of atom K steps "
+                    f"({instruction.shape[2]})",
+                    category,
+                )
+            if instruction.operand_source is OperandSource.SHARED:
+                for name in operation.reads:
+                    operand = buffers.get(name)
+                    if operand is not None and operand.space is not MemorySpace.SHARED:
+                        out.add(
+                            "MMA_OPERAND_SOURCE_MISMATCH",
+                            f"{path}.instruction.operand_source",
+                            f"atom reads operands from shared memory but {name!r} is "
+                            f"{operand.space.value}",
+                            category,
+                        )
 
         if tile is None:
             out.add(

@@ -352,7 +352,6 @@ class HardwareCommitmentTest(unittest.TestCase):
             {
                 "ALLOCATION_TENSOR_COLUMNS_UNDECLARED",
                 "BUFFER_SWIZZLE_UNDECLARED",
-                "MMA_INSTRUCTION_SHAPE_UNDECLARED",
                 "MMA_INSTRUCTION_UNDECLARED",
                 "MMA_TILE_UNDECLARED",
                 "TMA_DESCRIPTOR_UNDECLARED",
@@ -413,7 +412,13 @@ class HardwareCommitmentTest(unittest.TestCase):
             _mutated(
                 ASSIGNMENT_FULL,
                 lambda d: d["operations"][2]["parameters"].update(
-                    instruction="tcgen05.mma.cta_group::1.kind::f16"
+                    instruction={
+                        "contract": "tcgen05.mma.cta_group::1.kind::f16",
+                        "shape": [128, 256, 16],
+                        "cta_group": 1,
+                        "operand_source": "shared",
+                        "operand_major": ["k", "k"],
+                    }
                 ),
             ),
             TARGET,
@@ -425,7 +430,13 @@ class HardwareCommitmentTest(unittest.TestCase):
             _mutated(
                 ASSIGNMENT_FULL,
                 lambda d: d["operations"][2]["parameters"].update(
-                    instruction="wgmma.mma_async.sync.aligned"
+                    instruction={
+                        "contract": "wgmma.mma_async.sync.aligned",
+                        "shape": [64, 128, 16],
+                        "cta_group": 1,
+                        "operand_source": "shared",
+                        "operand_major": ["k", "k"],
+                    }
                 ),
             ),
             TARGET,

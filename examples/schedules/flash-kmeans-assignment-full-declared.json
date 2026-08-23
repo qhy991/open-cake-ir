@@ -257,16 +257,24 @@
       "pipeline": "main",
       "parameters": {
         "accumulator": "fp32",
-        "instruction": "tcgen05.mma.cta_group::1.kind::f16",
+        "instruction": {
+          "contract": "tcgen05.mma.cta_group::1.kind::f16",
+          "shape": [
+            128,
+            256,
+            16
+          ],
+          "cta_group": 1,
+          "operand_source": "shared",
+          "operand_major": [
+            "k",
+            "k"
+          ]
+        },
         "tile_shape": [
           128,
           256,
           64
-        ],
-        "instruction_shape": [
-          128,
-          256,
-          16
         ]
       }
     },

@@ -19,6 +19,8 @@ from pathlib import Path
 from open_cake_ir.compiler.ir import (
     LoadMovement,
     MemorySpace,
+    OperandMajorMode,
+    OperandSource,
     OperationKind,
     Schedule,
     Swizzle,
@@ -46,7 +48,7 @@ class DeclaredScheduleTest(unittest.TestCase):
         findings = verify(Schedule.load(DECLARED), TARGET)
         self.assertEqual(findings, (), f"unexpected findings: {[str(f) for f in findings]}")
 
-    def test_the_retained_schedule_declines_eight_commitments(self) -> None:
+    def test_the_retained_schedule_declines_seven_commitments(self) -> None:
         findings = verify(Schedule.load(RETAINED), TARGET)
         self.assertEqual([f for f in findings if f.blocks_lowering], [])
         self.assertEqual(
@@ -55,7 +57,6 @@ class DeclaredScheduleTest(unittest.TestCase):
                 "ALLOCATION_TENSOR_COLUMNS_UNDECLARED",
                 "BUFFER_SWIZZLE_UNDECLARED",
                 "BUFFER_SWIZZLE_UNDECLARED",
-                "MMA_INSTRUCTION_SHAPE_UNDECLARED",
                 "MMA_INSTRUCTION_UNDECLARED",
                 "MMA_TILE_UNDECLARED",
                 "TMA_DESCRIPTOR_UNDECLARED",
@@ -76,7 +77,7 @@ class DeclaredScheduleTest(unittest.TestCase):
             for buffer in document["buffers"]:
                 buffer.pop("swizzle", None)
             for operation in document["operations"]:
-                for field in ("instruction", "tile_shape", "instruction_shape", "descriptor_box"):
+                for field in ("instruction", "tile_shape", "descriptor_box"):
                     operation["parameters"].pop(field, None)
         self.assertEqual(retained, declared)
 
@@ -103,14 +104,30 @@ class CommitmentsNowDerivableTest(unittest.TestCase):
         self.assertIn("PIPELINE_STAGES = 2", self.source)
         self.assertEqual(self.schedule.pipelines[0].stages, 2)
 
-    def test_mma_tile_and_instruction_shape(self) -> None:
-        self.assertIn("MMA_TILE = (128, 256, 64)", self.source)
-        self.assertIn("MMA_INSTRUCTION_SHAPE = (128, 256, 16)", self.source)
+    def test_the_mma_atom_is_one_commitment(self) -> None:
+        """Five module-level decisions in the artifact; one object in the Schedule."""
+
+        for marker in (
+            "MMA_TILE = (128, 256, 64)",
+            "MMA_INSTRUCTION_SHAPE = (128, 256, 16)",
+            "tcgen05.CtaGroup.ONE",
+            "tcgen05.OperandSource.SMEM",
+            "tcgen05.OperandMajorMode.K",
+        ):
+            self.assertIn(marker, self.source)
+
         mma = self.schedule.operation("dot_mma")
         assert mma is not None
+        atom = mma.parameters.instruction
+        assert atom is not None
         self.assertEqual(mma.parameters.tile_shape, (128, 256, 64))
-        self.assertEqual(mma.parameters.instruction_shape, (128, 256, 16))
-        self.assertIn(mma.parameters.instruction, TARGET.instruction_contracts)
+        self.assertEqual(atom.shape, (128, 256, 16))
+        self.assertEqual(atom.cta_group, 1)
+        self.assertIs(atom.operand_source, OperandSource.SHARED)
+        self.assertEqual(atom.operand_major, (OperandMajorMode.K, OperandMajorMode.K))
+        self.assertIn(atom.contract, TARGET.instruction_contracts)
+        # the tile is four atom steps deep in K
+        self.assertEqual(mma.parameters.tile_shape[2] // atom.shape[2], 4)
 
     def test_tensor_memory_column_range(self) -> None:
         """The artifact reserves the whole array for a half-sized accumulator."""
@@ -150,9 +167,6 @@ class ResidualGapTest(unittest.TestCase):
     """
 
     RESIDUAL = {
-        "cta_group": "tcgen05.CtaGroup.ONE -- one-SM versus two-SM cooperative MMA.",
-        "operand_source": "tcgen05.OperandSource.SMEM -- operands from SMEM or TMEM.",
-        "operand_major_mode": "OperandMajorMode.K for both A and B.",
         "epilogue_tiler": (
             "(size(acc, [0, 0]), size(acc, [0, 1]) // 4) -- the epilogue sub-tiling, "
             "including a magic divisor."
@@ -160,15 +174,12 @@ class ResidualGapTest(unittest.TestCase):
         "tmem_load_atom": "tcgen05.Ld32x32bOp(Repetition.x64) -- the TMEM copy atom.",
     }
 
-    def test_the_residual_gap_is_five_decisions(self) -> None:
-        self.assertEqual(len(self.RESIDUAL), 5)
+    def test_the_residual_gap_is_two_decisions(self) -> None:
+        self.assertEqual(len(self.RESIDUAL), 2)
 
     def test_each_residual_decision_is_present_in_the_artifact(self) -> None:
         source = ARTIFACT.read_text(encoding="utf-8")
         markers = {
-            "cta_group": "tcgen05.CtaGroup.ONE",
-            "operand_source": "tcgen05.OperandSource.SMEM",
-            "operand_major_mode": "tcgen05.OperandMajorMode.K",
             "epilogue_tiler": "epilogue_tiler",
             "tmem_load_atom": "Ld32x32bOp",
         }

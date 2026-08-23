@@ -116,6 +116,20 @@ class ReductionScope(str, Enum):
     CTA = "cta"
 
 
+class OperandSource(str, Enum):
+    """Where an MMA reads its operands from."""
+
+    SHARED = "shared"
+    TENSOR = "tensor"
+
+
+class OperandMajorMode(str, Enum):
+    """Operand major axis. `tcgen05.OperandMajorMode` in the retained artifact."""
+
+    K = "k"
+    MN = "mn"
+
+
 class Swizzle(str, Enum):
     """Shared-memory swizzle commitment.
 
@@ -573,17 +587,61 @@ class LoadParameters:
 
 
 @dataclass(frozen=True)
+class MmaInstruction:
+    """One MMA atom commitment.
+
+    The retained artifact spreads this across five module-level decisions:
+    MMA_INSTRUCTION_SHAPE, the contract selected by MmaF16BF16Op, tcgen05.CtaGroup.ONE,
+    tcgen05.OperandSource.SMEM and OperandMajorMode.K for both operands. They are one
+    choice and belong in one object; naming them separately is how they drifted out of
+    the IR in the first place.
+    """
+
+    contract: str
+    shape: tuple[int, int, int]
+    cta_group: int
+    operand_source: OperandSource
+    operand_major: tuple[OperandMajorMode, OperandMajorMode]
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "MmaInstruction":
+        obj = _strict_object(
+            value,
+            required={"contract", "shape", "cta_group", "operand_source", "operand_major"},
+            context=context,
+        )
+        shape = _object_list(obj["shape"], f"{context}.shape")
+        if len(shape) != 3:
+            raise ScheduleParseError(f"{context}.shape must declare exactly M, N and K")
+        major = _object_list(obj["operand_major"], f"{context}.operand_major")
+        if len(major) != 2:
+            raise ScheduleParseError(
+                f"{context}.operand_major must declare a mode for A and for B"
+            )
+        cta_group = _positive_int(obj["cta_group"], f"{context}.cta_group")
+        if cta_group not in (1, 2):
+            raise ScheduleParseError(f"{context}.cta_group must be 1 or 2")
+        return cls(
+            _string(obj["contract"], f"{context}.contract"),
+            tuple(
+                _positive_int(extent, f"{context}.shape[{index}]")
+                for index, extent in enumerate(shape)
+            ),
+            cta_group,
+            _enum(OperandSource, obj["operand_source"], f"{context}.operand_source"),
+            tuple(
+                _enum(OperandMajorMode, mode, f"{context}.operand_major[{index}]")
+                for index, mode in enumerate(major)
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class MmaParameters:
     accumulator: DType
     formula: MmaFormula | None
-    instruction: str | None
+    instruction: MmaInstruction | None
     tile_shape: tuple[int, int, int] | None
-    instruction_shape: tuple[int, int, int] | None
-    """The atom's M/N/K, which is not the tile's.
-
-    The retained artifact commits to MMA_INSTRUCTION_SHAPE (128, 256, 16) and
-    MMA_TILE (128, 256, 64): the tile is four instruction steps deep in K.
-    """
 
 
 @dataclass(frozen=True)
@@ -651,7 +709,7 @@ def _operation_parameters(
         obj = _strict_object(
             value,
             required={"accumulator"},
-            optional={"formula", "instruction", "tile_shape", "instruction_shape"},
+            optional={"formula", "instruction", "tile_shape"},
             context=context,
         )
         accumulator = _enum(DType, obj["accumulator"], f"{context}.accumulator")
@@ -676,9 +734,10 @@ def _operation_parameters(
         return MmaParameters(
             accumulator,
             None if formula is None else _enum(MmaFormula, formula, f"{context}.formula"),
-            None if instruction is None else _string(instruction, f"{context}.instruction"),
+            None
+            if instruction is None
+            else MmaInstruction.from_dict(instruction, f"{context}.instruction"),
             mnk("tile_shape"),
-            mnk("instruction_shape"),
         )
 
     if kind is OperationKind.EPILOGUE:
