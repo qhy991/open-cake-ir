@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "1b198d78cfab51e851f9306ec0d32f6909aa5a63f898366a8cb74f7d1c53868e"
+    "canonical_sha256": "cdaa702f0d528018abb2c1e4f32426eb5815f174e2cfc55860c0f5e809bb93b1"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "typed pipeline kind derives from producer semantics; reject ambiguous or unsupported mbarrier producers"
+  "approval_basis": "a per-role register budget divides the CTA allocation the residency commitment declares"
 }

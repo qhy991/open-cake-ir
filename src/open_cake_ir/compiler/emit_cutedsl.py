@@ -524,6 +524,16 @@ class _Emitter:
 
     def _emit_role_body(self, role: Role, indent: int) -> None:
         pad = " " * indent
+        # A declared split reaches the hardware here. The direction is relative to the
+        # CTA's launch allocation, which is what the verifier held the split to, so a
+        # role asking for less than the whole releases and one asking for more claims.
+        budget = role.registers_per_thread
+        if budget is not None:
+            total = self.schedule.residency.registers_per_thread
+            if budget < total:
+                self.line(f"{pad}cute.arch.setmaxregister_decrease({budget})")
+            elif budget > total:
+                self.line(f"{pad}cute.arch.setmaxregister_increase({budget})")
         if role is self._tmem_owner():
             self.line(f"{pad}tmem.allocate(TMEM_COLUMNS)")
         if any(

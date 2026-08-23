@@ -300,6 +300,20 @@ def _object_list(value: Any, context: str, *, allow_empty: bool = True) -> list[
 class Role:
     name: str
     warps: tuple[int, ...]
+    registers_per_thread: int | None
+    """What this role's threads hold, when the roles divide the CTA's budget.
+
+    `Residency.registers_per_thread` is the whole CTA's allocation, fixed at launch.
+    `setmaxnreg` redistributes *within* that: a role that loads can drop to a small budget
+    so a role that accumulates can take more, and the total is conserved. So this is the
+    distribution and residency is the total, and the verifier holds the two to each other
+    rather than letting them drift apart.
+
+    All four surveyed libraries do this and none of them can say it in a Schedule today --
+    CUTLASS deallocates a transform role to 48 and allocates its accumulator role to 256,
+    FlashInfer holds an entirely `Empty` role at 24 so its softmax roles can have 192, and
+    the megakernel splits 64 against 104.
+    """
 
     @property
     def warp_extent(self) -> int:
@@ -313,7 +327,12 @@ class Role:
 
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "Role":
-        obj = _strict_object(value, required={"name", "warps"}, context=context)
+        obj = _strict_object(
+            value,
+            required={"name", "warps"},
+            optional={"registers_per_thread"},
+            context=context,
+        )
         warps = _object_list(obj["warps"], f"{context}.warps", allow_empty=False)
         parsed = tuple(
             _nonnegative_int(warp, f"{context}.warps[{index}]")
@@ -327,7 +346,16 @@ class Role:
                 f"{context}.warps must be one ascending contiguous interval; "
                 f"got {list(parsed)}"
             )
-        return cls(_string(obj["name"], f"{context}.name"), parsed)
+        registers = obj.get("registers_per_thread")
+        if registers is not None:
+            registers = _positive_int(registers, f"{context}.registers_per_thread")
+            # setmaxnreg takes a multiple of eight in [24, 256]; a value outside that is
+            # not a tuning choice the backend can decline, it is an illegal instruction.
+            if registers % 8 or not 24 <= registers <= 256:
+                raise ScheduleParseError(
+                    f"{context}.registers_per_thread must be a multiple of 8 in [24, 256]"
+                )
+        return cls(_string(obj["name"], f"{context}.name"), parsed, registers)
 
 
 @dataclass(frozen=True)

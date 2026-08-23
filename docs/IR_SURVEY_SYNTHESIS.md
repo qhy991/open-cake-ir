@@ -83,7 +83,14 @@ static triple; one Schedule is one kernel with a fixed, statically ordered opera
 ## What to do about each
 
 **Group one is work, and it should be ordered by evidence.** A register budget on `Role`
-is asked for by all four sources and is small. Per-operand load movement and the missing
+is asked for by all four sources and is small. *Done*: `Role.registers_per_thread` states
+the split, and because `setmaxnreg` redistributes a launch-time allocation rather than
+creating registers, the verifier holds the roles' total to the CTA allocation the residency
+commitment declares, refuses a split that does not span whole warpgroups, and refuses a
+partial one. The budget reaches the CuTe-DSL backend as `setmaxregister_increase` and
+`_decrease`. It is *not* hardware-verified: CuTe-DSL's compiled bindings are not installed
+on this host, so the check that the declaration survives to the device -- the one that
+caught a non-compiling cache modifier earlier -- could not be run. Per-operand load movement and the missing
 swizzle mode are each one kernel away from being needed. Pipeline kind and the carveout
 dependency are real design, not fields.
 

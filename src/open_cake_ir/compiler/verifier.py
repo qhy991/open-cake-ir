@@ -1569,6 +1569,78 @@ def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
             )
 
 
+def _verify_role_register_split(schedule: Schedule, target: Target, out: _Collector) -> None:
+    """Hold a role-by-role register split to the CTA budget it divides.
+
+    `setmaxnreg` redistributes a CTA's launch-time allocation; it does not create
+    registers. So a Schedule whose roles ask for more in total than the CTA was given is
+    asking the hardware for something it cannot do, and one that asks for less is leaving
+    registers unreachable rather than choosing to.
+
+    The instruction is warpgroup-wide, so a role that names a budget must occupy whole
+    warpgroups. A role sharing a warpgroup with another role cannot have its own budget --
+    they would issue conflicting `setmaxnreg` from the same warpgroup.
+    """
+
+    category = FindingCategory.HARDWARE_CONFORMANCE
+    budgeted = [role for role in schedule.roles if role.registers_per_thread is not None]
+    if not budgeted:
+        return
+
+    warps_per_group = target.warps_per_warpgroup
+    for index, role in enumerate(schedule.roles):
+        if role.registers_per_thread is None:
+            continue
+        first, count = role.warps[0], len(role.warps)
+        if first % warps_per_group or count % warps_per_group:
+            out.add(
+                "ROLE_REGISTERS_NOT_WARPGROUP_ALIGNED",
+                f"roles[{index}].registers_per_thread",
+                f"role {role.name!r} holds warps {list(role.warps)}; a register budget is "
+                f"issued per warpgroup, so it must start on and span whole groups of "
+                f"{warps_per_group}",
+                category,
+            )
+
+    if len(budgeted) != len(schedule.roles):
+        unbudgeted = [role.name for role in schedule.roles if role.registers_per_thread is None]
+        out.add(
+            "ROLE_REGISTERS_PARTIAL",
+            "roles",
+            f"roles {unbudgeted} declare no register budget while others do; the split "
+            "divides one CTA allocation, so it is stated for every role or for none",
+            category,
+        )
+        return
+
+    commitment = schedule.residency
+    total = commitment.registers_per_thread if commitment is not None else None
+    if total is None:
+        out.add(
+            "ROLE_REGISTERS_WITHOUT_TOTAL",
+            "residency.registers_per_thread",
+            "a role-by-role register split divides the CTA's allocation; declare the "
+            "allocation it divides",
+            category,
+        )
+        return
+
+    threads = schedule.total_warp_extent * target.warp_size
+    distributed = sum(
+        len(role.warps) * target.warp_size * role.registers_per_thread
+        for role in schedule.roles
+    )
+    if distributed != total * threads:
+        out.add(
+            "ROLE_REGISTERS_NOT_CONSERVED",
+            "roles",
+            f"the roles distribute {distributed} registers but the CTA was allocated "
+            f"{total * threads} ({total} per thread across {threads} threads); "
+            "setmaxnreg redistributes an allocation, it does not change its size",
+            category,
+        )
+
+
 def _verify_residency_commitment(
     schedule, target: Target, upper_bound, out: _Collector
 ) -> None:
@@ -1580,6 +1652,7 @@ def _verify_residency_commitment(
     author its occupancy and telling it which declaration to change.
     """
 
+    _verify_role_register_split(schedule, target, out)
     commitment = schedule.residency
     if commitment is None:
         return

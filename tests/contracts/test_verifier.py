@@ -17,7 +17,7 @@ import json
 import unittest
 from pathlib import Path
 
-from open_cake_ir.compiler.ir import Schedule
+from open_cake_ir.compiler.ir import Schedule, ScheduleParseError
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.verifier import (
     Finding,
@@ -661,3 +661,81 @@ class LoopNestRuleTest(unittest.TestCase):
             )
         )
         self.assertIn("LOOP_BODY_ORDER", _codes(findings))
+
+
+class RoleRegisterSplitTest(unittest.TestCase):
+    """A per-role register budget divides the CTA's allocation; it does not add to it.
+
+    All four surveyed libraries split registers by role -- one deallocates a transform
+    role so its accumulator role can take more, one holds an entirely empty role at the
+    minimum for the same reason. None of it could be written down here, so the emitter had
+    no budget to honour and the analysis had no split to reason about.
+    """
+
+    def _split(self, **changes) -> dict:
+        document = json.loads(
+            (ROOT / "corpus/schedules/rmsnorm-b8-smoke.json").read_text(encoding="utf-8")
+        )
+        document["roles"] = [
+            {"name": "load", "warps": [0, 1, 2, 3], "registers_per_thread": 64},
+            {"name": "compute", "warps": [4, 5, 6, 7], "registers_per_thread": 192},
+        ]
+        for operation in document["operations"]:
+            operation["role"] = "load" if operation["kind"] == "load" else "compute"
+        document["residency"] = {"registers_per_thread": 128}
+        for key, value in changes.items():
+            if key == "warps":
+                for role, warps in zip(document["roles"], value):
+                    role["warps"] = warps
+            elif key == "budgets":
+                for role, budget in zip(document["roles"], value):
+                    if budget is None:
+                        role.pop("registers_per_thread", None)
+                    else:
+                        role["registers_per_thread"] = budget
+            elif key == "total":
+                if value is None:
+                    # An empty residency block is a parse error in its own right, so the
+                    # absent case is the block being absent.
+                    document.pop("residency", None)
+                else:
+                    document["residency"]["registers_per_thread"] = value
+        return document
+
+    def _codes(self, document: dict) -> set[str]:
+        return {
+            f.code
+            for f in _blocking(verify(Schedule.from_dict(document), TARGET))
+            if f.code.startswith("ROLE_REGISTERS")
+        }
+
+    def test_a_conserved_split_is_accepted(self) -> None:
+        # 64 and 192 across four warps each is exactly 128 per thread over eight warps.
+        self.assertEqual(self._codes(self._split()), set())
+
+    def test_a_split_that_does_not_add_up_is_refused(self) -> None:
+        for label, budgets in (("under", (64, 128)), ("over", (128, 192))):
+            with self.subTest(direction=label):
+                self.assertIn(
+                    "ROLE_REGISTERS_NOT_CONSERVED", self._codes(self._split(budgets=budgets))
+                )
+
+    def test_a_budget_must_span_whole_warpgroups(self) -> None:
+        # setmaxnreg is issued by a whole warpgroup, so two roles sharing one would issue
+        # conflicting budgets from the same instruction.
+        codes = self._codes(self._split(warps=([0, 1], [2, 3, 4, 5, 6, 7])))
+        self.assertIn("ROLE_REGISTERS_NOT_WARPGROUP_ALIGNED", codes)
+
+    def test_a_partial_split_is_refused(self) -> None:
+        self.assertIn("ROLE_REGISTERS_PARTIAL", self._codes(self._split(budgets=(64, None))))
+
+    def test_a_split_without_the_allocation_it_divides_is_refused(self) -> None:
+        self.assertIn("ROLE_REGISTERS_WITHOUT_TOTAL", self._codes(self._split(total=None)))
+
+    def test_an_illegal_register_count_is_a_parse_error(self) -> None:
+        # Not a tuning choice the backend can decline: setmaxnreg takes a multiple of
+        # eight in [24, 256] and anything else is an illegal instruction.
+        for bad in (100, 20, 264):
+            with self.subTest(registers=bad):
+                with self.assertRaisesRegex(ScheduleParseError, "multiple of 8"):
+                    Schedule.from_dict(self._split(budgets=(bad, 192)))

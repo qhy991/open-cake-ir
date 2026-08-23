@@ -119,6 +119,18 @@ class Target:
     def warp_size(self) -> int:
         return 32
 
+    @property
+    def warps_per_warpgroup(self) -> int:
+        """Warps that issue a warpgroup-wide instruction together.
+
+        A constant of the ISA rather than a device observation, like `warp_size`, so it
+        lives here instead of in a Target document. `setmaxnreg` is warpgroup-wide, which
+        is what makes this a legality rule on a role's warp range rather than a
+        preference.
+        """
+
+        return 4
+
     @classmethod
     def load(cls, path: str | Path) -> "Target":
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))

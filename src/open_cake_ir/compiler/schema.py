@@ -240,7 +240,15 @@ def schedule_schema() -> dict[str, Any]:
                             "uniqueItems": True,
                             "items": _NONNEGATIVE,
                         },
-                    }
+                    },
+                    {
+                        "registers_per_thread": {
+                            "type": "integer",
+                            "minimum": 24,
+                            "maximum": 256,
+                            "multipleOf": 8,
+                        }
+                    },
                 ),
             },
             "allocations": {
