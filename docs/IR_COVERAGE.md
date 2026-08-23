@@ -7,8 +7,8 @@ and TMEM lifecycles, cluster-scoped operations (arXiv:2608.12629v1 Appendix A).
 
 This repository skipped that step and grew its vocabulary one operator at a time. This note
 is the missing survey, run against a second and independent source: kernel work actually
-carried out on this machine on B200 -- the SGLang CUTLASS FP8 grouped-MoE sweep (16 paired
-SGLang/CUTLASS worktrees), the SGLang MoE serving integration, and nine hand-written PTX
+carried out on this machine on B200 -- the SGLang CUTLASS FP8 grouped-MoE sweep (16 SGLang worktrees, each paired with a
+private CUTLASS fork bound per build -- most of the knobs live on the CUTLASS side), the SGLang MoE serving integration, and nine hand-written PTX
 phases on the Llama-3.2-1B QKV projection.
 
 The two sources disagree in an informative way, and that disagreement is the point.
@@ -70,6 +70,36 @@ Growing the IR from toy operators found the arithmetic gaps -- a reduction that 
 sum an arbitrary axis, no way to square or rescale, broadcasting that could not be stated.
 Real kernels find placement and resource gaps instead. Both halves are needed and only one
 had been exercised.
+
+## The surveyed work already writes the commitments the IR cannot hold
+
+Every PTX phase states its acceptance criteria as a resource budget: at most 48 registers
+with zero spill, at most 4096 bytes of shared memory, at most one barrier, no global
+workspace, no atomics, no second kernel. The CUTLASS side does the same through
+`static_assert` -- shared storage under 116736 bytes so two CTAs fit, exactly 64 TMEM
+columns so two CTAs own disjoint regions, `MinBlocksPerMultiprocessor == 2`.
+
+These are commitments a Schedule should carry and a verifier should gate. They are written
+as prose in a task document, or as an assertion inside a template, because there is nowhere
+in the IR to put them. That is the strongest argument for the residency and register work
+below: the demand already exists and is being met outside the system.
+
+It also changes what the analysis is for. Today it derives an occupancy number and reports
+it. If a Schedule could declare the residency it needs, the same analysis would be checking
+a claim instead, which is a gate rather than a remark.
+
+## How the surveyed work runs its loop
+
+Worth recording because it is closer to the paper's four-stage loop than this repository's
+own campaigns are. Each PTX phase freezes the geometry and changes exactly one axis, and
+each carries a citation of the previous phase's measured outcome. Four of the nine did not
+cross their bar, and those negative results are retained with the falsifier that produced
+them -- two rows per warp regressed because active warps per scheduler fell from 4.466 to
+2.675, wider loads halved request count while leaving sectors and DRAM bytes unchanged.
+
+One phase shipped no kernel at all, because its own noise rule made a clean pre-edit
+measurement a prerequisite and the measurement was noisy. That is the discipline the
+paper's harness is supposed to enforce, arrived at independently.
 
 ## Ordering
 
