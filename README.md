@@ -4,6 +4,10 @@
 [CAKE: Compiler-Agent Co-Design for Frontier Kernel Evolution](https://arxiv.org/abs/2608.12629v1).
 It does not contain or claim to reproduce the unpublished CAKE implementation.
 
+**想先看系统全貌？** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 用六张图说明 Context 依赖方向、
+Compiler 管线、Schedule 的硬件承诺、一次 Study Run 的状态机、Compiler Revision 的发布生命周期，
+以及本仓库与论文架构的逐项差距。
+
 **第一次接触编译器或 GPU kernel？请从
 [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) 开始。** 它用一个已经在 B200 上验证的真实例子解释
 Schedule、Assessment、Lowering、CUBIN 和正确性检查，并提供可直接复制的命令。
@@ -75,11 +79,12 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ### Maintainer or auditor
 
-1. [`CONTEXT-MAP.md`](CONTEXT-MAP.md) — canonical domain language.
-2. [`docs/ACCEPTANCE_GATES.md`](docs/ACCEPTANCE_GATES.md) — verified gates and claim boundaries.
-3. [`docs/MIGRATION_PLAN.md`](docs/MIGRATION_PLAN.md) and
+1. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the six diagrams, including the gap against the paper.
+2. [`CONTEXT-MAP.md`](CONTEXT-MAP.md) — canonical domain language.
+3. [`docs/ACCEPTANCE_GATES.md`](docs/ACCEPTANCE_GATES.md) — verified gates and claim boundaries.
+4. [`docs/MIGRATION_PLAN.md`](docs/MIGRATION_PLAN.md) and
    [`migration/CAPABILITY_MATRIX.md`](migration/CAPABILITY_MATRIX.md) — migration provenance.
-4. [`docs/adr/`](docs/adr/) — durable architecture decisions, including Rust and tool-rich optimization.
+5. [`docs/adr/`](docs/adr/) — durable architecture decisions, including Rust and tool-rich optimization.
 
 ## Migration rule
 

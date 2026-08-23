@@ -13,6 +13,9 @@ For intuition before the formal vocabulary:
 | Evaluation | Is one sealed Candidate correct, and was its measurement valid? |
 | Evidence | Can the raw observations and terminal decision be independently replayed? |
 
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) draws these relationships, the Compiler pipeline and the
+Revision lifecycle, and marks where the implementation is still short of the paper.
+
 ## Contexts
 
 - [Compiler](docs/contexts/compiler/CONTEXT.md) — defines and lowers typed hardware-explicit schedules.
