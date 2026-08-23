@@ -14,6 +14,7 @@ from open_cake_ir.evaluation import (  # noqa: E402
     BrokerAttempt,
     CudaLaunchManifest,
     EvaluationProtocol,
+    EvaluationReceipt,
     ExactShapeDispatcher,
     LaunchableCandidate,
     LaunchObservation,
@@ -726,3 +727,70 @@ class EvaluationContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AttributionAssayTest(unittest.TestCase):
+    """Profiler evidence is a separate assay that structurally cannot report a latency.
+
+    Nsight Compute serialises kernels and replays them, inflating every span it observes.
+    A harness that profiled the timed run and then reported its latency would be reporting
+    the profiler's overhead as the candidate's cost. Rather than documenting that, the
+    attribution purpose refuses to carry timing at all, so the mistake is unrepresentable.
+    """
+
+    def _receipt(self, **changes):
+        fields = {
+            "candidate_sha256": "a" * 64,
+            "workload_sha256": "b" * 64,
+            "evaluation_protocol_sha256": "c" * 64,
+            "purpose": "attribution",
+            "case_id": "headline_b32",
+            "correctness_passed": True,
+            "correctness": {"tie_aware_distance_match": True},
+            "kernel_calls": 1,
+            "fallback_calls": 0,
+            "launch_receipt_sha256": "d" * 64,
+            "timing": None,
+        }
+        fields.update(changes)
+        return EvaluationReceipt(**fields)
+
+    def test_an_attribution_receipt_may_not_carry_timing(self) -> None:
+        self._receipt()  # timing None is the only admissible shape
+        with self.assertRaisesRegex(ValueError, "identity or route differs"):
+            self._receipt(timing={"median_ms": 1.0})
+
+    def test_an_attribution_protocol_may_not_declare_a_timing_method(self) -> None:
+        EvaluationProtocol(
+            protocol_id="attribution-v1",
+            purpose="attribution",
+            workload_sha256="b" * 64,
+            case_id="headline_b32",
+            timing="none",
+        )
+        with self.assertRaisesRegex(ValueError, "EvaluationProtocol differs"):
+            EvaluationProtocol(
+                protocol_id="attribution-v1",
+                purpose="attribution",
+                workload_sha256="b" * 64,
+                case_id="headline_b32",
+                timing="paired_cupti",
+            )
+
+    def test_the_artifact_roles_differ_from_a_timed_assay(self) -> None:
+        # A timed assay owes timing samples; an attribution assay owes a profile. Asking
+        # for both would mean one of them was produced by a run that could not produce it.
+        launch = json.dumps({"purpose": "attribution"}, sort_keys=True).encode()
+        correctness = json.dumps(
+            {"passed": True, "metrics": {"tie_aware_distance_match": True}},
+            sort_keys=True,
+        ).encode()
+        with self.assertRaisesRegex(ValueError, "artifact custody differs"):
+            self._receipt(
+                launch_receipt_sha256=sha256(launch).hexdigest(),
+                artifact_payloads={
+                    "correctness_output": correctness,
+                    "launch_receipt": launch,
+                    "timing_samples": b"[]",
+                },
+            )

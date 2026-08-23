@@ -37,8 +37,8 @@
     }
   ],
   "current": {
-    "canonical_sha256": "4fb781f9d7da2522ce794eea74503c47e98449d3b4d6eec75d4acd809f5bf8e5",
-    "descriptor_raw_sha256": "3d16078cfcd992d80a9dfc73cbc47ce03931a1e805513894ff12e46dd258cda0",
+    "canonical_sha256": "a150438262ed000110bc9119382762e4a037a3e7a155e6abb1db305c073677b8",
+    "descriptor_raw_sha256": "729971a46fe450c72192326230a7c8cb83cc0f9945d64928a51f80578f55fcea",
     "executor_id": "open-cake-ir-b200-v7",
     "path": "runtime/executors/open-cake-ir-b200-v7.json",
     "source_count": 32
