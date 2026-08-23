@@ -146,7 +146,8 @@
         "x_tile"
       ],
       "parameters": {
-        "movement": "global"
+        "movement": "global",
+        "reuse": "reused"
       }
     },
     {
@@ -248,7 +249,8 @@
         "gamma_tile"
       ],
       "parameters": {
-        "movement": "global"
+        "movement": "global",
+        "reuse": "streamed"
       }
     },
     {

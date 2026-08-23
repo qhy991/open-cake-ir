@@ -26,6 +26,7 @@ from .ir import (
     DType,
     EpilogueFormula,
     LoadMovement,
+    LoadReuse,
     MemorySpace,
     OperandMajorMode,
     OperandSource,
@@ -73,6 +74,7 @@ _PARAMETERS = {
     OperationKind.LOAD: _object(
         {"movement": _enum(LoadMovement)},
         {
+            "reuse": _enum(LoadReuse),
             "descriptor_box": {
                 "type": "array",
                 "minItems": 1,

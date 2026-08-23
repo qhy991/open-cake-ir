@@ -17,6 +17,7 @@ from __future__ import annotations
 from .emit import Emission, EmitError, require as _require
 from .ir import (
     ElementwiseOp,
+    LoadReuse,
     AccessIndexKind,
     AccessMap,
     ArgminTieBreak,
@@ -437,6 +438,16 @@ class _TritonEmitter:
         if mask:
             self.line(f"{pad}    mask={mask},")
             self.line(f"{pad}    other=0.0,")
+        # The declared intent, in the terms this backend uses to say it: an operand read
+        # again is asked to stay resident, one read once is asked not to displace it.
+        reuse = operation.parameters.reuse
+        if reuse is LoadReuse.REUSED:
+            self.line(f'{pad}    eviction_policy="evict_last",')
+        elif reuse is LoadReuse.STREAMED:
+            # `.cg` alone: it caches in L2 and bypasses L1, which is the no-allocate the
+            # streamed operand wants. ptxas rejects `.cg` combined with `.evict_first`,
+            # and an eviction hint would allocate the line this is trying not to take.
+            self.line(f'{pad}    cache_modifier=".cg",')
         self.line(f"{pad})")
 
     def _emit_reduction_state(self, pad: str) -> None:

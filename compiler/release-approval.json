@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "71494cc14703680dfac8a462e8f18c9b6406127f34db9012231e0e8d4a78a03a"
+    "canonical_sha256": "5cd1d7ff4bbfa58af469a40293125677fd70f244c2829e21952967910a164177"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "persistent grid sized from the residency commitment; traversal order for the walk"
+  "approval_basis": "operand reuse intent reaches the cache controls each backend uses"
 }

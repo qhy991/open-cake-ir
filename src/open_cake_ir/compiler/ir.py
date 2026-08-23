@@ -94,6 +94,20 @@ class LoadMovement(str, Enum):
     TMA = "tma"
 
 
+class LoadReuse(str, Enum):
+    """Whether an operand is read again, which decides what it should do to the cache.
+
+    The surveyed PTX work toggles exactly this per operand: the activation every warp in
+    the CTA reads is asked to stay resident, and the weight each warp reads once is asked
+    not to displace it. Stated as intent rather than as a cache modifier, because the
+    modifier that expresses it differs per backend while the fact about the operand does
+    not (P8, and P2 -- the decision stays visible).
+    """
+
+    REUSED = "reused"
+    STREAMED = "streamed"
+
+
 class ArgminTieBreak(str, Enum):
     LOWEST_INDEX = "lowest_index"
 
@@ -657,6 +671,7 @@ class AccessMap:
 class LoadParameters:
     movement: LoadMovement
     descriptor_box: tuple[int, ...] | None
+    reuse: LoadReuse | None
     """TMA descriptor box extents -- the coordinate commitment the paper requires.
 
     Without it `movement: tma` is a flag: it says a bulk-tensor copy happens but not
@@ -846,7 +861,10 @@ def _operation_parameters(
 ) -> OperationParameters:
     if kind is OperationKind.LOAD:
         obj = _strict_object(
-            value, required={"movement"}, optional={"descriptor_box"}, context=context
+            value,
+            required={"movement"},
+            optional={"descriptor_box", "reuse"},
+            context=context,
         )
         movement = _enum(LoadMovement, obj["movement"], f"{context}.movement")
         box = obj.get("descriptor_box")
@@ -860,7 +878,12 @@ def _operation_parameters(
                 _positive_int(extent, f"{context}.descriptor_box[{index}]")
                 for index, extent in enumerate(extents)
             )
-        return LoadParameters(movement, box)
+        reuse = obj.get("reuse")
+        return LoadParameters(
+            movement,
+            box,
+            None if reuse is None else _enum(LoadReuse, reuse, f"{context}.reuse"),
+        )
 
     if kind is OperationKind.MMA:
         obj = _strict_object(
