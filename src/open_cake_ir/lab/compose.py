@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 from typing import Mapping, cast
 
 from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import (
     CudaLaunchManifest,
     CuptiPortfolioAssay,
@@ -198,9 +199,11 @@ def _materialize_run_references(
         cast(dict[str, object], skeleton["metadata"])[
             "workload_contract_sha256"
         ] = workload_contract.canonical_sha256
+        # Generated from the typed IR at bundle time. Checking a projection in would
+        # make it a second copy of facts the Compiler already owns, and every Turn
+        # prompt embeds these bytes.
         _write_reference(
-            references / "schedule.schema.json",
-            (root / "compiler/schedule.schema.json").read_bytes(),
+            references / "schedule.schema.json", schedule_schema_bytes()
         )
         _write_reference(
             references / "schedule-authoring.md",

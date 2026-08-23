@@ -106,7 +106,14 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--qualification-anchor",
                 str(anchor_path),
                 "--executor",
-                str(project / "runtime/executors/open-cake-ir-b200-v6.json"),
+                str(
+                    project
+                    / json.loads(
+                        (project / "inventory/EXECUTOR_REVISIONS.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )["current"]["path"]
+                ),
                 "--runtime-config",
                 str(runtime_path),
                 "--study-id",

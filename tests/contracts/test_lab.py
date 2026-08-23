@@ -307,7 +307,7 @@ class LabContractTests(unittest.TestCase):
 
             self.assertFalse(evidence_root.exists())
 
-    def test_current_study_successors_bind_executor_v6(self) -> None:
+    def test_current_study_successors_bind_the_current_executor(self) -> None:
         for name in (
             "matched-search-infrastructure-v4.json",
             "matched-search-system-qualification-v4.json",
@@ -317,10 +317,13 @@ class LabContractTests(unittest.TestCase):
         ):
             lock = Lab(ROOT).preflight(ROOT / "contracts/studies" / name)
             executor = lock.document["execution"]["executor_revision"]
-            self.assertEqual(executor["executor_id"], "open-cake-ir-b200-v6", name)
+            current = json.loads(
+                (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
+            )["current"]
+            self.assertEqual(executor["executor_id"], current["executor_id"], name)
             self.assertEqual(
                 executor["canonical_sha256"],
-                "28ae0cd7f4c09f0b2f6d0335e674f56447d33ecef29a41a6a74835fce9d89f4a",
+                current["canonical_sha256"],
                 name,
             )
 
@@ -777,7 +780,12 @@ class LabContractTests(unittest.TestCase):
                 cwd=root,
                 executor=ExecutorRevision.load(
                     ROOT,
-                    ROOT / "runtime/executors/open-cake-ir-b200-v6.json",
+                    ROOT
+                    / json.loads(
+                        (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )["current"]["path"],
                 ),
                 service_user=pwd.getpwuid(os.geteuid()).pw_name,
                 service_group=grp.getgrgid(os.getegid()).gr_name,

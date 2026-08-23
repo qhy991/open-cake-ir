@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Mapping, Sequence, cast
 
+from .emit_cutedsl import EmitError, emit as emit_cutedsl
 from .ir import Schedule, ScheduleParseError
 from .target import Target, TargetParseError
 from .verifier import verify as verify_contracts
@@ -175,17 +176,17 @@ _LOWERING_ASSETS = {
         "__SCHEDULE_SHA256__",
         "cake_flash_kmeans_assign",
     ),
-    "flash_kmeans_assignment_full": (
-        "src/open_cake_ir/compiler/assets/flash_kmeans_assignment_full.py.tmpl",
-        "__SCHEDULE_SHA256__",
-        "cake_flash_kmeans_assignment_full",
-    ),
     "tinygemm2_stage4_split_k": (
         "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
         "@@SCHEDULE_SHA256@@",
         "cake_tinygemm2_stage4_split_k",
     ),
 }
+# A profile here is generated from its Schedule rather than read from a checked-in file.
+# The Schedule must determine the source; emission refuses to invent a decision, so an
+# under-declared Schedule is a Finding rather than a silently different kernel.
+_EMITTED_PROFILES = {"flash_kmeans_assignment_full"}
+
 _TOOLCHAIN_REQUIREMENTS = {
     "flash_kmeans_b32_smoke": {
         "source_language": "python",
@@ -206,8 +207,10 @@ _TOOLCHAIN_REQUIREMENTS = {
         "entry_abi": "tinygemm2_tensor_map_v1",
     },
 }
+# A whole-document digest pinned each profile whose lowering was a checked-in file: the
+# file only matched one Schedule, so nothing else could be admitted. A profile that
+# emits needs no pin, because the source follows the Schedule.
 _CLOSED_PROFILE_SEMANTICS = {
-    "flash_kmeans_assignment_full": "0ba667c2f306a0b0c8f52f3a48d8d4a1eb62603ac46b3eab56e877d4adc14925",
     "tinygemm2_stage4_split_k": "e6e1bcf2ab027e9e6fa8591843c605aa5601115c9104a4e512950b5cb330260c",
 }
 _R16_STATIC_SEMANTICS_SHA256 = "2cf2de9ffa78b319fe93a0002826b427c9c92b981b9d297dcec522bf25b8b41a"
@@ -1292,6 +1295,36 @@ class Compiler:
             schedule_bytes=_canonical_json_bytes(schedule),
         )
 
+    def _emit(self, assessment: Assessment) -> Lowering:
+        """Generate the target source from the Schedule."""
+
+        definition = self._target_definitions.get(assessment.target)
+        if definition is None:
+            raise CompilerError(f"Target {assessment.target!r} is not bound by this Revision")
+        schedule = Schedule.from_dict(
+            _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
+        )
+        try:
+            emission = emit_cutedsl(schedule, Target.from_dict(dict(definition.document)))
+        except EmitError as error:
+            raise CompilerError(f"Schedule does not determine its source: {error}") from error
+        source = emission.source.replace("__SCHEDULE_SHA256__", assessment.schedule_sha256)
+        return Lowering(
+            compiler_revision_id=self._revision_id,
+            compiler_revision_sha256=self._revision_sha256,
+            schedule_id=assessment.schedule_id,
+            schedule_sha256=assessment.schedule_sha256,
+            target=assessment.target,
+            profile=assessment.profile,
+            entry_point=emission.entry_point,
+            source=source,
+            source_sha256=sha256(source.encode("utf-8")).hexdigest(),
+            source_map=MappingProxyType(_source_map(source)),
+            toolchain_requirements=MappingProxyType(
+                dict(_TOOLCHAIN_REQUIREMENTS[assessment.profile])
+            ),
+        )
+
     def _contract_findings(
         self, schedule: Schedule, target: str
     ) -> list[Finding]:
@@ -1333,6 +1366,8 @@ class Compiler:
         if not assessment.lowering_eligible:
             codes = ", ".join(finding.code for finding in assessment.findings)
             raise CompilerError(f"assessment is not lowering eligible: {codes}")
+        if assessment.profile in _EMITTED_PROFILES:
+            return self._emit(assessment)
         asset = _LOWERING_ASSETS.get(assessment.profile)
         if asset is None:
             raise CompilerError(f"lowering profile {assessment.profile!r} is not implemented")

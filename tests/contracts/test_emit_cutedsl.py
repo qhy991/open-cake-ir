@@ -24,16 +24,26 @@ from open_cake_ir.compiler.target import Target
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
-DECLARED = ROOT / "examples" / "schedules" / "flash-kmeans-assignment-full-declared.json"
-RETAINED = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
-ARTIFACT = (
-    ROOT
-    / "src"
-    / "open_cake_ir"
-    / "compiler"
-    / "assets"
-    / "flash_kmeans_assignment_full.py.tmpl"
-)
+SCHEDULE = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
+
+# What the deleted hand-written artifact carried as module constants. Emission derives
+# each one from the Schedule, which is why that file is gone.
+ARTIFACT_CONSTANTS = {
+    "IO_DTYPE": "cutlass.BFloat16",
+    "ACC_DTYPE": "cutlass.Float32",
+    "MMA_INSTRUCTION_SHAPE": (128, 256, 16),
+    "MMA_TILE": (128, 256, 64),
+    "PIPELINE_STAGES": 2,
+    "THREADS_PER_CTA": 224,
+    "EPILOGUE_THREADS": 128,
+    "EPILOGUE_WARPS": (0, 1, 2, 3),
+    "MMA_WARP": 4,
+    "TMA_WARP": 5,
+    "REDUCE_WARP": 6,
+    "NUM_K_LOOP_TRIPS": 2,           # NUM_K_TILES
+    "NUM_CENTROID_LOOP_TRIPS": 4,    # NUM_CENTROID_TILES
+    "TMEM_COLUMNS": 256,             # the artifact allocated 512
+}
 
 # Artifact constant -> the name the emitter derives it under. The two loop trip counts
 # are renamed because the emitter names them after the declared loops.
@@ -54,43 +64,29 @@ CONSTANT_MAP = {
 }
 
 
-def _artifact_constants() -> dict[str, str]:
-    source = ARTIFACT.read_text(encoding="utf-8")
-    return dict(re.findall(r"^([A-Z][A-Z0-9_]*) = (.+)$", source, re.M))
-
-
-def _rendered(value: object) -> str:
-    return value if isinstance(value, str) else repr(value)
-
-
 class DerivationTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.emission = emit(Schedule.load(DECLARED), TARGET)
-        self.artifact = _artifact_constants()
+    """Each constant the artifact hardcoded, now computed from the Schedule."""
 
     def test_every_artifact_constant_is_derived(self) -> None:
-        for hardcoded, derived in CONSTANT_MAP.items():
-            with self.subTest(constant=hardcoded):
-                self.assertIn(hardcoded, self.artifact)
-                self.assertIn(derived, self.emission.constants)
-                self.assertEqual(
-                    self.artifact[hardcoded],
-                    _rendered(self.emission.constants[derived]),
-                )
+        constants = emit(Schedule.load(SCHEDULE), TARGET).constants
+        for name, value in ARTIFACT_CONSTANTS.items():
+            with self.subTest(constant=name):
+                self.assertEqual(constants[name], value)
 
-    def test_the_derivation_covers_thirteen_decisions(self) -> None:
-        self.assertEqual(len(CONSTANT_MAP), 13)
+    def test_tensor_memory_is_sized_by_the_accumulator(self) -> None:
+        """The artifact called tmem.allocate(512) for a 256-column accumulator."""
 
-    def test_tensor_memory_columns_are_derived_not_hardcoded(self) -> None:
-        """The artifact writes `tmem.allocate(512)`; the Schedule says 256."""
-
-        self.assertIn("tmem.allocate(512)", ARTIFACT.read_text(encoding="utf-8"))
-        self.assertEqual(self.emission.constants["TMEM_COLUMNS"], 256)
+        schedule = Schedule.load(SCHEDULE)
+        allocation = next(
+            a for a in schedule.allocations if a.tensor_columns is not None
+        )
+        self.assertEqual(allocation.tensor_columns, 256)
+        self.assertEqual(allocation.implied_tensor_columns, 256)
 
 
 class StructureTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.schedule = Schedule.load(DECLARED)
+        self.schedule = Schedule.load(SCHEDULE)
         self.source = emit(self.schedule, TARGET).source
 
     def test_the_emitted_source_is_valid_python(self) -> None:
@@ -156,13 +152,9 @@ class UnderSpecificationTest(unittest.TestCase):
     """Emission fails loudly rather than inventing a decision the Schedule declined."""
 
     def _without(self, mutate) -> Schedule:
-        document = json.loads(DECLARED.read_text(encoding="utf-8"))
+        document = json.loads(SCHEDULE.read_text(encoding="utf-8"))
         mutate(document)
         return Schedule.from_dict(document)
-
-    def test_the_retained_schedule_cannot_be_emitted(self) -> None:
-        with self.assertRaises(EmitError):
-            emit(Schedule.load(RETAINED), TARGET)
 
     def test_a_missing_atom_is_refused(self) -> None:
         schedule = self._without(
@@ -211,7 +203,7 @@ class BodyEmissionTest(unittest.TestCase):
     """Each of these was a bug the B200 found, now derived rather than written."""
 
     def setUp(self) -> None:
-        self.schedule = Schedule.load(DECLARED)
+        self.schedule = Schedule.load(SCHEDULE)
         self.source = emit(self.schedule, TARGET).source
 
     def test_loop_nesting_and_scope_come_from_the_schedule(self) -> None:
@@ -303,14 +295,14 @@ class EmittedKernelObservationTest(unittest.TestCase):
 
     RECORD = ROOT / "inventory" / "EMITTED_KERNEL_OBSERVATION_20260823.json"
 
-    def test_the_observation_matches_what_the_emitter_produces_now(self) -> None:
-        import hashlib
+    def test_the_observation_matches_what_the_compiler_lowers_now(self) -> None:
+        from open_cake_ir.compiler import Compiler
 
         record = json.loads(self.RECORD.read_text(encoding="utf-8"))
-        source = emit(Schedule.load(DECLARED), TARGET).source
-        self.assertEqual(
-            hashlib.sha256(source.encode()).hexdigest(), record["emitted_source_sha256"]
-        )
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        lowering = compiler.lower(compiler.assess_file(SCHEDULE))
+        self.assertEqual(lowering.source_sha256, record["lowering"]["source_sha256"])
+        self.assertTrue(record["lowering"]["generated"])
         self.assertEqual(record["result"]["mismatch_count"], 0)
         self.assertEqual(record["result"]["max_chosen_distance_excess"], 0.0)
         self.assertTrue(record["result"]["passed"])

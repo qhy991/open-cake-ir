@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
-  "observed_at": "2026-08-23T08:20:00Z",
-  "purpose": "emitted_kernel_correctness",
+  "schema_version": 2,
+  "observed_at": "2026-08-23T09:05:00Z",
+  "purpose": "lowered_kernel_correctness",
   "scientific_claim_authorized": false,
   "performance_measured": false,
   "host": "verda-b200x4",
@@ -14,12 +14,20 @@
     "cutlass": "4.7.0",
     "torch": "2.13.0+cu130"
   },
-  "schedule": {
-    "path": "examples/schedules/flash-kmeans-assignment-full-declared.json",
-    "schedule_id": "flash-kmeans-assignment-full-declared-v1"
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v6"
   },
-  "emitted_source_sha256": "caf578369f006866e81bb66a894d05dbe40e919027bedcfd136731f0236656fc",
-  "emitted_source_lines": 337,
+  "schedule": {
+    "path": "corpus/schedules/flash-kmeans-assignment-full.json",
+    "schedule_id": "flash-kmeans-assignment-full-explicit-sm100a-v1",
+    "canonical_sha256": "9046dbf21ed3357063b15a968d45d6c6b9114bdde1ad40b4d43393f8eecc9f11"
+  },
+  "lowering": {
+    "generated": true,
+    "entry_point": "cake_flash_kmeans_assignment_full",
+    "source_sha256": "a24f980ae16a0704cf8e4d9563e2b5342880c8d24c31d9cf0dce922dd831ced6",
+    "source_lines": 337
+  },
   "result": {
     "compiled": true,
     "launched": true,
@@ -28,5 +36,5 @@
     "max_chosen_distance_excess": 0.0,
     "passed": true
   },
-  "note": "The kernel was generated from the Schedule by emit_cutedsl, not selected from a checked-in template. Correctness only; no timing was taken and no comparison against the hand-written artifact is claimed."
+  "note": "Compiler.lower generated this source from the Schedule; there is no checked-in template for this profile. Correctness only -- no timing was taken."
 }

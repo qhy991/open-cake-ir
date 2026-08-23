@@ -20,6 +20,22 @@ from open_cake_ir.lab import (  # noqa: E402
 )
 
 
+def _resolve_executor(executor_id: str) -> dict:
+    """Find a Revision descriptor by id: current, superseded, or archived."""
+
+    inventory = json.loads(
+        (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
+    )
+    for candidate in [
+        inventory["current"],
+        *inventory.get("superseded", []),
+        *inventory["archives"],
+    ]:
+        if candidate["executor_id"] == executor_id:
+            return candidate
+    raise AssertionError(f"executor {executor_id!r} is not resolvable")
+
+
 class GpuQuickstartContractTests(unittest.TestCase):
     def test_existing_output_blocks_before_any_gpu_work(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -68,7 +84,16 @@ class GpuQuickstartContractTests(unittest.TestCase):
 
             self.assertNotEqual(completed.returncode, 0, option)
 
-    def test_live_quickstart_inventory_binds_the_current_runner_and_executor(self) -> None:
+    def test_live_quickstart_inventory_binds_its_runner_and_executor(self) -> None:
+        """The observation names the Executor Revision it actually ran under.
+
+        Once a runtime source changes, that Revision is superseded and its closure no
+        longer verifies against this tree -- verifying it belongs to its archive. The
+        binding is still checked, by descriptor identity rather than by loading, because
+        restamping the observation to the current Revision would claim a run that never
+        happened.
+        """
+
         inventory = json.loads(
             (
                 ROOT / "inventory/GPU_QUICKSTART_QUALIFICATION_V3_20260823.json"
@@ -76,10 +101,12 @@ class GpuQuickstartContractTests(unittest.TestCase):
         )
         runner = ROOT / inventory["runner"]["path"]
         schedule = ROOT / inventory["schedule"]["path"]
-        executor_inventory = json.loads(
-            (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
-        )["current"]
-        executor = ExecutorRevision.load(ROOT, ROOT / executor_inventory["path"])
+        executor_inventory = _resolve_executor(
+            inventory["executor_revision"]["executor_id"]
+        )
+        descriptor = json.loads(
+            (ROOT / executor_inventory["path"]).read_text(encoding="utf-8")
+        )
 
         self.assertEqual(inventory["status"], "passed")
         self.assertFalse(inventory["scientific_claim_authorized"])
@@ -90,7 +117,7 @@ class GpuQuickstartContractTests(unittest.TestCase):
             inventory["schedule"]["raw_sha256"],
         )
         self.assertEqual(
-            executor.canonical_sha256,
+            executor_inventory["canonical_sha256"],
             inventory["executor_revision"]["canonical_sha256"],
         )
         self.assertEqual(
@@ -98,7 +125,7 @@ class GpuQuickstartContractTests(unittest.TestCase):
             inventory["executor_revision"]["descriptor_raw_sha256"],
         )
         executor_sources = {
-            record["path"]: record for record in executor.document["sources"]
+            record["path"]: record for record in descriptor["sources"]
         }
         self.assertEqual(
             executor_sources[inventory["runner"]["path"]]["sha256"],
@@ -151,7 +178,10 @@ class GpuQuickstartContractTests(unittest.TestCase):
                 for key in ("executor_id", "canonical_sha256")
             },
         )
-        self.assertEqual(result["executor_revision"]["executor_id"], executor.executor_id)
+        self.assertEqual(
+            result["executor_revision"]["executor_id"],
+            executor_inventory["executor_id"],
+        )
         self.assertEqual(
             {
                 "cubin_sha256": result["build"]["cubin_sha256"],

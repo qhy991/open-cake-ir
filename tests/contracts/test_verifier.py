@@ -338,17 +338,31 @@ class HardwareCommitmentTest(unittest.TestCase):
     the choice was neither inspectable nor verifiable. These rules report the gap.
     """
 
+    @staticmethod
+    def _strip(document: dict) -> None:
+        """Remove every hardware commitment, leaving the Schedule semantically identical."""
+
+        for allocation in document["allocations"]:
+            allocation.pop("tensor_columns", None)
+        for buffer in document["buffers"]:
+            buffer.pop("swizzle", None)
+        for operation in document["operations"]:
+            for field in ("instruction", "tile_shape", "descriptor_box", "subtile", "source_atom"):
+                operation["parameters"].pop(field, None)
+
     def _advisory(self, path: Path) -> dict[str, Finding]:
         """Advisory hardware-conformance findings; synchronization has its own test."""
 
+        document = json.loads(path.read_text(encoding="utf-8"))
+        self._strip(document)
         return {
             finding.code: finding
-            for finding in verify(Schedule.load(path), TARGET)
+            for finding in verify(Schedule.from_dict(document), TARGET)
             if not finding.blocks_lowering
             and finding.category is FindingCategory.HARDWARE_CONFORMANCE
         }
 
-    def test_retained_schedules_report_their_missing_commitments(self) -> None:
+    def test_a_declined_commitment_is_reported(self) -> None:
         advisory = self._advisory(ASSIGNMENT_FULL)
         self.assertEqual(
             set(advisory),
@@ -376,6 +390,8 @@ class HardwareCommitmentTest(unittest.TestCase):
 
         finding = self._advisory(ASSIGNMENT_FULL)["ALLOCATION_TENSOR_COLUMNS_UNDECLARED"]
         self.assertIn("131072 bytes implies 256 columns", finding.message)
+        # and the Schedule as retained makes that commitment
+        self.assertEqual(verify(Schedule.load(ASSIGNMENT_FULL), TARGET), ())
 
     def test_a_declared_column_range_must_match_the_byte_size(self) -> None:
         findings = verify(
@@ -488,15 +504,13 @@ class HardwareCommitmentTest(unittest.TestCase):
 
 
 class LoopNestRuleTest(unittest.TestCase):
-    DECLARED = ROOT / "examples" / "schedules" / "flash-kmeans-assignment-full-declared.json"
-
     def _mutate(self, mutate) -> tuple[Finding, ...]:
-        document = json.loads(self.DECLARED.read_text(encoding="utf-8"))
+        document = json.loads(ASSIGNMENT_FULL.read_text(encoding="utf-8"))
         mutate(document)
         return verify(Schedule.from_dict(document), TARGET)
 
-    def test_the_declared_nest_is_accepted(self) -> None:
-        self.assertEqual(verify(Schedule.load(self.DECLARED), TARGET), ())
+    def test_the_retained_nest_is_accepted(self) -> None:
+        self.assertEqual(verify(Schedule.load(ASSIGNMENT_FULL), TARGET), ())
 
     def test_a_body_entry_must_resolve(self) -> None:
         findings = self._mutate(lambda d: d["tile_loops"][0]["body"].append("ghost"))

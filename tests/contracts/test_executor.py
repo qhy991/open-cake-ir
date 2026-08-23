@@ -9,7 +9,12 @@ from hashlib import sha256
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_EXECUTOR = ROOT / "runtime/executors/open-cake-ir-b200-v6.json"
+# The current Executor Revision advances whenever a runtime source changes. Read it from
+# the inventory rather than naming a version, so a bump is not a test edit.
+_INVENTORY = json.loads(
+    (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
+)
+CURRENT_EXECUTOR = ROOT / _INVENTORY["current"]["path"]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.lab import ExecutorRevision  # noqa: E402
@@ -18,7 +23,7 @@ from open_cake_ir.lab import ExecutorRevision  # noqa: E402
 class ExecutorRevisionContractTests(unittest.TestCase):
     def test_released_executor_covers_the_complete_runtime_source_closure(self) -> None:
         executor = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR)
-        self.assertEqual(executor.executor_id, "open-cake-ir-b200-v6")
+        self.assertEqual(executor.executor_id, _INVENTORY["current"]["executor_id"])
         self.assertEqual(
             CURRENT_EXECUTOR.stat().st_mode & 0o444,
             0o444,
