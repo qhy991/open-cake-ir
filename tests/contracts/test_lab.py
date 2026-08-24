@@ -1921,3 +1921,78 @@ class CostModelRouteTest(unittest.TestCase):
         # a claim this measurement supports, so it is not made. Most inversions live here:
         # 24 of 37 candidates at one shape sit within 6% of the best.
         self.assertEqual(self._run(searches_per_turn=2, materiality=1.5), [])
+
+
+class BrokerExecutionDigestTest(unittest.TestCase):
+    """The digest a live Study pins its broker to.
+
+    `execution.broker_execution_sha256` is frozen into a Study Contract when a live
+    qualification is taken, and `execute_matched_from_config` recomputes it and refuses a
+    Campaign whose broker no longer matches. Preflight only checks the field's shape, so
+    this function is the whole of that binding -- and it had no test, which meant the one
+    property that makes it worth having could stop holding silently.
+    """
+
+    def _digest(self, argv, root, **overrides):
+        from open_cake_ir.lab import broker_execution_sha256
+
+        arguments = {
+            "cwd": root,
+            "project_root": root,
+            "timeout_seconds": 60,
+            "service_user": "gpuq",
+            "service_group": "gpuq-users",
+        }
+        arguments.update(overrides)
+        return broker_execution_sha256(tuple(argv), **arguments)
+
+    def test_the_digest_follows_the_content_of_what_it_will_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            binary = root / "broker"
+            binary.write_text("#!/bin/sh\nexit 0\n")
+            binary.chmod(0o700)
+            script = root / "worker.py"
+            script.write_text("print('one')\n")
+            argv = [str(binary), "--script", str(script)]
+
+            first = self._digest(argv, root)
+            self.assertEqual(first, self._digest(argv, root))
+
+            # An absolute file argument is part of what runs, so its content is part of
+            # the identity. This is what makes editing the evaluator invalidate a Study
+            # that was frozen against the old one, instead of running a different program
+            # under the same seal.
+            script.write_text("print('two')\n")
+            self.assertNotEqual(first, self._digest(argv, root))
+
+            # And so is the executable itself.
+            script.write_text("print('one')\n")
+            self.assertEqual(first, self._digest(argv, root))
+            binary.write_text("#!/bin/sh\nexit 1\n")
+            binary.chmod(0o700)
+            self.assertNotEqual(first, self._digest(argv, root))
+
+    def test_the_policy_it_refuses_is_the_policy_it_names(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            binary = root / "broker"
+            binary.write_text("#!/bin/sh\nexit 0\n")
+            binary.chmod(0o700)
+            argv = [str(binary)]
+
+            for label, overrides in (
+                ("cwd outside the project root", {"cwd": root.parent}),
+                ("no timeout", {"timeout_seconds": 0}),
+                ("no service user", {"service_user": ""}),
+                ("no service group", {"service_group": ""}),
+            ):
+                with self.subTest(refusal=label):
+                    with self.assertRaises(ValueError):
+                        self._digest(argv, root, **overrides)
+
+            with self.assertRaisesRegex(ValueError, "empty"):
+                self._digest([], root)
+            with self.assertRaisesRegex(ValueError, "unavailable"):
+                self._digest([str(root / "absent")], root)
+
