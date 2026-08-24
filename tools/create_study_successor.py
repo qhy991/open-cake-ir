@@ -57,6 +57,8 @@ def main() -> int:
     parser.add_argument("--maximum-candidates-per-turn", type=int)
     parser.add_argument("--searches-per-turn", type=int)
     parser.add_argument("--search-materiality-ratio", type=float)
+    parser.add_argument("--open-cake-schedule-skeleton", type=Path)
+    parser.add_argument("--direct-cuda-candidate-skeleton", type=Path)
     arguments = parser.parse_args()
 
     root = arguments.project_root.resolve(strict=True)
@@ -74,6 +76,12 @@ def main() -> int:
     document = _object(json.loads(source.read_text(encoding="utf-8")), "Study")
     if document.get("state") != "frozen":
         raise ValueError("Study successor source is not frozen")
+    skeletons = (
+        arguments.open_cake_schedule_skeleton,
+        arguments.direct_cuda_candidate_skeleton,
+    )
+    if (skeletons[0] is None) != (skeletons[1] is None):
+        raise ValueError("both Authoring Environment skeletons must be replaced together")
 
     inventory = _object(
         json.loads(
@@ -110,6 +118,7 @@ def main() -> int:
                 arguments.maximum_candidates_per_turn,
                 arguments.searches_per_turn,
                 arguments.search_materiality_ratio,
+                *skeletons,
             )
         ):
             raise ValueError("portfolio does not use matched-search authoring options")
@@ -120,7 +129,32 @@ def main() -> int:
         document["evidence"] = dict(matched_evidence_policy_v1())
         arms = _object(document.get("arms"), "Study.arms")
         open_cake = _object(arms.get("open_cake"), "Study.arms.open_cake")
+        direct_cuda = _object(arms.get("direct_cuda"), "Study.arms.direct_cuda")
         open_cake["compiler_revision"] = compiler_reference
+        if skeletons[0] is not None and skeletons[1] is not None:
+            schedule_path = skeletons[0].resolve(strict=True)
+            candidate_path = skeletons[1].resolve(strict=True)
+            try:
+                schedule_relative = schedule_path.relative_to(root).as_posix()
+                candidate_relative = candidate_path.relative_to(root).as_posix()
+            except ValueError as error:
+                raise ValueError(
+                    "Authoring Environment skeletons must be inside the project"
+                ) from error
+            schedule = _object(
+                json.loads(schedule_path.read_text(encoding="utf-8")),
+                "Open Cake Schedule skeleton",
+            )
+            open_cake["schedule_skeleton"] = {
+                "path": schedule_relative,
+                "canonical_sha256": sha256(
+                    _canonical_json_bytes(schedule)
+                ).hexdigest(),
+            }
+            direct_cuda["candidate_skeleton"] = {
+                "path": candidate_relative,
+                "sha256": sha256(candidate_path.read_bytes()).hexdigest(),
+            }
         if document.get("claim_scope") == "scientific_matched_search":
             # A successor adopts the current canonical Analysis Plan. Frozen source
             # Studies keep their bytes and remain readable through the bounded legacy

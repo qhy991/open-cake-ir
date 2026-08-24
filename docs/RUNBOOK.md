@@ -107,6 +107,24 @@ schema, prompt/scaffold bytes, removed environment, reference visibility, featur
 from the current source closure. Re-freeze a successor with the exact accessible checkout and broker command before
 launching a live Campaign. Earlier revisions remain historical.
 
+`matched-search-clean-start-reference-v24.json` is the reference-access fixture. It inherits the scientific
+template's local 150k/`max` factors, so preflight validates only that both arms receive implementation-free starters;
+it is not a runnable paper result. Create later reference successors through the paired operation below so one arm
+cannot silently retain a task implementation:
+
+```bash
+python tools/create_study_successor.py \
+  --source contracts/studies/matched-search-infrastructure-v24.json \
+  --output contracts/studies/<new-clean-reference-study>.json \
+  --study-id <new-clean-reference-study-id> \
+  --open-cake-schedule-skeleton contracts/scaffolds/open-cake-clean-start-v1.json \
+  --direct-cuda-candidate-skeleton contracts/scaffolds/direct-cuda-clean-start-v1.cu
+```
+
+The Open Cake starter must remain structurally incomplete and the direct CUDA function body empty. A future live,
+paper-aligned successor separately needs an `xhigh` qualification, the declared 80M endpoint and the complete
+isolation/provenance audit.
+
 ## 3. Qualify the live provider without GPU
 
 First ensure a fresh process can authenticate; cached `codex login status` alone is insufficient. Use new paths and

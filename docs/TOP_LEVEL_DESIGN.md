@@ -313,6 +313,9 @@ Clean-start provenance covers Compiler Revision, Corpus, scaffold, memory, diagn
 embedded in every Turn prompt—not
 only the agent workspace. A compiler evolved from the same task history is an explicit treatment prior. Such a
 study may estimate package effectiveness but cannot claim task-naive discovery without a stronger firewall.
+The clean-start reference fixture keeps this boundary concrete without another runtime mode: its Open Cake document
+cannot parse as a complete Schedule and its direct CUDA function body is empty; both references change together in
+one frozen Study successor.
 
 ## 9. Claim-stage handoffs
 

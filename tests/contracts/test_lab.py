@@ -397,6 +397,7 @@ class LabContractTests(unittest.TestCase):
             "matched-search-system-qualification-v24.json",
             "artifact-optimization-v24.json",
             "flash-kmeans-r45-portfolio-reconstruction-v24.json",
+            "matched-search-clean-start-reference-v24.json",
         ):
             lock = Lab(ROOT).preflight(ROOT / "contracts/studies" / name)
             executor = lock.document["execution"]["executor_revision"]

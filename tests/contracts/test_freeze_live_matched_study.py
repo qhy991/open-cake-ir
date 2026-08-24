@@ -334,6 +334,68 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             self.assertIn(b"broker execution authority is refreshed", generic.stderr)
             self.assertFalse(generic_output.exists())
 
+            clean_output = project / "contracts/studies/clean-reference-successor.json"
+            clean_command = [
+                sys.executable,
+                str(project / "tools/create_study_successor.py"),
+                "--project-root",
+                str(project),
+                "--source",
+                str(
+                    project
+                    / "contracts/studies/matched-search-infrastructure-v24.json"
+                ),
+                "--output",
+                str(clean_output),
+                "--study-id",
+                "clean-reference-contract-fixture",
+                "--open-cake-schedule-skeleton",
+                str(project / "contracts/scaffolds/open-cake-clean-start-v1.json"),
+                "--direct-cuda-candidate-skeleton",
+                str(project / "contracts/scaffolds/direct-cuda-clean-start-v1.cu"),
+            ]
+            clean = subprocess.run(
+                clean_command,
+                cwd=project,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30,
+                check=False,
+            )
+            self.assertEqual(clean.returncode, 0, clean.stderr.decode())
+            clean_study = json.loads(clean_output.read_text(encoding="utf-8"))
+            Lab(project).preflight(clean_output)
+            self.assertEqual(
+                clean_study["arms"]["open_cake"]["schedule_skeleton"]["path"],
+                "contracts/scaffolds/open-cake-clean-start-v1.json",
+            )
+            self.assertEqual(
+                clean_study["arms"]["direct_cuda"]["candidate_skeleton"]["path"],
+                "contracts/scaffolds/direct-cuda-clean-start-v1.cu",
+            )
+
+            incomplete_output = project / "contracts/studies/incomplete-reference.json"
+            incomplete_command = clean_command[:-2]
+            incomplete_command[incomplete_command.index("--output") + 1] = str(
+                incomplete_output
+            )
+            incomplete_command[incomplete_command.index("--study-id") + 1] = (
+                "incomplete"
+            )
+            incomplete = subprocess.run(
+                incomplete_command,
+                cwd=project,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30,
+                check=False,
+            )
+            self.assertNotEqual(incomplete.returncode, 0)
+            self.assertIn(b"must be replaced together", incomplete.stderr)
+            self.assertFalse(incomplete_output.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

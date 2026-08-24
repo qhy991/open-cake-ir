@@ -78,7 +78,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command.
-  The current local suite passes 336 tests plus 223 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 337 tests plus 223 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
@@ -107,6 +107,10 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   150k, task-informed package study also freezes the provider's distinct `max` reasoning level and complete
   implementation skeletons; it is not the paper's `xhigh`, 80M clean-start comparison. Serving and paper
   reproduction remain unsupported.
+- `matched-search-clean-start-reference-v24.json` is a zero-GPU successor fixture that replaces both arm references
+  together: Open Cake receives only its authoring interface and direct CUDA receives a canonical ABI with an empty
+  kernel body. Its contamination gate validates reference access only; its inherited 150k/`max` treatment still
+  cannot support a paper comparison.
 - Four bounded tool-rich artifact-optimization Campaigns are retained. v1 promoted one Open Cake artifact and
   exposed v14's scratch-file event classification defect; v2 promoted one Direct CUDA artifact and exposed v15's
   remaining assumption when Open Cake added and updated the fixed envelope in one Turn. v16 uses the smaller authority

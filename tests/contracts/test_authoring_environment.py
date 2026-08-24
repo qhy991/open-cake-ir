@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import unittest
 from hashlib import sha256
@@ -9,11 +10,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler import Compiler  # noqa: E402
-from open_cake_ir.evaluation import LaunchableCandidate, WorkloadContract  # noqa: E402
+from open_cake_ir.compiler import Compiler, Schedule, ScheduleParseError  # noqa: E402
+from open_cake_ir.evaluation import (  # noqa: E402
+    LaunchableCandidate,
+    WorkloadContract,
+    parse_cuda_launch_manifest,
+)
 from open_cake_ir.lab import (  # noqa: E402
     BuildRequest,
     CandidateSubmission,
+    Lab,
     OpenCakeEnvironment,
 )
 
@@ -56,6 +62,119 @@ def _headline_schedule(workload: WorkloadContract) -> dict[str, object]:
 
 
 class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
+    def test_clean_start_starters_expose_contract_without_implementation(self) -> None:
+        study_path = (
+            ROOT
+            / "contracts/studies/matched-search-clean-start-reference-v24.json"
+        )
+        lock = Lab(ROOT).preflight(study_path)
+        study = json.loads(study_path.read_text(encoding="utf-8"))
+        workload = WorkloadContract.load(
+            ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
+        )
+        shape = workload.case("headline_b32")["shape"]
+
+        schedule_path = ROOT / study["arms"]["open_cake"]["schedule_skeleton"]["path"]
+        starter = json.loads(schedule_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            set(starter),
+            {
+                "schema_version",
+                "schedule_id",
+                "target",
+                "roles",
+                "allocations",
+                "buffers",
+                "pipelines",
+                "barriers",
+                "operations",
+                "outputs",
+                "metadata",
+            },
+        )
+        self.assertNotIn("grid", starter)
+        self.assertNotIn("program_map", starter)
+        for field in ("roles", "allocations", "pipelines", "barriers", "operations"):
+            self.assertEqual(starter[field], [], field)
+        self.assertEqual(starter["outputs"], ["assignments"])
+        self.assertEqual(
+            starter["metadata"],
+            {
+                "profile": "flash_kmeans_b32_smoke",
+                "starter_scope": "authoring_contract_only",
+                "workload_contract_sha256": workload.canonical_sha256,
+            },
+        )
+        buffers = {item["name"]: item for item in starter["buffers"]}
+        self.assertEqual(
+            buffers,
+            {
+                "tokens": {
+                    "name": "tokens",
+                    "space": "global",
+                    "dtype": "bf16",
+                    "shape": [shape["B"], shape["N"], shape["D"]],
+                    "mode": "input",
+                },
+                "centroids": {
+                    "name": "centroids",
+                    "space": "global",
+                    "dtype": "bf16",
+                    "shape": [shape["B"], shape["K"], shape["D"]],
+                    "mode": "input",
+                },
+                "centroid_sq": {
+                    "name": "centroid_sq",
+                    "space": "global",
+                    "dtype": "fp32",
+                    "shape": [shape["B"], shape["K"]],
+                    "mode": "input",
+                },
+                "assignments": {
+                    "name": "assignments",
+                    "space": "global",
+                    "dtype": "int32",
+                    "shape": [shape["B"], shape["N"]],
+                    "mode": "output",
+                },
+            },
+        )
+        with self.assertRaisesRegex(
+            ScheduleParseError, "exactly one of grid or program_map"
+        ):
+            Schedule.from_dict(starter)
+
+        cuda_path = ROOT / study["arms"]["direct_cuda"]["candidate_skeleton"]["path"]
+        cuda_source = cuda_path.read_bytes()
+        manifest = parse_cuda_launch_manifest(cuda_source)
+        self.assertEqual(manifest.abi, "flash_kmeans_assign_v1")
+        self.assertEqual(manifest.target, "sm_100a")
+        self.assertEqual(manifest.grid, (1, 1, 1))
+        self.assertEqual(manifest.block, (1, 1, 1))
+        self.assertEqual(manifest.dynamic_shared_memory_bytes, 0)
+        text = cuda_source.decode("utf-8")
+        function_start = text.index('extern "C" __global__')
+        body_start = text.index("{", function_start)
+        self.assertEqual(
+            text[text.index("\n") + 1 : function_start],
+            "#include <cuda_bf16.h>\n#include <stdint.h>\n\n",
+        )
+        self.assertEqual(
+            text[function_start:body_start],
+            'extern "C" __global__ void flash_kmeans_assign_candidate(\n'
+            "    const __nv_bfloat16* tokens,\n"
+            "    const __nv_bfloat16* centroids,\n"
+            "    const float* centroid_sq,\n"
+            "    int32_t* assignments) ",
+        )
+        self.assertEqual(text[function_start:].count("{"), 1)
+        self.assertEqual(text[function_start:].count("}"), 1)
+        body = text[body_start + 1 : text.rindex("}")]
+        body_without_comments = re.sub(r"//[^\n]*|/\*.*?\*/", "", body, flags=re.S)
+        self.assertEqual(body_without_comments.strip(), "")
+        self.assertEqual(text[text.rindex("}") + 1 :], "\n")
+        self.assertEqual(lock.claim_scope, "scientific_matched_search")
+
     def test_complete_r16_skeleton_for_study_workload_builds_headline_candidate(self) -> None:
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
         workload = WorkloadContract.load(
