@@ -47,6 +47,32 @@ _TORCH_DTYPE = {
 }
 
 
+# What this backend has a body for, and where. The two sets differ: an mma or a reduction
+# is only emitted inside the tile loop, and a store only outside it. Keeping them as
+# tables the dispatch reads means the coverage cannot drift from the code, and it makes
+# the position-dependence a stated fact rather than the shape of two elif chains.
+OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
+    OperationKind.LOAD: "_emit_load",
+    OperationKind.ELEMENTWISE: "_emit_elementwise",
+    OperationKind.STORE: "_emit_store",
+}
+
+INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
+    OperationKind.LOAD: "_emit_load",
+    OperationKind.MMA: "_emit_mma",
+    OperationKind.REDUCE_ARGMIN: "_emit_argmin",
+    OperationKind.REDUCE_SUM: "_emit_sum",
+    OperationKind.ELEMENTWISE: "_emit_elementwise",
+}
+
+# A kind outside this union can never be emitted, wherever it is placed, so the Compiler
+# can say so before lowering. A kind inside it may still be refused for its position,
+# which needs emission to discover and stays there.
+SUPPORTED_OPERATION_KINDS = frozenset(OUTSIDE_LOOP_EMITTERS) | frozenset(
+    INSIDE_LOOP_EMITTERS
+)
+
+
 class _TritonEmitter:
     def __init__(
         self, schedule: Schedule, target: Target, entry_point: str | None = None
@@ -381,19 +407,16 @@ class _TritonEmitter:
                     self._emit_loop()
                     emitted_loop = True
                 continue
-            if operation.kind is OperationKind.LOAD:
-                self._emit_load(operation, self._body_pad())
-            elif operation.kind is OperationKind.ELEMENTWISE:
-                self._emit_elementwise(operation, self._body_pad())
-                self.line()
-            elif operation.kind is OperationKind.STORE:
-                self._emit_store(operation, self._body_pad())
-            else:
+            method = OUTSIDE_LOOP_EMITTERS.get(operation.kind)
+            if method is None:
                 raise EmitError(
                     f"operation {operation.op_id!r} of kind "
                     f"{operation.kind.value!r} sits outside the loop and this backend "
                     "has no body for it there"
                 )
+            getattr(self, method)(operation, self._body_pad())
+            if operation.kind is OperationKind.ELEMENTWISE:
+                self.line()
         _require(emitted_loop, "the declared tile loop names no operation")
         self.line("    # CAKE_KERNEL_END")
         self.line()
@@ -508,20 +531,12 @@ class _TritonEmitter:
         for op_id in self.loop.body:
             operation = self.schedule.operation(op_id)
             _require(operation is not None, f"loop body names unknown operation {op_id!r}")
-            if operation.kind is OperationKind.LOAD:
-                self._emit_load(operation, self._body_pad() + "    ")
-            elif operation.kind is OperationKind.MMA:
-                self._emit_mma(operation, self._body_pad() + "    ")
-            elif operation.kind is OperationKind.REDUCE_ARGMIN:
-                self._emit_argmin(operation, self._body_pad() + "    ")
-            elif operation.kind is OperationKind.REDUCE_SUM:
-                self._emit_sum(operation, self._body_pad() + "    ")
-            elif operation.kind is OperationKind.ELEMENTWISE:
-                self._emit_elementwise(operation, self._body_pad() + "    ")
-            else:
+            method = INSIDE_LOOP_EMITTERS.get(operation.kind)
+            if method is None:
                 raise EmitError(
                     f"operation kind {operation.kind.value!r} has no Triton body emitter"
                 )
+            getattr(self, method)(operation, self._body_pad() + "    ")
         self.line()
 
     _ELEMENTWISE_TEXT = {

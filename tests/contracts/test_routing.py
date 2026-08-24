@@ -31,8 +31,8 @@ class RoutingContractTests(unittest.TestCase):
             {
                 "stage": "assessment",
                 "findings": [
-                    {"code": "RESIDENCY_IMPOSSIBLE", "blocking": True},
-                    {"code": "RESIDENCY_BOUND", "blocking": False},
+                    {"code": "RESIDENCY_IMPOSSIBLE", "blocks_acceptance": True},
+                    {"code": "RESIDENCY_BOUND", "blocks_acceptance": False},
                 ],
             }
         )
@@ -40,6 +40,45 @@ class RoutingContractTests(unittest.TestCase):
         self.assertIn("RESIDENCY_IMPOSSIBLE", decision.reason)
         # A report is not a reason to reject, so it must not appear as one.
         self.assertNotIn("RESIDENCY_BOUND", decision.reason)
+
+    def test_a_missing_backend_body_is_the_vocabularys_not_the_candidates(self) -> None:
+        """The Schedule is not wrong; the compiler cannot lower it.
+
+        This finding blocks lowering without blocking acceptance, so a router that only
+        looked at acceptance would see nothing blocking and fall through to a stage-based
+        guess. And a router that saw it as merely blocking would tell the author to fix a
+        Schedule the IR and the Target both accept -- which is telling them to work around
+        a gap in the compiler.
+        """
+
+        decision = route_rejection(
+            {
+                "stage": "lowering",
+                "findings": [
+                    {
+                        "code": "PROFILE_OPERATION_UNEMITTABLE",
+                        "blocks_acceptance": False,
+                        "blocks_lowering": True,
+                    },
+                    {"code": "RESIDENCY_BOUND", "blocks_acceptance": False},
+                ],
+            }
+        )
+        self.assertEqual(decision.destination, IR_VOCABULARY)
+        self.assertIn("PROFILE_OPERATION_UNEMITTABLE", decision.reason)
+
+    def test_a_real_gate_refusal_still_wins_over_a_report(self) -> None:
+        # A Schedule can be both wrong and unlowerable. The gate refusal is the one the
+        # author can act on, so it must not be shadowed by the vocabulary route.
+        decision = route_rejection(
+            {
+                "stage": "assessment",
+                "findings": [
+                    {"code": "REDUCE_SHAPE_MISMATCH", "blocks_acceptance": True},
+                ],
+            }
+        )
+        self.assertEqual(decision.destination, CANDIDATE)
 
     def test_passing_every_gate_and_failing_to_compile_is_the_verifiers(self) -> None:
         """The one route that matters most, and the easiest to get backwards.

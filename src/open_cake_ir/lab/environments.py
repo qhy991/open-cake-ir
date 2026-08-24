@@ -324,7 +324,8 @@ def _ptxas_finding_rows(
             "code": "TOOLCHAIN_RESOURCE_REPORT",
             "path": launchable.entry_point,
             "message": " ".join(lines),
-            "blocking": False,
+            "blocks_acceptance": False,
+            "blocks_lowering": False,
         }
     ]
 
@@ -411,6 +412,11 @@ class OpenCakeEnvironment:
         caused it; an acceptance carries the reports that survived it, which is where the
         analysis attribution reaches the agent. Dropping them on acceptance would leave a
         working candidate with no stated reason for the performance it got.
+
+        What a finding blocks is two facts, not one. A Schedule can be accepted and still
+        not lowerable -- its kinds are well-formed and this backend has no body for one --
+        and compressing that into a single `blocking` flag told an author the finding that
+        stopped their candidate was not blocking anything.
         """
 
         return [
@@ -418,7 +424,8 @@ class OpenCakeEnvironment:
                 "code": item.code,
                 "path": item.path,
                 "message": item.message,
-                "blocking": item.blocks_acceptance,
+                "blocks_acceptance": item.blocks_acceptance,
+                "blocks_lowering": item.blocks_lowering,
             }
             for item in assessment.findings
         ]

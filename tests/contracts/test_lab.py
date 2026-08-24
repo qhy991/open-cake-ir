@@ -909,7 +909,8 @@ class LabContractTests(unittest.TestCase):
                                 "code": "RESIDENCY_BOUND",
                                 "path": "roles",
                                 "message": "registers bounds residency to 1 CTA",
-                                "blocking": False,
+                                "blocks_acceptance": False,
+                                "blocks_lowering": False,
                             }
                         ],
                     },

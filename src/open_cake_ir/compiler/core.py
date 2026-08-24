@@ -9,10 +9,10 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Callable, Mapping, Sequence, cast
+from typing import Any, Callable, Mapping, Sequence, cast
 
-from .emit_cutedsl import EmitError, emit as emit_cutedsl
-from .emit_triton import emit as emit_triton
+from . import emit_cutedsl, emit_triton
+from .emit_cutedsl import EmitError
 from .ir import (
     _SCHEDULE_OPTIONAL,
     _SCHEDULE_REQUIRED,
@@ -270,20 +270,42 @@ class _Profile:
     One record owns them, and a profile that omits one is a construction error rather than
     a lookup that silently returns nothing.
 
-    `emitter` generates the source from the Schedule; `asset` is the older path that fills
-    a digest into a checked-in template, and only that path needs `closed_semantics` --
-    the file matches one Schedule, so a pin is what keeps a second one from reaching it.
+    `backend` is the module that generates the source from the Schedule; `asset` is the
+    older path that fills a digest into a checked-in template, and only that path needs
+    `closed_semantics` -- the file matches one Schedule, so a pin is what keeps a second
+    one from reaching it.
+
+    The backend is held as a module rather than as its `emit` function so that the kinds
+    it can lower travel with it. Naming them separately would let a profile pair one
+    backend's emitter with another's coverage, which is the class of mistake this record
+    exists to make impossible.
     """
 
     toolchain: Mapping[str, object]
     conformance: "Callable[[Mapping[str, object], Sequence[Mapping[str, object]]], list[Finding]]"
-    emitter: object | None = None
+    backend: Any | None = None
     asset: tuple[str, str, str] | None = None
     closed_semantics: str | None = None
 
+    @property
+    def emitter(self) -> object | None:
+        return None if self.backend is None else self.backend.emit
+
+    @property
+    def emittable_kinds(self) -> frozenset:
+        """The operation kinds this profile's backend has a body for.
+
+        Derived from the backend's own dispatch table, so it states what the code does
+        rather than what someone remembered it did.
+        """
+
+        if self.backend is None:
+            return frozenset()
+        return self.backend.SUPPORTED_OPERATION_KINDS
+
     def __post_init__(self) -> None:
-        if (self.emitter is None) == (self.asset is None):
-            raise CompilerError("a profile lowers through exactly one of emitter or asset")
+        if (self.backend is None) == (self.asset is None):
+            raise CompilerError("a profile lowers through exactly one of backend or asset")
         if self.asset is None and self.closed_semantics is not None:
             raise CompilerError("an emitted profile pins no closed semantics digest")
 
@@ -298,7 +320,7 @@ _PROFILES: Mapping[str, _Profile] = {
             "entry_abi": "four_cuda_tensors_current_stream",
         },
         conformance=_flash_kmeans_b32_smoke_conformance,
-        emitter=emit_triton,
+        backend=emit_triton,
     ),
     "flash_kmeans_assignment_full": _Profile(
         toolchain={
@@ -309,7 +331,7 @@ _PROFILES: Mapping[str, _Profile] = {
             "entry_abi": "four_cuda_tensors_current_stream",
         },
         conformance=_flash_kmeans_assignment_full_conformance,
-        emitter=emit_cutedsl,
+        backend=emit_cutedsl,
     ),
     # The first operator admitted after the registry became one record. It needed no
     # emitter change, no formula of its own and no entry anywhere else: an operator is
@@ -323,7 +345,7 @@ _PROFILES: Mapping[str, _Profile] = {
             "entry_abi": "three_cuda_tensors_current_stream",
         },
         conformance=_rmsnorm_b8_smoke_conformance,
-        emitter=emit_triton,
+        backend=emit_triton,
     ),
     "tinygemm2_stage4_split_k": _Profile(
         toolchain={
@@ -1121,6 +1143,30 @@ class Compiler:
             )
         else:
             findings.extend(definition.conformance(buffer_by_name, operations))
+            # A kind this profile's backend has no body for cannot be lowered wherever it
+            # is placed, and that is knowable here rather than when emission raises. The
+            # Schedule is not ill-formed -- the IR expresses the kind and the Target
+            # supports it -- so this blocks lowering and not acceptance, and it names the
+            # backend rather than the author.
+            #
+            # Only for a profile that emits. The asset path fills a digest into a
+            # checked-in template and has no operation bodies at all, so it has no
+            # coverage to be outside of.
+            for index, operation in enumerate(operations if definition.backend else ()):
+                kind = operation.get("kind")
+                if kind not in _SUPPORTED_OPERATION_KINDS:
+                    continue
+                if OperationKind(kind) not in definition.emittable_kinds:
+                    findings.append(
+                        Finding(
+                            "PROFILE_OPERATION_UNEMITTABLE",
+                            f"operations[{index}].kind",
+                            f"profile {profile!r} lowers through a backend with no body "
+                            f"for operation kind {kind!r}",
+                            blocks_acceptance=False,
+                            blocks_lowering=True,
+                        )
+                    )
         if definition is not None and definition.closed_semantics is not None:
             semantic_sha = _semantic_schedule_sha256(schedule)
             known_delta = any(

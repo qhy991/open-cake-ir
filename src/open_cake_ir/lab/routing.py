@@ -11,8 +11,10 @@ Each destination is inferred from a signal the loop already produces, not from a
 * **verifier** -- every gate passed and the toolchain still refused. Something was true of
   this Schedule that the pre-compile gates do not model, which is a missing rule rather
   than a bad candidate.
-* **ir_vocabulary** -- lowering refused because the Schedule does not determine its source.
-  The author declared everything the IR can express and it was not enough.
+* **ir_vocabulary** -- the Schedule is well-formed and this backend cannot lower it. Some
+  of that is knowable before emission and arrives as a finding with a code; the rest is
+  discovered while emitting and arrives as a refusal to determine the source. The author
+  declared everything the IR can express and it was not enough either way.
 * **cost_model** -- the order was wrong. This one is not inferred from a rejection, because
   it needs two measurements to compare: the Lab raises it when a Turn searches more than
   one launchable candidate and the fastest is not the one the ranking put first. A Turn
@@ -38,6 +40,10 @@ DESTINATIONS = (CANDIDATE, VERIFIER, IR_VOCABULARY, COST_MODEL)
 # The Compiler says this when a profile emits and the Schedule leaves a decision open.
 # It is the one rejection that is about the vocabulary rather than about the Schedule.
 _UNDER_DETERMINED = "does not determine its source"
+
+# Findings that say the same thing early enough to carry a code. Matching a code beats
+# matching a message: a message is prose the Compiler is free to reword.
+_VOCABULARY_CODES = frozenset({"PROFILE_OPERATION_UNEMITTABLE"})
 
 
 @dataclass(frozen=True)
@@ -79,8 +85,21 @@ def route_rejection(feedback: Mapping[str, object]) -> Route:
         blocking = [
             item.get("code")
             for item in findings
-            if isinstance(item, Mapping) and item.get("blocking")
+            if isinstance(item, Mapping)
+            and (item.get("blocks_acceptance") or item.get("blocks_lowering"))
         ]
+        vocabulary = sorted(
+            str(code) for code in blocking if code in _VOCABULARY_CODES
+        )
+        if vocabulary:
+            # Checked before the candidate route: these findings block a Schedule that
+            # is not wrong, so telling its author to fix it would be telling them to
+            # work around a gap in the compiler.
+            return Route(
+                IR_VOCABULARY,
+                f"the Schedule is well-formed and no backend body exists for it: "
+                f"{', '.join(vocabulary)}",
+            )
         if blocking:
             return Route(
                 CANDIDATE,

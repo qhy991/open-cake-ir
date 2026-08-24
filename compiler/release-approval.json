@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "0c3730e49967879358c0ac082c2b0cec43b76e809f62ab9e08102deaf820cec8"
+    "canonical_sha256": "b64d4a81b5510c52ffc85486f83ebe8e96486bace94de6274c88a2aa20a87b42"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "tensor-memory allocation ownership becomes a declared fact"
+  "approval_basis": "backend operation coverage becomes a derived fact and an assessment finding"
 }

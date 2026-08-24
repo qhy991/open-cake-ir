@@ -199,6 +199,47 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class BackendCoverageTest(unittest.TestCase):
+    """What each backend can lower is a derived fact, and the Compiler reads it.
+
+    The dispatch used to be an `elif` chain, so the set of kinds a backend handled existed
+    only in the shape of that chain. Nothing could ask it, which is why a Schedule using a
+    kind with no body passed every gate and then raised while emitting.
+    """
+
+    def test_every_table_entry_names_a_method_that_exists(self) -> None:
+        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+
+        tables = (
+            (emit_cutedsl, "_Emitter", emit_cutedsl.BODY_EMITTERS),
+            (emit_triton, "_TritonEmitter", emit_triton.OUTSIDE_LOOP_EMITTERS),
+            (emit_triton, "_TritonEmitter", emit_triton.INSIDE_LOOP_EMITTERS),
+        )
+        for module, class_name, table in tables:
+            emitter_class = getattr(module, class_name)
+            for kind, method in table.items():
+                with self.subTest(backend=module.__name__, kind=kind.value):
+                    # A string key is only safe while something checks it resolves.
+                    self.assertTrue(callable(getattr(emitter_class, method, None)))
+
+    def test_the_declared_coverage_is_the_dispatch(self) -> None:
+        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+
+        self.assertEqual(
+            emit_cutedsl.SUPPORTED_OPERATION_KINDS, frozenset(emit_cutedsl.BODY_EMITTERS)
+        )
+        self.assertEqual(
+            emit_triton.SUPPORTED_OPERATION_KINDS,
+            frozenset(emit_triton.OUTSIDE_LOOP_EMITTERS)
+            | frozenset(emit_triton.INSIDE_LOOP_EMITTERS),
+        )
+        # The two backends genuinely differ, which is the reason a profile has to be
+        # asked rather than the Target: both of these lower for sm_100a.
+        self.assertNotEqual(
+            emit_cutedsl.SUPPORTED_OPERATION_KINDS, emit_triton.SUPPORTED_OPERATION_KINDS
+        )
+
+
 class AllocationOwnershipTest(unittest.TestCase):
     """Who takes out the tensor-memory allocation is the Schedule's decision.
 

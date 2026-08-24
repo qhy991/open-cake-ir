@@ -60,6 +60,21 @@ _SWIZZLE_BYTES = {
 }
 
 
+# Which operation kinds this backend has a body for. The dispatch reads this table, so
+# the set below cannot drift from what `_emit_operation` actually handles -- and the
+# Compiler can refuse a Schedule this backend has no body for at assessment time, rather
+# than the author discovering it when lowering raises.
+BODY_EMITTERS: dict[OperationKind, str] = {
+    OperationKind.LOAD: "_emit_load",
+    OperationKind.MMA: "_emit_mma",
+    OperationKind.EPILOGUE: "_emit_epilogue",
+    OperationKind.REDUCE_ARGMIN: "_emit_argmin",
+    OperationKind.STORE: "_emit_store",
+}
+
+SUPPORTED_OPERATION_KINDS = frozenset(BODY_EMITTERS)
+
+
 class _Emitter:
     def __init__(
         self, schedule: Schedule, target: Target, entry_point: str | None = None
@@ -638,21 +653,12 @@ class _Emitter:
     def _emit_operation(self, operation, indent: int) -> None:
         pad = " " * indent
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
-        kind = operation.kind
-        if kind is OperationKind.LOAD:
-            self._emit_load(operation, pad)
-        elif kind is OperationKind.MMA:
-            self._emit_mma(operation, pad)
-        elif kind is OperationKind.EPILOGUE:
-            self._emit_epilogue(operation, pad)
-        elif kind is OperationKind.REDUCE_ARGMIN:
-            self._emit_argmin(operation, pad)
-        elif kind is OperationKind.STORE:
-            self._emit_store(operation, pad)
-        else:
+        method = BODY_EMITTERS.get(operation.kind)
+        if method is None:
             raise EmitError(
-                f"operation kind {kind.value!r} has no CuTe-DSL body emitter"
+                f"operation kind {operation.kind.value!r} has no CuTe-DSL body emitter"
             )
+        getattr(self, method)(operation, pad)
 
     def _emit_load(self, operation, pad: str) -> None:
         """A TMA copy into the stage the barrier this load signals is gating."""

@@ -135,7 +135,12 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         self.assertIn("registers", findings["RESIDENCY_BOUND"]["message"])
         # Nothing blocking can reach this path; a blocking finding here would mean the
         # Environment accepted a candidate its own verifier refused.
-        self.assertFalse(any(item["blocking"] for item in findings.values()))
+        self.assertFalse(
+            any(
+                item["blocks_acceptance"] or item["blocks_lowering"]
+                for item in findings.values()
+            )
+        )
 
     def test_r25_schedule_is_rejected_by_r16_study_before_toolchain(self) -> None:
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
