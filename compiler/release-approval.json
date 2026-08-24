@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "aaab972db3e659604da3e82b2e8cae0b1ee052e010306c8cfa44cfe9d57c9ccb"
+    "canonical_sha256": "1a41be7698c812297055ab121627c17712fcdd8609535b47cce565ddfb17894b"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Scientific v3 candidate 79be4eba exposed the pinned Triton warp-specialization pass's unsupported multi-result argmin; the successor makes that exact backend legality failure structured lowering feedback and adds the frozen candidate as a Corpus regression."
+  "approval_basis": "Schedule ids remain deterministic serialization only; performance-semantic ties now abstain at a pruning boundary."
 }

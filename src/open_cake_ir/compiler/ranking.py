@@ -66,17 +66,39 @@ class Cost:
     device_fill: float
 
     @property
-    def order(self) -> tuple:
-        """Sort key, lower is better.
+    def order(self) -> tuple[float, int]:
+        """Performance-semantic preorder key, lower is better.
 
         A fuller device first, because every candidate here fits within one round and the
         unused capacity is idle multiprocessors. Then the higher residency ceiling, which
-        breaks ties toward the candidate with more room to hide latency. `schedule_id` ends
-        the key so the order is total and reproducible rather than dependent on input
-        order -- a ranking that is not deterministic cannot be evidence.
+        breaks ties toward the candidate with more room to hide latency.
+
+        `schedule_id` is deliberately absent. It can make serialization deterministic,
+        but it says nothing about performance and therefore cannot justify putting one
+        side of a tied group across a GPU-search cut.
         """
 
-        return (-self.device_fill, -self.ctas_per_multiprocessor, self.schedule_id)
+        return (-self.device_fill, -self.ctas_per_multiprocessor)
+
+
+def rank_for_cut(costs: Sequence[Cost], survivor_count: int) -> tuple[Cost, ...] | None:
+    """Return a stable order only when the requested cut does not split a tie.
+
+    The structural model is a preorder, not an oracle. `schedule_id` makes rows within
+    each equivalence class reproducible, but a boundary through such a class is a model
+    abstention: choosing either tied member would add a performance claim the declarations
+    do not contain. The caller must preserve its prior order when this returns None.
+    """
+
+    if not isinstance(survivor_count, int) or isinstance(survivor_count, bool):
+        raise ValueError("survivor_count must be an integer")
+    if survivor_count <= 0 or survivor_count > len(costs):
+        raise ValueError("survivor_count must select a non-empty subset of costs")
+    ordered = tuple(sorted(costs, key=lambda item: (*item.order, item.schedule_id)))
+    if survivor_count < len(ordered):
+        if ordered[survivor_count - 1].order == ordered[survivor_count].order:
+            return None
+    return ordered
 
 
 def _grid_ctas(schedule: Schedule) -> int | None:
@@ -145,4 +167,7 @@ def rank(
             unscored.append(schedule.schedule_id)
         else:
             scored.append(item)
-    return tuple(sorted(scored, key=lambda c: c.order)), tuple(unscored)
+    # `rank` exposes every row rather than making a selection. A stable spelling is useful
+    # for evidence, but only `Cost.order` carries performance meaning; `rank_for_cut`
+    # prevents this final serialization key from deciding who reaches a GPU.
+    return tuple(sorted(scored, key=lambda c: (*c.order, c.schedule_id))), tuple(unscored)

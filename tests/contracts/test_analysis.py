@@ -158,7 +158,7 @@ if __name__ == "__main__":
 
 
 class RankingTest(unittest.TestCase):
-    """Candidate ranking: a total order, advisory, and never a latency.
+    """Candidate ranking: a stable preorder, advisory, and never a latency.
 
     Measured on a B200 across nine tilings, twenty-nine of thirty-six pairs came out in the
     predicted order and the true best survived a cut at k=2. It filters; it does not choose.
@@ -202,6 +202,21 @@ class RankingTest(unittest.TestCase):
         )
         # A ranking that depends on the order it was handed cannot be evidence.
         self.assertEqual(len(forward), len(candidates))
+
+    def test_a_non_performance_tie_break_cannot_choose_a_survivor(self) -> None:
+        from open_cake_ir.compiler.ranking import Cost, rank_for_cut
+
+        tied = [
+            Cost("author-first", 32, 8, "registers", 0.25),
+            Cost("author-second", 32, 8, "registers", 0.25),
+        ]
+        self.assertEqual(tied[0].order, tied[1].order)
+        self.assertIsNone(rank_for_cut(tied, 1))
+
+        separated = tied + [Cost("fuller", 64, 8, "registers", 0.5)]
+        ordered = rank_for_cut(separated, 1)
+        assert ordered is not None
+        self.assertEqual(ordered[0].schedule_id, "fuller")
 
     def test_a_cost_carries_no_predicted_time(self) -> None:
         from open_cake_ir.compiler import ranking
