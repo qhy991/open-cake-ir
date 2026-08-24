@@ -244,6 +244,18 @@ no `elementwise` body, and the subtile loop that stages the accumulator would ha
 the declared operations instead of one hardcoded expression. That is emitter work with a
 kernel already in the corpus to drive it, and no new vocabulary.
 
+The one thing that would have made it a type-system question is whether the intermediate
+can be declared, and it can: that Schedule already carries a `register` buffer
+(`best_index`), so the staged distances could be another. The per-thread partition the
+epilogue works on is how the backend realises a CTA-wide register tile, which is what
+Triton's `acc` is too. `epilogue` would stop meaning "stage and apply a formula" and mean
+"stage", with the arithmetic following it as operations.
+
+Not done. The payoff is removing the last formula token from an emitted path, the cost is
+restructuring the harder backend's most intricate emitter, and no kernel needs it -- the
+one that would drive it already runs correctly. Recorded at the size it actually is, so the
+decision can be made on that rather than on an estimate.
+
 The lesson is the one the paper states about static analysis and applies just as well to
 reading code: a limit observed in one backend's realisation is not a limit of the IR, and
 the way to tell is to look for the same operation somewhere it is already written down.
