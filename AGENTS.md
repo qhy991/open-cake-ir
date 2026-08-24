@@ -48,6 +48,23 @@ The paper states eight. They bind IR changes here; the global doctrine covers th
 - The compiler requires an exact target match. It reports missing device or toolchain
   support; it never steps a schedule down to another architecture.
 
+## Learned here, not from the paper
+
+Both of these were found by probing this repository and cost a wrong answer or a wrong
+record before they were understood. They are corollaries of rules above, written as
+things to do because the rules above did not stop either one.
+
+- **A report states the domain it examined.** Omitting a resource the Schedule declares
+  nothing for reads as "does not constrain" and means "was not looked at", and the reader
+  will assume the generous one. Measured: `gemm-bias-b1-smoke` declares no shared memory,
+  Triton allocates it for the `tl.dot` operands, and it bounds residency exactly as
+  tightly as the registers the analysis does model.
+- **A block from an unrelated rule is on loan.** When a probe shows a hazard is refused,
+  ask which rule refused it. Twice here the answer was a rule about something else --
+  tensor-memory ownership by a synchronisation rule, a register-held contraction
+  accumulator by a lifetime rule -- and either can be scoped later by someone who checked
+  every consequence they knew of. Close it properly or record that the block is borrowed.
+
 ## Compiler evolution (S3, outer loop)
 
 - A proposal is checked against P1-P8 before it is implemented. A new primitive must be
