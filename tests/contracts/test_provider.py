@@ -18,10 +18,24 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     ProviderQualificationReceipt,
     ProviderTurn,
     normalize_codex_turn,
+    required_live_provider_qualification_scope,
 )
 
 
 class ProviderContractTests(unittest.TestCase):
+    def test_claim_scope_owns_the_live_provider_capability(self) -> None:
+        self.assertEqual(
+            required_live_provider_qualification_scope("artifact_optimization_only"),
+            "live_two_turn_tool_rich_provider",
+        )
+        for scope in ("scientific_matched_search", "system_qualification_only"):
+            self.assertEqual(
+                required_live_provider_qualification_scope(scope),
+                "live_two_turn_current_provider",
+            )
+        with self.assertRaisesRegex(ValueError, "no live provider qualification"):
+            required_live_provider_qualification_scope("bounded_local_b200_reconstruction")
+
     def _events(self, path: Path, *, duplicate: bool, second_text: str | None = None) -> bytes:
         message = '{"candidate_written":true}'
         file_started = {

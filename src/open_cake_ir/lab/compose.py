@@ -38,6 +38,7 @@ from .providers import (
     CodexProviderAdapter,
     CodexRunProvider,
     ProviderQualificationReceipt,
+    required_live_provider_qualification_scope,
 )
 from .runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter
 
@@ -423,10 +424,11 @@ def execute_matched_from_config(
     )
     qualification = ProviderQualificationReceipt.load(root / str(qualification_ref["path"]))
     if (
-        qualification.scope != "live_two_turn_current_provider"
+        qualification.scope
+        != required_live_provider_qualification_scope(lock.claim_scope)
         or qualification.canonical_sha256 != qualification_ref["canonical_sha256"]
     ):
-        raise ValueError("runtime execution requires a current live provider qualification")
+        raise ValueError("runtime execution requires the Claim Scope's live provider qualification")
     output_schema = _object(
         provider_authority["output_schema"], "arm_environments.provider.output_schema"
     )

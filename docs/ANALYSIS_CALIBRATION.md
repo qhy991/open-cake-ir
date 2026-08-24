@@ -273,11 +273,28 @@ evaluator/profile/replay seam for one frozen Candidate and shape. It does not me
 profiler-free latency, current Compiler performance, every search survivor, or a paper
 Campaign.
 
-The mechanism observation used working-v9 digest `52fb920a…`. After the profiled-launch
-correctness invariant was made fail-closed, final Executor digest `b1c30a16…` received two
-bounded two-job validation pairs; clean-card admission rejected all four jobs before module
-load or launch. They establish fail-closed zero-work behavior, not a dynamic pass of the
-final digest.
+The first mechanism observation used working-v9 precursor digest `52fb920a…`. After the
+profiled-launch correctness invariant was made fail-closed, canonical attempt 10 repeated
+the assay under released v9 digest `b1c30a16…`: 16,384/16,384 exact assignments, one
+target launch, zero fallback and zero timing, with the raw CSV and complete Evaluation
+Receipt replayed under the released source closure. Its signals were 7.17% SM, 3.35% DRAM,
+2.24% L2, 2.44% active warps, 37.46% long scoreboard and 1.36% barrier stalls; the small
+difference from the precursor profile does not change the bounded diagnosis.
+
+Executor v10 then repaired only the Claim Scope → provider-qualification composition
+boundary. Canonical attempt 12 nevertheless repeated the assay rather than inheriting v9's
+result: current digest `23a2c79f…` again produced 16,384/16,384 exact assignments, one
+target launch, zero fallback and zero timing, and its complete receipt replayed. The
+signals were 7.17% SM, 3.36% DRAM, 2.23% L2, 2.44% active warps, 37.44% long scoreboard
+and 1.37% barrier stalls. Attempt 11 never started the worker because the broker service
+could not traverse the temporary checkout chosen as its cwd; that is retained as a
+zero-work harness-staging failure, not retried under the same evidence identity.
+
+Earlier attempts 8/9 were manual invocations that omitted the runtime configuration's
+frozen `GPUQ_JOB_ID` environment argument. They rejected before inspecting card processes,
+so their all-zero counters establish fail-closed broker-environment handling, not dirty
+cards. Attempts 6/7 also did zero work, but their retained results do not support a narrower
+cause. The correction and exact artifact hashes are in the external diagnostic report.
 
 
 ## Reproducing

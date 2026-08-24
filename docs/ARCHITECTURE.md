@@ -158,7 +158,7 @@ The Lab owns every transition. The provider and the evaluator only return observ
 ```mermaid
 stateDiagram-v2
     direction TB
-    state "provider<br/>candidate set authored" as provider
+    state "provider<br/>ordered candidate tuple" as provider
     state "environment<br/>build / gate / seal each" as environment
     state "filter<br/>deduplicate + covered rank" as filter
     state "search<br/>oracle then CUPTI" as search
@@ -194,13 +194,19 @@ stateDiagram-v2
     sealed --> [*]
 ```
 
-The four paper stages now have one control path: a provider Turn can return a candidate
-set; every member is built and gated, equivalent programs are evaluated once, released
-ranking coverage may order them, and `searches_per_turn` bounds GPU work. Search selects
-one qualified Candidate for a fresh confirmatory assay. When the Study opts in, a separate
-correctness-qualified NCU launch explains that confirmed Candidate and its checked summary
-becomes next-Turn feedback. The remaining paper gap is breadth: this smallest slice does
-not profile every search survivor, and no scientific Campaign has exercised it.
+The four paper stages have one internal control path: the provider Interface can return an
+ordered candidate tuple; every member is built and gated, equivalent programs are
+evaluated once, released ranking coverage may order them, and `searches_per_turn` bounds
+GPU work. Search selects one qualified Candidate for a fresh confirmatory assay. When the
+Study opts in, a separate correctness-qualified NCU launch explains that confirmed
+Candidate and its checked summary becomes next-Turn feedback.
+
+That diagram is the Lab contract, not yet the complete live system. The canonical
+`CodexRunProvider` prompt, file lifecycle and normalizer still seal exactly one candidate
+per Turn, so live runs have no set to deduplicate or rank. ADR 0009 distils the smallest
+successor around one sealed candidate-set envelope; it is proposed, not implemented. The
+other remaining breadth gaps are profiling every search survivor and exercising the path
+in a scientific Campaign.
 
 ---
 
@@ -279,10 +285,11 @@ graph LR
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
 | Compile → external oracle → GPU timing | implemented, B200-verified on 5 emitted operators |
-| Profiler evidence in the inner loop | partial relative to the paper — the canonical no-timing NCU assay, raw/profile replay and next-Turn feedback are implemented and the mechanism is B200-exercised for one selected confirmed Candidate; the final Executor digest has only zero-work clean-card rejection evidence, while every evaluated survivor and a scientific Campaign are not yet covered |
+| Profiler evidence in the inner loop | partial relative to the paper — the canonical no-timing NCU assay, raw/profile replay and next-Turn feedback are implemented; current Executor v10 digest `23a2c79f…` passed one correctness-qualified B200 assay for a selected confirmed Candidate, while every evaluated survivor and a scientific Campaign are not yet covered |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
 | Deterministic lowering | `lower` generates for 6 of the 7 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke`, `layernorm_b8_smoke` and `gemm_bias_b1_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file |
-| The filter stage | partial — construction and verifier filtering are implemented, but v8 exposes no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
+| Live candidate-set authoring | absent — the Lab tuple/filter/replay path is fixture-tested, while the canonical Codex provider still writes exactly one Candidate per Turn; ADR 0009 is only proposed |
+| The filter stage | partial — construction and verifier filtering are implemented, but the live provider supplies one Candidate and v8 exposes no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
 | Diagnosis routing | implemented — every rejection is routed to the candidate, the verifier, the IR vocabulary or the cost model, and each destination is inferred from a signal the loop already produces |
 | Cost-model ranking | mechanism implemented but no released coverage — the structural hypothesis remains measurable, while public ranking declines every current profile |
 
@@ -290,12 +297,14 @@ The filter box is amber because its hard gates are active but its cost ranking h
 released calibration coverage. Missing coverage is an observable state, not a silent
 fallback to an unvalidated order.
 
-**What the filter does.** A provider Turn submits a set. Every candidate in it is built,
-gated and sealed — a rejected one is evidence, not a discard. Two candidates that are the
-same program under different names are searched once. A released profile-specific cost
-would order eligible candidates before GPU time; with v8's empty coverage they retain
-provider order. `searches_per_turn` bounds how many survive to measurement; confirmatory
-evaluation stays single, because that one is the measurement a claim rests on.
+**What the filter does.** At the Lab Interface a provider Turn may submit a set. Every
+candidate in it is built, gated and sealed — a rejected one is evidence, not a discard.
+Two candidates that are the same program under different names are searched once. A
+released profile-specific cost would order eligible candidates before GPU time; with v8's
+empty coverage they retain provider order. `searches_per_turn` bounds how many survive to
+measurement; confirmatory evaluation stays single, because that one is the measurement a
+claim rests on. The current live provider supplies a singleton, so these set operations
+are presently exercised only by contract fixtures.
 
 **What the ranking is worth.** The dormant hypothesis orders on device fill and declines
 past saturation. It used to sort on wave count first; a sweep across four predicted wave

@@ -44,6 +44,7 @@ from .providers import (
     ProviderQualificationReceipt,
     ProviderTurn,
     normalize_codex_turn,
+    required_live_provider_qualification_scope,
 )
 from .runtime import BoundedBrokerEvaluator, BrokerSubmitter, CommandBrokerSubmitter
 
@@ -82,6 +83,7 @@ __all__ = [
     "ProviderQualificationReceipt",
     "ProviderTurn",
     "normalize_codex_turn",
+    "required_live_provider_qualification_scope",
     "ExactShape",
     "KernelSeed",
     "SpecialistLowering",

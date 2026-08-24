@@ -315,10 +315,10 @@ different reduction vocabulary. ADR 0006 still stands.
 libraries. It is in the IR because Flash-KMeans needs it, which is legitimate -- an IR
 serves its corpus. It is worth recording that one operation is exercised by one operator
 while the gaps above are exercised by whole libraries, because that ratio is what a survey
-before the fact would have shown and a corpus of three families cannot.
+before the fact would have shown and a corpus of six families cannot.
 
 ## Corpus coverage, restated
 
-Ten cases across three families, against the paper's roughly four hundred across
+Sixteen cases across six operator families, against the paper's roughly four hundred across
 twenty-eight. Attention, MoE, quantized GEMM and fused graph kernels -- the four families
 these surveys are about -- have no local representation at all.

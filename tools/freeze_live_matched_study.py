@@ -22,6 +22,7 @@ from open_cake_ir.lab import (  # noqa: E402
     NvccToolchainBuilder,
     ProviderQualificationReceipt,
     broker_execution_sha256,
+    required_live_provider_qualification_scope,
 )
 
 
@@ -96,11 +97,12 @@ def main() -> int:
     anchor_path = arguments.qualification_anchor.resolve(strict=True)
     anchor_relative = _project_relative(root, anchor_path, "provider qualification anchor")
     qualification = ProviderQualificationReceipt.load(qualification_path)
-    if not qualification.qualified or qualification.scope not in {
-        "live_two_turn_current_provider",
-        "live_two_turn_tool_rich_provider",
-    }:
-        raise ValueError("live Study requires a live provider qualification")
+    if (
+        not qualification.qualified
+        or qualification.scope
+        != required_live_provider_qualification_scope(str(study["claim_scope"]))
+    ):
+        raise ValueError("live Study requires the Claim Scope's provider qualification")
     anchor = _object(json.loads(anchor_path.read_text(encoding="utf-8")), "anchor")
     if anchor.get("qualification_receipt_sha256") != qualification.canonical_sha256:
         raise ValueError("provider qualification anchor differs")

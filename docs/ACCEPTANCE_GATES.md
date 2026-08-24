@@ -13,9 +13,9 @@ supports a broader scientific claim.
 | G3 | passed | v8 16-case Corpus Gate, released content-bound Revision lock, reviewed approval and 32-source closure |
 | G4 | passed for migrated evidence and the bounded attribution slice | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles, raw r45 replay, and raw-checked no-timing NCU attribution |
 | G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay and matched/Portfolio semantic replay pass |
-| G6 | passed | 309 tests + 214 subtests cover candidate-set selection/replay, external Campaign custody, Lab authority, GPU tutorial custody, attribution replay and all three matched Claim Scopes |
-| G7 | passed | r4 proves two-Turn add/update, thread/usage/sandbox/cwd/reference continuity and the closed feature denylist |
-| G7F | passed | tool-rich v1 injects no feature disables and replays shell activity on initial and resumed Turns |
+| G6 | passed | 310 tests + 214 subtests cover fixture candidate-set selection/replay, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, attribution replay and all three matched Claim Scopes |
+| G7 | passed | r4 proves single-candidate two-Turn add/update, thread/usage/sandbox/cwd/reference continuity and the closed feature denylist |
+| G7F | passed | tool-rich v1 injects no feature disables and replays shell activity on initial and resumed singleton Turns |
 | G8 | passed | r6 has two adhered Runs, four replayed Evaluation Receipts and an independent offline system-qualification pass |
 | G9 | passed | private `qhy991/open-cake-ir` main is the source authority; legacy is read-only with pinned rollback |
 | G10 | historical projection only | r42 estimand unavailable and r45 bounded timing instability are preserved, not rerun |

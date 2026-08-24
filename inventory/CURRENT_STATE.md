@@ -1,7 +1,8 @@
 # Current-state inventory
 
 Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set replay repair,
-inner-loop NCU attribution, Executor v9 release and Compiler v8 release. The final legacy authority is clean revision
+final-Executor NCU attribution validation, live candidate-set boundary audit, Executor v10 release and Compiler v8
+release. The final legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
 `migration/bundles/cake-repro-final-2fa79092.bundle` remains an independent complete-history copy. The 146-record
@@ -33,12 +34,14 @@ causal effect, serving and paper reproduction are not.
   `COMPILER_REVISION_IDENTITY_INCIDENT_20260824.json` records why v4 and v6 cannot be reused or treated as unique
   released identities. v8 exposes no uncalibrated cost order: its `calibration_coverage` is empty and eligible
   candidates retain provider order.
-- Current Executor Revision `open-cake-ir-b200-v9` binds 34 runtime sources, including deterministic external
+- Current Executor Revision `open-cake-ir-b200-v10` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
   and no-GPU Triton-to-CUBIN qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor.
   The Executor pins NCU 2026.1.1.0 by path, bytes and size. G8 r6 retains its exact v1 closure, later source baselines
-  retain v2–v5, and v6–v8 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all nine revisions.
+  retain v2–v5, and v6–v9 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all ten revisions. v10 also
+  makes Claim Scope the single authority for choosing the closed versus tool-rich live provider qualification, so
+  artifact-only live composition no longer rejects its own qualified provider.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
 - Lab owns matched Turn/budget/checkpoint control and the exact-shape Portfolio handoff; Compiler does not own
   KernelSeed or held-out policy.
@@ -47,8 +50,12 @@ causal effect, serving and paper reproduction are not.
   attempt replay uses `(turn, purpose, candidate_sha256)`; qualification precedes selection and the selected
   candidate retains its own findings. Attribution is a separate correctness-qualified launch with no timing; its
   summary is recomputed from the retained CSV before archival and again during audit.
+- The Lab/provider seam can carry an ordered candidate tuple and its filtering, selection and replay behavior is
+  covered by fixtures. The canonical live Codex prompts, file lifecycle and normalizer still produce exactly one
+  Candidate per Turn, so the paper's live candidate-generation/ranking stage is not complete. Proposed ADR 0009
+  defines one sealed-envelope successor without adding a parallel Lab path.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 309 tests plus 214 subtests; the earlier remote qualification passed its
+- The current local contract suite passes 310 tests plus 214 subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
@@ -63,9 +70,11 @@ causal effect, serving and paper reproduction are not.
   samples, 16,384/16,384 exact assignments, and a replay-checked 11-metric profile. Full/PM/source reports expose
   grid underfill, a theoretical shared-memory residency limit and long-scoreboard pressure. This validates the
   evaluator mechanism and one frozen b32 Candidate; it is not current-kernel performance, every-survivor coverage
-  or a scientific Campaign. That mechanism pass used a v9 precursor. Two bounded validation pairs for the final
-  `b1c30a16…` closure were rejected by clean-card admission before any module load or launch, so no dynamic pass of
-  the final Executor digest is claimed.
+  or a scientific Campaign. Canonical attempt 12 passed under current v10 digest `23a2c79f…` and its retained raw
+  CSV, projected profile and complete Evaluation Receipt replay. Attempt 11 was a pre-worker temporary-checkout
+  permission failure and did no GPU work. Earlier attempts 8/9 omitted the runtime's frozen
+  `GPUQ_JOB_ID` environment argument and therefore prove only fail-closed zero-work admission, not dirty cards;
+  attempts 6/7 retain no narrower failure-stage evidence.
 - New Campaign Locks and Evidence roots are create-only and must be outside the checkout; historical in-checkout
   Campaigns remain read-only replay inputs.
 
@@ -77,7 +86,7 @@ causal effect, serving and paper reproduction are not.
 | Workload inputs/oracles | Workload Contracts + Evaluation adapters | migrated |
 | r41/r42 Turn/resume/checkpoint controls | matched Lab path | implemented and live-qualified by G7/G8 |
 | r43-r45 seed/specialists/dispatcher/timing | portfolio Lab + Evaluation path | implemented; new B200 rerun pending |
-| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | implemented and live provider-qualified; Campaign not run |
+| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | singleton provider qualified and v10 composition repaired; live successor must be re-frozen; candidate-set envelope proposed; Campaign not run |
 | Beginner B200 teaching smoke | Compiler + common correctness Evaluation | implemented and live-qualified; performance deliberately absent |
 | Legacy raw/index/source bytes | final bundle + manifest + historical indexes | migrated by immutable reference |
 | rXX/vN runners and verifiers | legacy Git history | deliberately not active |

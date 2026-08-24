@@ -37,6 +37,7 @@ from .providers import (
     ProviderQualificationReceipt,
     ProviderTurn,
     parse_codex_turn_events,
+    required_live_provider_qualification_scope,
 )
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -1363,6 +1364,11 @@ class Lab:
             or not qualification.file_lifecycle_observed
             or not qualification.usage_observed
             or not qualification.qualified
+            or qualification.scope
+            not in {
+                "zero_gpu_contract_fixture_only",
+                required_live_provider_qualification_scope(claim_scope),
+            }
             or qualification_ref.get("canonical_sha256") != qualification.canonical_sha256
         ):
             raise ValueError("provider qualification bytes or capability differs")

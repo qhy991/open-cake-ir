@@ -46,6 +46,16 @@ CODEX_DISABLED_FEATURES = (
 )
 
 
+def required_live_provider_qualification_scope(claim_scope: str) -> str:
+    """Return the one live provider capability authorized by a matched Claim Scope."""
+
+    if claim_scope == "artifact_optimization_only":
+        return "live_two_turn_tool_rich_provider"
+    if claim_scope in {"scientific_matched_search", "system_qualification_only"}:
+        return "live_two_turn_current_provider"
+    raise ValueError("matched Claim Scope has no live provider qualification")
+
+
 def _read_candidate_nofollow(path: Path) -> bytes:
     descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     try:
