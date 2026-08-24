@@ -76,7 +76,22 @@ def _softmax_case(shapes, torch):
     return (x, torch.empty_like(x)), reference, None
 
 
+def _rmsnorm_case(shapes, torch):
+    """Inputs and the float32 answer for the row RMSNorm.
+
+    The oracle is written from the definition rather than from the Schedule's own
+    decomposition, so it does not inherit the Schedule's reasoning about epsilon
+    placement -- which is the part a normalization gets wrong.
+    """
+
+    x = torch.randn(shapes["x"], device="cuda", dtype=torch.float32)
+    gamma = torch.randn(shapes["gamma"], device="cuda", dtype=torch.float32)
+    inverse = torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + 1e-6)
+    return (x, gamma, torch.empty_like(x)), x * inverse * gamma, None
+
+
 CASES = {
+    "rmsnorm_b8_smoke": _rmsnorm_case,
     "flash_kmeans_assignment_full": _flash_kmeans_case,
     "softmax_b8_smoke": _softmax_case,
 }

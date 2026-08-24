@@ -287,6 +287,21 @@ def _verify_loop_nest(schedule: Schedule, out: _Collector) -> None:
     scope_of: dict[str, str] = {}
     parent_of: dict[str, str] = {}
     for index, loop in enumerate(schedule.tile_loops):
+        # A loop that runs once is the same program as no loop, and the IR now has both
+        # spellings -- a Schedule whose axis is already resident declares no tile loop.
+        # Shapes here are static, so the trip count is knowable and one of the two forms
+        # has to be the form. This is the one that carries an iterator nothing reads.
+        buffer = schedule.buffer(loop.buffer)
+        if buffer is not None and loop.dimension < len(buffer.shape):
+            extent = buffer.shape[loop.dimension]
+            if (extent + loop.tile - 1) // loop.tile < 2:
+                out.add(
+                    "TILE_LOOP_SINGLE_TRIP",
+                    f"tile_loops[{index}].tile",
+                    f"loop {loop.name!r} walks {extent} in tiles of {loop.tile}, which is "
+                    f"one trip; a Schedule that does not iterate declares no tile loop",
+                    category,
+                )
         path = f"tile_loops[{index}].body"
         positions: list[int] = []
         for entry in loop.body:

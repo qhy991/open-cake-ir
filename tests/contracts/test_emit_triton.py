@@ -410,42 +410,57 @@ class ComposedArithmeticTest(unittest.TestCase):
         self.assertIn("x_tile", escapes[0].message)
 
 
-class SoftmaxObservationTest(unittest.TestCase):
-    """The retained B200 observation for the second emitted operator.
+class EmittedObservationTest(unittest.TestCase):
+    """The retained B200 observations for the operators this backend emits.
+
+    Each record names the artifact that ran, so a change to a lowering detaches the
+    evidence from the code and this says so. The answer is a new observation, taken with
+    `tools/observe_lowered_kernel.py`, never an edit to a record.
 
     Softmax is the case that tested whether an operator is one profile row plus the
-    Schedules that claim it. It needed two vocabulary additions -- a `max` fold and
-    `exp`/`div` -- and one backend change that was a removal: a Schedule whose reduced
-    axis is already resident declares no tile loop, and the emitter no longer insists on
-    one. Correctness only; no timing was taken.
+    Schedules that claim it. RMSNorm is here because admitting softmax changed it: a loop
+    that runs once is the same program as no loop, and once the IR had both spellings one
+    of them had to be the form. Correctness only; no timing was taken.
     """
 
-    RECORD = ROOT / "inventory" / "SOFTMAX_OBSERVATION_20260824.json"
+    OBSERVED = (
+        ("softmax", "SOFTMAX_OBSERVATION_20260824.json", "softmax-b8-smoke.json"),
+        ("rmsnorm", "RMSNORM_OBSERVATION_20260824.json", "rmsnorm-b8-smoke.json"),
+    )
 
-    def test_the_observation_matches_what_the_compiler_lowers_now(self) -> None:
-        from open_cake_ir.compiler import Compiler
-
-        record = json.loads(self.RECORD.read_text(encoding="utf-8"))
-        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
-        schedule = ROOT / "corpus" / "schedules" / "softmax-b8-smoke.json"
-        lowering = compiler.lower(compiler.assess_file(schedule))
-        self.assertEqual(lowering.source_sha256, record["lowering"]["source_sha256"])
-        self.assertEqual(record["result"]["mismatch_count"], 0)
-        self.assertLessEqual(
-            record["result"]["max_deviation"], record["result"]["tolerance"]
-        )
-        self.assertTrue(record["result"]["passed"])
-        self.assertFalse(record["performance_measured"])
-
-    def test_the_emitted_kernel_carries_no_loop(self) -> None:
+    def test_each_observation_matches_what_the_compiler_lowers_now(self) -> None:
         from open_cake_ir.compiler import Compiler
 
         compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
-        schedule = ROOT / "corpus" / "schedules" / "softmax-b8-smoke.json"
-        source = compiler.lower(compiler.assess_file(schedule)).source
-        # A loop here would be a trip count of one with an unused iterator, and it would
-        # force `weights` out of a loop -- which the verifier refuses, correctly.
-        self.assertNotIn("tl.range(", source)
-        self.assertIn("rowmax = tl.max(", source)
-        self.assertIn("rowsum = tl.sum(", source)
+        for name, record_name, schedule_name in self.OBSERVED:
+            with self.subTest(operator=name):
+                record = json.loads(
+                    (ROOT / "inventory" / record_name).read_text(encoding="utf-8")
+                )
+                lowering = compiler.lower(
+                    compiler.assess_file(ROOT / "corpus" / "schedules" / schedule_name)
+                )
+                self.assertEqual(
+                    lowering.source_sha256, record["lowering"]["source_sha256"]
+                )
+                self.assertEqual(record["result"]["mismatch_count"], 0)
+                self.assertLessEqual(
+                    record["result"]["max_deviation"], record["result"]["tolerance"]
+                )
+                self.assertTrue(record["result"]["passed"])
+                self.assertFalse(record["performance_measured"])
 
+    def test_neither_emitted_kernel_carries_a_loop(self) -> None:
+        from open_cake_ir.compiler import Compiler
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        for name, _, schedule_name in self.OBSERVED:
+            with self.subTest(operator=name):
+                source = compiler.lower(
+                    compiler.assess_file(ROOT / "corpus" / "schedules" / schedule_name)
+                ).source
+                # Both hold their reduced axis whole, so a loop here would be a trip
+                # count of one with an iterator nothing reads. The verifier refuses to
+                # let a Schedule spell it that way.
+                self.assertNotIn("tl.range(", source)
+                self.assertIn("tl.sum(", source)

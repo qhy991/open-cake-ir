@@ -6,6 +6,16 @@ the measurement, so nothing established whether the bounds it prints are true.
 
 Measured with Nsight Compute on a B200, exclusive, on the two emitted backends.
 
+One caveat on the RMSNorm row, added when the Schedule changed under it. These numbers were
+taken on a lowering that carried a tile loop of one trip; that Schedule now declares no loop
+(`docs/IR_SURVEY_SYNTHESIS.md` says why), so the artifact measured here is not the artifact
+the Compiler emits today. The *predicted* column is unaffected -- the analysis reads
+declarations, and it still says at most 7 resident CTAs bound by register storage -- and
+correctness was re-observed on the new lowering
+(`inventory/RMSNORM_OBSERVATION_20260824.json`). What is stale is the measured column, and
+renewing it needs an Nsight run that this repository has no instrument for. That gap is the
+same one `tools/observe_lowered_kernel.py` closed for correctness and has not closed here.
+
 | | predicted | measured | |
 | --- | --- | --- | --- |
 | **rmsnorm**, Triton | | | |
