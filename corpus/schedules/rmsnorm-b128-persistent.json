@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "schedule_id": "rmsnorm-b8-smoke-persistent-v1",
+  "schedule_id": "rmsnorm-b128-persistent-v1",
   "target": "sm_100a",
   "roles": [
     {
@@ -22,7 +22,7 @@
       "space": "global",
       "dtype": "fp32",
       "shape": [
-        8,
+        128,
         512,
         128
       ],
@@ -42,7 +42,7 @@
       "space": "global",
       "dtype": "fp32",
       "shape": [
-        8,
+        128,
         512,
         128
       ],

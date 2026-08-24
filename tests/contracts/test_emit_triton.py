@@ -12,6 +12,7 @@ import ast
 import copy
 import itertools
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -449,7 +450,14 @@ class EmittedObservationTest(unittest.TestCase):
     OBSERVED = (
         ("softmax", "SOFTMAX_OBSERVATION_20260824.json", "softmax-b8-smoke.json"),
         ("rmsnorm", "RMSNORM_OBSERVATION_20260824.json", "rmsnorm-b8-smoke.json"),
+        (
+            "rmsnorm-persistent",
+            "PERSISTENT_OBSERVATION_20260824.json",
+            "rmsnorm-b128-persistent.json",
+        ),
     )
+
+    LOOPLESS = ("softmax-b8-smoke.json", "rmsnorm-b8-smoke.json")
 
     def test_each_observation_matches_what_the_compiler_lowers_now(self) -> None:
         from open_cake_ir.compiler import Compiler
@@ -473,12 +481,12 @@ class EmittedObservationTest(unittest.TestCase):
                 self.assertTrue(record["result"]["passed"])
                 self.assertFalse(record["performance_measured"])
 
-    def test_neither_emitted_kernel_carries_a_loop(self) -> None:
+    def test_a_row_wise_kernel_carries_no_loop(self) -> None:
         from open_cake_ir.compiler import Compiler
 
         compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
-        for name, _, schedule_name in self.OBSERVED:
-            with self.subTest(operator=name):
+        for schedule_name in self.LOOPLESS:
+            with self.subTest(schedule=schedule_name):
                 source = compiler.lower(
                     compiler.assess_file(ROOT / "corpus" / "schedules" / schedule_name)
                 ).source
@@ -487,3 +495,26 @@ class EmittedObservationTest(unittest.TestCase):
                 # let a Schedule spell it that way.
                 self.assertNotIn("tl.range(", source)
                 self.assertIn("tl.sum(", source)
+
+    def test_the_persistent_walk_actually_strides(self) -> None:
+        """The one loop left, and the reason its Schedule was reshaped.
+
+        A persistent grid is sized from the residency the Schedule commits to and capped
+        at the tile count, so at the old shape it launched one CTA per tile and the
+        stride never strode. The emitted grid-stride and its second iteration had never
+        run. They do now: 592 CTAs over 1024 tiles, so most CTAs decode two.
+        """
+
+        from open_cake_ir.compiler import Compiler
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        source = compiler.lower(
+            compiler.assess_file(
+                ROOT / "corpus" / "schedules" / "rmsnorm-b128-persistent.json"
+            )
+        ).source
+        self.assertIn("for _work in tl.range(tl.program_id(0), TOTAL_TILES, NUM_CTAS)", source)
+        constants = dict(
+            re.findall(r"^\s+(TOTAL_TILES|NUM_CTAS)=(\d+),$", source, re.MULTILINE)
+        )
+        self.assertGreater(int(constants["TOTAL_TILES"]), int(constants["NUM_CTAS"]))

@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "c45e24fe12111b4801ad86e93cad3332ca7663ef8f961380792b1714100754e4"
+    "canonical_sha256": "da72ea2d0b39468e708720694397b0ed678d6c7de87e4e999c5fb3c38bae23f0"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "a mask path that cannot fire raises instead of falling through"
+  "approval_basis": "bind every Schedule the Corpus Gate reads"
 }

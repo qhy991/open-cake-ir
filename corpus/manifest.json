@@ -133,7 +133,7 @@
     },
     {
       "case_id": "rmsnorm-persistent",
-      "schedule": "corpus/schedules/rmsnorm-b8-smoke-persistent.json",
+      "schedule": "corpus/schedules/rmsnorm-b128-persistent.json",
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
@@ -141,8 +141,8 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "75006b7954d68d60ecf70a6d07496e70c3b37dd259e82bd78322efc2bc0dcc0b",
-        "lowering_source_sha256": "a28beeac0001765372507358ad3e552494fd5d17d4826fecd78dd161ced98c07"
+        "schedule_sha256": "801269e202542f1680a5e2605508302ec146e07ef0a6d3b92831b174fabd10a6",
+        "lowering_source_sha256": "a694145da1a97ded6dd0a355665851553ff5b79f1a65d76d49a98690a9e0a4a7"
       }
     },
     {

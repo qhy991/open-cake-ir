@@ -362,6 +362,33 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(released_gate.compiler_revision_id, released["revision_id"])
         self.assertTrue(released_gate.passed)
 
+    def test_the_revision_binds_every_schedule_its_gate_reads(self) -> None:
+        """The Corpus Gate's own inputs have to be sealed, or the gate proves nothing.
+
+        `corpus/manifest.json` is bound, so adding a case invalidates the lock. The
+        Schedule a case points at is bound only if the source set lists it too, and the
+        two lists were kept in step by hand -- so a gated Schedule could be edited under a
+        released Revision without the Revision noticing. It was: two Schedules admitted
+        with softmax sat outside the source set until this was checked.
+
+        The release refuses that now. This holds the checked-in pair as well, because a
+        Revision released before the check is the one nobody would re-run.
+        """
+
+        source_set = json.loads(
+            (ROOT / "compiler/source_set.json").read_text(encoding="utf-8")
+        )
+        manifest = json.loads(
+            (ROOT / "corpus/manifest.json").read_text(encoding="utf-8")
+        )
+        bound = set(source_set["paths"])
+        gated = {case["schedule"] for case in manifest["cases"]}
+        self.assertEqual(gated - bound, set())
+        # And nothing bound as a corpus Schedule that no case reads: an unread Schedule
+        # in the source set is content nobody gates.
+        stale = {p for p in bound if p.startswith("corpus/schedules/")} - gated
+        self.assertEqual(stale, set())
+
     def test_every_admitted_profile_has_a_corpus_case_that_lowers(self) -> None:
         """A profile is admitted by a row; a row that nothing exercises is a claim.
 

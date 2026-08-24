@@ -1,0 +1,42 @@
+{
+ "schema_version": 2,
+ "observed_at": "2026-08-24T07:00:00Z",
+ "purpose": "lowered_kernel_correctness",
+ "scientific_claim_authorized": false,
+ "performance_measured": false,
+ "host": "verda-b200x4",
+ "device": "NVIDIA B200",
+ "compute_capability": [
+  10,
+  0
+ ],
+ "toolchain": {
+  "cutlass": "4.7.0",
+  "torch": "2.13.0+cu130"
+ },
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v4",
+  "revision_sha256": "b7ed6eb2125b16d5653bb3dd42de98246a2ace351a758795777997a27c778ca5"
+ },
+ "schedule": {
+  "path": "corpus/schedules/rmsnorm-b128-persistent.json",
+  "schedule_id": "rmsnorm-b128-persistent-v1",
+  "canonical_sha256": "801269e202542f1680a5e2605508302ec146e07ef0a6d3b92831b174fabd10a6"
+ },
+ "lowering": {
+  "generated": true,
+  "entry_point": "cake_rmsnorm_b8_smoke",
+  "source_sha256": "a694145da1a97ded6dd0a355665851553ff5b79f1a65d76d49a98690a9e0a4a7",
+  "source_lines": 114
+ },
+ "result": {
+  "compiled": true,
+  "launched": true,
+  "total_elements": 8388608,
+  "mismatch_count": 0,
+  "max_deviation": 1.430511474609375e-06,
+  "tolerance": 1e-05,
+  "passed": true
+ },
+ "note": "Compiler.lower generated this source from the Schedule; there is no checked-in template for this profile. Correctness only -- no timing was taken. Reproduce with tools/observe_lowered_kernel.py."
+}

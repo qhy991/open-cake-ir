@@ -6,8 +6,13 @@ and the ranking was not, so a set had no order and the stage had nothing to do.
 
 This does not predict a time, and that is a decision rather than an omission. A Target
 declares no clock and no bandwidth, so a predicted time would be derived from neither. The
-same choice is visible in production: DeepGEMM's own layout comparison ranks on wave count
-and last-wave utilisation, and its `num_cycles` field is hardwired to zero behind a TODO.
+same choice is visible in production: DeepGEMM's own layout comparison leaves `num_cycles`
+hardwired to zero behind a TODO and orders on structure instead.
+
+The structure it orders on is wave count and last-wave utilisation. This model tried that
+and measurement refused it; see below. The precedent that survives is the narrow one --
+that a serious implementation declines to predict a time -- and not the particular terms
+that implementation picked, which are its evidence to produce and not ours to inherit.
 
 What it ranks on is what measurement supports, and it declines where measurement withdrew
 support. This model used to sort on wave count first -- how many full rounds of resident
