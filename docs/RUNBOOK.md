@@ -29,6 +29,30 @@ Every new Campaign custody root must be outside the checkout. `lab preflight --o
 --evidence-root` reject in-checkout paths before writing files or invoking execution inputs. Historical in-checkout
 Locks and Evidence remain valid only for read-only `lab audit`.
 
+`tools/release_compiler_cycle.sh "<basis>"` drives that pipeline end to end and derives the id, but it does not
+re-pin a **Target definition**: `compiler/revision.json` holds each Target's `canonical_sha256`, and editing
+`compiler/targets/*.json` means updating that pin by hand first, or the cycle stops at `target definition ... bytes
+differ`. That is deliberate — a source edit is routine and a hardware description changing is not — but it is a step
+the script will not take for you.
+
+Expectations are never regenerated inside a release. `tools/refresh_corpus_expectations.py` prints the diff and exits
+non-zero; `--write` adopts it. Read the diff first: adopting before reading is how a gate becomes a tautology.
+
+## Instruments
+
+These produce evidence rather than artifacts. Each one is checked in so a claim it supports can be repeated instead
+of trusted; `docs/ANALYSIS_CALIBRATION.md` reads their output and `evidence/calibration/` holds it.
+
+```bash
+python tools/calibrate_wave_term.py --first 60 --last 400 --step 2      # exclusive: benchmark
+python tools/calibrate_ranking_at_scale.py --batch 512                  # exclusive: benchmark
+python tools/observe_lowered_kernel.py --observed-at <iso8601> --out inventory/<NEW>.json
+python tools/ir_vocabulary.py                                           # no GPU
+```
+
+`observe_lowered_kernel.py` refuses to overwrite. A record is what happened once, so renewing one means a new file
+and a new date; the earlier record stays as history for the Revision it was taken under.
+
 ## 2. Resolve a Study
 
 ```bash

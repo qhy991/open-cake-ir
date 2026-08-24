@@ -86,7 +86,6 @@ class OperationKind(str, Enum):
     REDUCE_SUM = "reduce_sum"
     ELEMENTWISE = "elementwise"
     STORE = "store"
-    FENCE_PROXY = "fence_proxy"
 
 
 class LoadMovement(str, Enum):

@@ -22,8 +22,7 @@
     "reduce_argmin",
     "reduce_sum",
     "elementwise",
-    "store",
-    "fence_proxy"
+    "store"
   ],
   "resource_limits": {
     "maximum_threads_per_cta": 1024,

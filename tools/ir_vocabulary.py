@@ -6,9 +6,12 @@ missing when it exists, and called present when the match was a different concep
 the same word -- `register` the memory space read as a register budget, `policy` the NaN
 policy read as a cache policy. Both happened.
 
-The vocabulary is derived from the typed IR, so this cannot drift from it.
+The vocabulary is derived from the typed IR, so this cannot drift from it. So is the
+last section, which is the other half of the same question: an operation kind the IR can
+express but no backend can lower is a word the Schedule may say and the Compiler cannot
+answer, and that gap used to be discovered by hitting it.
 
-    ir_vocabulary.py                       every enum and every structure
+    ir_vocabulary.py                       every enum, structure, and backend body
     ir_vocabulary.py --probe raster grid   whether those words appear, and where
 """
 
@@ -18,7 +21,9 @@ import argparse
 import dataclasses
 from enum import Enum
 
-from open_cake_ir.compiler import ir
+from open_cake_ir.compiler import emit_cutedsl, emit_triton, ir
+
+_BACKENDS = {"triton": emit_triton, "cute-dsl": emit_cutedsl}
 
 
 def _enums() -> dict[str, list[str]]:
@@ -55,6 +60,22 @@ def main() -> int:
         print(f"\n# structures ({len(structures)})")
         for name, fields in structures.items():
             print(f"{name:26s} {len(fields):2d}  {', '.join(fields)}")
+
+        print(f"\n# operation kinds a backend can lower")
+        names = sorted(_BACKENDS)
+        print(f"{'kind':18s} " + "  ".join(f"{name:9s}" for name in names))
+        unreachable = []
+        for kind in ir.OperationKind:
+            marks = [kind in _BACKENDS[name].SUPPORTED_OPERATION_KINDS for name in names]
+            cells = "  ".join(f"{'yes' if mark else '--':9s}" for mark in marks)
+            print(f"{kind.value:18s} {cells}")
+            if not any(marks):
+                unreachable.append(kind.value)
+        if unreachable:
+            # A kind the IR can express and nothing can lower. Not a defect on its own --
+            # the vocabulary may lead the backends deliberately -- but it should be a
+            # thing someone chose rather than a thing an author discovers.
+            print(f"\nno backend lowers: {', '.join(unreachable)}")
         return 0
 
     # A word can match a field name, an enum member, or an enum type. Reporting which

@@ -141,7 +141,6 @@ class UnifiedVocabularyTest(unittest.TestCase):
                 "reduce_argmin",
                 "reduce_sum",
                 "store",
-                "fence_proxy",
             },
             {member.value for member in OperationKind},
         )
@@ -300,7 +299,7 @@ class LocalizedDiagnosticTest(unittest.TestCase):
                 B32,
                 lambda d: _op(d, "load_centroids").update(kind="tma_load"),
                 "schedule.operations[1].kind",
-                "epilogue, fence_proxy, load, mma, reduce_argmin, reduce_sum, store",
+                "epilogue, load, mma, reduce_argmin, reduce_sum, store",
             ),
             (
                 B32,

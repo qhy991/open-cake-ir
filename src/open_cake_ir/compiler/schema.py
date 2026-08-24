@@ -129,7 +129,6 @@ _PARAMETERS = {
         {"axis": _NONNEGATIVE, "scope": _enum(ReductionScope)}
     ),
     OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),
-    OperationKind.FENCE_PROXY: _object({}),
 }
 
 

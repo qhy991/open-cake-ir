@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "b64d4a81b5510c52ffc85486f83ebe8e96486bace94de6274c88a2aa20a87b42"
+    "canonical_sha256": "73dfc1110810405853097fc0e753180a7ecf63bfa60f1553eaa44515fcce00ae"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "backend operation coverage becomes a derived fact and an assessment finding"
+  "approval_basis": "remove an operation kind no backend lowers and no Schedule uses"
 }
