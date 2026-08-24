@@ -241,10 +241,9 @@ graph LR
     end
 
     CH --> FIL["<b>filter</b><br/>rank and prune<br/>before GPU time"]
-    EVD -->|"route: candidate · verifier<br/>vocabulary · cost model"| AE
     FIL --> EX["compile → oracle → CUPTI"]
     EX --> EVD["retained evidence"]
-    EVD -->|inner loop| AE
+    EVD -->|"inner loop: route to candidate ·<br/>verifier · vocabulary · cost model"| AE
     EVD -->|"outer loop<br/>corpus gate + human merge"| CH
 
     style T1 fill:#d4edda,stroke:#28a745
