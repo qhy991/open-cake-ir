@@ -215,3 +215,82 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
+    """A Compiler refusal has to reach the router in the shape the router reads.
+
+    The routing tests build feedback by hand, so they prove the classifier and not the
+    seam. If `_finding_rows` and the router disagree about what a finding row carries,
+    both suites pass and every vocabulary gap gets blamed on the candidate.
+
+    The Schedule here is well formed -- the IR admits the dtype and so does the Target --
+    and this backend cannot name it. That is the compiler's gap, not the author's.
+    """
+
+    def _rejection(self, mutate):
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        workload = WorkloadContract.load(
+            ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
+        )
+        study = json.loads(
+            (
+                ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+            ).read_text(encoding="utf-8")
+        )
+        document = _headline_schedule(workload)
+        mutate(document)
+        environment = OpenCakeEnvironment(
+            compiler,
+            RecordingToolchain(),
+            authority_document=study["arms"]["open_cake"],
+            workload=workload,
+            case_id="headline_b32",
+        )
+
+        return environment.build(
+            CandidateSubmission.seal(
+                "application/vnd.open-cake.schedule+json",
+                json.dumps(document, sort_keys=True, separators=(",", ":")).encode(),
+            )
+        )
+
+    @staticmethod
+    def _retype(document):
+        for buffer in document["buffers"]:
+            if buffer["name"] == "distance_tile":
+                # fp8 is a dtype the IR admits and this profile's backend cannot name.
+                buffer["dtype"] = "fp8_e4m3"
+
+    @staticmethod
+    def _rekind(document):
+        for operation in document["operations"]:
+            if operation["id"] == "store_assignment":
+                # An epilogue is an operation kind the IR admits and Triton has no body
+                # for. The Schedule stays well formed; the backend runs out of vocabulary.
+                operation["kind"] = "epilogue"
+                operation["parameters"] = {
+                    "formula": "centroid_sq_minus_two_dot",
+                    "coalesced": True,
+                }
+
+    def test_a_gap_the_backend_has_reaches_the_router_as_the_vocabularys(self) -> None:
+        from open_cake_ir.lab.routing import IR_VOCABULARY, route_rejection
+
+        for name, mutate, code in (
+            ("dtype", self._retype, "PROFILE_DTYPE_UNEMITTABLE"),
+            ("operation kind", self._rekind, "PROFILE_OPERATION_UNEMITTABLE"),
+        ):
+            with self.subTest(gap=name):
+                result = self._rejection(mutate)
+                self.assertEqual(result.disposition, "rejected")
+                codes = {
+                    row["code"]
+                    for row in result.feedback["findings"]
+                    if row["blocks_lowering"]
+                }
+                self.assertIn(code, codes)
+                self.assertEqual(
+                    route_rejection(result.feedback).destination, IR_VOCABULARY
+                )
+
