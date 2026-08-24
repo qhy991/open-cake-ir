@@ -96,6 +96,13 @@ causal effect, serving and paper reproduction are not.
   Receipts has eleven replay-checked metrics and no timing. Fresh audit passes integrity, exact semantic replay,
   adherence and `system_qualification_passed=true`. Scientific inclusion remains forbidden and all estimand fields
   remain null.
+- Scientific Study `open-cake-ir-scientific-matched-live-v2` is retained as preflight-only authority and was never
+  executed: v1 exposed that Executor v18 rejected a real resumed same-path delete/add replacement before accounting
+  its provider usage. The create-only Executor-v19 successor is Study
+  `open-cake-ir-scientific-matched-live-v3` (canonical SHA
+  `ec1c4592c2fd5cd81f4e6edfc3056c85025e97b7750a4964289ac87c1ee33570`) under Campaign authority
+  `59a5c1687c367e24e09b4858955c82147f7b1fa5a1cca1c8e814a6a1ba74157d`. It preserves the six preregistered Runs,
+  150k-token endpoint and exact analysis plan; no v3 outcome is claimed before execution and audit.
 - The first bounded tool-rich Campaign is retained under
   `/home/qinhaiyan/open-cake-ir-evidence/campaigns/artifact-optimization-live-v1`. Open Cake supplied three launchable
   Candidates and promoted candidate `7141869d…` at a confirmed 1.556059 ms. Direct CUDA's raw provider stream also
