@@ -302,10 +302,12 @@ fallback to an unvalidated order.
 candidate in it is built, gated and sealed — a rejected one is evidence, not a discard.
 Two candidates that are the same program under different names are searched once. A
 released profile-specific cost would order eligible candidates before GPU time; with v8's
-empty coverage they retain provider order. `searches_per_turn` bounds how many survive to
-measurement; confirmatory evaluation stays single, because that one is the measurement a
-claim rests on. Candidate-set v2 exercised this with three launchable members and two GPU
-searches in each arm; older frozen Studies still use the singleton edge.
+empty coverage they retain provider order. Executor v17 applies that order only when every
+launchable member is scored; if the model declines one member, the whole set retains
+provider order because unknown is not slower. `searches_per_turn` bounds how many survive
+to measurement; confirmatory evaluation stays single, because that one is the measurement
+a claim rests on. Candidate-set v2 exercised this with three launchable members and two
+GPU searches in each arm; older frozen Studies still use the singleton edge.
 
 **What the ranking is worth.** The dormant hypothesis orders on device fill and declines
 past saturation. It used to sort on wave count first; a sweep across four predicted wave

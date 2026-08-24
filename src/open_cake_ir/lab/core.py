@@ -2239,19 +2239,30 @@ class Lab:
                     for payload in provider_turn.candidates:
                         entry = CandidateSubmission.seal(environment.media_type, payload)
                         built.append((entry, environment.build(entry)))
-                    launchable_first = sorted(
-                        range(len(built)),
-                        key=lambda index: (
-                            built[index][1].disposition != "launchable",
-                            # A candidate the model declined to score sorts behind every
-                            # candidate it did score. An empty key would sort it first,
-                            # which would read a refusal to judge as a good judgement.
-                            built[index][1].cost is None,
-                            built[index][1].cost.order
-                            if built[index][1].cost is not None
-                            else (),
-                            index,
-                        ),
+                    launchable_first = [
+                        index
+                        for index, (_, result) in enumerate(built)
+                        if result.disposition == "launchable"
+                    ]
+                    # A partial order is not an order over the candidate set. If the
+                    # model declines any launchable member, moving that unknown behind
+                    # scored members would let `searches_per_turn` silently reject it as
+                    # slower. Apply the cost order only when it covers the whole
+                    # launchable set; otherwise every member keeps provider order.
+                    if launchable_first and all(
+                        built[index][1].cost is not None
+                        for index in launchable_first
+                    ):
+                        def complete_cost_order(index: int) -> tuple[tuple, int]:
+                            cost = built[index][1].cost
+                            assert cost is not None
+                            return cost.order, index
+
+                        launchable_first.sort(key=complete_cost_order)
+                    launchable_first.extend(
+                        index
+                        for index, (_, result) in enumerate(built)
+                        if result.disposition != "launchable"
                     )
                     ledger.append(
                         "candidate_set_filtered",

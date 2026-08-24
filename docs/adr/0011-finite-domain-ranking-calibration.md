@@ -42,4 +42,6 @@ view and must replay byte-for-byte from the frozen plan and raw records.
 Both repetitions contain 25 correct measured candidates, 5 compiler refusals and all
 2,300 possible three-candidate decisions. They fail the fixed 5% boundary: maximum
 survivor regret is 35.95% and 8.16%. The Compiler Revision remains v8 with empty
-`calibration_coverage`; this negative result authorizes no implementation change.
+`calibration_coverage`; this negative result authorizes no ranking-term or coverage
+change. Executor v17 separately closes the partial-order defect exposed during review:
+one unscored launchable member now keeps the entire set in provider order.

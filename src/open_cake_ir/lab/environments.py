@@ -343,9 +343,9 @@ class EnvironmentResult:
     """What the pre-GPU filter can say about this candidate's order, if anything.
 
     Supplied by the environment because the environment owns the Compiler; the Lab only
-    sorts by it. An environment that has no cost model supplies none, and its candidates
-    are ordered by the order they were written -- which is the treatment asymmetry the
-    study measures, not an accident.
+    sorts by it. The Lab applies costs only when every launchable member of the set has
+    one. If the environment has no cost model, or the model declines any member, the
+    whole launchable set retains the order it was written -- unknown is not slower.
     """
 
     semantic_sha256: str | None = None
