@@ -114,7 +114,22 @@ def _gemm_bias_oracle(inputs, torch):
     return a.to(torch.float32) @ b.to(torch.float32).t() + bias[None, :], None
 
 
+def _flash_kmeans_b32_oracle(inputs, torch):
+    """The batched form of the same argmin, for the Triton profile.
+
+    Same elision and same reliance on the norm vector handed in as the CuTe-DSL case:
+    this checks the arithmetic the kernel promises, not a relation its caller satisfies.
+    """
+
+    tokens, centroids, centroid_sq, _ = inputs
+    distance = centroid_sq[:, None, :] - 2.0 * torch.bmm(
+        tokens.to(torch.float32), centroids.to(torch.float32).transpose(1, 2)
+    )
+    return torch.argmin(distance, dim=-1).to(torch.int32), distance
+
+
 ORACLES = {
+    "flash_kmeans_b32_smoke": _flash_kmeans_b32_oracle,
     "gemm_bias_b1_smoke": _gemm_bias_oracle,
     "layernorm_b8_smoke": _layernorm_oracle,
     "flash_kmeans_assignment_full": _flash_kmeans_oracle,

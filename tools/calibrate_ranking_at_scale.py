@@ -33,7 +33,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from kernel_cases import ORACLES, build_inputs  # noqa: E402
 from open_cake_ir.compiler.analysis import residency_upper_bound  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
 from open_cake_ir.compiler.ir import Schedule  # noqa: E402
@@ -43,11 +45,11 @@ _ROW_BUFFERS = ("x_tile", "sq", "normed", "y_tile")
 _SCALAR_BUFFERS = ("sumsq", "meansq", "shifted", "inv_rms")
 
 
-def _variant(base: dict, batch: int, tile: int, registers: int, warps: int) -> dict:
+def _rmsnorm_variant(base: dict, size: int, tile: int, registers: int, warps: int) -> dict:
     document = json.loads(json.dumps(base))
     for buffer in document["buffers"]:
         if buffer["name"] in ("x", "y"):
-            buffer["shape"][0] = batch
+            buffer["shape"][0] = size
         elif buffer["name"] in _ROW_BUFFERS:
             buffer["shape"][0] = tile
         elif buffer["name"] in _SCALAR_BUFFERS:
@@ -56,8 +58,6 @@ def _variant(base: dict, batch: int, tile: int, registers: int, warps: int) -> d
         if axis["name"] == "row_block":
             axis["tile"] = tile
     document["roles"][0]["warps"] = list(range(warps))
-    # The residency commitment is checked against the bound rather than shaping the code,
-    # so it is pinned at the loosest value every variant can honour instead of swept.
     document["residency"] = {
         "ctas_per_multiprocessor": 1,
         "registers_per_thread": registers,
@@ -66,12 +66,87 @@ def _variant(base: dict, batch: int, tile: int, registers: int, warps: int) -> d
     return document
 
 
-def _reference(x, gamma):
-    import torch
+def _gemm_variant(base: dict, size: int, tile: int, registers: int, warps: int) -> dict:
+    """The same sweep for a contraction: M extent, the output tile, and the budgets.
 
-    scaled = x.to(torch.float32)
-    inverse = torch.rsqrt(scaled.pow(2).mean(dim=-1, keepdim=True) + 1e-6)
-    return scaled * inverse * gamma
+    K stays as declared. Varying it would change how many loop iterations the accumulator
+    is summed over, which is a different question from how the output is tiled.
+    """
+
+    document = json.loads(json.dumps(base))
+    shapes = {buffer["name"]: buffer for buffer in document["buffers"]}
+    k = shapes["a_tile"]["shape"][1]
+    shapes["a"]["shape"][0] = size
+    shapes["c"]["shape"][0] = size
+    shapes["a_tile"]["shape"] = [tile, k]
+    shapes["b_tile"]["shape"] = [tile, k]
+    for name in ("acc", "c_tile"):
+        shapes[name]["shape"] = [tile, tile]
+    shapes["bias_tile"]["shape"] = [tile]
+    for axis in document["program_map"]["axes"]:
+        axis["tile"] = tile
+    for operation in document["operations"]:
+        if operation["kind"] == "mma":
+            operation["parameters"]["tile_shape"] = [tile, tile, k]
+    document["roles"][0]["warps"] = list(range(warps))
+    document["residency"] = {
+        "ctas_per_multiprocessor": 1,
+        "registers_per_thread": registers,
+    }
+    document["schedule_id"] = f"gemm-t{tile}-r{registers}-w{warps}"
+    return document
+
+
+def _flash_kmeans_variant(base: dict, size: int, tile: int, registers: int, warps: int) -> dict:
+    """The sweep the ranking was originally validated on: the token block it walks.
+
+    `size` is the token count. The centroid loop's tile stays as declared, because the
+    original nine tilings varied the token block against a fixed centroid tile and that
+    is the set the 29-of-36 figure came from.
+    """
+
+    document = json.loads(json.dumps(base))
+    shapes = {buffer["name"]: buffer for buffer in document["buffers"]}
+    centroid_tile = shapes["centroid_tile"]["shape"][0]
+    for name in ("tokens", "assignments"):
+        shapes[name]["shape"][1] = size
+    shapes["token_tile"]["shape"][0] = tile
+    for name in ("distance_tile", "cross", "scaled_cross"):
+        shapes[name]["shape"] = [tile, centroid_tile]
+    shapes["best_index_tile"]["shape"] = [tile]
+    for axis in document["program_map"]["axes"]:
+        if axis["name"] == "token_block":
+            axis["tile"] = tile
+    for operation in document["operations"]:
+        if operation["kind"] == "mma":
+            operation["parameters"]["tile_shape"] = [
+                tile,
+                centroid_tile,
+                shapes["token_tile"]["shape"][1],
+            ]
+    document["roles"][0]["warps"] = list(range(warps))
+    document["residency"] = {
+        "ctas_per_multiprocessor": 1,
+        "registers_per_thread": registers,
+    }
+    document["schedule_id"] = f"flashkmeans-t{tile}-r{registers}-w{warps}"
+    return document
+
+
+# One entry per profile this instrument can sweep. The tile axis means something
+# different in each -- rows for a normalization, the output block for a contraction --
+# which is why the sweep is per profile rather than one parameterised shape.
+VARIANTS = {
+    "flash_kmeans_b32_smoke": _flash_kmeans_variant,
+    "rmsnorm_b8_smoke": _rmsnorm_variant,
+    "gemm_bias_b1_smoke": _gemm_variant,
+}
+
+DEFAULT_TILES = {
+    "rmsnorm_b8_smoke": (16, 32, 64, 128, 256),
+    "gemm_bias_b1_smoke": (32, 64, 128),
+    "flash_kmeans_b32_smoke": (64, 128, 256),
+}
 
 
 def _time_ms(launch, arguments, *, reps: int, warmup: int, flush) -> float:
@@ -118,7 +193,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--schedule", default="corpus/schedules/rmsnorm-b8-smoke.json")
     parser.add_argument("--revision", default="compiler/revision.lock.json")
-    parser.add_argument("--batch", type=int, default=512)
+    parser.add_argument(
+        "--batch",
+        type=int,
+        default=512,
+        help="the extent the whole set shares: rows for a normalization, M for a GEMM",
+    )
+    parser.add_argument(
+        "--tiles",
+        type=int,
+        nargs="+",
+        default=None,
+        help="tile sizes to sweep; the default suits the profile",
+    )
     parser.add_argument("--reps", type=int, default=41)
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--tolerance", type=float, default=2e-3)
@@ -138,14 +225,26 @@ def main() -> int:
     workspace = tempfile.mkdtemp(prefix="cake-ranking-")
     flush = torch.empty(256 * 1024 * 1024, dtype=torch.uint8, device="cuda")
 
-    x = None
+    profile = base["metadata"]["profile"]
+    variant = VARIANTS.get(profile)
+    oracle = ORACLES.get(profile)
+    if variant is None or oracle is None:
+        raise SystemExit(
+            f"no sweep for profile {profile!r}; this instrument sweeps "
+            f"{', '.join(sorted(set(VARIANTS) & set(ORACLES)))}"
+        )
+    # A normalization tiles rows and a contraction tiles the output block, so the useful
+    # range differs even though the sweep is the same shape.
+    tiles = arguments.tiles or DEFAULT_TILES[profile]
+
+    inputs = None
     rows: list[dict] = []
     refused = 0
     revision: dict[str, str] = {}
     for tile, registers, warps in itertools.product(
-        (16, 32, 64, 128, 256), (64, 96, 128, 168, 224), (4, 8)
+        tiles, (64, 96, 128, 168, 224), (4, 8)
     ):
-        document = _variant(base, arguments.batch, tile, registers, warps)
+        document = variant(base, arguments.batch, tile, registers, warps)
         assessment = compiler.assess(document)
         if not assessment.lowering_eligible:
             refused += 1
@@ -170,19 +269,16 @@ def main() -> int:
         specification.loader.exec_module(module)
         launch = getattr(module, lowering.entry_point)
 
-        shape = next(
-            tuple(item["shape"]) for item in document["buffers"] if item["name"] == "x"
-        )
-        if x is None or tuple(x.shape) != shape:
+        # One input set for the whole sweep: every variant computes the same workload,
+        # so a candidate that differs from the others differs in how, not in what.
+        if inputs is None:
             torch.manual_seed(0)
-            x = torch.randn(shape, dtype=torch.float32, device="cuda")
-            gamma = torch.randn(shape[2], dtype=torch.float32, device="cuda")
-            expected = _reference(x, gamma)
-        out = torch.empty_like(x)
+            inputs = build_inputs(document, torch)
+            expected, _ = oracle(inputs, torch)
 
-        launch(x, gamma, out)
+        observed = launch(*inputs)
         torch.cuda.synchronize()
-        deviation = (out - expected).abs().max().item()
+        deviation = (observed - expected).abs().max().item()
         if deviation > arguments.tolerance:
             # An incorrect candidate has no place in a ranking calibration: the order it
             # would take is not the order of anything the workload asked for.
@@ -190,7 +286,7 @@ def main() -> int:
                   flush=True)
             continue
 
-        median = _time_ms(launch, (x, gamma, out), reps=arguments.reps,
+        median = _time_ms(launch, inputs, reps=arguments.reps,
                           warmup=arguments.warmup, flush=flush)
         grid_x, grid_y, grid_z = assessment.analysis["grid"]
         rows.append(
@@ -210,7 +306,6 @@ def main() -> int:
         )
         print(f"{document['schedule_id']:24s} ctas={rows[-1]['ctas']:6d} "
               f"r<={bound.ctas_per_multiprocessor:2d} {median * 1000:8.2f}us", flush=True)
-        del out
 
     device = torch.cuda.get_device_properties(0)
     Path(arguments.out).write_text(
