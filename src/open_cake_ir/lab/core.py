@@ -27,7 +27,7 @@ from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from .checkpoints import TurnObservation, project_checkpoints
 from .custody import admit_new_campaign_path
-from .environments import AuthoringEnvironment, CandidateSubmission
+from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
 from .executor import ExecutorRevision
 from .faults import RunProtocolFault
 from .routing import CANDIDATE, COST_MODEL, route_rejection
@@ -210,7 +210,11 @@ def _archive_evaluation_receipt(
     evidence: EvidenceStore,
     receipt: EvaluationReceipt,
 ) -> list[dict[str, object]]:
-    required = {"correctness_output", "launch_receipt", "timing_samples"}
+    required = (
+        {"correctness_output", "launch_receipt", "profile"}
+        if receipt.purpose == "attribution"
+        else {"correctness_output", "launch_receipt", "timing_samples"}
+    )
     if set(receipt.artifact_payloads) != required:
         raise ValueError("EvaluationReceipt artifact custody is incomplete")
     references: list[dict[str, object]] = []
@@ -536,7 +540,10 @@ def _replay_launchable_candidate(
     matching = []
     for event in launchable_events:
         payload = _object(event.get("payload"), "launchable.payload")
-        if payload.get("turn") == turn:
+        if (
+            payload.get("turn") == turn
+            and payload.get("candidate_sha256") == candidate_sha256
+        ):
             matching.append(payload)
     if len(matching) != 1:
         raise ValueError("launchable candidate event coverage differs")
@@ -1163,6 +1170,16 @@ class PortfolioStudyReport:
     run_audit: RunAudit | None
 
 
+@dataclass(frozen=True)
+class _SearchedCandidate:
+    """One candidate kept intact from authored bytes through its search receipt."""
+
+    submission: CandidateSubmission
+    environment_result: EnvironmentResult
+    launchable: LaunchableCandidate
+    receipt: EvaluationReceipt
+
+
 
 class Lab:
     """Resolve, execute and audit preregistered studies over frozen dependencies."""
@@ -1489,7 +1506,10 @@ class Lab:
         compiler_ref = _object(
             open_cake.get("compiler_revision"), "study.arms.open_cake.compiler_revision"
         )
-        if set(compiler_ref) != {"path", "canonical_sha256"}:
+        if set(compiler_ref) not in (
+            {"path", "canonical_sha256"},
+            {"path", "canonical_sha256", "revision_id"},
+        ):
             raise ValueError("Compiler Revision reference fields differ")
         compiler_relative, compiler_path = _project_path(
             self._root,
@@ -1504,7 +1524,14 @@ class Lab:
             compiler_ref.get("canonical_sha256"),
             "study.arms.open_cake.compiler_revision.canonical_sha256",
         )
-        if not gate.passed or gate.compiler_revision_sha256 != compiler_sha:
+        if (
+            not gate.passed
+            or gate.compiler_revision_sha256 != compiler_sha
+            or (
+                "revision_id" in compiler_ref
+                and compiler_ref["revision_id"] != gate.compiler_revision_id
+            )
+        ):
             raise ValueError("Study Contract Compiler Revision differs or fails its Corpus Gate")
 
         allocation = _object(study.document.get("allocation"), "study.allocation")
@@ -1730,7 +1757,10 @@ class Lab:
             raise ValueError("portfolio Workload bytes differ")
 
         compiler_ref = _object(study.document["compiler_revision"], "study.compiler_revision")
-        if set(compiler_ref) != {"path", "canonical_sha256"}:
+        if set(compiler_ref) not in (
+            {"path", "canonical_sha256"},
+            {"path", "canonical_sha256", "revision_id"},
+        ):
             raise ValueError("portfolio Compiler Revision reference differs")
         compiler_relative, compiler_path = _project_path(
             self._root, compiler_ref["path"], "study.compiler_revision.path"
@@ -1740,7 +1770,15 @@ class Lab:
         compiler_sha = _digest(
             compiler_ref["canonical_sha256"], "study.compiler_revision.canonical_sha256"
         )
-        if compiler.state != "released" or not gate.passed or gate.compiler_revision_sha256 != compiler_sha:
+        if (
+            compiler.state != "released"
+            or not gate.passed
+            or gate.compiler_revision_sha256 != compiler_sha
+            or (
+                "revision_id" in compiler_ref
+                and compiler_ref["revision_id"] != gate.compiler_revision_id
+            )
+        ):
             raise ValueError("portfolio requires the exact released Compiler Revision")
 
         seed_ref = _object(study.document["kernel_seed"], "study.kernel_seed")
@@ -2080,6 +2118,14 @@ class Lab:
                         provider_turn.raw_events,
                         media_type="application/x-ndjson",
                     )
+                    if (
+                        not provider_turn.candidates
+                        or len(provider_turn.candidates)
+                        != len(provider_turn.candidate_sha256s)
+                        or len(set(provider_turn.candidate_sha256s))
+                        != len(provider_turn.candidate_sha256s)
+                    ):
+                        raise ValueError("provider candidate set identity differs")
                     # Every candidate is sealed, not only the one that reaches a GPU.
                     # The set a Turn produced is what the pre-GPU filter acted on, so an
                     # evidence root that kept only the survivor could not show what was
@@ -2102,8 +2148,8 @@ class Lab:
                         "objects": [
                             events_object.reference("provider_events"),
                             *(
-                                item.reference("candidate_submission")
-                                for item in candidate_objects
+                                item.reference(f"candidate_submission_{index:04d}")
+                                for index, item in enumerate(candidate_objects)
                             ),
                         ],
                     }
@@ -2167,6 +2213,15 @@ class Lab:
                     )
                     submission, environment_result = built[launchable_first[0]]
                     if environment_result.disposition == "rejected":
+                        ledger.append(
+                            "candidate_selected",
+                            {
+                                "turn": turn_number,
+                                "candidate_sha256": submission.sha256,
+                                "qualified_search_candidates": [],
+                                "reason": "all_candidates_rejected",
+                            },
+                        )
                         observations.append(
                             TurnObservation(
                                 turn_number,
@@ -2226,7 +2281,7 @@ class Lab:
                         # Search is the assay that exists to choose; confirmatory stays
                         # single because that one is the measurement a claim rests on.
                         budget_k = evaluation_protocol.get("searches_per_turn", 1)
-                        searched: list[tuple[object, EvaluationReceipt]] = []
+                        searched: list[_SearchedCandidate] = []
                         # The paper's first stage asks for structurally distinct
                         # candidates. Two Schedules that differ only in a name or in the
                         # order of independent declarations are one kernel with two
@@ -2234,7 +2289,9 @@ class Lab:
                         # already measure.
                         spelled: dict[str, str] = {}
                         collapsed: list[dict[str, str]] = []
-                        for position in launchable_first[:budget_k]:
+                        for position in launchable_first:
+                            if len(searched) >= budget_k:
+                                break
                             entry_submission, entry_result = built[position]
                             if entry_result.disposition != "launchable":
                                 break
@@ -2309,8 +2366,14 @@ class Lab:
                                     ),
                                 },
                             )
-                            searched.append((entry_launchable, entry_search))
-                            submission = entry_submission
+                            searched.append(
+                                _SearchedCandidate(
+                                    entry_submission,
+                                    entry_result,
+                                    entry_launchable,
+                                    entry_search,
+                                )
+                            )
 
                         if collapsed:
                             # Not a measurement's finding, so it does not wait for
@@ -2322,7 +2385,7 @@ class Lab:
                                     "turn": turn_number,
                                     "routed_to": CANDIDATE,
                                     "routing_reason": (
-                                        f"{len(collapsed)} of the candidates searched "
+                                        f"{len(collapsed)} of the ranked candidates "
                                         "this Turn are the same program as an earlier "
                                         "one under a different name"
                                     ),
@@ -2330,25 +2393,44 @@ class Lab:
                                 },
                             )
 
-                        # The filter's order can now be checked against a measurement.
-                        # When they disagree the candidate was not wrong -- the order was,
-                        # and that is the cost model's to answer for.
-                        if len(searched) > 1:
+                        # Qualification precedes selection. An unstable or incorrect
+                        # timing remains evidence, but it cannot win a search whose sole
+                        # purpose is to choose the candidate worth confirming.
+                        qualified_search = [
+                            index
+                            for index, item in enumerate(searched)
+                            if _receipt_qualifies(item.receipt)
+                        ]
+
+                        # The filter's order can now be checked against trustworthy
+                        # measurements. When they disagree the candidate was not wrong --
+                        # the order was, and that is the cost model's to answer for.
+                        if len(qualified_search) > 1:
                             measured = sorted(
-                                range(len(searched)),
+                                qualified_search,
                                 key=lambda index: (
-                                    _receipt_latency_ms(searched[index][1]) or float("inf")
+                                    _receipt_latency_ms(searched[index].receipt)
+                                    or float("inf")
                                 ),
                             )
-                            ranked = _receipt_latency_ms(searched[0][1])
-                            fastest = _receipt_latency_ms(searched[measured[0]][1])
+                            ranked_index = qualified_search[0]
+                            ranked = _receipt_latency_ms(
+                                searched[ranked_index].receipt
+                            )
+                            fastest = _receipt_latency_ms(
+                                searched[measured[0]].receipt
+                            )
                             ratio = (
                                 ranked / fastest
                                 if ranked is not None and fastest
                                 else None
                             )
                             threshold = evaluation_protocol["search_materiality_ratio"]
-                            if measured[0] != 0 and ratio is not None and ratio >= threshold:
+                            if (
+                                measured[0] != ranked_index
+                                and ratio is not None
+                                and ratio >= threshold
+                            ):
                                 ledger.append(
                                     "diagnosis_routed",
                                     {
@@ -2356,14 +2438,18 @@ class Lab:
                                         "routed_to": COST_MODEL,
                                         "routing_reason": (
                                             "the filter ranked "
-                                            f"{searched[0][0].candidate_sha256} first and "
+                                            f"{searched[ranked_index].launchable.candidate_sha256} first and "
                                             "measurement put "
-                                            f"{searched[measured[0]][0].candidate_sha256} "
+                                            f"{searched[measured[0]].launchable.candidate_sha256} "
                                             f"{ratio:.3f}x ahead of it, which the Study "
                                             f"counts as material at {threshold}x"
                                         ),
-                                        "ranked_first": searched[0][0].candidate_sha256,
-                                        "measured_first": searched[measured[0]][0].candidate_sha256,
+                                        "ranked_first": searched[
+                                            ranked_index
+                                        ].launchable.candidate_sha256,
+                                        "measured_first": searched[
+                                            measured[0]
+                                        ].launchable.candidate_sha256,
                                         "observed_ratio": round(ratio, 6),
                                         "materiality_ratio": threshold,
                                     },
@@ -2372,12 +2458,36 @@ class Lab:
                             # materiality decides is whether the order was *wrong*, not
                             # which measurement won.
                             best = measured[0]
+                        elif qualified_search:
+                            best = qualified_search[0]
                         else:
+                            # No candidate won. Keep the filter's first searched candidate
+                            # only as the diagnostic subject for the next Turn.
                             best = 0
-                        launchable, search = searched[best]
+                        selected = searched[best]
+                        submission = selected.submission
+                        environment_result = selected.environment_result
+                        launchable = selected.launchable
+                        search = selected.receipt
+                        ledger.append(
+                            "candidate_selected",
+                            {
+                                "turn": turn_number,
+                                "candidate_sha256": launchable.candidate_sha256,
+                                "qualified_search_candidates": [
+                                    searched[index].launchable.candidate_sha256
+                                    for index in qualified_search
+                                ],
+                                "reason": (
+                                    "lowest_qualified_search_latency"
+                                    if qualified_search
+                                    else "no_qualified_search_candidate"
+                                ),
+                            },
+                        )
 
                         confirmed: EvaluationReceipt | None = None
-                        if _receipt_qualifies(search):
+                        if qualified_search:
                             confirmed_attempt = evaluator.evaluate(
                                 launchable,
                                 case_id=case_id,
@@ -2850,7 +2960,8 @@ class Lab:
             )
         threads: set[str] = set()
         cumulative_by_turn: dict[int, int] = {}
-        provider_candidate_by_turn: dict[int, str] = {}
+        provider_candidates_by_turn: dict[int, tuple[str, ...]] = {}
+        candidate_set_turns: set[int] = set()
         prior_cumulative = 0
         arm = audit.run_id.rsplit("-", 1)[0]
         resolved_inputs = _object(lock.document["resolved_inputs"], "resolved_inputs")
@@ -2880,24 +2991,63 @@ class Lab:
             objects = payload.get("objects")
             if not isinstance(objects, list):
                 return False
-            by_role = {
-                str(item.get("role")): cast(Mapping[str, object], item)
+            event_references = [
+                cast(Mapping[str, object], item)
                 for item in objects
-                if isinstance(item, Mapping) and isinstance(item.get("role"), str)
-            }
+                if isinstance(item, Mapping) and item.get("role") == "provider_events"
+            ]
+            candidate_count = payload.get("candidate_count")
+            legacy_single_candidate = "candidate_count" not in payload
+            if legacy_single_candidate:
+                candidate_count = 1
+                candidate_references = [
+                    cast(Mapping[str, object], item)
+                    for item in objects
+                    if isinstance(item, Mapping)
+                    and item.get("role") == "candidate_submission"
+                ]
+            else:
+                candidate_set_turns.add(expected_turn)
+                indexed_references: dict[int, Mapping[str, object]] = {}
+                for item in objects:
+                    if not isinstance(item, Mapping):
+                        continue
+                    role = item.get("role")
+                    match = (
+                        re.fullmatch(r"candidate_submission_(\d{4})", role)
+                        if isinstance(role, str)
+                        else None
+                    )
+                    if match is not None:
+                        index = int(match.group(1))
+                        if index in indexed_references:
+                            return False
+                        indexed_references[index] = item
+                candidate_references = [
+                    indexed_references[index]
+                    for index in range(len(indexed_references))
+                ]
             if (
-                len(objects) != 2
-                or len(by_role) != 2
-                or set(by_role) != {"provider_events", "candidate_submission"}
+                len(event_references) != 1
+                or not isinstance(candidate_count, int)
+                or isinstance(candidate_count, bool)
+                or candidate_count <= 0
+                or len(candidate_references) != candidate_count
+                or len(objects) != candidate_count + 1
             ):
                 return False
-            raw_events = evidence.read_object(by_role["provider_events"])
-            candidate = evidence.read_object(by_role["candidate_submission"])
+            raw_events = evidence.read_object(event_references[0])
+            candidates = tuple(
+                evidence.read_object(reference) for reference in candidate_references
+            )
+            candidate_digests = tuple(sha256(candidate).hexdigest() for candidate in candidates)
             if (
-                sha256(raw_events).hexdigest()
-                != by_role["provider_events"].get("sha256")
-                or sha256(candidate).hexdigest()
-                != by_role["candidate_submission"].get("sha256")
+                sha256(raw_events).hexdigest() != event_references[0].get("sha256")
+                or any(
+                    digest != reference.get("sha256")
+                    for digest, reference in zip(candidate_digests, candidate_references)
+                )
+                or len(set(candidate_digests)) != len(candidate_digests)
             ):
                 return False
             terminal_document: dict[str, object] = {
@@ -2942,7 +3092,7 @@ class Lab:
                 return False
             threads.add(thread_id)
             cumulative_by_turn[expected_turn] = cumulative
-            provider_candidate_by_turn[expected_turn] = sha256(candidate).hexdigest()
+            provider_candidates_by_turn[expected_turn] = candidate_digests
             prior_cumulative = cumulative
         if len(threads) != 1 or list(cumulative_by_turn.values()) != sorted(
             cumulative_by_turn.values()
@@ -2953,12 +3103,19 @@ class Lab:
             _canonical_json_bytes(lock.document["evaluation_protocol"])
         ).hexdigest()
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
-        candidate_by_turn: dict[int, str] = {}
-        qualified_by_turn: dict[int, float] = {}
+        faults = [event for event in events if event.get("kind") == "run_fault"]
+        if len(faults) > 1:
+            return False
+        fault_turn = max(provider_candidates_by_turn) if faults else None
+        if faults:
+            fault_payload = _object(faults[0].get("payload"), "run_fault.payload")
+            if fault_payload.get("fault") != audit.protocol_adherence:
+                return False
+
         attempt_events = [
             event for event in events if event.get("kind") == "evaluation_attempt_completed"
         ]
-        attempt_payloads: dict[tuple[int, str], Mapping[str, object]] = {}
+        attempt_payloads: dict[tuple[int, str, str], Mapping[str, object]] = {}
         for event in attempt_events:
             payload = _object(
                 event.get("payload"), "evaluation_attempt_completed.payload"
@@ -2977,15 +3134,15 @@ class Lab:
                 or not isinstance(payload.get("objects"), list)
             ):
                 return False
-            key = (turn, cast(str, purpose))
+            key = (turn, cast(str, purpose), candidate_sha256)
             if key in attempt_payloads:
                 return False
             attempt_payloads[key] = payload
-        replayed_attempts: set[tuple[int, str]] = set()
+        replayed_attempts: set[tuple[int, str, str]] = set()
         launchable_events = [
             event for event in events if event.get("kind") == "launchable_candidate_sealed"
         ]
-        launchables_by_turn: dict[int, LaunchableCandidate] = {}
+        launchables: dict[tuple[int, str], LaunchableCandidate] = {}
         for event in launchable_events:
             payload = _object(event.get("payload"), "launchable.payload")
             turn = payload.get("turn")
@@ -2994,28 +3151,51 @@ class Lab:
                 not isinstance(turn, int)
                 or isinstance(turn, bool)
                 or turn <= 0
-                or turn in launchables_by_turn
                 or not isinstance(candidate_sha256, str)
                 or _DIGEST.fullmatch(candidate_sha256) is None
             ):
                 return False
-            launchables_by_turn[turn] = _replay_launchable_candidate(
+            key = (turn, candidate_sha256)
+            if key in launchables:
+                return False
+            launchables[key] = _replay_launchable_candidate(
                 evidence,
                 launchable_events,
                 turn=turn,
                 candidate_sha256=candidate_sha256,
                 arm=arm,
             )
+
+        receipts: dict[tuple[int, str, str], EvaluationReceipt] = {}
+        receipt_order: list[tuple[int, str, str]] = []
+        rejected: dict[tuple[int, str], Mapping[str, object]] = {}
         for event in events:
             kind = event.get("kind")
             payload = _object(event.get("payload"), f"event.{kind}.payload")
             if kind == "candidate_rejected":
-                turn = int(payload["turn"])
-                candidate_by_turn[turn] = str(payload["candidate_sha256"])
+                turn = payload.get("turn")
+                candidate_sha256 = payload.get("candidate_sha256")
+                if (
+                    not isinstance(turn, int)
+                    or isinstance(turn, bool)
+                    or not isinstance(candidate_sha256, str)
+                    or _DIGEST.fullmatch(candidate_sha256) is None
+                    or (turn, candidate_sha256) in rejected
+                ):
+                    return False
+                rejected[(turn, candidate_sha256)] = payload
             elif kind == "candidate_evaluated":
-                turn = int(payload["turn"])
-                candidate_sha256 = str(payload["candidate_sha256"])
-                candidate_by_turn[turn] = candidate_sha256
+                turn = payload.get("turn")
+                purpose = payload.get("purpose")
+                candidate_sha256 = payload.get("candidate_sha256")
+                if (
+                    not isinstance(turn, int)
+                    or isinstance(turn, bool)
+                    or purpose not in {"search", "confirmatory", "attribution"}
+                    or not isinstance(candidate_sha256, str)
+                    or _DIGEST.fullmatch(candidate_sha256) is None
+                ):
+                    return False
                 objects = payload.get("objects")
                 if not isinstance(objects, list):
                     return False
@@ -3024,15 +3204,7 @@ class Lab:
                     for item in objects
                     if isinstance(item, Mapping) and item.get("role") == "evaluation_receipt"
                 ]
-                required_roles = {
-                    "correctness_output",
-                    "launch_receipt",
-                    "timing_samples",
-                    "evaluation_receipt",
-                }
-                if len(receipt_refs) != 1 or not required_roles <= {
-                    str(item.get("role")) for item in objects if isinstance(item, Mapping)
-                }:
+                if len(receipt_refs) != 1:
                     return False
                 receipt = _object(
                     json.loads(evidence.read_object(cast(Mapping[str, object], receipt_refs[0]))),
@@ -3046,14 +3218,21 @@ class Lab:
                     or receipt.get("purpose") != payload.get("purpose")
                 ):
                     return False
-                launchable = launchables_by_turn.get(turn)
-                if (
-                    launchable is None
-                    or launchable.candidate_sha256 != candidate_sha256
+                launchable = launchables.get((turn, candidate_sha256))
+                if launchable is None:
+                    return False
+                expected_raw = receipt.get("artifact_payload_sha256")
+                if not isinstance(expected_raw, Mapping) or (
+                    purpose in {"search", "confirmatory"}
+                    and set(expected_raw)
+                    != {"correctness_output", "launch_receipt", "timing_samples"}
+                ) or (
+                    purpose == "attribution"
+                    and not {"correctness_output", "launch_receipt"} <= set(expected_raw)
                 ):
                     return False
                 raw_payloads: dict[str, bytes] = {}
-                for role in ("correctness_output", "launch_receipt", "timing_samples"):
+                for role in sorted(expected_raw):
                     matching = [
                         item
                         for item in objects
@@ -3064,8 +3243,7 @@ class Lab:
                     raw_payloads[role] = evidence.read_object(
                         cast(Mapping[str, object], matching[0])
                     )
-                expected_raw = receipt.get("artifact_payload_sha256")
-                if not isinstance(expected_raw, Mapping) or expected_raw != {
+                if expected_raw != {
                     role: sha256(raw).hexdigest()
                     for role, raw in sorted(raw_payloads.items())
                 }:
@@ -3092,52 +3270,33 @@ class Lab:
                     _canonical_json_bytes(receipt)
                 ).hexdigest():
                     return False
-                attempt_key = (turn, str(payload.get("purpose")))
-                attempt_payload = attempt_payloads.get(attempt_key)
-                if (
-                    attempt_payload is None
-                    or attempt_payload.get("candidate_sha256") != candidate_sha256
-                ):
+                receipt_key = (turn, cast(str, purpose), candidate_sha256)
+                if receipt_key in receipts:
                     return False
-                replayed_attempts.add(attempt_key)
-                _replay_evaluation_attempt_event(
-                    evidence,
-                    attempt_payload,
-                    candidate=launchable,
-                    protocol_sha256=protocol_sha256,
-                    final_receipt=validated_receipt,
-                )
-                if payload.get("purpose") == "confirmatory":
-                    timing = validated_receipt.timing
-                    if (
-                        validated_receipt.correctness_passed
-                        and validated_receipt.kernel_calls == 1
-                        and validated_receipt.fallback_calls == 0
-                        and isinstance(timing, Mapping)
-                        and timing.get("measurement_quality_passed") is True
-                    ):
-                        latency = timing.get("pooled_median_ms")
-                        if not isinstance(latency, (int, float)) or float(latency) <= 0:
-                            return False
-                        qualified_by_turn[turn] = float(latency)
+                receipts[receipt_key] = validated_receipt
+                receipt_order.append(receipt_key)
+                if purpose in {"search", "confirmatory"}:
+                    attempt_payload = attempt_payloads.get(receipt_key)
+                    if attempt_payload is None:
+                        return False
+                    replayed_attempts.add(receipt_key)
+                    _replay_evaluation_attempt_event(
+                        evidence,
+                        attempt_payload,
+                        candidate=launchable,
+                        protocol_sha256=protocol_sha256,
+                        final_receipt=validated_receipt,
+                    )
         unreplayed_attempts = set(attempt_payloads) - replayed_attempts
         if unreplayed_attempts:
-            faults = [event for event in events if event.get("kind") == "run_fault"]
             if len(unreplayed_attempts) != 1 or len(faults) != 1:
                 return False
-            turn, purpose = next(iter(unreplayed_attempts))
-            if (
-                turn != max(provider_candidate_by_turn)
-                or (purpose == "confirmatory" and (turn, "search") not in replayed_attempts)
-            ):
+            turn, purpose, candidate_sha256 = next(iter(unreplayed_attempts))
+            if turn != fault_turn:
                 return False
-            attempt_payload = attempt_payloads[(turn, purpose)]
-            launchable = launchables_by_turn.get(turn)
-            if (
-                launchable is None
-                or launchable.candidate_sha256
-                != attempt_payload["candidate_sha256"]
-            ):
+            attempt_payload = attempt_payloads[(turn, purpose, candidate_sha256)]
+            launchable = launchables.get((turn, candidate_sha256))
+            if launchable is None:
                 return False
             _replay_evaluation_attempt_event(
                 evidence,
@@ -3146,37 +3305,303 @@ class Lab:
                 protocol_sha256=protocol_sha256,
                 final_receipt=None,
             )
-        observations = []
-        unmatched_provider_turns = set(provider_candidate_by_turn) - set(candidate_by_turn)
-        if (
-            any(
-                provider_candidate_by_turn.get(turn) != launchable.candidate_sha256
-                for turn, launchable in launchables_by_turn.items()
-            )
-            or any(
-                provider_candidate_by_turn.get(turn) != candidate_sha256
-                for turn, candidate_sha256 in candidate_by_turn.items()
-            )
-            or unmatched_provider_turns
-            and (
-                unmatched_provider_turns != {max(provider_candidate_by_turn)}
-                or len([event for event in events if event.get("kind") == "run_fault"])
-                != 1
-            )
+
+        if any(
+            turn not in provider_candidates_by_turn
+            or candidate_sha256 not in provider_candidates_by_turn[turn]
+            for turn, candidate_sha256 in [
+                *launchables,
+                *rejected,
+                *((key[0], key[2]) for key in receipts),
+                *((key[0], key[2]) for key in attempt_payloads),
+            ]
         ):
             return False
-        for turn, candidate_sha256 in sorted(candidate_by_turn.items()):
-            if turn not in cumulative_by_turn:
+
+        filter_events = [
+            event for event in events if event.get("kind") == "candidate_set_filtered"
+        ]
+        filters: dict[int, Mapping[str, object]] = {}
+        filter_order: dict[int, tuple[str, ...]] = {}
+        filter_disposition: dict[int, dict[str, str]] = {}
+        for event in filter_events:
+            payload = _object(event.get("payload"), "candidate_set_filtered.payload")
+            turn = payload.get("turn")
+            order = payload.get("order")
+            if (
+                set(payload) != {"turn", "submitted", "launchable", "order"}
+                or not isinstance(turn, int)
+                or isinstance(turn, bool)
+                or turn in filters
+                or turn not in candidate_set_turns
+                or not isinstance(order, list)
+            ):
                 return False
-            observations.append(
-                TurnObservation(
-                    turn,
-                    cumulative_by_turn[turn],
-                    candidate_sha256,
-                    turn in qualified_by_turn,
-                    qualified_by_turn.get(turn),
+            candidates: list[str] = []
+            dispositions: dict[str, str] = {}
+            for row in order:
+                if not isinstance(row, Mapping) or set(row) != {
+                    "candidate_sha256",
+                    "disposition",
+                    "cost",
+                }:
+                    return False
+                candidate_sha256 = row.get("candidate_sha256")
+                disposition = row.get("disposition")
+                cost = row.get("cost")
+                if (
+                    not isinstance(candidate_sha256, str)
+                    or _DIGEST.fullmatch(candidate_sha256) is None
+                    or candidate_sha256 in dispositions
+                    or disposition not in {"launchable", "rejected"}
+                    or (
+                        cost is not None
+                        and (
+                            not isinstance(cost, Mapping)
+                            or set(cost) != {"device_fill", "binding_resource"}
+                        )
+                    )
+                ):
+                    return False
+                candidates.append(candidate_sha256)
+                dispositions[candidate_sha256] = cast(str, disposition)
+            provider_candidates = provider_candidates_by_turn.get(turn)
+            if (
+                provider_candidates is None
+                or len(candidates) != len(provider_candidates)
+                or set(candidates) != set(provider_candidates)
+                or payload.get("submitted") != len(provider_candidates)
+                or payload.get("launchable")
+                != sum(value == "launchable" for value in dispositions.values())
+            ):
+                return False
+            filters[turn] = payload
+            filter_order[turn] = tuple(candidates)
+            filter_disposition[turn] = dispositions
+
+        selection_events = [
+            event for event in events if event.get("kind") == "candidate_selected"
+        ]
+        selections: dict[int, Mapping[str, object]] = {}
+        for event in selection_events:
+            payload = _object(event.get("payload"), "candidate_selected.payload")
+            turn = payload.get("turn")
+            candidate_sha256 = payload.get("candidate_sha256")
+            qualified = payload.get("qualified_search_candidates")
+            if (
+                set(payload)
+                != {
+                    "turn",
+                    "candidate_sha256",
+                    "qualified_search_candidates",
+                    "reason",
+                }
+                or not isinstance(turn, int)
+                or isinstance(turn, bool)
+                or turn in selections
+                or turn not in candidate_set_turns
+                or not isinstance(candidate_sha256, str)
+                or _DIGEST.fullmatch(candidate_sha256) is None
+                or not isinstance(qualified, list)
+                or any(
+                    not isinstance(value, str) or _DIGEST.fullmatch(value) is None
+                    for value in qualified
                 )
+            ):
+                return False
+            selections[turn] = payload
+
+        observations: list[TurnObservation] = []
+        searches_per_turn = int(
+            _object(lock.document["evaluation_protocol"], "evaluation_protocol").get(
+                "searches_per_turn", 1
             )
+        )
+        for turn, provider_candidates in sorted(provider_candidates_by_turn.items()):
+            if turn in candidate_set_turns:
+                if turn not in filters:
+                    if turn != fault_turn:
+                        return False
+                    continue
+                selection = selections.get(turn)
+                if selection is None:
+                    if turn != fault_turn:
+                        return False
+                    continue
+                selected = cast(str, selection["candidate_sha256"])
+                order = filter_order[turn]
+                dispositions = filter_disposition[turn]
+                if selected not in provider_candidates:
+                    return False
+                search_keys = [
+                    key
+                    for key in receipt_order
+                    if key[0] == turn and key[1] == "search"
+                ]
+                if selection.get("reason") == "all_candidates_rejected":
+                    if (
+                        selected != order[0]
+                        or any(value == "launchable" for value in dispositions.values())
+                        or search_keys
+                        or selection.get("qualified_search_candidates") != []
+                        or (turn, selected) not in rejected
+                    ):
+                        return False
+                    if turn != fault_turn:
+                        observations.append(
+                            TurnObservation(
+                                turn,
+                                cumulative_by_turn[turn],
+                                selected,
+                                False,
+                                None,
+                            )
+                        )
+                    continue
+                if not search_keys or len(search_keys) > searches_per_turn:
+                    return False
+                searched_candidates = [key[2] for key in search_keys]
+                if (
+                    len(set(searched_candidates)) != len(searched_candidates)
+                    or any(dispositions.get(value) != "launchable" for value in searched_candidates)
+                    or [order.index(value) for value in searched_candidates]
+                    != sorted(order.index(value) for value in searched_candidates)
+                ):
+                    return False
+                qualified_search = [
+                    key[2] for key in search_keys if _receipt_qualifies(receipts[key])
+                ]
+                expected_selected = (
+                    min(
+                        qualified_search,
+                        key=lambda value: _receipt_latency_ms(
+                            receipts[(turn, "search", value)]
+                        )
+                        or float("inf"),
+                    )
+                    if qualified_search
+                    else searched_candidates[0]
+                )
+                expected_reason = (
+                    "lowest_qualified_search_latency"
+                    if qualified_search
+                    else "no_qualified_search_candidate"
+                )
+                if (
+                    selection.get("qualified_search_candidates") != qualified_search
+                    or selected != expected_selected
+                    or selection.get("reason") != expected_reason
+                ):
+                    return False
+                confirms = [
+                    receipt
+                    for (candidate_turn, purpose, candidate), receipt in receipts.items()
+                    if candidate_turn == turn
+                    and purpose == "confirmatory"
+                    and candidate == selected
+                ]
+                foreign_confirms = [
+                    key
+                    for key in receipts
+                    if key[0] == turn
+                    and key[1] == "confirmatory"
+                    and key[2] != selected
+                ]
+                if foreign_confirms or (not qualified_search and confirms):
+                    return False
+                if turn == fault_turn:
+                    continue
+                if len(confirms) != (1 if qualified_search else 0):
+                    return False
+                confirmed = confirms[0] if confirms else None
+                qualified = confirmed is not None and _receipt_qualifies(confirmed)
+                attributions = [
+                    key
+                    for key in receipts
+                    if key[0] == turn and key[1] == "attribution"
+                ]
+                attribution_declared = (
+                    "attribution_evaluation"
+                    in _object(
+                        lock.document["evaluation_protocol"], "evaluation_protocol"
+                    )
+                )
+                if (
+                    len(attributions)
+                    != (1 if qualified and attribution_declared else 0)
+                    or any(key[2] != selected for key in attributions)
+                ):
+                    return False
+                observations.append(
+                    TurnObservation(
+                        turn,
+                        cumulative_by_turn[turn],
+                        selected,
+                        qualified,
+                        _receipt_latency_ms(confirmed) if qualified else None,
+                    )
+                )
+            else:
+                # Historical evidence wrote exactly one candidate per Turn and had no
+                # explicit filter/selection events. Keep that bounded spelling readable;
+                # new evidence must use the candidate-set contract above.
+                if len(provider_candidates) != 1:
+                    return False
+                selected = provider_candidates[0]
+                if turn == fault_turn:
+                    continue
+                has_rejection = (turn, selected) in rejected
+                has_evaluation = any(
+                    key[0] == turn and key[2] == selected for key in receipts
+                )
+                if has_rejection == has_evaluation:
+                    return False
+                confirmed = receipts.get((turn, "confirmatory", selected))
+                qualified = confirmed is not None and _receipt_qualifies(confirmed)
+                observations.append(
+                    TurnObservation(
+                        turn,
+                        cumulative_by_turn[turn],
+                        selected,
+                        qualified,
+                        _receipt_latency_ms(confirmed) if qualified else None,
+                    )
+                )
+
+        if set(filters) != candidate_set_turns - ({fault_turn} if fault_turn else set()):
+            # A fault may happen after its filter was written, so the final Turn is the
+            # sole allowed extra member on either side of this equality.
+            if not (
+                fault_turn in candidate_set_turns
+                and set(filters) | {fault_turn} == candidate_set_turns
+            ):
+                return False
+        if any(turn not in filters for turn in selections):
+            return False
+        for turn, candidate_sha256 in rejected:
+            if turn in candidate_set_turns:
+                selection = selections.get(turn)
+                if (
+                    selection is None
+                    or selection.get("reason") != "all_candidates_rejected"
+                    or selection.get("candidate_sha256") != candidate_sha256
+                ):
+                    return False
+
+        for turn, purpose, candidate_sha256 in receipts:
+            if purpose == "attribution":
+                selected = selections.get(turn)
+                if selected is not None and selected.get("candidate_sha256") != candidate_sha256:
+                    return False
+
+        for turn, candidate_sha256 in launchables:
+            if turn in candidate_set_turns and filter_disposition.get(turn, {}).get(
+                candidate_sha256
+            ) != "launchable":
+                return False
+
+        if not observations and not faults:
+            return False
         if [item.turn for item in observations] != list(range(1, len(observations) + 1)):
             return False
         resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")

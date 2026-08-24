@@ -113,7 +113,7 @@ id -nG
 `id -nG` 必须包含 `gpuq-users`。不要直接设置 `CUDA_VISIBLE_DEVICES` 或绕过 GPUQ 占卡。运行：
 
 ```bash
-/usr/local/bin/gpu-run \
+/home/qinhaiyan/agent-gpu-broker/bin/gpu-run \
   --label open-cake-ir-getting-started \
   --mode exclusive \
   --gpu-count 1 \

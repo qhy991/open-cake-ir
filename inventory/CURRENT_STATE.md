@@ -1,6 +1,6 @@
 # Current-state inventory
 
-Snapshot: 2026-08-23 after external Campaign custody, Executor v7 release and Compiler v4 release. The final legacy authority is clean revision
+Snapshot: 2026-08-24 after candidate-set replay repair, Executor v8 release and Compiler v7 release. The final legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
 `migration/bundles/cake-repro-final-2fa79092.bundle` remains an independent complete-history copy. The 146-record
@@ -26,22 +26,26 @@ causal effect, serving and paper reproduction are not.
 
 ## New repository state
 
-- Compiler Revision `open-cake-ir-sm100a-v4` binds the exact Target, public Schedule authoring contract, 25-source
-  closure, ten-case Corpus Gate and approval. Externally sealed v2/v3 releases remain immutable history.
-- Current Executor Revision `open-cake-ir-b200-v7` binds 32 runtime sources, including deterministic external
+- Compiler Revision `open-cake-ir-sm100a-v7` binds the exact Target, public Schedule authoring contract, 32-source
+  closure, 16-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
+  remain immutable history. `COMPILER_REVISION_IDENTITY_INCIDENT_20260824.json` records why v4 and v6 cannot be
+  reused or treated as unique released identities.
+- Current Executor Revision `open-cake-ir-b200-v8` binds 33 runtime sources, including deterministic external
   Campaign custody and the GPU teaching smoke, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
   and no-GPU Triton-to-CUBIN
   qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor. G8 r6 retains its exact v1
-  closure, later source baselines retain v2–v5, and v6 is superseded;
-  `inventory/EXECUTOR_REVISIONS.json` resolves all seven revisions.
+  closure, later source baselines retain v2–v5, and v6/v7 are superseded;
+  `inventory/EXECUTOR_REVISIONS.json` resolves all eight revisions.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
 - Lab owns matched Turn/budget/checkpoint control and the exact-shape Portfolio handoff; Compiler does not own
   KernelSeed or held-out policy.
 - Common Evaluation has sealed artifact custody, bounded broker-attempt semantics, shape-bound persistent Driver
-  loading, raw Portfolio cohorts and semantic replay.
+  loading, raw Portfolio cohorts and semantic replay. Candidate-set replay uses `(turn, candidate_sha256)` and
+  attempt replay uses `(turn, purpose, candidate_sha256)`; qualification precedes selection and the selected
+  candidate retains its own findings.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 242 tests plus 105 subtests; the earlier remote qualification passed its
+- The current local contract suite passes 303 tests plus 212 subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
@@ -72,9 +76,9 @@ causal effect, serving and paper reproduction are not.
 ## A note on the superseded kernel observation
 
 `EMITTED_KERNEL_OBSERVATION_20260823.json` records a correct B200 run and names compiler
-Revision `open-cake-ir-sm100a-v6`. No such Revision appears in the release history, which
-runs v1, v2, v3, v4 -- `compiler/releases/` holds v2 and v3 and nothing else, and there is
-no v5 anywhere in the repository. The id in that record cannot be resolved to a Revision.
+Revision `open-cake-ir-sm100a-v6`. No released descriptor for that identity exists. The
+current release is v7; v5 was skipped and v6 was retired because the frozen observation
+already consumed its name. The id in that old record still cannot be resolved to bytes.
 
 It is left as written. A record is what someone wrote down at the time, and correcting one
 after the fact is the failure mode the whole content-binding scheme exists to prevent. What
@@ -84,4 +88,5 @@ outside script can write. `tools/observe_lowered_kernel.py` takes the Revision i
 Assessment, so it cannot name one that did not assess the Schedule.
 
 `EMITTED_KERNEL_OBSERVATION_20260824.json` supersedes it and is the one the contract test
-holds the lowering to.
+holds the lowering to. The separate revision-identity incident record also accounts for
+the six distinct historical v4 digests without changing any observation.

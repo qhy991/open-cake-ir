@@ -69,22 +69,22 @@ and a new date; the earlier record stays as history for the Revision it was take
 ## 2. Resolve a Study
 
 ```bash
-open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v4.json \
+open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v5.json \
   --output /new/path/campaign.lock.json
 ```
 
-Which Study Contract is current is not a fact this document owns. `release_compiler_cycle.sh` and
-`release_executor_cycle.sh` print the contracts they restamp, and that list is the answer; the names below were
-correct when written and a release that adds a successor will move them.
+Which Study Contract is current is not a fact this document owns. Release scripts never rewrite a frozen contract;
+`tools/create_study_successor.py` binds a new explicit successor to the current Compiler and Executor and validates
+it through Lab preflight. The names below were current when written.
 
-The current checked-in scientific matched contract, `matched-search-infrastructure-v4.json`, uses a zero-GPU fixture
+The current checked-in scientific matched contract, `matched-search-infrastructure-v5.json`, uses a zero-GPU fixture
 provider and intentionally cannot start a live provider. The current non-scientific G8 template is
-`matched-search-system-qualification-v4.json`; earlier versions remain frozen historical records. Freeze
+`matched-search-system-qualification-v5.json`; earlier versions remain frozen historical records. Freeze
 a live successor only after a real two-Turn qualification emits a receipt with
 the matching closed or tool-rich scope and binds the exact executable, model, reasoning effort, service tier, output
 schema, prompt/scaffold bytes, removed environment, reference visibility, feature overrides and event contract.
-`artifact-optimization-v4.json` is the current zero-GPU contract fixture;
-`artifact-optimization-verda-v5.json` binds the current live tool-rich provider and Executor but authorizes no
+`artifact-optimization-v5.json` is the current zero-GPU contract fixture;
+`artifact-optimization-verda-v6.json` binds the current live tool-rich provider and Executor but authorizes no
 Campaign by itself. Earlier revisions remain historical.
 
 ## 3. Qualify the live provider without GPU
@@ -129,10 +129,10 @@ Then freeze either non-scientific Study from its matching receipt, seal anchor a
 ```bash
 python tools/freeze_live_matched_study.py \
   --project-root . \
-  --template contracts/studies/matched-search-system-qualification-v4.json \
+  --template contracts/studies/matched-search-system-qualification-v5.json \
   --qualification contracts/providers/<new-live-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-live-anchor>.json \
-  --executor runtime/executors/open-cake-ir-b200-v7.json \
+  --executor runtime/executors/open-cake-ir-b200-v8.json \
   --runtime-config /new/path/runtime.json \
   --study-id <new-g8-study-id> \
   --output contracts/studies/<new-g8-study>.json

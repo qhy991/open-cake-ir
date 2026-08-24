@@ -5,8 +5,8 @@
 #
 # Any edit to a Revision-bound source invalidates the released lock, which is the
 # governance working as designed. This drives the documented pipeline end to end: settle
-# the id, run the Corpus Gate, record the approval, release, verify, and re-stamp the
-# Study Contracts bound to the Revision.
+# the id, run the Corpus Gate, record the approval, release, and verify. Frozen Study
+# Contracts are never re-stamped; a new release is consumed by a successor contract.
 #
 # The id is derived, not passed. A Revision that some sealed evidence run was produced
 # under is history and its bytes are immutable, so an edit after one of those must bump.
@@ -22,6 +22,8 @@ BASIS="${1:?usage: release_compiler_cycle.sh <approval-basis>}"
 eval "$(python3 - <<'PY'
 import json, pathlib, re
 
+from tools.compiler_revision_witnesses import compiler_revision_witnesses
+
 # A refused gate leaves no lock behind, so the draft is the fallback authority for the
 # current id. Without it a single failed cycle would strand the repository with no way to
 # name the Revision it was releasing.
@@ -29,13 +31,13 @@ locked = pathlib.Path("compiler/revision.lock.json")
 source = locked if locked.exists() else pathlib.Path("compiler/revision.json")
 current = json.loads(source.read_text())["revision_id"].removesuffix("-draft").rsplit("-", 1)[-1]
 
-# A sealed evidence index is the only thing that makes a Revision id historical.
-witnessed = set()
-for path in pathlib.Path("evidence/releases").glob("*.json"):
-    document = json.loads(path.read_text())
-    identity = document.get("compiler_revision_id")
-    if isinstance(identity, str):
-        witnessed.add(identity.rsplit("-", 1)[-1])
+# Study Contracts, evidence, and inventory observations are all frozen witnesses. The
+# helper is the sole owner of that discovery rule, so release and verification cannot
+# silently disagree about what makes an id historical.
+witnessed = {
+    item.revision_id.rsplit("-", 1)[-1]
+    for item in compiler_revision_witnesses(pathlib.Path("."))
+}
 
 ordinal = lambda value: int(m.group(1)) if (m := re.fullmatch(r"v(\d+)", value)) else 0
 history = max((ordinal(value) for value in witnessed), default=0)
@@ -58,7 +60,11 @@ PY
 
 if [ -n "$ARCHIVE" ]; then
   echo "--- ${ARCHIVE} is witnessed by sealed evidence; archiving and bumping to ${NEXT} ---"
-  mkdir -p "compiler/releases/${ARCHIVE}"
+  if [ -e "compiler/releases/${ARCHIVE}" ]; then
+    echo "refusing to overwrite frozen compiler/releases/${ARCHIVE}" >&2
+    exit 1
+  fi
+  mkdir "compiler/releases/${ARCHIVE}"
   cp compiler/revision.lock.json compiler/corpus-gate-report.json \
      compiler/release-approval.json compiler/source_set.json "compiler/releases/${ARCHIVE}/"
 else
@@ -118,39 +124,13 @@ for pass in write verify; do
     --output compiler/revision.lock.json $extra
 done
 
-echo "--- restamp Study Contracts bound to the Revision ---"
-python3 - <<'PY_INNER'
-import hashlib, json, pathlib, subprocess
-
-def canon(obj):
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+python3 - <<'PY'
+import hashlib, json, pathlib
 
 lock = json.loads(pathlib.Path("compiler/revision.lock.json").read_text())
-digest = hashlib.sha256(canon(lock)).hexdigest()
-print(f"    {lock['revision_id']} -> {digest[:16]}")
-
-# A Study Contract frozen against an earlier Revision is historical evidence and keeps
-# its binding; the correct response to a Revision bump is a successor, never an edit.
-# Only contracts introduced on this branch are re-stamped.
-historical = set(subprocess.run(
-    ["git", "ls-tree", "-r", "--name-only", "6e4d0f1", "contracts/studies"],
-    capture_output=True, text=True, check=True).stdout.split())
-assert historical, "could not read the pre-branch Study Contracts"
-
-for path in sorted(pathlib.Path("contracts/studies").glob("*.json")):
-    if str(path) in historical:
-        continue
-    document = json.loads(path.read_text())
-    holders = [document, document.get("arms", {}).get("open_cake", {})]
-    changed = False
-    for holder in holders:
-        pin = holder.get("compiler_revision") if isinstance(holder, dict) else None
-        if isinstance(pin, dict) and pin.get("path") == "compiler/revision.lock.json":
-            if pin["canonical_sha256"] != digest:
-                pin["canonical_sha256"] = digest
-                changed = True
-    if changed:
-        path.write_text(canon(document).decode() + "\n")
-        print(f"    restamped {path.name}")
-PY_INNER
+canonical = json.dumps(lock, sort_keys=True, separators=(",", ":"),
+                       ensure_ascii=False).encode()
+print(f"    {lock['revision_id']} -> {hashlib.sha256(canonical).hexdigest()[:16]}")
+print("    create successor Study Contracts explicitly; frozen contracts were unchanged")
+PY
 echo "--- done ---"

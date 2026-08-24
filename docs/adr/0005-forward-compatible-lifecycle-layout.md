@@ -1,6 +1,6 @@
 # ADR 0005: Adopt lifecycle-first repository governance without moving history
 
-Status: accepted, 2026-08-23.
+Status: accepted, 2026-08-23; descriptor-placement commitment superseded by ADR 0007.
 
 ## Context
 

@@ -10,10 +10,10 @@ supports a broader scientific claim.
 | G0 | passed | final HEAD/tree, 146-record manifest and verified complete-history bundle |
 | G1 | passed | ADR 0001 plus the real second-use Portfolio extension in ADR 0002 |
 | G2 | passed | deterministic public assess/lower, localized negative, exact Target and dependency isolation |
-| G3 | passed | v3 six-case Corpus Gate, released Revision lock, complete source archive and external terminal-seal anchor |
+| G3 | passed | v7 16-case Corpus Gate, released content-bound Revision lock, reviewed approval and 32-source closure |
 | G4 | passed for migrated evidence | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles and raw r45 replay pass |
 | G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay and matched/Portfolio semantic replay pass |
-| G6 | passed | 123 contract tests + 13 subtests; external Campaign custody, Lab authority, GPU tutorial custody, raw replay and all three matched Claim Scopes pass |
+| G6 | passed | 303 contract tests + 212 subtests; candidate-set selection/replay, external Campaign custody, Lab authority, GPU tutorial custody and all three matched Claim Scopes pass |
 | G7 | passed | r4 proves two-Turn add/update, thread/usage/sandbox/cwd/reference continuity and the closed feature denylist |
 | G7F | passed | tool-rich v1 injects no feature disables and replays shell activity on initial and resumed Turns |
 | G8 | passed | r6 has two adhered Runs, four replayed Evaluation Receipts and an independent offline system-qualification pass |

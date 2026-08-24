@@ -202,9 +202,9 @@ a gated event rather than a commit.
 ```mermaid
 graph TD
     E["edit Compiler source"] --> D["<b>revision.json</b><br/>state: draft<br/><i>no source-hash check</i>"]
-    D --> G["<b>Corpus Gate</b><br/>six cases · exact finding codes<br/>exact lowering digests"]
+    D --> G["<b>Corpus Gate</b><br/>16 cases · exact finding codes<br/>exact lowering digests"]
     G -->|"any case differs"| STOP["release refused"]
-    G -->|"6/6 matched"| AP["<b>release-approval.json</b><br/>binds the gate digest<br/>records who authorized it"]
+    G -->|"16/16 matched"| AP["<b>release-approval.json</b><br/>binds the gate digest<br/>records who authorized it"]
     AP --> L["<b>revision.lock.json</b><br/>state: released<br/>binds every source by digest"]
     L --> AR["<b>compiler/releases/vN/</b><br/>immutable history"]
 
@@ -216,8 +216,9 @@ graph TD
     linkStyle 7 stroke:#c00,stroke-dasharray:4 3
 ```
 
-`scratchpad/release_v4.sh` in the branch history drives the cycle end to end, because a
-single compiler edit requires all of it again.
+`tools/release_compiler_cycle.sh` drives the cycle end to end, because a single
+Compiler-source edit requires all of it again. Frozen Study Contracts are consumed through
+explicit successors rather than being re-stamped.
 
 ---
 

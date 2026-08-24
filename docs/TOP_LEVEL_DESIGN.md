@@ -336,8 +336,9 @@ evidence/                  # immutable historical observations
 reports/current/           # deletable generated projections
 ```
 
-See [ADR 0005](adr/0005-forward-compatible-lifecycle-layout.md). Executor v6 is the final transitional descriptor
-under `runtime/executors/`; its successor starts the new release layout.
+See [ADR 0005](adr/0005-forward-compatible-lifecycle-layout.md) and its scoped supersession in
+[ADR 0007](adr/0007-candidate-evidence-and-revision-witnesses.md). Current descriptor paths remain canonical until
+a complete successor migration can move every writer and consumer together.
 
 The public command families mirror the two products:
 

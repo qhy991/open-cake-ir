@@ -311,11 +311,11 @@ class LabContractTests(unittest.TestCase):
 
     def test_current_study_successors_bind_the_current_executor(self) -> None:
         for name in (
-            "matched-search-infrastructure-v4.json",
-            "matched-search-system-qualification-v4.json",
-            "artifact-optimization-v4.json",
-            "artifact-optimization-verda-v5.json",
-            "flash-kmeans-r45-portfolio-reconstruction-v4.json",
+            "matched-search-infrastructure-v5.json",
+            "matched-search-system-qualification-v5.json",
+            "artifact-optimization-v5.json",
+            "artifact-optimization-verda-v6.json",
+            "flash-kmeans-r45-portfolio-reconstruction-v5.json",
         ):
             lock = Lab(ROOT).preflight(ROOT / "contracts/studies" / name)
             executor = lock.document["execution"]["executor_revision"]
@@ -349,7 +349,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_system_qualification_preflight_binds_non_scientific_one_run_per_arm(self) -> None:
         lock = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-v4.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-v5.json"
         )
 
         self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
@@ -358,7 +358,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_artifact_optimization_preflight_binds_full_features_without_an_estimand(self) -> None:
         lock = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/artifact-optimization-v4.json"
+            ROOT / "contracts/studies/artifact-optimization-v5.json"
         )
 
         self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
@@ -372,7 +372,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_live_artifact_optimization_study_binds_the_tool_rich_qualification(self) -> None:
         lock = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/artifact-optimization-verda-v5.json"
+            ROOT / "contracts/studies/artifact-optimization-verda-v6.json"
         )
         provider = lock.document["resolved_inputs"]["arm_environments"]["open_cake"][
             "provider"
@@ -388,7 +388,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_closed_provider_receipt_cannot_authorize_artifact_optimization(self) -> None:
         study = json.loads(
-            (ROOT / "contracts/studies/artifact-optimization-v4.json").read_text()
+            (ROOT / "contracts/studies/artifact-optimization-v5.json").read_text()
         )
         for arm in study["arms"].values():
             provider = arm["provider"]
@@ -421,7 +421,7 @@ class LabContractTests(unittest.TestCase):
         study = json.loads(
             (
                 ROOT
-                / "contracts/studies/matched-search-system-qualification-v4.json"
+                / "contracts/studies/matched-search-system-qualification-v5.json"
             ).read_text()
         )
         anchor = {"path": "anchor.json", "canonical_sha256": "a" * 64}
@@ -439,7 +439,7 @@ class LabContractTests(unittest.TestCase):
         study = json.loads(
             (
                 ROOT
-                / "contracts/studies/matched-search-system-qualification-v4.json"
+                / "contracts/studies/matched-search-system-qualification-v5.json"
             ).read_text()
         )
         study["analysis_plan"]["estimand"] = "forbidden pilot contrast"
@@ -453,7 +453,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_preflight_rejects_a_changed_direct_candidate_skeleton(self) -> None:
         study = json.loads(
-            (ROOT / "contracts/studies/matched-search-infrastructure-v4.json").read_text()
+            (ROOT / "contracts/studies/matched-search-infrastructure-v5.json").read_text()
         )
         study["arms"]["direct_cuda"]["candidate_skeleton"]["sha256"] = "a" * 64
         with tempfile.TemporaryDirectory() as directory:
@@ -491,7 +491,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-v4.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-v5.json"
         )
         provider = UnderCheckpointProvider()
         resolved = lock.document["resolved_inputs"]
@@ -623,7 +623,7 @@ class LabContractTests(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-v4.json")
+        lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-v5.json")
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
             json.dumps(
@@ -697,7 +697,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-v4.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-v5.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -811,7 +811,7 @@ class LabContractTests(unittest.TestCase):
         )
 
     def test_preflight_rejects_a_draft_compiler_revision(self) -> None:
-        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v4.json").read_text())
+        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v5.json").read_text())
         draft = json.loads((ROOT / "compiler/revision.json").read_text())
         draft_sha256 = sha256(
             json.dumps(
@@ -833,7 +833,7 @@ class LabContractTests(unittest.TestCase):
                 Lab(ROOT).preflight(path)
 
     def test_preflight_rejects_an_unsupported_analysis_plan(self) -> None:
-        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v4.json").read_text())
+        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v5.json").read_text())
         study["analysis_plan"]["contrast"] = "unsupported_nonsense"
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "study.json"
@@ -843,7 +843,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_lab_owns_two_turn_resume_budget_evaluation_and_terminal(self) -> None:
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v4.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v5.json")
         provider = FakeProvider()
         resolved = lock.document["resolved_inputs"]
         arm_environments = resolved["arm_environments"]
@@ -917,7 +917,7 @@ class LabContractTests(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v4.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v5.json")
         provider = FakeProvider()
         arm_environments = lock.document["resolved_inputs"]["arm_environments"]
         protocol_sha256 = sha256(
@@ -928,7 +928,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as parent:
-            lab.execute(
+            campaign = lab.execute(
                 lock,
                 Path(parent).resolve() / "campaign-evidence",
                 provider=provider,
@@ -955,7 +955,7 @@ class LabContractTests(unittest.TestCase):
     def test_semantic_replay_rejects_raw_broker_counter_that_differs_from_ledger(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v5.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1019,7 +1019,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v5.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1052,7 +1052,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_r42_turn_discrete_missing_cell_keeps_estimand_unavailable(self) -> None:
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v4.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v5.json")
         legacy = json.loads(
             (ROOT / "evidence/historical/legacy/r42-index.json").read_text()
         )
@@ -1115,7 +1115,7 @@ class LabContractTests(unittest.TestCase):
     def test_candidate_rejection_is_observed_and_later_turn_cannot_backfill(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v5.json"
         )
         resolved = lock.document["resolved_inputs"]
 
@@ -1167,7 +1167,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_protocol_failures_are_intact_but_not_included(self) -> None:
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v4.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v5.json")
         with tempfile.TemporaryDirectory() as directory:
             evidence = EvidenceStore.create(Path(directory).resolve() / "evidence")
             for run_id in lock.run_order:
@@ -1188,7 +1188,7 @@ class LabContractTests(unittest.TestCase):
     def test_contamination_uses_the_same_terminal_schema_without_replacement(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v5.json"
         )
         resolved = lock.document["resolved_inputs"]
 
@@ -1255,7 +1255,7 @@ class LabContractTests(unittest.TestCase):
     def test_portfolio_semantic_replay_keeps_correctness_separate_from_timing(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v4.json"
+            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v5.json"
         )
         from open_cake_ir.compiler import Compiler
         from open_cake_ir.evaluation import (
@@ -1399,10 +1399,10 @@ class LabContractTests(unittest.TestCase):
 
     def test_preflight_resolves_variant_specific_inputs_into_one_lock(self) -> None:
         matched = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v5.json"
         )
         portfolio = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v4.json"
+            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v5.json"
         )
 
         self.assertEqual(matched.study_kind, "matched_search")
@@ -1481,7 +1481,7 @@ class CandidateSetFilterTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v4.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v5.json")
         arms = lock.document["resolved_inputs"]["arm_environments"]
         protocol_sha256 = sha256(
             json.dumps(
@@ -1515,6 +1515,31 @@ class CandidateSetFilterTest(unittest.TestCase):
                 for event in store.replay_events(identifier)
                 if event["kind"] == "candidate_set_filtered"
             )
+            report = lab.audit(campaign)
+
+            class TamperedSelectionReplay:
+                def replay_events(self, identifier):
+                    replayed = json.loads(json.dumps(store.replay_events(identifier)))
+                    alternatives = next(
+                        event["payload"]["order"]
+                        for event in replayed
+                        if event["kind"] == "candidate_set_filtered"
+                    )
+                    for event in replayed:
+                        if event["kind"] == "candidate_selected":
+                            event["payload"]["candidate_sha256"] = alternatives[1][
+                                "candidate_sha256"
+                            ]
+                            break
+                    return replayed
+
+                def read_object(self, reference):
+                    return store.read_object(reference)
+
+            audit = store.audit_run(run_id)
+            tampered_selection_rejected = not lab._replay_matched_run(
+                TamperedSelectionReplay(), audit, lock
+            )
 
         self.assertTrue(events)
         first = events[0]["payload"]
@@ -1530,6 +1555,9 @@ class CandidateSetFilterTest(unittest.TestCase):
         # And every candidate was built, not only the survivor -- counted across the whole
         # campaign, because the recording environment is shared by every run and arm.
         self.assertEqual(len(built), 3 * campaign_wide)
+        self.assertTrue(report.archive_integrity_passed)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertTrue(tampered_selection_rejected)
 
 
 class AttributionAssayIntegrationTest(unittest.TestCase):
@@ -1584,7 +1612,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        study_path = ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+        study_path = ROOT / "contracts/studies/matched-search-infrastructure-v5.json"
         stack = contextlib.ExitStack()
         with stack:
             if declare_attribution:
@@ -1609,7 +1637,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as parent:
-            lab.execute(
+            campaign = lab.execute(
                 lock,
                 Path(parent).resolve() / "campaign-evidence",
                 provider=FakeProvider(),
@@ -1620,11 +1648,16 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
                     lock.document["workload"]["canonical_sha256"],
                 ),
             )
-        return purposes
+            semantic_replay_passed = lab.audit(campaign).semantic_replay_passed
+        return purposes, semantic_replay_passed
 
     def test_attribution_runs_only_when_the_study_declares_it(self) -> None:
-        self.assertNotIn("attribution", self._run(declare_attribution=False))
-        self.assertIn("attribution", self._run(declare_attribution=True))
+        without, without_replay = self._run(declare_attribution=False)
+        with_attribution, with_replay = self._run(declare_attribution=True)
+        self.assertNotIn("attribution", without)
+        self.assertIn("attribution", with_attribution)
+        self.assertTrue(without_replay)
+        self.assertTrue(with_replay)
 
 
 class SearchBudgetTest(unittest.TestCase):
@@ -1637,7 +1670,7 @@ class SearchBudgetTest(unittest.TestCase):
 
     def _preflight(self, value, materiality=None):
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v5.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         if value is None:
             document["evaluation_protocol"].pop("searches_per_turn", None)
@@ -1677,7 +1710,7 @@ class SearchBudgetTest(unittest.TestCase):
 
 
 class StructurallyDistinctCandidatesTest(unittest.TestCase):
-    """Two spellings of one program are searched once, and the author is told.
+    """Two spellings of one program consume one search slot, and the author is told.
 
     The paper's first stage asks for structurally distinct candidates. A provider that
     renames a Schedule and submits it again produces different bytes, a different seal and
@@ -1697,12 +1730,17 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
                     result.feedback,
                     result.artifact_payloads,
                     cost=result.cost,
-                    # Identical when the two candidates are one program, distinct when
-                    # they are two. Nothing else about the submissions differs.
-                    semantic_sha256="a" * 64 if same_program else f"{variant:064d}",
+                    # The first two collapse in the duplicate case; the third is still a
+                    # distinct program and must receive the search slot that the second
+                    # spelling did not consume.
+                    semantic_sha256=(
+                        ("a" if variant < 2 else "b") * 64
+                        if same_program
+                        else f"{variant:064d}"
+                    ),
                 )
 
-        class TwoCandidateProvider(FakeProvider):
+        class CandidateSetProvider(FakeProvider):
             def turn(self, request):
                 observed = super().turn(request)
                 payloads = tuple(
@@ -1710,7 +1748,7 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
                         {"run_id": request.run_id, "turn": request.turn, "variant": i},
                         sort_keys=True,
                     ).encode()
-                    for i in range(2)
+                    for i in range(3)
                 )
                 return ProviderTurn(
                     thread_id=observed.thread_id,
@@ -1725,7 +1763,7 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v5.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = 2
         document["evaluation_protocol"]["search_materiality_ratio"] = 1.05
@@ -1747,7 +1785,7 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
             campaign = lab.execute(
                 lock,
                 Path(directory) / "campaign-evidence",
-                provider=TwoCandidateProvider(),
+                provider=CandidateSetProvider(),
                 environments={arm: TwinEnvironment(arm, arms[arm]) for arm in arms},
                 evaluator=FakeEvaluator(
                     lock.document["evaluation_protocol"],
@@ -1789,8 +1827,195 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
                 self.assertNotEqual(
                     entry["candidate_sha256"], entry["same_program_as"]
                 )
-        # And the saving is real rather than only reported.
-        self.assertLess(same_searched, distinct_searched)
+        # The duplicate saves one measurement and the third, distinct candidate fills
+        # the declared second slot. A slice taken before deduplication would search only
+        # one program here.
+        self.assertEqual(same_searched, distinct_searched)
+
+
+class QualifiedCandidateSelectionTest(unittest.TestCase):
+    """Qualification chooses the winner, and its findings stay paired with it."""
+
+    def test_an_unstable_fastest_candidate_cannot_win_or_lend_findings(self) -> None:
+        class SelectionEnvironment(FakeEnvironment):
+            def build(self, submission):
+                variant = json.loads(submission.payload)["variant"]
+                result = super().build(submission)
+                candidate = result.launchable
+                assert candidate is not None
+                entry_point = f"{self.arm}_turn_{variant + 1}"
+                artifacts = dict(candidate.artifact_payloads)
+                manifest = json.loads(artifacts["launch_manifest"])
+                manifest["kernel_name"] = entry_point
+                artifacts["launch_manifest"] = json.dumps(
+                    manifest, sort_keys=True, separators=(",", ":")
+                ).encode()
+                roles = {
+                    role: sha256(payload).hexdigest()
+                    for role, payload in artifacts.items()
+                }
+                return EnvironmentResult(
+                    result.disposition,
+                    result.submission_sha256,
+                    LaunchableCandidate(
+                        candidate_sha256=candidate.candidate_sha256,
+                        target=candidate.target,
+                        entry_point=entry_point,
+                        artifact_roles=roles,
+                        launch_spec_sha256=roles["launch_manifest"],
+                        artifact_payloads=artifacts,
+                    ),
+                    {"findings": [{"variant": variant}]},
+                    result.artifact_payloads,
+                )
+
+        class CandidateSetProvider(FakeProvider):
+            def turn(self, request):
+                observed = super().turn(request)
+                payloads = tuple(
+                    json.dumps(
+                        {
+                            "run_id": request.run_id,
+                            "turn": request.turn,
+                            "variant": variant,
+                        },
+                        sort_keys=True,
+                    ).encode()
+                    for variant in range(2)
+                )
+                return ProviderTurn(
+                    thread_id=observed.thread_id,
+                    provider_tokens=observed.provider_tokens,
+                    candidates=payloads,
+                    candidate_sha256s=tuple(
+                        sha256(payload).hexdigest() for payload in payloads
+                    ),
+                    raw_events=observed.raw_events,
+                    raw_events_sha256=observed.raw_events_sha256,
+                    terminal_message=observed.terminal_message,
+                    terminal_message_count=observed.terminal_message_count,
+                    normalization=observed.normalization,
+                )
+
+        class QualityEvaluator(FakeEvaluator):
+            def __init__(self, *arguments):
+                super().__init__(*arguments)
+                self.selections: list[tuple[str, int]] = []
+
+            def evaluate(self, candidate, *, case_id, purpose):
+                variant = int(candidate.entry_point.rsplit("_", 1)[1]) - 1
+                self.selections.append((purpose, variant))
+                result = super().evaluate(
+                    candidate,
+                    case_id=case_id,
+                    purpose=purpose,
+                )
+                receipt = result.final_receipt
+                assert receipt is not None and len(result.attempts) == 1
+                # Variant zero is faster but unstable. Variant one is the sole result
+                # whose measurement is eligible to choose and confirm.
+                latency = 0.1 if variant == 0 else 1.0
+                quality = variant == 1
+                timing = {
+                    "measurement_quality_passed": quality,
+                    "pooled_median_ms": latency,
+                }
+                samples = (
+                    [0.08] * 62 + [0.1] + [0.12] * 62
+                    if variant == 0
+                    else [latency] * 125
+                )
+                receipt = dataclasses.replace(
+                    receipt,
+                    timing=timing,
+                    artifact_payloads={
+                        **receipt.artifact_payloads,
+                        "timing_samples": json.dumps(samples).encode(),
+                    },
+                )
+                attempt = result.attempts[0]
+                raw = json.loads(attempt.artifact_payloads["broker_record"])
+                raw["receipt"]["timing"] = timing
+                raw_bytes = json.dumps(
+                    raw, sort_keys=True, separators=(",", ":")
+                ).encode()
+                attempt = dataclasses.replace(
+                    attempt,
+                    receipt=receipt,
+                    artifact_payloads={
+                        **attempt.artifact_payloads,
+                        "broker_record": raw_bytes,
+                        "evaluator_result": raw_bytes,
+                    },
+                )
+                return LogicalEvaluationAttempt(
+                    candidate.candidate_sha256,
+                    (attempt,),
+                    receipt,
+                )
+
+        lab = Lab(ROOT)
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v5.json"
+        document = json.loads(source.read_text(encoding="utf-8"))
+        document["evaluation_protocol"]["searches_per_turn"] = 2
+        document["evaluation_protocol"]["search_materiality_ratio"] = 1.05
+        with tempfile.TemporaryDirectory() as directory:
+            study_path = Path(directory) / "successor.json"
+            study_path.write_text(
+                json.dumps(document, sort_keys=True, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            lock = lab.preflight(study_path)
+            arms = lock.document["resolved_inputs"]["arm_environments"]
+            protocol_sha256 = sha256(
+                json.dumps(
+                    lock.document["evaluation_protocol"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+            provider = CandidateSetProvider()
+            evaluator = QualityEvaluator(
+                lock.document["evaluation_protocol"],
+                protocol_sha256,
+                lock.document["workload"]["canonical_sha256"],
+            )
+            campaign = lab.execute(
+                lock,
+                Path(directory) / "campaign-evidence",
+                provider=provider,
+                environments={
+                    arm: SelectionEnvironment(arm, arms[arm]) for arm in arms
+                },
+                evaluator=evaluator,
+            )
+            store = EvidenceStore.open(campaign.evidence_root)
+            selections = [
+                event["payload"]
+                for run_id in lock.run_order
+                for event in store.replay_events(run_id)
+                if event["kind"] == "candidate_selected"
+            ]
+            report = lab.audit(campaign)
+
+        self.assertTrue(report.archive_integrity_passed)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertTrue(selections)
+        self.assertTrue(
+            all(
+                payload["reason"] == "lowest_qualified_search_latency"
+                and payload["qualified_search_candidates"]
+                == [payload["candidate_sha256"]]
+                for payload in selections
+            )
+        )
+        self.assertNotIn(("confirmatory", 0), evaluator.selections)
+        self.assertIn(("confirmatory", 1), evaluator.selections)
+        next_turns = [request for request in provider.requests if request.turn == 2]
+        self.assertTrue(next_turns)
+        self.assertTrue(
+            all(request.feedback["findings"] == [{"variant": 1}] for request in next_turns)
+        )
 
 
 class CostModelRouteTest(unittest.TestCase):
@@ -1860,7 +2085,7 @@ class CostModelRouteTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v5.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = searches_per_turn
         if searches_per_turn > 1:
@@ -2067,4 +2292,3 @@ class RuntimeReferenceCustodyTest(unittest.TestCase):
 
                 with self.assertRaisesRegex(ValueError, "fields differ"):
                     _raw_reference_path(root, {"path": "inner/runtime.json"}, "reference")
-

@@ -37,18 +37,19 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v4` is content-bound to an exact `sm_100a` Target and a ten-case
-  Flash-KMeans/TinyGEMM2/RMSNorm Corpus Gate. Its release lock binds the persistent Gate Report and approval;
-  externally sealed v2/v3 releases remain immutable history.
+- Compiler Revision `open-cake-ir-sm100a-v7` is content-bound to an exact `sm_100a` Target and a 16-case,
+  32-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
+  observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
+  unresolvable v6 name, while release numbering now reads every frozen witness source.
 - The Lab implements two closed Study variants on the same control plane: `matched_search` and `portfolio`. The former
   owns provider Turns, resume, token checkpoints, candidate sealing and search/confirmatory Evaluation; the latter
   reconstructs the final three-shape specialist/dispatcher boundary without a new runtime mode. Within
   `matched_search`, `artifact_optimization_only` restores provider-default features while forbidding scientific
   comparison and promoting Candidates only through common confirmatory Evaluation.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
-- Current Executor Revision `open-cake-ir-b200-v7` binds the 32-source runtime closure, including deterministic
-  external Campaign custody, and exact B200 host packages; v1–v5 are archived and v6 is the superseded predecessor.
-  The current local suite passes 242 tests plus 105 subtests. The earlier remote qualification passed its frozen
+- Current Executor Revision `open-cake-ir-b200-v8` binds the 33-source runtime closure, including deterministic
+  external Campaign custody, and exact B200 host packages; v1–v5 are archived and v6/v7 are superseded descriptors.
+  The current local suite passes 303 tests plus 212 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
