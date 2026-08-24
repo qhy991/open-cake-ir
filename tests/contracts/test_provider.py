@@ -38,7 +38,14 @@ class ProviderContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no live provider qualification"):
             required_live_provider_qualification_scope("bounded_local_b200_reconstruction")
 
-    def _events(self, path: Path, *, duplicate: bool, second_text: str | None = None) -> bytes:
+    def _events(
+        self,
+        path: Path,
+        *,
+        duplicate: bool,
+        first_text: str | None = None,
+        second_text: str | None = None,
+    ) -> bytes:
         message = '{"candidate_written":true}'
         file_started = {
             "type": "item.started",
@@ -61,7 +68,10 @@ class ProviderContractTests(unittest.TestCase):
             {"type": "turn.started"},
         ]
         if duplicate:
-            events.append(terminal)
+            first = json.loads(json.dumps(terminal))
+            if first_text is not None:
+                first["item"]["text"] = first_text
+            events.append(first)
         events.extend([file_started, file_completed, terminal])
         if second_text is not None:
             events[-1] = json.loads(json.dumps(terminal))
@@ -182,6 +192,24 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(single.terminal_message_count, 1)
         self.assertEqual(duplicate.terminal_message_count, 2)
         self.assertEqual(duplicate.normalization, "duplicate_exact_bracketed")
+
+    def test_bracketed_terminal_whitespace_normalizes_by_json_meaning(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            candidate.write_text('{"schedule":1}')
+            turn = normalize_codex_turn(
+                self._events(
+                    candidate,
+                    duplicate=True,
+                    first_text='{ "candidate_written": true }',
+                ),
+                candidate_path=candidate,
+                expected_change="add",
+                expected_terminal_message='{"candidate_written":true}',
+            )
+
+        self.assertEqual(turn.terminal_message_count, 2)
+        self.assertEqual(turn.normalization, "duplicate_semantic_bracketed")
 
     def test_canonical_candidate_set_projects_ordered_members_for_each_arm(self) -> None:
         cases = (

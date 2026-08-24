@@ -555,6 +555,21 @@ def parse_codex_turn_events(
         and messages[1][0] > stop_index
     ):
         normalization = "duplicate_exact_bracketed"
+    elif (
+        len(message_texts) == 2
+        and messages[0][0] < start_index
+        and messages[1][0] > stop_index
+    ):
+        try:
+            semantic_messages = [
+                _canonical_json_bytes(json.loads(text)).decode("utf-8")
+                for text in message_texts
+            ]
+        except (UnicodeError, ValueError, json.JSONDecodeError):
+            semantic_messages = []
+        if semantic_messages != [expected_terminal_message, expected_terminal_message]:
+            raise ValueError("provider terminal-event normalization differs")
+        normalization = "duplicate_semantic_bracketed"
     else:
         raise ValueError("provider terminal-event normalization differs")
 

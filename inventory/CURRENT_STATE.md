@@ -34,12 +34,12 @@ causal effect, serving and paper reproduction are not.
   `COMPILER_REVISION_IDENTITY_INCIDENT_20260824.json` records why v4 and v6 cannot be reused or treated as unique
   released identities. v8 exposes no uncalibrated cost order: its `calibration_coverage` is empty and eligible
   candidates retain provider order.
-- Current Executor Revision `open-cake-ir-b200-v13` binds 34 runtime sources, including deterministic external
+- Current Executor Revision `open-cake-ir-b200-v14` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
   and no-GPU Triton-to-CUBIN qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor.
   The Executor pins NCU 2026.1.1.0 by path, bytes and size. G8 r6 retains its exact v1 closure, later source baselines
-  retain v2–v5, and v6–v12 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all thirteen revisions. The Lab
+  retain v2–v5, and v6–v13 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all fourteen revisions. The Lab
   makes Claim Scope the single authority for choosing the closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
@@ -57,13 +57,20 @@ causal effect, serving and paper reproduction are not.
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
   non-scientific two-search Campaign remain the two unpassed ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 317 tests plus 223 subtests; the earlier remote qualification passed its
+- The current local contract suite passes 319 tests plus 223 subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
   null. The tool-rich successor injects no feature disables, observes shell activity across resume and freezes a live
   `artifact_optimization_only` Study without executing it. Private `qhy991/open-cake-ir` is the sole source owner;
   legacy remains read-only historical/rollback evidence.
+- Both closed and tool-rich Codex 0.144.4 candidate-set qualifications pass for Open Cake and direct CUDA add/resume
+  lifecycles. The first non-scientific live Campaign is retained under
+  `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v1` as bounded failure evidence: Open Cake
+  authored three launchable members, then the broker worker could not traverse the temporary checkout; direct CUDA
+  emitted two JSON-equivalent bracketed terminals that the v13 byte-only normalizer rejected. It launched no GPU,
+  and v14 now retains missing-result process output and normalizes only JSON-equivalent bracketed terminals. A
+  successor Campaign from an accessible worktree is still required.
 - The beginner `b32_smoke` path has a fresh B200 observation: one candidate kernel launch from the loaded CUBIN,
   16,384/16,384 exact assignments, no fallback, synchronized unload, and explicitly no performance or scientific
   claim.

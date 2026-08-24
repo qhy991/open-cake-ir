@@ -239,8 +239,13 @@ class CommandBrokerSubmitter:
                     },
                 ) from error
             if not result_path.is_file() or result_path.is_symlink():
-                raise RuntimeError(
-                    f"evaluator command exited {completed.returncode} without a result"
+                raise RunProtocolFault(
+                    "broker_fault",
+                    f"evaluator command exited {completed.returncode} without a result",
+                    artifact_payloads={
+                        "broker_stdout": completed.stdout,
+                        "broker_stderr": completed.stderr,
+                    },
                 )
             metadata = result_path.stat(follow_symlinks=False)
             if (

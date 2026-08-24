@@ -49,13 +49,14 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   comparison and promoting Candidates only through common confirmatory Evaluation. The Lab's ordered candidate-set
   envelope is implemented and fixture-tested for both arms. Authoring and GPU-search budgets are independent, and
   the tool-rich prompts give auxiliary agents read-only investigations while the primary thread remains the sole
-  submission writer. ADR 0009 remains proposed until a live two-arm qualification and non-scientific Campaign pass.
+  submission writer. Both live two-arm provider policies are qualified; ADR 0009 remains proposed until the
+  non-scientific Campaign slice passes.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
-- Current Executor Revision `open-cake-ir-b200-v13` binds the 34-source runtime closure, including deterministic
+- Current Executor Revision `open-cake-ir-b200-v14` binds the 34-source runtime closure, including deterministic
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
-  exact B200 host packages; v1–v5 are archived and v6–v12 are superseded descriptors. Current matched Study fixtures
+  exact B200 host packages; v1–v5 are archived and v6–v13 are superseded descriptors. Current matched Study fixtures
   opt into a correctness-qualified, no-timing profiler assay; a live Study must re-freeze its exact broker command.
-  The current local suite passes 317 tests plus 223 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 319 tests plus 223 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no

@@ -80,5 +80,9 @@ Acceptance requires all three pieces, in order:
 Until the third item passes, candidate-set composition is an internally tested capability,
 not an exercised live paper stage.
 
-As of 2026-08-24, item 1 passes in the 317-test/223-subtest local suite. Items 2 and 3
-remain deliberately unclaimed.
+As of 2026-08-24, item 1 passes in the 319-test/223-subtest local suite and item 2 passes
+for both the closed and tool-rich Codex 0.144.4 policies. The first item-3 attempt retained
+three launchable Open Cake members but reached no Evaluation because the broker worker
+could not traverse the temporary checkout; direct CUDA then hit a JSON-whitespace
+normalization fault. Both failure boundaries are repaired in Executor v14, but item 3
+remains deliberately unclaimed until a successor Campaign passes.

@@ -393,10 +393,10 @@ class LabContractTests(unittest.TestCase):
 
     def test_current_study_successors_bind_the_current_executor(self) -> None:
         for name in (
-            "matched-search-infrastructure-v11.json",
-            "matched-search-system-qualification-v11.json",
-            "artifact-optimization-v11.json",
-            "flash-kmeans-r45-portfolio-reconstruction-v11.json",
+            "matched-search-infrastructure-v12.json",
+            "matched-search-system-qualification-v12.json",
+            "artifact-optimization-v12.json",
+            "flash-kmeans-r45-portfolio-reconstruction-v12.json",
         ):
             lock = Lab(ROOT).preflight(ROOT / "contracts/studies" / name)
             executor = lock.document["execution"]["executor_revision"]
@@ -443,7 +443,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_system_qualification_preflight_binds_non_scientific_one_run_per_arm(self) -> None:
         lock = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-v11.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-v12.json"
         )
 
         self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
@@ -452,7 +452,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_artifact_optimization_preflight_binds_full_features_without_an_estimand(self) -> None:
         lock = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/artifact-optimization-v11.json"
+            ROOT / "contracts/studies/artifact-optimization-v12.json"
         )
 
         self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
@@ -483,7 +483,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_closed_provider_receipt_cannot_authorize_artifact_optimization(self) -> None:
         study = json.loads(
-            (ROOT / "contracts/studies/artifact-optimization-v11.json").read_text()
+            (ROOT / "contracts/studies/artifact-optimization-v12.json").read_text()
         )
         for arm in study["arms"].values():
             provider = arm["provider"]
@@ -516,7 +516,7 @@ class LabContractTests(unittest.TestCase):
         study = json.loads(
             (
                 ROOT
-                / "contracts/studies/matched-search-system-qualification-v11.json"
+                / "contracts/studies/matched-search-system-qualification-v12.json"
             ).read_text()
         )
         anchor = {"path": "anchor.json", "canonical_sha256": "a" * 64}
@@ -534,7 +534,7 @@ class LabContractTests(unittest.TestCase):
         study = json.loads(
             (
                 ROOT
-                / "contracts/studies/matched-search-system-qualification-v11.json"
+                / "contracts/studies/matched-search-system-qualification-v12.json"
             ).read_text()
         )
         study["analysis_plan"]["estimand"] = "forbidden pilot contrast"
@@ -548,7 +548,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_preflight_rejects_a_changed_direct_candidate_skeleton(self) -> None:
         study = json.loads(
-            (ROOT / "contracts/studies/matched-search-infrastructure-v11.json").read_text()
+            (ROOT / "contracts/studies/matched-search-infrastructure-v12.json").read_text()
         )
         study["arms"]["direct_cuda"]["candidate_skeleton"]["sha256"] = "a" * 64
         with tempfile.TemporaryDirectory() as directory:
@@ -586,7 +586,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-v11.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-v12.json"
         )
         provider = UnderCheckpointProvider()
         resolved = lock.document["resolved_inputs"]
@@ -719,7 +719,7 @@ class LabContractTests(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-v11.json")
+        lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-v12.json")
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
             json.dumps(
@@ -793,7 +793,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-v11.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-v12.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -906,8 +906,73 @@ class LabContractTests(unittest.TestCase):
             {"correctness_output", "launch_receipt", "timing_samples"},
         )
 
+    def test_missing_broker_result_retains_process_output(self) -> None:
+        workload_path = ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
+        workload = json.loads(workload_path.read_text())
+        workload_sha = sha256(
+            json.dumps(
+                workload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode()
+        ).hexdigest()
+        protocol = {"case_id": "headline_b32", "kind": "fixture"}
+        protocol_sha = sha256(
+            json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        payloads = {"cubin": b"cubin", "launch_manifest": b"manifest"}
+        candidate = LaunchableCandidate(
+            candidate_sha256="a" * 64,
+            target="sm_100a",
+            entry_point="kernel",
+            artifact_roles={
+                role: sha256(payload).hexdigest()
+                for role, payload in payloads.items()
+            },
+            launch_spec_sha256=sha256(payloads["launch_manifest"]).hexdigest(),
+            artifact_payloads=payloads,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            worker = root / "worker.py"
+            worker.write_text(
+                "import sys\n"
+                "print('worker-out')\n"
+                "print('worker-err', file=sys.stderr)\n"
+                "raise SystemExit(3)\n"
+            )
+            submitter = CommandBrokerSubmitter(
+                command=(sys.executable, str(worker)),
+                workload_path=workload_path,
+                workload_sha256=workload_sha,
+                protocol_sha256=protocol_sha,
+                cwd=root,
+                executor=ExecutorRevision.load(
+                    ROOT,
+                    ROOT
+                    / json.loads(
+                        (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )["current"]["path"],
+                ),
+                service_user=pwd.getpwuid(os.geteuid()).pw_name,
+                service_group=grp.getgrgid(os.getegid()).gr_name,
+            )
+            with self.assertRaises(RunProtocolFault) as raised:
+                submitter.submit(
+                    candidate,
+                    case_id="headline_b32",
+                    purpose="search",
+                    attempt=1,
+                )
+
+        self.assertEqual(raised.exception.protocol_adherence, "broker_fault")
+        self.assertEqual(
+            raised.exception.artifact_payloads,
+            {"broker_stdout": b"worker-out\n", "broker_stderr": b"worker-err\n"},
+        )
+
     def test_preflight_rejects_a_draft_compiler_revision(self) -> None:
-        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v11.json").read_text())
+        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v12.json").read_text())
         draft = json.loads((ROOT / "compiler/revision.json").read_text())
         draft_sha256 = sha256(
             json.dumps(
@@ -929,7 +994,7 @@ class LabContractTests(unittest.TestCase):
                 Lab(ROOT).preflight(path)
 
     def test_preflight_rejects_an_unsupported_analysis_plan(self) -> None:
-        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v11.json").read_text())
+        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v12.json").read_text())
         study["analysis_plan"]["contrast"] = "unsupported_nonsense"
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "study.json"
@@ -939,7 +1004,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_lab_owns_two_turn_resume_budget_evaluation_and_terminal(self) -> None:
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v11.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v12.json")
         provider = FakeProvider()
         resolved = lock.document["resolved_inputs"]
         arm_environments = resolved["arm_environments"]
@@ -1013,7 +1078,7 @@ class LabContractTests(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v11.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v12.json")
         provider = FakeProvider()
         arm_environments = lock.document["resolved_inputs"]["arm_environments"]
         protocol_sha256 = sha256(
@@ -1051,7 +1116,7 @@ class LabContractTests(unittest.TestCase):
     def test_semantic_replay_rejects_raw_broker_counter_that_differs_from_ledger(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1115,7 +1180,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1151,7 +1216,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1227,7 +1292,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_r42_turn_discrete_missing_cell_keeps_estimand_unavailable(self) -> None:
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v11.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v12.json")
         legacy = json.loads(
             (ROOT / "evidence/historical/legacy/r42-index.json").read_text()
         )
@@ -1290,7 +1355,7 @@ class LabContractTests(unittest.TestCase):
     def test_candidate_rejection_is_observed_and_later_turn_cannot_backfill(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         )
         resolved = lock.document["resolved_inputs"]
 
@@ -1342,7 +1407,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_protocol_failures_are_intact_but_not_included(self) -> None:
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v11.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v12.json")
         with tempfile.TemporaryDirectory() as directory:
             evidence = EvidenceStore.create(Path(directory).resolve() / "evidence")
             for run_id in lock.run_order:
@@ -1363,7 +1428,7 @@ class LabContractTests(unittest.TestCase):
     def test_contamination_uses_the_same_terminal_schema_without_replacement(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         )
         resolved = lock.document["resolved_inputs"]
 
@@ -1430,7 +1495,7 @@ class LabContractTests(unittest.TestCase):
     def test_portfolio_semantic_replay_keeps_correctness_separate_from_timing(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v11.json"
+            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v12.json"
         )
         from open_cake_ir.compiler import Compiler
         from open_cake_ir.evaluation import (
@@ -1574,10 +1639,10 @@ class LabContractTests(unittest.TestCase):
 
     def test_preflight_resolves_variant_specific_inputs_into_one_lock(self) -> None:
         matched = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         )
         portfolio = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v11.json"
+            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v12.json"
         )
 
         self.assertEqual(matched.study_kind, "matched_search")
@@ -1668,7 +1733,7 @@ class CandidateSetFilterTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         _enable_candidate_set(document, 3)
         with tempfile.TemporaryDirectory() as parent:
@@ -1830,7 +1895,7 @@ class CandidateSetFilterTest(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1990,7 +2055,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         current_executor = json.loads(
             (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
@@ -2070,7 +2135,7 @@ class SearchBudgetTest(unittest.TestCase):
 
     def _preflight(self, value, materiality=None, maximum_candidates=None):
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         if value is None:
             document["evaluation_protocol"].pop("searches_per_turn", None)
@@ -2170,7 +2235,7 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = 2
         document["evaluation_protocol"]["search_materiality_ratio"] = 1.05
@@ -2365,7 +2430,7 @@ class QualifiedCandidateSelectionTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = 2
         document["evaluation_protocol"]["search_materiality_ratio"] = 1.05
@@ -2496,7 +2561,7 @@ class CostModelRouteTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v12.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = searches_per_turn
         document["evaluation_protocol"].pop("search_materiality_ratio", None)
