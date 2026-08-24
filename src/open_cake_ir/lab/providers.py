@@ -695,11 +695,16 @@ def normalize_codex_turn(
         expected_terminal_message=expected_terminal_message,
         event_contract=event_contract,
     )
+    observed_change = parsed.change_kind
+    if expected_change == "update" and observed_change == "add":
+        # The Lab checked that the candidate existed before this resumed Turn.
+        # Codex may nevertheless label its in-place replacement as an add.
+        observed_change = "update"
     if (
         parsed.candidate_path is not None
         and (
             parsed.candidate_path != str(candidate_path.absolute())
-            or parsed.change_kind != expected_change
+            or observed_change != expected_change
         )
     ):
         raise ValueError("provider candidate path or change kind differs")

@@ -2260,10 +2260,11 @@ class Lab:
                     # scored members would let `searches_per_turn` silently reject it as
                     # slower. Apply the cost order only when it covers the whole
                     # launchable set; otherwise every member keeps provider order.
-                    if launchable_first and all(
+                    cost_order_applied = bool(launchable_first) and all(
                         built[index][1].cost is not None
                         for index in launchable_first
-                    ):
+                    )
+                    if cost_order_applied:
                         def complete_cost_order(index: int) -> tuple[tuple, int]:
                             cost = built[index][1].cost
                             assert cost is not None
@@ -2575,7 +2576,8 @@ class Lab:
                             )
                             threshold = evaluation_protocol["search_materiality_ratio"]
                             if (
-                                measured[0] != ranked_index
+                                cost_order_applied
+                                and measured[0] != ranked_index
                                 and ratio is not None
                                 and ratio >= threshold
                             ):

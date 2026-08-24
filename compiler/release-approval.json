@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "3905600fd42f74c7e52d5743743fbe34f3f718538af8b5034990d8208abc8081"
+    "canonical_sha256": "aaab972db3e659604da3e82b2e8cae0b1ee052e010306c8cfa44cfe9d57c9ccb"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Scientific matched-search Run open_cake-1 exposed a verifier/emitter contradiction: an emitted MMA without an instruction was marked lowering-eligible; add candidate-actionable pre-lowering evidence while preserving asset profiles"
+  "approval_basis": "Scientific v3 candidate 79be4eba exposed the pinned Triton warp-specialization pass's unsupported multi-result argmin; the successor makes that exact backend legality failure structured lowering feedback and adds the frozen candidate as a Corpus regression."
 }

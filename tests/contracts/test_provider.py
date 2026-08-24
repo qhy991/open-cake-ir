@@ -286,6 +286,39 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(turn.candidates, (b'{"schedule":2}',))
         self.assertEqual(turn.normalization, "duplicate_exact_bracketed")
 
+    def test_resume_bare_add_label_is_the_authoritative_update(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            candidate.write_text('{"schedule":2}')
+
+            turn = normalize_codex_turn(
+                self._events(candidate, duplicate=False),
+                candidate_path=candidate,
+                expected_change="update",
+                expected_terminal_message='{"candidate_written":true}',
+            )
+            initial_events = [
+                json.loads(line)
+                for line in self._events(candidate, duplicate=False).splitlines()
+            ]
+            for event in initial_events:
+                item = event.get("item", {})
+                if item.get("type") == "file_change":
+                    item["changes"][0]["kind"] = "update"
+            with self.assertRaisesRegex(ValueError, "change kind"):
+                normalize_codex_turn(
+                    b"".join(
+                        json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                        for event in initial_events
+                    ),
+                    candidate_path=candidate,
+                    expected_change="add",
+                    expected_terminal_message='{"candidate_written":true}',
+                )
+
+        self.assertEqual(turn.candidates, (b'{"schedule":2}',))
+        self.assertEqual(turn.provider_tokens, 120)
+
     def test_canonical_candidate_set_projects_ordered_members_for_each_arm(self) -> None:
         cases = (
             (

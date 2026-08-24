@@ -33,6 +33,21 @@
       }
     },
     {
+      "case_id": "flash-kmeans-warp-specialized-argmin",
+      "schedule": "corpus/schedules/flash-kmeans-b32-warp-specialized-argmin.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "79be4eba958be4fc21a377d69e18c973b3b86a2282bcddb3b62191455a0161fd",
+        "lowering_source_sha256": null
+      }
+    },
+    {
       "case_id": "flash-kmeans-r25-accepted",
       "schedule": "corpus/schedules/flash-kmeans-assignment-full.json",
       "expected": {

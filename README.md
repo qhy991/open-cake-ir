@@ -37,12 +37,13 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v9` is content-bound to an exact `sm_100a` Target and a 16-case,
-  32-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
+- Compiler Revision `open-cake-ir-sm100a-v10` is content-bound to an exact `sm_100a` Target and a 17-case,
+  33-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
-  emitted MMA omit its instruction contract while still being marked lowering-eligible. Public ranking in v9 obeys
-  its calibration coverage; current coverage is empty rather than falling back to an uncalibrated order. A
+  emitted MMA omit its instruction contract while still being marked lowering-eligible. v10 turns the pinned Triton
+  backend's unsupported warp-specialized value-and-index argmin into structured lowering feedback. Public ranking in
+  v10 obeys its calibration coverage; current coverage is empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
   eligible GEMM triplets and failed the fixed 5% boundary at 35.95% and 8.16%, so no coverage was promoted.
 - The Lab implements two closed Study variants on the same control plane: `matched_search` and `portfolio`. The former
@@ -52,28 +53,31 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   comparison and promoting Candidates only through common confirmatory Evaluation. The Lab's ordered candidate-set
   envelope is implemented and exercised for both arms. Authoring and GPU-search budgets are independent, and
   the tool-rich prompts give auxiliary agents read-only investigations while the primary thread remains the sole
-  submission writer. Both live two-arm provider policies are qualified, and ADR 0009 is accepted after a bounded
+  submission writer; the sealed envelope is the handoff and the external Lab remains the sole Judge. Both live
+  two-arm provider policies are qualified, and ADR 0009 is accepted after a bounded
   non-scientific B200 Campaign produced three launchable Candidates per arm, searched two per arm and replayed all
   eight selected-only search/confirmatory/attribution receipts. ADR 0012's Executor-v18 successor replays ten
   Receipts and profiles both correct search survivors in each arm, including the non-selected one. These are system
   qualifications, not arm comparisons.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
-- Current Executor Revision `open-cake-ir-b200-v19` binds the 34-source runtime closure, including deterministic
+- Current Executor Revision `open-cake-ir-b200-v21` binds the 34-source runtime closure, including deterministic
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
-  exact B200 host packages; v1–v5 are archived and v6–v18 are superseded descriptors. It canonically treats one
-  observed same-path delete/add replacement as a resumed candidate update. Its candidate-set filter applies
-  a cost order only when every launchable member is scored; otherwise the whole set keeps provider order. Current
+  exact B200 host packages; v1–v5 are archived and v6–v20 are superseded descriptors. v19 canonically treats one
+  observed same-path delete/add replacement as a resumed candidate update. v20 applies
+  a cost order only when every launchable member is scored and emits a cost-model misranking diagnosis only when
+  that order was actually applied; otherwise the whole set keeps provider order without inventing a ranking. v21
+  also treats a resumed bare `add` label as the Lab-authoritative update after the pre-Turn existence check. Current
   matched Study fixtures retain a correctness-qualified, no-timing profile for every searched survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command.
-  The current local suite passes 328 tests plus 223 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 331 tests plus 223 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
   scientific claim.
 - Historical Executor v10 digest `23a2c79f…` passes the separate correctness-qualified B200 NCU assay for that frozen
   Candidate: one target launch, zero fallback and zero timing, with all 11 profiler metrics replayed from retained
-  raw CSV. This validates that historical mechanism; current v18 all-survivor coverage is independently qualified by
+  raw CSV. This validates that historical mechanism; frozen v19 all-survivor coverage is independently qualified by
   the bounded successor above. Neither observation measures profiler speed or supports a scientific claim.
 - The pinned Codex 0.144.3 tool-rich qualification passes with no injected feature disables and observes shell
   activity on both initial and resumed singleton Turns. The Lab derives the required live qualification from Claim Scope, so
@@ -85,10 +89,13 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   observed 68 commits ahead; origin now carries the final revision and a verified complete-history bundle provides
   an independent recovery path under `migration/bundles/`.
 - Historical r41/r42/r45 outcomes remain bounded negative/inconclusive evidence. G7 r4, the non-scientific G8 r6 and
-  candidate-set system qualifications v2/v3 pass on the remote B200 host. v3 has two adhered Runs and ten replayed
-  Evaluation Receipts, including every correct searched survivor's profile, but produces no treatment comparison:
-  estimand, estimate and uncertainty remain null. No scientific Campaign, serving integration or paper-result claim
-  has been run here.
+  candidate-set system qualifications v2/v3 pass on the remote B200 host. The six-Run scientific matched-search v3
+  Campaign also completes with archive integrity and semantic replay: direct CUDA qualifies in 2/3 Runs at 9.880473
+  and 10.084415 ms, while Open Cake qualifies in 0/3 at the turn-discrete 150k checkpoint. One provider fault and one
+  harness fault leave the preregistered Estimand unavailable, so no causal estimate is reported. Executor v20/v21 and
+  Compiler v10 are create-only successors for the three defects exposed by that immutable Evidence. This local
+  150k, task-informed package study is not the paper's 80M clean-start comparison; serving and paper reproduction
+  remain unsupported.
 - Four bounded tool-rich artifact-optimization Campaigns are retained. v1 promoted one Open Cake artifact and
   exposed v14's scratch-file event classification defect; v2 promoted one Direct CUDA artifact and exposed v15's
   remaining assumption when Open Cake added and updated the fixed envelope in one Turn. v16 uses the smaller authority

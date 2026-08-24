@@ -207,8 +207,9 @@ That diagram is now also the bounded live candidate-set path. Successor
 project its ordered members into the same build/filter/search path; frozen Studies retain
 their singleton compatibility edge. ADR 0009 records that boundary, and the non-scientific
 candidate-set v2 Campaign exercised it on B200, and the v3 successor exercised complete
-correct-search-survivor attribution under Executor v18. Remaining breadth gaps are
-released cost-ranking coverage and a preregistered scientific Campaign.
+correct-search-survivor attribution under Executor v18. A preregistered six-Run scientific
+Campaign has now executed, but two protocol-missing Runs make its Estimand unavailable.
+Remaining breadth gaps are released cost-ranking coverage and a complete matched Campaign.
 
 ---
 
@@ -287,7 +288,7 @@ graph LR
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
 | Compile → external oracle → GPU timing | implemented, B200-verified on 5 emitted operators |
-| Profiler evidence in the inner loop | partial relative to the paper — Executor v18 composes the canonical no-timing NCU assay after every correctness-qualified search survivor, retains raw/profile replay for all of them and feeds back the selected profile; a bounded live v18 two-arm successor covers selected and non-selected survivors, while a preregistered scientific Campaign is not yet covered |
+| Profiler evidence in the inner loop | partial relative to the paper — Executor v18 composes the canonical no-timing NCU assay after every correctness-qualified search survivor, retains raw/profile replay for all of them and feeds back the selected profile; a bounded live v18 two-arm successor covers selected and non-selected survivors, and scientific v3 executes it, but two missing Runs prevent the preregistered estimate |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
 | Deterministic lowering | `lower` generates for 6 of the 7 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke`, `layernorm_b8_smoke` and `gemm_bias_b1_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file |
 | Live candidate-set authoring | implemented and bounded-live exercised — both Codex 0.144.4 policies pass two-arm envelope qualification, and candidate-set v2 produced three launchable Candidates and searched two in each arm on B200; the Campaign is system qualification only |

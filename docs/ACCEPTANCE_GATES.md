@@ -10,10 +10,10 @@ supports a broader scientific claim.
 | G0 | passed | final HEAD/tree, 146-record manifest and verified complete-history bundle |
 | G1 | passed | ADR 0001 plus the real second-use Portfolio extension in ADR 0002 |
 | G2 | passed | deterministic public assess/lower, localized negative, exact Target and dependency isolation |
-| G3 | passed | v8 16-case Corpus Gate, released content-bound Revision lock, reviewed approval and 32-source closure |
+| G3 | passed | v10 17-case Corpus Gate, released content-bound Revision lock, reviewed approval and 33-source closure; the scientific-v3 Triton warp-specialized argmin failure is retained as a lowering-ineligible regression |
 | G4 | passed for migrated evidence and the bounded attribution slice | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles, raw r45 replay, and raw-checked no-timing NCU attribution including all correct search survivors in the v18 qualification |
 | G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay and matched/Portfolio semantic replay pass |
-| G6 | passed | 326 tests + 223 subtests cover candidate-set transport/selection/replay, all-or-nothing calibrated ordering, every correctness-qualified search survivor's attribution and missing-profile rejection, tool-rich scratch lifecycles, artifact-only feedback-budget freezing, immutable CLI reports, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, preregistered ranking-calibration replay and all three matched Claim Scopes |
+| G6 | passed | 331 tests + 223 subtests cover candidate-set transport/selection/replay, all-or-nothing calibrated ordering, every correctness-qualified search survivor's attribution and missing-profile rejection, tool-rich scratch lifecycles, artifact-only feedback-budget freezing, immutable CLI reports, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, preregistered ranking-calibration replay and all three matched Claim Scopes |
 | G7 | passed | r4 proves singleton continuity; Codex 0.144.4 closed and tool-rich successors prove the two-arm candidate-set add/update lifecycle |
 | G7F | passed | tool-rich v1 injects no feature disables and replays shell activity; its candidate-set successor preserves the single-writer envelope boundary, and artifact v4 replays one measured feedback transition per arm without claiming auxiliary-agent use |
 | G8 | passed | r6 passes the singleton pilot; candidate-set v2 covers selected-only attribution, and v3 adds two adhered v18 Runs with ten replayed Receipts and complete correct-search-survivor profiles |
@@ -215,3 +215,9 @@ custody, status parity and the pinned rollback procedure remain part of every la
 Require every prescheduled Run Audit, preregistered inclusion/missingness handling, both parts of the Run endpoint,
 estimate and uncertainty, contamination audit, explicit unavailable classifications and a scope-limited Claim View.
 Portfolio and Serving require later independent gates; fixed-shape success cannot satisfy them.
+
+Scientific v3 is the first completed local application of this gate. Fresh audit passes archive integrity and exact
+semantic replay, but one provider fault and one harness fault leave two Runs missing. Direct CUDA qualifies in 2/3
+Runs, Open Cake in 0/3, and the preregistered Estimand remains unavailable; the gate therefore reports no estimate or
+uncertainty. Executor v21 and Compiler v10 repair the observed mechanisms only for successor Studies and do not
+rewrite or retroactively include the frozen v3 Runs.

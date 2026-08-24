@@ -82,7 +82,7 @@ class CompilerRevisionWitnessTests(unittest.TestCase):
         )
         successor = incident["resolution"]["successor_revision"]
 
-        self.assertEqual(current["revision_id"], "open-cake-ir-sm100a-v9")
+        self.assertEqual(current["revision_id"], "open-cake-ir-sm100a-v10")
         self.assertEqual(successor["revision_id"], archived["revision_id"])
         self.assertEqual(successor["canonical_sha256"], _canonical_sha256(archived))
 

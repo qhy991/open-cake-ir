@@ -37,10 +37,10 @@
     }
   ],
   "current": {
-    "canonical_sha256": "c89a78bc6700742b520eafb43ac72cbbf735fd333eca48089be6d25cb9a24af9",
-    "descriptor_raw_sha256": "a6c61b34e39a91ef04665c9981cfd0164593cbe5648bec4ac5603f15d2a9bd47",
-    "executor_id": "open-cake-ir-b200-v19",
-    "path": "runtime/executors/open-cake-ir-b200-v19.json",
+    "canonical_sha256": "62e9efeeb9f41cc57f16b95338d880228b9693224b6e0e006a31a9751047f8ee",
+    "descriptor_raw_sha256": "15549fbfdd4e736d8b80cd0cdbf44c9ad28e43272b9dd13155a75a1ecd6b9001",
+    "executor_id": "open-cake-ir-b200-v21",
+    "path": "runtime/executors/open-cake-ir-b200-v21.json",
     "source_count": 34
   },
   "schema_version": 1,
@@ -106,6 +106,20 @@
       "descriptor_raw_sha256": "2827100e63e3e95b658a3e2aadf74ed4a392ef99e2e581fc0f0e5ae77fbee19e",
       "executor_id": "open-cake-ir-b200-v18",
       "path": "runtime/executors/open-cake-ir-b200-v18.json",
+      "source_count": 34
+    },
+    {
+      "canonical_sha256": "c89a78bc6700742b520eafb43ac72cbbf735fd333eca48089be6d25cb9a24af9",
+      "descriptor_raw_sha256": "a6c61b34e39a91ef04665c9981cfd0164593cbe5648bec4ac5603f15d2a9bd47",
+      "executor_id": "open-cake-ir-b200-v19",
+      "path": "runtime/executors/open-cake-ir-b200-v19.json",
+      "source_count": 34
+    },
+    {
+      "canonical_sha256": "f962803ceb35c8923d2ac7c29db0dc07ec37dcac175e36febf4c0c774560132a",
+      "descriptor_raw_sha256": "49ed558d0e79f9ca8c441dea3dfed7de65822baafcb603c8b455e69497dfbd91",
+      "executor_id": "open-cake-ir-b200-v20",
+      "path": "runtime/executors/open-cake-ir-b200-v20.json",
       "source_count": 34
     },
     {

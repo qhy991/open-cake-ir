@@ -7,7 +7,6 @@
     "corpus/schedules/flash-kmeans-assignment-full.json",
     "corpus/schedules/flash-kmeans-b32-smoke-shape-drift-v2.json",
     "corpus/schedules/flash-kmeans-b32-smoke-v2.json",
-    "corpus/schedules/flash-kmeans-b32-warp-specialized-argmin.json",
     "corpus/schedules/gemm-bias-b1-smoke-shape-drift.json",
     "corpus/schedules/gemm-bias-b1-smoke.json",
     "corpus/schedules/layernorm-b8-smoke-shape-drift.json",

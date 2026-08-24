@@ -1322,6 +1322,37 @@ class Compiler:
                             blocks_lowering=True,
                         )
                     )
+            # The pinned Triton automatic-warp-specialization pass requires every
+            # reduction in the specialized loop to have one result. `reduce_argmin`
+            # returns both value and index, so this exact combination is a known
+            # backend legality failure rather than an in-process toolchain crash.
+            if definition.backend is emit_triton:
+                operations_by_id = {
+                    operation.get("id"): operation for operation in operations
+                }
+                for index, loop in enumerate(
+                    _objects(schedule.get("tile_loops", []), "tile_loops")
+                ):
+                    options = _object(
+                        loop.get("range_options"),
+                        f"tile_loops[{index}].range_options",
+                    )
+                    body = _strings(loop.get("body"), f"tile_loops[{index}].body")
+                    if options.get("warp_specialize") and any(
+                        operations_by_id.get(operation_id, {}).get("kind")
+                        == OperationKind.REDUCE_ARGMIN.value
+                        for operation_id in body
+                    ):
+                        findings.append(
+                            Finding(
+                                "TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED",
+                                f"tile_loops[{index}].range_options.warp_specialize",
+                                "the pinned Triton backend cannot warp-specialize a "
+                                "loop containing the value-and-index argmin reduction",
+                                blocks_acceptance=False,
+                                blocks_lowering=True,
+                            )
+                        )
         if definition is not None and definition.closed_semantics is not None:
             semantic_sha = _semantic_schedule_sha256(schedule)
             known_delta = any(

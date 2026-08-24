@@ -61,12 +61,48 @@ PY
 if [ -n "$ARCHIVE" ]; then
   echo "--- ${ARCHIVE} is witnessed by sealed evidence; archiving and bumping to ${NEXT} ---"
   if [ -e "compiler/releases/${ARCHIVE}" ]; then
-    echo "refusing to overwrite frozen compiler/releases/${ARCHIVE}" >&2
-    exit 1
+    python3 - "$ARCHIVE" <<'PY'
+import hashlib, json, pathlib, sys
+
+archive = pathlib.Path("compiler/releases") / sys.argv[1]
+lock_path = archive / "revision.lock.json"
+if lock_path.read_bytes() != pathlib.Path("compiler/revision.lock.json").read_bytes():
+    raise SystemExit(f"refusing non-identical frozen {lock_path}")
+lock = json.loads(lock_path.read_text())
+
+
+def canonical(path):
+    return hashlib.sha256(json.dumps(
+        json.loads(path.read_text()), sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()).hexdigest()
+
+
+for field, name in (("corpus_gate", "corpus-gate-report.json"),
+                    ("release_approval", "release-approval.json")):
+    path = archive / name
+    if canonical(path) != lock[field]["canonical_sha256"]:
+        raise SystemExit(f"refusing non-identical frozen {path}")
+source_paths = json.loads((archive / "source_set.json").read_text())["paths"]
+if source_paths != [source["path"] for source in lock["sources"]]:
+    raise SystemExit(f"refusing non-identical frozen {archive / 'source_set.json'}")
+PY
+    echo "    complete archive already exists; resuming the interrupted release"
+  else
+    mkdir "compiler/releases/${ARCHIVE}"
+    cp compiler/revision.lock.json compiler/corpus-gate-report.json \
+       compiler/release-approval.json "compiler/releases/${ARCHIVE}/"
+    python3 - "$ARCHIVE" <<'PY'
+import json, pathlib, sys
+
+archive = pathlib.Path("compiler/releases") / sys.argv[1]
+lock = json.loads(pathlib.Path("compiler/revision.lock.json").read_text())
+archive.joinpath("source_set.json").write_text(json.dumps({
+    "paths": [source["path"] for source in lock["sources"]],
+    "schema_version": 1,
+}, indent=2) + "\n")
+PY
   fi
-  mkdir "compiler/releases/${ARCHIVE}"
-  cp compiler/revision.lock.json compiler/corpus-gate-report.json \
-     compiler/release-approval.json compiler/source_set.json "compiler/releases/${ARCHIVE}/"
 else
   echo "--- no sealed evidence witnesses the working Revision; releasing it as ${NEXT} ---"
   for stale in $STALE; do
