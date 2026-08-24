@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Freeze one live non-scientific matched Study from qualified authorities."""
+"""Freeze one live matched Study from qualified authorities."""
 
 from __future__ import annotations
 
@@ -135,8 +135,6 @@ def main() -> int:
     )
     if (
         study.get("kind") != "matched_search"
-        or study.get("claim_scope")
-        not in {"system_qualification_only", "artifact_optimization_only"}
         or study.get("state") != "frozen"
     ):
         raise ValueError("live matched Study template policy differs")
@@ -273,10 +271,11 @@ def main() -> int:
         stream.write(_canonical_json_bytes(study) + b"\n")
     try:
         lock = Lab(root).preflight(temporary)
-        if lock.claim_scope not in {
-            "system_qualification_only",
-            "artifact_optimization_only",
-        } or lock.estimand is not None:
+        analysis = _object(study.get("analysis_plan"), "study.analysis_plan")
+        if (
+            lock.claim_scope != study.get("claim_scope")
+            or lock.estimand != analysis.get("estimand")
+        ):
             raise ValueError("frozen live Study data policy differs")
         temporary.replace(output)
         output.chmod(0o644)

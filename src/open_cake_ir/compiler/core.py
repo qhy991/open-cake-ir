@@ -1341,6 +1341,30 @@ class Compiler:
 
         findings.extend(self._contract_findings(typed_schedule, target))
 
+        # The IR permits instruction-free MMA assets, but an otherwise-lowerable
+        # backend profile must choose the Target contract that determines its lowering.
+        # This is an eligibility-completeness check, not a redundant linter: a Schedule
+        # already blocked for another exact reason retains that stable Finding set.
+        if (
+            definition is not None
+            and definition.backend
+            and not any(finding.blocks_lowering for finding in findings)
+        ):
+            for index, operation in enumerate(operations):
+                if operation.get("kind") == OperationKind.MMA.value and not _object(
+                    operation.get("parameters"), f"operations[{index}].parameters"
+                ).get("instruction"):
+                    findings.append(
+                        Finding(
+                            "PROFILE_MMA_INSTRUCTION_REQUIRED",
+                            f"operations[{index}].parameters.instruction",
+                            f"profile {profile!r} lowers through a backend whose mma "
+                            "must name an instruction contract",
+                            blocks_acceptance=False,
+                            blocks_lowering=True,
+                        )
+                    )
+
         accepted = not any(finding.blocks_acceptance for finding in findings)
         lowering_eligible = accepted and not any(
             finding.blocks_lowering for finding in findings

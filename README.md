@@ -37,11 +37,12 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v8` is content-bound to an exact `sm_100a` Target and a 16-case,
+- Compiler Revision `open-cake-ir-sm100a-v9` is content-bound to an exact `sm_100a` Target and a 16-case,
   32-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
-  unresolvable v6 name, while v7 is archived by exact bytes. Public ranking now obeys the Revision's
-  calibration coverage; current coverage is empty rather than falling back to an uncalibrated order. A
+  unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
+  emitted MMA omit its instruction contract while still being marked lowering-eligible. Public ranking in v9 obeys
+  its calibration coverage; current coverage is empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
   eligible GEMM triplets and failed the fixed 5% boundary at 35.95% and 8.16%, so no coverage was promoted.
 - The Lab implements two closed Study variants on the same control plane: `matched_search` and `portfolio`. The former

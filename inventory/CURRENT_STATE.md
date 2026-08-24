@@ -1,7 +1,7 @@
 # Current-state inventory
 
 Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set envelope implementation and live
-system qualification, historical Executor-v10 NCU attribution validation, Executor v18 release and Compiler v8
+system qualification, historical Executor-v10 NCU attribution validation, Executor v18 release and Compiler v9
 release. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
@@ -29,11 +29,14 @@ causal effect, serving and paper reproduction are not.
 
 ## New repository state
 
-- Compiler Revision `open-cake-ir-sm100a-v8` binds the exact Target, public Schedule authoring contract, 32-source
+- Compiler Revision `open-cake-ir-sm100a-v9` binds the exact Target, public Schedule authoring contract, 32-source
   closure, 16-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
-  remain immutable history; v7 is archived byte-for-byte because retained calibration witnesses it.
+  remain immutable history; v7 and v8 are archived byte-for-byte because retained calibration and Study authorities
+  witness them. v9 makes an otherwise-lowerable backend-emitted MMA without an instruction contract a structured,
+  candidate-actionable Finding instead of a late emitter exception. Its 33-object source archive passes immediate
+  external audit.
   `COMPILER_REVISION_IDENTITY_INCIDENT_20260824.json` records why v4 and v6 cannot be reused or treated as unique
-  released identities. v8 exposes no uncalibrated cost order: its `calibration_coverage` is empty and eligible
+  released identities. v9 exposes no uncalibrated cost order: its `calibration_coverage` is empty and eligible
   candidates retain provider order.
 - Current Executor Revision `open-cake-ir-b200-v18` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
@@ -62,7 +65,7 @@ causal effect, serving and paper reproduction are not.
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 326 tests plus 223 subtests; the earlier remote qualification passed its
+- The current local contract suite passes 327 tests plus 223 subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain

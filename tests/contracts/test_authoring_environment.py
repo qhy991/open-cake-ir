@@ -63,7 +63,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v16.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v17.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -108,7 +108,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v16.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v17.json"
             ).read_text(encoding="utf-8")
         )
         environment = OpenCakeEnvironment(
@@ -149,7 +149,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v16.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v17.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -191,7 +191,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v16.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v17.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -240,7 +240,7 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v16.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v17.json"
             ).read_text(encoding="utf-8")
         )
         document = _headline_schedule(workload)
@@ -279,6 +279,12 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
                     "coalesced": True,
                 }
 
+    @staticmethod
+    def _omit_mma_instruction(document):
+        for operation in document["operations"]:
+            if operation["kind"] == "mma":
+                operation["parameters"].pop("instruction")
+
     def test_a_gap_the_backend_has_reaches_the_router_as_the_vocabularys(self) -> None:
         from open_cake_ir.lab.routing import IR_VOCABULARY, route_rejection
 
@@ -298,3 +304,17 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
                 self.assertEqual(
                     route_rejection(result.feedback).destination, IR_VOCABULARY
                 )
+
+    def test_an_emitted_mma_without_an_instruction_is_candidate_feedback(self) -> None:
+        from open_cake_ir.lab.routing import CANDIDATE, route_rejection
+
+        result = self._rejection(self._omit_mma_instruction)
+
+        self.assertEqual(result.disposition, "rejected")
+        codes = {
+            row["code"]
+            for row in result.feedback["findings"]
+            if row["blocks_lowering"]
+        }
+        self.assertIn("PROFILE_MMA_INSTRUCTION_REQUIRED", codes)
+        self.assertEqual(route_rejection(result.feedback).destination, CANDIDATE)

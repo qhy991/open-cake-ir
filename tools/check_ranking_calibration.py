@@ -7,6 +7,7 @@ import argparse
 import itertools
 import json
 import math
+import re
 import statistics
 from hashlib import sha256
 from pathlib import Path
@@ -79,12 +80,29 @@ def evaluate(root: Path, plan_path: Path) -> dict[str, object]:
     ):
         raise ValueError("calibration Schedule differs")
     revision_authority = authority["compiler_revision"]
-    revision = json.loads((root / revision_authority["path"]).read_text(encoding="utf-8"))
-    if (
-        revision.get("revision_id") != revision_authority["revision_id"]
-        or sha256(_canonical_bytes(revision)).hexdigest()
-        != revision_authority["canonical_sha256"]
-    ):
+    revision_id = revision_authority["revision_id"]
+    revision_paths = [root / revision_authority["path"]]
+    match = re.fullmatch(r"open-cake-ir-sm100a-(v\d+)", revision_id)
+    if match is not None:
+        # Early frozen plans named the then-current lock path. Once that exact release
+        # advances into immutable history, id and digest remain the authorities and the
+        # lifecycle's canonical archive is the bounded compatibility location.
+        revision_paths.append(
+            root / "compiler/releases" / match.group(1) / "revision.lock.json"
+        )
+    revision = next(
+        (
+            candidate
+            for path in revision_paths
+            if path.is_file()
+            for candidate in [json.loads(path.read_text(encoding="utf-8"))]
+            if candidate.get("revision_id") == revision_id
+            and sha256(_canonical_bytes(candidate)).hexdigest()
+            == revision_authority["canonical_sha256"]
+        ),
+        None,
+    )
+    if revision is None:
         raise ValueError("calibration Compiler Revision differs")
 
     repetitions = []

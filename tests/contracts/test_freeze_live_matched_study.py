@@ -75,7 +75,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 maximum_turns=2,
             )
 
-    def test_live_authorities_freeze_one_non_scientific_run_per_arm(self) -> None:
+    def test_live_authorities_preserve_each_matched_claim_scope(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             project = temporary / "open-cake-ir"
@@ -95,7 +95,10 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             executable.write_bytes(b"qualified codex fixture")
             executable.chmod(0o700)
             fixture = json.loads(
-                (project / "contracts/providers/fixture-provider-v1.json").read_text()
+                (
+                    project
+                    / "contracts/providers/fixture-provider-candidate-set-v1.json"
+                ).read_text()
             )
             qualification = ProviderQualificationReceipt(
                 provider_revision="codex-live-contract-fixture",
@@ -152,7 +155,10 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--project-root",
                 str(project),
                 "--template",
-                str(project / "contracts/studies/matched-search-system-qualification-v6.json"),
+                str(
+                    project
+                    / "contracts/studies/matched-search-system-qualification-v17.json"
+                ),
                 "--qualification",
                 str(qualification_path),
                 "--qualification-anchor",
@@ -204,6 +210,59 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 ],
                 sha256(_canonical_json_bytes(anchor)).hexdigest(),
             )
+
+            scientific_template = (
+                project / "contracts/studies/matched-search-infrastructure-v17.json"
+            )
+            scientific_output = project / "contracts/studies/live-scientific.json"
+            scientific_command = list(command)
+            scientific_command[scientific_command.index("--template") + 1] = str(
+                scientific_template
+            )
+            scientific_command[scientific_command.index("--study-id") + 1] = (
+                "open-cake-ir-live-scientific-contract-fixture"
+            )
+            scientific_command[scientific_command.index("--output") + 1] = str(
+                scientific_output
+            )
+            scientific_completed = subprocess.run(
+                scientific_command,
+                cwd=project,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30,
+                check=False,
+            )
+
+            self.assertEqual(
+                scientific_completed.returncode,
+                0,
+                scientific_completed.stderr.decode(),
+            )
+            scientific_lock = Lab(project).preflight(scientific_output)
+            scientific_study = json.loads(scientific_output.read_text())
+            template_study = json.loads(scientific_template.read_text())
+            self.assertEqual(scientific_lock.claim_scope, "scientific_matched_search")
+            self.assertEqual(
+                scientific_lock.run_order,
+                (
+                    "open_cake-1",
+                    "direct_cuda-1",
+                    "direct_cuda-2",
+                    "open_cake-2",
+                    "open_cake-3",
+                    "direct_cuda-3",
+                ),
+            )
+            self.assertEqual(
+                scientific_lock.estimand,
+                template_study["analysis_plan"]["estimand"],
+            )
+            self.assertEqual(
+                scientific_study["analysis_plan"], template_study["analysis_plan"]
+            )
+            self.assertEqual(scientific_output.stat().st_mode & 0o444, 0o444)
 
             repeated = subprocess.run(
                 command,

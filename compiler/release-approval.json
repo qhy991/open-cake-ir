@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "0ed833975644948b48c33c658a6ee09bc5eb93a59b7ffb68f329624930aefe9e"
+    "canonical_sha256": "3905600fd42f74c7e52d5743743fbe34f3f718538af8b5034990d8208abc8081"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Public ranking now obeys Revision calibration coverage; declared-domain B200 GEMM and Flash-KMeans evidence refutes promoting the device-fill hypothesis"
+  "approval_basis": "Scientific matched-search Run open_cake-1 exposed a verifier/emitter contradiction: an emitted MMA without an instruction was marked lowering-eligible; add candidate-actionable pre-lowering evidence while preserving asset profiles"
 }
