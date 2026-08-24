@@ -86,6 +86,7 @@ def _compiler(args: argparse.Namespace) -> int:
         {
             "schedule_sha256": lowering.schedule_sha256,
             "source_sha256": lowering.source_sha256,
+            "generated": lowering.generated,
             "entry_point": lowering.entry_point,
             "output": str(output),
         }

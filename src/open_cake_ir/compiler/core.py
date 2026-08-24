@@ -62,7 +62,12 @@ class Assessment:
 
 @dataclass(frozen=True)
 class Lowering:
-    """Inspectable target source derived from one eligible Assessment."""
+    """Inspectable target source materialized from one eligible Assessment.
+
+    `generated` distinguishes operation-emitting backends from the closed asset path.
+    Both are deterministic, but only the former generates the program from Schedule
+    operations; collapsing them would make that paper-relevant boundary unobservable.
+    """
 
     compiler_revision_id: str
     compiler_revision_sha256: str
@@ -70,6 +75,7 @@ class Lowering:
     schedule_sha256: str
     target: str
     profile: str
+    generated: bool
     entry_point: str
     source: str
     source_sha256: str
@@ -1481,6 +1487,7 @@ class Compiler:
             schedule_sha256=assessment.schedule_sha256,
             target=assessment.target,
             profile=assessment.profile,
+            generated=True,
             entry_point=emission.entry_point,
             source=source,
             source_sha256=sha256(source.encode("utf-8")).hexdigest(),
@@ -1622,6 +1629,7 @@ class Compiler:
             schedule_sha256=assessment.schedule_sha256,
             target=assessment.target,
             profile=assessment.profile,
+            generated=False,
             entry_point=entry_point,
             source=source,
             source_sha256=sha256(source.encode("utf-8")).hexdigest(),

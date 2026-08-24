@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from hashlib import sha256
 from io import StringIO
 from pathlib import Path
 from types import MappingProxyType
@@ -78,7 +79,7 @@ class CliContractTests(unittest.TestCase):
                     "preflight",
                     str(
                         ROOT
-                        / "contracts/studies/matched-search-system-qualification-v26.json"
+                        / "contracts/studies/matched-search-system-qualification-v27.json"
                     ),
                 ]
             )
@@ -117,7 +118,7 @@ class CliContractTests(unittest.TestCase):
                         str(ROOT),
                         "lab",
                         "preflight",
-                        str(ROOT / "contracts/studies/matched-search-infrastructure-v26.json"),
+                        str(ROOT / "contracts/studies/matched-search-infrastructure-v27.json"),
                         "--output",
                         str(lock_path),
                     ]
@@ -245,6 +246,32 @@ class CliContractTests(unittest.TestCase):
         )
         self.assertEqual(result["compiler_revision_id"], released["revision_id"])
 
+    def test_compiler_lower_exposes_whether_the_schedule_generated_the_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "lowered.py"
+            output = StringIO()
+            with redirect_stdout(output):
+                code = main(
+                    [
+                        "--project-root",
+                        str(ROOT),
+                        "compiler",
+                        "lower",
+                        "--revision",
+                        str(ROOT / "compiler/revision.lock.json"),
+                        str(ROOT / "corpus/schedules/flash-kmeans-assignment-full.json"),
+                        "--output",
+                        str(target),
+                    ]
+                )
+
+            result = json.loads(output.getvalue())
+            self.assertEqual(code, 0)
+            self.assertTrue(result["generated"])
+            self.assertEqual(
+                result["source_sha256"], sha256(target.read_bytes()).hexdigest()
+            )
+
     def test_lab_preflight_emits_one_content_bound_campaign_lock(self) -> None:
         output = StringIO()
         with redirect_stdout(output):
@@ -254,14 +281,14 @@ class CliContractTests(unittest.TestCase):
                     str(ROOT),
                     "lab",
                     "preflight",
-                    str(ROOT / "contracts/studies/matched-search-infrastructure-v26.json"),
+                    str(ROOT / "contracts/studies/matched-search-infrastructure-v27.json"),
                 ]
             )
 
         result = json.loads(output.getvalue())
         self.assertEqual(code, 0)
         self.assertEqual(
-            result["study_id"], "open-cake-ir-matched-search-infrastructure-v26"
+            result["study_id"], "open-cake-ir-matched-search-infrastructure-v27"
         )
         self.assertEqual(len(result["campaign_lock_sha256"]), 64)
         self.assertEqual(len(result["run_order"]), 6)

@@ -37,15 +37,17 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v11` is content-bound to an exact `sm_100a` Target and a 17-case,
+- Compiler Revision `open-cake-ir-sm100a-v12` is content-bound to an exact `sm_100a` Target and a 17-case,
   33-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
   emitted MMA omit its instruction contract while still being marked lowering-eligible. v10 turns the pinned Triton
   backend's unsupported warp-specialized value-and-index argmin into structured lowering feedback. v11 separates the
   performance-semantic cost preorder from deterministic `schedule_id` serialization, so a tied cut is an abstention
-  rather than an invented performance choice. Public ranking obeys its calibration coverage; current coverage remains
-  empty rather than falling back to an uncalibrated order. A
+  rather than an invented performance choice. v12 makes the existing lowering boundary public: `generated=true`
+  means a backend emitted operation bodies from the Schedule, while TinyGEMM2's closed asset reports `false` instead
+  of being indistinguishable from generation. No kernel source digest changed. Public ranking obeys its calibration
+  coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
   eligible GEMM triplets and failed the fixed 5% boundary at 35.95% and 8.16%. A drift-controlled successor then
   classified every triplet as decisive or tied: 1,450 decisive cuts and 850 abstentions per repeat. One repeat still
@@ -64,9 +66,9 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   Receipts and profiles both correct search survivors in each arm, including the non-selected one. These are system
   qualifications, not arm comparisons.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
-- Current Executor Revision `open-cake-ir-b200-v25` binds the 34-source runtime closure, including deterministic
+- Current Executor Revision `open-cake-ir-b200-v26` binds the 34-source runtime closure, including deterministic
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
-  exact B200 host packages; v1–v5 are archived and v6–v24 are superseded descriptors. v19 canonically treats one
+  exact B200 host packages; v1–v5 are archived and v6–v25 are superseded descriptors. v19 canonically treats one
   observed same-path delete/add replacement as a resumed candidate update. v20 applies
   a cost order only when every launchable member is scored and emits a cost-model misranking diagnosis only when
   that order was actually applied; otherwise the whole set keeps provider order without inventing a ranking. v21
@@ -79,12 +81,13 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   `max` reasoning choice: qualification and live freezing must bind one explicit effort, identical across arms, and
   changing it without a matching qualification fails preflight. v25 retains the exact rendered reference bundle
   supplied on every provider Turn as a replay-checked Evidence object; absence becomes a harness fault and missing
-  endpoint rather than an unverifiable clean-start pass. The current matched Study fixtures
+  endpoint rather than an unverifiable clean-start pass. v26 projects the Compiler-owned lowering-generation fact
+  through the public CLI without changing execution semantics. The current matched Study fixtures
   retain a correctness-qualified, no-timing profile for every searched
   survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command.
-  The current local suite passes 340 tests plus 226 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 341 tests plus 226 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
@@ -116,7 +119,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   150k, task-informed package study also freezes the provider's distinct `max` reasoning level and complete
   implementation skeletons. The later `xhigh` capability qualification does not rewrite that frozen treatment or
   supply an 80M clean-start Study. Serving and paper reproduction remain unsupported.
-- `matched-search-clean-start-reference-v26.json` is a zero-GPU successor fixture that replaces both arm references
+- `matched-search-clean-start-reference-v27.json` is a zero-GPU successor fixture that replaces both arm references
   together: Open Cake receives only its authoring interface and direct CUDA receives a canonical ABI with an empty
   kernel body. Its contamination gate validates reference access only; its inherited 150k/`max` treatment still
   cannot support a paper comparison.

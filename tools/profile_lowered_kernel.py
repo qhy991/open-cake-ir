@@ -197,6 +197,7 @@ def main() -> int:
             "canonical_sha256": assessment.schedule_sha256,
         },
         "lowering": {
+            "generated": lowering.generated,
             "entry_point": lowering.entry_point,
             "source_sha256": lowering.source_sha256,
         },

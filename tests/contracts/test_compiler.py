@@ -691,6 +691,7 @@ class CompilerContractTests(unittest.TestCase):
 
         self.assertEqual(first.source, second.source)
         self.assertEqual(first.source_sha256, second.source_sha256)
+        self.assertTrue(first.generated)
         self.assertEqual(first.entry_point, "cake_flash_kmeans_assignment_full")
         self.assertIn(f"# schedule_sha256={assessment.schedule_sha256}", first.source)
         self.assertEqual(
@@ -749,6 +750,7 @@ class CompilerContractTests(unittest.TestCase):
 
         lowering = compiler.lower(assessment)
 
+        self.assertFalse(lowering.generated)
         self.assertEqual(lowering.entry_point, "cake_tinygemm2_stage4_split_k")
         self.assertIn(assessment.schedule_sha256, lowering.source)
         self.assertEqual(

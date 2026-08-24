@@ -136,7 +136,7 @@ def main() -> int:
             "canonical_sha256": assessment.schedule_sha256,
         },
         "lowering": {
-            "generated": True,
+            "generated": lowering.generated,
             "entry_point": lowering.entry_point,
             "source_sha256": lowering.source_sha256,
             "source_lines": len(lowering.source.splitlines()),
@@ -150,10 +150,18 @@ def main() -> int:
             "passed": passed,
         },
         "note": (
-            "Compiler.lower generated this source from the Schedule; there is no "
-            "checked-in template for this profile. Correctness only -- no timing was "
-            "taken. Reproduce with tools/observe_lowered_kernel.py."
-        ),
+            (
+                "Compiler.lower generated this source from the Schedule; there is no "
+                "checked-in template for this profile. "
+            )
+            if lowering.generated
+            else (
+                "Compiler.lower materialized this source from a closed checked-in asset; "
+                "the Schedule did not generate its operation bodies. "
+            )
+        )
+        + "Correctness only -- no timing was taken. Reproduce with "
+        "tools/observe_lowered_kernel.py.",
     }
     out = Path(arguments.out)
     if out.exists():

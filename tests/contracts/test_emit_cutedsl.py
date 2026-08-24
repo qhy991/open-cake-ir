@@ -480,7 +480,7 @@ class EmittedKernelObservationTest(unittest.TestCase):
         compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
         lowering = compiler.lower(compiler.assess_file(SCHEDULE))
         self.assertEqual(lowering.source_sha256, record["lowering"]["source_sha256"])
-        self.assertTrue(record["lowering"]["generated"])
+        self.assertEqual(lowering.generated, record["lowering"]["generated"])
         self.assertEqual(record["result"]["mismatch_count"], 0)
         self.assertEqual(record["result"]["max_chosen_distance_excess"], 0.0)
         self.assertTrue(record["result"]["passed"])

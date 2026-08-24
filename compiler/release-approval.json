@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "1a41be7698c812297055ab121627c17712fcdd8609535b47cce565ddfb17894b"
+    "canonical_sha256": "386a56c89fd387822ec0794e186c043f2bb14cc3429d35cabfa976134e74b353"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Schedule ids remain deterministic serialization only; performance-semantic ties now abstain at a pruning boundary."
+  "approval_basis": "Lowering.generated exposes backend emission versus closed asset materialization without changing either source."
 }

@@ -481,6 +481,7 @@ class EmittedObservationTest(unittest.TestCase):
                 lowering = compiler.lower(
                     compiler.assess_file(ROOT / "corpus" / "schedules" / schedule_name)
                 )
+                self.assertEqual(lowering.generated, record["lowering"]["generated"])
                 self.assertEqual(
                     lowering.source_sha256, record["lowering"]["source_sha256"]
                 )
