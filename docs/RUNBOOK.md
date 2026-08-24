@@ -153,6 +153,11 @@ open-cake-ir lab preflight contracts/studies/<new-g8-study>.json \
   --output /new/path/g8-campaign.lock.json
 ```
 
+For an artifact-only successor that is intended to observe real Evaluation feedback, the freeze command may also
+declare `--provider-token-limit <N> --maximum-turns <M>`. They are one operation: both are required, the limit becomes
+the sole terminal checkpoint, and other Claim Scopes reject the override. Choose `N` from retained prior provider
+usage and keep `M` as the independent hard call bound; neither value creates a scientific budget claim.
+
 ## 4. Execute matched search, system qualification or artifact optimization
 
 Copy `examples/runtime/matched-live.example.json`, replacing every absolute path. Run the CLI with effective

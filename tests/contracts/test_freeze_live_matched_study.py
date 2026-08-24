@@ -16,6 +16,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.lab import Lab, ProviderQualificationReceipt  # noqa: E402
+from tools.freeze_live_matched_study import (  # noqa: E402
+    _replace_artifact_feedback_budget,
+)
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -23,6 +26,55 @@ def _canonical_json_bytes(value: object) -> bytes:
 
 
 class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
+    def test_artifact_feedback_budget_has_one_explicit_horizon(self) -> None:
+        study: dict[str, object] = {
+            "claim_scope": "artifact_optimization_only",
+            "budget": {
+                "unit": "provider_tokens",
+                "limit": 150_000,
+                "checkpoints": [50_000, 100_000, 150_000],
+                "maximum_turns": 4,
+                "maximum_candidates_per_turn": 3,
+            },
+        }
+
+        _replace_artifact_feedback_budget(
+            study,
+            provider_token_limit=8_000_000,
+            maximum_turns=2,
+        )
+
+        self.assertEqual(
+            study["budget"],
+            {
+                "unit": "provider_tokens",
+                "limit": 8_000_000,
+                "checkpoints": [8_000_000],
+                "maximum_turns": 2,
+                "maximum_candidates_per_turn": 3,
+            },
+        )
+
+    def test_feedback_budget_replacement_is_complete_and_artifact_only(self) -> None:
+        artifact = {
+            "claim_scope": "artifact_optimization_only",
+            "budget": {},
+        }
+        with self.assertRaisesRegex(ValueError, "declared together"):
+            _replace_artifact_feedback_budget(
+                artifact,
+                provider_token_limit=8_000_000,
+                maximum_turns=None,
+            )
+
+        system = {"claim_scope": "system_qualification_only", "budget": {}}
+        with self.assertRaisesRegex(ValueError, "artifact-optimization only"):
+            _replace_artifact_feedback_budget(
+                system,
+                provider_token_limit=8_000_000,
+                maximum_turns=2,
+            )
+
     def test_live_authorities_freeze_one_non_scientific_run_per_arm(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)

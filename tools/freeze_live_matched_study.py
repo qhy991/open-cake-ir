@@ -58,6 +58,37 @@ def _refresh_raw_reference(root: Path, value: object, context: str) -> None:
     reference["sha256"] = sha256(path.resolve(strict=True).read_bytes()).hexdigest()
 
 
+def _replace_artifact_feedback_budget(
+    study: dict[str, object],
+    *,
+    provider_token_limit: int | None,
+    maximum_turns: int | None,
+) -> None:
+    """Replace the live artifact budget with one bounded feedback horizon."""
+
+    if (provider_token_limit is None) != (maximum_turns is None):
+        raise ValueError(
+            "provider-token-limit and maximum-turns must be declared together"
+        )
+    if provider_token_limit is None:
+        return
+    if study.get("claim_scope") != "artifact_optimization_only":
+        raise ValueError("feedback budget replacement is artifact-optimization only")
+    if (
+        not isinstance(provider_token_limit, int)
+        or isinstance(provider_token_limit, bool)
+        or provider_token_limit <= 0
+        or not isinstance(maximum_turns, int)
+        or isinstance(maximum_turns, bool)
+        or maximum_turns <= 0
+    ):
+        raise ValueError("feedback budget values must be positive integers")
+    budget = _object(study.get("budget"), "study.budget")
+    budget["limit"] = provider_token_limit
+    budget["checkpoints"] = [provider_token_limit]
+    budget["maximum_turns"] = maximum_turns
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=ROOT)
@@ -72,6 +103,22 @@ def main() -> int:
         "--enable-attribution",
         action="store_true",
         help="declare correctness_then_profile and expose its checked summary",
+    )
+    parser.add_argument(
+        "--provider-token-limit",
+        type=int,
+        help=(
+            "replace an artifact-only live budget and use this value as its sole "
+            "terminal checkpoint; requires --maximum-turns"
+        ),
+    )
+    parser.add_argument(
+        "--maximum-turns",
+        type=int,
+        help=(
+            "hard Turn bound for an artifact-only live budget; requires "
+            "--provider-token-limit"
+        ),
     )
     arguments = parser.parse_args()
 
@@ -90,6 +137,11 @@ def main() -> int:
         or study.get("state") != "frozen"
     ):
         raise ValueError("live matched Study template policy differs")
+    _replace_artifact_feedback_budget(
+        study,
+        provider_token_limit=arguments.provider_token_limit,
+        maximum_turns=arguments.maximum_turns,
+    )
     qualification_path = arguments.qualification.resolve(strict=True)
     qualification_relative = _project_relative(
         root, qualification_path, "provider qualification"
