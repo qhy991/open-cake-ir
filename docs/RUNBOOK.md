@@ -47,8 +47,12 @@ of trusted; `docs/ANALYSIS_CALIBRATION.md` reads their output and `evidence/cali
 python tools/calibrate_wave_term.py --first 60 --last 400 --step 2      # exclusive: benchmark
 python tools/calibrate_ranking_at_scale.py --batch 512                  # exclusive: benchmark
 python tools/observe_lowered_kernel.py --observed-at <iso8601> --out inventory/<NEW>.json
+python tools/profile_lowered_kernel.py --schedule <path> --observed-at <iso8601> --out <NEW>.json
 python tools/ir_vocabulary.py                                           # no GPU
 ```
+
+Both `observe_lowered_kernel.py` and `profile_lowered_kernel.py` build their inputs from
+`tools/kernel_cases.py`, so a kernel one of them profiles is a kernel the other checked.
 
 `observe_lowered_kernel.py` refuses to overwrite. A record is what happened once, so renewing one means a new file
 and a new date; the earlier record stays as history for the Revision it was taken under.

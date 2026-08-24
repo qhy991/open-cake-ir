@@ -4,63 +4,63 @@ The paper's harness reports a performance analysis as a *report*, and says plain
 on-device measurement remains the ground truth. This repository had the report and none of
 the measurement, so nothing established whether the bounds it prints are true.
 
-Measured with Nsight Compute on a B200, exclusive, on the two emitted backends.
-
-One caveat on the RMSNorm row, added when the Schedule changed under it. These numbers were
-taken on a lowering that carried a tile loop of one trip; that Schedule now declares no loop
-(`docs/IR_SURVEY_SYNTHESIS.md` says why), so the artifact measured here is not the artifact
-the Compiler emits today. The *predicted* column is unaffected -- the analysis reads
-declarations, and it still says at most 7 resident CTAs bound by register storage -- and
-correctness was re-observed on the new lowering
-(`inventory/RMSNORM_OBSERVATION_20260824.json`). What is stale is the measured column, and
-renewing it needs an Nsight run that this repository has no instrument for. That gap is the
-same one `tools/observe_lowered_kernel.py` closed for correctness and has not closed here.
+Measured with Nsight Compute on a B200, exclusive, by `tools/profile_lowered_kernel.py`.
+The raw records are in `evidence/calibration/residency-b200-*.json`.
 
 | | predicted | measured | |
 | --- | --- | --- | --- |
 | **rmsnorm**, Triton | | | |
-| registers per thread | >= 66 | 95 | lower bound holds, understates by 31% |
+| registers per thread | >= 66 | 96 | lower bound holds |
 | resident CTAs | <= 7 | 5 | upper bound holds, loose by 2 |
-| binding resource | registers | registers | correct |
+| binding resource | registers | registers | correct, and measured uniquely |
+| **softmax**, Triton | | | |
+| registers per thread | >= 65 | 96 | lower bound holds |
+| resident CTAs | <= 7 | 5 | upper bound holds, loose by 2 |
+| binding resource | registers | registers | correct, and measured uniquely |
 | **flash-kmeans assignment**, CuTe-DSL | | | |
-| registers per thread | >= 1 | 80 | holds, but says nothing |
+| registers per thread | >= 1 | 99 | holds, but says nothing |
 | resident CTAs | <= 2 | 2 | upper bound holds, and is exact |
-| binding resource | shared memory | shared memory | correct |
+| binding resource | shared memory | registers *and* shared memory | correct, but the measurement ties |
 
 ## What this establishes
 
-**Both bounds are sound in the direction claimed.** The register figure is a lower bound
-on storage and was below the measured allocation in both cases; the residency figure is an
-upper bound on resident CTAs and was at or above the measured limit in both cases. Nothing
-here contradicts the analysis, which is not a given -- the analysis was renamed to say
-"bound" only after it was written, and this is the first check that the renaming was
-accurate rather than merely more cautious.
+**Both bounds are sound in the direction claimed, on three kernels across both backends.**
+The register figure is a lower bound on storage and was below the measured allocation every
+time; the residency figure is an upper bound on resident CTAs and was at or above the
+measured limit every time. Nothing here contradicts the analysis, which is not a given --
+the analysis was renamed to say "bound" only after it was written.
 
-**Both binding-resource predictions were correct.** This is the half the paper calls
-attribution, and it is the half an author can act on: being told that registers rather than
-shared memory is what limits residency points at which declaration to change. Two for two
-is not a large sample, but the two cases bind on *different* resources, which is the
-interesting pair.
+**The exact quantities are exact and the estimated one is loose, as claimed.** Shared memory
+is an explicit allocation the Schedule declares, and its bound came out equal to the
+measurement. Registers are inferred from declared buffers with liveness and aliasing, and
+that bound is 31% low on the two Triton kernels and vacuous on the third.
 
-**The exact quantities are exact and the estimated one is loose, exactly as claimed.**
-Shared memory is an explicit allocation the Schedule declares, and its bound came out equal
-to the measurement. Registers are inferred from declared buffers with liveness and
-aliasing, and that bound is 31% low on one kernel and vacuous on the other. The distinction
-between exact Schedule quantities and the estimated one is not a hedge; it is visible in the
-numbers.
+**The attribution is weaker than it looked.** This is the half the paper calls attribution
+and the half an author can act on -- being told that registers rather than shared memory
+limits residency points at which declaration to change. On the two Triton kernels the
+measurement singles out one resource and the prediction names it. On flash-kmeans it does
+not: registers and shared memory both limit to 2, so "shared memory" is correct in the sense
+that it is one of the two, and it discriminated nothing. An earlier run of this measurement,
+made by a script outside the repository, recorded that row as a clean win; it was a tie, and
+the instrument is how that came to light.
+
+That earlier run also read the register figures differently -- 95 rather than 96 on rmsnorm,
+and 80 rather than 99 on flash-kmeans. Which metric it sampled cannot be recovered, because
+the script is gone. The figures above are `launch__registers_per_thread` and can be
+re-derived by anyone with the repository and a B200.
 
 ## What it exposes
 
 **The register bound says nothing about a schedule that keeps its data off-register.**
 `flash-kmeans-assignment-full` declares almost no register buffers -- its staging lives in
-shared and tensor memory -- so the bound is 1 against a measured 80. It did not mislead
-here because shared memory bound residency anyway and the report said so. But a schedule
-that is genuinely register-bound while declaring few register buffers would get a residency
-ceiling far above the truth, and the report would name the wrong resource.
+shared and tensor memory -- so the bound is 1 against a measured 99. It did not mislead here
+because shared memory bounds residency anyway and the report said so. But a schedule that is
+genuinely register-bound while declaring few register buffers would get a residency ceiling
+far above the truth, and the report would name the wrong resource.
 
 That is a real limit of an analysis that reasons only over declarations: it cannot see the
-registers a backend needs for addressing, predication and staging, and those were 29 and 79
-registers per thread in these two kernels. Worth recording rather than filing as a defect,
+registers a backend needs for addressing, predication and staging, and those were 30 and 98
+registers per thread in these kernels. Worth recording rather than filing as a defect,
 because closing it means either measuring or modelling the backend, and the paper puts
 measurement at the end of the loop for exactly this reason.
 

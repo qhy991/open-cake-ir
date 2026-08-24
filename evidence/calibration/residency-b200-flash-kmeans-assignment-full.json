@@ -1,0 +1,44 @@
+{
+ "schema_version": 1,
+ "observed_at": "2026-08-24T04:00:00Z",
+ "purpose": "residency_attribution",
+ "host": "verda-b200x4",
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v4",
+  "revision_sha256": "91728c879d41ecdb3cbd041158dd64d9f9f9100a42a8fcf7ec9faf922ec3d48e"
+ },
+ "schedule": {
+  "path": "corpus/schedules/flash-kmeans-assignment-full.json",
+  "schedule_id": "flash-kmeans-assignment-full-explicit-sm100a-v1",
+  "canonical_sha256": "6818329b64842d7df94141d0b77f7fab9fbb91ec00b95eaba214600da697ba4b"
+ },
+ "lowering": {
+  "entry_point": "cake_flash_kmeans_assignment_full",
+  "source_sha256": "677ba240be22861de2416180bb3e11eeb3265252599186cd607e9f6c3a285406"
+ },
+ "predicted": {
+  "ctas_per_multiprocessor_upper_bound": 2,
+  "binding_resource": "shared_memory",
+  "registers_per_thread_lower_bound": 1
+ },
+ "measured": {
+  "registers_per_thread": 99.0,
+  "occupancy_limits": {
+   "logical_register_storage": 2.0,
+   "shared_memory": 2.0,
+   "blocks": 32.0,
+   "threads": 9.0
+  },
+  "ctas_per_multiprocessor": 2.0,
+  "binding_resource": [
+   "logical_register_storage",
+   "shared_memory"
+  ]
+ },
+ "verdict": {
+  "residency_bound_sound": true,
+  "binding_resource_correct": true,
+  "binding_resource_measured_uniquely": false,
+  "register_floor_sound": true
+ }
+}
