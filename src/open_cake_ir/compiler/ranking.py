@@ -18,9 +18,12 @@ staircase the term describes is not there (`docs/ANALYSIS_CALIBRATION.md`). So t
 gone, and with it the ability to order a grid that overfills the device -- `cost` returns
 None for those rather than ordering them on a refuted basis.
 
-What survives is device fill, which the nine-tiling calibration did test and which came out
-concordant on twenty-nine of thirty-six pairs. That is the whole model: among candidates
-that fit within one round of the device, prefer the one that fills more of it.
+What survives is device fill: among candidates that fit within one round of the device,
+prefer the one that fills more of it. That is the whole model, and its support is one
+kernel. The nine-tiling Flash-KMeans calibration came out concordant on twenty-nine of
+thirty-six pairs; pointing the same instrument at RMSNorm found it beating a blind pick at
+one workload scale and losing to one at the next. Read the order as advice from a model
+that has been right about one kernel, not as a filter that is known to work.
 
 Ranking is advisory by construction. It orders candidates that have already passed the
 gates; it never admits or rejects one. On-device measurement remains the authority.

@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "e7778ebe6eaf0946a42080df3681236d3689774907b2d7494ec05542918af2e2"
+    "canonical_sha256": "51877752ad1b1006f82d6aba302c5fddc954e310ae1e92432a5088e69790ab0d"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "wave term refuted on B200; ranking declines past one round of the device"
+  "approval_basis": "second-kernel ranking calibration; docstring now states the model's actual support"
 }

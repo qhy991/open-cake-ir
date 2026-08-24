@@ -133,6 +133,48 @@ sort key without evidence, and the one direct test of it refuted it. Restoring i
 measurement showing the staircase, not an argument that it should be there -- timing-model
 coverage is per-target evidence and is never inherited.
 
+## The ranking on a second kernel, which disagrees
+
+The nine-tiling run above is Flash-KMeans. Everything the model claims rests on it, so the
+same instrument was pointed at RMSNorm: `tools/calibrate_ranking_at_scale.py` builds one
+workload's candidate set the way the ranking's caller does -- five row tiles, five register
+budgets, two role widths -- checks every candidate against a float32 reference, times it,
+and scores each order key by what a top-k cut would cost. 37 correct candidates, 13 refused
+by the gates, at three workload scales.
+
+Concordance is the wrong measure here and the run showed why: 24 of the 37 candidates at
+batch 512 are within 6% of the best. The optimum is a plateau with a few cliffs, so a
+ranking's job is to miss the cliffs, not to find the peak. What follows is the penalty of
+the best candidate a top-k cut keeps, against the penalty of picking blind.
+
+| workload | device fill | in the model's domain | shipped key at k=1 | blind pick |
+| --- | --- | --- | --- | --- |
+| batch 16 | 0.12 .. 0.43 | 37 of 37 | **+1.6%** | +3.7% |
+| batch 64 | 0.46 .. 1.73 | 32 of 37 | **+4.5%** | +3.7% |
+| batch 512 | 3.69 .. 13.84 | 0 of 37 | declines | +9.2% |
+
+**On this kernel the ranking is not a filter.** It beats a blind pick at one scale by two
+points and loses to one at the next by one, on a kernel whose whole in-domain spread is
+under 22%. The Flash-KMeans result -- twenty-nine of thirty-six pairs, true best surviving
+k=2 -- does not carry to RMSNorm, and the honest reading is that the model has one kernel
+of support rather than a general capability.
+
+Nothing here says which key to use instead, and that is deliberate. `+fill` -- preferring
+the emptier device -- wins at batch 64 and 512 and loses at batch 16. Adopting it would fit
+this kernel and break the one the model was built on, which is how the wave term got in.
+
+**The decline was load-bearing.** At batch 512 the model refuses to rank, on the wave-term
+evidence alone. Had it instead extended its own key past saturation, `-device_fill` would
+have selected the single worst candidate of the 37, at +40.9%. That was not the argument
+for declining and it is not why the boundary is there, but it is the strongest evidence for
+it: the term stops working at exactly the point the model stops claiming.
+
+**What this changes about running the loop.** A pre-GPU filter this weak makes the
+`searches_per_turn` above one worth its GPU time rather than a luxury, and it means a
+`cost_model` diagnosis is the expected outcome on kernels like this rather than a signal
+that something broke.
+
+
 ## Reproducing
 
 `docs/RUNBOOK.md` covers the broker. The profiling job runs exclusive per the shared-GPU
