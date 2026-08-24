@@ -1,0 +1,53 @@
+{
+  "calibration_id": "gemm-b200-ranking-m512-v6",
+  "decision": {
+    "all_repetitions_passed": false,
+    "maximum_survivor_regret_ratio": 1.05,
+    "promotion_scope": "exact measured performance semantics only"
+  },
+  "plan": {
+    "path": "contracts/calibrations/gemm-b200-ranking-m512-v6.json",
+    "raw_sha256": "401345299b1cddc4a2cf1116115fe4273e207648ed4a740824be15e02808c9ab"
+  },
+  "repetitions": [
+    {
+      "candidate_set_count": 2300,
+      "compiler_refused_count": 5,
+      "maximum_survivor_regret_ratio": 1.3594691573833992,
+      "measured_candidate_count": 25,
+      "observed_at": "2026-08-24T16:50:47Z",
+      "passed": false,
+      "path": "evidence/calibration/gemm-b200-ranking-m512-v6-repeat-1.json",
+      "raw_sha256": "3832622ec0ff74091da96df4ad42f18ccd6ae3e61a32343c19e1a16fb5712a37",
+      "retained_survivors": [
+        "gemm-t64-r128-w4",
+        "gemm-t64-r224-w8"
+      ],
+      "worst_candidate_set": [
+        "gemm-t64-r64-w8",
+        "gemm-t64-r128-w4",
+        "gemm-t64-r224-w8"
+      ]
+    },
+    {
+      "candidate_set_count": 2300,
+      "compiler_refused_count": 5,
+      "maximum_survivor_regret_ratio": 1.0815822468502747,
+      "measured_candidate_count": 25,
+      "observed_at": "2026-08-24T16:51:19Z",
+      "passed": false,
+      "path": "evidence/calibration/gemm-b200-ranking-m512-v6-repeat-2.json",
+      "raw_sha256": "d7444ad292c2b3d2d0a3d83ca7f3a6684caed096cbf2c0c5391d3e351969124e",
+      "retained_survivors": [
+        "gemm-t32-r64-w4",
+        "gemm-t64-r224-w8"
+      ],
+      "worst_candidate_set": [
+        "gemm-t32-r64-w4",
+        "gemm-t64-r96-w8",
+        "gemm-t64-r224-w8"
+      ]
+    }
+  ],
+  "schema_version": 1
+}

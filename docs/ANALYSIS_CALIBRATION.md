@@ -240,6 +240,38 @@ publishing an uncalibrated order. The structural cost function remains as an exp
 dormant hypothesis so this instrument can test it; only a later reviewed Revision with a
 predeclared profile domain and useful top-k behavior may expose it publicly.
 
+## The preregistered Lab decision also fails
+
+The table above asks whether the first few rows of one 25-candidate order contain the
+global best. That is not the decision the Lab makes: a provider may submit three
+candidates and the Study searches two. A good top-2 over the full sweep does not imply a
+safe top-2 for an arbitrary three-row subset.
+
+Commit `05180fc` therefore froze the complete source closure, the same 30-candidate GEMM
+domain, two independent exclusive-B200 repetitions and the existing 5% Study materiality
+boundary before either measurement. The decision projection enumerates every combination
+of three correct lowering-eligible rows, applies the shipped order, retains two and asks
+whether the retained best is within 5% of that subset's measured best.
+
+| repeat | correct measured | compiler-refused | three-candidate decisions | worst survivor regret |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 25 | 5 | 2,300 | **35.95%** |
+| 2 | 25 | 5 | 2,300 | **8.16%** |
+
+Both repetitions fail the rule. In repeat 1, three rows with identical device-fill and
+residency keys are ordered by `schedule_id`; that non-performance tie-break retains the
+39.84 us and 36.06 us rows and discards the 26.53 us row. Repeat 2 fails on a different
+three-row set, so the negative result is not one unstable outlier defining the decision.
+The old full-domain top-2 regret of 0.46% was true but insufficient: it answered a weaker
+question than the filter's actual pruning decision.
+
+No threshold or domain was changed after measurement, and no coverage is promoted. The
+next ranking hypothesis must resolve ties from performance-semantic declarations and pass
+this same all-subset decision boundary before it is tested on held-out shapes or profiles.
+The current profile-name-only coverage spelling is also too broad for an exact-shape
+result; a future release must make the evidence domain explicit rather than projecting
+one shape to every Schedule sharing the profile name.
+
 ## The inner-loop profile is a different observation
 
 `profile_lowered_kernel.py` above calibrates a Compiler report. The matched Lab's

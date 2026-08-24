@@ -313,7 +313,11 @@ boundaries found latency linear in CTA count and no step, so that term is gone. 
 B200 domains then put device-fill top-1 regret at 1.72% in one non-preregistered GEMM
 sweep and 19.43% on Flash-KMeans (`docs/ANALYSIS_CALIBRATION.md`). The former is
 insufficient for promotion and the latter is negative evidence, so v8 publishes no cost
-order rather than turning a coarse search hint into a claimed filter.
+order rather than turning a coarse search hint into a claimed filter. A preregistered
+successor then tested the Lab's actual three-to-two cut over all 2,300 eligible GEMM
+triplets: two independent repeats failed the 5% boundary at 35.95% and 8.16%. This rules
+out promotion even for that measured shape and shows why a deterministic `schedule_id`
+tie-break is total ordering, not performance evidence.
 
 That is why the loop routes a wrong order to the cost model rather than to the author, and
 why a Study that searches more than one candidate has to declare how much faster counts as

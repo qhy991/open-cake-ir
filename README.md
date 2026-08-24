@@ -41,7 +41,9 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   32-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 is archived by exact bytes. Public ranking now obeys the Revision's
-  calibration coverage; current coverage is empty rather than falling back to an uncalibrated order.
+  calibration coverage; current coverage is empty rather than falling back to an uncalibrated order. A
+  preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
+  eligible GEMM triplets and failed the fixed 5% boundary at 35.95% and 8.16%, so no coverage was promoted.
 - The Lab implements two closed Study variants on the same control plane: `matched_search` and `portfolio`. The former
   owns provider Turns, resume, token checkpoints, candidate sealing and search/confirmatory Evaluation; the latter
   reconstructs the final three-shape specialist/dispatcher boundary without a new runtime mode. Within
@@ -57,7 +59,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
   exact B200 host packages; v1–v5 are archived and v6–v15 are superseded descriptors. Current matched Study fixtures
   opt into a correctness-qualified, no-timing profiler assay; a live Study must re-freeze its exact broker command.
-  The current local suite passes 325 tests plus 223 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 326 tests plus 223 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no

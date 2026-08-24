@@ -55,6 +55,7 @@ of trusted; `docs/ANALYSIS_CALIBRATION.md` reads their output and `evidence/cali
 python tools/calibrate_wave_term.py --first 60 --last 400 --step 2      # exclusive: benchmark
 python tools/calibrate_ranking_at_scale.py --size 512 --observed-at <iso8601> \
   --out /new/path/ranking.json                                          # exclusive: benchmark
+python tools/check_ranking_calibration.py                               # no GPU; exit 1 is a retained negative decision
 python tools/observe_lowered_kernel.py --observed-at <iso8601> --out inventory/<NEW>.json
 python tools/profile_lowered_kernel.py --schedule <path> --observed-at <iso8601> --out <NEW>.json
 python tools/ir_vocabulary.py                                           # no GPU
@@ -62,7 +63,9 @@ python tools/ir_vocabulary.py                                           # no GPU
 
 The ranking calibration measures the dormant structural hypothesis even when the released
 Compiler has no profile coverage. Its output informs a later reviewed Revision; running
-the instrument never changes `calibration_coverage`.
+the instrument never changes `calibration_coverage`. A decision plan must be committed
+before measurement. The checker applies that frozen rule and exits nonzero when the
+evidence fails; do not change its threshold or regenerate the raw records to make it pass.
 
 Both `observe_lowered_kernel.py` and `profile_lowered_kernel.py` build their inputs from
 `tools/kernel_cases.py`, so a kernel one of them profiles is a kernel the other checked.

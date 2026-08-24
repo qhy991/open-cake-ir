@@ -12,6 +12,9 @@ is reading, so a claim there can be checked rather than taken.
 | `rmsnorm-b200-ranking-b512.json` | same | Past saturation the model declines; extending its key there would have picked the worst of 37 candidates. |
 | `gemm-b200-ranking-m512-v5.json` | same | In the declared 30-candidate domain, 25 pass the gates and correctness; the single sweep has 1.72% top-1 regret but cannot set its own promotion criterion. |
 | `flash-kmeans-b200-ranking-n512-v5.json` | same | In the declared 30-candidate domain, 16 pass the gates and correctness; device fill misses the best by 19.43% at k=1. |
+| `gemm-b200-ranking-m512-v6-repeat-1.json` | same, under the frozen v6 calibration plan | The first preregistered exclusive-B200 repeat measures 25 correct candidates and retains 5 compiler refusals. |
+| `gemm-b200-ranking-m512-v6-repeat-2.json` | same, under the frozen v6 calibration plan | The independent repeat has the same complete disposition: 25 correct candidates and 5 compiler refusals. |
+| `gemm-b200-ranking-m512-v6-decision.json` | `tools/check_ranking_calibration.py` | Exhausting all 2,300 three-candidate subsets fails the 3-to-2, 5% survivor criterion in both repeats: worst regret is 35.95% and 8.16%. |
 
 Each new ranking row carries the candidate's own `max_deviation`, all 41 timing samples,
 and the evaluator/oracle source hashes. Refused and incorrect candidates remain in the

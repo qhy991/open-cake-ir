@@ -19,6 +19,7 @@ from tools.calibrate_ranking_at_scale import (  # noqa: E402
     VARIANTS,
     main,
 )
+from tools.check_ranking_calibration import evaluate  # noqa: E402
 from tools.kernel_cases import ORACLES, global_shapes  # noqa: E402
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
@@ -159,6 +160,32 @@ class RankingCalibrationInstrumentTests(unittest.TestCase):
                 best = min(row["median_ms"] for row in record["rows"])
                 top_one_regret = (ranked[0]["median_ms"] / best - 1) * 100
                 self.assertIn(f"{top_one_regret:.2f}%", prose)
+
+    def test_preregistered_candidate_set_decision_replays_as_negative(self) -> None:
+        plan = ROOT / "contracts/calibrations/gemm-b200-ranking-m512-v6.json"
+        retained = (
+            ROOT / "evidence/calibration/gemm-b200-ranking-m512-v6-decision.json"
+        )
+
+        replayed = evaluate(ROOT, plan)
+        rendered = json.dumps(replayed, indent=2, sort_keys=True) + "\n"
+
+        self.assertEqual(rendered, retained.read_text(encoding="utf-8"))
+        self.assertFalse(replayed["decision"]["all_repetitions_passed"])
+        self.assertEqual(
+            [item["candidate_set_count"] for item in replayed["repetitions"]],
+            [2300, 2300],
+        )
+        self.assertTrue(
+            all(
+                item["maximum_survivor_regret_ratio"] > 1.05
+                for item in replayed["repetitions"]
+            )
+        )
+        revision = json.loads(
+            (ROOT / "compiler/revision.lock.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(revision["calibration_coverage"], [])
 
 if __name__ == "__main__":
     unittest.main()

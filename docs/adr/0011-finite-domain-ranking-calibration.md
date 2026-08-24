@@ -36,3 +36,10 @@ unmeasured candidate.
 Both raw measurements must be produced in separate exclusive one-GPU broker allocations,
 with 41 cold-L2 samples per correct candidate. The checked decision record is a derived
 view and must replay byte-for-byte from the frozen plan and raw records.
+
+## Validation
+
+Both repetitions contain 25 correct measured candidates, 5 compiler refusals and all
+2,300 possible three-candidate decisions. They fail the fixed 5% boundary: maximum
+survivor regret is 35.95% and 8.16%. The Compiler Revision remains v8 with empty
+`calibration_coverage`; this negative result authorizes no implementation change.
