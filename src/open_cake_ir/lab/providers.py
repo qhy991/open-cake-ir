@@ -367,6 +367,7 @@ def parse_codex_turn_events(
     *,
     expected_terminal_message: str,
     event_contract: str = "closed_file_change_v1",
+    expected_candidate_name: str | None = None,
 ) -> ParsedCodexTurnEvents:
     """Parse the complete closed Codex JSONL Turn without reading its candidate."""
 
@@ -419,9 +420,11 @@ def parse_codex_turn_events(
     auxiliary_events: dict[
         str, list[tuple[str, Mapping[str, object]]]
     ] = {}
+    activity_indices: list[int] = []
     auxiliary_types = {
         "reasoning",
         "command_execution",
+        "file_change",
         "mcp_tool_call",
         "collab_tool_call",
         "web_search",
@@ -436,8 +439,25 @@ def parse_codex_turn_events(
         if not isinstance(item, Mapping):
             raise ValueError("provider item payload differs")
         item_type = item.get("type")
-        if item_type == "file_change":
+        changes = item.get("changes")
+        candidate_file_change = (
+            item_type == "file_change"
+            and (
+                event_contract == "closed_file_change_v1"
+                or (
+                    expected_candidate_name is not None
+                    and isinstance(changes, list)
+                    and len(changes) == 1
+                    and isinstance(changes[0], Mapping)
+                    and isinstance(changes[0].get("path"), str)
+                    and Path(cast(str, changes[0]["path"])).name
+                    == expected_candidate_name
+                )
+            )
+        )
+        if candidate_file_change:
             file_events.append((index, event, cast(Mapping[str, object], item)))
+            activity_indices.append(index)
         elif item_type == "agent_message" and event_type == "item.completed":
             if set(item) != {"id", "type", "text"}:
                 raise ValueError("provider terminal message fields differ")
@@ -453,6 +473,7 @@ def parse_codex_turn_events(
             auxiliary_events.setdefault(item_id, []).append(
                 (cast(str, event_type), cast(Mapping[str, object], item))
             )
+            activity_indices.append(index)
         else:
             raise ValueError("provider emitted an unadmitted item type")
 
@@ -478,6 +499,30 @@ def parse_codex_turn_events(
             raise ValueError("provider auxiliary item lifecycle differs")
         first = lifecycle[0][1]
         final = lifecycle[-1][1]
+        if next(iter(item_types)) == "file_change":
+            if (
+                event_types != ["item.started", "item.completed"]
+                or set(first) != {"id", "type", "changes", "status"}
+                or set(final) != {"id", "type", "changes", "status"}
+                or first.get("status") != "in_progress"
+                or final.get("status") != "completed"
+                or first.get("changes") != final.get("changes")
+            ):
+                raise ValueError("provider auxiliary file-change lifecycle differs")
+            changes = first.get("changes")
+            if (
+                not isinstance(changes, list)
+                or not changes
+                or any(
+                    not isinstance(change, Mapping)
+                    or set(change) != {"path", "kind"}
+                    or not isinstance(change.get("path"), str)
+                    or not Path(cast(str, change["path"])).is_absolute()
+                    or change.get("kind") not in {"add", "update", "delete"}
+                    for change in changes
+                )
+            ):
+                raise ValueError("provider auxiliary file-change payload differs")
         if any(
             item.get("server") != first.get("server")
             or item.get("tool") != first.get("tool")
@@ -505,16 +550,18 @@ def parse_codex_turn_events(
 
     candidate_path: str | None = None
     change_kind: str | None = None
-    start_index = 2
-    stop_index = 1
+    start_index = min(activity_indices, default=2)
+    stop_index = max(activity_indices, default=1)
     if file_events:
         if len(file_events) != 2:
             raise ValueError("provider must emit at most one complete file-change lifecycle")
-        (start_index, start_event, start_item), (
-            stop_index,
+        (file_start_index, start_event, start_item), (
+            file_stop_index,
             stop_event,
             stop_item,
         ) = file_events
+        start_index = min(start_index, file_start_index)
+        stop_index = max(stop_index, file_stop_index)
         if (
             set(start_item) != {"id", "type", "changes", "status"}
             or set(stop_item) != {"id", "type", "changes", "status"}
@@ -550,15 +597,16 @@ def parse_codex_turn_events(
     if message_texts == [expected_terminal_message] and messages[0][0] > stop_index:
         normalization = "single_exact"
     elif (
-        message_texts == [expected_terminal_message, expected_terminal_message]
+        len(message_texts) >= 2
+        and all(text == expected_terminal_message for text in message_texts)
         and messages[0][0] < start_index
-        and messages[1][0] > stop_index
+        and messages[-1][0] > stop_index
     ):
         normalization = "duplicate_exact_bracketed"
     elif (
-        len(message_texts) == 2
+        len(message_texts) >= 2
         and messages[0][0] < start_index
-        and messages[1][0] > stop_index
+        and messages[-1][0] > stop_index
     ):
         try:
             semantic_messages = [
@@ -567,7 +615,7 @@ def parse_codex_turn_events(
             ]
         except (UnicodeError, ValueError, json.JSONDecodeError):
             semantic_messages = []
-        if semantic_messages != [expected_terminal_message, expected_terminal_message]:
+        if semantic_messages != [expected_terminal_message] * len(message_texts):
             raise ValueError("provider terminal-event normalization differs")
         normalization = "duplicate_semantic_bracketed"
     else:
@@ -623,6 +671,7 @@ def normalize_codex_turn(
         raw_events,
         expected_terminal_message=expected_terminal_message,
         event_contract=event_contract,
+        expected_candidate_name=candidate_path.name,
     )
     if (
         parsed.candidate_path is not None

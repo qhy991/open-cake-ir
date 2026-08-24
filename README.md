@@ -53,18 +53,18 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   non-scientific B200 Campaign produced three launchable Candidates per arm, searched two per arm and replayed all
   eight search/confirmatory/attribution receipts. This is system qualification, not an arm comparison.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
-- Current Executor Revision `open-cake-ir-b200-v14` binds the 34-source runtime closure, including deterministic
+- Current Executor Revision `open-cake-ir-b200-v15` binds the 34-source runtime closure, including deterministic
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
-  exact B200 host packages; v1–v5 are archived and v6–v13 are superseded descriptors. Current matched Study fixtures
+  exact B200 host packages; v1–v5 are archived and v6–v14 are superseded descriptors. Current matched Study fixtures
   opt into a correctness-qualified, no-timing profiler assay; a live Study must re-freeze its exact broker command.
-  The current local suite passes 319 tests plus 223 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 322 tests plus 223 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
   scientific claim.
 - Historical Executor v10 digest `23a2c79f…` passes the separate correctness-qualified B200 NCU assay for that frozen
   Candidate: one target launch, zero fallback and zero timing, with all 11 profiler metrics replayed from retained
-  raw CSV. This validates the attribution mechanism under v10, not current v14, kernel speed or a scientific Campaign.
+  raw CSV. This validates the attribution mechanism under v10, not current v15, kernel speed or a scientific Campaign.
 - The pinned Codex 0.144.3 tool-rich qualification passes with no injected feature disables and observes shell
   activity on both initial and resumed singleton Turns. The Lab derives the required live qualification from Claim Scope, so
   artifact-only composition accepts this tool-rich receipt while scientific/system scopes retain the closed receipt.
@@ -78,6 +78,11 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   the candidate-set v2 system qualification pass on the remote B200 host. The latter has two adhered Runs and eight
   replayed Evaluation Receipts, but produces no treatment comparison: estimand, estimate and uncertainty remain
   null. No scientific Campaign, serving integration or paper-result claim has been run here.
+- The first bounded tool-rich artifact-optimization Campaign is retained as mixed evidence: Open Cake authored three
+  launchable Candidates and promoted one through confirmatory Evaluation, while Direct CUDA was sealed as a provider
+  fault because Executor v14 confused its temporary scratch-file lifecycles with the fixed Candidate lifecycle. v15
+  gives those scratch changes a strict auxiliary-activity contract and fixes immutable CLI report projection. The
+  historical Run is not reclassified; a separately frozen successor is required to qualify the repaired path.
 
 ## Read order by role
 

@@ -3211,18 +3211,6 @@ class Lab:
                 sort_keys=True,
                 separators=(",", ":"),
             )
-            parsed = parse_codex_turn_events(
-                raw_events,
-                expected_terminal_message=expected_terminal,
-                event_contract=event_contract,
-            )
-            turn_tokens = payload.get("turn_provider_tokens")
-            if (
-                parsed.thread_id != thread_id
-                or turn_tokens != parsed.provider_tokens
-                or cumulative != prior_cumulative + turn_tokens
-            ):
-                return False
             expected_change = "add" if expected_turn == 1 else "update"
             expected_name = (
                 "candidate-set.json"
@@ -3233,6 +3221,19 @@ class Lab:
                     else "candidate.cu"
                 )
             )
+            parsed = parse_codex_turn_events(
+                raw_events,
+                expected_terminal_message=expected_terminal,
+                event_contract=event_contract,
+                expected_candidate_name=expected_name,
+            )
+            turn_tokens = payload.get("turn_provider_tokens")
+            if (
+                parsed.thread_id != thread_id
+                or turn_tokens != parsed.provider_tokens
+                or cumulative != prior_cumulative + turn_tokens
+            ):
+                return False
             if parsed.candidate_path is not None and (
                 parsed.change_kind != expected_change
                 or Path(parsed.candidate_path).name != expected_name

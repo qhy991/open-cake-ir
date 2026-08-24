@@ -1,7 +1,7 @@
 # Current-state inventory
 
 Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set envelope implementation and live
-system qualification, historical Executor-v10 NCU attribution validation, Executor v14 release and Compiler v8
+system qualification, historical Executor-v10 NCU attribution validation, Executor v15 release and Compiler v8
 release. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
@@ -35,12 +35,12 @@ causal effect, serving and paper reproduction are not.
   `COMPILER_REVISION_IDENTITY_INCIDENT_20260824.json` records why v4 and v6 cannot be reused or treated as unique
   released identities. v8 exposes no uncalibrated cost order: its `calibration_coverage` is empty and eligible
   candidates retain provider order.
-- Current Executor Revision `open-cake-ir-b200-v14` binds 34 runtime sources, including deterministic external
+- Current Executor Revision `open-cake-ir-b200-v15` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
   and no-GPU Triton-to-CUBIN qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor.
   The Executor pins NCU 2026.1.1.0 by path, bytes and size. G8 r6 retains its exact v1 closure, later source baselines
-  retain v2–v5, and v6–v13 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all fourteen revisions. The Lab
+  retain v2–v5, and v6–v14 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all fifteen revisions. The Lab
   makes Claim Scope the single authority for choosing the closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
@@ -58,7 +58,7 @@ causal effect, serving and paper reproduction are not.
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 319 tests plus 223 subtests; the earlier remote qualification passed its
+- The current local contract suite passes 322 tests plus 223 subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
@@ -78,6 +78,14 @@ causal effect, serving and paper reproduction are not.
   eight receipts pass tie-aware correctness with one target launch and zero fallback; fresh-process audit reconstructs
   integrity, semantic replay, adherence and `system_qualification_passed=true`. Estimand, estimate and uncertainty
   remain null, so the observed latency values are not an arm comparison.
+- The first bounded tool-rich Campaign is retained under
+  `/home/qinhaiyan/open-cake-ir-evidence/campaigns/artifact-optimization-live-v1`. Open Cake supplied three launchable
+  Candidates and promoted candidate `7141869d…` at a confirmed 1.556059 ms. Direct CUDA's raw provider stream also
+  contains three Candidates, but Executor v14 classified its temporary source-file add/delete lifecycles as competing
+  Candidate lifecycles and sealed a provider fault. Executor v15 now treats only the fixed envelope path as the
+  Candidate lifecycle, validates other file changes as typed auxiliary activity, and projects immutable report
+  mappings at the CLI boundary. Audit still replays the frozen v1 classification; only a new Campaign can qualify the
+  repaired Direct path. This is artifact evidence, not an arm comparison or a scientific result.
 - The beginner `b32_smoke` path has a fresh B200 observation: one candidate kernel launch from the loaded CUBIN,
   16,384/16,384 exact assignments, no fallback, synchronized unload, and explicitly no performance or scientific
   claim.
@@ -102,7 +110,7 @@ causal effect, serving and paper reproduction are not.
 | Workload inputs/oracles | Workload Contracts + Evaluation adapters | migrated |
 | r41/r42 Turn/resume/checkpoint controls | matched Lab path | implemented and live-qualified by G7/G8 |
 | r43-r45 seed/specialists/dispatcher/timing | portfolio Lab + Evaluation path | implemented; new B200 rerun pending |
-| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | candidate-set envelope and single-writer boundary implemented; both provider policies live-qualified and the closed system Campaign passes; a tool-rich artifact-optimization Campaign remains unrun |
+| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | candidate-set envelope and single-writer boundary implemented; bounded v1 promoted one Open Cake artifact and exposed a v14 Direct-event parser defect; v15 successor qualification pending |
 | Beginner B200 teaching smoke | Compiler + common correctness Evaluation | implemented and live-qualified; performance deliberately absent |
 | Legacy raw/index/source bytes | final bundle + manifest + historical indexes | migrated by immutable reference |
 | rXX/vN runners and verifiers | legacy Git history | deliberately not active |

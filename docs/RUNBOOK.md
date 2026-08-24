@@ -76,7 +76,7 @@ and a new date; the earlier record stays as history for the Revision it was take
 ## 2. Resolve a Study
 
 ```bash
-open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v12.json \
+open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v13.json \
   --output /new/path/campaign.lock.json
 ```
 
@@ -86,13 +86,13 @@ validates it through Lab preflight. It deliberately refuses a live Study because
 broker command digest; `freeze_live_matched_study.py` is the sole path that refreshes that complete authority. The
 names below were current when written.
 
-The current checked-in scientific matched contract, `matched-search-infrastructure-v12.json`, uses a zero-GPU fixture
+The current checked-in scientific matched contract, `matched-search-infrastructure-v13.json`, uses a zero-GPU fixture
 provider and intentionally cannot start a live provider. The current non-scientific G8 template is
-`matched-search-system-qualification-v12.json`; earlier versions remain frozen historical records. Freeze
+`matched-search-system-qualification-v13.json`; earlier versions remain frozen historical records. Freeze
 a live successor only after a real two-Turn qualification emits a receipt with
 the matching closed or tool-rich scope and binds the exact executable, model, reasoning effort, service tier, output
 schema, prompt/scaffold bytes, removed environment, reference visibility, feature overrides and event contract.
-`artifact-optimization-v12.json` is the current zero-GPU contract fixture. The frozen
+`artifact-optimization-v13.json` is the current zero-GPU contract fixture. The frozen
 `artifact-optimization-verda-v7.json` remains a historical live authority for Executor v8; it is not executable
 from the current source closure. Re-freeze a successor with the exact accessible checkout and broker command before
 launching a live Campaign. Earlier revisions remain historical.
@@ -141,10 +141,10 @@ Then freeze either non-scientific Study from its matching receipt, seal anchor a
 ```bash
 python tools/freeze_live_matched_study.py \
   --project-root . \
-  --template contracts/studies/matched-search-system-qualification-v12.json \
+  --template contracts/studies/matched-search-system-qualification-v13.json \
   --qualification contracts/providers/<new-live-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-live-anchor>.json \
-  --executor runtime/executors/open-cake-ir-b200-v14.json \
+  --executor runtime/executors/open-cake-ir-b200-v15.json \
   --runtime-config /new/path/runtime.json \
   --study-id <new-g8-study-id> \
   --output contracts/studies/<new-g8-study>.json \

@@ -411,6 +411,173 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(turn.candidates, (b'{"schedule":1}',))
         self.assertEqual(turn.tool_activity[0].item_type, "command_execution")
 
+    def test_tool_rich_scratch_file_changes_leave_candidate_custody_to_postcondition(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate-set.json"
+            candidate.write_text(
+                '{"arm":"direct_cuda","candidates":["// candidate\\n"],"schema_version":1}\n'
+            )
+            terminal = '{"candidate_written":true}'
+            events = [
+                {
+                    "type": "thread.started",
+                    "thread_id": "01234567-89ab-cdef-0123-456789abcdef",
+                },
+                {"type": "turn.started"},
+                *(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "id": f"message_{index}",
+                            "type": "agent_message",
+                            "text": terminal,
+                        },
+                    }
+                    for index in range(2)
+                ),
+            ]
+            changes = (
+                (
+                    "scratch_add",
+                    [
+                        {"path": "/tmp/candidate-1.cu", "kind": "add"},
+                        {"path": "/tmp/candidate-2.cu", "kind": "add"},
+                    ],
+                ),
+                (
+                    "candidate_add",
+                    [{"path": str(candidate.absolute()), "kind": "add"}],
+                ),
+                (
+                    "scratch_delete",
+                    [
+                        {"path": "/tmp/candidate-1.cu", "kind": "delete"},
+                        {"path": "/tmp/candidate-2.cu", "kind": "delete"},
+                    ],
+                ),
+            )
+            for item_id, item_changes in changes:
+                events.extend(
+                    [
+                        {
+                            "type": "item.started",
+                            "item": {
+                                "id": item_id,
+                                "type": "file_change",
+                                "changes": item_changes,
+                                "status": "in_progress",
+                            },
+                        },
+                        {
+                            "type": "item.completed",
+                            "item": {
+                                "id": item_id,
+                                "type": "file_change",
+                                "changes": item_changes,
+                                "status": "completed",
+                            },
+                        },
+                    ]
+                )
+            events.extend(
+                [
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "id": "message_2",
+                            "type": "agent_message",
+                            "text": terminal,
+                        },
+                    },
+                    {
+                        "type": "turn.completed",
+                        "usage": {"input_tokens": 100, "output_tokens": 20},
+                    },
+                ]
+            )
+            raw_events = b"".join(
+                json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                for event in events
+            )
+
+            turn = normalize_codex_turn(
+                raw_events,
+                candidate_path=candidate,
+                expected_change="add",
+                expected_terminal_message=terminal,
+                event_contract="tool_rich_candidate_v1",
+                submission_contract=CANDIDATE_SET_ENVELOPE_V1,
+                arm="direct_cuda",
+                maximum_candidates_per_turn=3,
+            )
+
+        self.assertEqual(turn.candidates, (b"// candidate\n",))
+        self.assertEqual(turn.terminal_message_count, 3)
+        self.assertEqual(turn.normalization, "duplicate_exact_bracketed")
+        self.assertEqual(
+            [activity.item_type for activity in turn.tool_activity],
+            ["file_change", "file_change"],
+        )
+
+    def test_tool_rich_scratch_file_change_requires_a_complete_stable_lifecycle(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            candidate.write_text('{"schedule":1}')
+            events = [
+                {
+                    "type": "thread.started",
+                    "thread_id": "01234567-89ab-cdef-0123-456789abcdef",
+                },
+                {"type": "turn.started"},
+                {
+                    "type": "item.started",
+                    "item": {
+                        "id": "scratch",
+                        "type": "file_change",
+                        "changes": [{"path": "/tmp/a", "kind": "add"}],
+                        "status": "in_progress",
+                    },
+                },
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "scratch",
+                        "type": "file_change",
+                        "changes": [{"path": "/tmp/b", "kind": "add"}],
+                        "status": "completed",
+                    },
+                },
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "message",
+                        "type": "agent_message",
+                        "text": '{"candidate_written":true}',
+                    },
+                },
+                {
+                    "type": "turn.completed",
+                    "usage": {"input_tokens": 100, "output_tokens": 20},
+                },
+            ]
+            raw_events = b"".join(
+                json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                for event in events
+            )
+
+            with self.assertRaisesRegex(ValueError, "file-change lifecycle"):
+                normalize_codex_turn(
+                    raw_events,
+                    candidate_path=candidate,
+                    expected_change="add",
+                    expected_terminal_message='{"candidate_written":true}',
+                    event_contract="tool_rich_candidate_v1",
+                )
+
     def test_tool_rich_turn_rejects_an_incomplete_auxiliary_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "candidate.json"

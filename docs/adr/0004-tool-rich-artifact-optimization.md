@@ -36,6 +36,8 @@ Receipts.
 - Full feature exposure and scientific data use are independent policies.
 - Apps/MCP, shell, browser, plugins and subagents may appear in optimization traces without becoming measurements.
 - A tool-rich Run may create scratch files; only the fixed Candidate path is sealed as the Candidate.
+- Non-Candidate scratch-file lifecycles are strict typed auxiliary activity and never compete with that fixed path;
+  the final no-follow postcondition remains the submission authority.
 - Raw auxiliary output is retained in Evidence, so operators must authorize the source data for archival before a
   live optimization Campaign.
 - Multi-agent token usage remains the provider's reported Turn usage; maximum Turns provides an independent hard
