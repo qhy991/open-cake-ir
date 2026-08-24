@@ -1091,11 +1091,18 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
                 continue
             edges.append(name)
         graph[operation.op_id] = tuple(edges)
-    for node in sorted(_cycle_members(graph)):
+    # One cycle is one defect. Reporting a finding per member gave an author six blocking
+    # findings for one mistake, none of them pointing anywhere: the path was `operations`
+    # every time. The paper asks feedback to be localized diagnostics, and a set of names
+    # with no index is the other way to fail that -- noise without a place to look.
+    members = sorted(_cycle_members(graph))
+    if members:
+        position = {op.op_id: index for index, op in enumerate(schedule.operations)}
+        first = min(members, key=lambda name: position.get(name, 0))
         out.add(
             "OP_DEPENDENCY_CYCLE",
-            "operations",
-            f"dependency cycle includes {node!r}",
+            f"operations[{position[first]}].depends_on",
+            f"dependency cycle through {', '.join(repr(name) for name in members)}",
             category,
         )
 

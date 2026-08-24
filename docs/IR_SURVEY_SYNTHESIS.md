@@ -170,6 +170,17 @@ history, which is exactly the kind of change that would have opened the second c
 So: when a probe shows a hazard is refused, ask which rule refused it. If it is not a rule
 about that hazard, either close it properly or write down that the block is on loan.
 
+Five more hazards were probed the same way and came back clean, which is worth recording so
+the search is not repeated: an unmasked access is not expressible at all -- `BoundaryPolicy`
+has one member -- and overlapping role warps, a read of a buffer nothing writes, a
+dependency cycle and a declared output nothing stores each have a rule of their own. Two
+accidental guards in seven probes, and the codebase is otherwise guarded on purpose.
+
+The cycle probe did find something else: one cycle produced one finding per member, six of
+them, every path pointing at `operations`. That is the other way to fail the paper's ask
+for localized diagnostics -- not a pass/fail bit, but a set of names with no place to look.
+It is one finding now, naming the members and pointing at the operation that enters it.
+
 ## The two backends disagree about where an accumulator lives
 
 A contraction accumulated across a loop is what a GEMM is, and the two emitted backends

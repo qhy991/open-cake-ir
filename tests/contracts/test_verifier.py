@@ -264,6 +264,11 @@ class DataConsistencyTest(unittest.TestCase):
 
         findings = verify(_mutated(B32, cycle), TARGET)
         self.assertIn("OP_DEPENDENCY_CYCLE", _codes(findings))
+        # One cycle is one finding, and it says where to look. Six findings naming six
+        # members with `operations` as the path is a set of names, not a diagnosis.
+        cycles = [f for f in findings if f.code == "OP_DEPENDENCY_CYCLE"]
+        self.assertEqual(len(cycles), 1)
+        self.assertRegex(cycles[0].path, r"^operations\[\d+\]\.depends_on$")
 
     def test_load_source_must_be_global(self) -> None:
         findings = verify(

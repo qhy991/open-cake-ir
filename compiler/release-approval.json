@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "1e103a4a67c28d12926f6e6a154d8805d49888a23cf5df327ce78b337744b783"
+    "canonical_sha256": "dfe3709091651ebcc14e31e797e7f198d67ac12397f34366dbdcafbbafa1c98b"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "name the constraint a contraction accumulator hits"
+  "approval_basis": "one cycle is one finding, and it points somewhere"
 }
