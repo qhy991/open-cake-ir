@@ -15,8 +15,11 @@ ceiling. `schedule_id` remains only a stable serialization key. `rank_for_cut` i
 decision primitive: when the requested boundary splits an equal-key group it returns an
 abstention instead of manufacturing an order.
 
-`contracts/calibrations/gemm-b200-ranking-m512-v7.json` owns the finite domain, source
-closure, sampling protocol and pass/fail rule. Its checker classifies every eligible
+The v7 plan misspelled the display `schedule_id` already present in its pinned Schedule
+bytes. Its checker rejected both raw records at authority validation, before performance
+evaluation; the plan and records remain frozen as a non-evaluable attempt. The v8
+successor corrects only that spelling and collects new repetitions. Its contract owns the
+same finite domain, source closure, sampling protocol and pass/fail rule. The checker classifies every eligible
 three-row subset before looking at performance: decisive subsets are evaluated and tied
 boundary subsets are reported as abstentions. This partitions the declared domain; it
 does not select convenient rows or add new ones.
