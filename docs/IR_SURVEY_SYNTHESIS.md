@@ -227,16 +227,26 @@ release -- and exactly one line is the operator's math:
 registers[value] = centroid_sq[column] - 2.0 * registers[value]
 ```
 
-That line cannot be built from the arithmetic vocabulary, and the reason is specific. It
-reads a global vector at `column`, which comes from the accumulator's own coordinate inside
-the subtile being staged. `ElementwiseParameters.broadcast_axis` says an operand is
-constant along an axis; this operand is *gathered* along one, indexed by where the value
-being computed sits. The vocabulary has no word for that, and it is the only thing standing
-between this epilogue and a composition.
+That line *can* be built from the arithmetic vocabulary, and an earlier reading of this
+recorded that it could not. The mistake is worth keeping because of where it came from.
 
-So the missing piece is not an emitter for `elementwise` in CuTe-DSL. It is a way to
-declare an operand indexed by the coordinate of the value it combines with -- which is a
-type-system question, not a field, and is not settled here.
+`column` is the accumulator element's own N coordinate, and CuTe-DSL has to compute it
+explicitly because the epilogue works on a per-thread register fragment. That made it look
+like a gather -- an operand indexed by the position of the value it combines with -- and
+the note here said the vocabulary had no word for it and that supplying one was a
+type-system question. Reading the Triton Schedule for the same kernel settles it:
+`flash-kmeans-b32-smoke-v2` writes exactly this formula as `mul` by a scalar and then `sub`
+with `broadcast_axis: 1`. An operand constant along an axis is what a broadcast is. The
+coordinate arithmetic is how one backend realises it, not what the Schedule has to say.
+
+So the remaining gap is smaller and more ordinary than it looked: the CuTe-DSL backend has
+no `elementwise` body, and the subtile loop that stages the accumulator would have to run
+the declared operations instead of one hardcoded expression. That is emitter work with a
+kernel already in the corpus to drive it, and no new vocabulary.
+
+The lesson is the one the paper states about static analysis and applies just as well to
+reading code: a limit observed in one backend's realisation is not a limit of the IR, and
+the way to tell is to look for the same operation somewhere it is already written down.
 
 ## What a second operator actually cost
 
