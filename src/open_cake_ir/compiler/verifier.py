@@ -987,12 +987,27 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
                 continue
             escaping = sorted(set(readers.get(name, ())) - body)
             if escaping:
+                # A contraction accumulated across the loop is the case an author is
+                # most likely to expect to work, because that is what a GEMM is. Saying
+                # only "a reduction result" sends them looking for a rule they broke
+                # rather than telling them a register accumulator is not one -- an
+                # accumulator that outlives its loop has to live in a space that does.
+                contraction = any(
+                    (op := schedule.operation(op_id)) is not None
+                    and op.kind is OperationKind.MMA
+                    for op_id in producers
+                )
+                reason = (
+                    "a contraction accumulated across a loop needs an accumulator in a "
+                    "space that outlives it, and a register buffer does not"
+                    if contraction
+                    else "only a reduction result is carried out of a loop"
+                )
                 out.add(
                     "BUFFER_ESCAPES_LOOP",
                     f"buffers[{schedule.buffers.index(buffers[name])}]",
                     f"buffer {name!r} is written only inside {loop.name!r} but read by "
-                    f"{', '.join(escaping)} outside it; only a reduction result is "
-                    "carried out of a loop",
+                    f"{', '.join(escaping)} outside it; {reason}",
                     category,
                 )
 

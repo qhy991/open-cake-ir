@@ -146,6 +146,30 @@ survey does not settle which:
 The megakernel family is out of scope for either. A megakernel is an interpreter and its
 schedule is its input; the distance from a Schedule is not a field.
 
+## The two backends disagree about where an accumulator lives
+
+A contraction accumulated across a loop is what a GEMM is, and the two emitted backends
+are not the same about it.
+
+CuTe-DSL does it: `flash-kmeans-assignment-full` declares an mma inside a `k_loop` writing
+an accumulator that the epilogue reads afterwards, and tcgen05 accumulates in tensor memory
+natively. Triton cannot: `_emit_mma` assigns a `tl.dot`, so a second iteration would
+overwrite the first.
+
+Nothing in the IR says so. What stops the wrong answer is `BUFFER_ESCAPES_LOOP`, a rule
+about *register* buffers read outside the loop that wrote them -- and tensor memory is
+exempt because an allocation there outlives the loop by construction. So the CuTe-DSL
+Schedule passes and the Triton one is refused, correctly, by a rule that is about something
+else. That is an accidental guard, and the second one found in this repository: the
+tensor-memory ownership ambiguity was blocked the same way, by `OP_CROSS_ROLE_RACE`.
+
+The refusal now names the constraint it is actually about, because a GEMM author told that
+"only a reduction result is carried out of a loop" goes looking for a rule they broke. What
+is not fixed is the asymmetry itself. Closing it means the Triton emitter accumulating when
+the loop walks the contraction axis and assigning when it walks an output axis -- both
+shapes exist in the corpus today -- and that distinction has to be derived or declared
+before it can be emitted. It needs a Triton GEMM to be worth settling.
+
 ## What still keeps one backend on a formula
 
 `ElementwiseOp` exists so that an operator's math is composed rather than named, and three

@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "31f0cc49b6376dbf580d86c047cc5b785047da21266f116246cba54796312e89"
+    "canonical_sha256": "1e103a4a67c28d12926f6e6a154d8805d49888a23cf5df327ce78b337744b783"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "layernorm admitted with no vocabulary change"
+  "approval_basis": "name the constraint a contraction accumulator hits"
 }
