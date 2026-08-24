@@ -91,7 +91,19 @@ def _rmsnorm_oracle(inputs, torch):
     return x * torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + 1e-6) * gamma, None
 
 
+def _layernorm_oracle(inputs, torch):
+    """`torch.nn.functional.layer_norm`, so the comparison is against an implementation
+    that did not come from the Schedule's own decomposition of the variance."""
+
+    x, gamma, beta, _ = inputs
+    return (
+        torch.nn.functional.layer_norm(x, (x.shape[-1],), gamma, beta, eps=1e-5),
+        None,
+    )
+
+
 ORACLES = {
+    "layernorm_b8_smoke": _layernorm_oracle,
     "flash_kmeans_assignment_full": _flash_kmeans_oracle,
     "softmax_b8_smoke": _softmax_oracle,
     "rmsnorm_b8_smoke": _rmsnorm_oracle,

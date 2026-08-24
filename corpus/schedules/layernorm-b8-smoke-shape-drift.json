@@ -1,0 +1,553 @@
+{
+  "schema_version": 1,
+  "schedule_id": "layernorm-b8-smoke-shape-drift-v1",
+  "target": "sm_100a",
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "x",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        8,
+        512,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "gamma",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "beta",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "y",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        8,
+        512,
+        64
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "x_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "rowsum",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "mu",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "centered",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "sq",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "sqsum",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "var",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "shifted",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "inv",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "normed",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "gamma_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "beta_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "scaled",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "y_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64,
+        128
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_x",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "x"
+      ],
+      "writes": [
+        "x_tile"
+      ],
+      "parameters": {
+        "movement": "global",
+        "reuse": "reused"
+      }
+    },
+    {
+      "id": "sum_x",
+      "kind": "reduce",
+      "role": "compute",
+      "reads": [
+        "x_tile"
+      ],
+      "writes": [
+        "rowsum"
+      ],
+      "parameters": {
+        "op": "sum",
+        "axis": 1,
+        "scope": "cta"
+      },
+      "depends_on": [
+        "load_x"
+      ]
+    },
+    {
+      "id": "mean",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "rowsum"
+      ],
+      "writes": [
+        "mu"
+      ],
+      "parameters": {
+        "op": "mul",
+        "scalar": 0.0078125
+      },
+      "depends_on": [
+        "sum_x"
+      ]
+    },
+    {
+      "id": "center",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "x_tile",
+        "mu"
+      ],
+      "writes": [
+        "centered"
+      ],
+      "parameters": {
+        "op": "sub",
+        "broadcast_axis": 0
+      },
+      "depends_on": [
+        "mean"
+      ]
+    },
+    {
+      "id": "square",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "centered"
+      ],
+      "writes": [
+        "sq"
+      ],
+      "parameters": {
+        "op": "square"
+      },
+      "depends_on": [
+        "center"
+      ]
+    },
+    {
+      "id": "sum_sq",
+      "kind": "reduce",
+      "role": "compute",
+      "reads": [
+        "sq"
+      ],
+      "writes": [
+        "sqsum"
+      ],
+      "parameters": {
+        "op": "sum",
+        "axis": 1,
+        "scope": "cta"
+      },
+      "depends_on": [
+        "square"
+      ]
+    },
+    {
+      "id": "variance",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "sqsum"
+      ],
+      "writes": [
+        "var"
+      ],
+      "parameters": {
+        "op": "mul",
+        "scalar": 0.0078125
+      },
+      "depends_on": [
+        "sum_sq"
+      ]
+    },
+    {
+      "id": "shift",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "var"
+      ],
+      "writes": [
+        "shifted"
+      ],
+      "parameters": {
+        "op": "add",
+        "scalar": 1e-05
+      },
+      "depends_on": [
+        "variance"
+      ]
+    },
+    {
+      "id": "rsqrt",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "shifted"
+      ],
+      "writes": [
+        "inv"
+      ],
+      "parameters": {
+        "op": "rsqrt"
+      },
+      "depends_on": [
+        "shift"
+      ]
+    },
+    {
+      "id": "normalize",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "centered",
+        "inv"
+      ],
+      "writes": [
+        "normed"
+      ],
+      "parameters": {
+        "op": "mul",
+        "broadcast_axis": 0
+      },
+      "depends_on": [
+        "rsqrt"
+      ]
+    },
+    {
+      "id": "load_gamma",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "gamma"
+      ],
+      "writes": [
+        "gamma_tile"
+      ],
+      "parameters": {
+        "movement": "global",
+        "reuse": "streamed"
+      }
+    },
+    {
+      "id": "load_beta",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "beta"
+      ],
+      "writes": [
+        "beta_tile"
+      ],
+      "parameters": {
+        "movement": "global",
+        "reuse": "streamed"
+      }
+    },
+    {
+      "id": "scale",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "normed",
+        "gamma_tile"
+      ],
+      "writes": [
+        "scaled"
+      ],
+      "parameters": {
+        "op": "mul",
+        "broadcast_axis": 1
+      },
+      "depends_on": [
+        "normalize",
+        "load_gamma"
+      ]
+    },
+    {
+      "id": "bias",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "scaled",
+        "beta_tile"
+      ],
+      "writes": [
+        "y_tile"
+      ],
+      "parameters": {
+        "op": "add",
+        "broadcast_axis": 1
+      },
+      "depends_on": [
+        "scale",
+        "load_beta"
+      ]
+    },
+    {
+      "id": "store_y",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "y_tile"
+      ],
+      "writes": [
+        "y"
+      ],
+      "parameters": {
+        "coalesced": true
+      },
+      "depends_on": [
+        "bias"
+      ]
+    }
+  ],
+  "outputs": [
+    "y"
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "row_block",
+        "axis": 0,
+        "buffer": "x",
+        "dimension": 1,
+        "tile": 64
+      },
+      {
+        "name": "batch",
+        "axis": 1,
+        "buffer": "x",
+        "dimension": 0,
+        "tile": 1
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_beta",
+      "buffer": "beta",
+      "indices": [
+        {
+          "source": "dimension",
+          "dimension": 0
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_gamma",
+      "buffer": "gamma",
+      "indices": [
+        {
+          "source": "dimension",
+          "dimension": 0
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_x",
+      "buffer": "x",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "program_tile",
+          "name": "row_block"
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_y",
+      "buffer": "y",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "program_tile",
+          "name": "row_block"
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {
+    "profile": "layernorm_b8_smoke",
+    "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "residency": {
+    "ctas_per_multiprocessor": 4,
+    "registers_per_thread": 96
+  }
+}

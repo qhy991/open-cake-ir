@@ -173,6 +173,35 @@
         "schedule_sha256": "ea6d242ddb5323474c24e8789b605ed5ff7e928e6bdff55a7c2e240904b08300",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "layernorm-accepted",
+      "schedule": "corpus/schedules/layernorm-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "8e3617c0a7dd81e61fb1fba93387c6e9e78ad5284c3cf6f4b7d3506254d0ea32",
+        "lowering_source_sha256": "15ca6c3baae29dfc74c079049d62a92e4ec8de196705a0ab774ca754d682c7cd"
+      }
+    },
+    {
+      "case_id": "layernorm-shape-drift",
+      "schedule": "corpus/schedules/layernorm-b8-smoke-shape-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "PROFILE_SHAPE_MISMATCH",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "9c8a7872b74deb0d9b90a6301b4aaacfe03655b0f2ed6b6aa286e35f7003a27b",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

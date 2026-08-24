@@ -166,6 +166,17 @@ operator is one row plus the Schedules that claim it. The bill, end to end:
 * **Everything else: nothing.** One profile row, one conformance function, two corpus
   cases. No new finding code, no emitter structure, no scheduler.
 
+**And a third operator cost nothing.** LayerNorm was admitted next, chosen because on
+paper it needed no vocabulary: two folds, `mul`, `sub`, `square`, `add`, `rsqrt` and two
+broadcasts, every one of them already there for the two before it. It landed that way --
+one profile row, one conformance rule, two corpus cases, one oracle, and not a single
+change to the IR or to either backend. Fifteen operations and eighteen buffers, correct on
+a B200 against `torch.nn.functional.layer_norm` to 1.9e-06.
+
+That is the claim under test, and softmax could not make it: softmax had to decide what a
+reduction is. A vocabulary that stops needing additions is the only evidence that the
+distillation converged, and one operator is the beginning of it rather than the proof.
+
 The gate earned its keep twice here. It refused the two-pass-in-a-loop Schedule that would
 have computed a softmax over stale maxima, and the profile rule refused a drift case with
 a mismatched output shape. Both were predicted before running and both fired exactly there.

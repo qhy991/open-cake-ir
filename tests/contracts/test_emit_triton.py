@@ -451,13 +451,22 @@ class EmittedObservationTest(unittest.TestCase):
         ("softmax", "SOFTMAX_OBSERVATION_20260824.json", "softmax-b8-smoke.json"),
         ("rmsnorm", "RMSNORM_OBSERVATION_20260824.json", "rmsnorm-b8-smoke.json"),
         (
+            "layernorm",
+            "LAYERNORM_OBSERVATION_20260824.json",
+            "layernorm-b8-smoke.json",
+        ),
+        (
             "rmsnorm-persistent",
             "PERSISTENT_OBSERVATION_20260824.json",
             "rmsnorm-b128-persistent.json",
         ),
     )
 
-    LOOPLESS = ("softmax-b8-smoke.json", "rmsnorm-b8-smoke.json")
+    LOOPLESS = (
+        "softmax-b8-smoke.json",
+        "rmsnorm-b8-smoke.json",
+        "layernorm-b8-smoke.json",
+    )
 
     def test_each_observation_matches_what_the_compiler_lowers_now(self) -> None:
         from open_cake_ir.compiler import Compiler

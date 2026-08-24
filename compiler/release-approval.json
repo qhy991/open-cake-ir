@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "36d96c116cf9d3100a863ca32eba604e896dd4b24ea6ce3d75b5e2c0f414bcce"
+    "canonical_sha256": "31f0cc49b6376dbf580d86c047cc5b785047da21266f116246cba54796312e89"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "say what an idle enum member is and is not"
+  "approval_basis": "layernorm admitted with no vocabulary change"
 }

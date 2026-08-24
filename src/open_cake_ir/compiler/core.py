@@ -289,6 +289,34 @@ def _softmax_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
     ]
 
 
+def _layernorm_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """LayerNorm normalizes the last axis and both parameters span it.
+
+    Two parameters rather than RMSNorm's one, which is the whole difference at this level:
+    a Schedule that declares only a scale is that operator and not this one.
+    """
+
+    x = _shape_of(buffers, "x")
+    coheres = (
+        x is not None
+        and len(x) == 3
+        and _shape_of(buffers, "y") == x
+        and _shape_of(buffers, "gamma") == (x[2],)
+        and _shape_of(buffers, "beta") == (x[2],)
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.x.shape",
+            "LayerNorm normalizes the last axis, so y matches x and gamma and beta span it",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
 @dataclass(frozen=True)
 class _Profile:
     """One admitted lowering profile and every fact that follows from admitting it.
@@ -384,6 +412,20 @@ _PROFILES: Mapping[str, _Profile] = {
             "entry_abi": "four_cuda_tensors_current_stream",
         },
         conformance=_softmax_b8_smoke_conformance,
+        backend=emit_triton,
+    ),
+    # The third operator admitted through the same row, and the first that needed no
+    # vocabulary at all: two folds, seven arithmetic primitives and two broadcasts that
+    # were already there for the two before it.
+    "layernorm_b8_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_layernorm_b8_smoke",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_layernorm_b8_smoke_conformance,
         backend=emit_triton,
     ),
     "rmsnorm_b8_smoke": _Profile(
