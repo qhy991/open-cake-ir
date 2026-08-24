@@ -241,6 +241,7 @@ graph LR
     end
 
     CH --> FIL["<b>filter</b><br/>rank and prune<br/>before GPU time"]
+    EVD -->|"route: candidate · verifier<br/>vocabulary · cost model"| AE
     FIL --> EX["compile → oracle → CUPTI"]
     EX --> EVD["retained evidence"]
     EVD -->|inner loop| AE
@@ -248,9 +249,9 @@ graph LR
 
     style T1 fill:#d4edda,stroke:#28a745
     style T2 fill:#d4edda,stroke:#28a745
-    style T4 fill:#fff3cd,stroke:#b8860b
+    style T4 fill:#d4edda,stroke:#28a745
     style T3 fill:#fff3cd,stroke:#b8860b
-    style FIL fill:#f8d7da,stroke:#c00
+    style FIL fill:#d4edda,stroke:#28a745
     style W fill:#d4edda,stroke:#28a745
     style AE fill:#d4edda,stroke:#28a745
     style EX fill:#d4edda,stroke:#28a745
@@ -263,21 +264,39 @@ graph LR
 | Authoring Environment, both arms | implemented |
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
-| Compile → external oracle → GPU measurement | implemented, B200-verified |
+| Compile → external oracle → GPU measurement | implemented, B200-verified on three emitted operators |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
-| Deterministic lowering | partial — `lower` generates the warp-specialized profile from its Schedule, verified on B200 at 128/128; the other two profiles still stamp a checked-in file |
-| Cost-model ranking | partial — the analysis derives static upper bounds on residency; logical register storage is an optimistic lower bound, not ptxas allocation, and no time is estimated because the Target declares no clock or bandwidth |
-| The filter stage | absent — one candidate per Turn leaves nothing to rank |
+| Deterministic lowering | implemented for four of five profiles: `lower` generates Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke` and `softmax_b8_smoke`, and warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file |
+| The filter stage | implemented — a Turn submits a candidate set, every candidate is built and sealed, the set is ordered before any of it runs, and `searches_per_turn` decides how much of it reaches a GPU |
+| Diagnosis routing | implemented — every rejection is routed to the candidate, the verifier, the IR vocabulary or the cost model, and each destination is inferred from a signal the loop already produces |
+| Cost-model ranking | partial, and narrower than it was — see below |
 
-The filter box stays red, and it is why the cost model can only go so far. A cost model
-exists to order a candidate set; a Turn authors exactly one candidate — the provider
-output schema pins `tool_calls` and `candidate_written` to constants — so there is
-nothing to order, and the paper's stated mechanism, *cheap analyses rank and filter
-candidates before they reach expensive GPU runs*, has no place in the control flow.
-Widening that is a change to the Study Contract's treatment definition, not an
-implementation detail.
+The filter box is green because the mechanism is there, and the cost model beside it is
+amber because measurement said so. Both facts came from the same week's work and they are
+worth stating together.
 
-What the analysis does supply today is the report the harness owes the agent. For the
-Triton profile every matched Study uses, declared logical register storage bounds maximum
-possible residency to one CTA per multiprocessor, with an optimistic lower bound of 289
-registers per thread. Actual allocation and spills remain ptxas evidence.
+**What the filter does.** A provider Turn submits a set. Every candidate in it is built,
+gated and sealed — a rejected one is evidence, not a discard — and the set is ordered by
+`compiler/ranking.py` before any of it reaches a GPU. Two candidates that are the same
+program under different names are searched once. `searches_per_turn` bounds how many
+survive to a measurement; confirmatory evaluation stays single, because that one is the
+measurement a claim rests on.
+
+**What the ranking is worth.** It orders on device fill and declines past saturation, and
+that is the whole model. It used to sort on wave count first; a sweep across four predicted
+wave boundaries found latency linear in CTA count and no step at any of them, so the term
+is gone (`docs/ANALYSIS_CALIBRATION.md`). What is left beat a blind pick on Flash-KMeans
+and did not on RMSNorm — one kernel of support rather than a general capability. The
+order is advice from a model that has been right about one kernel.
+
+That is why the loop routes a wrong order to the cost model rather than to the author, and
+why a Study that searches more than one candidate has to declare how much faster counts as
+wrong: on a loss surface where 24 of 37 candidates sit within 6% of the best, routing every
+inversion would report mostly measurement error.
+
+**What the analysis supplies.** Residency upper bounds and the resource that binds them,
+which is the report the harness owes the agent. Both bounds held in the direction claimed
+on three kernels across both backends, and the binding resource was named correctly each
+time — though on Flash-KMeans registers and shared memory tie, so naming one discriminated
+nothing. Logical register storage is an optimistic lower bound and not ptxas allocation;
+no time is estimated, because the Target declares no clock and no bandwidth.
