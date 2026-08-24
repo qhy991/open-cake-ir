@@ -293,3 +293,67 @@ class CalibrationIndexTest(unittest.TestCase):
         self.assertEqual(present - named, set(), "measurements with no row")
         self.assertEqual(named - present, set(), "rows with no measurement")
 
+
+class ArchiveShapeTamperTest(unittest.TestCase):
+    """The event sequence's shape is authority too, not only its bytes.
+
+    A tampering test already covers the bytes of an event, the authority and the
+    terminal. What it does not cover is the sequence: an archive with a gap, with an
+    extra file, or one that does not end where a Run has to end. Fifty-one refusals guard
+    this store and seven of them had ever fired in a test -- the rest were arguments.
+    """
+
+    def _sealed_run(self, root: Path, run_id: str) -> Path:
+        evidence = EvidenceStore.create(root / "evidence")
+        authority = {"kind": "fixture", "id": run_id}
+        run = evidence.start_run(
+            run_id,
+            authority_sha256=sha256(
+                json.dumps(authority, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest(),
+            authority=authority,
+        )
+        for index in range(3):
+            run.append("observation", {"value": index})
+        run.seal(
+            protocol_adherence="adhered",
+            endpoint_observation="observed",
+            endpoint={"value": 2},
+        )
+        return evidence.root
+
+    def test_a_gap_or_an_extra_file_breaks_the_archive(self) -> None:
+        def remove_middle(events: Path) -> None:
+            sorted(events.iterdir())[1].unlink()
+
+        def remove_last(events: Path) -> None:
+            sorted(events.iterdir())[-1].unlink()
+
+        def leave_a_gap(events: Path) -> None:
+            first = sorted(events.iterdir())[0]
+            copy = events / "000000000009.json"
+            copy.write_bytes(first.read_bytes())
+
+        for label, tamper in (
+            ("a middle event removed", remove_middle),
+            ("the terminal removed", remove_last),
+            ("an event beyond the end", leave_a_gap),
+        ):
+            with self.subTest(archive=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                run_id = "shape"
+                evidence_root = self._sealed_run(root, run_id)
+                events = evidence_root / "runs" / run_id / "events"
+                events.chmod(0o750)
+                for path in events.iterdir():
+                    path.chmod(0o640)
+                tamper(events)
+
+                store = EvidenceStore.open(evidence_root)
+                audit = store.audit_run(run_id)
+                self.assertFalse(audit.integrity)
+                # And a reader cannot get a sequence out of it either. An archive that
+                # audits as broken but still replays would let a claim be read off it.
+                with self.assertRaises(ValueError):
+                    store.replay_events(run_id)
+
