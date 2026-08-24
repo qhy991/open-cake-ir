@@ -357,3 +357,38 @@ class ArchiveShapeTamperTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     store.replay_events(run_id)
 
+    def test_a_sealed_run_refuses_a_later_event(self) -> None:
+        """History stops when the claim is made, or it is not history.
+
+        `read_object` rehashes what it returns and `audit_run` verifies the chain, so a
+        forged archive is caught on the way out. This is the guard on the way in: once a
+        Run is sealed, the writer that holds it must not be able to add to it.
+        """
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            evidence = EvidenceStore.create(root / "evidence")
+            authority = {"kind": "fixture", "id": "sealed"}
+            run = evidence.start_run(
+                "sealed",
+                authority_sha256=sha256(
+                    json.dumps(authority, sort_keys=True, separators=(",", ":")).encode()
+                ).hexdigest(),
+                authority=authority,
+            )
+            run.append("observation", {"value": 0})
+            run.seal(
+                protocol_adherence="adhered",
+                endpoint_observation="observed",
+                endpoint={"value": 0},
+            )
+
+            with self.assertRaisesRegex(ValueError, "already sealed"):
+                run.append("observation", {"value": 1})
+            # And a second terminal is refused as a terminal too, not only as an append.
+            with self.assertRaises(ValueError):
+                run.append("run_terminal", {"value": 1})
+
+            audit = EvidenceStore.open(evidence.root).audit_run("sealed")
+            self.assertTrue(audit.integrity)
+
