@@ -269,6 +269,16 @@ That is the claim under test, and softmax could not make it: softmax had to deci
 reduction is. A vocabulary that stops needing additions is the only evidence that the
 distillation converged, and one operator is the beginning of it rather than the proof.
 
+**And a fourth cost a derivation, not a word.** `gemm-bias-b1-smoke` is the first admitted
+operator whose loop walks the contraction rather than an output axis. It added no
+vocabulary either -- the IR already said everything it needed -- but it did need the
+Triton emitter to tell the two shapes apart and accumulate for one of them, which is
+backend work rather than a new thing a Schedule can say.
+
+So the tally across five emitted operators is: two needed vocabulary, one needed a
+derivation, two needed neither. What has stopped growing is the set of words. What has
+not is what a backend must be able to do with them, and those are different claims.
+
 The gate earned its keep twice here. It refused the two-pass-in-a-loop Schedule that would
 have computed a softmax over stale maxima, and the profile rule refused a drift case with
 a mismatched output shape. Both were predicted before running and both fired exactly there.
