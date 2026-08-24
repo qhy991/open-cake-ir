@@ -169,7 +169,7 @@
     },
     {
       "id": "sum_sq",
-      "kind": "reduce_sum",
+      "kind": "reduce",
       "role": "compute",
       "reads": [
         "sq"
@@ -181,6 +181,7 @@
         "square"
       ],
       "parameters": {
+        "op": "sum",
         "axis": 1,
         "scope": "cta"
       }

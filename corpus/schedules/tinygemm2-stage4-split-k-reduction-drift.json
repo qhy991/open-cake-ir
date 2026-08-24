@@ -264,7 +264,7 @@
     },
     {
       "id": "reduce_partials",
-      "kind": "reduce_sum",
+      "kind": "reduce",
       "role": "compute",
       "reads": [
         "partial_accumulators"
@@ -279,6 +279,7 @@
         "split_k_mma"
       ],
       "parameters": {
+        "op": "sum",
         "axis": 0,
         "scope": "cta"
       }

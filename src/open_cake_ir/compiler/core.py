@@ -226,7 +226,10 @@ def _tinygemm2_stage4_split_k_conformance(buffers, operations) -> list["Finding"
     )
     if (
         reduction is not None
-        and reduction.get("kind") == "reduce_sum"
+        and reduction.get("kind") == "reduce"
+        # The operator is now the operation's to declare, so this profile has to say it
+        # wants a sum. A max over four partials is a different kernel with the same shape.
+        and parameters.get("op") == "sum"
         and parts == 4
         and parameters.get("scope") == "cta"
     ):
@@ -255,6 +258,28 @@ def _rmsnorm_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
             "PROFILE_SHAPE_MISMATCH",
             "buffers.x.shape",
             "RMSNorm normalizes the last axis, so y matches x and gamma spans it",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
+def _softmax_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """Softmax normalizes the last axis, so y matches x and nothing else is read.
+
+    The shape rule is the same one RMSNorm states; what differs is that softmax has no
+    learned parameter, so a Schedule that reads a third buffer is not this operator.
+    """
+
+    x = _shape_of(buffers, "x")
+    coheres = x is not None and len(x) == 3 and _shape_of(buffers, "y") == x
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.x.shape",
+            "softmax normalizes the last axis, so y matches x",
             blocks_acceptance=False,
             blocks_lowering=True,
         )
@@ -336,6 +361,20 @@ _PROFILES: Mapping[str, _Profile] = {
     # The first operator admitted after the registry became one record. It needed no
     # emitter change, no formula of its own and no entry anywhere else: an operator is
     # now one row plus the Schedules that claim it.
+    # The second operator admitted through the same row. It needed two vocabulary
+    # additions -- a max fold and `exp`/`div` -- and no emitter structure at all, which
+    # is the claim the registry was reshaped to make testable.
+    "softmax_b8_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_softmax_b8_smoke",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_softmax_b8_smoke_conformance,
+        backend=emit_triton,
+    ),
     "rmsnorm_b8_smoke": _Profile(
         toolchain={
             "source_language": "python",
@@ -360,7 +399,10 @@ _PROFILES: Mapping[str, _Profile] = {
             "@@SCHEDULE_SHA256@@",
             "cake_tinygemm2_stage4_split_k",
         ),
-        closed_semantics="70d5c3a06a9aa026a6da275accd79398e8a5e7909422cda6b5ffe091feacfece",
+        # Re-pinned when reduce_sum became reduce with op: sum. The pin says which
+        # Schedule may reach this checked-in template, and the kernel it describes
+        # did not change -- only how the Schedule writes it down.
+        closed_semantics="7aa2fdb287d7d8af141ef83b84cf17409a2a4de8c4f90c6eaac3a4490865e799",
     ),
 }
 

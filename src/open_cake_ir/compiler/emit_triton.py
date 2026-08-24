@@ -14,6 +14,8 @@ handling from the operation, and the host-side contract from the global buffers.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from .emit import Emission, EmitError, require as _require
 from .ir import (
     ElementwiseOp,
@@ -27,6 +29,7 @@ from .ir import (
     MemorySpace,
     OperationKind,
     ProgramAxis,
+    ReduceOp,
     Schedule,
     TileLoop,
 )
@@ -47,6 +50,35 @@ _TORCH_DTYPE = {
 }
 
 
+@dataclass(frozen=True)
+class _Reduction:
+    """How one fold is written, in the two places a fold can appear.
+
+    A loop that carries a reduction needs the identity before it starts, so a backend
+    that assumed zero could only ever emit a sum -- max over an empty prefix is not zero.
+    A reduction with no loop around it needs neither: it sees its whole input once, and
+    writing it as an accumulation would read an accumulator nothing initialised.
+    """
+
+    identity: str
+    accumulate: str
+    once: str
+
+
+REDUCTIONS: dict[ReduceOp, _Reduction] = {
+    ReduceOp.SUM: _Reduction(
+        identity="tl.zeros(({tile},), tl.float32)",
+        accumulate="{out} += tl.sum({src}.to(tl.float32), axis={axis})",
+        once="{out} = tl.sum({src}.to(tl.float32), axis={axis})",
+    ),
+    ReduceOp.MAX: _Reduction(
+        identity='tl.full(({tile},), float("-inf"), tl.float32)',
+        accumulate="{out} = tl.maximum({out}, tl.max({src}.to(tl.float32), axis={axis}))",
+        once="{out} = tl.max({src}.to(tl.float32), axis={axis})",
+    ),
+}
+
+
 # What this backend has a body for, and where. The two sets differ: an mma or a reduction
 # is only emitted inside the tile loop, and a store only outside it. Keeping them as
 # tables the dispatch reads means the coverage cannot drift from the code, and it makes
@@ -54,6 +86,7 @@ _TORCH_DTYPE = {
 OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.LOAD: "_emit_load",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
+    OperationKind.REDUCE: "_emit_reduce",
     OperationKind.STORE: "_emit_store",
 }
 
@@ -61,7 +94,7 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.REDUCE_ARGMIN: "_emit_argmin",
-    OperationKind.REDUCE_SUM: "_emit_sum",
+    OperationKind.REDUCE: "_emit_reduce",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
 }
 
@@ -86,9 +119,13 @@ class _TritonEmitter:
 
         _require(schedule.program_map is not None, "a Triton Schedule maps its program")
         _require(schedule.access_maps, "a Triton Schedule declares its access maps")
-        _require(len(schedule.tile_loops) == 1, "expected exactly one tile loop")
+        # At most one, not exactly one. A Schedule whose whole reduced axis is resident
+        # has nothing to iterate, and requiring a loop there made the backend emit a trip
+        # count of one with an unused iterator -- and forced a two-pass operator to carry
+        # a value out of a loop, which is the one thing a loop must not do.
+        _require(len(schedule.tile_loops) <= 1, "expected at most one tile loop")
         _require(len(schedule.roles) == 1, "expected exactly one role")
-        self.loop = schedule.tile_loops[0]
+        self.loop = schedule.tile_loops[0] if schedule.tile_loops else None
         self.role = schedule.roles[0]
 
         # A kernel must write something, so a store is required of every Schedule. An
@@ -135,7 +172,11 @@ class _TritonEmitter:
         for axis in self.schedule.program_map.axes:
             if axis.buffer == buffer_name and axis.dimension == dimension:
                 return f"N_{axis.name.upper()}"
-        if self.loop.buffer == buffer_name and self.loop.dimension == dimension:
+        if (
+            self.loop is not None
+            and self.loop.buffer == buffer_name
+            and self.loop.dimension == dimension
+        ):
             return f"N_{self.loop.name.upper()}"
         return f"D_{buffer_name.upper()}_{dimension}"
 
@@ -161,8 +202,9 @@ class _TritonEmitter:
         for axis in self.schedule.program_map.axes:
             if axis.is_tiled:
                 values[self._tile(axis.name)] = axis.tile
-        values[self._tile(self.loop.name)] = self.loop.tile
-        values["NUM_STAGES"] = self.loop.range_options.num_stages
+        if self.loop is not None:
+            values[self._tile(self.loop.name)] = self.loop.tile
+            values["NUM_STAGES"] = self.loop.range_options.num_stages
         values["NUM_WARPS"] = len(self.role.warps)
         if self.schedule.program_map is not None and self.schedule.program_map.persistent:
             values["TOTAL_TILES"] = self.total_tiles()
@@ -236,7 +278,11 @@ class _TritonEmitter:
             if component.source is AccessIndexKind.PROGRAM_TILE and f"{component.name}_offsets" == vector:
                 axis = self._axis(component.name)
                 return self._extent(axis.buffer, axis.dimension)
-            if component.source is AccessIndexKind.LOOP_TILE and f"{component.name}_offsets" == vector:
+            if (
+                component.source is AccessIndexKind.LOOP_TILE
+                and f"{component.name}_offsets" == vector
+                and self.loop is not None
+            ):
                 return self._extent(self.loop.buffer, self.loop.dimension)
         return None  # a full-dimension index spans its axis and needs no mask
 
@@ -335,7 +381,11 @@ class _TritonEmitter:
             # checked and then dropped.
             "compile_options": {
                 "num_warps": constants["NUM_WARPS"],
-                "num_stages": constants["NUM_STAGES"],
+                **(
+                    {"num_stages": constants["NUM_STAGES"]}
+                    if "NUM_STAGES" in constants
+                    else {}
+                ),
                 **(
                     {"maxnreg": self.schedule.residency.registers_per_thread}
                     if self.schedule.residency is not None
@@ -401,7 +451,7 @@ class _TritonEmitter:
         # dropped any other operation declared outside the loop.
         emitted_loop = False
         for operation in self.schedule.operations:
-            if operation.op_id in self.loop.body:
+            if self.loop is not None and operation.op_id in self.loop.body:
                 if not emitted_loop:
                     self._emit_reduction_state(self._body_pad())
                     self._emit_loop()
@@ -417,7 +467,10 @@ class _TritonEmitter:
             getattr(self, method)(operation, self._body_pad())
             if operation.kind is OperationKind.ELEMENTWISE:
                 self.line()
-        _require(emitted_loop, "the declared tile loop names no operation")
+        _require(
+            emitted_loop or self.loop is None,
+            "the declared tile loop names no operation",
+        )
         self.line("    # CAKE_KERNEL_END")
         self.line()
         self.line()
@@ -490,11 +543,12 @@ class _TritonEmitter:
             self.line(f"{pad}{self.reduce.writes[0]} = tl.zeros(({tile},), tl.int32)")
             self.line()
         for operation in self.schedule.operations:
-            if operation.kind is not OperationKind.REDUCE_SUM:
+            if operation.kind is not OperationKind.REDUCE:
                 continue
             if operation.op_id not in self.loop.body:
                 continue
-            self.line(f"{pad}{operation.writes[0]} = tl.zeros(({tile},), tl.float32)")
+            identity = REDUCTIONS[operation.parameters.op].identity
+            self.line(f"{pad}{operation.writes[0]} = {identity.format(tile=tile)}")
             self.line()
 
     def _token_axis(self) -> ProgramAxis:
@@ -542,9 +596,14 @@ class _TritonEmitter:
     _ELEMENTWISE_TEXT = {
         ElementwiseOp.SQUARE: "{a} * {a}",
         ElementwiseOp.RSQRT: "tl.rsqrt({a})",
+        ElementwiseOp.EXP: "tl.exp({a})",
         ElementwiseOp.ADD: "{a} + {b}",
         ElementwiseOp.SUB: "{a} - {b}",
         ElementwiseOp.MUL: "{a} * {b}",
+        # Written as the division it is. A Schedule that wants the reciprocal-then-
+        # multiply a fast kernel uses declares `rsqrt`-style reciprocal and `mul`, which
+        # is a different Schedule with different numerics -- and says so.
+        ElementwiseOp.DIV: "{a} / {b}",
     }
 
     def _emit_elementwise(self, operation, pad: str) -> None:
@@ -587,24 +646,31 @@ class _TritonEmitter:
         index = ", ".join(":" if position == axis else "None" for position in range(len(widest)))
         return f"{name}[{index}]"
 
-    def _emit_sum(self, operation, pad: str) -> None:
-        """Sum the declared axis of the input and accumulate into the result.
+    def _emit_reduce(self, operation, pad: str) -> None:
+        """Fold the declared axis of the input into the result.
 
         The axis is what the operation declares and the extent follows from the read
-        buffer, so nothing here needs to know which operator asked for the reduction.
+        buffer, so nothing here needs to know which operator asked for the reduction --
+        and which fold it is comes from the operation too, rather than from this backend
+        having been written when sum was the only one.
         """
 
         source = self.schedule.buffer(operation.reads[0])
-        _require(source is not None, f"sum reads unknown buffer {operation.reads[0]!r}")
+        _require(source is not None, f"reduce reads unknown buffer {operation.reads[0]!r}")
         axis = operation.parameters.axis
         _require(
             axis < len(source.shape),
-            f"sum axis {axis} is outside {source.name!r}",
+            f"reduce axis {axis} is outside {source.name!r}",
         )
+        reduction = REDUCTIONS[operation.parameters.op]
+        carried = self.loop is not None and operation.op_id in self.loop.body
+        template = reduction.accumulate if carried else reduction.once
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(
-            f"{pad}{operation.writes[0]} += tl.sum("
-            f"{operation.reads[0]}.to(tl.float32), axis={axis})"
+            pad
+            + template.format(
+                out=operation.writes[0], src=operation.reads[0], axis=axis
+            )
         )
 
     def _emit_mma(self, operation, pad: str) -> None:
@@ -703,7 +769,11 @@ class _TritonEmitter:
             if name != "NUM_WARPS":
                 self.line(f"        {name}={value},")
         self.line(f"        num_warps={constants['NUM_WARPS']},")
-        self.line(f"        num_stages={constants['NUM_STAGES']},")
+        if "NUM_STAGES" in constants:
+            # Pipelining depth belongs to the loop's range options. With no loop there is
+            # nothing to pipeline and no declaration to carry, so the launch says nothing
+            # rather than inventing a depth the Schedule never asked for.
+            self.line(f"        num_stages={constants['NUM_STAGES']},")
         residency = self.schedule.residency
         if residency is not None and residency.registers_per_thread is not None:
             self.line(f"        maxnreg={residency.registers_per_thread},")

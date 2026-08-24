@@ -7,7 +7,7 @@ into one vocabulary, as required by `docs/MIGRATION_PLAN.md`.
 The legacy split forced two workarounds that do not survive here:
 
 * `explicit_resource_ir` and `production_resource_ir` each had to rewrite an operation
-  kind into a base-legal one (`epilogue` -> `store`, `reduce_sum` -> `reduce_argmin`),
+  kind into a base-legal one (`epilogue` -> `store`, `reduce` -> `reduce_argmin`),
   parse through the frozen base parser, then restore the real kind afterwards. One
   `OperationKind` removes the rewrite entirely.
 * `EpilogueFormula` and `EpilogueParameters` were declared twice with disjoint members.
@@ -74,18 +74,36 @@ class BufferMode(str, Enum):
 class OperationKind(str, Enum):
     """The unified operation vocabulary.
 
-    `EPILOGUE` came from the explicit-resource model and `REDUCE_SUM` from the
+    `EPILOGUE` came from the explicit-resource model and `REDUCE` from the
     production-resource model; both were separate enums that had to be smuggled
     through the base parser as `store` / `reduce_argmin`.
+
+    `REDUCE` is one kind carrying an operator rather than one kind per operator, which is
+    the shape `ELEMENTWISE` already had. A second reduction was the moment to pick: a
+    `reduce_max` kind beside `reduce_sum` would have been two spellings of collapsing an
+    axis. `REDUCE_ARGMIN` stays separate because it returns an index rather than a value,
+    and that is what makes its tie-break and NaN policy observable at all.
     """
 
     LOAD = "load"
     MMA = "mma"
     EPILOGUE = "epilogue"
     REDUCE_ARGMIN = "reduce_argmin"
-    REDUCE_SUM = "reduce_sum"
+    REDUCE = "reduce"
     ELEMENTWISE = "elementwise"
     STORE = "store"
+
+
+class ReduceOp(str, Enum):
+    """The associative operator a reduction folds with.
+
+    Each one implies its own identity, which the backend needs before a loop that carries
+    the reduction across iterations. Naming the operator here is what lets that identity
+    be derived instead of assumed.
+    """
+
+    SUM = "sum"
+    MAX = "max"
 
 
 class LoadMovement(str, Enum):
@@ -136,13 +154,15 @@ class ElementwiseOp(str, Enum):
 
     SQUARE = "square"
     RSQRT = "rsqrt"
+    EXP = "exp"
     ADD = "add"
     SUB = "sub"
     MUL = "mul"
+    DIV = "div"
 
     @property
     def arity(self) -> int:
-        return 1 if self in (ElementwiseOp.SQUARE, ElementwiseOp.RSQRT) else 2
+        return 1 if self in (ElementwiseOp.SQUARE, ElementwiseOp.RSQRT, ElementwiseOp.EXP) else 2
 
 
 class ReductionScope(str, Enum):
@@ -868,16 +888,20 @@ class ReduceArgminParameters:
 
 
 @dataclass(frozen=True)
-class ReduceSumParameters:
-    """A sum that collapses one declared axis of its input.
+class ReduceParameters:
+    """A fold that collapses one declared axis of its input.
 
     This declared how many partial accumulators to combine, which is the split-K use it
     was written for and also a second statement of a fact the read buffer's shape already
-    carried. Declaring the axis instead makes the extent follow from that shape, so a sum
+    carried. Declaring the axis instead makes the extent follow from that shape, so a fold
     over any axis of any input is expressible, and the verifier gains an invariant it
     could not state before: the written shape is the read shape with this axis removed.
+
+    The invariant holds whatever the operator is, which is the argument for `op` living
+    here rather than in the kind: every rule written for the sum is a rule about the axis.
     """
 
+    op: ReduceOp
     axis: int
     scope: ReductionScope
 
@@ -921,7 +945,7 @@ OperationParameters = Union[
     MmaParameters,
     EpilogueParameters,
     ReduceArgminParameters,
-    ReduceSumParameters,
+    ReduceParameters,
     StoreParameters,
     FenceProxyParameters,
 ]
@@ -1026,9 +1050,10 @@ def _operation_parameters(
             _boolean(obj.get("across_loop", False), f"{context}.across_loop"),
         )
 
-    if kind is OperationKind.REDUCE_SUM:
-        obj = _strict_object(value, required={"axis", "scope"}, context=context)
-        return ReduceSumParameters(
+    if kind is OperationKind.REDUCE:
+        obj = _strict_object(value, required={"op", "axis", "scope"}, context=context)
+        return ReduceParameters(
+            _enum(ReduceOp, obj["op"], f"{context}.op"),
             _nonnegative_int(obj["axis"], f"{context}.axis"),
             _enum(ReductionScope, obj["scope"], f"{context}.scope"),
         )

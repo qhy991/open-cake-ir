@@ -1,0 +1,42 @@
+{
+ "schema_version": 2,
+ "observed_at": "2026-08-24T02:00:00Z",
+ "purpose": "lowered_kernel_correctness",
+ "scientific_claim_authorized": false,
+ "performance_measured": false,
+ "host": "verda-b200x4",
+ "device": "NVIDIA B200",
+ "compute_capability": [
+  10,
+  0
+ ],
+ "toolchain": {
+  "cutlass": "4.7.0",
+  "torch": "2.13.0+cu130"
+ },
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v4",
+  "revision_sha256": "0c7c4e27106cc9b0f7f6a31b86aca0b16e6473a55bd27f3cdf2e05478a3be846"
+ },
+ "schedule": {
+  "path": "corpus/schedules/softmax-b8-smoke.json",
+  "schedule_id": "softmax-b8-smoke-v1",
+  "canonical_sha256": "d2114d96a3e27730520c1a9321a19f74bbaa9542438f2f1e0fc31f2da012ef74"
+ },
+ "lowering": {
+  "generated": true,
+  "entry_point": "cake_softmax_b8_smoke",
+  "source_sha256": "0021939fa4ab5932c92915c355f58157e90facaa1fb92e4ea81ce6b1fb5b7345",
+  "source_lines": 89
+ },
+ "result": {
+  "compiled": true,
+  "launched": true,
+  "total_elements": 524288,
+  "mismatch_count": 0,
+  "max_deviation": 4.470348358154297e-08,
+  "tolerance": 1e-05,
+  "passed": true
+ },
+ "note": "Compiler.lower generated this source from the Schedule; there is no checked-in template for this profile. Correctness only -- no timing was taken. Reproduce with tools/observe_lowered_kernel.py."
+}

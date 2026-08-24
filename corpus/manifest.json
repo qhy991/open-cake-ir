@@ -68,8 +68,8 @@
         "finding_codes": [
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "6f55e843b8c26879b5397756cc10e79dbd1dc3a9666a7688ece7e9776223fb37",
-        "lowering_source_sha256": "c25416f2368f289cbf5f80d265dd50541df12d395084179546d517121373ba79"
+        "schedule_sha256": "d0b244ddad690e568cffcdee2f4c44e1adf43923be3e05e369e64844644c06f3",
+        "lowering_source_sha256": "1811936ddb019d61228a556f7b234b125eadbd336af1a25bd6c85166be047cd6"
       }
     },
     {
@@ -82,7 +82,7 @@
           "REDUCE_SUM_SEMANTICS",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "5ab0ae637d8618df404c53f60c921183e7edeacaf64accbad7dae6ec86b62e40",
+        "schedule_sha256": "6450880ba030176a1e19730fc0b9c9d471270c7df5153f5a016fb4c4234dcca5",
         "lowering_source_sha256": null
       }
     },
@@ -96,8 +96,8 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "8c6969d605f326ed87fff01f2af80e54f38bc4d566fe4b0b813d9b14e129869a",
-        "lowering_source_sha256": "8ce141ad86ddfdfc57b881b931612ee4c26dbee9484727f64cc88c5ed19cbf30"
+        "schedule_sha256": "47c40597867a031fca2d088c3ba937f88d26172fe6048d9694022a68f4b203a6",
+        "lowering_source_sha256": "e0841232737b301db16fa60a7ded6b261a6c870498f4e45a245dcf4cf4ce4b40"
       }
     },
     {
@@ -111,7 +111,7 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "f1e415078c385bc23ca7cdaca3c2b4fbaf8c6b4dfeb0cc1fd409dc5e425829de",
+        "schedule_sha256": "83b95f645b316c519df5fb28ce038718b87cb5b44649e47032103e3f86042a18",
         "lowering_source_sha256": null
       }
     },
@@ -127,7 +127,7 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "13302fc4f0fa2d95aff13f2b254dd3563db13812021e92a85a6d1f5eb624a430",
+        "schedule_sha256": "c2eb4effb450c62b20d484897de0e84b7379c0b91572efa394e83c5ca2518bd5",
         "lowering_source_sha256": null
       }
     },
@@ -141,8 +141,37 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "8888346c02330c8dfc5332548d135283f565200f2601caa057432c1685df97ca",
-        "lowering_source_sha256": "eedf80d153a10eeb614d1f8812024dec0963bd47c08046f7fc74e15c3670609d"
+        "schedule_sha256": "50799499b5efc9e2c99672082c16e4590f6e7ad765566b1d079b31ff0d4fff62",
+        "lowering_source_sha256": "c3c105747b7f13980217000c6fcea9e17eca2f8b8b969d47249c29ddb2d4f34d"
+      }
+    },
+    {
+      "case_id": "softmax-accepted",
+      "schedule": "corpus/schedules/softmax-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "d2114d96a3e27730520c1a9321a19f74bbaa9542438f2f1e0fc31f2da012ef74",
+        "lowering_source_sha256": "0021939fa4ab5932c92915c355f58157e90facaa1fb92e4ea81ce6b1fb5b7345"
+      }
+    },
+    {
+      "case_id": "softmax-shape-drift",
+      "schedule": "corpus/schedules/softmax-b8-smoke-shape-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "PROFILE_SHAPE_MISMATCH",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ea6d242ddb5323474c24e8789b605ed5ff7e928e6bdff55a7c2e240904b08300",
+        "lowering_source_sha256": null
       }
     }
   ]

@@ -26,7 +26,8 @@ from open_cake_ir.compiler.ir import (
     LoadMovement,
     MemorySpace,
     OperationKind,
-    ReduceSumParameters,
+    ReduceOp,
+    ReduceParameters,
     ReductionScope,
     Schedule,
     ScheduleParseError,
@@ -68,7 +69,7 @@ def _op(document: dict, op_id: str) -> dict:
 
 class RetainedScheduleTest(unittest.TestCase):
     def test_every_corpus_schedule_parses(self) -> None:
-        self.assertEqual(len(CORPUS), 10)
+        self.assertEqual(len(CORPUS), 12)
         for path in CORPUS:
             with self.subTest(schedule=path.name):
                 schedule = Schedule.load(path)
@@ -95,17 +96,21 @@ class UnifiedVocabularyTest(unittest.TestCase):
     """The four legacy models are resolved into one.
 
     `explicit_resource_ir` rewrote `epilogue` -> `store` and `production_resource_ir`
-    rewrote `reduce_sum` -> `reduce_argmin` (fabricating tie_break/nan_policy) so the
+    rewrote `reduce` -> `reduce_argmin` (fabricating tie_break/nan_policy) so the
     frozen base parser would accept them. Both operations now parse as themselves.
     """
 
-    def test_reduce_sum_keeps_its_kind_and_parameters(self) -> None:
+    def test_a_reduction_keeps_its_kind_and_parameters(self) -> None:
         schedule = Schedule.load(TINYGEMM)
         operation = schedule.operation("reduce_partials")
         assert operation is not None
-        self.assertIs(operation.kind, OperationKind.REDUCE_SUM)
+        self.assertIs(operation.kind, OperationKind.REDUCE)
+        # The operator is a parameter, not the kind. A second fold was the moment that
+        # choice had to be made, and making it the kind would have been two spellings of
+        # collapsing an axis.
         self.assertEqual(
-            operation.parameters, ReduceSumParameters(axis=0, scope=ReductionScope.CTA)
+            operation.parameters,
+            ReduceParameters(op=ReduceOp.SUM, axis=0, scope=ReductionScope.CTA),
         )
 
     def test_epilogue_keeps_its_kind_and_parameters(self) -> None:
@@ -139,7 +144,7 @@ class UnifiedVocabularyTest(unittest.TestCase):
                 "mma",
                 "epilogue",
                 "reduce_argmin",
-                "reduce_sum",
+                "reduce",
                 "store",
             },
             {member.value for member in OperationKind},
@@ -299,7 +304,7 @@ class LocalizedDiagnosticTest(unittest.TestCase):
                 B32,
                 lambda d: _op(d, "load_centroids").update(kind="tma_load"),
                 "schedule.operations[1].kind",
-                "epilogue, load, mma, reduce_argmin, reduce_sum, store",
+                "epilogue, load, mma, reduce, reduce_argmin, store",
             ),
             (
                 B32,

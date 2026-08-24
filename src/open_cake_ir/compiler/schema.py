@@ -125,7 +125,7 @@ _PARAMETERS = {
         {"tie_break": _enum(ArgminTieBreak), "nan_policy": {"enum": ["reject_input"]}},
         {"across_loop": {"type": "boolean"}},
     ),
-    OperationKind.REDUCE_SUM: _object(
+    OperationKind.REDUCE: _object(
         {"axis": _NONNEGATIVE, "scope": _enum(ReductionScope)}
     ),
     OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),

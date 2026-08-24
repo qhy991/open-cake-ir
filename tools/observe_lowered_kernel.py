@@ -40,6 +40,48 @@ def _global_shapes(document: dict) -> dict[str, tuple[int, ...]]:
     }
 
 
+def _flash_kmeans_case(shapes, torch):
+    """Inputs and the float32 answer for the assignment kernel.
+
+    The oracle is independent of the kernel: argmin of squared euclidean distance with
+    the token norm elided, which is constant per row and cannot change the argmin.
+    """
+
+    tokens_n, dimension = shapes["tokens"]
+    centroids_k, _ = shapes["centroids"]
+    tokens = torch.randn(tokens_n, dimension, device="cuda", dtype=torch.bfloat16)
+    centroids = torch.randn(centroids_k, dimension, device="cuda", dtype=torch.bfloat16)
+    left, right = tokens.to(torch.float32), centroids.to(torch.float32)
+    distance = (right * right).sum(dim=1)[None, :] - 2.0 * (left @ right.t())
+    inputs = (
+        tokens,
+        centroids,
+        (right * right).sum(dim=1).contiguous(),
+        torch.empty(tokens_n, centroids_k, device="cuda", dtype=torch.float32),
+        torch.full((tokens_n,), -1, device="cuda", dtype=torch.int32),
+    )
+    return inputs, torch.argmin(distance, dim=1).to(torch.int32), distance
+
+
+def _softmax_case(shapes, torch):
+    """Inputs and the float32 answer for the row softmax.
+
+    torch.softmax is the oracle rather than a hand-written exp-and-divide, so the
+    comparison is against an implementation that did not come from the same reasoning
+    the Schedule did.
+    """
+
+    x = torch.randn(shapes["x"], device="cuda", dtype=torch.float32)
+    reference = torch.softmax(x, dim=-1)
+    return (x, torch.empty_like(x)), reference, None
+
+
+CASES = {
+    "flash_kmeans_assignment_full": _flash_kmeans_case,
+    "softmax_b8_smoke": _softmax_case,
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -48,6 +90,12 @@ def main() -> int:
     parser.add_argument("--revision", default="compiler/revision.lock.json")
     parser.add_argument("--observed-at", required=True, help="ISO 8601 UTC timestamp")
     parser.add_argument("--out", required=True)
+    parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=1e-5,
+        help="max absolute deviation admitted for a float-valued kernel",
+    )
     arguments = parser.parse_args()
 
     import torch
@@ -62,24 +110,14 @@ def main() -> int:
     lowering = compiler.lower(assessment)
 
     shapes = _global_shapes(document)
-    tokens_n, dimension = shapes["tokens"]
-    centroids_k, _ = shapes["centroids"]
-
+    case = CASES.get(assessment.profile)
+    if case is None:
+        raise SystemExit(
+            f"no oracle for profile {assessment.profile!r}; this tool observes "
+            f"{', '.join(sorted(CASES))}"
+        )
     torch.manual_seed(0)
-    tokens = torch.randn(tokens_n, dimension, device="cuda", dtype=torch.bfloat16)
-    centroids = torch.randn(centroids_k, dimension, device="cuda", dtype=torch.bfloat16)
-    centroid_sq = (centroids.to(torch.float32) ** 2).sum(dim=1).contiguous()
-    distance_scratch = torch.empty(
-        tokens_n, centroids_k, device="cuda", dtype=torch.float32
-    )
-    assignments = torch.full((tokens_n,), -1, device="cuda", dtype=torch.int32)
-
-    # Independent of the kernel: float32 argmin of squared euclidean distance with the
-    # token norm elided, which is constant per row and cannot change the argmin.
-    left = tokens.to(torch.float32)
-    right = centroids.to(torch.float32)
-    distance = (right * right).sum(dim=1)[None, :] - 2.0 * (left @ right.t())
-    reference = torch.argmin(distance, dim=1).to(torch.int32)
+    inputs, reference, distance = case(shapes, torch)
 
     with tempfile.TemporaryDirectory(prefix="cake-observe-") as directory:
         module_path = Path(directory) / f"{lowering.entry_point}.py"
@@ -90,17 +128,35 @@ def main() -> int:
         assert specification is not None and specification.loader is not None
         module = importlib.util.module_from_spec(specification)
         specification.loader.exec_module(module)
-        observed = module.launch_once(
-            tokens, centroids, centroid_sq, distance_scratch, assignments
+        launch = getattr(module, "launch_once", None) or getattr(
+            module, lowering.entry_point
         )
+        observed = launch(*inputs)
         torch.cuda.synchronize()
 
-    mismatch = int((observed != reference).sum().item())
-    rows = torch.arange(tokens_n, device=tokens.device)
-    chosen = distance[rows, observed.long().clamp(0, centroids_k - 1)]
-    # A mismatch can still be a legal tie, so the claim is about the distance chosen
-    # rather than about the index: an equal distance is an equally correct answer.
-    excess = float((chosen - distance[rows, reference.long()]).max().item())
+    if distance is None:
+        # A float-valued kernel is judged by how far it is, not by whether it matches:
+        # an exact-equality rule would call float32 softmax wrong for reassociating a
+        # sum, which is not a defect and is not something the Schedule chose.
+        deviation = (observed - reference).abs()
+        mismatch = int(deviation.gt(arguments.tolerance).sum().item())
+        measured = {
+            "max_deviation": float(deviation.max().item()),
+            "tolerance": arguments.tolerance,
+        }
+        passed = measured["max_deviation"] <= arguments.tolerance
+    else:
+        mismatch = int((observed != reference).sum().item())
+        rows = torch.arange(observed.shape[0], device=observed.device)
+        chosen = distance[rows, observed.long().clamp(0, distance.shape[1] - 1)]
+        # A mismatch can still be a legal tie, so the claim is about the distance chosen
+        # rather than about the index: an equal distance is an equally correct answer.
+        excess = float((chosen - distance[rows, reference.long()]).max().item())
+        # Two kernels, two questions. An index kernel is asked whether the answer it
+        # chose is as good; a float kernel is asked how far off it is. One field name
+        # for both would have made the record say something it did not measure.
+        measured = {"max_chosen_distance_excess": excess}
+        passed = mismatch == 0 or excess == 0.0
 
     device = torch.cuda.get_device_properties(0)
     import cutlass
@@ -136,10 +192,10 @@ def main() -> int:
         "result": {
             "compiled": True,
             "launched": True,
-            "total_assignments": tokens_n,
+            "total_elements": int(reference.numel()),
             "mismatch_count": mismatch,
-            "max_chosen_distance_excess": excess,
-            "passed": mismatch == 0 or excess == 0.0,
+            **measured,
+            "passed": passed,
         },
         "note": (
             "Compiler.lower generated this source from the Schedule; there is no "

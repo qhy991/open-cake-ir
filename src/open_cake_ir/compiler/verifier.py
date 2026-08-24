@@ -806,7 +806,7 @@ _ARITY = {
     OperationKind.MMA: (2, 1, "mma"),
     OperationKind.EPILOGUE: (1, 1, "epilogue"),
     OperationKind.REDUCE_ARGMIN: (1, 1, "reduce_argmin"),
-    OperationKind.REDUCE_SUM: (1, 1, "reduce_sum"),
+    OperationKind.REDUCE: (1, 1, "reduce"),
     OperationKind.STORE: (1, 1, "store"),
 }
 
@@ -962,7 +962,7 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
             name
             for op_id in loop.body
             if (op := schedule.operation(op_id)) is not None
-            and op.kind in (OperationKind.REDUCE_SUM, OperationKind.REDUCE_ARGMIN)
+            and op.kind in (OperationKind.REDUCE, OperationKind.REDUCE_ARGMIN)
             for name in op.writes
         }
         for name, producers in sorted(writers.items()):
@@ -1190,7 +1190,7 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
     # extent used to be restated in the operation, which put the same fact in two places
     # and left the pair uncheckable; deriving it from the buffers makes disagreement
     # between them a Finding instead of a kernel that reduces the wrong number of values.
-    if operation.kind is OperationKind.REDUCE_SUM and operation.reads and operation.writes:
+    if operation.kind is OperationKind.REDUCE and operation.reads and operation.writes:
         source = buffers.get(operation.reads[0])
         result = buffers.get(operation.writes[0])
         axis = operation.parameters.axis

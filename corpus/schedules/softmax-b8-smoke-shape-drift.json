@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "schedule_id": "rmsnorm-b8-smoke-persistent-v1",
+  "schedule_id": "softmax-b8-smoke-shape-drift-v1",
   "target": "sm_100a",
   "roles": [
     {
@@ -29,22 +29,13 @@
       "mode": "input"
     },
     {
-      "name": "gamma",
-      "space": "global",
-      "dtype": "fp32",
-      "shape": [
-        128
-      ],
-      "mode": "input"
-    },
-    {
       "name": "y",
       "space": "global",
       "dtype": "fp32",
       "shape": [
         8,
         512,
-        128
+        64
       ],
       "mode": "output"
     },
@@ -59,26 +50,7 @@
       "mode": "scratch"
     },
     {
-      "name": "sq",
-      "space": "register",
-      "dtype": "fp32",
-      "shape": [
-        64,
-        128
-      ],
-      "mode": "scratch"
-    },
-    {
-      "name": "sumsq",
-      "space": "register",
-      "dtype": "fp32",
-      "shape": [
-        64
-      ],
-      "mode": "scratch"
-    },
-    {
-      "name": "meansq",
+      "name": "rowmax",
       "space": "register",
       "dtype": "fp32",
       "shape": [
@@ -91,35 +63,27 @@
       "space": "register",
       "dtype": "fp32",
       "shape": [
-        64
-      ],
-      "mode": "scratch"
-    },
-    {
-      "name": "inv_rms",
-      "space": "register",
-      "dtype": "fp32",
-      "shape": [
-        64
-      ],
-      "mode": "scratch"
-    },
-    {
-      "name": "gamma_tile",
-      "space": "register",
-      "dtype": "fp32",
-      "shape": [
+        64,
         128
       ],
       "mode": "scratch"
     },
     {
-      "name": "normed",
+      "name": "weights",
       "space": "register",
       "dtype": "fp32",
       "shape": [
         64,
         128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "rowsum",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64
       ],
       "mode": "scratch"
     },
@@ -151,34 +115,72 @@
       }
     },
     {
-      "id": "square",
-      "kind": "elementwise",
+      "id": "row_max",
+      "kind": "reduce",
       "role": "compute",
       "reads": [
         "x_tile"
       ],
       "writes": [
-        "sq"
+        "rowmax"
       ],
       "depends_on": [
         "load_x"
       ],
       "parameters": {
-        "op": "square"
+        "op": "max",
+        "axis": 1,
+        "scope": "cta"
       }
     },
     {
-      "id": "sum_sq",
+      "id": "shift",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "x_tile",
+        "rowmax"
+      ],
+      "writes": [
+        "shifted"
+      ],
+      "depends_on": [
+        "row_max"
+      ],
+      "parameters": {
+        "op": "sub",
+        "broadcast_axis": 0
+      }
+    },
+    {
+      "id": "exponentiate",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "shifted"
+      ],
+      "writes": [
+        "weights"
+      ],
+      "depends_on": [
+        "shift"
+      ],
+      "parameters": {
+        "op": "exp"
+      }
+    },
+    {
+      "id": "row_sum",
       "kind": "reduce",
       "role": "compute",
       "reads": [
-        "sq"
+        "weights"
       ],
       "writes": [
-        "sumsq"
+        "rowsum"
       ],
       "depends_on": [
-        "square"
+        "exponentiate"
       ],
       "parameters": {
         "op": "sum",
@@ -187,110 +189,22 @@
       }
     },
     {
-      "id": "mean",
+      "id": "normalize",
       "kind": "elementwise",
       "role": "compute",
       "reads": [
-        "sumsq"
-      ],
-      "writes": [
-        "meansq"
-      ],
-      "depends_on": [
-        "sum_sq"
-      ],
-      "parameters": {
-        "op": "mul",
-        "scalar": 0.0078125
-      }
-    },
-    {
-      "id": "shift",
-      "kind": "elementwise",
-      "role": "compute",
-      "reads": [
-        "meansq"
-      ],
-      "writes": [
-        "shifted"
-      ],
-      "depends_on": [
-        "mean"
-      ],
-      "parameters": {
-        "op": "add",
-        "scalar": 1e-06
-      }
-    },
-    {
-      "id": "rsqrt",
-      "kind": "elementwise",
-      "role": "compute",
-      "reads": [
-        "shifted"
-      ],
-      "writes": [
-        "inv_rms"
-      ],
-      "depends_on": [
-        "shift"
-      ],
-      "parameters": {
-        "op": "rsqrt"
-      }
-    },
-    {
-      "id": "load_gamma",
-      "kind": "load",
-      "role": "compute",
-      "reads": [
-        "gamma"
-      ],
-      "writes": [
-        "gamma_tile"
-      ],
-      "parameters": {
-        "movement": "global",
-        "reuse": "streamed"
-      }
-    },
-    {
-      "id": "scale",
-      "kind": "elementwise",
-      "role": "compute",
-      "reads": [
-        "x_tile",
-        "inv_rms"
-      ],
-      "writes": [
-        "normed"
-      ],
-      "depends_on": [
-        "rsqrt"
-      ],
-      "parameters": {
-        "op": "mul",
-        "broadcast_axis": 0
-      }
-    },
-    {
-      "id": "weight",
-      "kind": "elementwise",
-      "role": "compute",
-      "reads": [
-        "normed",
-        "gamma_tile"
+        "weights",
+        "rowsum"
       ],
       "writes": [
         "y_tile"
       ],
       "depends_on": [
-        "scale",
-        "load_gamma"
+        "row_sum"
       ],
       "parameters": {
-        "op": "mul",
-        "broadcast_axis": 1
+        "op": "div",
+        "broadcast_axis": 0
       }
     },
     {
@@ -304,7 +218,7 @@
         "y"
       ],
       "depends_on": [
-        "weight"
+        "normalize"
       ],
       "parameters": {
         "coalesced": true
@@ -330,34 +244,9 @@
         "dimension": 0,
         "tile": 1
       }
-    ],
-    "persistent": true,
-    "traversal": [
-      "row_block",
-      "batch"
     ]
   },
-  "tile_loops": [
-    {
-      "name": "feature_loop",
-      "iterator": "feat",
-      "buffer": "x",
-      "dimension": 2,
-      "tile": 128,
-      "body": [
-        "square",
-        "sum_sq"
-      ],
-      "range_options": {
-        "num_stages": 1,
-        "loop_unroll_factor": 1,
-        "flatten": false,
-        "warp_specialize": false,
-        "disallow_acc_multi_buffer": true,
-        "disable_licm": false
-      }
-    }
-  ],
+  "tile_loops": [],
   "access_maps": [
     {
       "operation": "load_x",
@@ -374,17 +263,6 @@
         {
           "source": "dimension",
           "dimension": 2
-        }
-      ],
-      "boundary": "mask_tiled_axes"
-    },
-    {
-      "operation": "load_gamma",
-      "buffer": "gamma",
-      "indices": [
-        {
-          "source": "dimension",
-          "dimension": 0
         }
       ],
       "boundary": "mask_tiled_axes"
@@ -410,7 +288,7 @@
     }
   ],
   "metadata": {
-    "profile": "rmsnorm_b8_smoke",
+    "profile": "softmax_b8_smoke",
     "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "residency": {

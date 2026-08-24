@@ -340,8 +340,8 @@ class CompilerContractTests(unittest.TestCase):
         )
 
         self.assertEqual(release.document["state"], "released")
-        self.assertEqual(release.document["corpus_gate"]["case_count"], 10)
-        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 10)
+        self.assertEqual(release.document["corpus_gate"]["case_count"], 12)
+        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 12)
         self.assertEqual(
             len(release.document["sources"]),
             len(json.loads((ROOT / "compiler" / "source_set.json").read_text())["paths"]),
@@ -368,11 +368,14 @@ class CompilerContractTests(unittest.TestCase):
         report = compiler.check_corpus()
 
         self.assertTrue(report.passed, report.cases)
-        self.assertEqual(report.case_count, 10)
-        self.assertEqual(report.accepted_case_count, 8)
+        self.assertEqual(report.case_count, 12)
+        # Softmax added one accepted-and-lowerable case and one accepted-but-not,
+        # which is the shape every operator lands in: the kernel and the drift that
+        # proves its profile rule fires.
+        self.assertEqual(report.accepted_case_count, 10)
         self.assertEqual(report.rejected_case_count, 2)
-        self.assertEqual(report.lowerable_case_count, 5)
-        self.assertEqual(report.nonlowerable_case_count, 5)
+        self.assertEqual(report.lowerable_case_count, 6)
+        self.assertEqual(report.nonlowerable_case_count, 6)
 
     def test_r16_program_map_schedule_uses_the_canonical_compiler(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
@@ -573,7 +576,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(assessment.analysis["total_warps"], 12)
         self.assertEqual(
             assessment.analysis["operation_counts"],
-            {"epilogue": 1, "load": 3, "mma": 1, "reduce_sum": 1},
+            {"epilogue": 1, "load": 3, "mma": 1, "reduce": 1},
         )
 
     def test_r31_reduction_semantic_drift_is_rejected(self) -> None:

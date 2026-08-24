@@ -5,7 +5,7 @@
   "target_definitions": {
     "sm_100a": {
       "path": "compiler/targets/sm_100a.json",
-      "canonical_sha256": "114bac2ba1ae4f0fa3401456e03b0cc7f82a978626d73d793d982ec1ea2528db"
+      "canonical_sha256": "5e4d845d51a02dafce0089e36b595636fae94b997fe41e2092ba1e44bdcdc082"
     }
   },
   "corpus_manifest": "corpus/manifest.json",

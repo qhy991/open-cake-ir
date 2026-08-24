@@ -208,8 +208,9 @@ ROW_SUM_SCHEDULE = {
     "operations": [
         {"id": "load_x", "kind": "load", "role": "compute", "reads": ["x"],
          "writes": ["x_tile"], "parameters": {"movement": "global"}},
-        {"id": "row_sum", "kind": "reduce_sum", "role": "compute", "reads": ["x_tile"],
-         "writes": ["acc"], "depends_on": ["load_x"], "parameters": {"axis": 1, "scope": "cta"}},
+        {"id": "row_sum", "kind": "reduce", "role": "compute", "reads": ["x_tile"],
+         "writes": ["acc"], "depends_on": ["load_x"],
+         "parameters": {"op": "sum", "axis": 1, "scope": "cta"}},
         {"id": "store_y", "kind": "store", "role": "compute", "reads": ["acc"],
          "writes": ["y"], "depends_on": ["row_sum"], "parameters": {"coalesced": True}},
     ],
@@ -334,9 +335,9 @@ class ComposedArithmeticTest(unittest.TestCase):
                 {"id": "square", "kind": "elementwise", "role": "compute",
                  "reads": ["x_tile"], "writes": ["sq"], "depends_on": ["load_x"],
                  "parameters": {"op": "square"}},
-                {"id": "sum_sq", "kind": "reduce_sum", "role": "compute", "reads": ["sq"],
+                {"id": "sum_sq", "kind": "reduce", "role": "compute", "reads": ["sq"],
                  "writes": ["sumsq"], "depends_on": ["square"],
-                 "parameters": {"axis": 1, "scope": "cta"}},
+                 "parameters": {"op": "sum", "axis": 1, "scope": "cta"}},
                 {"id": "mean", "kind": "elementwise", "role": "compute",
                  "reads": ["sumsq"], "writes": ["meansq"], "depends_on": ["sum_sq"],
                  "parameters": {"op": "mul", "scalar": 1.0 / features}},
@@ -407,3 +408,44 @@ class ComposedArithmeticTest(unittest.TestCase):
         self.assertTrue(escapes)
         self.assertTrue(all(f.blocks_lowering for f in escapes))
         self.assertIn("x_tile", escapes[0].message)
+
+
+class SoftmaxObservationTest(unittest.TestCase):
+    """The retained B200 observation for the second emitted operator.
+
+    Softmax is the case that tested whether an operator is one profile row plus the
+    Schedules that claim it. It needed two vocabulary additions -- a `max` fold and
+    `exp`/`div` -- and one backend change that was a removal: a Schedule whose reduced
+    axis is already resident declares no tile loop, and the emitter no longer insists on
+    one. Correctness only; no timing was taken.
+    """
+
+    RECORD = ROOT / "inventory" / "SOFTMAX_OBSERVATION_20260824.json"
+
+    def test_the_observation_matches_what_the_compiler_lowers_now(self) -> None:
+        from open_cake_ir.compiler import Compiler
+
+        record = json.loads(self.RECORD.read_text(encoding="utf-8"))
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        schedule = ROOT / "corpus" / "schedules" / "softmax-b8-smoke.json"
+        lowering = compiler.lower(compiler.assess_file(schedule))
+        self.assertEqual(lowering.source_sha256, record["lowering"]["source_sha256"])
+        self.assertEqual(record["result"]["mismatch_count"], 0)
+        self.assertLessEqual(
+            record["result"]["max_deviation"], record["result"]["tolerance"]
+        )
+        self.assertTrue(record["result"]["passed"])
+        self.assertFalse(record["performance_measured"])
+
+    def test_the_emitted_kernel_carries_no_loop(self) -> None:
+        from open_cake_ir.compiler import Compiler
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        schedule = ROOT / "corpus" / "schedules" / "softmax-b8-smoke.json"
+        source = compiler.lower(compiler.assess_file(schedule)).source
+        # A loop here would be a trip count of one with an unused iterator, and it would
+        # force `weights` out of a loop -- which the verifier refuses, correctly.
+        self.assertNotIn("tl.range(", source)
+        self.assertIn("rowmax = tl.max(", source)
+        self.assertIn("rowsum = tl.sum(", source)
+

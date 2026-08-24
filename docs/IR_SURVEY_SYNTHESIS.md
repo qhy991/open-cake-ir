@@ -146,6 +146,34 @@ survey does not settle which:
 The megakernel family is out of scope for either. A megakernel is an interpreter and its
 schedule is its input; the distance from a Schedule is not a field.
 
+## What a second operator actually cost
+
+Softmax was admitted to test the claim the profile registry was reshaped to make: that an
+operator is one row plus the Schedules that claim it. The bill, end to end:
+
+* **Vocabulary: three additions and one merge.** `exp` and `div` joined `ElementwiseOp`.
+  A max fold was needed, and that was the decision -- a `reduce_max` kind beside
+  `reduce_sum` would have been two spellings of collapsing an axis, so `reduce_sum` became
+  `reduce` with an `op`, which is the shape `elementwise` already had. `reduce_argmin`
+  stayed separate because it returns an index, and that is what makes its tie-break and
+  NaN policy observable at all.
+* **Backend: one change, and it was a removal.** The Triton emitter required exactly one
+  tile loop. Softmax is two passes over a row, so with a loop the verifier refused it --
+  `BUFFER_ESCAPES_LOOP`, correctly: `weights` computed inside a loop holds only the last
+  iteration. At this shape the row is already resident and there is nothing to iterate, so
+  the Schedule declares no loop and the emitter no longer insists on one. The loop it used
+  to emit had a trip count of one and an unused iterator.
+* **Everything else: nothing.** One profile row, one conformance function, two corpus
+  cases. No new finding code, no emitter structure, no scheduler.
+
+The gate earned its keep twice here. It refused the two-pass-in-a-loop Schedule that would
+have computed a softmax over stale maxima, and the profile rule refused a drift case with
+a mismatched output shape. Both were predicted before running and both fired exactly there.
+
+What this does **not** show is that attention follows. This softmax holds a whole row in
+registers; a long one needs online rescaling, which is a different Schedule and probably a
+different reduction vocabulary. ADR 0006 still stands.
+
 ## The finding in the other direction
 
 `reduce_argmin`, with its tie-break and NaN-policy vocabulary, appears in none of the four
