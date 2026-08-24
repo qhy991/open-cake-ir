@@ -146,6 +146,32 @@ survey does not settle which:
 The megakernel family is out of scope for either. A megakernel is an interpreter and its
 schedule is its input; the distance from a Schedule is not a field.
 
+## What still keeps one backend on a formula
+
+`ElementwiseOp` exists so that an operator's math is composed rather than named, and three
+Triton operators now compose. The CuTe-DSL one does not: its epilogue still selects
+`EpilogueFormula.CENTROID_SQ_MINUS_TWO_DOT`, and that token is the last of its kind on an
+emitted path.
+
+Reading the emitter narrows why. Forty lines of it are generic -- wait on the mbarrier,
+copy tensor memory to registers through the declared atom, walk the subtiles, copy out,
+release -- and exactly one line is the operator's math:
+
+```python
+registers[value] = centroid_sq[column] - 2.0 * registers[value]
+```
+
+That line cannot be built from the arithmetic vocabulary, and the reason is specific. It
+reads a global vector at `column`, which comes from the accumulator's own coordinate inside
+the subtile being staged. `ElementwiseParameters.broadcast_axis` says an operand is
+constant along an axis; this operand is *gathered* along one, indexed by where the value
+being computed sits. The vocabulary has no word for that, and it is the only thing standing
+between this epilogue and a composition.
+
+So the missing piece is not an emitter for `elementwise` in CuTe-DSL. It is a way to
+declare an operand indexed by the coordinate of the value it combines with -- which is a
+type-system question, not a field, and is not settled here.
+
 ## What a second operator actually cost
 
 Softmax was admitted to test the claim the profile registry was reshaped to make: that an
