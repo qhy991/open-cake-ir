@@ -109,6 +109,27 @@ dependency are real design, not fields.
 current model -- a static byte partition per kernel -- is what makes all three cases
 inexpressible, and adding a lock attribute to `Allocation` would not change that.
 
+One half of the tensor-memory case turned out to be a live defect in this repository
+rather than a gap against CUTLASS, and it has been closed. The CuTe-DSL backend already
+emits the whole allocation protocol -- `allocate`, `wait_for_alloc`, then
+`relinquish_alloc_permit` and `free` -- and it chose the warp that issues them by taking
+the role of the first operation, in declaration order, whose reads touched tensor memory.
+The verifier admits a Schedule where two roles read tensor memory (probed: it assesses
+clean, and only the backend's own incompleteness stopped the lowering), so that inference
+was ambiguous by more than accident: reordering two operations would have moved a
+`tcgen05.alloc` to a different warp and its matching release with it.
+
+`Allocation.allocating_role` now carries it, required for tensor memory and refused
+elsewhere, and the corpus Schedule declares the epilogue -- what the inference picked, so
+the emitted source is byte-identical and the hardware evidence taken on it still holds.
+Naming `mma` instead moves the instruction, which is the point: an author can now change
+a decision that used to belong to the backend.
+
+That does not settle what a resource is. It settles who takes one out. Release *timing* --
+CUTLASS releases inside the persistent loop so the next CTA can rasterize, this backend at
+the end of the role body -- is still the backend's, and so is everything about the shared
+memory page pool and the scale relation.
+
 **Group three is not a vocabulary question.** There are two coherent answers and this
 survey does not settle which:
 

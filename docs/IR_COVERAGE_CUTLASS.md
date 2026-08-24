@@ -29,6 +29,12 @@ Eight axes map directly, and they are not the peripheral ones:
 allocation *lock*: the MMA warp holds it across the persistent loop and must
 `release_allocation_lock()` before deallocating so the next CTA can rasterize, and on 2SM
 the deallocation is an asymmetric leader/follower arrive-wait-arrive across the peer CTA.
+
+*Partly closed.* `Allocation.allocating_role` now names the role that issues the
+allocation and its release, which this repository's own CuTe-DSL backend had been
+inferring from operation declaration order. What is still the backend's is *when* the
+release happens -- it lands at the end of the role body, and CUTLASS's whole point is that
+its position inside the persistent loop is a decision. The 2SM asymmetry is untouched.
 Nor does it hold the warp-to-subpartition legality map -- `Shape<_2,_2>` or `Shape<_4,_1>`
 decides which of four epilogue warps may touch which TMEM subpartition, and that is a
 hardware rule, not a preference.

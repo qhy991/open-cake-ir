@@ -199,6 +199,47 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class AllocationOwnershipTest(unittest.TestCase):
+    """Who takes out the tensor-memory allocation is the Schedule's decision.
+
+    It used to be the emitter's: the role of the first operation, in declaration order,
+    whose reads touched tensor memory. The verifier admits a Schedule where two roles read
+    tensor memory, so that inference was ambiguous by more than accident -- reordering two
+    operations would have moved a `tcgen05.alloc` to a different warp, and the matching
+    `relinquish_alloc_permit` with it.
+    """
+
+    def _emit_with_owner(self, role: str) -> str:
+        document = json.loads(SCHEDULE.read_text(encoding="utf-8"))
+        for allocation in document["allocations"]:
+            if allocation["space"] == "tensor":
+                allocation["allocating_role"] = role
+        return emit(Schedule.from_dict(document), TARGET).source
+
+    def _allocating_branch(self, source: str) -> str:
+        lines = source.splitlines()
+        index = next(i for i, line in enumerate(lines) if "tmem.allocate(" in line)
+        return next(line.strip() for line in reversed(lines[:index]) if "warp_idx" in line)
+
+    def test_the_declared_role_is_where_the_allocation_lands(self) -> None:
+        # The corpus Schedule declares the epilogue, which is what the inference used to
+        # pick, so this half also fixes the behaviour the hardware evidence was taken on.
+        self.assertIn("warp_idx <= 3", self._allocating_branch(self._emit_with_owner("epilogue")))
+        # And naming a different role moves the instruction, which is the whole point:
+        # a decision the Schedule can state is a decision an author can change.
+        self.assertIn("warp_idx == MMA_WARP", self._allocating_branch(self._emit_with_owner("mma")))
+
+    def test_an_undeclared_owner_is_refused_rather_than_guessed(self) -> None:
+        document = json.loads(SCHEDULE.read_text(encoding="utf-8"))
+        for allocation in document["allocations"]:
+            if allocation["space"] == "tensor":
+                allocation.pop("allocating_role")
+        # Structurally incomplete, so it does not survive construction -- there is no
+        # ill-typed Schedule for a later stage to reason about.
+        with self.assertRaisesRegex(ValueError, "allocating_role"):
+            Schedule.from_dict(document)
+
+
 class BodyEmissionTest(unittest.TestCase):
     """Each of these was a bug the B200 found, now derived rather than written."""
 
@@ -314,9 +355,14 @@ class EmittedKernelObservationTest(unittest.TestCase):
 
     Correctness only. No timing was taken and no comparison against the hand-written
     artifact is claimed.
+
+    The record names the artifact that ran, so a change to the lowering detaches the
+    evidence from the code and this test says so. The answer is a new observation, taken
+    with `tools/observe_lowered_kernel.py`, never an edit to a record: the earlier one
+    stays as history for the Revision it was taken under.
     """
 
-    RECORD = ROOT / "inventory" / "EMITTED_KERNEL_OBSERVATION_20260823.json"
+    RECORD = ROOT / "inventory" / "EMITTED_KERNEL_OBSERVATION_20260824.json"
 
     def test_the_observation_matches_what_the_compiler_lowers_now(self) -> None:
         from open_cake_ir.compiler import Compiler

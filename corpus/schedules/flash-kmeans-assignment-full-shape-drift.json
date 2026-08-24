@@ -45,7 +45,8 @@
     {
       "name": "tmem_accumulator",
       "space": "tensor",
-      "size_bytes": 131072
+      "size_bytes": 131072,
+      "allocating_role": "epilogue"
     }
   ],
   "buffers": [

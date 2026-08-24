@@ -46,7 +46,8 @@
       "name": "tmem_accumulator",
       "space": "tensor",
       "size_bytes": 131072,
-      "tensor_columns": 256
+      "tensor_columns": 256,
+      "allocating_role": "epilogue"
     }
   ],
   "buffers": [

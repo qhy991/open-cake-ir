@@ -455,14 +455,26 @@ class _Emitter:
         raise EmitError("epilogue must write one global buffer")
 
     def _tmem_owner(self) -> Role:
-        """The role that allocates tensor memory: the one that reads the accumulator."""
+        """The role the Schedule says issues the tensor-memory allocation and its release.
 
-        for operation in self.schedule.operations:
-            for name in operation.reads:
-                buffer = self.schedule.buffer(name)
-                if buffer is not None and buffer.space is MemorySpace.TENSOR:
-                    return self.roles[operation.role]
-        raise EmitError("no role reads tensor memory")
+        This used to be inferred: the role of the first operation, in declaration order,
+        whose reads touched tensor memory. That made a hardware-visible decision follow
+        the order operations happened to be written in, and the verifier admits a Schedule
+        where two roles read tensor memory, so the inference was ambiguous by more than
+        accident. The Schedule names it now.
+        """
+
+        allocation = next(
+            (a for a in self.schedule.allocations if a.space is MemorySpace.TENSOR), None
+        )
+        if allocation is None or allocation.allocating_role is None:
+            raise EmitError("no tensor-memory Allocation names an allocating role")
+        role = self.roles.get(allocation.allocating_role)
+        if role is None:
+            raise EmitError(
+                f"allocating role {allocation.allocating_role!r} is not a declared role"
+            )
+        return role
 
     def _named_barriers(self) -> tuple[Barrier, ...]:
         return tuple(

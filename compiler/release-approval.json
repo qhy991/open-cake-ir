@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "51877752ad1b1006f82d6aba302c5fddc954e310ae1e92432a5088e69790ab0d"
+    "canonical_sha256": "0c3730e49967879358c0ac082c2b0cec43b76e809f62ab9e08102deaf820cec8"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "second-kernel ranking calibration; docstring now states the model's actual support"
+  "approval_basis": "tensor-memory allocation ownership becomes a declared fact"
 }

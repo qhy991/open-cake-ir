@@ -1386,6 +1386,25 @@ def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
     roles = {role.name for role in schedule.roles}
     pipelines = {pipeline.name for pipeline in schedule.pipelines}
     barriers = {barrier.name: barrier for barrier in schedule.barriers}
+    active = {operation.role for operation in schedule.operations}
+
+    for index, allocation in enumerate(schedule.allocations):
+        role = allocation.allocating_role
+        if role is None:
+            continue
+        path = f"allocations[{index}].allocating_role"
+        if role not in roles:
+            out.add("ALLOCATION_ROLE_UNKNOWN", path, f"unknown role {role!r}", category)
+        elif role not in active:
+            # The allocation and its release are instructions, so they need a role with
+            # a body to put them in. A role with no operations is not dispatched at all,
+            # and the allocation would never be taken out.
+            out.add(
+                "ALLOCATION_ROLE_INACTIVE",
+                path,
+                f"role {role!r} has no operations, so there is no body to allocate in",
+                category,
+            )
 
     for index, barrier in enumerate(schedule.barriers):
         path = f"barriers[{index}]"

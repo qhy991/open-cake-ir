@@ -360,10 +360,25 @@ class Role:
 
 @dataclass(frozen=True)
 class Allocation:
+    """A region of one memory space, and -- where the space has one -- who takes it out.
+
+    `allocating_role` names the role that issues the allocation and its release. Tensor
+    memory is the only space here that has that protocol: `tcgen05.alloc` is issued by one
+    warp, the address reaches the rest of the CTA through shared memory, and the matching
+    `relinquish_alloc_permit` has to come from the same warp. Which role that is changes
+    when the release becomes visible to the next CTA, so it is a decision the Schedule
+    makes rather than one a backend derives from the order operations happen to be
+    written in.
+
+    A space without an allocation protocol may not name a role, because there would be no
+    instruction for it to place.
+    """
+
     name: str
     space: MemorySpace
     size_bytes: int
     tensor_columns: int | None
+    allocating_role: str | None
 
     @property
     def implied_tensor_columns(self) -> int:
@@ -376,15 +391,26 @@ class Allocation:
         obj = _strict_object(
             value,
             required={"name", "space", "size_bytes"},
-            optional={"tensor_columns"},
+            optional={"tensor_columns", "allocating_role"},
             context=context,
         )
         columns = obj.get("tensor_columns")
+        space = _enum(MemorySpace, obj["space"], f"{context}.space")
+        role = obj.get("allocating_role")
+        if space is MemorySpace.TENSOR and role is None:
+            raise ScheduleParseError(
+                f"{context}.allocating_role is required for a tensor-memory Allocation"
+            )
+        if space is not MemorySpace.TENSOR and role is not None:
+            raise ScheduleParseError(
+                f"{context}.allocating_role names a space with no allocation protocol"
+            )
         return cls(
             _string(obj["name"], f"{context}.name"),
-            _enum(MemorySpace, obj["space"], f"{context}.space"),
+            space,
             _positive_int(obj["size_bytes"], f"{context}.size_bytes"),
             None if columns is None else _positive_int(columns, f"{context}.tensor_columns"),
+            None if role is None else _string(role, f"{context}.allocating_role"),
         )
 
 
