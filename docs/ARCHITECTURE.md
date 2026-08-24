@@ -263,9 +263,9 @@ graph LR
 | Authoring Environment, both arms | implemented |
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
-| Compile → external oracle → GPU measurement | implemented, B200-verified on three emitted operators |
+| Compile → external oracle → GPU measurement | implemented, B200-verified on 4 emitted operators |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
-| Deterministic lowering | implemented for four of five profiles: `lower` generates Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke` and `softmax_b8_smoke`, and warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file |
+| Deterministic lowering | `lower` generates for 5 of the 6 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke` and `layernorm_b8_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file |
 | The filter stage | implemented — a Turn submits a candidate set, every candidate is built and sealed, the set is ordered before any of it runs, and `searches_per_turn` decides how much of it reaches a GPU |
 | Diagnosis routing | implemented — every rejection is routed to the candidate, the verifier, the IR vocabulary or the cost model, and each destination is inferred from a signal the loop already produces |
 | Cost-model ranking | partial, and narrower than it was — see below |

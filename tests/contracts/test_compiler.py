@@ -362,6 +362,32 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(released_gate.compiler_revision_id, released["revision_id"])
         self.assertTrue(released_gate.passed)
 
+    def test_the_architecture_map_counts_the_profiles_that_exist(self) -> None:
+        """The alignment table drifted twice in one day, the second time by one operator.
+
+        It is the document that tells a reader what this implementation is missing, so a
+        count in it that lags the registry sends someone to build what is already there.
+        Both times the fix was to read the registry; this reads it.
+        """
+
+        import re
+
+        from open_cake_ir.compiler.core import _PROFILES
+
+        text = (ROOT / "docs/ARCHITECTURE.md").read_text(encoding="utf-8")
+        match = re.search(r"generates for (\d+) of the (\d+) admitted profiles", text)
+        self.assertIsNotNone(match, "the alignment table no longer states the counts")
+        generating, total = (int(value) for value in match.groups())
+        self.assertEqual(total, len(_PROFILES))
+        self.assertEqual(
+            generating, sum(1 for profile in _PROFILES.values() if profile.backend)
+        )
+        for name, profile in _PROFILES.items():
+            with self.subTest(profile=name):
+                # And every one of them is named, so the table cannot count right while
+                # listing the wrong ones.
+                self.assertIn(f"`{name}`", text)
+
     def test_a_schedule_outside_the_corpus_is_history_something_else_pins(self) -> None:
         """Why an ungated Schedule is allowed to sit in the corpus directory.
 
