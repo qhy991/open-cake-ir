@@ -102,7 +102,10 @@ def main() -> int:
     parser.add_argument(
         "--enable-attribution",
         action="store_true",
-        help="declare correctness_then_profile and expose its checked summary",
+        help=(
+            "profile every correctness-qualified search survivor and expose the "
+            "selected survivor's checked summary"
+        ),
     )
     parser.add_argument(
         "--provider-token-limit",
@@ -240,15 +243,26 @@ def main() -> int:
         evaluation = _object(
             study.get("evaluation_protocol"), "study.evaluation_protocol"
         )
-        if "attribution_evaluation" in evaluation:
+        if evaluation.get("attribution_evaluation") not in {
+            None,
+            "correctness_then_profile",
+            "correctness_then_profile_each_search_survivor",
+        }:
             raise ValueError("Study attribution Evaluation is already declared")
-        evaluation["attribution_evaluation"] = "correctness_then_profile"
+        evaluation["attribution_evaluation"] = (
+            "correctness_then_profile_each_search_survivor"
+        )
         for arm in arms.values():
             environment = _object(arm, "study.arm")
             feedback = environment.get("feedback")
-            if not isinstance(feedback, list) or "profile" in feedback:
+            if (
+                not isinstance(feedback, list)
+                or feedback.count("profile") > 1
+                or ("profile" in feedback and feedback[-1] != "profile")
+            ):
                 raise ValueError("Study attribution feedback authority differs")
-            feedback.append("profile")
+            if "profile" not in feedback:
+                feedback.append("profile")
     study["study_id"] = arguments.study_id
 
     output.parent.resolve(strict=True)

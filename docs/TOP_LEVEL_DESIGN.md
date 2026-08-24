@@ -271,8 +271,9 @@ fixed CompilerRevision + fixed Study/Workload Contracts
 For a Study that declares `attribution_evaluation`, the smallest complete profiler slice
 stays inside that same Evaluation path:
 
-- the outcome is one correctness-qualified candidate launch observed by Nsight Compute,
-  retained and routed into the next Turn; profiler latency is a non-goal;
+- every correctness-qualified search survivor is separately observed by Nsight Compute
+  and retained; the selected survivor's checked projection is routed into the next Turn,
+  while profiler latency is a non-goal;
 - the Study owns whether the assay runs, the Executor owns the exact NCU executable, and
   the `profile` artifact owns the raw NCU CSV. Its metric summary is a checked projection
   recomputed from those bytes, never a second handwritten observation;

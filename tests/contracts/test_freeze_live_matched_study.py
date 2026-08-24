@@ -194,7 +194,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             study = json.loads(output.read_text())
             self.assertEqual(
                 study["evaluation_protocol"]["attribution_evaluation"],
-                "correctness_then_profile",
+                "correctness_then_profile_each_search_survivor",
             )
             self.assertEqual(study["arms"]["open_cake"]["feedback"][-1], "profile")
             self.assertEqual(study["arms"]["direct_cuda"]["feedback"][-1], "profile")

@@ -35,14 +35,17 @@ causal effect, serving and paper reproduction are not.
   `COMPILER_REVISION_IDENTITY_INCIDENT_20260824.json` records why v4 and v6 cannot be reused or treated as unique
   released identities. v8 exposes no uncalibrated cost order: its `calibration_coverage` is empty and eligible
   candidates retain provider order.
-- Current Executor Revision `open-cake-ir-b200-v17` binds 34 runtime sources, including deterministic external
+- Current Executor Revision `open-cake-ir-b200-v18` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
   and no-GPU Triton-to-CUBIN qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor.
   The Executor pins NCU 2026.1.1.0 by path, bytes and size. G8 r6 retains its exact v1 closure, later source baselines
-  retain v2–v5, and v6–v16 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all seventeen revisions. The Lab
+  retain v2–v5, and v6–v17 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all eighteen revisions. The Lab
   makes Claim Scope the single authority for choosing the closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
+- Current matched Study fixtures profile every correctness-qualified search survivor through the existing no-timing
+  attribution purpose and feed back only the selected survivor's checked projection. Frozen selected-only evidence
+  retains its earlier operation spelling; a current live successor has not yet been B200-qualified.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
 - Lab owns matched Turn/budget/checkpoint control and the exact-shape Portfolio handoff; Compiler does not own
   KernelSeed or held-out policy.

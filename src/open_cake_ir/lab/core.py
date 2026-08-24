@@ -117,6 +117,8 @@ _ONE_RUN_PER_ARM_SCOPES = {
     "system_qualification_only",
     "artifact_optimization_only",
 }
+_LEGACY_ATTRIBUTION_EVALUATION = "correctness_then_profile"
+_ATTRIBUTION_EVALUATION = "correctness_then_profile_each_search_survivor"
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -1185,6 +1187,7 @@ class _SearchedCandidate:
     environment_result: EnvironmentResult
     launchable: LaunchableCandidate
     receipt: EvaluationReceipt
+    attribution: EvaluationReceipt | None
 
 
 
@@ -1537,7 +1540,11 @@ class Lab:
             study.document.get("evaluation_protocol"),
             "study.evaluation_protocol",
         ).get("attribution_evaluation")
-        if attribution_evaluation not in {None, "correctness_then_profile"}:
+        if attribution_evaluation not in {
+            None,
+            _LEGACY_ATTRIBUTION_EVALUATION,
+            _ATTRIBUTION_EVALUATION,
+        }:
             raise ValueError("Study Contract attribution Evaluation differs")
         profile_feedback = ["profile"] if attribution_evaluation is not None else []
         if open_cake.get("feedback") != [
@@ -2039,6 +2046,10 @@ class Lab:
         evaluation_protocol = _object(
             lock.document["evaluation_protocol"], "campaign_lock.evaluation_protocol"
         )
+        attribution_evaluation = evaluation_protocol.get("attribution_evaluation")
+        profile_each_search_survivor = (
+            attribution_evaluation == _ATTRIBUTION_EVALUATION
+        )
         expected_protocol_sha256 = sha256(
             _canonical_json_bytes(evaluation_protocol)
         ).hexdigest()
@@ -2361,6 +2372,52 @@ class Lab:
                             != launchable.launch_spec_sha256
                         ):
                             raise ValueError("LaunchableCandidate artifact custody is incomplete")
+
+                        def evaluate_attribution(
+                            candidate: LaunchableCandidate,
+                        ) -> EvaluationReceipt:
+                            attempt = evaluator.evaluate(
+                                candidate,
+                                case_id=case_id,
+                                purpose="attribution",
+                            )
+                            ledger.append(
+                                "evaluation_attempt_completed",
+                                {
+                                    "turn": turn_number,
+                                    "purpose": "attribution",
+                                    "candidate_sha256": candidate.candidate_sha256,
+                                    "objects": _archive_logical_attempt(
+                                        evidence, attempt
+                                    ),
+                                },
+                            )
+                            receipt = attempt.final_receipt
+                            if receipt is None:
+                                raise RuntimeError(
+                                    "attribution Evaluation has no final receipt"
+                                )
+                            _validate_receipt_authority(
+                                receipt,
+                                candidate=candidate,
+                                workload_sha256=workload_sha256,
+                                protocol_sha256=expected_protocol_sha256,
+                                case_id=case_id,
+                                purpose="attribution",
+                            )
+                            ledger.append(
+                                "candidate_evaluated",
+                                {
+                                    "turn": turn_number,
+                                    "purpose": "attribution",
+                                    "candidate_sha256": candidate.candidate_sha256,
+                                    "objects": _archive_evaluation_receipt(
+                                        evidence, receipt
+                                    ),
+                                },
+                            )
+                            return receipt
+
                         # Search-evaluate the candidates the filter kept, in its order.
                         # Search is the assay that exists to choose; confirmatory stays
                         # single because that one is the measurement a claim rests on.
@@ -2450,12 +2507,19 @@ class Lab:
                                     ),
                                 },
                             )
+                            entry_attribution = (
+                                evaluate_attribution(entry_launchable)
+                                if profile_each_search_survivor
+                                and entry_search.correctness_passed
+                                else None
+                            )
                             searched.append(
                                 _SearchedCandidate(
                                     entry_submission,
                                     entry_result,
                                     entry_launchable,
                                     entry_search,
+                                    entry_attribution,
                                 )
                             )
 
@@ -2614,51 +2678,19 @@ class Lab:
                             )
                         qualified = confirmed is not None and _receipt_qualifies(confirmed)
                         latency = _receipt_latency_ms(confirmed) if qualified else None
-                        # Attribution runs only after a candidate qualifies. Profiling one
-                        # that did not would spend device time to explain a result nobody
-                        # will act on, and the assay is declared by the Study rather than
-                        # assumed so a Campaign that cannot afford it simply omits it.
-                        attribution: EvaluationReceipt | None = None
-                        if qualified and "attribution_evaluation" in evaluation_protocol:
-                            live_stage = "evaluation"
-                            attribution_attempt = evaluator.evaluate(
-                                launchable,
-                                case_id=case_id,
-                                purpose="attribution",
-                            )
-                            ledger.append(
-                                "evaluation_attempt_completed",
-                                {
-                                    "turn": turn_number,
-                                    "purpose": "attribution",
-                                    "candidate_sha256": launchable.candidate_sha256,
-                                    "objects": _archive_logical_attempt(
-                                        evidence, attribution_attempt
-                                    ),
-                                },
-                            )
-                            attribution = attribution_attempt.final_receipt
-                            if attribution is None:
-                                raise RuntimeError("attribution Evaluation has no final receipt")
-                            _validate_receipt_authority(
-                                attribution,
-                                candidate=launchable,
-                                workload_sha256=workload_sha256,
-                                protocol_sha256=expected_protocol_sha256,
-                                case_id=case_id,
-                                purpose="attribution",
-                            )
-                            ledger.append(
-                                "candidate_evaluated",
-                                {
-                                    "turn": turn_number,
-                                    "purpose": "attribution",
-                                    "candidate_sha256": launchable.candidate_sha256,
-                                    "objects": _archive_evaluation_receipt(
-                                        evidence, attribution
-                                    ),
-                                },
-                            )
+                        # The current assay already profiled every correctness-passing
+                        # search survivor. The selected profile is feedback, not an
+                        # acceptance input. Frozen Studies retain the earlier
+                        # selected-after-confirmation operation at this compatibility
+                        # edge.
+                        attribution = selected.attribution
+                        if (
+                            not profile_each_search_survivor
+                            and qualified
+                            and attribution_evaluation
+                            == _LEGACY_ATTRIBUTION_EVALUATION
+                        ):
+                            attribution = evaluate_attribution(launchable)
                         observations.append(
                             TurnObservation(
                                 turn_number,
@@ -3638,11 +3670,13 @@ class Lab:
             selections[turn] = payload
 
         observations: list[TurnObservation] = []
-        searches_per_turn = int(
-            _object(lock.document["evaluation_protocol"], "evaluation_protocol").get(
-                "searches_per_turn", 1
-            )
+        evaluation_protocol = _object(
+            lock.document["evaluation_protocol"], "evaluation_protocol"
         )
+        searches_per_turn = int(
+            evaluation_protocol.get("searches_per_turn", 1)
+        )
+        attribution_evaluation = evaluation_protocol.get("attribution_evaluation")
         for turn, provider_candidates in sorted(provider_candidates_by_turn.items()):
             if turn in candidate_set_turns:
                 if turn not in filters:
@@ -3746,16 +3780,25 @@ class Lab:
                     for key in receipts
                     if key[0] == turn and key[1] == "attribution"
                 ]
-                attribution_declared = (
-                    "attribution_evaluation"
-                    in _object(
-                        lock.document["evaluation_protocol"], "evaluation_protocol"
+                expected_attributions = (
+                    [
+                        candidate
+                        for candidate in searched_candidates
+                        if receipts[(turn, "search", candidate)].correctness_passed
+                    ]
+                    if attribution_evaluation == _ATTRIBUTION_EVALUATION
+                    else (
+                        [selected]
+                        if qualified
+                        and attribution_evaluation
+                        == _LEGACY_ATTRIBUTION_EVALUATION
+                        else []
                     )
                 )
                 if (
-                    len(attributions)
-                    != (1 if qualified and attribution_declared else 0)
-                    or any(key[2] != selected for key in attributions)
+                    len(attributions) != len(expected_attributions)
+                    or {key[2] for key in attributions}
+                    != set(expected_attributions)
                 ):
                     return False
                 observations.append(
@@ -3816,12 +3859,6 @@ class Lab:
                     filter_disposition.get(turn, {}).get(candidate_sha256)
                     != "rejected"
                 ):
-                    return False
-
-        for turn, purpose, candidate_sha256 in receipts:
-            if purpose == "attribution":
-                selected = selections.get(turn)
-                if selected is not None and selected.get("candidate_sha256") != candidate_sha256:
                     return False
 
         for turn, candidate_sha256 in launchables:

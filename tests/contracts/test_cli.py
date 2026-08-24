@@ -78,7 +78,7 @@ class CliContractTests(unittest.TestCase):
                     "preflight",
                     str(
                         ROOT
-                        / "contracts/studies/matched-search-system-qualification-v15.json"
+                        / "contracts/studies/matched-search-system-qualification-v16.json"
                     ),
                 ]
             )
@@ -117,7 +117,7 @@ class CliContractTests(unittest.TestCase):
                         str(ROOT),
                         "lab",
                         "preflight",
-                        str(ROOT / "contracts/studies/matched-search-infrastructure-v15.json"),
+                        str(ROOT / "contracts/studies/matched-search-infrastructure-v16.json"),
                         "--output",
                         str(lock_path),
                     ]
@@ -254,14 +254,14 @@ class CliContractTests(unittest.TestCase):
                     str(ROOT),
                     "lab",
                     "preflight",
-                    str(ROOT / "contracts/studies/matched-search-infrastructure-v15.json"),
+                    str(ROOT / "contracts/studies/matched-search-infrastructure-v16.json"),
                 ]
             )
 
         result = json.loads(output.getvalue())
         self.assertEqual(code, 0)
         self.assertEqual(
-            result["study_id"], "open-cake-ir-matched-search-contract-fixture-v15"
+            result["study_id"], "open-cake-ir-matched-search-contract-fixture-v16"
         )
         self.assertEqual(len(result["campaign_lock_sha256"]), 64)
         self.assertEqual(len(result["run_order"]), 6)
