@@ -84,7 +84,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command.
-  The current local suite passes 340 tests plus 223 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 340 tests plus 226 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
@@ -97,8 +97,11 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   activity on both initial and resumed singleton Turns. The Lab derives the required live qualification from Claim Scope, so
   artifact-only composition accepts this tool-rich receipt while scientific/system scopes retain the closed receipt.
   Both closed and tool-rich Codex 0.144.4 candidate-set successors are separately live-qualified for Open Cake and
-  direct CUDA. Account/admin policy determines the effective catalog, and external mutation or direct GPU
-  measurement remains unauthorized.
+  direct CUDA. A second closed qualification now binds the paper-reported `xhigh` reasoning value to the same pinned
+  executable and three-member envelope: both arms passed add/resume, usage and reference-visibility checks under
+  external sealed Evidence. This proves provider transport at `xhigh`; no scientific Study has yet frozen the 80M
+  endpoint, and no paper result is implied. Account/admin policy determines the effective catalog, while external
+  mutation and direct GPU measurement remain unauthorized.
 - The legacy source authority is the clean final Stage 6 revision `2fa79092...`, tree `b02d730b...`. It was initially
   observed 68 commits ahead; origin now carries the final revision and a verified complete-history bundle provides
   an independent recovery path under `migration/bundles/`.
@@ -111,8 +114,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   Executor v22 corrects only the Analysis Plan of future Studies; Executor v23 closes semantic events only for new
   matched Studies; Executor v24 makes reasoning effort an explicit qualified treatment factor. This local
   150k, task-informed package study also freezes the provider's distinct `max` reasoning level and complete
-  implementation skeletons; it is not the paper's `xhigh`, 80M clean-start comparison. Serving and paper
-  reproduction remain unsupported.
+  implementation skeletons. The later `xhigh` capability qualification does not rewrite that frozen treatment or
+  supply an 80M clean-start Study. Serving and paper reproduction remain unsupported.
 - `matched-search-clean-start-reference-v26.json` is a zero-GPU successor fixture that replaces both arm references
   together: Open Cake receives only its authoring interface and direct CUDA receives a canonical ABI with an empty
   kernel body. Its contamination gate validates reference access only; its inherited 150k/`max` treatment still

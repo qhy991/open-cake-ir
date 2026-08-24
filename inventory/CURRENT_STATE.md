@@ -86,7 +86,7 @@ causal effect, serving and paper reproduction are not.
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 340 tests plus 223 subtests; the earlier remote qualification passed its
+- The current local contract suite passes 340 tests plus 226 subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
@@ -94,7 +94,10 @@ causal effect, serving and paper reproduction are not.
   `artifact_optimization_only` Study without executing it. Private `qhy991/open-cake-ir` is the sole source owner;
   legacy remains read-only historical/rollback evidence.
 - Both closed and tool-rich Codex 0.144.4 candidate-set qualifications pass for Open Cake and direct CUDA add/resume
-  lifecycles. The first non-scientific live Campaign is retained under
+  lifecycles. A separate closed `xhigh` successor also passes for both arms with the pinned executable, three-member
+  envelope, exact reference visibility and no GPU authority. It closes only the provider-capability prerequisite:
+  frozen local Studies remain `max`, and no 80M scientific authority exists. The first non-scientific live Campaign
+  is retained under
   `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v1` as bounded failure evidence: Open Cake
   authored three launchable members, then the broker worker could not traverse the temporary checkout; direct CUDA
   emitted two JSON-equivalent bracketed terminals that the v13 byte-only normalizer rejected. It launched no GPU,
