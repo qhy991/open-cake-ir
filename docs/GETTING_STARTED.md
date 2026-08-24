@@ -178,6 +178,38 @@ id -nG
 [`inventory/GPU_QUICKSTART_QUALIFICATION_V3_20260823.json`](../inventory/GPU_QUICKSTART_QUALIFICATION_V3_20260823.json)。
 该摘要绑定 create-only worker result、完整 stdout 和包含真实 job ID 的 `gpu-run` stderr。
 
+## 5b. 另外三个算子
+
+教程例子是 Flash-KMeans，但语料里有四个可发射的 Profile。另外三个都是行内归约，都只声明 Schedule、不改后端：
+
+| Schedule | Profile | 后端 | 需要的新词汇 |
+| --- | --- | --- | --- |
+| `corpus/schedules/rmsnorm-b8-smoke.json` | `rmsnorm_b8_smoke` | Triton | — |
+| `corpus/schedules/softmax-b8-smoke.json` | `softmax_b8_smoke` | Triton | `exp`、`div`、`max` 折叠 |
+| `corpus/schedules/layernorm-b8-smoke.json` | `layernorm_b8_smoke` | Triton | 无 |
+
+不需要 GPU 就能看它降出什么：
+
+```bash
+./.venv/bin/python -c "
+from pathlib import Path
+from open_cake_ir.compiler import Compiler
+c = Compiler.load(Path('.'), Path('compiler/revision.lock.json'))
+print(c.lower(c.assess_file(Path('corpus/schedules/layernorm-b8-smoke.json'))).source)
+"
+```
+
+在 B200 上核对正确性，用的是仓库里的仪器而不是临时脚本——记录会写成一个新文件，它拒绝覆盖已有的：
+
+```bash
+python tools/observe_lowered_kernel.py \
+  --schedule corpus/schedules/layernorm-b8-smoke.json \
+  --observed-at 2026-01-01T00:00:00Z \
+  --out /new/path/LAYERNORM_OBSERVATION.json
+```
+
+`inventory/*_OBSERVATION_*.json` 是已经留下的记录。每一条都钉住它运行过的那个产物的 `source_sha256`，所以改了 Lowering，证据就与代码脱钩——正确的做法是重新观测，永远不是改记录。
+
 ## 6. 三条路径不要混淆
 
 | 路径 | 回答的问题 | 能否形成科学结论 |
