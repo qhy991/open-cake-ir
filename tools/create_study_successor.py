@@ -7,6 +7,7 @@ import argparse
 import json
 import sys
 import tempfile
+from hashlib import sha256
 from pathlib import Path
 from typing import cast
 
@@ -14,7 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
-from open_cake_ir.lab import ExecutorRevision, Lab  # noqa: E402
+from open_cake_ir.lab import (  # noqa: E402
+    ExecutorRevision,
+    Lab,
+    ProviderQualificationReceipt,
+)
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -44,6 +49,9 @@ def main() -> int:
         action="store_true",
         help="declare correctness_then_profile and expose its checked summary",
     )
+    parser.add_argument("--maximum-candidates-per-turn", type=int)
+    parser.add_argument("--searches-per-turn", type=int)
+    parser.add_argument("--search-materiality-ratio", type=float)
     arguments = parser.parse_args()
 
     root = arguments.project_root.resolve(strict=True)
@@ -91,13 +99,84 @@ def main() -> int:
         "canonical_sha256": gate.compiler_revision_sha256,
     }
     if document.get("kind") == "portfolio":
-        if arguments.enable_attribution:
-            raise ValueError("portfolio does not use matched-search attribution")
+        if arguments.enable_attribution or any(
+            value is not None
+            for value in (
+                arguments.maximum_candidates_per_turn,
+                arguments.searches_per_turn,
+                arguments.search_materiality_ratio,
+            )
+        ):
+            raise ValueError("portfolio does not use matched-search authoring options")
         document["compiler_revision"] = compiler_reference
     else:
         arms = _object(document.get("arms"), "Study.arms")
         open_cake = _object(arms.get("open_cake"), "Study.arms.open_cake")
         open_cake["compiler_revision"] = compiler_reference
+        if arguments.maximum_candidates_per_turn is not None:
+            if arguments.maximum_candidates_per_turn <= 0:
+                raise ValueError("maximum Candidates per Turn must be positive")
+            budget = _object(document.get("budget"), "Study.budget")
+            budget["maximum_candidates_per_turn"] = (
+                arguments.maximum_candidates_per_turn
+            )
+            evaluation = _object(
+                document.get("evaluation_protocol"), "Study.evaluation_protocol"
+            )
+            if arguments.searches_per_turn is not None:
+                evaluation["searches_per_turn"] = arguments.searches_per_turn
+            if arguments.search_materiality_ratio is not None:
+                evaluation["search_materiality_ratio"] = (
+                    arguments.search_materiality_ratio
+                )
+            optimization = document.get("claim_scope") == "artifact_optimization_only"
+            receipt_path = (
+                "contracts/providers/fixture-provider-optimization-candidate-set-v1.json"
+                if optimization
+                else "contracts/providers/fixture-provider-candidate-set-v1.json"
+            )
+            receipt = ProviderQualificationReceipt.load(root / receipt_path)
+            prompt_paths = {
+                "open_cake": (
+                    "src/open_cake_ir/lab/prompts/"
+                    + (
+                        "open_cake_optimization_candidate_set_turn_v1.md"
+                        if optimization
+                        else "open_cake_candidate_set_turn_v1.md"
+                    )
+                ),
+                "direct_cuda": (
+                    "src/open_cake_ir/lab/prompts/"
+                    + (
+                        "direct_cuda_optimization_candidate_set_turn_v1.md"
+                        if optimization
+                        else "direct_cuda_candidate_set_turn_v1.md"
+                    )
+                ),
+            }
+            for arm_name, raw_environment in arms.items():
+                environment = _object(raw_environment, f"Study.arms.{arm_name}")
+                provider = _object(
+                    environment.get("provider"), f"Study.arms.{arm_name}.provider"
+                )
+                provider["revision"] = receipt.provider_revision
+                provider["qualification"] = {
+                    "path": receipt_path,
+                    "canonical_sha256": receipt.canonical_sha256,
+                }
+                prompt_path = prompt_paths[arm_name]
+                environment["prompt_template"] = {
+                    "path": prompt_path,
+                    "sha256": sha256((root / prompt_path).read_bytes()).hexdigest(),
+                }
+        elif any(
+            value is not None
+            for value in (
+                arguments.searches_per_turn,
+                arguments.search_materiality_ratio,
+            )
+        ):
+            raise ValueError("search options require a Candidate-set authoring bound")
         if arguments.enable_attribution:
             evaluation = _object(
                 document.get("evaluation_protocol"), "Study.evaluation_protocol"

@@ -45,7 +45,15 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     if line.startswith("CANDIDATE_PATH_JSON=")
                 )
                 candidate = Path(json.loads(candidate_line.split("=", 1)[1]))
-                thread_id = "01234567-89ab-cdef-0123-456789abcdef"
+                arm_lines = [
+                    line for line in prompt.splitlines() if line.startswith("ARM=")
+                ]
+                arm = arm_lines[0].split("=", 1)[1] if arm_lines else "open_cake"
+                thread_id = (
+                    "11234567-89ab-cdef-0123-456789abcdef"
+                    if arm == "direct_cuda"
+                    else "01234567-89ab-cdef-0123-456789abcdef"
+                )
                 reported_thread_id = (
                     "fedcba98-7654-3210-fedc-ba9876543210"
                     if resumed and {break_resumed_thread!r}
@@ -65,19 +73,30 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 change = "update" if resumed else "add"
                 if candidate.exists() is not resumed:
                     raise SystemExit(35)
-                expected_line = next(
+                candidate_set_lines = [
                     line for line in prompt.splitlines()
-                    if line.startswith("Write exactly this JSON object: ")
-                )
-                candidate.write_text(
-                    json.dumps(
-                        json.loads(expected_line.split(": ", 1)[1]),
-                        sort_keys=True,
-                    ),
-                    encoding="utf-8",
-                )
+                    if line.startswith("EXPECTED_CANDIDATE_SET_JSON=")
+                ]
+                if candidate_set_lines:
+                    expected = json.loads(candidate_set_lines[0].split("=", 1)[1])
+                    candidate.write_text(
+                        json.dumps(expected, sort_keys=True, separators=(",", ":")) + "\\n",
+                        encoding="utf-8",
+                    )
+                else:
+                    expected_line = next(
+                        line for line in prompt.splitlines()
+                        if line.startswith("Write exactly this JSON object: ")
+                    )
+                    candidate.write_text(
+                        json.dumps(
+                            json.loads(expected_line.split(": ", 1)[1]),
+                            sort_keys=True,
+                        ),
+                        encoding="utf-8",
+                    )
                 terminal_document = {{
-                    "arm": "open_cake",
+                    "arm": arm,
                     "candidate_written": True,
                     "kind": "open_cake_ir_turn",
                     "turn": turn,
@@ -155,12 +174,12 @@ class ProviderQualificationContractTests(unittest.TestCase):
         provider_revision: str,
         run_id: str,
         feature_policy: str = "closed_research",
+        maximum_candidates_per_turn: int | None = None,
     ) -> tuple[subprocess.CompletedProcess[bytes], Path, Path, Path]:
         receipt_path = root / "provider-qualification.json"
         anchor_path = root / "provider-qualification-anchor.json"
         evidence_root = root / "evidence"
-        completed = subprocess.run(
-            [
+        command = [
                 sys.executable,
                 str(ROOT / "tools/qualify_codex_provider.py"),
                 "--executable",
@@ -188,7 +207,16 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 run_id,
                 "--feature-policy",
                 feature_policy,
-            ],
+            ]
+        if maximum_candidates_per_turn is not None:
+            command.extend(
+                [
+                    "--maximum-candidates-per-turn",
+                    str(maximum_candidates_per_turn),
+                ]
+            )
+        completed = subprocess.run(
+            command,
             cwd=ROOT,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -292,6 +320,54 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     "resumed_provider_events",
                 },
             )
+
+    def test_candidate_set_qualification_covers_both_arm_projections(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable)
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root,
+                executable,
+                provider_revision="codex-candidate-set-fixture-v1",
+                run_id="codex-provider-candidate-set",
+                maximum_candidates_per_turn=3,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            receipt = ProviderQualificationReceipt.load(receipt_path)
+            evidence = EvidenceStore.open(evidence_root)
+            audit = evidence.audit_run("codex-provider-candidate-set")
+            observed = next(
+                event
+                for event in evidence.replay_events(audit.run_id)
+                if event["kind"] == "provider_qualification_observed"
+            )["payload"]
+
+            self.assertTrue(audit.integrity)
+            self.assertEqual(
+                audit.endpoint["submission_contract"],
+                "candidate_set_envelope_v1",
+            )
+            self.assertEqual(
+                audit.endpoint["arms_qualified"],
+                ["open_cake", "direct_cuda"],
+            )
+            self.assertEqual(set(observed["arms"]), {"open_cake", "direct_cuda"})
+            self.assertNotEqual(
+                observed["arms"]["open_cake"]["thread_id"],
+                observed["arms"]["direct_cuda"]["thread_id"],
+            )
+            for arm in ("open_cake", "direct_cuda"):
+                arm_observation = observed["arms"][arm]
+                self.assertEqual(len(arm_observation["initial_candidate_sha256s"]), 3)
+                self.assertEqual(len(arm_observation["resumed_candidate_sha256s"]), 3)
+                envelope = json.loads(
+                    (root / "workspace" / arm / "candidate-set.json").read_text()
+                )
+                self.assertEqual(envelope["arm"], arm)
+                self.assertEqual(len(envelope["candidates"]), 3)
+            self.assertEqual(receipt.scope, "live_two_turn_current_provider")
 
     def test_incomplete_two_turn_observation_cannot_issue_a_live_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -33,6 +33,7 @@ from .faults import RunProtocolFault
 from .routing import CANDIDATE, COST_MODEL, route_rejection
 from .portfolio import KernelSeed
 from .providers import (
+    CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
     ProviderQualificationReceipt,
     ProviderTurn,
@@ -1105,6 +1106,7 @@ class TurnRequest:
     cumulative_provider_tokens: int
     thread_id: str | None
     feedback: Mapping[str, object]
+    maximum_candidates_per_turn: int
 
 
 class RunProvider(Protocol):
@@ -1272,6 +1274,9 @@ class Lab:
         ) or open_cake.get("scaffold") != direct_cuda.get("scaffold"):
             raise ValueError("matched Authoring Environments differ in provider or scaffold")
         _digest(direct_cuda.get("toolchain_sha256"), "study.arms.direct_cuda.toolchain_sha256")
+        candidate_set_submission = "maximum_candidates_per_turn" in _object(
+            study.document.get("budget"), "study.budget"
+        )
         provider = _object(open_cake.get("provider"), "study.arms.provider")
         provider_fields = {
             "revision",
@@ -1355,6 +1360,13 @@ class Lab:
                         **(
                             {"event_contract": provider["event_contract"]}
                             if "event_contract" in provider
+                            else {}
+                        ),
+                        **(
+                            {
+                                "submission_contract": CANDIDATE_SET_ENVELOPE_V1
+                            }
+                            if candidate_set_submission
                             else {}
                         ),
                     }
@@ -1499,6 +1511,24 @@ class Lab:
                 prompt.get("sha256"), f"study.arms.{arm_name}.prompt_template.sha256"
             ) != sha256(prompt_path.read_bytes()).hexdigest():
                 raise ValueError("Study Contract prompt bytes differ")
+            expected_prompt_markers = {
+                "{{RUN_ID}}",
+                "{{ARM}}",
+                "{{TURN}}",
+                "{{CANDIDATE_PATH}}",
+                "{{CUMULATIVE_PROVIDER_TOKENS}}",
+                "{{FEEDBACK_JSON}}",
+                "{{REFERENCE_BUNDLE}}",
+            }
+            if candidate_set_submission:
+                expected_prompt_markers.add("{{MAXIMUM_CANDIDATES_PER_TURN}}")
+            prompt_text = prompt_path.read_text(encoding="utf-8")
+            if (
+                set(re.findall(r"\{\{[A-Z0-9_]+\}\}", prompt_text))
+                != expected_prompt_markers
+                or any(prompt_text.count(marker) != 1 for marker in expected_prompt_markers)
+            ):
+                raise ValueError("Study Contract prompt marker set differs")
         if open_cake.get("tool_surface") != ["submit_schedule"] or direct_cuda.get(
             "tool_surface"
         ) != ["submit_cuda"]:
@@ -1575,8 +1605,12 @@ class Lab:
         checkpoints = budget.get("checkpoints")
         limit = budget.get("limit")
         maximum_turns = budget.get("maximum_turns")
+        maximum_candidates_per_turn = budget.get("maximum_candidates_per_turn", 1)
+        budget_fields = {"unit", "limit", "checkpoints", "maximum_turns"}
+        if candidate_set_submission:
+            budget_fields.add("maximum_candidates_per_turn")
         if (
-            set(budget) != {"unit", "limit", "checkpoints", "maximum_turns"}
+            set(budget) != budget_fields
             or
             budget.get("unit") != "provider_tokens"
             or not isinstance(limit, int)
@@ -1590,6 +1624,9 @@ class Lab:
             or not isinstance(maximum_turns, int)
             or isinstance(maximum_turns, bool)
             or maximum_turns <= 0
+            or not isinstance(maximum_candidates_per_turn, int)
+            or isinstance(maximum_candidates_per_turn, bool)
+            or maximum_candidates_per_turn <= 0
         ):
             raise ValueError("Study Contract budget grid differs")
         if claim_scope == "system_qualification_only" and (
@@ -1615,6 +1652,10 @@ class Lab:
         searches = evaluation.get("searches_per_turn", 1)
         if not isinstance(searches, int) or isinstance(searches, bool) or searches < 1:
             raise ValueError("Study Contract searches_per_turn differs")
+        if searches > maximum_candidates_per_turn:
+            raise ValueError(
+                "Study Contract searches_per_turn exceeds maximum_candidates_per_turn"
+            )
         # How much faster the measurement has to be before the order counts as wrong.
         # A Study that searches more than one candidate has to say, because without it
         # every inversion inside the noise would be routed to the cost model as a defect
@@ -1992,6 +2033,9 @@ class Lab:
         budget = _object(resolved_inputs["budget"], "campaign_lock.resolved_inputs.budget")
         checkpoints = cast(list[int], budget["checkpoints"])
         maximum_turns = cast(int, budget["maximum_turns"])
+        maximum_candidates_per_turn = cast(
+            int, budget.get("maximum_candidates_per_turn", 1)
+        )
         evaluation_protocol = _object(
             lock.document["evaluation_protocol"], "campaign_lock.evaluation_protocol"
         )
@@ -2069,6 +2113,10 @@ class Lab:
             expected_provider_configuration["event_contract"] = provider_document[
                 "event_contract"
             ]
+        if "maximum_candidates_per_turn" in budget:
+            expected_provider_configuration[
+                "submission_contract"
+            ] = CANDIDATE_SET_ENVELOPE_V1
         if (
             getattr(provider, "configuration", None) != expected_provider_configuration
             or qualification.canonical_sha256
@@ -2127,6 +2175,7 @@ class Lab:
                             cumulative_tokens,
                             thread_id,
                             feedback,
+                            maximum_candidates_per_turn,
                         )
                     )
                     if thread_id is not None and provider_turn.thread_id != thread_id:
@@ -2138,7 +2187,9 @@ class Lab:
                         media_type="application/x-ndjson",
                     )
                     if (
-                        not provider_turn.candidates
+                        events_object.sha256 != provider_turn.raw_events_sha256
+                        or not provider_turn.candidates
+                        or len(provider_turn.candidates) > maximum_candidates_per_turn
                         or len(provider_turn.candidates)
                         != len(provider_turn.candidate_sha256s)
                         or len(set(provider_turn.candidate_sha256s))
@@ -2230,6 +2281,42 @@ class Lab:
                             ],
                         },
                     )
+                    # A rejected member remains evidence even when another member is
+                    # launchable. Otherwise the archive would retain only a disposition
+                    # bit and lose the concrete feedback needed to improve the next set.
+                    for rejected_submission, rejected_result in built:
+                        if rejected_result.disposition != "rejected":
+                            continue
+                        decision = route_rejection(rejected_result.feedback)
+                        rejection_payload: dict[str, object] = {
+                            "turn": turn_number,
+                            "candidate_sha256": rejected_submission.sha256,
+                            "feedback": dict(rejected_result.feedback),
+                            "routed_to": decision.destination,
+                            "routing_reason": decision.reason,
+                        }
+                        if rejected_result.artifact_payloads:
+                            references = []
+                            rejected_roles = []
+                            for role, payload in sorted(
+                                rejected_result.artifact_payloads.items()
+                            ):
+                                try:
+                                    references.append(
+                                        evidence.put(
+                                            payload,
+                                            media_type=_candidate_artifact_media_type(
+                                                role.rsplit("_", 1)[-1]
+                                            ),
+                                        ).reference(role)
+                                    )
+                                except (OSError, ValueError):
+                                    rejected_roles.append(role)
+                            if references:
+                                rejection_payload["objects"] = references
+                            if rejected_roles:
+                                rejection_payload["artifact_rejections"] = rejected_roles
+                        ledger.append("candidate_rejected", rejection_payload)
                     submission, environment_result = built[launchable_first[0]]
                     if environment_result.disposition == "rejected":
                         ledger.append(
@@ -2251,39 +2338,6 @@ class Lab:
                             )
                         )
                         feedback = environment_result.feedback
-                        # A rejection that says only "refused" makes every failure the
-                        # candidate's fault, and the outer loop that turns recurring
-                        # failures into rules has nothing to accumulate.
-                        decision = route_rejection(feedback)
-                        rejection_payload: dict[str, object] = {
-                            "turn": turn_number,
-                            "candidate_sha256": submission.sha256,
-                            "feedback": dict(feedback),
-                            "routed_to": decision.destination,
-                            "routing_reason": decision.reason,
-                        }
-                        if environment_result.artifact_payloads:
-                            references = []
-                            rejected_roles = []
-                            for role, payload in sorted(
-                                environment_result.artifact_payloads.items()
-                            ):
-                                try:
-                                    references.append(
-                                        evidence.put(
-                                            payload,
-                                            media_type=_candidate_artifact_media_type(
-                                                role.rsplit("_", 1)[-1]
-                                            ),
-                                        ).reference(role)
-                                    )
-                                except (OSError, ValueError):
-                                    rejected_roles.append(role)
-                            if references:
-                                rejection_payload["objects"] = references
-                            if rejected_roles:
-                                rejection_payload["artifact_rejections"] = rejected_roles
-                        ledger.append("candidate_rejected", rejection_payload)
                     else:
                         launchable = environment_result.launchable
                         assert launchable is not None
@@ -2642,6 +2696,9 @@ class Lab:
                 fault_payload: dict[str, object] = {
                     "fault": fault,
                     "exception_type": type(error).__name__,
+                    "turn": turn_number,
+                    "stage": live_stage,
+                    "terminal_provider_tokens": cumulative_tokens,
                 }
                 if isinstance(error, RunProtocolFault) and error.artifact_payloads:
                     references = []
@@ -2986,16 +3043,62 @@ class Lab:
                 checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
             )
             checkpoints = checkpoint_payload.get("checkpoints")
+            fault_fields_present = any(
+                field in fault_payload
+                for field in ("turn", "stage", "terminal_provider_tokens")
+            )
+            if fault_fields_present:
+                terminal_tokens = fault_payload.get("terminal_provider_tokens")
+                if (
+                    set(("turn", "stage", "terminal_provider_tokens"))
+                    - set(fault_payload)
+                    or fault_payload.get("turn") != 1
+                    or fault_payload.get("stage") != "provider"
+                    or not isinstance(terminal_tokens, int)
+                    or isinstance(terminal_tokens, bool)
+                    or terminal_tokens < 0
+                ):
+                    return False
+                replay_budget = _object(
+                    _object(lock.document["resolved_inputs"], "resolved_inputs")[
+                        "budget"
+                    ],
+                    "resolved_inputs.budget",
+                )
+                expected_checkpoints = [
+                    {
+                        "provider_tokens": item.provider_tokens,
+                        "state": item.state,
+                        "best_candidate_sha256": item.best_candidate_sha256,
+                        "best_confirmed_latency_ms": item.best_confirmed_latency_ms,
+                    }
+                    for item in project_checkpoints(
+                        turns=(),
+                        checkpoints=cast(list[int], replay_budget["checkpoints"]),
+                        terminal_provider_tokens=terminal_tokens,
+                    )
+                ]
+            else:
+                # Frozen evidence predating explicit fault location could only prove
+                # that no checkpoint had been reached.
+                expected_checkpoints = (
+                    checkpoints
+                    if isinstance(checkpoints, list)
+                    and bool(checkpoints)
+                    and all(
+                        isinstance(item, Mapping)
+                        and item.get("state") == "unreached"
+                        for item in checkpoints
+                    )
+                    else None
+                )
             return (
                 fault_payload.get("fault") == audit.protocol_adherence
                 and audit.endpoint_observation == "missing"
                 and audit.endpoint is None
                 and isinstance(checkpoints, list)
                 and bool(checkpoints)
-                and all(
-                    isinstance(item, Mapping) and item.get("state") == "unreached"
-                    for item in checkpoints
-                )
+                and checkpoints == expected_checkpoints
             )
         threads: set[str] = set()
         cumulative_by_turn: dict[int, int] = {}
@@ -3004,6 +3107,11 @@ class Lab:
         prior_cumulative = 0
         arm = audit.run_id.rsplit("-", 1)[0]
         resolved_inputs = _object(lock.document["resolved_inputs"], "resolved_inputs")
+        replay_budget = _object(resolved_inputs["budget"], "resolved_inputs.budget")
+        maximum_candidates_per_turn = int(
+            replay_budget.get("maximum_candidates_per_turn", 1)
+        )
+        candidate_set_submission = "maximum_candidates_per_turn" in replay_budget
         arm_environments = _object(
             resolved_inputs["arm_environments"], "resolved_inputs.arm_environments"
         )
@@ -3071,6 +3179,7 @@ class Lab:
                 or not isinstance(candidate_count, int)
                 or isinstance(candidate_count, bool)
                 or candidate_count <= 0
+                or candidate_count > maximum_candidates_per_turn
                 or len(candidate_references) != candidate_count
                 or len(objects) != candidate_count + 1
             ):
@@ -3115,7 +3224,15 @@ class Lab:
             ):
                 return False
             expected_change = "add" if expected_turn == 1 else "update"
-            expected_name = "candidate.json" if audit.run_id.startswith("open_cake-") else "candidate.cu"
+            expected_name = (
+                "candidate-set.json"
+                if candidate_set_submission
+                else (
+                    "candidate.json"
+                    if audit.run_id.startswith("open_cake-")
+                    else "candidate.cu"
+                )
+            )
             if parsed.candidate_path is not None and (
                 parsed.change_kind != expected_change
                 or Path(parsed.candidate_path).name != expected_name
@@ -3145,11 +3262,42 @@ class Lab:
         faults = [event for event in events if event.get("kind") == "run_fault"]
         if len(faults) > 1:
             return False
-        fault_turn = max(provider_candidates_by_turn) if faults else None
+        fault_turn: int | None = None
+        fault_terminal_tokens: int | None = None
         if faults:
             fault_payload = _object(faults[0].get("payload"), "run_fault.payload")
             if fault_payload.get("fault") != audit.protocol_adherence:
                 return False
+            if "terminal_provider_tokens" in fault_payload:
+                fault_turn_value = fault_payload.get("turn")
+                fault_stage = fault_payload.get("stage")
+                fault_terminal_value = fault_payload.get("terminal_provider_tokens")
+                if (
+                    not isinstance(fault_turn_value, int)
+                    or isinstance(fault_turn_value, bool)
+                    or fault_turn_value <= 0
+                    or fault_stage not in {"provider", "environment", "evaluation"}
+                    or not isinstance(fault_terminal_value, int)
+                    or isinstance(fault_terminal_value, bool)
+                    or fault_terminal_value < prior_cumulative
+                    or (
+                        fault_stage == "provider"
+                        and fault_turn_value != len(provider_events) + 1
+                    )
+                    or (
+                        fault_stage in {"environment", "evaluation"}
+                        and (
+                            fault_turn_value != len(provider_events)
+                            or fault_terminal_value != prior_cumulative
+                        )
+                    )
+                ):
+                    return False
+                fault_turn = fault_turn_value
+                fault_terminal_tokens = fault_terminal_value
+            else:
+                fault_turn = max(provider_candidates_by_turn)
+                fault_terminal_tokens = prior_cumulative
 
         attempt_events = [
             event for event in events if event.get("kind") == "evaluation_attempt_completed"
@@ -3418,6 +3566,16 @@ class Lab:
             filter_order[turn] = tuple(candidates)
             filter_disposition[turn] = dispositions
 
+        if candidate_set_submission:
+            expected_rejections = {
+                (turn, candidate_sha256)
+                for turn, dispositions in filter_disposition.items()
+                for candidate_sha256, disposition in dispositions.items()
+                if disposition == "rejected"
+            }
+            if set(rejected) != expected_rejections:
+                return False
+
         selection_events = [
             event for event in events if event.get("kind") == "candidate_selected"
         ]
@@ -3619,11 +3777,15 @@ class Lab:
             return False
         for turn, candidate_sha256 in rejected:
             if turn in candidate_set_turns:
-                selection = selections.get(turn)
+                # Rejection is a property of each set member, not of the Turn's
+                # eventual selection.  A mixed set legitimately records rejected
+                # members while selecting a different launchable member.  The exact
+                # rejected-member set was checked against the filter dispositions
+                # above; the all-rejected selection rule is checked in the selection
+                # replay branch.
                 if (
-                    selection is None
-                    or selection.get("reason") != "all_candidates_rejected"
-                    or selection.get("candidate_sha256") != candidate_sha256
+                    filter_disposition.get(turn, {}).get(candidate_sha256)
+                    != "rejected"
                 ):
                     return False
 
@@ -3648,7 +3810,11 @@ class Lab:
         projected = project_checkpoints(
             turns=observations,
             checkpoints=cast(list[int], budget["checkpoints"]),
-            terminal_provider_tokens=max(cumulative_by_turn.values()),
+            terminal_provider_tokens=(
+                fault_terminal_tokens
+                if fault_terminal_tokens is not None
+                else max(cumulative_by_turn.values())
+            ),
         )
         expected_projection = [
             {

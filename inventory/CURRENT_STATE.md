@@ -1,8 +1,8 @@
 # Current-state inventory
 
-Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set replay repair,
-final-Executor NCU attribution validation, live candidate-set boundary audit, Executor v10 release and Compiler v8
-release. The final legacy authority is clean revision
+Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set envelope implementation and replay
+repair, historical Executor-v10 NCU attribution validation, Executor v13 release and Compiler v8 release. The final
+legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
 `migration/bundles/cake-repro-final-2fa79092.bundle` remains an independent complete-history copy. The 146-record
@@ -34,12 +34,12 @@ causal effect, serving and paper reproduction are not.
   `COMPILER_REVISION_IDENTITY_INCIDENT_20260824.json` records why v4 and v6 cannot be reused or treated as unique
   released identities. v8 exposes no uncalibrated cost order: its `calibration_coverage` is empty and eligible
   candidates retain provider order.
-- Current Executor Revision `open-cake-ir-b200-v10` binds 34 runtime sources, including deterministic external
+- Current Executor Revision `open-cake-ir-b200-v13` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
   and no-GPU Triton-to-CUBIN qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor.
   The Executor pins NCU 2026.1.1.0 by path, bytes and size. G8 r6 retains its exact v1 closure, later source baselines
-  retain v2–v5, and v6–v9 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all ten revisions. v10 also
+  retain v2–v5, and v6–v12 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all thirteen revisions. The Lab
   makes Claim Scope the single authority for choosing the closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
@@ -50,12 +50,14 @@ causal effect, serving and paper reproduction are not.
   attempt replay uses `(turn, purpose, candidate_sha256)`; qualification precedes selection and the selected
   candidate retains its own findings. Attribution is a separate correctness-qualified launch with no timing; its
   summary is recomputed from the retained CSV before archival and again during audit.
-- The Lab/provider seam can carry an ordered candidate tuple and its filtering, selection and replay behavior is
-  covered by fixtures. The canonical live Codex prompts, file lifecycle and normalizer still produce exactly one
-  Candidate per Turn, so the paper's live candidate-generation/ranking stage is not complete. Proposed ADR 0009
-  defines one sealed-envelope successor without adding a parallel Lab path.
+- The Lab/provider seam now carries one canonical `candidate-set.json` envelope for either arm and projects its
+  ordered members into the existing filtering, selection and replay path. Fixtures cover canonical transport,
+  authoring/search bounds, semantic deduplication, mixed and all-member rejection, fresh-process replay, and faults
+  before compilation or GPU work. Tool-rich prompts apply KDA-internal's useful ownership boundary: auxiliary agents
+  investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
+  non-scientific two-search Campaign remain the two unpassed ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 310 tests plus 214 subtests; the earlier remote qualification passed its
+- The current local contract suite passes 317 tests plus 223 subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
@@ -70,7 +72,7 @@ causal effect, serving and paper reproduction are not.
   samples, 16,384/16,384 exact assignments, and a replay-checked 11-metric profile. Full/PM/source reports expose
   grid underfill, a theoretical shared-memory residency limit and long-scoreboard pressure. This validates the
   evaluator mechanism and one frozen b32 Candidate; it is not current-kernel performance, every-survivor coverage
-  or a scientific Campaign. Canonical attempt 12 passed under current v10 digest `23a2c79f…` and its retained raw
+  or a scientific Campaign. Canonical attempt 12 passed under historical v10 digest `23a2c79f…` and its retained raw
   CSV, projected profile and complete Evaluation Receipt replay. Attempt 11 was a pre-worker temporary-checkout
   permission failure and did no GPU work. Earlier attempts 8/9 omitted the runtime's frozen
   `GPUQ_JOB_ID` environment argument and therefore prove only fail-closed zero-work admission, not dirty cards;
@@ -86,7 +88,7 @@ causal effect, serving and paper reproduction are not.
 | Workload inputs/oracles | Workload Contracts + Evaluation adapters | migrated |
 | r41/r42 Turn/resume/checkpoint controls | matched Lab path | implemented and live-qualified by G7/G8 |
 | r43-r45 seed/specialists/dispatcher/timing | portfolio Lab + Evaluation path | implemented; new B200 rerun pending |
-| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | singleton provider qualified and v10 composition repaired; live successor must be re-frozen; candidate-set envelope proposed; Campaign not run |
+| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | candidate-set envelope and single-writer agent boundary fixture-tested; live provider qualification, re-freeze and Campaign pending |
 | Beginner B200 teaching smoke | Compiler + common correctness Evaluation | implemented and live-qualified; performance deliberately absent |
 | Legacy raw/index/source bytes | final bundle + manifest + historical indexes | migrated by immutable reference |
 | rXX/vN runners and verifiers | legacy Git history | deliberately not active |

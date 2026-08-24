@@ -34,6 +34,8 @@ from .executor import ExecutorRevision
 from .faults import RunProtocolFault
 from .portfolio import KernelSeed, lower_specialists
 from .providers import (
+    CANDIDATE_SET_ENVELOPE_V1,
+    SINGLE_CANDIDATE_V1,
     CodexInvocationBuilder,
     CodexProviderAdapter,
     CodexRunProvider,
@@ -419,6 +421,7 @@ def execute_matched_from_config(
     open_arm = _object(arms["open_cake"], "arm_environments.open_cake")
     direct_arm = _object(arms["direct_cuda"], "arm_environments.direct_cuda")
     provider_authority = _object(open_arm["provider"], "arm_environments.provider")
+    budget = _object(resolved["budget"], "campaign_lock.resolved_inputs.budget")
     qualification_ref = _object(
         provider_authority["qualification"], "arm_environments.provider.qualification"
     )
@@ -564,6 +567,11 @@ def execute_matched_from_config(
             ),
             event_contract=str(
                 provider_authority.get("event_contract", "closed_file_change_v1")
+            ),
+            submission_contract=(
+                CANDIDATE_SET_ENVELOPE_V1
+                if "maximum_candidates_per_turn" in budget
+                else SINGLE_CANDIDATE_V1
             ),
         )
     references_root.chmod(0o555)

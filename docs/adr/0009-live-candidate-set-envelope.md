@@ -11,20 +11,25 @@ this closes the missing live transport without adding a second Lab path or makin
 
 This proposal does not change frozen Studies, promote the dormant cost model, increase GPU
 work implicitly, admit runtime-shaped Schedules, or require every Turn to fill its allowed
-set. It is not implemented or live-qualified yet.
+set. The transport and zero-GPU fixture slice are implemented; live acceptance is pending.
 
 ## Owners and canonical form
 
 - The successor Study budget owns `maximum_candidates_per_turn`, an integer greater than
-  zero. It is the authoring bound and is granted identically to both arms in a scientific
-  Study.
+  zero. Its presence selects the envelope transport; absence retains the frozen singleton
+  transport. It is the authoring bound and is granted identically to both arms in a
+  scientific Study. There is deliberately no second Study flag saying the same thing.
 - `evaluation_protocol.searches_per_turn` remains the independent GPU-measurement bound.
   It may not authorize more candidates than the Turn wrote, and it does not change the
   authoring bound.
 - One canonical envelope owns candidate order. It contains `schema_version`, `arm` and a
   non-empty `candidates` array. Open Cake entries are Schedule JSON objects; direct CUDA
   entries are UTF-8 source strings. The envelope itself must be canonical JSON, so its
-  exact bytes are reconstructible rather than becoming a second handwritten truth.
+  exact bytes are reconstructible rather than becoming a second handwritten truth. The
+  file spelling is sorted-key compact UTF-8 JSON followed by exactly one LF.
+- Provider qualification records the derived `candidate_set_envelope_v1` submission
+  capability in its configuration digest. That is a qualification projection of the
+  Study budget, not another writable choice.
 - `ProviderTurn.candidates` is the sole semantic projection consumed by the Lab. Schedule
   objects are projected to canonical Schedule bytes and CUDA strings to their exact UTF-8
   bytes. Existing candidate hashes, Evidence roles and replay keys remain unchanged.
@@ -50,6 +55,16 @@ Frozen single-candidate Studies keep their exact prompt, filename and adapter se
 a bounded compatibility edge. Only a successor Authoring Environment may select the
 envelope contract; old and new forms are never writable in the same Run.
 
+## Agent ownership
+
+The tool-rich optimization scope follows KDA-internal's useful ownership boundary without
+copying its orchestration framework: auxiliary agents may perform distinct read-only
+investigations, while the primary provider thread is the only submission writer. At the
+Turn boundary the workspace contains only `candidate-set.json`; raw auxiliary lifecycles
+remain in provider Evidence, and the external Lab remains the sole evaluator. Agent
+personas or managers may influence exploration style but cannot change the Study,
+candidate budget, Evaluation protocol or acceptance decision.
+
 ## Smallest complete vertical slice
 
 Acceptance requires all three pieces, in order:
@@ -64,3 +79,6 @@ Acceptance requires all three pieces, in order:
 
 Until the third item passes, candidate-set composition is an internally tested capability,
 not an exercised live paper stage.
+
+As of 2026-08-24, item 1 passes in the 317-test/223-subtest local suite. Items 2 and 3
+remain deliberately unclaimed.

@@ -35,6 +35,7 @@ from .executor import ExecutorRevision
 from .faults import CandidateCompileRejected, RunProtocolFault
 from .portfolio import ExactShape, KernelSeed, SpecialistLowering, lower_specialists
 from .providers import (
+    CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
     CodexInvocationBuilder,
     CodexProviderAdapter,
@@ -75,6 +76,7 @@ __all__ = [
     "TritonToolchainBuilder",
     "ToolchainBuilder",
     "CodexInvocationBuilder",
+    "CANDIDATE_SET_ENVELOPE_V1",
     "CODEX_DISABLED_FEATURES",
     "CodexProviderAdapter",
     "CodexRunProvider",

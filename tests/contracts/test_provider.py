@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.lab.providers import (  # noqa: E402
+    CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
     CodexInvocationBuilder,
     CodexRunProvider,
@@ -20,6 +21,7 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     normalize_codex_turn,
     required_live_provider_qualification_scope,
 )
+from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 
 
 class ProviderContractTests(unittest.TestCase):
@@ -130,6 +132,34 @@ class ProviderContractTests(unittest.TestCase):
         self.assertNotIn("--disable", invocation.argv)
         self.assertTrue(set(CODEX_DISABLED_FEATURES))
 
+    def test_candidate_set_capability_is_bound_without_changing_legacy_configuration(self) -> None:
+        arguments = {
+            "executable": ROOT / "pyproject.toml",
+            "provider_revision": "codex-fixture-v1",
+            "model": "gpt-5.6-sol",
+            "reasoning_effort": "max",
+            "service_tier": "default",
+            "workspace": ROOT,
+            "output_schema": ROOT
+            / "contracts/providers/codex-turn-output-schema-v1.json",
+            "removed_environment": ("OPENAI_API_KEY",),
+        }
+        legacy = CodexInvocationBuilder(**arguments)
+        candidate_set = CodexInvocationBuilder(
+            **arguments,
+            submission_contract=CANDIDATE_SET_ENVELOPE_V1,
+        )
+
+        self.assertNotIn("submission_contract", legacy.configuration)
+        self.assertEqual(
+            candidate_set.configuration["submission_contract"],
+            CANDIDATE_SET_ENVELOPE_V1,
+        )
+        self.assertNotEqual(
+            legacy.configuration_sha256,
+            candidate_set.configuration_sha256,
+        )
+
     def test_single_and_bracketed_duplicate_terminal_forms_normalize_equally(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "candidate.json"
@@ -152,6 +182,89 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(single.terminal_message_count, 1)
         self.assertEqual(duplicate.terminal_message_count, 2)
         self.assertEqual(duplicate.normalization, "duplicate_exact_bracketed")
+
+    def test_canonical_candidate_set_projects_ordered_members_for_each_arm(self) -> None:
+        cases = (
+            (
+                "open_cake",
+                [{"variant": 2}, {"variant": 0}, {"variant": 1}],
+                (b'{"variant":2}', b'{"variant":0}', b'{"variant":1}'),
+            ),
+            (
+                "direct_cuda",
+                ["// variant 2\n", "// variant 0\n", "// variant 1\n"],
+                (b"// variant 2\n", b"// variant 0\n", b"// variant 1\n"),
+            ),
+        )
+        for arm, members, expected in cases:
+            with self.subTest(arm=arm), tempfile.TemporaryDirectory() as directory:
+                candidate = Path(directory) / "candidate-set.json"
+                envelope = {
+                    "schema_version": 1,
+                    "arm": arm,
+                    "candidates": members,
+                }
+                candidate.write_bytes(
+                    json.dumps(
+                        envelope,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                    + b"\n"
+                )
+                turn = normalize_codex_turn(
+                    self._events(candidate, duplicate=False),
+                    candidate_path=candidate,
+                    expected_change="add",
+                    expected_terminal_message='{"candidate_written":true}',
+                    submission_contract=CANDIDATE_SET_ENVELOPE_V1,
+                    arm=arm,
+                    maximum_candidates_per_turn=3,
+                )
+
+            self.assertEqual(turn.candidates, expected)
+            self.assertEqual(
+                turn.candidate_sha256s,
+                tuple(sha256(member).hexdigest() for member in expected),
+            )
+
+    def test_candidate_set_rejects_noncanonical_wrong_arm_and_over_bound_envelopes(self) -> None:
+        valid = {
+            "schema_version": 1,
+            "arm": "open_cake",
+            "candidates": [{"variant": 0}, {"variant": 1}],
+        }
+        cases = (
+            (json.dumps(valid).encode() + b"\n", "canonical bytes", "open_cake", 2),
+            (
+                json.dumps(valid, sort_keys=True, separators=(",", ":")).encode()
+                + b"\n",
+                "fields",
+                "direct_cuda",
+                2,
+            ),
+            (
+                json.dumps(valid, sort_keys=True, separators=(",", ":")).encode()
+                + b"\n",
+                "count",
+                "open_cake",
+                1,
+            ),
+        )
+        for payload, message, arm, maximum in cases:
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
+                candidate = Path(directory) / "candidate-set.json"
+                candidate.write_bytes(payload)
+                with self.assertRaisesRegex(ValueError, message):
+                    normalize_codex_turn(
+                        self._events(candidate, duplicate=False),
+                        candidate_path=candidate,
+                        expected_change="add",
+                        expected_terminal_message='{"candidate_written":true}',
+                        submission_contract=CANDIDATE_SET_ENVELOPE_V1,
+                        arm=arm,
+                        maximum_candidates_per_turn=maximum,
+                    )
 
     def test_nonidentical_duplicate_terminal_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -394,8 +507,14 @@ class ProviderContractTests(unittest.TestCase):
                     expected_change,
                     expected_terminal_message,
                     event_contract="closed_file_change_v1",
+                    submission_contract="single_candidate_v1",
+                    arm=None,
+                    maximum_candidates_per_turn=1,
                 ):
                     test_case.assertEqual(event_contract, "closed_file_change_v1")
+                    test_case.assertEqual(submission_contract, "single_candidate_v1")
+                    test_case.assertIsNone(arm)
+                    test_case.assertEqual(maximum_candidates_per_turn, 1)
                     self.invocations.append(invocation)
                     candidate_path.write_text(
                         json.dumps({"turn": len(self.invocations)})
@@ -434,6 +553,7 @@ class ProviderContractTests(unittest.TestCase):
                     cumulative_provider_tokens=0,
                     thread_id=None,
                     feedback=MappingProxyType({"kind": "initial"}),
+                    maximum_candidates_per_turn=1,
                 )
             )
             second = provider.turn(
@@ -444,6 +564,7 @@ class ProviderContractTests(unittest.TestCase):
                     cumulative_provider_tokens=100,
                     thread_id=first.thread_id,
                     feedback={"kind": "evaluation"},
+                    maximum_candidates_per_turn=1,
                 )
             )
 
@@ -451,6 +572,137 @@ class ProviderContractTests(unittest.TestCase):
         self.assertNotIn("resume", adapter.invocations[0].argv)
         self.assertIn("resume", adapter.invocations[1].argv)
         self.assertNotEqual(first.candidate_sha256s, second.candidate_sha256s)
+
+    def test_concrete_candidate_set_provider_owns_one_envelope_and_no_other_file(self) -> None:
+        for extra_file in (False, True):
+            with self.subTest(extra_file=extra_file), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                executable = root / "codex"
+                executable.write_bytes(b"fixture executable")
+                executable.chmod(0o700)
+                workspace = root / "workspace"
+                workspace.mkdir()
+                references = root / "references"
+                references.mkdir()
+                reference = references / "authority.json"
+                reference.write_text("{}")
+                reference.chmod(0o444)
+                references.chmod(0o555)
+                schema = root / "schema.json"
+                schema.write_text("{}")
+                builder = CodexInvocationBuilder(
+                    executable=executable,
+                    provider_revision="codex-candidate-set-fixture",
+                    model="gpt-5.6-sol",
+                    reasoning_effort="max",
+                    service_tier="default",
+                    workspace=workspace,
+                    output_schema=schema,
+                    removed_environment=("OPENAI_API_KEY",),
+                    submission_contract=CANDIDATE_SET_ENVELOPE_V1,
+                )
+                qualification = ProviderQualificationReceipt(
+                    provider_revision=builder.provider_revision,
+                    executable_sha256=sha256(executable.read_bytes()).hexdigest(),
+                    configuration_sha256=builder.configuration_sha256,
+                    initial_and_resume_equivalent=True,
+                    file_lifecycle_observed=True,
+                    usage_observed=True,
+                    qualified=True,
+                    scope="live_two_turn_current_provider",
+                )
+
+                class Adapter:
+                    def execute(
+                        self,
+                        invocation,
+                        *,
+                        candidate_path,
+                        expected_change,
+                        expected_terminal_message,
+                        event_contract,
+                        submission_contract,
+                        arm,
+                        maximum_candidates_per_turn,
+                    ):
+                        self.invocation = invocation
+                        self.path = candidate_path
+                        self.maximum = maximum_candidates_per_turn
+                        members = ({"variant": 0}, {"variant": 1})
+                        envelope = {
+                            "schema_version": 1,
+                            "arm": arm,
+                            "candidates": members,
+                        }
+                        candidate_path.write_bytes(
+                            json.dumps(
+                                envelope,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ).encode()
+                            + b"\n"
+                        )
+                        if extra_file:
+                            (candidate_path.parent / "scratch.txt").write_text("leak")
+                        payloads = tuple(
+                            json.dumps(
+                                member,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ).encode()
+                            for member in members
+                        )
+                        return ProviderTurn(
+                            thread_id="01234567-89ab-cdef-0123-456789abcdef",
+                            provider_tokens=100,
+                            candidates=payloads,
+                            candidate_sha256s=tuple(
+                                sha256(payload).hexdigest() for payload in payloads
+                            ),
+                            raw_events=b'{}\n',
+                            raw_events_sha256=sha256(b'{}\n').hexdigest(),
+                            terminal_message=expected_terminal_message,
+                            terminal_message_count=1,
+                            normalization="single_exact",
+                        )
+
+                adapter = Adapter()
+                provider = CodexRunProvider(
+                    qualification=qualification,
+                    builders={"open_cake-1": builder},
+                    reference_roots={"open_cake-1": references},
+                    prompt_templates={
+                        "open_cake": ROOT
+                        / "src/open_cake_ir/lab/prompts/open_cake_candidate_set_turn_v1.md",
+                        "direct_cuda": ROOT
+                        / "src/open_cake_ir/lab/prompts/direct_cuda_candidate_set_turn_v1.md",
+                    },
+                    adapter=adapter,
+                )
+                request = SimpleNamespace(
+                    run_id="open_cake-1",
+                    arm="open_cake",
+                    turn=1,
+                    cumulative_provider_tokens=0,
+                    thread_id=None,
+                    feedback={"kind": "initial"},
+                    maximum_candidates_per_turn=2,
+                )
+
+                if extra_file:
+                    with self.assertRaisesRegex(
+                        RunProtocolFault, "workspace custody"
+                    ):
+                        provider.turn(request)
+                else:
+                    turn = provider.turn(request)
+                    self.assertEqual(len(turn.candidates), 2)
+                    self.assertEqual(adapter.path.name, "candidate-set.json")
+                    self.assertEqual(adapter.maximum, 2)
+                    self.assertIn(
+                        "one to\n2 Schedule objects",
+                        adapter.invocation.argv[-1],
+                    )
 
 
 if __name__ == "__main__":

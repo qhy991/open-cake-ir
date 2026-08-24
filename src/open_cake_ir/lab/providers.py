@@ -21,6 +21,8 @@ from .process import (
 
 _THREAD_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _MAX_CANDIDATE_BYTES = 64 * 1024 * 1024
+SINGLE_CANDIDATE_V1 = "single_candidate_v1"
+CANDIDATE_SET_ENVELOPE_V1 = "candidate_set_envelope_v1"
 CODEX_DISABLED_FEATURES = (
     "apps",
     "auth_elicitation",
@@ -133,6 +135,72 @@ def _plain_json(value: object) -> object:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     raise ValueError("provider feedback contains a non-JSON value")
+
+
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _project_candidate_submission(
+    payload: bytes,
+    *,
+    submission_contract: str,
+    arm: str | None,
+    maximum_candidates_per_turn: int,
+) -> tuple[bytes, ...]:
+    """Project one sealed provider file into the ordered semantic Candidate set."""
+
+    if (
+        not isinstance(maximum_candidates_per_turn, int)
+        or isinstance(maximum_candidates_per_turn, bool)
+        or maximum_candidates_per_turn <= 0
+    ):
+        raise ValueError("provider maximum candidates per Turn differs")
+    if submission_contract == SINGLE_CANDIDATE_V1:
+        if maximum_candidates_per_turn != 1 or arm is not None:
+            raise ValueError("legacy provider submission contract differs")
+        return (payload,)
+    if submission_contract != CANDIDATE_SET_ENVELOPE_V1 or arm not in {
+        "open_cake",
+        "direct_cuda",
+    }:
+        raise ValueError("provider submission contract differs")
+    try:
+        document = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("provider candidate-set envelope is not JSON") from error
+    if (
+        not isinstance(document, Mapping)
+        or set(document) != {"schema_version", "arm", "candidates"}
+        or document.get("schema_version") != 1
+        or document.get("arm") != arm
+        or payload != _canonical_json_bytes(document) + b"\n"
+    ):
+        raise ValueError("provider candidate-set envelope fields or canonical bytes differ")
+    candidates = document.get("candidates")
+    if (
+        not isinstance(candidates, list)
+        or not candidates
+        or len(candidates) > maximum_candidates_per_turn
+    ):
+        raise ValueError("provider candidate-set envelope count differs")
+    if arm == "open_cake":
+        if any(not isinstance(candidate, Mapping) for candidate in candidates):
+            raise ValueError("Open Cake candidate-set member is not a Schedule object")
+        projected = tuple(_canonical_json_bytes(candidate) for candidate in candidates)
+    else:
+        if any(not isinstance(candidate, str) or not candidate for candidate in candidates):
+            raise ValueError("direct CUDA candidate-set member is not non-empty source")
+        projected = tuple(candidate.encode("utf-8") for candidate in candidates)
+    if len({sha256(candidate).hexdigest() for candidate in projected}) != len(projected):
+        raise ValueError("provider candidate-set contains duplicate Candidate bytes")
+    return projected
 
 
 @dataclass(frozen=True)
@@ -528,6 +596,9 @@ def normalize_codex_turn(
     expected_change: str,
     expected_terminal_message: str,
     event_contract: str = "closed_file_change_v1",
+    submission_contract: str = SINGLE_CANDIDATE_V1,
+    arm: str | None = None,
+    maximum_candidates_per_turn: int = 1,
 ) -> ProviderTurn:
     """Accept only the two terminal forms observed by the frozen r42 boundary."""
 
@@ -546,12 +617,18 @@ def normalize_codex_turn(
         )
     ):
         raise ValueError("provider candidate path or change kind differs")
-    candidate = _read_candidate_nofollow(candidate_path)
+    submission = _read_candidate_nofollow(candidate_path)
+    candidates = _project_candidate_submission(
+        submission,
+        submission_contract=submission_contract,
+        arm=arm,
+        maximum_candidates_per_turn=maximum_candidates_per_turn,
+    )
     return ProviderTurn(
         thread_id=parsed.thread_id,
         provider_tokens=parsed.provider_tokens,
-        candidates=(candidate,),
-        candidate_sha256s=(sha256(candidate).hexdigest(),),
+        candidates=candidates,
+        candidate_sha256s=tuple(sha256(candidate).hexdigest() for candidate in candidates),
         raw_events=raw_events,
         raw_events_sha256=sha256(raw_events).hexdigest(),
         terminal_message=expected_terminal_message,
@@ -577,6 +654,9 @@ class CodexProviderAdapter:
         expected_change: str,
         expected_terminal_message: str,
         event_contract: str = "closed_file_change_v1",
+        submission_contract: str = SINGLE_CANDIDATE_V1,
+        arm: str | None = None,
+        maximum_candidates_per_turn: int = 1,
     ) -> ProviderTurn:
         """Run without shell expansion and remove every contract-declared environment name."""
 
@@ -613,6 +693,9 @@ class CodexProviderAdapter:
                 expected_change=expected_change,
                 expected_terminal_message=expected_terminal_message,
                 event_contract=event_contract,
+                submission_contract=submission_contract,
+                arm=arm,
+                maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
         except (OSError, ValueError) as error:
             raise RunProtocolFault(
@@ -634,12 +717,16 @@ class TurnRequestLike(Protocol):
     cumulative_provider_tokens: int
     thread_id: str | None
     feedback: Mapping[str, object]
+    maximum_candidates_per_turn: int
 
 
 class CodexRunProvider:
     """Canonical Campaign-Lock-compatible provider from Turn to normalized evidence."""
 
-    _CANDIDATE_NAMES = {"open_cake": "candidate.json", "direct_cuda": "candidate.cu"}
+    _SINGLE_CANDIDATE_NAMES = {
+        "open_cake": "candidate.json",
+        "direct_cuda": "candidate.cu",
+    }
 
     def __init__(
         self,
@@ -659,7 +746,7 @@ class CodexRunProvider:
             }
             or not builders
             or set(reference_roots) != set(builders)
-            or set(prompt_templates) != set(self._CANDIDATE_NAMES)
+            or set(prompt_templates) != set(self._SINGLE_CANDIDATE_NAMES)
         ):
             raise ValueError("live Codex Run Provider authority differs")
         revisions = {builder.provider_revision for builder in builders.values()}
@@ -698,6 +785,14 @@ class CodexRunProvider:
         self._event_contract = str(
             self.configuration.get("event_contract", "closed_file_change_v1")
         )
+        self._submission_contract = str(
+            self.configuration.get("submission_contract", SINGLE_CANDIDATE_V1)
+        )
+        if self._submission_contract not in {
+            SINGLE_CANDIDATE_V1,
+            CANDIDATE_SET_ENVELOPE_V1,
+        }:
+            raise ValueError("Codex submission contract differs")
         self._references = {
             run_id: (path.resolve(strict=True), *read_frozen_reference_bundle(path))
             for run_id, path in reference_roots.items()
@@ -728,6 +823,10 @@ class CodexRunProvider:
             "{{FEEDBACK_JSON}}": feedback,
             "{{REFERENCE_BUNDLE}}": self._references[request.run_id][2],
         }
+        if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1:
+            replacements["{{MAXIMUM_CANDIDATES_PER_TURN}}"] = str(
+                request.maximum_candidates_per_turn
+            )
         prompt = self._templates[request.arm]
         if set(re.findall(r"\{\{[A-Z0-9_]+\}\}", prompt)) != set(replacements):
             raise ValueError("Codex prompt template marker set differs")
@@ -741,7 +840,18 @@ class CodexRunProvider:
         """Execute initial/add or same-thread resume/update under one environment."""
 
         builder = self._builders.get(request.run_id)
-        if builder is None or request.arm not in self._CANDIDATE_NAMES or request.turn <= 0:
+        if (
+            builder is None
+            or request.arm not in self._SINGLE_CANDIDATE_NAMES
+            or request.turn <= 0
+            or not isinstance(request.maximum_candidates_per_turn, int)
+            or isinstance(request.maximum_candidates_per_turn, bool)
+            or request.maximum_candidates_per_turn <= 0
+            or (
+                self._submission_contract == SINGLE_CANDIDATE_V1
+                and request.maximum_candidates_per_turn != 1
+            )
+        ):
             raise ValueError("Codex Run or arm is outside the Campaign Lock")
         workspace = builder.workspace.absolute()
         reference_root, reference_sha256, _ = self._references[request.run_id]
@@ -754,7 +864,11 @@ class CodexRunProvider:
                 raise ValueError("initial Codex Turn requires one empty workspace")
         elif request.thread_id is None:
             raise ValueError("resumed Codex Turn requires the existing thread")
-        candidate_path = workspace / self._CANDIDATE_NAMES[request.arm]
+        candidate_path = workspace / (
+            "candidate-set.json"
+            if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1
+            else self._SINGLE_CANDIDATE_NAMES[request.arm]
+        )
         expected_change = "add" if request.turn == 1 else "update"
         if (expected_change == "add" and candidate_path.exists()) or (
             expected_change == "update" and not candidate_path.is_file()
@@ -781,7 +895,25 @@ class CodexRunProvider:
             expected_change=expected_change,
             expected_terminal_message=terminal,
             event_contract=self._event_contract,
+            submission_contract=self._submission_contract,
+            arm=(
+                request.arm
+                if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1
+                else None
+            ),
+            maximum_candidates_per_turn=request.maximum_candidates_per_turn,
         )
+        if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1:
+            entries = list(workspace.iterdir())
+            if (
+                entries != [candidate_path]
+                or candidate_path.is_symlink()
+                or not candidate_path.is_file()
+            ):
+                raise RunProtocolFault(
+                    "provider_fault",
+                    "Codex candidate-set workspace custody differs",
+                )
         if read_frozen_reference_bundle(reference_root)[0] != reference_sha256:
             raise RunProtocolFault("contamination", "provider references changed during Turn")
         return result
@@ -803,6 +935,7 @@ class CodexInvocationBuilder:
         removed_environment: tuple[str, ...],
         disabled_features: tuple[str, ...] = CODEX_DISABLED_FEATURES,
         event_contract: str = "closed_file_change_v1",
+        submission_contract: str = SINGLE_CANDIDATE_V1,
     ) -> None:
         values = (provider_revision, model, reasoning_effort, service_tier)
         if any(not value for value in values) or not removed_environment:
@@ -819,6 +952,11 @@ class CodexInvocationBuilder:
             ((), "tool_rich_candidate_v1"),
         }:
             raise ValueError("Codex feature and event contracts differ")
+        if submission_contract not in {
+            SINGLE_CANDIDATE_V1,
+            CANDIDATE_SET_ENVELOPE_V1,
+        }:
+            raise ValueError("Codex submission contract differs")
         self._executable = executable
         self._provider_revision = provider_revision
         self._model = model
@@ -829,6 +967,7 @@ class CodexInvocationBuilder:
         self._removed_environment = removed_environment
         self._disabled_features = disabled_features
         self._event_contract = event_contract
+        self._submission_contract = submission_contract
 
     @property
     def workspace(self) -> Path:
@@ -857,6 +996,8 @@ class CodexInvocationBuilder:
         }
         if self._event_contract != "closed_file_change_v1":
             configuration["event_contract"] = self._event_contract
+        if self._submission_contract != SINGLE_CANDIDATE_V1:
+            configuration["submission_contract"] = self._submission_contract
         return configuration
 
     @property

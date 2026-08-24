@@ -47,26 +47,27 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   reconstructs the final three-shape specialist/dispatcher boundary without a new runtime mode. Within
   `matched_search`, `artifact_optimization_only` restores provider-default features while forbidding scientific
   comparison and promoting Candidates only through common confirmatory Evaluation. The Lab's ordered candidate-set
-  path is fixture-tested, but the canonical live Codex provider still authors one Candidate per Turn; proposed ADR
-  0009 defines the smallest live successor.
+  envelope is implemented and fixture-tested for both arms. Authoring and GPU-search budgets are independent, and
+  the tool-rich prompts give auxiliary agents read-only investigations while the primary thread remains the sole
+  submission writer. ADR 0009 remains proposed until a live two-arm qualification and non-scientific Campaign pass.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
-- Current Executor Revision `open-cake-ir-b200-v10` binds the 34-source runtime closure, including deterministic
+- Current Executor Revision `open-cake-ir-b200-v13` binds the 34-source runtime closure, including deterministic
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
-  exact B200 host packages; v1–v5 are archived and v6–v9 are superseded descriptors. Current matched Study fixtures
+  exact B200 host packages; v1–v5 are archived and v6–v12 are superseded descriptors. Current matched Study fixtures
   opt into a correctness-qualified, no-timing profiler assay; a live Study must re-freeze its exact broker command.
-  The current local suite passes 310 tests plus 214 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 317 tests plus 223 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
   scientific claim.
-- Current Executor v10 digest `23a2c79f…` passes the separate correctness-qualified B200 NCU assay for that frozen
+- Historical Executor v10 digest `23a2c79f…` passes the separate correctness-qualified B200 NCU assay for that frozen
   Candidate: one target launch, zero fallback and zero timing, with all 11 profiler metrics replayed from retained
-  raw CSV. This validates the attribution mechanism, not kernel speed or a scientific Campaign.
+  raw CSV. This validates the attribution mechanism under v10, not current v13, kernel speed or a scientific Campaign.
 - The pinned Codex 0.144.3 tool-rich qualification passes with no injected feature disables and observes shell
-  activity on both initial and resumed Turns. v10 now derives the required live qualification from Claim Scope, so
+  activity on both initial and resumed singleton Turns. The Lab derives the required live qualification from Claim Scope, so
   artifact-only composition accepts this tool-rich receipt while scientific/system scopes retain the closed receipt.
-  Account/admin policy still determines the effective catalog, and external mutation or direct GPU measurement
-  remains unauthorized.
+  Its candidate-set successor still requires live qualification. Account/admin policy determines the effective
+  catalog, and external mutation or direct GPU measurement remains unauthorized.
 - The legacy source authority is the clean final Stage 6 revision `2fa79092...`, tree `b02d730b...`. It was initially
   observed 68 commits ahead; origin now carries the final revision and a verified complete-history bundle provides
   an independent recovery path under `migration/bundles/`.

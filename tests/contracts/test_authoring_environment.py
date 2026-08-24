@@ -63,7 +63,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v8.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -108,7 +108,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v8.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
             ).read_text(encoding="utf-8")
         )
         environment = OpenCakeEnvironment(
@@ -149,7 +149,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v8.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -191,7 +191,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v8.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -240,7 +240,7 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v8.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v11.json"
             ).read_text(encoding="utf-8")
         )
         document = _headline_schedule(workload)

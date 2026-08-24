@@ -76,7 +76,7 @@ and a new date; the earlier record stays as history for the Revision it was take
 ## 2. Resolve a Study
 
 ```bash
-open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v8.json \
+open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v11.json \
   --output /new/path/campaign.lock.json
 ```
 
@@ -86,13 +86,13 @@ validates it through Lab preflight. It deliberately refuses a live Study because
 broker command digest; `freeze_live_matched_study.py` is the sole path that refreshes that complete authority. The
 names below were current when written.
 
-The current checked-in scientific matched contract, `matched-search-infrastructure-v8.json`, uses a zero-GPU fixture
+The current checked-in scientific matched contract, `matched-search-infrastructure-v11.json`, uses a zero-GPU fixture
 provider and intentionally cannot start a live provider. The current non-scientific G8 template is
-`matched-search-system-qualification-v8.json`; earlier versions remain frozen historical records. Freeze
+`matched-search-system-qualification-v11.json`; earlier versions remain frozen historical records. Freeze
 a live successor only after a real two-Turn qualification emits a receipt with
 the matching closed or tool-rich scope and binds the exact executable, model, reasoning effort, service tier, output
 schema, prompt/scaffold bytes, removed environment, reference visibility, feature overrides and event contract.
-`artifact-optimization-v8.json` is the current zero-GPU contract fixture. The frozen
+`artifact-optimization-v11.json` is the current zero-GPU contract fixture. The frozen
 `artifact-optimization-verda-v7.json` remains a historical live authority for Executor v8; it is not executable
 from the current source closure. Re-freeze a successor with the exact accessible checkout and broker command before
 launching a live Campaign. Earlier revisions remain historical.
@@ -112,6 +112,7 @@ python tools/qualify_codex_provider.py \
   --anchor-output evidence/qualifications/<new-live-anchor>.json \
   --evidence-root evidence/qualifications/<new-live-run> \
   --run-id <new-live-run> \
+  --maximum-candidates-per-turn 3 \
   --feature-policy closed_research
 ```
 
@@ -131,6 +132,7 @@ python tools/qualify_codex_provider.py \
   --anchor-output evidence/qualifications/<new-tool-rich-anchor>.json \
   --evidence-root evidence/qualifications/<new-tool-rich-run> \
   --run-id <new-tool-rich-run> \
+  --maximum-candidates-per-turn 3 \
   --feature-policy provider_defaults_optimization
 ```
 
@@ -139,10 +141,10 @@ Then freeze either non-scientific Study from its matching receipt, seal anchor a
 ```bash
 python tools/freeze_live_matched_study.py \
   --project-root . \
-  --template contracts/studies/matched-search-system-qualification-v8.json \
+  --template contracts/studies/matched-search-system-qualification-v11.json \
   --qualification contracts/providers/<new-live-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-live-anchor>.json \
-  --executor runtime/executors/open-cake-ir-b200-v10.json \
+  --executor runtime/executors/open-cake-ir-b200-v13.json \
   --runtime-config /new/path/runtime.json \
   --study-id <new-g8-study-id> \
   --output contracts/studies/<new-g8-study>.json \
@@ -174,8 +176,9 @@ forbidden.
 
 For `artifact_optimization_only`, one multi-Turn Run per Authoring Environment uses the same command. Auxiliary
 Apps/MCP/shell/browser/plugin/subagent activity is retained in raw Evidence, so the operator must approve its source
-data for archival before launch. The provider may create workspace scratch files, but only the fixed Candidate path
-is sealed. Audit promotes the lowest-latency confirmatory-qualified Candidate per Run, with earliest Turn as
+data for archival before launch. In candidate-set successors, auxiliary agents are read-only and the primary thread
+is the sole writer; only `candidate-set.json` may remain at the Turn boundary. Audit promotes the
+lowest-latency confirmatory-qualified Candidate per Run, with earliest Turn as
 tie-break; it never reports qualification rates, arm medians, ratios, uncertainty or scientific inclusion. External
 mutation and direct GPU measurement remain unauthorized even when those tools are visible.
 

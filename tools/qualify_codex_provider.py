@@ -17,7 +17,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.evidence import EvidenceObject, EvidenceStore  # noqa: E402
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
+    CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
+    SINGLE_CANDIDATE_V1,
     CodexInvocationBuilder,
     CodexProviderAdapter,
     ProviderInvocation,
@@ -36,9 +38,9 @@ def _canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
-def _terminal_message(turn: int, event_contract: str) -> str:
+def _terminal_message(turn: int, event_contract: str, *, arm: str = "open_cake") -> str:
     document: dict[str, object] = {
-        "arm": "open_cake",
+        "arm": arm,
         "candidate_written": True,
         "kind": "open_cake_ir_turn",
         "turn": turn,
@@ -56,9 +58,13 @@ def _turn_prompt(
     candidate: Path,
     turn: int,
     *,
+    arm: str,
+    expected_submission: object,
+    maximum_candidates_per_turn: int,
+    submission_contract: str,
+    tool_instruction: str,
     reference_bundle_sha256: str,
     reference_bundle: str,
-    reference_nonce: str,
     prompt_template: Path,
 ) -> str:
     change = "add" if turn == 1 else "update"
@@ -66,19 +72,75 @@ def _turn_prompt(
     replacements = {
         "{{CANDIDATE_PATH_JSON}}": json.dumps(str(candidate.absolute())),
         "{{EXPECTED_CHANGE}}": change,
-        "{{EXPECTED_CANDIDATE_JSON}}": json.dumps(
-            {"qualification_turn": turn, "reference_nonce": reference_nonce},
-            sort_keys=True,
-            separators=(",", ":"),
-        ),
         "{{REFERENCE_BUNDLE_SHA256}}": reference_bundle_sha256,
         "{{REFERENCE_BUNDLE}}": reference_bundle,
     }
+    if submission_contract == CANDIDATE_SET_ENVELOPE_V1:
+        replacements.update(
+            {
+                "{{ARM}}": arm,
+                "{{MAXIMUM_CANDIDATES_PER_TURN}}": str(
+                    maximum_candidates_per_turn
+                ),
+                "{{EXPECTED_CANDIDATE_SET_JSON}}": json.dumps(
+                    expected_submission,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ),
+                "{{TOOL_INSTRUCTION}}": tool_instruction,
+            }
+        )
+    else:
+        replacements["{{EXPECTED_CANDIDATE_JSON}}"] = json.dumps(
+            expected_submission,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
     for marker, value in replacements.items():
         if template.count(marker) != 1:
             raise ValueError(f"qualification prompt marker {marker!r} differs")
         template = template.replace(marker, value)
     return template
+
+
+def _expected_submission(
+    arm: str,
+    turn: int,
+    reference_nonce: str,
+    maximum_candidates_per_turn: int,
+    submission_contract: str,
+) -> tuple[object, tuple[bytes, ...]]:
+    if submission_contract == SINGLE_CANDIDATE_V1:
+        document = {
+            "qualification_turn": turn,
+            "reference_nonce": reference_nonce,
+        }
+        return document, (_canonical_json_bytes(document),)
+    if arm == "open_cake":
+        members: list[object] = [
+            {
+                "candidate_index": index,
+                "qualification_turn": turn,
+                "reference_nonce": reference_nonce,
+            }
+            for index in range(maximum_candidates_per_turn)
+        ]
+        projected = tuple(_canonical_json_bytes(member) for member in members)
+    else:
+        members = [
+            (
+                f"// qualification candidate {index}; turn {turn}; "
+                f"reference {reference_nonce}\n"
+            )
+            for index in range(maximum_candidates_per_turn)
+        ]
+        projected = tuple(str(member).encode("utf-8") for member in members)
+    return {
+        "schema_version": 1,
+        "arm": arm,
+        "candidates": members,
+    }, projected
 
 
 def _validate_invocation(
@@ -185,6 +247,12 @@ def main() -> int:
     parser.add_argument("--service-tier", default="default")
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument(
+        "--maximum-candidates-per-turn",
+        type=int,
+        default=None,
+        help="qualify the canonical candidate-set envelope for both arms",
+    )
+    parser.add_argument(
         "--feature-policy",
         choices=("closed_research", "provider_defaults_optimization"),
         default="closed_research",
@@ -205,15 +273,31 @@ def main() -> int:
     evidence_root = _new_path(args.evidence_root)
     anchor_output = _new_path(args.anchor_output)
     removed_environment = tuple(args.removed_environment or ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"))
+    maximum_candidates_per_turn = args.maximum_candidates_per_turn or 1
+    submission_contract = (
+        CANDIDATE_SET_ENVELOPE_V1
+        if args.maximum_candidates_per_turn is not None
+        else SINGLE_CANDIDATE_V1
+    )
+    qualification_arms = (
+        ("open_cake", "direct_cuda")
+        if submission_contract == CANDIDATE_SET_ENVELOPE_V1
+        else ("open_cake",)
+    )
     if args.feature_policy == "closed_research":
         disabled_features = CODEX_DISABLED_FEATURES
         event_contract = "closed_file_change_v1"
         prompt_template = ROOT / "contracts/providers/codex-qualification-prompt-v1.md"
+        tool_instruction = "Do not invoke auxiliary tools."
         receipt_scope = "live_two_turn_current_provider"
     else:
         disabled_features = ()
         event_contract = "tool_rich_candidate_v1"
         prompt_template = ROOT / "contracts/providers/codex-qualification-prompt-v2.md"
+        tool_instruction = (
+            "First use the shell tool to run `pwd` without writing a file or "
+            "invoking a network/GPU operation."
+        )
         receipt_scope = "live_two_turn_tool_rich_provider"
     if (
         not executable.is_file()
@@ -231,11 +315,25 @@ def main() -> int:
         or anchor_output == receipt_output
         or anchor_output == evidence_root
         or evidence_root in anchor_output.parents
+        or (
+            args.maximum_candidates_per_turn is not None
+            and args.maximum_candidates_per_turn <= 0
+        )
     ):
         raise ValueError("Codex qualification input custody differs")
     workspace.mkdir(mode=0o750)
+    workspaces = {"open_cake": workspace}
+    if submission_contract == CANDIDATE_SET_ENVELOPE_V1:
+        workspaces = {}
+        for arm in qualification_arms:
+            arm_workspace = workspace / arm
+            arm_workspace.mkdir(mode=0o750)
+            workspaces[arm] = arm_workspace
+        prompt_template = (
+            ROOT
+            / "contracts/providers/codex-qualification-candidate-set-prompt-v1.md"
+        )
     references.mkdir(mode=0o755)
-    candidate = workspace / "candidate.json"
     executable_sha256 = sha256(executable.read_bytes()).hexdigest()
     output_schema_sha256 = sha256(output_schema.read_bytes()).hexdigest()
     qualification_prompt_sha256 = sha256(
@@ -247,6 +345,11 @@ def main() -> int:
                 "provider_revision": args.provider_revision,
                 "executable_sha256": executable_sha256,
                 "output_schema_sha256": output_schema_sha256,
+                **(
+                    {"submission_contract": submission_contract}
+                    if submission_contract == CANDIDATE_SET_ENVELOPE_V1
+                    else {}
+                ),
             }
         )
     ).hexdigest()
@@ -280,6 +383,10 @@ def main() -> int:
         "turns": ["initial_add", "same_thread_resume_update"],
         "gpu_execution_authorized": False,
     }
+    if submission_contract == CANDIDATE_SET_ENVELOPE_V1:
+        authority["submission_contract"] = submission_contract
+        authority["maximum_candidates_per_turn"] = maximum_candidates_per_turn
+        authority["arms"] = list(qualification_arms)
     authority_sha256 = sha256(_canonical_json_bytes(authority)).hexdigest()
     evidence = (
         EvidenceStore.writer(evidence_root)
@@ -292,175 +399,333 @@ def main() -> int:
         authority=authority,
     )
     try:
-        builder = CodexInvocationBuilder(
-            executable=executable,
-            provider_revision=args.provider_revision,
-            model=args.model,
-            reasoning_effort=args.reasoning_effort,
-            service_tier=args.service_tier,
-            workspace=workspace,
-            output_schema=output_schema,
-            removed_environment=removed_environment,
-            disabled_features=disabled_features,
-            event_contract=event_contract,
-        )
         adapter = CodexProviderAdapter(timeout_seconds=args.timeout_seconds)
-        initial_invocation = builder.build(
-            _turn_prompt(
-                candidate,
+        observations: dict[str, dict[str, object]] = {}
+        configuration_sha256s: set[str] = set()
+        for arm in qualification_arms:
+            arm_workspace = workspaces[arm]
+            candidate = arm_workspace / (
+                "candidate-set.json"
+                if submission_contract == CANDIDATE_SET_ENVELOPE_V1
+                else "candidate.json"
+            )
+            builder = CodexInvocationBuilder(
+                executable=executable,
+                provider_revision=args.provider_revision,
+                model=args.model,
+                reasoning_effort=args.reasoning_effort,
+                service_tier=args.service_tier,
+                workspace=arm_workspace,
+                output_schema=output_schema,
+                removed_environment=removed_environment,
+                disabled_features=disabled_features,
+                event_contract=event_contract,
+                submission_contract=submission_contract,
+            )
+            configuration_sha256s.add(builder.configuration_sha256)
+            expected_initial, initial_candidates = _expected_submission(
+                arm,
                 1,
-                reference_bundle_sha256=reference_bundle_sha256,
-                reference_bundle=reference_bundle,
-                reference_nonce=reference_nonce,
-                prompt_template=prompt_template,
-            ),
-            thread_id=None,
-        )
-        _validate_invocation(
-            initial_invocation,
-            executable=executable,
-            workspace=workspace,
-        )
-        initial = adapter.execute(
-            initial_invocation,
-            candidate_path=candidate,
-            expected_change="add",
-            expected_terminal_message=_terminal_message(1, event_contract),
-            event_contract=event_contract,
-        )
-        _validate_workspace(workspace, candidate)
-        if json.loads(initial.candidates[0]) != {
-            "qualification_turn": 1,
-            "reference_nonce": reference_nonce,
-        }:
-            raise ValueError("Codex initial candidate bytes differ")
+                reference_nonce,
+                maximum_candidates_per_turn,
+                submission_contract,
+            )
+            initial_invocation = builder.build(
+                _turn_prompt(
+                    candidate,
+                    1,
+                    arm=arm,
+                    expected_submission=expected_initial,
+                    maximum_candidates_per_turn=maximum_candidates_per_turn,
+                    submission_contract=submission_contract,
+                    tool_instruction=tool_instruction,
+                    reference_bundle_sha256=reference_bundle_sha256,
+                    reference_bundle=reference_bundle,
+                    prompt_template=prompt_template,
+                ),
+                thread_id=None,
+            )
+            _validate_invocation(
+                initial_invocation,
+                executable=executable,
+                workspace=arm_workspace,
+            )
+            initial = adapter.execute(
+                initial_invocation,
+                candidate_path=candidate,
+                expected_change="add",
+                expected_terminal_message=_terminal_message(
+                    1, event_contract, arm=arm
+                ),
+                event_contract=event_contract,
+                submission_contract=submission_contract,
+                arm=(
+                    arm
+                    if submission_contract == CANDIDATE_SET_ENVELOPE_V1
+                    else None
+                ),
+                maximum_candidates_per_turn=maximum_candidates_per_turn,
+            )
+            _validate_workspace(arm_workspace, candidate)
+            initial_submission = candidate.read_bytes()
+            if (
+                initial.candidates != initial_candidates
+                if submission_contract == CANDIDATE_SET_ENVELOPE_V1
+                else json.loads(initial.candidates[0]) != expected_initial
+            ):
+                raise ValueError("Codex initial candidate bytes differ")
 
-        resumed_invocation = builder.build(
-            _turn_prompt(
-                candidate,
+            expected_resumed, resumed_candidates = _expected_submission(
+                arm,
                 2,
-                reference_bundle_sha256=reference_bundle_sha256,
-                reference_bundle=reference_bundle,
-                reference_nonce=reference_nonce,
-                prompt_template=prompt_template,
-            ),
-            thread_id=initial.thread_id,
-        )
-        _validate_invocation(
-            resumed_invocation,
-            executable=executable,
-            workspace=workspace,
-        )
-        _validate_invocation_pair(
-            initial_invocation,
-            resumed_invocation,
-            thread_id=initial.thread_id,
-        )
-        resumed = adapter.execute(
-            resumed_invocation,
-            candidate_path=candidate,
-            expected_change="update",
-            expected_terminal_message=_terminal_message(2, event_contract),
-            event_contract=event_contract,
-        )
-        _validate_workspace(workspace, candidate)
+                reference_nonce,
+                maximum_candidates_per_turn,
+                submission_contract,
+            )
+            resumed_invocation = builder.build(
+                _turn_prompt(
+                    candidate,
+                    2,
+                    arm=arm,
+                    expected_submission=expected_resumed,
+                    maximum_candidates_per_turn=maximum_candidates_per_turn,
+                    submission_contract=submission_contract,
+                    tool_instruction=tool_instruction,
+                    reference_bundle_sha256=reference_bundle_sha256,
+                    reference_bundle=reference_bundle,
+                    prompt_template=prompt_template,
+                ),
+                thread_id=initial.thread_id,
+            )
+            _validate_invocation(
+                resumed_invocation,
+                executable=executable,
+                workspace=arm_workspace,
+            )
+            _validate_invocation_pair(
+                initial_invocation,
+                resumed_invocation,
+                thread_id=initial.thread_id,
+            )
+            resumed = adapter.execute(
+                resumed_invocation,
+                candidate_path=candidate,
+                expected_change="update",
+                expected_terminal_message=_terminal_message(
+                    2, event_contract, arm=arm
+                ),
+                event_contract=event_contract,
+                submission_contract=submission_contract,
+                arm=(
+                    arm
+                    if submission_contract == CANDIDATE_SET_ENVELOPE_V1
+                    else None
+                ),
+                maximum_candidates_per_turn=maximum_candidates_per_turn,
+            )
+            _validate_workspace(arm_workspace, candidate)
+            resumed_submission = candidate.read_bytes()
+            if (
+                (
+                    resumed.candidates != resumed_candidates
+                    if submission_contract == CANDIDATE_SET_ENVELOPE_V1
+                    else json.loads(resumed.candidates[0]) != expected_resumed
+                )
+                or resumed.thread_id != initial.thread_id
+                or initial.provider_tokens <= 0
+                or resumed.provider_tokens <= 0
+                or initial.candidate_sha256s == resumed.candidate_sha256s
+                or (
+                    event_contract == "tool_rich_candidate_v1"
+                    and (
+                        not any(
+                            activity.item_type == "command_execution"
+                            for activity in initial.tool_activity
+                        )
+                        or not any(
+                            activity.item_type == "command_execution"
+                            for activity in resumed.tool_activity
+                        )
+                    )
+                )
+            ):
+                raise ValueError(
+                    "Codex two-Turn identity, usage, or candidate lifecycle differs"
+                )
+            observations[arm] = {
+                "builder": builder,
+                "candidate": candidate,
+                "initial": initial,
+                "initial_invocation": initial_invocation,
+                "initial_submission": initial_submission,
+                "resumed": resumed,
+                "resumed_invocation": resumed_invocation,
+                "resumed_submission": resumed_submission,
+            }
+
         if (
-            json.loads(resumed.candidates[0])
-            != {"qualification_turn": 2, "reference_nonce": reference_nonce}
-            or resumed.thread_id != initial.thread_id
-            or initial.provider_tokens <= 0
-            or resumed.provider_tokens <= 0
-            or initial.candidate_sha256s == resumed.candidate_sha256s
+            len(configuration_sha256s) != 1
+            or (
+                submission_contract == CANDIDATE_SET_ENVELOPE_V1
+                and set(workspace.iterdir()) != set(workspaces.values())
+            )
+            or len(
+                {
+                    str(observation["initial"].thread_id)
+                    for observation in observations.values()
+                }
+            )
+            != len(qualification_arms)
             or sha256(executable.read_bytes()).hexdigest() != executable_sha256
             or sha256(output_schema.read_bytes()).hexdigest() != output_schema_sha256
             or read_frozen_reference_bundle(references)[0] != reference_bundle_sha256
-            or (
-                event_contract == "tool_rich_candidate_v1"
-                and (
-                    not any(
-                        activity.item_type == "command_execution"
-                        for activity in initial.tool_activity
-                    )
-                    or not any(
-                        activity.item_type == "command_execution"
-                        for activity in resumed.tool_activity
-                    )
-                )
-            )
         ):
-            raise ValueError("Codex two-Turn identity, usage, or candidate lifecycle differs")
+            raise ValueError("Codex provider qualification authority changed")
 
         receipt = ProviderQualificationReceipt(
             provider_revision=args.provider_revision,
             executable_sha256=executable_sha256,
-            configuration_sha256=builder.configuration_sha256,
+            configuration_sha256=next(iter(configuration_sha256s)),
             initial_and_resume_equivalent=True,
             file_lifecycle_observed=True,
             usage_observed=True,
             qualified=True,
             scope=receipt_scope,
         )
-        objects = [
-            evidence.put(initial.raw_events, media_type="application/x-ndjson").reference(
-                "initial_provider_events"
-            ),
-            evidence.put(initial.candidates[0], media_type="application/json").reference(
-                "initial_candidate"
-            ),
-            _put_json(evidence, _invocation_document(initial_invocation)).reference(
-                "initial_invocation"
-            ),
-            evidence.put(resumed.raw_events, media_type="application/x-ndjson").reference(
-                "resumed_provider_events"
-            ),
-            evidence.put(resumed.candidates[0], media_type="application/json").reference(
-                "resumed_candidate"
-            ),
-            _put_json(evidence, _invocation_document(resumed_invocation)).reference(
-                "resumed_invocation"
-            ),
-            _put_json(evidence, receipt.document).reference("qualification_receipt"),
-            evidence.put(reference_path.read_bytes(), media_type="application/json").reference(
-                "qualification_reference"
-            ),
-        ]
-        ledger.append(
-            "provider_qualification_observed",
-            {
+        objects = []
+        arm_payloads: dict[str, object] = {}
+        for arm, observation in observations.items():
+            initial = observation["initial"]
+            resumed = observation["resumed"]
+            initial_invocation = observation["initial_invocation"]
+            resumed_invocation = observation["resumed_invocation"]
+            prefix = "" if submission_contract == SINGLE_CANDIDATE_V1 else f"{arm}_"
+            objects.extend(
+                [
+                    evidence.put(
+                        initial.raw_events,
+                        media_type="application/x-ndjson",
+                    ).reference(f"{prefix}initial_provider_events"),
+                    _put_json(
+                        evidence, _invocation_document(initial_invocation)
+                    ).reference(f"{prefix}initial_invocation"),
+                    evidence.put(
+                        resumed.raw_events,
+                        media_type="application/x-ndjson",
+                    ).reference(f"{prefix}resumed_provider_events"),
+                    _put_json(
+                        evidence, _invocation_document(resumed_invocation)
+                    ).reference(f"{prefix}resumed_invocation"),
+                ]
+            )
+            if submission_contract == SINGLE_CANDIDATE_V1:
+                objects.extend(
+                    [
+                        evidence.put(
+                            initial.candidates[0], media_type="application/json"
+                        ).reference("initial_candidate"),
+                        evidence.put(
+                            resumed.candidates[0], media_type="application/json"
+                        ).reference("resumed_candidate"),
+                    ]
+                )
+            else:
+                objects.extend(
+                    [
+                        evidence.put(
+                            observation["initial_submission"],
+                            media_type="application/json",
+                        ).reference(f"{arm}_initial_submission_envelope"),
+                        evidence.put(
+                            observation["resumed_submission"],
+                            media_type="application/json",
+                        ).reference(f"{arm}_resumed_submission_envelope"),
+                    ]
+                )
+                candidate_media_type = (
+                    "application/json" if arm == "open_cake" else "text/x-cuda"
+                )
+                for phase, turn in (("initial", initial), ("resumed", resumed)):
+                    objects.extend(
+                        evidence.put(candidate, media_type=candidate_media_type).reference(
+                            f"{arm}_{phase}_candidate_{index:04d}"
+                        )
+                        for index, candidate in enumerate(turn.candidates)
+                    )
+            arm_payloads[arm] = {
                 "thread_id": initial.thread_id,
                 "initial_provider_tokens": initial.provider_tokens,
                 "resumed_provider_tokens": resumed.provider_tokens,
                 "initial_normalization": initial.normalization,
                 "resumed_normalization": resumed.normalization,
-                "initial_candidate_sha256": initial.candidate_sha256s[0],
-                "resumed_candidate_sha256": resumed.candidate_sha256s[0],
-                "objects": objects,
-                "reference_bundle_sha256": reference_bundle_sha256,
+                "initial_candidate_sha256s": list(initial.candidate_sha256s),
+                "resumed_candidate_sha256s": list(resumed.candidate_sha256s),
                 "initial_auxiliary_activity": [
                     dict(activity.document) for activity in initial.tool_activity
                 ],
                 "resumed_auxiliary_activity": [
                     dict(activity.document) for activity in resumed.tool_activity
                 ],
-            },
+            }
+        objects.extend(
+            [
+                _put_json(evidence, receipt.document).reference(
+                    "qualification_receipt"
+                ),
+                evidence.put(
+                    reference_path.read_bytes(), media_type="application/json"
+                ).reference("qualification_reference"),
+            ]
         )
+        if submission_contract == SINGLE_CANDIDATE_V1:
+            legacy = arm_payloads["open_cake"]
+            observed_payload = {
+                "thread_id": legacy["thread_id"],
+                "initial_provider_tokens": legacy["initial_provider_tokens"],
+                "resumed_provider_tokens": legacy["resumed_provider_tokens"],
+                "initial_normalization": legacy["initial_normalization"],
+                "resumed_normalization": legacy["resumed_normalization"],
+                "initial_candidate_sha256": legacy["initial_candidate_sha256s"][0],
+                "resumed_candidate_sha256": legacy["resumed_candidate_sha256s"][0],
+                "objects": objects,
+                "reference_bundle_sha256": reference_bundle_sha256,
+                "initial_auxiliary_activity": legacy["initial_auxiliary_activity"],
+                "resumed_auxiliary_activity": legacy["resumed_auxiliary_activity"],
+            }
+        else:
+            observed_payload = {
+                "submission_contract": submission_contract,
+                "maximum_candidates_per_turn": maximum_candidates_per_turn,
+                "arms": arm_payloads,
+                "objects": objects,
+                "reference_bundle_sha256": reference_bundle_sha256,
+            }
+        ledger.append(
+            "provider_qualification_observed",
+            observed_payload,
+        )
+        endpoint = {
+            "qualification_receipt_sha256": receipt.canonical_sha256,
+            "add_observed": True,
+            "update_observed": True,
+            "thread_continuity_observed": True,
+            "usage_observed": True,
+            "sandbox_observed": True,
+            "cwd_observed": True,
+            "candidate_changed": True,
+            "reference_visibility_observed": True,
+            "gpu_execution_authorized": False,
+            "feature_policy": args.feature_policy,
+            "event_contract": event_contract,
+        }
+        if submission_contract == CANDIDATE_SET_ENVELOPE_V1:
+            endpoint["submission_contract"] = submission_contract
+            endpoint["arms_qualified"] = list(qualification_arms)
+            endpoint["maximum_candidates_per_turn"] = maximum_candidates_per_turn
         ledger.seal(
             protocol_adherence="adhered",
             endpoint_observation="qualified",
-            endpoint={
-                "qualification_receipt_sha256": receipt.canonical_sha256,
-                "add_observed": True,
-                "update_observed": True,
-                "thread_continuity_observed": True,
-                "usage_observed": True,
-                "sandbox_observed": True,
-                "cwd_observed": True,
-                "candidate_changed": True,
-                "reference_visibility_observed": True,
-                "gpu_execution_authorized": False,
-                "feature_policy": args.feature_policy,
-                "event_contract": event_contract,
-            },
+            endpoint=endpoint,
         )
     except Exception as error:
         failure_payload: dict[str, object] = {
