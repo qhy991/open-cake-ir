@@ -1676,6 +1676,123 @@ class SearchBudgetTest(unittest.TestCase):
         )
 
 
+class StructurallyDistinctCandidatesTest(unittest.TestCase):
+    """Two spellings of one program are searched once, and the author is told.
+
+    The paper's first stage asks for structurally distinct candidates. A provider that
+    renames a Schedule and submits it again produces different bytes, a different seal and
+    the same kernel; measuring it twice spends GPU time to learn what the first
+    measurement already said.
+    """
+
+    def _run(self, *, same_program: bool):
+        class TwinEnvironment(FakeEnvironment):
+            def build(self, submission):
+                variant = json.loads(submission.payload)["variant"]
+                result = super().build(submission)
+                return EnvironmentResult(
+                    result.disposition,
+                    result.submission_sha256,
+                    result.launchable,
+                    result.feedback,
+                    result.artifact_payloads,
+                    cost=result.cost,
+                    # Identical when the two candidates are one program, distinct when
+                    # they are two. Nothing else about the submissions differs.
+                    semantic_sha256="a" * 64 if same_program else f"{variant:064d}",
+                )
+
+        class TwoCandidateProvider(FakeProvider):
+            def turn(self, request):
+                observed = super().turn(request)
+                payloads = tuple(
+                    json.dumps(
+                        {"run_id": request.run_id, "turn": request.turn, "variant": i},
+                        sort_keys=True,
+                    ).encode()
+                    for i in range(2)
+                )
+                return ProviderTurn(
+                    thread_id=observed.thread_id,
+                    provider_tokens=observed.provider_tokens,
+                    candidates=payloads,
+                    candidate_sha256s=tuple(sha256(p).hexdigest() for p in payloads),
+                    raw_events=observed.raw_events,
+                    raw_events_sha256=observed.raw_events_sha256,
+                    terminal_message=observed.terminal_message,
+                    terminal_message_count=observed.terminal_message_count,
+                    normalization=observed.normalization,
+                )
+
+        lab = Lab(ROOT)
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+        document = json.loads(source.read_text(encoding="utf-8"))
+        document["evaluation_protocol"]["searches_per_turn"] = 2
+        document["evaluation_protocol"]["search_materiality_ratio"] = 1.05
+        with tempfile.TemporaryDirectory() as directory:
+            study_path = Path(directory) / "successor.json"
+            study_path.write_text(
+                json.dumps(document, sort_keys=True, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            lock = lab.preflight(study_path)
+            arms = lock.document["resolved_inputs"]["arm_environments"]
+            protocol_sha256 = sha256(
+                json.dumps(
+                    lock.document["evaluation_protocol"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+            campaign = lab.execute(
+                lock,
+                Path(directory) / "campaign-evidence",
+                provider=TwoCandidateProvider(),
+                environments={arm: TwinEnvironment(arm, arms[arm]) for arm in arms},
+                evaluator=FakeEvaluator(
+                    lock.document["evaluation_protocol"],
+                    protocol_sha256,
+                    lock.document["workload"]["canonical_sha256"],
+                ),
+            )
+            store = EvidenceStore.open(campaign.evidence_root)
+            events = [
+                event
+                for identifier in lock.run_order
+                for event in store.replay_events(identifier)
+            ]
+            searched = sum(
+                1
+                for event in events
+                if event["kind"] == "candidate_evaluated"
+                and event["payload"]["purpose"] == "search"
+            )
+            collapses = [
+                event["payload"]
+                for event in events
+                if event["kind"] == "diagnosis_routed"
+                and "collapsed" in event["payload"]
+            ]
+            return searched, collapses
+
+    def test_one_program_is_measured_once_and_reported(self) -> None:
+        distinct_searched, distinct_collapses = self._run(same_program=False)
+        self.assertEqual(distinct_collapses, [])
+
+        same_searched, same_collapses = self._run(same_program=True)
+        self.assertTrue(same_collapses)
+        for payload in same_collapses:
+            self.assertEqual(payload["routed_to"], "candidate")
+            for entry in payload["collapsed"]:
+                # The report has to name which candidate it stood in for, or the author
+                # is told they repeated themselves without being told what they repeated.
+                self.assertNotEqual(
+                    entry["candidate_sha256"], entry["same_program_as"]
+                )
+        # And the saving is real rather than only reported.
+        self.assertLess(same_searched, distinct_searched)
+
+
 class CostModelRouteTest(unittest.TestCase):
     """The fourth destination, unlocked by evaluating more than one candidate.
 

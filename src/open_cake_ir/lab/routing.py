@@ -7,7 +7,8 @@ rules has nothing to accumulate.
 
 Each destination is inferred from a signal the loop already produces, not from a new one:
 
-* **candidate** -- a gate refused it. The Schedule is wrong and its author can see why.
+* **candidate** -- a gate refused it, or the set repeated itself. The Schedule is wrong,
+  or two of them are one program under two names, and its author can see why either way.
 * **verifier** -- every gate passed and the toolchain still refused. Something was true of
   this Schedule that the pre-compile gates do not model, which is a missing rule rather
   than a bad candidate.

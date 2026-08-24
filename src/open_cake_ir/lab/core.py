@@ -30,7 +30,7 @@ from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission
 from .executor import ExecutorRevision
 from .faults import RunProtocolFault
-from .routing import COST_MODEL, route_rejection
+from .routing import CANDIDATE, COST_MODEL, route_rejection
 from .portfolio import KernelSeed
 from .providers import (
     CODEX_DISABLED_FEATURES,
@@ -2227,10 +2227,29 @@ class Lab:
                         # single because that one is the measurement a claim rests on.
                         budget_k = evaluation_protocol.get("searches_per_turn", 1)
                         searched: list[tuple[object, EvaluationReceipt]] = []
+                        # The paper's first stage asks for structurally distinct
+                        # candidates. Two Schedules that differ only in a name or in the
+                        # order of independent declarations are one kernel with two
+                        # spellings, and the second search buys nothing the first did not
+                        # already measure.
+                        spelled: dict[str, str] = {}
+                        collapsed: list[dict[str, str]] = []
                         for position in launchable_first[:budget_k]:
                             entry_submission, entry_result = built[position]
                             if entry_result.disposition != "launchable":
                                 break
+                            semantic = entry_result.semantic_sha256
+                            if semantic is not None and semantic in spelled:
+                                collapsed.append(
+                                    {
+                                        "candidate_sha256": entry_submission.sha256,
+                                        "same_program_as": spelled[semantic],
+                                        "semantic_sha256": semantic,
+                                    }
+                                )
+                                continue
+                            if semantic is not None:
+                                spelled[semantic] = entry_submission.sha256
                             entry_launchable = entry_result.launchable
                             assert entry_launchable is not None
                             artifact_references = []
@@ -2292,6 +2311,24 @@ class Lab:
                             )
                             searched.append((entry_launchable, entry_search))
                             submission = entry_submission
+
+                        if collapsed:
+                            # Not a measurement's finding, so it does not wait for
+                            # materiality: two spellings of one program is a fact about
+                            # the set, visible before any of it ran.
+                            ledger.append(
+                                "diagnosis_routed",
+                                {
+                                    "turn": turn_number,
+                                    "routed_to": CANDIDATE,
+                                    "routing_reason": (
+                                        f"{len(collapsed)} of the candidates searched "
+                                        "this Turn are the same program as an earlier "
+                                        "one under a different name"
+                                    ),
+                                    "collapsed": collapsed,
+                                },
+                            )
 
                         # The filter's order can now be checked against a measurement.
                         # When they disagree the candidate was not wrong -- the order was,

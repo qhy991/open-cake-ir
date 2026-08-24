@@ -348,6 +348,16 @@ class EnvironmentResult:
     study measures, not an accident.
     """
 
+    semantic_sha256: str | None = None
+    """This candidate's identity as a program rather than as bytes, if known.
+
+    The paper's first stage asks for *structurally distinct* candidates. Two Schedules
+    that differ only in a name or in the order of independent declarations are one kernel
+    with two spellings, and searching both spends a second measurement to learn what the
+    first already said. Supplied by the environment for the same reason `cost` is: the
+    environment owns the Compiler, and this is the Compiler's own semantic digest.
+    """
+
     def __post_init__(self) -> None:
         if self.disposition not in {"launchable", "rejected"}:
             raise ValueError("Authoring Environment disposition differs")
@@ -521,6 +531,11 @@ class OpenCakeEnvironment:
                 {"stage": "built", "findings": self._finding_rows(assessment)}
             ),
             cost=next(iter(self._compiler.rank([assessment])[0]), None),
+            semantic_sha256=(
+                digest
+                if isinstance(digest := assessment.analysis.get("semantic_sha256"), str)
+                else None
+            ),
         )
 
 
