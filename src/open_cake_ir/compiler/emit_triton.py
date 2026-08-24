@@ -281,8 +281,12 @@ class _TritonEmitter:
             if (
                 component.source is AccessIndexKind.LOOP_TILE
                 and f"{component.name}_offsets" == vector
-                and self.loop is not None
             ):
+                # ACCESS_LOOP_UNKNOWN refuses this Schedule before it reaches emission,
+                # so this cannot fire. It raises anyway because the alternative is a
+                # silent fall-through to "needs no mask", which is a wrong kernel rather
+                # than a refused one.
+                _require(self.loop is not None, f"{vector} indexes a loop there is none of")
                 return self._extent(self.loop.buffer, self.loop.dimension)
         return None  # a full-dimension index spans its axis and needs no mask
 

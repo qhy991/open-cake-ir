@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "663777b0f0e7ab1146b44c3e742a5d42aa964789e22acb8bd99dd136fb7bc3d0"
+    "canonical_sha256": "c45e24fe12111b4801ad86e93cad3332ca7663ef8f961380792b1714100754e4"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "a loop that runs once is not a loop"
+  "approval_basis": "a mask path that cannot fire raises instead of falling through"
 }

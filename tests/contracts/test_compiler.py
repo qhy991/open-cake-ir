@@ -362,6 +362,36 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(released_gate.compiler_revision_id, released["revision_id"])
         self.assertTrue(released_gate.passed)
 
+    def test_every_admitted_profile_has_a_corpus_case_that_lowers(self) -> None:
+        """A profile is admitted by a row; a row that nothing exercises is a claim.
+
+        The registry was reshaped so that an operator is one record plus the Schedules
+        that claim it. Nothing held the second half: a profile could be added with a
+        toolchain, a conformance rule and a backend, and no Schedule anywhere proving the
+        combination lowers. This is what makes the corpus the evidence for the row.
+        """
+
+        from open_cake_ir.compiler.core import _PROFILES
+
+        manifest = json.loads(
+            (ROOT / "corpus/manifest.json").read_text(encoding="utf-8")
+        )
+        lowering: dict[str, list[str]] = {}
+        for case in manifest["cases"]:
+            document = json.loads(
+                (ROOT / case["schedule"]).read_text(encoding="utf-8")
+            )
+            profile = document.get("metadata", {}).get("profile")
+            if case["expected"]["lowering_eligible"]:
+                lowering.setdefault(profile, []).append(case["case_id"])
+
+        for name in _PROFILES:
+            with self.subTest(profile=name):
+                self.assertTrue(
+                    lowering.get(name),
+                    f"profile {name!r} is admitted but no corpus case lowers through it",
+                )
+
     def test_full_compiler_corpus_gate_passes(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
 
