@@ -1638,9 +1638,12 @@ class Lab:
             if claim_scope == "artifact_optimization_only"
             else "closed_file_change_v1"
         )
+        _name(
+            provider.get("reasoning_effort"),
+            "study.arms.provider.reasoning_effort",
+        )
         if (
             provider.get("model") != "gpt-5.6-sol"
-            or provider.get("reasoning_effort") != "max"
             or provider.get("service_tier") != "default"
             or provider.get("sandbox") != "workspace-write"
             or provider.get("cwd_policy") != "independent_empty_workspace"

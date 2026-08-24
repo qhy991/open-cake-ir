@@ -175,6 +175,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         run_id: str,
         feature_policy: str = "closed_research",
         maximum_candidates_per_turn: int | None = None,
+        reasoning_effort: str = "max",
     ) -> tuple[subprocess.CompletedProcess[bytes], Path, Path, Path]:
         receipt_path = root / "provider-qualification.json"
         anchor_path = root / "provider-qualification-anchor.json"
@@ -205,6 +206,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 str(evidence_root),
                 "--run-id",
                 run_id,
+                "--reasoning-effort",
+                reasoning_effort,
                 "--feature-policy",
                 feature_policy,
             ]
@@ -332,6 +335,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 provider_revision="codex-candidate-set-fixture-v1",
                 run_id="codex-provider-candidate-set",
                 maximum_candidates_per_turn=3,
+                reasoning_effort="xhigh",
             )
 
             self.assertEqual(completed.returncode, 0, completed.stderr.decode())
@@ -354,6 +358,13 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 ["open_cake", "direct_cuda"],
             )
             self.assertEqual(set(observed["arms"]), {"open_cake", "direct_cuda"})
+            invocation_ref = next(
+                item
+                for item in observed["objects"]
+                if item["role"] == "open_cake_initial_invocation"
+            )
+            invocation = json.loads(evidence.read_object(invocation_ref))
+            self.assertIn('model_reasoning_effort="xhigh"', invocation["argv"])
             self.assertNotEqual(
                 observed["arms"]["open_cake"]["thread_id"],
                 observed["arms"]["direct_cuda"]["thread_id"],

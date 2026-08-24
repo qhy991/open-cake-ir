@@ -13,7 +13,7 @@ supports a broader scientific claim.
 | G3 | passed | v10 17-case Corpus Gate, released content-bound Revision lock, reviewed approval and 33-source closure; the scientific-v3 Triton warp-specialized argmin failure is retained as a lowering-ineligible regression |
 | G4 | passed for migrated evidence and the bounded attribution slice | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles, raw r45 replay, and raw-checked no-timing NCU attribution including all correct search survivors in the v18 qualification |
 | G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay, closed successor matched-event semantics and matched/Portfolio semantic replay pass |
-| G6 | passed | 335 tests + 223 subtests cover candidate-set transport/selection/replay, unknown/start/diagnosis event tampering, all-or-nothing calibrated ordering, every correctness-qualified search survivor's attribution and missing-profile rejection, two-part Estimand availability/missingness, tool-rich scratch lifecycles, artifact-only feedback-budget freezing, immutable CLI reports, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, preregistered ranking-calibration replay and all three matched Claim Scopes |
+| G6 | passed | 336 tests + 223 subtests cover candidate-set transport/selection/replay, unknown/start/diagnosis event tampering, exact reasoning-effort qualification/freezing, all-or-nothing calibrated ordering, every correctness-qualified search survivor's attribution and missing-profile rejection, two-part Estimand availability/missingness, tool-rich scratch lifecycles, artifact-only feedback-budget freezing, immutable CLI reports, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, preregistered ranking-calibration replay and all three matched Claim Scopes |
 | G7 | passed | r4 proves singleton continuity; Codex 0.144.4 closed and tool-rich successors prove the two-arm candidate-set add/update lifecycle |
 | G7F | passed | tool-rich v1 injects no feature disables and replays shell activity; its candidate-set successor preserves the single-writer envelope boundary, and artifact v4 replays one measured feedback transition per arm without claiming auxiliary-agent use |
 | G8 | passed | r6 passes the singleton pilot; candidate-set v2 covers selected-only attribution, and v3 adds two adhered v18 Runs with ten replayed Receipts and complete correct-search-survivor profiles |
@@ -100,6 +100,7 @@ Tests through `preflight -> execute -> audit` must prove:
 - Campaign Lock references exact Workload/Study/Authoring Environment/provider/compiler/toolchain digests;
 - allocation order and globally unique labels are fixed before outcomes;
 - initial and resumed turns preserve cwd, sandbox, scaffold, provider and environment;
+- provider reasoning effort is explicit, identical across arms and covered by the exact qualification digest;
 - success, candidate rejection, protocol fault and contamination all yield Terminal Archives;
 - Archive Integrity, Protocol Adherence, Endpoint Observation and Analysis Inclusion remain orthogonal;
 - compile/correctness/no-qualified outcomes are observed rather than complete-case deleted;
@@ -230,3 +231,5 @@ failure remains an observed qualification outcome, the complete two-part Estiman
 least one conditional latency per arm, and the estimate includes its declared qualification-rate difference. The
 legacy v3 plan, Runs and report remain unchanged. Executor v23 preserves that Estimand and closes the semantic event
 vocabulary only for successor matched Studies; it does not manufacture additional historical endpoint evidence.
+Executor v24 makes reasoning effort a Study-owned, live-qualified factor so a future successor can use the paper's
+`xhigh` without treating the distinct frozen `max` level as an alias.

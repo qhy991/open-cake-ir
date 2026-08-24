@@ -89,7 +89,7 @@ class ProviderContractTests(unittest.TestCase):
             executable=ROOT / "pyproject.toml",
             provider_revision="codex-fixture-v1",
             model="gpt-5.6-sol",
-            reasoning_effort="max",
+            reasoning_effort="xhigh",
             service_tier="default",
             workspace=ROOT,
             output_schema=ROOT / "contracts/providers/codex-turn-output-schema-v1.json",
@@ -118,6 +118,8 @@ class ProviderContractTests(unittest.TestCase):
             self.assertIn("shell_tool", disabled)
         self.assertNotIn("resume", initial.argv)
         self.assertIn("resume", resumed.argv)
+        self.assertIn('model_reasoning_effort="xhigh"', initial.argv)
+        self.assertEqual(builder.configuration["reasoning_effort"], "xhigh")
 
     def test_provider_default_features_emit_no_forced_disable_flags(self) -> None:
         builder = CodexInvocationBuilder(

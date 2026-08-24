@@ -243,7 +243,11 @@ def main() -> int:
     parser.add_argument("--evidence-root", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--model", default="gpt-5.6-sol")
-    parser.add_argument("--reasoning-effort", default="max")
+    parser.add_argument(
+        "--reasoning-effort",
+        required=True,
+        help="exact provider reasoning effort to qualify as a treatment factor",
+    )
     parser.add_argument("--service-tier", default="default")
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument(

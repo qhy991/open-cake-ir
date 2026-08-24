@@ -82,7 +82,7 @@ and a new date; the earlier record stays as history for the Revision it was take
 ## 2. Resolve a Study
 
 ```bash
-open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v23.json \
+open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v24.json \
   --output /new/path/campaign.lock.json
 ```
 
@@ -92,17 +92,17 @@ validates it through Lab preflight. It deliberately refuses a live Study because
 broker command digest; `freeze_live_matched_study.py` is the sole path that refreshes that complete authority. The
 names below were current when written.
 
-The current checked-in scientific matched contract, `matched-search-infrastructure-v23.json`, uses a zero-GPU fixture
+The current checked-in scientific matched contract, `matched-search-infrastructure-v24.json`, uses a zero-GPU fixture
 provider and intentionally cannot start a live provider. Its Analysis Plan is the ADR 0013 successor: the terminal
 budget comes only from `budget.limit`, candidate failure is observed, external failure is missing, and a complete
 estimate requires conditional latency in both arms. Its Evidence policy is the ADR 0014 successor: every event kind
 is closed, Run boundaries are checked, and search/diagnosis projections are derived during replay. The current
-non-scientific G8 template is `matched-search-system-qualification-v23.json`; earlier versions remain frozen
+non-scientific G8 template is `matched-search-system-qualification-v24.json`; earlier versions remain frozen
 historical records. Freeze
 a live successor only after a real two-Turn qualification emits a receipt with
 the matching closed or tool-rich scope and binds the exact executable, model, reasoning effort, service tier, output
 schema, prompt/scaffold bytes, removed environment, reference visibility, feature overrides and event contract.
-`artifact-optimization-v23.json` is the current zero-GPU contract fixture. The frozen
+`artifact-optimization-v24.json` is the current zero-GPU contract fixture. The frozen
 `artifact-optimization-verda-v7.json` remains a historical live authority for Executor v8; it is not executable
 from the current source closure. Re-freeze a successor with the exact accessible checkout and broker command before
 launching a live Campaign. Earlier revisions remain historical.
@@ -122,6 +122,7 @@ python tools/qualify_codex_provider.py \
   --anchor-output evidence/qualifications/<new-live-anchor>.json \
   --evidence-root evidence/qualifications/<new-live-run> \
   --run-id <new-live-run> \
+  --reasoning-effort xhigh \
   --maximum-candidates-per-turn 3 \
   --feature-policy closed_research
 ```
@@ -142,6 +143,7 @@ python tools/qualify_codex_provider.py \
   --anchor-output evidence/qualifications/<new-tool-rich-anchor>.json \
   --evidence-root evidence/qualifications/<new-tool-rich-run> \
   --run-id <new-tool-rich-run> \
+  --reasoning-effort max \
   --maximum-candidates-per-turn 3 \
   --feature-policy provider_defaults_optimization
 ```
@@ -151,11 +153,12 @@ Then freeze either non-scientific Study from its matching receipt, seal anchor a
 ```bash
 python tools/freeze_live_matched_study.py \
   --project-root . \
-  --template contracts/studies/matched-search-system-qualification-v23.json \
+  --template contracts/studies/matched-search-system-qualification-v24.json \
   --qualification contracts/providers/<new-live-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-live-anchor>.json \
-  --executor runtime/executors/open-cake-ir-b200-v23.json \
+  --executor runtime/executors/open-cake-ir-b200-v24.json \
   --runtime-config /new/path/runtime.json \
+  --reasoning-effort xhigh \
   --study-id <new-g8-study-id> \
   --output contracts/studies/<new-g8-study>.json \
   --enable-attribution
@@ -167,6 +170,11 @@ For an artifact-only successor that is intended to observe real Evaluation feedb
 declare `--provider-token-limit <N> --maximum-turns <M>`. They are one operation: both are required, the limit becomes
 the sole terminal checkpoint, and other Claim Scopes reject the override. Choose `N` from retained prior provider
 usage and keep `M` as the independent hard call bound; neither value creates a scientific budget claim.
+
+Reasoning effort has no implicit operator default. Qualification and freezing both name the exact value, and the
+qualification digest must match it. Use `xhigh` for a future paper-aligned scientific treatment; `max` remains a
+distinct engineering choice for the existing task-informed artifact lane. Changing the value requires a new
+qualification and successor Study, not a field edit.
 
 ## 4. Execute matched search, system qualification or artifact optimization
 

@@ -15,7 +15,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.lab import Lab, ProviderQualificationReceipt  # noqa: E402
+from open_cake_ir.lab import (  # noqa: E402
+    CANDIDATE_SET_ENVELOPE_V1,
+    CodexInvocationBuilder,
+    Lab,
+    ProviderQualificationReceipt,
+)
 from tools.freeze_live_matched_study import (  # noqa: E402
     _replace_artifact_feedback_budget,
 )
@@ -94,16 +99,25 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             executable = project / "codex-fixture"
             executable.write_bytes(b"qualified codex fixture")
             executable.chmod(0o700)
-            fixture = json.loads(
-                (
+            provider_revision = "codex-live-contract-fixture"
+            invocation = CodexInvocationBuilder(
+                executable=executable,
+                provider_revision=provider_revision,
+                model="gpt-5.6-sol",
+                reasoning_effort="xhigh",
+                service_tier="default",
+                workspace=project,
+                output_schema=(
                     project
-                    / "contracts/providers/fixture-provider-candidate-set-v1.json"
-                ).read_text()
+                    / "contracts/providers/codex-turn-output-schema-v1.json"
+                ),
+                removed_environment=("OPENAI_API_KEY", "ANTHROPIC_API_KEY"),
+                submission_contract=CANDIDATE_SET_ENVELOPE_V1,
             )
             qualification = ProviderQualificationReceipt(
-                provider_revision="codex-live-contract-fixture",
+                provider_revision=provider_revision,
                 executable_sha256=sha256(executable.read_bytes()).hexdigest(),
-                configuration_sha256=fixture["configuration_sha256"],
+                configuration_sha256=invocation.configuration_sha256,
                 initial_and_resume_equivalent=True,
                 file_lifecycle_observed=True,
                 usage_observed=True,
@@ -157,7 +171,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--template",
                 str(
                     project
-                    / "contracts/studies/matched-search-system-qualification-v23.json"
+                    / "contracts/studies/matched-search-system-qualification-v24.json"
                 ),
                 "--qualification",
                 str(qualification_path),
@@ -174,6 +188,8 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 ),
                 "--runtime-config",
                 str(runtime_path),
+                "--reasoning-effort",
+                "xhigh",
                 "--study-id",
                 "open-cake-ir-live-g8-contract-fixture",
                 "--output",
@@ -199,6 +215,14 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             self.assertEqual(output.stat().st_mode & 0o444, 0o444)
             study = json.loads(output.read_text())
             self.assertEqual(
+                study["arms"]["open_cake"]["provider"]["reasoning_effort"],
+                "xhigh",
+            )
+            self.assertEqual(
+                study["arms"]["direct_cuda"]["provider"]["reasoning_effort"],
+                "xhigh",
+            )
+            self.assertEqual(
                 study["evaluation_protocol"]["attribution_evaluation"],
                 "correctness_then_profile_each_search_survivor",
             )
@@ -217,7 +241,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             current_scientific = json.loads(
                 (
                     project
-                    / "contracts/studies/matched-search-infrastructure-v23.json"
+                    / "contracts/studies/matched-search-infrastructure-v24.json"
                 ).read_text()
             )
             scientific_output = project / "contracts/studies/live-scientific.json"

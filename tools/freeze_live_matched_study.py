@@ -99,6 +99,11 @@ def main() -> int:
     parser.add_argument("--qualification-anchor", type=Path, required=True)
     parser.add_argument("--executor", type=Path, required=True)
     parser.add_argument("--runtime-config", type=Path, required=True)
+    parser.add_argument(
+        "--reasoning-effort",
+        required=True,
+        help="exact qualified provider reasoning effort to freeze for both arms",
+    )
     parser.add_argument("--study-id", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
@@ -199,6 +204,7 @@ def main() -> int:
         arm = _object(arms[arm_name], f"study.arms.{arm_name}")
         provider = _object(arm["provider"], f"study.arms.{arm_name}.provider")
         provider["revision"] = qualification.provider_revision
+        provider["reasoning_effort"] = arguments.reasoning_effort
         provider["executable_sha256"] = executable_sha256
         provider["qualification"] = {
             "path": qualification_relative,
