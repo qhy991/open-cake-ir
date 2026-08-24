@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "3ac450a3e225555f576cdaac4e73729af6a76bea7c5087d8735668836f9a090f"
+    "canonical_sha256": "776653877fb5efb378cb28750ce6267e1d84113302437fb7b7dcc31a53076cc9"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "an mma contract names dtypes the operands have to have"
+  "approval_basis": "the residency report states its own domain"
 }

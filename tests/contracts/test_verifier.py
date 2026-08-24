@@ -795,3 +795,41 @@ class ContractionAccumulatorDiagnosticTest(unittest.TestCase):
         # A staged load that escapes is a different mistake and keeps the general reason.
         self.assertIn("only a reduction result", messages["norm_tile"])
 
+
+class UnmodelledResourceReportTest(unittest.TestCase):
+    """The residency report says what it did not examine, not only what it bounded.
+
+    A resource a Schedule declares nothing for produces no bound, and leaving it out of
+    the report reads as "does not constrain". Measurement made the difference concrete:
+    `gemm-bias-b1-smoke` declares no shared memory, Triton allocates it for the `tl.dot`
+    operands anyway, and on a B200 it bounds residency exactly as tightly as the registers
+    the analysis does model (`docs/ANALYSIS_CALIBRATION.md`).
+
+    The paper says a static analysis is a gate only within its modelled domain. A report
+    that does not state its domain leaves the reader to assume it.
+    """
+
+    def _residency_message(self, name: str) -> str:
+        schedule = Schedule.from_dict(
+            json.loads(
+                (ROOT / "corpus/schedules" / name).read_text(encoding="utf-8")
+            )
+        )
+        target = Target.load(ROOT / "compiler/targets/sm_100a.json")
+        return next(
+            finding.message
+            for finding in verify(schedule, target)
+            if finding.code == "RESIDENCY_BOUND"
+        )
+
+    def test_a_space_with_no_allocation_is_named_as_unbounded_not_omitted(self) -> None:
+        gemm = self._residency_message("gemm-bias-b1-smoke.json")
+        self.assertIn("declares no shared_memory or tensor_memory", gemm)
+        self.assertIn("a backend may still allocate some", gemm)
+
+    def test_a_schedule_that_declares_them_gets_no_such_caveat(self) -> None:
+        # It bounds both, so there is nothing unexamined to warn about.
+        assignment = self._residency_message("flash-kmeans-assignment-full.json")
+        self.assertNotIn("declares no", assignment)
+        self.assertIn("tensor_memory", assignment)
+

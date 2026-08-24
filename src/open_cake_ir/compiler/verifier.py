@@ -1841,13 +1841,31 @@ def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> No
         for b in sorted(upper_bound.bounds, key=lambda b: b.ctas)
         if b.resource != binding.resource
     )
+    # A resource the Schedule declares nothing for produces no bound, and omitting it
+    # reads as "does not constrain" when it means "was not examined". Measurement made
+    # that concrete: the GEMM declares no shared memory, Triton allocates it for the dot
+    # anyway, and it bound residency exactly as tightly as the registers this does model.
+    modelled = {b.resource for b in upper_bound.bounds}
+    unmodelled = " or ".join(
+        sorted(
+            resource
+            for resource in ("shared_memory", "tensor_memory")
+            if resource not in modelled
+        )
+    )
     out.add(
         "RESIDENCY_BOUND",
         "allocations" if binding.resource.endswith("memory") else "roles",
         f"{binding.resource} bounds maximum possible residency to {binding.ctas} CTA "
         "per multiprocessor "
         f"({binding.per_cta} of {binding.per_multiprocessor} {binding.unit})"
-        + (f"; the next bounds are {others}" if others else ""),
+        + (f"; the next bounds are {others}" if others else "")
+        + (
+            f"; this Schedule declares no {unmodelled}, so nothing here bounds it and a "
+            "backend may still allocate some"
+            if unmodelled
+            else ""
+        ),
         category,
         FindingSeverity.REPORT,
     )
