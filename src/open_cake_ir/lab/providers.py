@@ -367,7 +367,7 @@ def parse_codex_turn_events(
     *,
     expected_terminal_message: str,
     event_contract: str = "closed_file_change_v1",
-    expected_candidate_name: str | None = None,
+    legacy_candidate_name: str | None = None,
 ) -> ParsedCodexTurnEvents:
     """Parse the complete closed Codex JSONL Turn without reading its candidate."""
 
@@ -440,19 +440,16 @@ def parse_codex_turn_events(
             raise ValueError("provider item payload differs")
         item_type = item.get("type")
         changes = item.get("changes")
-        candidate_file_change = (
-            item_type == "file_change"
-            and (
-                event_contract == "closed_file_change_v1"
-                or (
-                    expected_candidate_name is not None
-                    and isinstance(changes, list)
-                    and len(changes) == 1
-                    and isinstance(changes[0], Mapping)
-                    and isinstance(changes[0].get("path"), str)
-                    and Path(cast(str, changes[0]["path"])).name
-                    == expected_candidate_name
-                )
+        candidate_file_change = item_type == "file_change" and (
+            event_contract == "closed_file_change_v1"
+            or (
+                legacy_candidate_name is not None
+                and isinstance(changes, list)
+                and len(changes) == 1
+                and isinstance(changes[0], Mapping)
+                and isinstance(changes[0].get("path"), str)
+                and Path(cast(str, changes[0]["path"])).name
+                == legacy_candidate_name
             )
         )
         if candidate_file_change:
@@ -671,7 +668,6 @@ def normalize_codex_turn(
         raw_events,
         expected_terminal_message=expected_terminal_message,
         event_contract=event_contract,
-        expected_candidate_name=candidate_path.name,
     )
     if (
         parsed.candidate_path is not None

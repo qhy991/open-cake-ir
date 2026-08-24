@@ -19,6 +19,7 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     ProviderQualificationReceipt,
     ProviderTurn,
     normalize_codex_turn,
+    parse_codex_turn_events,
     required_live_provider_qualification_scope,
 )
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
@@ -349,7 +350,10 @@ class ProviderContractTests(unittest.TestCase):
                 event_contract="tool_rich_candidate_v1",
             )
 
-        self.assertEqual(len(turn.tool_activity), 1)
+        self.assertEqual(
+            [activity.item_type for activity in turn.tool_activity],
+            ["mcp_tool_call", "file_change"],
+        )
         self.assertEqual(turn.tool_activity[0].item_type, "mcp_tool_call")
         self.assertEqual(turn.tool_activity[0].server, "fixture")
         self.assertEqual(turn.tool_activity[0].tool, "read_reference")
@@ -411,7 +415,7 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(turn.candidates, (b'{"schedule":1}',))
         self.assertEqual(turn.tool_activity[0].item_type, "command_execution")
 
-    def test_tool_rich_scratch_file_changes_leave_candidate_custody_to_postcondition(
+    def test_tool_rich_file_changes_leave_candidate_custody_to_postcondition(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -449,6 +453,10 @@ class ProviderContractTests(unittest.TestCase):
                 (
                     "candidate_add",
                     [{"path": str(candidate.absolute()), "kind": "add"}],
+                ),
+                (
+                    "candidate_update",
+                    [{"path": str(candidate.absolute()), "kind": "update"}],
                 ),
                 (
                     "scratch_delete",
@@ -518,8 +526,21 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(turn.normalization, "duplicate_exact_bracketed")
         self.assertEqual(
             [activity.item_type for activity in turn.tool_activity],
-            ["file_change", "file_change"],
+            ["file_change", "file_change", "file_change", "file_change"],
         )
+
+    def test_pre_v16_candidate_lifecycle_projection_remains_replayable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate-set.json"
+            parsed = parse_codex_turn_events(
+                self._events(candidate, duplicate=False),
+                expected_terminal_message='{"candidate_written":true}',
+                event_contract="tool_rich_candidate_v1",
+                legacy_candidate_name=candidate.name,
+            )
+
+        self.assertEqual(parsed.candidate_path, str(candidate.absolute()))
+        self.assertEqual(parsed.tool_activity, ())
 
     def test_tool_rich_scratch_file_change_requires_a_complete_stable_lifecycle(
         self,

@@ -3122,6 +3122,21 @@ class Lab:
         event_contract = str(
             provider_authority.get("event_contract", "closed_file_change_v1")
         )
+        executor_revision = _object(
+            _object(lock.document["execution"], "execution")["executor_revision"],
+            "execution.executor_revision",
+        )
+        executor_match = re.fullmatch(
+            r"open-cake-ir-b200-v(\d+)", str(executor_revision.get("executor_id"))
+        )
+        # Tool-rich Executors before v16 projected the fixed Candidate lifecycle
+        # separately from auxiliary activity. Preserve that frozen replay boundary;
+        # current Turns use the final no-follow file as their sole submission authority.
+        legacy_candidate_projection = (
+            event_contract == "tool_rich_candidate_v1"
+            and executor_match is not None
+            and int(executor_match.group(1)) < 16
+        )
         for expected_turn, event in enumerate(provider_events, start=1):
             payload = _object(event.get("payload"), "provider_turn.payload")
             if payload.get("turn") != expected_turn:
@@ -3225,7 +3240,9 @@ class Lab:
                 raw_events,
                 expected_terminal_message=expected_terminal,
                 event_contract=event_contract,
-                expected_candidate_name=expected_name,
+                legacy_candidate_name=(
+                    expected_name if legacy_candidate_projection else None
+                ),
             )
             turn_tokens = payload.get("turn_provider_tokens")
             if (

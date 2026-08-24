@@ -13,7 +13,7 @@ supports a broader scientific claim.
 | G3 | passed | v8 16-case Corpus Gate, released content-bound Revision lock, reviewed approval and 32-source closure |
 | G4 | passed for migrated evidence and the bounded attribution slice | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles, raw r45 replay, and raw-checked no-timing NCU attribution |
 | G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay and matched/Portfolio semantic replay pass |
-| G6 | passed | 322 tests + 223 subtests cover candidate-set transport/selection/replay, tool-rich scratch lifecycles, immutable CLI reports, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, attribution replay and all three matched Claim Scopes |
+| G6 | passed | 323 tests + 223 subtests cover candidate-set transport/selection/replay, tool-rich scratch lifecycles, immutable CLI reports, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, attribution replay and all three matched Claim Scopes |
 | G7 | passed | r4 proves singleton continuity; Codex 0.144.4 closed and tool-rich successors prove the two-arm candidate-set add/update lifecycle |
 | G7F | passed | tool-rich v1 injects no feature disables and replays shell activity; its candidate-set successor preserves the single-writer envelope boundary |
 | G8 | passed | r6 passes the singleton pilot; candidate-set v2 adds two adhered Runs, eight replayed Evaluation Receipts and an independent offline system-qualification pass |
@@ -146,12 +146,12 @@ The Codex 0.144.4 candidate-set successor additionally freezes the KDA-inspired 
 may investigate read-only, the primary provider thread is the sole envelope writer, and the external Lab alone may
 evaluate Candidates. Qualification attests this transport boundary, not the quality of auxiliary-agent reasoning.
 
-The first bounded artifact-optimization Campaign exercised that boundary beyond the two-Turn transport probe. Open
-Cake produced three launchable Candidates and promoted one through common Evaluation. Direct CUDA also wrote a valid
-three-member envelope, but Executor v14 rejected its temporary source-file add/delete lifecycles as competing
-Candidate lifecycles. Executor v15 makes those non-Candidate file changes strict typed auxiliary activity while the
-fixed envelope remains the sole submission authority. The v1 fault is immutable; a new Campaign, not replay
-reclassification, must qualify the repaired live path.
+Two bounded artifact-optimization Campaigns exercised that boundary beyond the transport probe. v1 promoted one Open
+Cake artifact and exposed v14's rejection of Direct CUDA scratch-file lifecycles. v2 promoted one Direct CUDA artifact
+and exposed v15's remaining rejection when Open Cake added and updated its fixed envelope in the same Turn. Executor
+v16 follows the already-declared authority boundary directly: every tool-rich file-change lifecycle is strict typed
+auxiliary activity, while the final no-follow envelope alone submits Candidates. Both earlier faults are immutable;
+a new Campaign, not replay reclassification, must qualify the repaired live path.
 
 ## G8 — Bounded end-to-end pilot passes
 
