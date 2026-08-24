@@ -362,6 +362,43 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(released_gate.compiler_revision_id, released["revision_id"])
         self.assertTrue(released_gate.passed)
 
+    def test_a_schedule_outside_the_corpus_is_history_something_else_pins(self) -> None:
+        """Why an ungated Schedule is allowed to sit in the corpus directory.
+
+        Two do. They are the r16 shape the vocabulary has since moved past -- they name an
+        epilogue formula this IR no longer admits, so they do not parse -- and a frozen
+        KernelSeed and two historical Study Contracts reference them by path. Deleting
+        them would break references that are supposed to be immutable; gating them is
+        impossible, because the Compiler cannot read them.
+
+        So the rule is: an ungated Schedule has to be both. Unreadable by the current
+        Revision, and pinned by something frozen. A file that is readable and ungated is
+        a corpus case someone forgot to register; one that is unreadable and unpinned is
+        a leftover.
+        """
+
+        from open_cake_ir.compiler.ir import Schedule, ScheduleParseError
+
+        manifest = json.loads(
+            (ROOT / "corpus/manifest.json").read_text(encoding="utf-8")
+        )
+        gated = {case["schedule"] for case in manifest["cases"]}
+        pinning = list((ROOT / "contracts").rglob("*.json")) + list(
+            (ROOT / "evidence").rglob("*.json")
+        )
+        haystack = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace") for path in pinning
+        )
+
+        for path in sorted((ROOT / "corpus/schedules").glob("*.json")):
+            relative = f"corpus/schedules/{path.name}"
+            if relative in gated:
+                continue
+            with self.subTest(schedule=path.name):
+                with self.assertRaises(ScheduleParseError):
+                    Schedule.from_dict(json.loads(path.read_text(encoding="utf-8")))
+                self.assertIn(relative, haystack)
+
     def test_the_revision_binds_every_schedule_its_gate_reads(self) -> None:
         """The Corpus Gate's own inputs have to be sealed, or the gate proves nothing.
 
