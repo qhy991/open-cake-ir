@@ -69,6 +69,11 @@ class BufferMode(str, Enum):
     SCRATCH = "scratch"
 
 
+# `tl.dot(a, trans(b))` and tcgen05 alike contract the last axis of both staged operands,
+# so a rank-2 operand carries K at axis 1. Named because two modules reason about it.
+_CONTRACTION_AXIS = 1
+
+
 class OperationKind(str, Enum):
     """The unified operation vocabulary.
 
@@ -1222,6 +1227,59 @@ class Schedule:
 
     def operation(self, op_id: str) -> Operation | None:
         return next((item for item in self.operations if item.op_id == op_id), None)
+
+    def _staged_axis_filled_by(self, operand: str, loop: "TileLoop") -> int | None:
+        """Which axis of a staged operand this loop's tile index fills, if any.
+
+        A `program` component is a scalar and removes the dimension it indexes, so the
+        staged tile's axes are the remaining components in order. An operand the loop does
+        not index at all -- loaded once outside it -- answers None.
+        """
+
+        producer = next((op for op in self.operations if operand in op.writes), None)
+        if producer is None:
+            return None
+        access = next(
+            (m for m in self.access_maps if m.operation == producer.op_id), None
+        )
+        if access is None:
+            return None
+        axis = 0
+        for component in access.indices:
+            if component.source is AccessIndexKind.PROGRAM:
+                continue
+            if (
+                component.source is AccessIndexKind.LOOP_TILE
+                and component.name == loop.iterator
+            ):
+                return axis
+            axis += 1
+        return None
+
+    def mma_accumulates_over(self, operation: Operation, loop: "TileLoop") -> bool:
+        """Whether this contraction sums across the loop rather than starting again.
+
+        A contraction is `out[M, N] = sum over K of a[M, K] * b[N, K]`, so K is axis 1 of
+        both staged operands. A loop that fills K is walking the sum and its results have
+        to accumulate; a loop that fills M or N is walking the output and each iteration
+        computes a different part of it.
+
+        Both shapes are in the corpus. Flash-KMeans tiles the centroid axis, which is the
+        output's N, and each iteration produces a fresh block. The Blackwell assignment
+        kernel tiles K, and tcgen05 accumulates in tensor memory. Deriving which is which
+        is what lets one emitter serve both without the Schedule declaring a mode.
+
+        An operand the loop never indexes does not vote: it is loop-invariant, which is
+        true of either shape.
+        """
+
+        if operation.kind is not OperationKind.MMA or len(operation.reads) != 2:
+            return False
+        filled = [
+            self._staged_axis_filled_by(name, loop) for name in operation.reads
+        ]
+        indexed = [axis for axis in filled if axis is not None]
+        return bool(indexed) and all(axis == _CONTRACTION_AXIS for axis in indexed)
 
     def tile_loop(self, name: str) -> TileLoop | None:
         return next((item for item in self.tile_loops if item.name == name), None)

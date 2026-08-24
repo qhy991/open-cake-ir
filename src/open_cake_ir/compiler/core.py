@@ -317,6 +317,38 @@ def _layernorm_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
     ]
 
 
+def _gemm_bias_b1_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """A contraction with a per-column bias: `c[M, N] = a[M, K] @ b[N, K]^T + bias[N]`.
+
+    Both operands carry K last, because that is the axis a `tl.dot` and a tcgen05 MMA
+    both contract. The bias spans the output's N, which is what makes it a bias rather
+    than a second operand.
+    """
+
+    a = _shape_of(buffers, "a")
+    b = _shape_of(buffers, "b")
+    coheres = (
+        a is not None
+        and b is not None
+        and len(a) == 2
+        and len(b) == 2
+        and a[1] == b[1]
+        and _shape_of(buffers, "c") == (a[0], b[0])
+        and _shape_of(buffers, "bias") == (b[0],)
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.a.shape",
+            "a GEMM contracts the last axis of both operands and biases the output column",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
 @dataclass(frozen=True)
 class _Profile:
     """One admitted lowering profile and every fact that follows from admitting it.
@@ -417,6 +449,19 @@ _PROFILES: Mapping[str, _Profile] = {
     # The third operator admitted through the same row, and the first that needed no
     # vocabulary at all: two folds, seven arithmetic primitives and two broadcasts that
     # were already there for the two before it.
+    # The first admitted operator whose loop walks the contraction rather than an output
+    # axis, which is what a GEMM is and what the accumulation derivation exists for.
+    "gemm_bias_b1_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_gemm_bias_b1_smoke",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_gemm_bias_b1_smoke_conformance,
+        backend=emit_triton,
+    ),
     "layernorm_b8_smoke": _Profile(
         toolchain={
             "source_language": "python",

@@ -550,13 +550,25 @@ class _TritonEmitter:
             self.line(f"{pad}{self.reduce.writes[0]} = tl.zeros(({tile},), tl.int32)")
             self.line()
         for operation in self.schedule.operations:
-            if operation.kind is not OperationKind.REDUCE:
-                continue
             if operation.op_id not in self.loop.body:
                 continue
-            identity = REDUCTIONS[operation.parameters.op].identity
-            self.line(f"{pad}{operation.writes[0]} = {identity.format(tile=tile)}")
-            self.line()
+            if operation.kind is OperationKind.REDUCE:
+                identity = REDUCTIONS[operation.parameters.op].identity
+                self.line(f"{pad}{operation.writes[0]} = {identity.format(tile=tile)}")
+                self.line()
+            elif operation.kind is OperationKind.MMA and self._accumulating(operation):
+                # A contraction summed across the loop needs its accumulator before the
+                # loop, for the same reason a fold does: the first iteration adds to it.
+                accumulator = self.schedule.buffer(operation.writes[0])
+                _require(
+                    accumulator is not None and len(accumulator.shape) == 2,
+                    "an accumulated contraction writes a rank-2 buffer",
+                )
+                rows, columns = accumulator.shape
+                self.line(
+                    f"{pad}{accumulator.name} = tl.zeros(({rows}, {columns}), tl.float32)"
+                )
+                self.line()
 
     def _token_axis(self) -> ProgramAxis:
         assert self.schedule.program_map is not None
@@ -700,7 +712,19 @@ class _TritonEmitter:
             "the dot takes exactly two staged operands and reads nothing else",
         )
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
-        self.line(f"{pad}{operation.writes[0]} = tl.dot({tiles[0]}, tl.trans({tiles[1]}))")
+        assign = "+=" if self._accumulating(operation) else "="
+        self.line(
+            f"{pad}{operation.writes[0]} {assign} tl.dot({tiles[0]}, tl.trans({tiles[1]}))"
+        )
+
+    def _accumulating(self, operation) -> bool:
+        """Whether this contraction sums across the loop it sits in."""
+
+        return (
+            self.loop is not None
+            and operation.op_id in self.loop.body
+            and self.schedule.mma_accumulates_over(operation, self.loop)
+        )
 
     def _emit_argmin(self, operation, pad: str) -> None:
         source = operation.reads[0]

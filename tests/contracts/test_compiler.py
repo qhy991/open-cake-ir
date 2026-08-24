@@ -340,8 +340,8 @@ class CompilerContractTests(unittest.TestCase):
         )
 
         self.assertEqual(release.document["state"], "released")
-        self.assertEqual(release.document["corpus_gate"]["case_count"], 14)
-        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 14)
+        self.assertEqual(release.document["corpus_gate"]["case_count"], 16)
+        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 16)
         self.assertEqual(
             len(release.document["sources"]),
             len(json.loads((ROOT / "compiler" / "source_set.json").read_text())["paths"]),
@@ -488,14 +488,16 @@ class CompilerContractTests(unittest.TestCase):
         report = compiler.check_corpus()
 
         self.assertTrue(report.passed, report.cases)
-        self.assertEqual(report.case_count, 14)
-        # Every operator lands in the same shape: one accepted-and-lowerable case and
-        # one accepted-but-not, the kernel and the drift that proves its profile rule
-        # fires. Three of the four now, and layernorm needed no new vocabulary to do it.
-        self.assertEqual(report.accepted_case_count, 12)
-        self.assertEqual(report.rejected_case_count, 2)
-        self.assertEqual(report.lowerable_case_count, 7)
-        self.assertEqual(report.nonlowerable_case_count, 7)
+        self.assertEqual(report.case_count, 16)
+        # Every operator lands as a kernel plus the drift that proves its profile rule
+        # fires. The three normalization drifts are rejected rather than merely
+        # unlowerable: their staged tile contradicts the extent it addresses, which the
+        # access-map rule could not see until it stopped comparing a store's global
+        # output against the tile axes.
+        self.assertEqual(report.accepted_case_count, 11)
+        self.assertEqual(report.rejected_case_count, 5)
+        self.assertEqual(report.lowerable_case_count, 8)
+        self.assertEqual(report.nonlowerable_case_count, 8)
 
     def test_r16_program_map_schedule_uses_the_canonical_compiler(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)

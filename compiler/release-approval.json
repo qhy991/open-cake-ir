@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "dfe3709091651ebcc14e31e797e7f198d67ac12397f34366dbdcafbbafa1c98b"
+    "canonical_sha256": "3ac450a3e225555f576cdaac4e73729af6a76bea7c5087d8735668836f9a090f"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "one cycle is one finding, and it points somewhere"
+  "approval_basis": "an mma contract names dtypes the operands have to have"
 }

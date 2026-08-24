@@ -102,7 +102,20 @@ def _layernorm_oracle(inputs, torch):
     )
 
 
+def _gemm_bias_oracle(inputs, torch):
+    """`c = a @ b.T + bias`, written from the definition.
+
+    The operands are bf16 because the contract the Schedule declares reads bf16, and the
+    reference upcasts them rather than rounding a float32 answer: the kernel accumulates
+    in float32 from bf16 inputs, so what is left between them is accumulation order.
+    """
+
+    a, b, bias, _ = inputs
+    return a.to(torch.float32) @ b.to(torch.float32).t() + bias[None, :], None
+
+
 ORACLES = {
+    "gemm_bias_b1_smoke": _gemm_bias_oracle,
     "layernorm_b8_smoke": _layernorm_oracle,
     "flash_kmeans_assignment_full": _flash_kmeans_oracle,
     "softmax_b8_smoke": _softmax_oracle,

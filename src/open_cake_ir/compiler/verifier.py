@@ -32,6 +32,7 @@ from .ir import (
     LoadMovement,
     MemorySpace,
     Operation,
+    DType,
     OperationKind,
     Schedule,
 )
@@ -584,6 +585,35 @@ def _verify_instruction_commitments(
                 FindingSeverity.HINT,
             )
         else:
+            # A contract names the dtypes the hardware will read and accumulate in. The
+            # Target admits contracts by name and nothing checked the name against the
+            # operands, so a Schedule could declare a bf16 contract over fp32 buffers:
+            # accepted, lowered, and 0.06 off on a B200, because `tl.dot` quietly picks
+            # TF32 for fp32 inputs. Adding a contract adds a row here.
+            admitted = _CONTRACT_DTYPES.get(instruction.contract)
+            if admitted is not None:
+                operands, accumulate = admitted
+                for name in operation.reads:
+                    buffer = buffers.get(name)
+                    if buffer is not None and buffer.dtype not in operands:
+                        out.add(
+                            "MMA_OPERAND_DTYPE_DIFFERS",
+                            f"{path}.instruction.contract",
+                            f"contract {instruction.contract!r} reads "
+                            f"{'/'.join(sorted(d.value for d in operands))} but "
+                            f"{name!r} is {buffer.dtype.value}",
+                            category,
+                        )
+                written = buffers.get(operation.writes[0]) if operation.writes else None
+                if written is not None and written.dtype is not accumulate:
+                    out.add(
+                        "MMA_ACCUMULATOR_DTYPE_DIFFERS",
+                        f"{path}.instruction.contract",
+                        f"contract {instruction.contract!r} accumulates in "
+                        f"{accumulate.value} but {written.name!r} is "
+                        f"{written.dtype.value}",
+                        category,
+                    )
             if instruction.contract not in target.instruction_contracts:
                 out.add(
                     "TARGET_INSTRUCTION_UNSUPPORTED",
@@ -816,6 +846,16 @@ def _verify_swizzle_commitments(schedule: Schedule, out: _Collector) -> None:
 
 # --------------------------------------------------------------- data consistency
 
+# What each admitted instruction contract reads and accumulates in. The Target names the
+# contracts it admits; this is what those names mean, and it is here rather than in the
+# Target because a Target describes hardware and this is a property of the instruction.
+_CONTRACT_DTYPES = {
+    "tcgen05.mma.cta_group::1.kind::f16": ({DType.BF16, DType.FP16}, DType.FP32),
+    "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32": ({DType.BF16}, DType.FP32),
+    "triton.dot.bf16_fp32": ({DType.BF16}, DType.FP32),
+}
+
+
 _ARITY = {
     OperationKind.LOAD: (1, 1, "load"),
     OperationKind.MMA: (2, 1, "mma"),
@@ -977,7 +1017,18 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
             name
             for op_id in loop.body
             if (op := schedule.operation(op_id)) is not None
-            and op.kind in (OperationKind.REDUCE, OperationKind.REDUCE_ARGMIN)
+            and (
+                op.kind in (OperationKind.REDUCE, OperationKind.REDUCE_ARGMIN)
+                # A contraction whose loop walks K is a reduction too, and its result is
+                # carried by the same construction. Which loops do that is derived from
+                # the operands rather than declared, so a Schedule that tiles the output
+                # axis instead still hits the rule -- and should, because that shape has
+                # no accumulator to carry.
+                or (
+                    op.kind is OperationKind.MMA
+                    and schedule.mma_accumulates_over(op, loop)
+                )
+            )
             for name in op.writes
         }
         for name, producers in sorted(writers.items()):
@@ -1358,7 +1409,21 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
         operation = op_by_id.get(access.operation)
         if operation is None or not operation.writes:
             continue
-        staged = buffers.get(operation.writes[0])
+        # The staged side, not the written side. A load writes its tile and a store reads
+        # it, so taking `writes[0]` compared a store's *global* output against the tile
+        # axes. Every store in the corpus escaped that by a rank coincidence -- the global
+        # buffer had one more dimension than the access map had vector components, so the
+        # check below skipped it -- and the first rank-2 output made it a false positive
+        # on a Schedule that was correct.
+        staged = next(
+            (
+                buffer
+                for name in list(operation.writes) + list(operation.reads)
+                if (buffer := buffers.get(name)) is not None
+                and buffer.space is not MemorySpace.GLOBAL
+            ),
+            None,
+        )
         source = buffers.get(access.buffer)
         if staged is None or source is None or source.space is not MemorySpace.GLOBAL:
             continue

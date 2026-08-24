@@ -455,6 +455,7 @@ class EmittedObservationTest(unittest.TestCase):
             "LAYERNORM_OBSERVATION_20260824.json",
             "layernorm-b8-smoke.json",
         ),
+        ("gemm-bias", "GEMM_OBSERVATION_20260824.json", "gemm-bias-b1-smoke.json"),
         (
             "rmsnorm-persistent",
             "PERSISTENT_OBSERVATION_20260824.json",
@@ -504,6 +505,32 @@ class EmittedObservationTest(unittest.TestCase):
                 # let a Schedule spell it that way.
                 self.assertNotIn("tl.range(", source)
                 self.assertIn("tl.sum(", source)
+
+    def test_a_contraction_over_the_loop_accumulates(self) -> None:
+        """The shape the accumulation derivation exists for, and the only one that has it.
+
+        Flash-KMeans tiles the centroid axis, which is the output's N, so each iteration
+        computes a fresh block and the dot assigns. This GEMM tiles K, so the iterations
+        are a sum and the dot has to add. Which one a loop is doing is derived from the
+        operands' access maps, not declared, so both shapes reach the same emitter.
+        """
+
+        from open_cake_ir.compiler import Compiler
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        schedules = ROOT / "corpus" / "schedules"
+        gemm = compiler.lower(
+            compiler.assess_file(schedules / "gemm-bias-b1-smoke.json")
+        ).source
+        self.assertIn("acc = tl.zeros((64, 64), tl.float32)", gemm)
+        self.assertIn("acc += tl.dot(", gemm)
+
+        kmeans = compiler.lower(
+            compiler.assess_file(schedules / "flash-kmeans-b32-smoke-v2.json")
+        ).source
+        # The same emitter, the other shape: no accumulator before the loop and no add.
+        self.assertIn("cross = tl.dot(", kmeans)
+        self.assertNotIn("cross +=", kmeans)
 
     def test_the_persistent_walk_actually_strides(self) -> None:
         """The one loop left, and the reason its Schedule was reshaped.

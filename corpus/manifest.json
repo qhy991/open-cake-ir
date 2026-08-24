@@ -104,10 +104,11 @@
       "case_id": "rmsnorm-shape-drift",
       "schedule": "corpus/schedules/rmsnorm-b8-smoke-shape-drift.json",
       "expected": {
-        "accepted": true,
+        "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
           "PROFILE_SHAPE_MISMATCH",
+          "ACCESS_TILE_MISMATCH",
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
@@ -163,10 +164,11 @@
       "case_id": "softmax-shape-drift",
       "schedule": "corpus/schedules/softmax-b8-smoke-shape-drift.json",
       "expected": {
-        "accepted": true,
+        "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
           "PROFILE_SHAPE_MISMATCH",
+          "ACCESS_TILE_MISMATCH",
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
@@ -192,6 +194,36 @@
       "case_id": "layernorm-shape-drift",
       "schedule": "corpus/schedules/layernorm-b8-smoke-shape-drift.json",
       "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "PROFILE_SHAPE_MISMATCH",
+          "ACCESS_TILE_MISMATCH",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "9c8a7872b74deb0d9b90a6301b4aaacfe03655b0f2ed6b6aa286e35f7003a27b",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "gemm-bias-accepted",
+      "schedule": "corpus/schedules/gemm-bias-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "5d47773882eb44119d83ddf3c0f570e749fb81df0bf95925861eae8e06856983",
+        "lowering_source_sha256": "17c20ff669dbdf21fa0ed8bd2cc27e3fd5f93cce0b27caffa5b83caf9e484267"
+      }
+    },
+    {
+      "case_id": "gemm-bias-shape-drift",
+      "schedule": "corpus/schedules/gemm-bias-b1-smoke-shape-drift.json",
+      "expected": {
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
@@ -199,7 +231,7 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "9c8a7872b74deb0d9b90a6301b4aaacfe03655b0f2ed6b6aa286e35f7003a27b",
+        "schedule_sha256": "fc202dd8378d0223593a5b3b7e4b4ab52ddcff29f95614b47619427a96ddae25",
         "lowering_source_sha256": null
       }
     }

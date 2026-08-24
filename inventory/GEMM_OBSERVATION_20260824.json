@@ -1,0 +1,42 @@
+{
+ "schema_version": 2,
+ "observed_at": "2026-08-24T09:30:00Z",
+ "purpose": "lowered_kernel_correctness",
+ "scientific_claim_authorized": false,
+ "performance_measured": false,
+ "host": "verda-b200x4",
+ "device": "NVIDIA B200",
+ "compute_capability": [
+  10,
+  0
+ ],
+ "toolchain": {
+  "cutlass": "4.7.0",
+  "torch": "2.13.0+cu130"
+ },
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v4",
+  "revision_sha256": "b98c9a26964f597f9a30506fbe7b50d7473ac27733c6fc816309a72308d65f95"
+ },
+ "schedule": {
+  "path": "corpus/schedules/gemm-bias-b1-smoke.json",
+  "schedule_id": "gemm-bias-b1-smoke-v1",
+  "canonical_sha256": "5d47773882eb44119d83ddf3c0f570e749fb81df0bf95925861eae8e06856983"
+ },
+ "lowering": {
+  "generated": true,
+  "entry_point": "cake_gemm_bias_b1_smoke",
+  "source_sha256": "17c20ff669dbdf21fa0ed8bd2cc27e3fd5f93cce0b27caffa5b83caf9e484267",
+  "source_lines": 116
+ },
+ "result": {
+  "compiled": true,
+  "launched": true,
+  "total_elements": 131072,
+  "mismatch_count": 0,
+  "max_deviation": 3.814697265625e-05,
+  "tolerance": 0.01,
+  "passed": true
+ },
+ "note": "Compiler.lower generated this source from the Schedule; there is no checked-in template for this profile. Correctness only -- no timing was taken. Reproduce with tools/observe_lowered_kernel.py."
+}
