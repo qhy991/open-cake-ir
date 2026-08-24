@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "da72ea2d0b39468e708720694397b0ed678d6c7de87e4e999c5fb3c38bae23f0"
+    "canonical_sha256": "6eb7b1a8900ea2a9b174863d2998b57baa7676e69a44f07a5929f075a7b61cac"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "bind every Schedule the Corpus Gate reads"
+  "approval_basis": "drop a dtype no backend can name"
 }

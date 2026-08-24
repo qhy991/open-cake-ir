@@ -60,6 +60,11 @@ class RoutingContractTests(unittest.TestCase):
                         "blocks_acceptance": False,
                         "blocks_lowering": True,
                     },
+                    {
+                        "code": "PROFILE_DTYPE_UNEMITTABLE",
+                        "blocks_acceptance": False,
+                        "blocks_lowering": True,
+                    },
                     {"code": "RESIDENCY_BOUND", "blocks_acceptance": False},
                 ],
             }

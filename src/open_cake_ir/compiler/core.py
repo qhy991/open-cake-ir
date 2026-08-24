@@ -16,6 +16,7 @@ from .emit_cutedsl import EmitError
 from .ir import (
     _SCHEDULE_OPTIONAL,
     _SCHEDULE_REQUIRED,
+    DType,
     OperationKind,
     Schedule,
     ScheduleParseError,
@@ -153,7 +154,9 @@ class CorpusGateReport:
 # parsed cleanly and was then rejected as an unknown root field by this check.
 _REQUIRED_TOP_LEVEL_FIELDS = set(_SCHEDULE_REQUIRED)
 _OPTIONAL_TOP_LEVEL_FIELDS = set(_SCHEDULE_OPTIONAL)
-_DTYPE_BYTES = {"bf16": 2, "fp16": 2, "fp32": 4, "int32": 4, "int64": 8}
+# Derived, not restated. The byte width of a dtype is the IR's fact; a second table here
+# is how a new dtype gets a size in one place and not the other.
+_DTYPE_BYTES = {member.value: member.itemsize for member in DType}
 # The IR's enum is what the compiler knows how to parse, so restating the list here
 # made a second authority that a new kind had to be added to as well -- and forgetting
 # it rejected the Schedule as unsupported rather than saying anything about the gap.
@@ -327,6 +330,14 @@ class _Profile:
         if self.backend is None:
             return frozenset()
         return self.backend.SUPPORTED_OPERATION_KINDS
+
+    @property
+    def emittable_dtypes(self) -> frozenset:
+        """The dtypes this profile's backend can name wherever it has to name them."""
+
+        if self.backend is None:
+            return frozenset()
+        return self.backend.SUPPORTED_DTYPES
 
     def __post_init__(self) -> None:
         if (self.backend is None) == (self.asset is None):
@@ -1194,6 +1205,21 @@ class Compiler:
             # Only for a profile that emits. The asset path fills a digest into a
             # checked-in template and has no operation bodies at all, so it has no
             # coverage to be outside of.
+            for index, buffer in enumerate(buffers if definition.backend else ()):
+                dtype = buffer.get("dtype") if isinstance(buffer, Mapping) else None
+                if dtype not in _DTYPE_BYTES:
+                    continue
+                if DType(dtype) not in definition.emittable_dtypes:
+                    findings.append(
+                        Finding(
+                            "PROFILE_DTYPE_UNEMITTABLE",
+                            f"buffers[{index}].dtype",
+                            f"profile {profile!r} lowers through a backend that cannot "
+                            f"name dtype {dtype!r}",
+                            blocks_acceptance=False,
+                            blocks_lowering=True,
+                        )
+                    )
             for index, operation in enumerate(operations if definition.backend else ()):
                 kind = operation.get("kind")
                 if kind not in _SUPPORTED_OPERATION_KINDS:

@@ -222,6 +222,35 @@ class BackendCoverageTest(unittest.TestCase):
                     # A string key is only safe while something checks it resolves.
                     self.assertTrue(callable(getattr(emitter_class, method, None)))
 
+    def test_a_backend_names_every_dtype_it_admits_in_both_places(self) -> None:
+        """A dtype in one of a backend's tables and not the other lowers until it reaches
+        a host tensor, and then raises a KeyError instead of being refused.
+
+        `int64` was exactly that until the Compiler learned to check: it had a byte width
+        in the IR, no entry in either backend, and produced a raw KeyError from emission.
+        It is gone; this holds the shape that let it hide.
+        """
+
+        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+
+        for module, tables in (
+            (emit_triton, (emit_triton._TL_DTYPE, emit_triton._TORCH_DTYPE)),
+            (emit_cutedsl, (emit_cutedsl._CUTLASS_DTYPE, emit_cutedsl._TORCH_DTYPE)),
+        ):
+            with self.subTest(backend=module.__name__):
+                first, second = (frozenset(table) for table in tables)
+                self.assertEqual(first, second)
+                self.assertEqual(module.SUPPORTED_DTYPES, first)
+
+    def test_every_dtype_the_ir_admits_has_a_backend(self) -> None:
+        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+        from open_cake_ir.compiler.ir import DType
+
+        covered = emit_cutedsl.SUPPORTED_DTYPES | emit_triton.SUPPORTED_DTYPES
+        # Same rule the operation kinds live under: a word the vocabulary offers and no
+        # backend can keep is a promise, not a capability.
+        self.assertEqual(set(DType) - covered, set())
+
     def test_the_declared_coverage_is_the_dispatch(self) -> None:
         from open_cake_ir.compiler import emit_cutedsl, emit_triton
 

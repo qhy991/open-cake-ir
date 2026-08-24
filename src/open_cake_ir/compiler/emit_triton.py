@@ -49,6 +49,9 @@ _TORCH_DTYPE = {
     DType.INT32: "torch.int32",
 }
 
+# What this backend can name, in both the places it has to name it.
+SUPPORTED_DTYPES = frozenset(_TL_DTYPE) & frozenset(_TORCH_DTYPE)
+
 
 @dataclass(frozen=True)
 class _Reduction:

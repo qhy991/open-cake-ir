@@ -49,8 +49,14 @@ _TORCH_DTYPE = {
     DType.BF16: "torch.bfloat16",
     DType.FP16: "torch.float16",
     DType.FP32: "torch.float32",
+    DType.FP8_E4M3: "torch.float8_e4m3fn",
     DType.INT32: "torch.int32",
 }
+
+# What this backend can name, in both the places it has to name it. A dtype in one table
+# and not the other is a Schedule that lowers until it reaches a host tensor, which is a
+# KeyError rather than a refusal.
+SUPPORTED_DTYPES = frozenset(_CUTLASS_DTYPE) & frozenset(_TORCH_DTYPE)
 
 _SWIZZLE_BYTES = {
     Swizzle.NONE: 0,

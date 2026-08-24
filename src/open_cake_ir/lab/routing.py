@@ -46,7 +46,9 @@ _UNDER_DETERMINED = "does not determine its source"
 
 # Findings that say the same thing early enough to carry a code. Matching a code beats
 # matching a message: a message is prose the Compiler is free to reword.
-_VOCABULARY_CODES = frozenset({"PROFILE_OPERATION_UNEMITTABLE"})
+_VOCABULARY_CODES = frozenset(
+    {"PROFILE_OPERATION_UNEMITTABLE", "PROFILE_DTYPE_UNEMITTABLE"}
+)
 
 
 @dataclass(frozen=True)

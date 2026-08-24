@@ -292,7 +292,7 @@ class LocalizedDiagnosticTest(unittest.TestCase):
                 B32,
                 lambda d: d["buffers"][0].update(dtype="fp4"),
                 "schedule.buffers[0].dtype",
-                "bf16, fp16, fp32, fp8_e4m3, int32, int64",
+                "bf16, fp16, fp32, fp8_e4m3, int32",
             ),
             (
                 B32,
