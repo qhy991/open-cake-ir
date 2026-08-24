@@ -156,10 +156,11 @@ a test suite that only asks whether the bad Schedule is refused -- it was, every
   the order operations were written in, which two roles reading tensor memory would have
   made ambiguous. `OP_CROSS_ROLE_RACE` refused those Schedules, for a reason about
   synchronisation. Closed properly: `Allocation.allocating_role` names the role.
-* **Contraction accumulators.** The Triton backend assigns a `tl.dot` rather than
+* **Contraction accumulators.** The Triton backend assigned a `tl.dot` rather than
   accumulating, so an mma in a loop over the contraction axis would overwrite.
-  `BUFFER_ESCAPES_LOOP` refuses those Schedules, for a reason about register lifetime.
-  Not closed: it needs a Triton GEMM to settle what the emitter should derive.
+  `BUFFER_ESCAPES_LOOP` refused those Schedules, for a reason about register lifetime.
+  Closed: which loops accumulate is derived from the operands' access maps, and a GEMM
+  that tiles K is in the corpus and correct on hardware.
 
 The pattern is worth naming because the danger is not the hazard, it is the *reason* the
 block exists. A rule written for one purpose can be relaxed, scoped or replaced by someone
@@ -198,12 +199,18 @@ Schedule passes and the Triton one is refused, correctly, by a rule that is abou
 else. That is an accidental guard, and the second one found in this repository: the
 tensor-memory ownership ambiguity was blocked the same way, by `OP_CROSS_ROLE_RACE`.
 
-The refusal now names the constraint it is actually about, because a GEMM author told that
-"only a reduction result is carried out of a loop" goes looking for a rule they broke. What
-is not fixed is the asymmetry itself. Closing it means the Triton emitter accumulating when
-the loop walks the contraction axis and assigning when it walks an output axis -- both
-shapes exist in the corpus today -- and that distinction has to be derived or declared
-before it can be emitted. It needs a Triton GEMM to be worth settling.
+That is closed. `Schedule.mma_accumulates_over` derives it: a contraction carries K at axis
+1 of both staged operands, and an operand's access map says which of its axes the loop's
+tile index fills. Flash-KMeans fills the centroid tile's axis 0, which is the output's N, so
+each iteration is a fresh block and the dot assigns. `gemm-bias-b1-smoke` fills axis 1 of
+both, so the iterations are a sum and the dot adds. One emitter, two shapes, nothing
+declared -- and both shapes were already in the corpus, so the derivation was checked
+against them rather than fitted to one.
+
+The refusal still names the constraint it is about, because a Schedule that keeps a
+register accumulator across a loop the derivation says is *not* a contraction loop is still
+wrong, and "only a reduction result is carried out of a loop" would send its author
+looking for a rule they broke.
 
 ## What still keeps one backend on a formula
 
