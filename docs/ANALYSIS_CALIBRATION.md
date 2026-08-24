@@ -21,6 +21,10 @@ The raw records are in `evidence/calibration/residency-b200-*.json`.
 | registers per thread | >= 66 | 96 | lower bound holds |
 | resident CTAs | <= 7 | 5 | upper bound holds, loose by 2 |
 | binding resource | registers | registers | correct, and measured uniquely |
+| **gemm + bias**, Triton | | | |
+| registers per thread | >= 64 | 81 | lower bound holds |
+| resident CTAs | <= 8 | 5 | upper bound holds, loose by 3 |
+| binding resource | registers | registers *and* shared memory | correct, but the measurement ties |
 | **flash-kmeans assignment**, CuTe-DSL | | | |
 | registers per thread | >= 1 | 99 | holds, but says nothing |
 | resident CTAs | <= 2 | 2 | upper bound holds, and is exact |
@@ -28,7 +32,7 @@ The raw records are in `evidence/calibration/residency-b200-*.json`.
 
 ## What this establishes
 
-**Both bounds are sound in the direction claimed, on four kernels across both backends.**
+**Both bounds are sound in the direction claimed, on five kernels across both backends.**
 The register figure is a lower bound on storage and was below the measured allocation every
 time; the residency figure is an upper bound on resident CTAs and was at or above the
 measured limit every time. Nothing here contradicts the analysis, which is not a given --
@@ -37,16 +41,25 @@ the analysis was renamed to say "bound" only after it was written.
 **The exact quantities are exact and the estimated one is loose, as claimed.** Shared memory
 is an explicit allocation the Schedule declares, and its bound came out equal to the
 measurement. Registers are inferred from declared buffers with liveness and aliasing, and
-that bound is about 31% low on all three Triton kernels and vacuous on the fourth.
+that bound runs 21% to 31% low on the four Triton kernels and is vacuous on the fifth.
 
 **The attribution is weaker than it looked.** This is the half the paper calls attribution
 and the half an author can act on -- being told that registers rather than shared memory
-limits residency points at which declaration to change. On the three Triton kernels the
-measurement singles out one resource and the prediction names it. On flash-kmeans it does
-not: registers and shared memory both limit to 2, so "shared memory" is correct in the sense
-that it is one of the two, and it discriminated nothing. An earlier run of this measurement,
-made by a script outside the repository, recorded that row as a clean win; it was a tie, and
-the instrument is how that came to light.
+limits residency points at which declaration to change. On three of the five kernels the measurement
+singles out one resource and the prediction names it. On the other two it does not:
+flash-kmeans is limited to 2 CTAs by registers and shared memory alike, and the GEMM to 5
+by both, so naming one is correct in the sense of naming a member and discriminates nothing.
+An earlier run of the flash-kmeans row, made by a script outside the repository, recorded it
+as a clean win; it was a tie, and the instrument is how that came to light. The ties are not
+a property of one backend -- one is CuTe-DSL and one is Triton.
+
+**The GEMM tie is the sharper finding, because the analysis could not have seen it.** That
+Schedule declares no shared memory at all. Triton allocates it anyway, for the `tl.dot`
+operands, and it bounds residency exactly as tightly as the registers the analysis does
+model. So the prediction named a binding resource while being structurally blind to the
+one beside it. This is the register limit again -- a bound derived from declarations cannot
+see what a backend needs on its own behalf -- and it is worse here, because registers are
+under-counted by about 31% while this shared memory is under-counted by all of it.
 
 That earlier run also read the register figures differently -- 95 rather than 96 on rmsnorm,
 and 80 rather than 99 on flash-kmeans. Which metric it sampled cannot be recovered, because
@@ -64,7 +77,7 @@ far above the truth, and the report would name the wrong resource.
 
 That is a real limit of an analysis that reasons only over declarations: it cannot see the
 registers a backend needs for addressing, predication and staging, and those were 30 and 98
-registers per thread in these kernels. Worth recording rather than filing as a defect,
+registers per thread across these five kernels. Worth recording rather than filing as a defect,
 because closing it means either measuring or modelling the backend, and the paper puts
 measurement at the end of the loop for exactly this reason.
 

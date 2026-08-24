@@ -19,6 +19,7 @@ does not record the check cannot be read as though one happened.
 | `residency-b200-softmax-b8-smoke.json` | same | Same, on the second Triton operator. |
 | `residency-b200-layernorm-b8-smoke.json` | same | Same again on the third, which is the operator that needed no new vocabulary. |
 | `residency-b200-flash-kmeans-assignment-full.json` | same | Bounds sound; the binding resource is a tie between registers and shared memory, so the prediction discriminated nothing. |
+| `residency-b200-gemm-bias-b1-smoke.json` | same | Bounds sound, and a tie again -- on a Schedule declaring no shared memory at all, which Triton allocates for the dot. |
 
 These are measurements, not Study Contract evidence: no hash chain, no Executor Revision.
 They inform the model rather than witnessing a run, and the honest way to read one is to

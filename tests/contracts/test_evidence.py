@@ -296,17 +296,27 @@ class CalibrationIndexTest(unittest.TestCase):
         ]
         prose = (ROOT / "docs" / "ANALYSIS_CALIBRATION.md").read_text(encoding="utf-8")
 
-        self.assertIn(f"on {len(records)} kernels", prose.replace("four", "4"))
+        # The prose is written in words and the records count in integers, so the two
+        # are compared through one small normalisation rather than by making the doc
+        # read like a table.
+        spelled = {3: "three", 4: "four", 5: "five", 6: "six", 7: "seven"}
+        self.assertIn(f"on {spelled[len(records)]} kernels", prose)
         for record in records:
             with self.subTest(schedule=record["schedule"]["schedule_id"]):
                 verdict = record["verdict"]
                 self.assertTrue(verdict["residency_bound_sound"])
                 self.assertTrue(verdict["register_floor_sound"])
                 self.assertTrue(verdict["binding_resource_correct"])
-                # The tie is the one attribution the doc downgrades, and it names which.
-                unique = verdict["binding_resource_measured_uniquely"]
-                triton = "flash-kmeans" not in record["schedule"]["schedule_id"]
-                self.assertEqual(unique, triton)
+        # Ties are what the doc downgrades the attribution for, and it says how many.
+        # They are not a property of one backend: one is CuTe-DSL and one is Triton, so
+        # this counts them rather than predicting which kernel they land on.
+        unique = sum(
+            record["verdict"]["binding_resource_measured_uniquely"]
+            for record in records
+        )
+        self.assertIn(
+            f"On {spelled[unique]} of the {spelled[len(records)]} kernels", prose
+        )
 
     def test_every_calibration_file_has_a_row_and_every_row_a_file(self) -> None:
         import re
