@@ -178,6 +178,11 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         self.assertEqual(result.feedback["stage"], "assessment")
         self.assertIn("profile", result.feedback["error"])
         self.assertEqual(toolchain.requests, [])
+        # The fourth route on real feedback: a Schedule the gates refused is the
+        # candidate's to fix, and it is the fallback, so nothing else must claim it.
+        from open_cake_ir.lab.routing import CANDIDATE, route_rejection
+
+        self.assertEqual(route_rejection(result.feedback).destination, CANDIDATE)
 
     def test_wrong_workload_binding_is_rejected_before_toolchain(self) -> None:
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")

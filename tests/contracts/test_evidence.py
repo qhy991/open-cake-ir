@@ -268,3 +268,28 @@ class EvidenceContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CalibrationIndexTest(unittest.TestCase):
+    """The calibration index names every measurement, and only measurements that exist.
+
+    A file added without a row is a measurement nobody reading the index knows about; a
+    row without a file is an index that lies. Both have happened elsewhere in this
+    repository today -- the runbook named superseded contracts, and the compiler source
+    set omitted Schedules its own gate read -- which is what a hand-kept list does.
+    """
+
+    def test_every_calibration_file_has_a_row_and_every_row_a_file(self) -> None:
+        import re
+
+        directory = ROOT / "evidence" / "calibration"
+        present = {path.name for path in directory.glob("*.json")}
+        named = set(
+            re.findall(
+                r"`([a-z0-9.-]+\.json)`",
+                (directory / "README.md").read_text(encoding="utf-8"),
+            )
+        )
+        self.assertEqual(present - named, set(), "measurements with no row")
+        self.assertEqual(named - present, set(), "rows with no measurement")
+
