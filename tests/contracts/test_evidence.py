@@ -279,6 +279,35 @@ class CalibrationIndexTest(unittest.TestCase):
     set omitted Schedules its own gate read -- which is what a hand-kept list does.
     """
 
+    def test_the_calibration_prose_agrees_with_the_measurements(self) -> None:
+        """The doc's summary claims are about the records, so they are checkable.
+
+        `docs/ANALYSIS_CALIBRATION.md` says both bounds held in the direction claimed on
+        four kernels, and that on Flash-KMeans the binding resource was a tie while the
+        Triton kernels singled one out. Each of those is a field in a stored record. A doc
+        that misquotes its own evidence is the worst drift there is -- everything else in
+        this repository is checkable, and that would be the one claim taken on trust.
+        """
+
+        directory = ROOT / "evidence" / "calibration"
+        records = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted(directory.glob("residency-b200-*.json"))
+        ]
+        prose = (ROOT / "docs" / "ANALYSIS_CALIBRATION.md").read_text(encoding="utf-8")
+
+        self.assertIn(f"on {len(records)} kernels", prose.replace("four", "4"))
+        for record in records:
+            with self.subTest(schedule=record["schedule"]["schedule_id"]):
+                verdict = record["verdict"]
+                self.assertTrue(verdict["residency_bound_sound"])
+                self.assertTrue(verdict["register_floor_sound"])
+                self.assertTrue(verdict["binding_resource_correct"])
+                # The tie is the one attribution the doc downgrades, and it names which.
+                unique = verdict["binding_resource_measured_uniquely"]
+                triton = "flash-kmeans" not in record["schedule"]["schedule_id"]
+                self.assertEqual(unique, triton)
+
     def test_every_calibration_file_has_a_row_and_every_row_a_file(self) -> None:
         import re
 
