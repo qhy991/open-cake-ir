@@ -393,7 +393,10 @@ def parse_codex_turn_events(
         "turn.completed",
     }
     if (
-        (event_contract == "closed_file_change_v1" and len(typed_events) not in {6, 7})
+        (
+            event_contract == "closed_file_change_v1"
+            and len(typed_events) not in {6, 7, 8, 9}
+        )
         or (event_contract == "closed_file_change_v1" and "item.updated" in types)
         or len(typed_events) < 6
         or any(event_type not in admitted_types for event_type in types)
@@ -550,43 +553,66 @@ def parse_codex_turn_events(
     start_index = min(activity_indices, default=2)
     stop_index = max(activity_indices, default=1)
     if file_events:
-        if len(file_events) != 2:
-            raise ValueError("provider must emit at most one complete file-change lifecycle")
-        (file_start_index, start_event, start_item), (
-            file_stop_index,
-            stop_event,
-            stop_item,
-        ) = file_events
-        start_index = min(start_index, file_start_index)
-        stop_index = max(stop_index, file_stop_index)
-        if (
-            set(start_item) != {"id", "type", "changes", "status"}
-            or set(stop_item) != {"id", "type", "changes", "status"}
-            or start_event.get("type") != "item.started"
-            or stop_event.get("type") != "item.completed"
-            or not isinstance(start_item.get("id"), str)
-            or not start_item.get("id")
-            or start_item.get("id") != stop_item.get("id")
-            or start_item.get("status") != "in_progress"
-            or stop_item.get("status") != "completed"
-            or start_item.get("changes") != stop_item.get("changes")
-        ):
-            raise ValueError("provider file-change lifecycle differs")
-        changes = start_item.get("changes")
-        if not isinstance(changes, list) or len(changes) != 1:
-            raise ValueError("provider candidate file-change differs")
-        change = changes[0]
-        if not isinstance(change, Mapping) or set(change) != {"path", "kind"}:
-            raise ValueError("provider candidate file-change differs")
-        candidate_path = cast(str | None, change.get("path"))
-        change_kind = cast(str | None, change.get("kind"))
-        if (
-            not isinstance(candidate_path, str)
-            or not candidate_path
-            or not Path(candidate_path).is_absolute()
-            or change_kind not in {"add", "update"}
-        ):
-            raise ValueError("provider candidate path or change kind differs")
+        def complete_file_change(
+            start: tuple[int, Mapping[str, object], Mapping[str, object]],
+            stop: tuple[int, Mapping[str, object], Mapping[str, object]],
+        ) -> tuple[str, str, int, int]:
+            start_event_index, start_event, start_item = start
+            stop_event_index, stop_event, stop_item = stop
+            if (
+                set(start_item) != {"id", "type", "changes", "status"}
+                or set(stop_item) != {"id", "type", "changes", "status"}
+                or start_event.get("type") != "item.started"
+                or stop_event.get("type") != "item.completed"
+                or not isinstance(start_item.get("id"), str)
+                or not start_item.get("id")
+                or start_item.get("id") != stop_item.get("id")
+                or start_item.get("status") != "in_progress"
+                or stop_item.get("status") != "completed"
+                or start_item.get("changes") != stop_item.get("changes")
+            ):
+                raise ValueError("provider file-change lifecycle differs")
+            changes = start_item.get("changes")
+            if not isinstance(changes, list) or len(changes) != 1:
+                raise ValueError("provider candidate file-change differs")
+            change = changes[0]
+            if not isinstance(change, Mapping) or set(change) != {"path", "kind"}:
+                raise ValueError("provider candidate file-change differs")
+            path = change.get("path")
+            kind = change.get("kind")
+            if (
+                not isinstance(path, str)
+                or not path
+                or not Path(path).is_absolute()
+                or kind not in {"add", "update", "delete"}
+            ):
+                raise ValueError("provider candidate path or change kind differs")
+            return path, cast(str, kind), start_event_index, stop_event_index
+
+        if len(file_events) == 2:
+            candidate_path, change_kind, _, _ = complete_file_change(
+                file_events[0], file_events[1]
+            )
+            if change_kind not in {"add", "update"}:
+                raise ValueError("provider candidate path or change kind differs")
+        elif len(file_events) == 4:
+            removed_path, removed_kind, _, removed_stop = complete_file_change(
+                file_events[0], file_events[1]
+            )
+            added_path, added_kind, added_start, _ = complete_file_change(
+                file_events[2], file_events[3]
+            )
+            if (
+                removed_path != added_path
+                or removed_kind != "delete"
+                or added_kind != "add"
+                or removed_stop >= added_start
+            ):
+                raise ValueError("provider replacement lifecycle differs")
+            candidate_path = added_path
+            change_kind = "update"
+        else:
+            raise ValueError("provider must emit one candidate update")
     elif event_contract == "closed_file_change_v1":
         raise ValueError("provider must emit one complete file-change lifecycle")
 

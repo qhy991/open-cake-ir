@@ -157,7 +157,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--template",
                 str(
                     project
-                    / "contracts/studies/matched-search-system-qualification-v17.json"
+                    / "contracts/studies/matched-search-system-qualification-v18.json"
                 ),
                 "--qualification",
                 str(qualification_path),
@@ -212,7 +212,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             )
 
             scientific_template = (
-                project / "contracts/studies/matched-search-infrastructure-v17.json"
+                project / "contracts/studies/matched-search-infrastructure-v18.json"
             )
             scientific_output = project / "contracts/studies/live-scientific.json"
             scientific_command = list(command)

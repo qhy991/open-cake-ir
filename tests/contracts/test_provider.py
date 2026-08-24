@@ -212,6 +212,80 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(turn.terminal_message_count, 2)
         self.assertEqual(turn.normalization, "duplicate_semantic_bracketed")
 
+    def test_delete_then_add_of_the_same_candidate_is_one_resume_update(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            candidate.write_text('{"schedule":2}')
+            terminal = {
+                "type": "item.completed",
+                "item": {
+                    "id": "message",
+                    "type": "agent_message",
+                    "text": '{"candidate_written":true}',
+                },
+            }
+            events = [
+                {
+                    "type": "thread.started",
+                    "thread_id": "01234567-89ab-cdef-0123-456789abcdef",
+                },
+                {"type": "turn.started"},
+                terminal,
+            ]
+            for item_id, kind in (("remove", "delete"), ("replace", "add")):
+                started = {
+                    "type": "item.started",
+                    "item": {
+                        "id": item_id,
+                        "type": "file_change",
+                        "changes": [
+                            {"path": str(candidate.absolute()), "kind": kind}
+                        ],
+                        "status": "in_progress",
+                    },
+                }
+                completed = json.loads(json.dumps(started))
+                completed["type"] = "item.completed"
+                completed["item"]["status"] = "completed"
+                events.extend((started, completed))
+            events.extend(
+                (
+                    terminal,
+                    {
+                        "type": "turn.completed",
+                        "usage": {"input_tokens": 193014, "output_tokens": 44243},
+                    },
+                )
+            )
+            raw = b"".join(
+                json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                for event in events
+            )
+
+            turn = normalize_codex_turn(
+                raw,
+                candidate_path=candidate,
+                expected_change="update",
+                expected_terminal_message='{"candidate_written":true}',
+            )
+            different_paths = json.loads(json.dumps(events))
+            for index in (5, 6):
+                different_paths[index]["item"]["changes"][0]["path"] = str(
+                    (Path(directory) / "different.json").absolute()
+                )
+            with self.assertRaisesRegex(ValueError, "replacement lifecycle"):
+                parse_codex_turn_events(
+                    b"".join(
+                        json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                        for event in different_paths
+                    ),
+                    expected_terminal_message='{"candidate_written":true}',
+                )
+
+        self.assertEqual(turn.provider_tokens, 237257)
+        self.assertEqual(turn.candidates, (b'{"schedule":2}',))
+        self.assertEqual(turn.normalization, "duplicate_exact_bracketed")
+
     def test_canonical_candidate_set_projects_ordered_members_for_each_arm(self) -> None:
         cases = (
             (
