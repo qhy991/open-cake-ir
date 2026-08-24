@@ -1996,3 +1996,75 @@ class BrokerExecutionDigestTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unavailable"):
                 self._digest([str(root / "absent")], root)
 
+
+class RuntimeReferenceCustodyTest(unittest.TestCase):
+    """The gate between a runtime config and the files a live Campaign will read.
+
+    `execute_matched_from_config` resolves every raw reference through this, and it is the
+    whole of the property that a config cannot point a Campaign at a file outside the
+    project. It had no test: a line trace found lab/compose.py at 197 of 197 statements
+    never executed, and most of that module needs a live Campaign. This part does not.
+
+    Each refusal below is a different way in, not a variation on one.
+    """
+
+    def _resolve(self, root, path_value, digest=None, name="reference"):
+        from open_cake_ir.lab.compose import _raw_reference_path
+
+        if digest is None:
+            candidate = root / path_value if isinstance(path_value, str) else None
+            digest = (
+                sha256(candidate.read_bytes()).hexdigest()
+                if candidate is not None and candidate.is_file()
+                else "0" * 64
+            )
+        return _raw_reference_path(root, {"path": path_value, "sha256": digest}, name)
+
+    def test_a_reference_inside_the_project_resolves_to_its_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "inner").mkdir()
+            target = root / "inner" / "runtime.json"
+            target.write_text("{}\n")
+            self.assertEqual(self._resolve(root, "inner/runtime.json"), target)
+
+    def test_every_way_out_of_the_project_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            outer = Path(directory).resolve()
+            root = outer / "project"
+            (root / "inner").mkdir(parents=True)
+            target = root / "inner" / "runtime.json"
+            target.write_text("{}\n")
+            secret = outer / "secret.json"
+            secret.write_text("{}\n")
+
+            (root / "link.json").symlink_to(secret)
+            # A symlinked *directory* passes the final-component check, so the resolved
+            # path has to be tested against the root as well. If that ordering were the
+            # other way round this would be the way through.
+            (root / "elsewhere").symlink_to(outer)
+
+            for label, value in (
+                ("an absolute path", str(secret)),
+                ("a parent traversal", "../secret.json"),
+                ("a backslash separator", "inner\\runtime.json"),
+                ("a symlinked file", "link.json"),
+                ("a symlinked directory component", "elsewhere/secret.json"),
+                ("a directory rather than a file", "inner"),
+                ("a path that is not a string", 7),
+                ("an empty path", ""),
+            ):
+                with self.subTest(refusal=label):
+                    with self.assertRaises(ValueError):
+                        self._resolve(root, value)
+
+            with self.subTest(refusal="substituted bytes"):
+                with self.assertRaisesRegex(ValueError, "bytes differ"):
+                    self._resolve(root, "inner/runtime.json", digest="0" * 64)
+
+            with self.subTest(refusal="fields differ"):
+                from open_cake_ir.lab.compose import _raw_reference_path
+
+                with self.assertRaisesRegex(ValueError, "fields differ"):
+                    _raw_reference_path(root, {"path": "inner/runtime.json"}, "reference")
+
