@@ -13,10 +13,10 @@ supports a broader scientific claim.
 | G3 | passed | v8 16-case Corpus Gate, released content-bound Revision lock, reviewed approval and 32-source closure |
 | G4 | passed for migrated evidence and the bounded attribution slice | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles, raw r45 replay, and raw-checked no-timing NCU attribution |
 | G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay and matched/Portfolio semantic replay pass |
-| G6 | passed | 310 tests + 214 subtests cover fixture candidate-set selection/replay, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, attribution replay and all three matched Claim Scopes |
-| G7 | passed | r4 proves single-candidate two-Turn add/update, thread/usage/sandbox/cwd/reference continuity and the closed feature denylist |
-| G7F | passed | tool-rich v1 injects no feature disables and replays shell activity on initial and resumed singleton Turns |
-| G8 | passed | r6 has two adhered Runs, four replayed Evaluation Receipts and an independent offline system-qualification pass |
+| G6 | passed | 319 tests + 223 subtests cover candidate-set transport/selection/replay, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, attribution replay and all three matched Claim Scopes |
+| G7 | passed | r4 proves singleton continuity; Codex 0.144.4 closed and tool-rich successors prove the two-arm candidate-set add/update lifecycle |
+| G7F | passed | tool-rich v1 injects no feature disables and replays shell activity; its candidate-set successor preserves the single-writer envelope boundary |
+| G8 | passed | r6 passes the singleton pilot; candidate-set v2 adds two adhered Runs, eight replayed Evaluation Receipts and an independent offline system-qualification pass |
 | G9 | passed | private `qhy991/open-cake-ir` main is the source authority; legacy is read-only with pinned rollback |
 | G10 | historical projection only | r42 estimand unavailable and r45 bounded timing instability are preserved, not rerun |
 
@@ -125,6 +125,12 @@ r2 exposed an invalid response schema. r3 passed after the schema repair; r4 is 
 binds the closed Apps/MCP/browser/shell/subagent feature denylist. See
 `inventory/G7_PROVIDER_AUTH_OBSERVATION_20260822.json`.
 
+The closed and tool-rich Codex 0.144.4 successors also pass the same two-Turn, one-file add/update lifecycle for both
+Open Cake and direct CUDA candidate-set envelopes. Their qualification records are
+`contracts/providers/codex-cli-0.144.4-candidate-set-live-v1.json` and
+`contracts/providers/codex-cli-0.144.4-candidate-set-tool-rich-v1.json`. This qualifies provider transport only;
+GPU Evaluation remains owned by G8.
+
 ## G7F — Live tool-rich provider qualification passes
 
 **Settles:** whether the final engineering optimization loop can expose provider-default features without breaking
@@ -135,6 +141,10 @@ The pinned Codex 0.144.3 successor injects no `--disable` flags, binds output sc
 Turns. Raw activity and the terminal archive replay with integrity. This attests only observed capabilities under the
 effective account/admin policy; it does not authorize external mutation, direct GPU measurement or scientific use.
 See `inventory/FULL_FEATURE_PROVIDER_QUALIFICATION_20260823.json`.
+
+The Codex 0.144.4 candidate-set successor additionally freezes the KDA-inspired ownership boundary: auxiliary agents
+may investigate read-only, the primary provider thread is the sole envelope writer, and the external Lab alone may
+evaluate Candidates. Qualification attests this transport boundary, not the quality of auxiliary-agent reasoning.
 
 ## G8 — Bounded end-to-end pilot passes
 
@@ -151,6 +161,16 @@ Remote r6 passes this gate. Both Runs are adhered, independently replay to searc
 retain actual GPUQ job identities. Their provider-token totals were below the sole 80k checkpoint, so Run endpoints
 remain `missing`; that is intentionally irrelevant to system qualification and cannot create a scientific estimate.
 See `inventory/G8_SYSTEM_QUALIFICATION_20260822.json`.
+
+Candidate-set v2 passes the same gate through Executor v14 and the frozen Study
+`contracts/studies/matched-search-candidate-set-system-v2.json`. Each arm submits three non-deduplicated launchable
+Candidates, searches two, and evaluates its selected Candidate once confirmatorily and once for attribution. The
+eight receipts all pass the frozen tie-aware oracle with one target launch and zero fallback. Independent audit of
+`/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v2` reconstructs integrity, semantic
+replay, adherence and `system_qualification_passed=true` under Campaign authority
+`88605aa1b1557b58aec9dacb4e043290d9a03205b0847d507fa72fc68fad633b`. Open Cake ends below the 80k checkpoint and
+direct CUDA crosses it on the non-backfillable Turn, so their endpoint observations differ; both remain excluded
+from scientific analysis and all estimand fields remain null.
 
 ## G9 — Cutover is safe
 

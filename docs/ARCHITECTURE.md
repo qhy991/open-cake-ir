@@ -201,12 +201,13 @@ GPU work. Search selects one qualified Candidate for a fresh confirmatory assay.
 Study opts in, a separate correctness-qualified NCU launch explains that confirmed
 Candidate and its checked summary becomes next-Turn feedback.
 
-That diagram is the Lab contract, not yet the complete live system. The canonical
-`CodexRunProvider` prompt, file lifecycle and normalizer still seal exactly one candidate
-per Turn, so live runs have no set to deduplicate or rank. ADR 0009 distils the smallest
-successor around one sealed candidate-set envelope; it is proposed, not implemented. The
-other remaining breadth gaps are profiling every search survivor and exercising the path
-in a scientific Campaign.
+That diagram is now also the bounded live candidate-set path. Successor
+`CodexRunProvider` prompts, file lifecycle and normalizer seal one canonical envelope and
+project its ordered members into the same build/filter/search path; frozen Studies retain
+their singleton compatibility edge. ADR 0009 records that boundary, and the non-scientific
+candidate-set v2 Campaign exercised it on B200. Remaining breadth gaps are released
+cost-ranking coverage, profiling every search survivor and a preregistered scientific
+Campaign.
 
 ---
 
@@ -285,11 +286,11 @@ graph LR
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
 | Compile → external oracle → GPU timing | implemented, B200-verified on 5 emitted operators |
-| Profiler evidence in the inner loop | partial relative to the paper — the canonical no-timing NCU assay, raw/profile replay and next-Turn feedback are implemented; current Executor v10 digest `23a2c79f…` passed one correctness-qualified B200 assay for a selected confirmed Candidate, while every evaluated survivor and a scientific Campaign are not yet covered |
+| Profiler evidence in the inner loop | partial relative to the paper — the canonical no-timing NCU assay, raw/profile replay and next-Turn feedback are implemented; historical Executor v10 digest `23a2c79f…` passed one standalone correctness-qualified B200 assay, and Executor v14 replayed attribution for each selected candidate-set v2 Candidate, while every evaluated survivor and a scientific Campaign are not yet covered |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
 | Deterministic lowering | `lower` generates for 6 of the 7 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke`, `layernorm_b8_smoke` and `gemm_bias_b1_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file |
-| Live candidate-set authoring | absent — the Lab tuple/filter/replay path is fixture-tested, while the canonical Codex provider still writes exactly one Candidate per Turn; ADR 0009 is only proposed |
-| The filter stage | partial — construction and verifier filtering are implemented, but the live provider supplies one Candidate and v8 exposes no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
+| Live candidate-set authoring | implemented and bounded-live exercised — both Codex 0.144.4 policies pass two-arm envelope qualification, and candidate-set v2 produced three launchable Candidates and searched two in each arm on B200; the Campaign is system qualification only |
+| The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but v8 exposes no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
 | Diagnosis routing | implemented — every rejection is routed to the candidate, the verifier, the IR vocabulary or the cost model, and each destination is inferred from a signal the loop already produces |
 | Cost-model ranking | mechanism implemented but no released coverage — the structural hypothesis remains measurable, while public ranking declines every current profile |
 
@@ -303,8 +304,8 @@ Two candidates that are the same program under different names are searched once
 released profile-specific cost would order eligible candidates before GPU time; with v8's
 empty coverage they retain provider order. `searches_per_turn` bounds how many survive to
 measurement; confirmatory evaluation stays single, because that one is the measurement a
-claim rests on. The current live provider supplies a singleton, so these set operations
-are presently exercised only by contract fixtures.
+claim rests on. Candidate-set v2 exercised this with three launchable members and two GPU
+searches in each arm; older frozen Studies still use the singleton edge.
 
 **What the ranking is worth.** The dormant hypothesis orders on device fill and declines
 past saturation. It used to sort on wave count first; a sweep across four predicted wave

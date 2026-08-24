@@ -1,7 +1,8 @@
 # Current-state inventory
 
-Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set envelope implementation and replay
-repair, historical Executor-v10 NCU attribution validation, Executor v13 release and Compiler v8 release. The final
+Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set envelope implementation and live
+system qualification, historical Executor-v10 NCU attribution validation, Executor v14 release and Compiler v8
+release. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
@@ -55,7 +56,7 @@ causal effect, serving and paper reproduction are not.
   authoring/search bounds, semantic deduplication, mixed and all-member rejection, fresh-process replay, and faults
   before compilation or GPU work. Tool-rich prompts apply KDA-internal's useful ownership boundary: auxiliary agents
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
-  non-scientific two-search Campaign remain the two unpassed ADR 0009 acceptance steps.
+  non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
 - The current local contract suite passes 319 tests plus 223 subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
@@ -69,8 +70,14 @@ causal effect, serving and paper reproduction are not.
   `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v1` as bounded failure evidence: Open Cake
   authored three launchable members, then the broker worker could not traverse the temporary checkout; direct CUDA
   emitted two JSON-equivalent bracketed terminals that the v13 byte-only normalizer rejected. It launched no GPU,
-  and v14 now retains missing-result process output and normalizes only JSON-equivalent bracketed terminals. A
-  successor Campaign from an accessible worktree is still required.
+  and v14 now retains missing-result process output and normalizes only JSON-equivalent bracketed terminals.
+- The accessible-worktree successor passes under Study `open-cake-ir-candidate-set-system-v2`, Campaign authority
+  `88605aa1b1557b58aec9dacb4e043290d9a03205b0847d507fa72fc68fad633b` and external Evidence root
+  `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v2`. Both arms submit three distinct
+  launchable Candidates, search two and give the selected Candidate confirmatory plus attribution Evaluation. All
+  eight receipts pass tie-aware correctness with one target launch and zero fallback; fresh-process audit reconstructs
+  integrity, semantic replay, adherence and `system_qualification_passed=true`. Estimand, estimate and uncertainty
+  remain null, so the observed latency values are not an arm comparison.
 - The beginner `b32_smoke` path has a fresh B200 observation: one candidate kernel launch from the loaded CUBIN,
   16,384/16,384 exact assignments, no fallback, synchronized unload, and explicitly no performance or scientific
   claim.
@@ -95,7 +102,7 @@ causal effect, serving and paper reproduction are not.
 | Workload inputs/oracles | Workload Contracts + Evaluation adapters | migrated |
 | r41/r42 Turn/resume/checkpoint controls | matched Lab path | implemented and live-qualified by G7/G8 |
 | r43-r45 seed/specialists/dispatcher/timing | portfolio Lab + Evaluation path | implemented; new B200 rerun pending |
-| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | candidate-set envelope and single-writer agent boundary fixture-tested; live provider qualification, re-freeze and Campaign pending |
+| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | candidate-set envelope and single-writer boundary implemented; both provider policies live-qualified and the closed system Campaign passes; a tool-rich artifact-optimization Campaign remains unrun |
 | Beginner B200 teaching smoke | Compiler + common correctness Evaluation | implemented and live-qualified; performance deliberately absent |
 | Legacy raw/index/source bytes | final bundle + manifest + historical indexes | migrated by immutable reference |
 | rXX/vN runners and verifiers | legacy Git history | deliberately not active |

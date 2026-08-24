@@ -1,17 +1,18 @@
 # ADR 0009: live candidate sets use one sealed envelope
 
-Status: proposed, 2026-08-24.
+Status: accepted, 2026-08-24.
 
 ## Outcome and non-goals
 
-A successor live Study will let one provider Turn author several Candidates through one
+A successor live Study lets one provider Turn author several Candidates through one
 canonical `candidate-set.json` file. The Lab already consumes an ordered candidate tuple;
 this closes the missing live transport without adding a second Lab path or making
 `searches_per_turn` mean two things.
 
-This proposal does not change frozen Studies, promote the dormant cost model, increase GPU
+This decision does not change frozen Studies, promote the dormant cost model, increase GPU
 work implicitly, admit runtime-shaped Schedules, or require every Turn to fill its allowed
-set. The transport and zero-GPU fixture slice are implemented; live acceptance is pending.
+set. The transport, zero-GPU fixture slice and bounded live system-qualification slice are
+implemented and exercised.
 
 ## Owners and canonical form
 
@@ -67,7 +68,7 @@ candidate budget, Evaluation protocol or acceptance decision.
 
 ## Smallest complete vertical slice
 
-Acceptance requires all three pieces, in order:
+Acceptance required all three pieces, in order:
 
 1. a zero-GPU fixture Turn with three entries proves ordering, the authoring bound,
    per-candidate rejection, semantic deduplication, selection and fresh-process replay;
@@ -77,12 +78,28 @@ Acceptance requires all three pieces, in order:
    Candidates in a Turn and evaluates two under an explicitly frozen
    `searches_per_turn=2` protocol.
 
-Until the third item passes, candidate-set composition is an internally tested capability,
-not an exercised live paper stage.
-
 As of 2026-08-24, item 1 passes in the 319-test/223-subtest local suite and item 2 passes
 for both the closed and tool-rich Codex 0.144.4 policies. The first item-3 attempt retained
 three launchable Open Cake members but reached no Evaluation because the broker worker
 could not traverse the temporary checkout; direct CUDA then hit a JSON-whitespace
-normalization fault. Both failure boundaries are repaired in Executor v14, but item 3
-remains deliberately unclaimed until a successor Campaign passes.
+normalization fault. That immutable v1 Campaign remains bounded failure evidence.
+
+The successor Study `open-cake-ir-candidate-set-system-v2` (canonical SHA
+`6b7c916c61bf01f393383c5c9f7f0929ad834511cbd30237575c8cf7e0302538`) passed item 3 under
+Executor v14. Its external Campaign authority SHA is
+`88605aa1b1557b58aec9dacb4e043290d9a03205b0847d507fa72fc68fad633b`, and its Evidence root
+is `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v2`.
+Each arm submitted three non-deduplicated launchable Candidates and searched two. The Open
+Cake set is structurally distinct at the Schedule level (`m256-c32-w8-s3`,
+`m128-c64-w8-s3`, and `m128-c32-w4-s2`). Each selected Candidate then received fresh
+confirmatory and attribution Evaluation, yielding four receipts per arm. All eight receipts
+pass the frozen tie-aware correctness oracle, observe one target-kernel call and zero
+fallback calls. Fresh-process audit reconstructs archive integrity, semantic replay,
+protocol adherence and `system_qualification_passed=true`; the two terminal seals are
+`9d3fb8b890f38c10655e4327f07c320de30333d16c2d1cee9ebd0c3cd692cb33` and
+`e4ac6d746eb5b1bd01df786aeae4642a2d09cae82efc4fd79d8c57875e92157c`.
+
+This accepts the candidate-set composition boundary only. The Study forbids comparative
+statistics, and its estimand, estimate and uncertainty are all null. The observed arm
+latencies are operational evidence for the path, not a treatment comparison or a paper
+result.

@@ -47,10 +47,11 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   reconstructs the final three-shape specialist/dispatcher boundary without a new runtime mode. Within
   `matched_search`, `artifact_optimization_only` restores provider-default features while forbidding scientific
   comparison and promoting Candidates only through common confirmatory Evaluation. The Lab's ordered candidate-set
-  envelope is implemented and fixture-tested for both arms. Authoring and GPU-search budgets are independent, and
+  envelope is implemented and exercised for both arms. Authoring and GPU-search budgets are independent, and
   the tool-rich prompts give auxiliary agents read-only investigations while the primary thread remains the sole
-  submission writer. Both live two-arm provider policies are qualified; ADR 0009 remains proposed until the
-  non-scientific Campaign slice passes.
+  submission writer. Both live two-arm provider policies are qualified, and ADR 0009 is accepted after a bounded
+  non-scientific B200 Campaign produced three launchable Candidates per arm, searched two per arm and replayed all
+  eight search/confirmatory/attribution receipts. This is system qualification, not an arm comparison.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
 - Current Executor Revision `open-cake-ir-b200-v14` binds the 34-source runtime closure, including deterministic
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
@@ -63,18 +64,20 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   scientific claim.
 - Historical Executor v10 digest `23a2c79f…` passes the separate correctness-qualified B200 NCU assay for that frozen
   Candidate: one target launch, zero fallback and zero timing, with all 11 profiler metrics replayed from retained
-  raw CSV. This validates the attribution mechanism under v10, not current v13, kernel speed or a scientific Campaign.
+  raw CSV. This validates the attribution mechanism under v10, not current v14, kernel speed or a scientific Campaign.
 - The pinned Codex 0.144.3 tool-rich qualification passes with no injected feature disables and observes shell
   activity on both initial and resumed singleton Turns. The Lab derives the required live qualification from Claim Scope, so
   artifact-only composition accepts this tool-rich receipt while scientific/system scopes retain the closed receipt.
-  Its candidate-set successor still requires live qualification. Account/admin policy determines the effective
-  catalog, and external mutation or direct GPU measurement remains unauthorized.
+  Both closed and tool-rich Codex 0.144.4 candidate-set successors are separately live-qualified for Open Cake and
+  direct CUDA. Account/admin policy determines the effective catalog, and external mutation or direct GPU
+  measurement remains unauthorized.
 - The legacy source authority is the clean final Stage 6 revision `2fa79092...`, tree `b02d730b...`. It was initially
   observed 68 commits ahead; origin now carries the final revision and a verified complete-history bundle provides
   an independent recovery path under `migration/bundles/`.
-- Historical r41/r42/r45 outcomes remain bounded negative/inconclusive evidence. G7 r4 and the non-scientific G8 r6
-  system qualification pass on the remote B200 host. G8 produces no treatment comparison: estimand, estimate and
-  uncertainty remain null. No scientific Campaign, serving integration or paper-result claim has been run here.
+- Historical r41/r42/r45 outcomes remain bounded negative/inconclusive evidence. G7 r4, the non-scientific G8 r6 and
+  the candidate-set v2 system qualification pass on the remote B200 host. The latter has two adhered Runs and eight
+  replayed Evaluation Receipts, but produces no treatment comparison: estimand, estimate and uncertainty remain
+  null. No scientific Campaign, serving integration or paper-result claim has been run here.
 
 ## Read order by role
 
