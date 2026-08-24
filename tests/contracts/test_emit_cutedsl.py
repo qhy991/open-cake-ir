@@ -251,6 +251,39 @@ class BackendCoverageTest(unittest.TestCase):
         # backend can keep is a promise, not a capability.
         self.assertEqual(set(DType) - covered, set())
 
+    # Tables that are partial on purpose, each with a declared-coverage set saying so and
+    # a Compiler finding that refuses a Schedule outside it. Everything else keyed by an
+    # IR enum has to be total: a member with no entry is a KeyError from emission rather
+    # than a diagnosis, which is how int64 hid.
+    DECLARED_PARTIAL = {
+        ("emit_triton", "INSIDE_LOOP_EMITTERS"),
+        ("emit_triton", "OUTSIDE_LOOP_EMITTERS"),
+        ("emit_triton", "_TL_DTYPE"),
+        ("emit_triton", "_TORCH_DTYPE"),
+        ("emit_cutedsl", "BODY_EMITTERS"),
+    }
+
+    def test_every_other_enum_keyed_table_is_total(self) -> None:
+        from enum import Enum
+
+        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+
+        for module in (emit_triton, emit_cutedsl):
+            short = module.__name__.rsplit(".", 1)[-1]
+            for name, table in sorted(vars(module).items()):
+                if not isinstance(table, dict) or not table:
+                    continue
+                keys = list(table)
+                if not all(isinstance(key, Enum) for key in keys):
+                    continue
+                if (short, name) in self.DECLARED_PARTIAL:
+                    continue
+                with self.subTest(table=f"{short}.{name}"):
+                    owner = type(keys[0])
+                    self.assertEqual(
+                        [member.value for member in owner if member not in table], []
+                    )
+
     def test_the_declared_coverage_is_the_dispatch(self) -> None:
         from open_cake_ir.compiler import emit_cutedsl, emit_triton
 

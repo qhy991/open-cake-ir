@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "6eb7b1a8900ea2a9b174863d2998b57baa7676e69a44f07a5929f075a7b61cac"
+    "canonical_sha256": "36d96c116cf9d3100a863ca32eba604e896dd4b24ea6ce3d75b5e2c0f414bcce"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "drop a dtype no backend can name"
+  "approval_basis": "keep every enum-keyed backend table total or declared partial"
 }

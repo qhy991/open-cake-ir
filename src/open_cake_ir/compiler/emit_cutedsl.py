@@ -58,6 +58,15 @@ _TORCH_DTYPE = {
 # KeyError rather than a refusal.
 SUPPORTED_DTYPES = frozenset(_CUTLASS_DTYPE) & frozenset(_TORCH_DTYPE)
 
+# Total over PipelineKind by contract, unlike the operation and dtype tables above: a
+# pipeline kind with no class is a Schedule the IR admits and this backend cannot name,
+# and there is no declared-partial set saying so. At module scope so that it is visible
+# to the check that keeps it total.
+PIPELINE_CLASSES = {
+    PipelineKind.TMA_TO_UMMA: "PipelineTmaUmma",
+    PipelineKind.UMMA_TO_THREAD: "PipelineUmmaAsync",
+}
+
 _SWIZZLE_BYTES = {
     Swizzle.NONE: 0,
     Swizzle.B32: 32,
@@ -335,11 +344,7 @@ class _Emitter:
                 f"barrier {barrier.name!r} needs one lowerable pipeline kind; got "
                 f"{rendered or ['none']}"
             )
-        kind = kinds.pop()
-        return {
-            PipelineKind.TMA_TO_UMMA: "PipelineTmaUmma",
-            PipelineKind.UMMA_TO_THREAD: "PipelineUmmaAsync",
-        }[kind]
+        return PIPELINE_CLASSES[kinds.pop()]
 
     def _participants(self, barrier: Barrier) -> tuple[str, str]:
         return f"{barrier.name}_producer", f"{barrier.name}_consumer"
