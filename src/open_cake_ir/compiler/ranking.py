@@ -14,8 +14,8 @@ and measurement refused it; see below. The precedent that survives is the narrow
 that a serious implementation declines to predict a time -- and not the particular terms
 that implementation picked, which are its evidence to produce and not ours to inherit.
 
-What it ranks on is what measurement supports, and it declines where measurement withdrew
-support. This model used to sort on wave count first -- how many full rounds of resident
+What this primitive ranks on is device fill, and it declines where measurement withdrew
+support. It used to sort on wave count first -- how many full rounds of resident
 CTAs the grid takes -- on the reasoning that a partial final round is a round of dead time.
 A sweep of one Schedule's grid across four predicted wave boundaries found latency linear
 in CTA count with no step at any of them, and no step at any other wave size either: the
@@ -23,15 +23,16 @@ staircase the term describes is not there (`docs/ANALYSIS_CALIBRATION.md`). So t
 gone, and with it the ability to order a grid that overfills the device -- `cost` returns
 None for those rather than ordering them on a refuted basis.
 
-What survives is device fill: among candidates that fit within one round of the device,
-prefer the one that fills more of it. That is the whole model, and its support is one
-kernel. The nine-tiling Flash-KMeans calibration came out concordant on twenty-nine of
-thirty-six pairs; pointing the same instrument at RMSNorm found it beating a blind pick at
-one workload scale and losing to one at the next. Read the order as advice from a model
-that has been right about one kernel, not as a filter that is known to work.
+What survives inside this primitive is device fill: among candidates that fit within one
+round of the device, prefer the one that fills more of it. Expanded declared-domain B200
+calibrations on GEMM and Flash-KMeans did not support that key as a useful profile filter.
+Consequently the released Compiler's `calibration_coverage` is empty and its public
+`Compiler.rank` withholds every profile. Keeping the primitive separate preserves the
+measured hypothesis without exposing it as calibrated product behavior.
 
-Ranking is advisory by construction. It orders candidates that have already passed the
-gates; it never admits or rejects one. On-device measurement remains the authority.
+When a later Revision has coverage, ranking remains advisory by construction: it orders
+candidates that have already passed the gates and never admits or rejects one. On-device
+measurement remains the authority.
 """
 
 from __future__ import annotations

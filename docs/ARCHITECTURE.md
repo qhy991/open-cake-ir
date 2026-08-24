@@ -237,13 +237,15 @@ graph LR
         direction TB
         T1["typed IR + construction checks"]
         T2["verifier hard gates"]
-        T3["cost model:<br/>attribution, no estimate"]
+        T3["cost hypothesis:<br/>no released coverage"]
         T4["deterministic lowering"]
     end
 
-    CH --> FIL["<b>filter</b><br/>rank and prune<br/>before GPU time"]
-    FIL --> EX["compile → oracle → CUPTI"]
+    CH --> FIL["<b>filter</b><br/>gates + covered rank<br/>before GPU time"]
+    FIL --> EX["compile → oracle → CUPTI timing"]
     EX --> EVD["retained evidence"]
+    EX -.-> PROF["profiler attribution<br/><i>receipt/replay only</i>"]
+    PROF -.-> EVD
     EVD -->|"inner loop: route to candidate ·<br/>verifier · vocabulary · cost model"| AE
     EVD -->|"outer loop<br/>corpus gate + human merge"| CH
 
@@ -251,10 +253,11 @@ graph LR
     style T2 fill:#d4edda,stroke:#28a745
     style T4 fill:#d4edda,stroke:#28a745
     style T3 fill:#fff3cd,stroke:#b8860b
-    style FIL fill:#d4edda,stroke:#28a745
+    style FIL fill:#fff3cd,stroke:#b8860b
     style W fill:#d4edda,stroke:#28a745
     style AE fill:#d4edda,stroke:#28a745
     style EX fill:#d4edda,stroke:#28a745
+    style PROF fill:#fff3cd,stroke:#b8860b
     style EVD fill:#d4edda,stroke:#28a745
 ```
 
@@ -264,30 +267,32 @@ graph LR
 | Authoring Environment, both arms | implemented |
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
-| Compile → external oracle → GPU measurement | implemented, B200-verified on 5 emitted operators |
+| Compile → external oracle → GPU timing | implemented, B200-verified on 5 emitted operators |
+| Profiler evidence in the inner loop | partial — attribution receipt and replay are implemented, but the canonical B200 evaluator refuses attribution, so the paper's fourth-stage evidence bundle is not yet complete |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
 | Deterministic lowering | `lower` generates for 6 of the 7 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke`, `layernorm_b8_smoke` and `gemm_bias_b1_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file |
-| The filter stage | implemented — a Turn submits a candidate set, every candidate is built and sealed, the set is ordered before any of it runs, and `searches_per_turn` decides how much of it reaches a GPU |
+| The filter stage | partial — construction and verifier filtering are implemented, but v8 exposes no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
 | Diagnosis routing | implemented — every rejection is routed to the candidate, the verifier, the IR vocabulary or the cost model, and each destination is inferred from a signal the loop already produces |
-| Cost-model ranking | partial, and narrower than it was — see below |
+| Cost-model ranking | mechanism implemented but no released coverage — the structural hypothesis remains measurable, while public ranking declines every current profile |
 
-The filter box is green because the mechanism is there, and the cost model beside it is
-amber because measurement said so. Both facts came from the same week's work and they are
-worth stating together.
+The filter box is amber because its hard gates are active but its cost ranking has no
+released calibration coverage. Missing coverage is an observable state, not a silent
+fallback to an unvalidated order.
 
 **What the filter does.** A provider Turn submits a set. Every candidate in it is built,
-gated and sealed — a rejected one is evidence, not a discard — and the set is ordered by
-`compiler/ranking.py` before any of it reaches a GPU. Two candidates that are the same
-program under different names are searched once. `searches_per_turn` bounds how many
-survive to a measurement; confirmatory evaluation stays single, because that one is the
-measurement a claim rests on.
+gated and sealed — a rejected one is evidence, not a discard. Two candidates that are the
+same program under different names are searched once. A released profile-specific cost
+would order eligible candidates before GPU time; with v8's empty coverage they retain
+provider order. `searches_per_turn` bounds how many survive to measurement; confirmatory
+evaluation stays single, because that one is the measurement a claim rests on.
 
-**What the ranking is worth.** It orders on device fill and declines past saturation, and
-that is the whole model. It used to sort on wave count first; a sweep across four predicted
-wave boundaries found latency linear in CTA count and no step at any of them, so the term
-is gone (`docs/ANALYSIS_CALIBRATION.md`). What is left beat a blind pick on Flash-KMeans
-and did not on RMSNorm — one kernel of support rather than a general capability. The
-order is advice from a model that has been right about one kernel.
+**What the ranking is worth.** The dormant hypothesis orders on device fill and declines
+past saturation. It used to sort on wave count first; a sweep across four predicted wave
+boundaries found latency linear in CTA count and no step, so that term is gone. Expanded
+B200 domains then put device-fill top-1 regret at 1.72% in one non-preregistered GEMM
+sweep and 19.43% on Flash-KMeans (`docs/ANALYSIS_CALIBRATION.md`). The former is
+insufficient for promotion and the latter is negative evidence, so v8 publishes no cost
+order rather than turning a coarse search hint into a claimed filter.
 
 That is why the loop routes a wrong order to the cost model rather than to the author, and
 why a Study that searches more than one candidate has to declare how much faster counts as
@@ -296,7 +301,8 @@ inversion would report mostly measurement error.
 
 **What the analysis supplies.** Residency upper bounds and the resource that binds them,
 which is the report the harness owes the agent. Both bounds held in the direction claimed
-on three kernels across both backends, and the binding resource was named correctly each
-time — though on Flash-KMeans registers and shared memory tie, so naming one discriminated
-nothing. Logical register storage is an optimistic lower bound and not ptxas allocation;
-no time is estimated, because the Target declares no clock and no bandwidth.
+on five kernels across both backends, and the predicted binding resource was always among
+the measured binders. Only three measurements identified one resource uniquely; registers
+and shared memory tied on Flash-KMeans and GEMM, so naming either discriminated nothing.
+Logical register storage is an optimistic lower bound and not ptxas allocation; no time is
+estimated, because the Target declares no clock and no bandwidth.

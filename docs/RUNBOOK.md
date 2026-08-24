@@ -51,11 +51,16 @@ of trusted; `docs/ANALYSIS_CALIBRATION.md` reads their output and `evidence/cali
 
 ```bash
 python tools/calibrate_wave_term.py --first 60 --last 400 --step 2      # exclusive: benchmark
-python tools/calibrate_ranking_at_scale.py --batch 512                  # exclusive: benchmark
+python tools/calibrate_ranking_at_scale.py --size 512 --observed-at <iso8601> \
+  --out /new/path/ranking.json                                          # exclusive: benchmark
 python tools/observe_lowered_kernel.py --observed-at <iso8601> --out inventory/<NEW>.json
 python tools/profile_lowered_kernel.py --schedule <path> --observed-at <iso8601> --out <NEW>.json
 python tools/ir_vocabulary.py                                           # no GPU
 ```
+
+The ranking calibration measures the dormant structural hypothesis even when the released
+Compiler has no profile coverage. Its output informs a later reviewed Revision; running
+the instrument never changes `calibration_coverage`.
 
 Both `observe_lowered_kernel.py` and `profile_lowered_kernel.py` build their inputs from
 `tools/kernel_cases.py`, so a kernel one of them profiles is a kernel the other checked.
@@ -69,7 +74,7 @@ and a new date; the earlier record stays as history for the Revision it was take
 ## 2. Resolve a Study
 
 ```bash
-open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v5.json \
+open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v6.json \
   --output /new/path/campaign.lock.json
 ```
 
@@ -77,14 +82,14 @@ Which Study Contract is current is not a fact this document owns. Release script
 `tools/create_study_successor.py` binds a new explicit successor to the current Compiler and Executor and validates
 it through Lab preflight. The names below were current when written.
 
-The current checked-in scientific matched contract, `matched-search-infrastructure-v5.json`, uses a zero-GPU fixture
+The current checked-in scientific matched contract, `matched-search-infrastructure-v6.json`, uses a zero-GPU fixture
 provider and intentionally cannot start a live provider. The current non-scientific G8 template is
-`matched-search-system-qualification-v5.json`; earlier versions remain frozen historical records. Freeze
+`matched-search-system-qualification-v6.json`; earlier versions remain frozen historical records. Freeze
 a live successor only after a real two-Turn qualification emits a receipt with
 the matching closed or tool-rich scope and binds the exact executable, model, reasoning effort, service tier, output
 schema, prompt/scaffold bytes, removed environment, reference visibility, feature overrides and event contract.
-`artifact-optimization-v5.json` is the current zero-GPU contract fixture;
-`artifact-optimization-verda-v6.json` binds the current live tool-rich provider and Executor but authorizes no
+`artifact-optimization-v6.json` is the current zero-GPU contract fixture;
+`artifact-optimization-verda-v7.json` binds the current live tool-rich provider and Executor but authorizes no
 Campaign by itself. Earlier revisions remain historical.
 
 ## 3. Qualify the live provider without GPU
@@ -129,7 +134,7 @@ Then freeze either non-scientific Study from its matching receipt, seal anchor a
 ```bash
 python tools/freeze_live_matched_study.py \
   --project-root . \
-  --template contracts/studies/matched-search-system-qualification-v5.json \
+  --template contracts/studies/matched-search-system-qualification-v6.json \
   --qualification contracts/providers/<new-live-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-live-anchor>.json \
   --executor runtime/executors/open-cake-ir-b200-v8.json \

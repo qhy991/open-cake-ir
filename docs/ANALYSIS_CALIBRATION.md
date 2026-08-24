@@ -83,7 +83,7 @@ measurement at the end of the loop for exactly this reason.
 
 ## The ranking, measured
 
-The ranking that filters candidates before GPU time was tested the same way: nine tilings
+The ranking hypothesis was first tested the same way: nine tilings
 of the Flash-KMeans schedule, all nine correct, timed as a median of twenty runs with the
 cache dropped between them.
 
@@ -93,7 +93,7 @@ more than the number. The model put the true best second and the true worst last
 first and second choices were the measurement's second and first. It separates good from
 bad and does not resolve fine distinctions.
 
-That is the right capability for the stage it serves. A pre-GPU filter has to keep the
+That appeared to be the right capability for the stage it serves. A pre-GPU filter has to keep the
 winner in the surviving set, not name it; the paper leaves naming to measurement. Here the
 true best survives a cut at k=2. What must not be done with this number is to treat the
 order as a result -- reporting a ranked list as though position three were meaningfully
@@ -183,8 +183,9 @@ the best candidate a top-k cut keeps, against the penalty of picking blind.
 **On this kernel the ranking is not a filter.** It beats a blind pick at one scale by two
 points and loses to one at the next by one, on a kernel whose whole in-domain spread is
 under 22%. The Flash-KMeans result -- twenty-nine of thirty-six pairs, true best surviving
-k=2 -- does not carry to RMSNorm, and the honest reading is that the model has one kernel
-of support rather than a general capability.
+k=2 -- does not carry to RMSNorm. At this point the honest reading was that the model had
+one narrow kernel result rather than a general capability; the declared-domain successor
+below withdraws even that profile-level interpretation.
 
 Nothing here says which key to use instead, and that is deliberate. `+fill` -- preferring
 the emptier device -- wins at batch 64 and 512 and loses at batch 16. Adopting it would fit
@@ -206,6 +207,38 @@ to the cost model would report mostly measurement error, so a Study that searche
 one candidate must declare `search_materiality_ratio` -- how much faster the measurement has
 to be before the order counts as wrong. The faster candidate is carried forward either way;
 what the ratio decides is whether a claim gets made about the model.
+
+## The declared-domain check withdraws the remaining coverage claim
+
+The original Flash-KMeans result varied nine tilings. It did not cover the register budget
+and role width choices the actual candidate vocabulary exposes. The successor instrument
+therefore declares one fixed domain per profile before measurement: three tiles, five
+register budgets and two warp counts at global extent 512. Every one of the 30 candidates
+is either compiler-refused or externally checked against the float32 oracle; every correct
+survivor retains 41 cold-L2 timing samples.
+
+| profile | correct measured | compiler-refused | device-fill top-1 regret | top-4 regret |
+| --- | ---: | ---: | ---: | ---: |
+| GEMM + bias | 25 | 5 | **1.72%** | 0.46% |
+| Flash-KMeans | 16 | 14 | **19.43%** | 0.00% |
+
+Pairwise concordance is not the release criterion; top-k survivor quality is. Device fill
+is coarse enough that many candidates tie, and the deterministic `schedule_id` tie-break
+does not carry performance meaning. A k=4 search recovers near-best candidates, but that is
+evidence for spending four GPU searches, not for pruning to one candidate before
+measurement.
+
+Flash-KMeans is direct negative evidence for a k=1 filter. The GEMM sweep is encouraging,
+but it is only one non-preregistered run: there was no acceptance threshold or independent
+repeat fixed before seeing it. It is insufficient evidence for promotion, not evidence
+that the hypothesis fails on GEMM. A successor calibration must declare those two facts
+before measuring rather than deriving a pass rule from this result.
+
+Therefore Compiler v8 keeps `calibration_coverage` empty. `Compiler.rank` returns every
+otherwise eligible candidate as withheld, preserving provider order in the Lab rather than
+publishing an uncalibrated order. The structural cost function remains as an explicitly
+dormant hypothesis so this instrument can test it; only a later reviewed Revision with a
+predeclared profile domain and useful top-k behavior may expose it publicly.
 
 
 ## Reproducing

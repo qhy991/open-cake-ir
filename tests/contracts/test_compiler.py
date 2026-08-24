@@ -777,7 +777,7 @@ class CandidateRankingTest(unittest.TestCase):
                 operation["parameters"]["tile_shape"] = [block_n, 64, 128]
         return document
 
-    def test_a_refused_candidate_is_withheld_from_the_order(self) -> None:
+    def test_uncalibrated_and_refused_candidates_are_withheld(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         assessments = [
             compiler.assess(self._variant(64, "fits-a")),
@@ -788,8 +788,18 @@ class CandidateRankingTest(unittest.TestCase):
 
         scored, withheld = compiler.rank(assessments)
 
-        self.assertEqual({c.schedule_id for c in scored}, {"fits-a", "fits-b"})
-        self.assertIn("no-cta-is-resident", withheld)
+        self.assertEqual(scored, ())
+        self.assertEqual(
+            withheld,
+            ("fits-a", "fits-b", "no-cta-is-resident"),
+        )
+
+    def test_ranking_rejects_forged_calibration_coverage(self) -> None:
+        compiler = Compiler.load(ROOT, REVISION_PATH)
+        assessment = compiler.assess(self._variant(64, "fits-a"))
+
+        with self.assertRaisesRegex(CompilerError, "canonical Schedule replay"):
+            compiler.rank([dataclasses.replace(assessment, calibration_available=True)])
 
     def test_ranking_refuses_an_assessment_from_another_revision(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)

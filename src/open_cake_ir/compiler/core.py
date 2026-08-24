@@ -1476,7 +1476,7 @@ class Compiler:
     def rank(
         self, assessments: Sequence[Assessment]
     ) -> tuple[tuple["Cost", ...], tuple[str, ...]]:
-        """Order eligible candidates best-first, before any of them reaches a GPU.
+        """Order calibrated eligible candidates before any of them reaches a GPU.
 
         This is the paper's pre-GPU filter stage, and the boundary it keeps is the point:
         an Assessment that the gates refused is not ranked at all. Ranking a rejected
@@ -1484,17 +1484,32 @@ class Compiler:
         the harness is for. Rejected and unscorable candidates come back named rather than
         dropped, so a caller cannot mistake the order for a complete view of its set.
 
-        The order carries no predicted time. `compiler/ranking.py` says why, and
-        `docs/ANALYSIS_CALIBRATION.md` records what measurement says about the order that
-        is produced: it separates good from bad and does not resolve fine distinctions.
+        The released Revision owns calibration coverage. An eligible candidate from an
+        uncovered profile is returned as withheld rather than being assigned precision
+        that the Revision does not claim. The order carries no predicted time;
+        `compiler/ranking.py` defines the dormant structural primitive and
+        `docs/ANALYSIS_CALIBRATION.md` records the measurements required to activate it.
         """
 
         eligible: list[Schedule] = []
         withheld: list[str] = []
         for assessment in assessments:
-            if assessment.compiler_revision_id != self._revision_id:
+            if (
+                assessment.compiler_revision_id != self._revision_id
+                or assessment.compiler_revision_sha256 != self._revision_sha256
+            ):
                 raise CompilerError("assessment belongs to a different Compiler Revision")
+            replayed = self.assess(
+                _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
+            )
+            if assessment != replayed:
+                raise CompilerError(
+                    "assessment fields differ from canonical Schedule replay"
+                )
             if not assessment.lowering_eligible:
+                withheld.append(assessment.schedule_id)
+                continue
+            if not assessment.calibration_available:
                 withheld.append(assessment.schedule_id)
                 continue
             definition = self._target_definitions.get(assessment.target)

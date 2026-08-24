@@ -65,9 +65,14 @@ class CompilerRevisionWitnessTests(unittest.TestCase):
         self.assertEqual(len(observed), 6)
         self.assertEqual(observed, recorded - {archived_last_v4})
 
-    def test_current_revision_is_the_unique_recorded_successor(self) -> None:
+    def test_the_incident_successor_is_archived_and_current_has_advanced(self) -> None:
         current = json.loads(
             (ROOT / "compiler/revision.lock.json").read_text(encoding="utf-8")
+        )
+        archived = json.loads(
+            (ROOT / "compiler/releases/v7/revision.lock.json").read_text(
+                encoding="utf-8"
+            )
         )
         incident = json.loads(
             (
@@ -77,9 +82,9 @@ class CompilerRevisionWitnessTests(unittest.TestCase):
         )
         successor = incident["resolution"]["successor_revision"]
 
-        self.assertEqual(current["revision_id"], "open-cake-ir-sm100a-v7")
-        self.assertEqual(successor["revision_id"], current["revision_id"])
-        self.assertEqual(successor["canonical_sha256"], _canonical_sha256(current))
+        self.assertEqual(current["revision_id"], "open-cake-ir-sm100a-v8")
+        self.assertEqual(successor["revision_id"], archived["revision_id"])
+        self.assertEqual(successor["canonical_sha256"], _canonical_sha256(archived))
 
 
 if __name__ == "__main__":

@@ -26,9 +26,12 @@ import argparse
 import importlib.util
 import itertools
 import json
+import math
+import socket
 import statistics
 import sys
 import tempfile
+from hashlib import sha256
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +42,7 @@ from kernel_cases import ORACLES, build_inputs  # noqa: E402
 from open_cake_ir.compiler.analysis import residency_upper_bound  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
 from open_cake_ir.compiler.ir import Schedule  # noqa: E402
+from open_cake_ir.compiler.ranking import cost as ranking_hypothesis  # noqa: E402
 from open_cake_ir.compiler.target import Target  # noqa: E402
 
 _ROW_BUFFERS = ("x_tile", "sq", "normed", "y_tile")
@@ -148,8 +152,17 @@ DEFAULT_TILES = {
     "flash_kmeans_b32_smoke": (64, 128, 256),
 }
 
+EXTENT_SYMBOLS = {
+    "rmsnorm_b8_smoke": "B",
+    "gemm_bias_b1_smoke": "M",
+    "flash_kmeans_b32_smoke": "N",
+}
 
-def _time_ms(launch, arguments, *, reps: int, warmup: int, flush) -> float:
+REGISTER_BUDGETS = (64, 96, 128, 168, 224)
+WARP_COUNTS = (4, 8)
+
+
+def _time_samples_ms(launch, arguments, *, reps: int, warmup: int, flush) -> list[float]:
     import torch
 
     for _ in range(warmup):
@@ -166,7 +179,7 @@ def _time_ms(launch, arguments, *, reps: int, warmup: int, flush) -> float:
         end.record()
         end.synchronize()
         samples.append(start.elapsed_time(end))
-    return statistics.median(samples)
+    return samples
 
 
 def _keys(row: dict) -> dict[str, float]:
@@ -194,10 +207,10 @@ def main() -> int:
     parser.add_argument("--schedule", default="corpus/schedules/rmsnorm-b8-smoke.json")
     parser.add_argument("--revision", default="compiler/revision.lock.json")
     parser.add_argument(
-        "--batch",
+        "--size",
         type=int,
         default=512,
-        help="the extent the whole set shares: rows for a normalization, M for a GEMM",
+        help="profile-specific global extent: RMSNorm B, GEMM M, Flash-KMeans N",
     )
     parser.add_argument(
         "--tiles",
@@ -209,13 +222,32 @@ def main() -> int:
     parser.add_argument("--reps", type=int, default=41)
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--tolerance", type=float, default=2e-3)
-    parser.add_argument("--out", default="ranking-at-scale.json")
+    parser.add_argument("--observed-at", required=True, help="ISO 8601 UTC timestamp")
+    parser.add_argument("--out", required=True)
     arguments = parser.parse_args()
+
+    out = Path(arguments.out)
+    if out.exists() or out.is_symlink():
+        raise SystemExit(f"{out} already exists; a new measurement gets a new file")
+    if (
+        arguments.size <= 0
+        or arguments.reps <= 0
+        or arguments.warmup < 0
+        or not math.isfinite(arguments.tolerance)
+        or arguments.tolerance <= 0
+    ):
+        raise SystemExit("size/reps must be positive and warmup must be non-negative")
 
     import torch
 
     compiler = Compiler.load(ROOT, arguments.revision)
-    base = json.loads((ROOT / arguments.schedule).read_text(encoding="utf-8"))
+    schedule_path = (ROOT / arguments.schedule).resolve(strict=True)
+    if ROOT not in schedule_path.parents or schedule_path.is_symlink():
+        raise SystemExit("Schedule custody differs")
+    if not out.parent.resolve(strict=True).is_dir():
+        raise SystemExit("output parent differs")
+    schedule_bytes = schedule_path.read_bytes()
+    base = json.loads(schedule_bytes)
     target = Target.from_dict(
         json.loads(
             (ROOT / f"compiler/targets/{base['target']}.json").read_text(encoding="utf-8")
@@ -236,27 +268,39 @@ def main() -> int:
     # A normalization tiles rows and a contraction tiles the output block, so the useful
     # range differs even though the sweep is the same shape.
     tiles = arguments.tiles or DEFAULT_TILES[profile]
+    if any(tile <= 0 for tile in tiles) or len(set(tiles)) != len(tiles):
+        raise SystemExit("tile domain must contain distinct positive values")
 
     inputs = None
     rows: list[dict] = []
-    refused = 0
-    revision: dict[str, str] = {}
+    excluded: list[dict[str, object]] = []
+    revision: dict[str, str] | None = None
     for tile, registers, warps in itertools.product(
-        tiles, (64, 96, 128, 168, 224), (4, 8)
+        tiles, REGISTER_BUDGETS, WARP_COUNTS
     ):
-        document = variant(base, arguments.batch, tile, registers, warps)
+        document = variant(base, arguments.size, tile, registers, warps)
         assessment = compiler.assess(document)
         if not assessment.lowering_eligible:
-            refused += 1
+            excluded.append(
+                {
+                    "schedule_id": document["schedule_id"],
+                    "tile": tile,
+                    "registers_per_thread": registers,
+                    "warps": warps,
+                    "disposition": "refused_by_compiler",
+                    "finding_codes": [
+                        finding.code for finding in assessment.findings
+                    ],
+                }
+            )
             continue
         revision = {
-            "id": assessment.compiler_revision_id,
-            "sha256": assessment.compiler_revision_sha256,
+            "revision_id": assessment.compiler_revision_id,
+            "revision_sha256": assessment.compiler_revision_sha256,
         }
-        bound = residency_upper_bound(
-            Schedule.from_dict(json.loads(assessment.schedule_bytes)), target
-        )
-        scored, _ = compiler.rank([assessment])
+        typed_schedule = Schedule.from_dict(json.loads(assessment.schedule_bytes))
+        bound = residency_upper_bound(typed_schedule, target)
+        hypothesis_cost = ranking_hypothesis(typed_schedule, target)
         lowering = compiler.lower(assessment)
 
         module_path = Path(workspace) / f"{document['schedule_id'].replace('-', '_')}.py"
@@ -284,10 +328,26 @@ def main() -> int:
             # would take is not the order of anything the workload asked for.
             print(f"{document['schedule_id']}: INCORRECT, max deviation {deviation:.2e}",
                   flush=True)
+            excluded.append(
+                {
+                    "schedule_id": document["schedule_id"],
+                    "tile": tile,
+                    "registers_per_thread": registers,
+                    "warps": warps,
+                    "disposition": "incorrect",
+                    "max_deviation": deviation,
+                }
+            )
             continue
 
-        median = _time_ms(launch, inputs, reps=arguments.reps,
-                          warmup=arguments.warmup, flush=flush)
+        samples = _time_samples_ms(
+            launch,
+            inputs,
+            reps=arguments.reps,
+            warmup=arguments.warmup,
+            flush=flush,
+        )
+        median = statistics.median(samples)
         grid_x, grid_y, grid_z = assessment.analysis["grid"]
         rows.append(
             {
@@ -299,52 +359,97 @@ def main() -> int:
                 "ctas_per_multiprocessor_upper_bound": bound.ctas_per_multiprocessor,
                 "binding_resource": bound.binding.resource,
                 "multiprocessor_count": multiprocessors,
-                "ranked_by_the_model": bool(scored),
+                "ranked_by_hypothesis": hypothesis_cost is not None,
                 "max_deviation": deviation,
                 "median_ms": median,
+                "timing_samples_ms": samples,
             }
         )
         print(f"{document['schedule_id']:24s} ctas={rows[-1]['ctas']:6d} "
               f"r<={bound.ctas_per_multiprocessor:2d} {median * 1000:8.2f}us", flush=True)
 
+    if revision is None:
+        raise SystemExit("the declared domain produced no lowering-eligible candidates")
+    candidate_count = len(tiles) * len(REGISTER_BUDGETS) * len(WARP_COUNTS)
+    if len(rows) + len(excluded) != candidate_count:
+        raise RuntimeError("calibration domain coverage differs")
     device = torch.cuda.get_device_properties(0)
-    Path(arguments.out).write_text(
-        json.dumps(
+    evaluation_sources = []
+    for role, source in (
+        ("driver", Path(__file__).resolve()),
+        ("oracle", ROOT / "tools" / "kernel_cases.py"),
+    ):
+        evaluation_sources.append(
             {
-                "schema_version": 1,
-                "schedule_id": base["schedule_id"],
-                "target": base["target"],
-                "compiler_revision": revision,
-                "device": {
-                    "name": device.name,
-                    "multiprocessor_count": device.multi_processor_count,
-                },
-                "batch": arguments.batch,
-                "reps": arguments.reps,
-                "refused_by_the_gates": refused,
-                "rows": rows,
-            },
-            indent=2,
-            sort_keys=True,
+                "role": role,
+                "path": source.relative_to(ROOT).as_posix(),
+                "raw_sha256": sha256(source.read_bytes()).hexdigest(),
+            }
         )
-        + "\n",
-        encoding="utf-8",
-    )
+    record = {
+        "schema_version": 3,
+        "observed_at": arguments.observed_at,
+        "purpose": "candidate_ranking_calibration",
+        "host": socket.gethostname(),
+        "evaluation_sources": evaluation_sources,
+        "schedule": {
+            "path": schedule_path.relative_to(ROOT).as_posix(),
+            "schedule_id": base["schedule_id"],
+            "profile": profile,
+            "raw_sha256": sha256(schedule_bytes).hexdigest(),
+        },
+        "target": base["target"],
+        "compiler_revision": revision,
+        "device": {
+            "name": device.name,
+            "multiprocessor_count": device.multi_processor_count,
+        },
+        "evaluation_domain": {
+            "extent": {"symbol": EXTENT_SYMBOLS[profile], "value": arguments.size},
+            "tiles": list(tiles),
+            "registers_per_thread": list(REGISTER_BUDGETS),
+            "warps": list(WARP_COUNTS),
+            "candidate_count": candidate_count,
+        },
+        "protocol": {
+            "input_seed": 0,
+            "correctness_tolerance": arguments.tolerance,
+            "warmup_launches": arguments.warmup,
+            "timing_samples_per_candidate": arguments.reps,
+            "l2_flush_bytes_per_sample": flush.numel(),
+            "summary_statistic": "median_ms",
+        },
+        "excluded": excluded,
+        "rows": rows,
+    }
+    with out.open("x", encoding="utf-8") as stream:
+        json.dump(record, stream, indent=2, sort_keys=True)
+        stream.write("\n")
 
-    print(f"\n{len(rows)} correct candidates, {refused} refused by the gates")
+    refused = sum(
+        item["disposition"] == "refused_by_compiler" for item in excluded
+    )
+    incorrect = sum(item["disposition"] == "incorrect" for item in excluded)
+    print(
+        f"\n{len(rows)} measured candidates, {refused} refused by the gates, "
+        f"{incorrect} incorrect"
+    )
     pairs = [(i, j) for i in range(len(rows)) for j in range(i + 1, len(rows))]
-    print(f"scoring {len(pairs)} pairs\n")
-    print(f"{'order key':24s} concordant   share")
+    print(f"scoring {len(pairs)} total pairs; key ties are not predictions\n")
+    print(f"{'order key':24s} concordant/comparable   share")
     for name in _keys(rows[0]) if rows else {}:
         agree = 0
+        comparable = 0
         for i, j in pairs:
             left = _keys(rows[i])[name] - _keys(rows[j])[name]
             slower = rows[i]["median_ms"] - rows[j]["median_ms"]
+            if left == 0 or slower == 0:
+                continue
+            comparable += 1
             if left * slower > 0:
                 agree += 1
-            elif left == 0 and slower == 0:
-                agree += 1
-        print(f"{name:24s} {agree:5d}/{len(pairs):<6d} {agree / len(pairs):6.1%}")
+        share = agree / comparable if comparable else float("nan")
+        print(f"{name:24s} {agree:5d}/{comparable:<10d} {share:6.1%}")
     print(f"wrote {arguments.out}")
     return 0
 
