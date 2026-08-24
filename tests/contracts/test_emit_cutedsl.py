@@ -399,11 +399,17 @@ class EmittedKernelObservationTest(unittest.TestCase):
 
     The record names the artifact that ran, so a change to the lowering detaches the
     evidence from the code and this test says so. The answer is a new observation, taken
-    with `tools/observe_lowered_kernel.py`, never an edit to a record: the earlier one
-    stays as history for the Revision it was taken under.
+    with `tools/observe_lowered_kernel.py`, never an edit to a record: the earlier ones
+    stay as history for the Revision and the inputs they were taken under.
+
+    This one is stronger than the records it supersedes. They were taken with a
+    centroid-norm vector constructed to equal the squared row sums of the centroids, which
+    is how the kernel is called in production and is one input family. The instrument now
+    derives its inputs from the Schedule's declarations, so the vector is arbitrary and
+    the check is of the arithmetic the kernel actually promises.
     """
 
-    RECORD = ROOT / "inventory" / "EMITTED_KERNEL_OBSERVATION_20260824.json"
+    RECORD = ROOT / "inventory" / "FLASH_KMEANS_OBSERVATION_20260824.json"
 
     def test_the_observation_matches_what_the_compiler_lowers_now(self) -> None:
         from open_cake_ir.compiler import Compiler

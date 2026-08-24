@@ -53,6 +53,9 @@ python tools/ir_vocabulary.py                                           # no GPU
 
 Both `observe_lowered_kernel.py` and `profile_lowered_kernel.py` build their inputs from
 `tools/kernel_cases.py`, so a kernel one of them profiles is a kernel the other checked.
+Adding an operator adds an oracle there and nothing else: shapes, dtypes and argument
+order are derived from the Schedule's global buffers, because that is where they are
+already declared and where the emitted host function already validates them.
 
 `observe_lowered_kernel.py` refuses to overwrite. A record is what happened once, so renewing one means a new file
 and a new date; the earlier record stays as history for the Revision it was taken under.

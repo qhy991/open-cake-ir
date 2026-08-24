@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from kernel_cases import CASES, global_shapes  # noqa: E402
+from kernel_cases import ORACLES, build_inputs  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
 
 
@@ -61,15 +61,15 @@ def main() -> int:
         raise SystemExit(f"the gates refused this Schedule: {codes}")
     lowering = compiler.lower(assessment)
 
-    shapes = global_shapes(document)
-    case = CASES.get(assessment.profile)
-    if case is None:
+    oracle = ORACLES.get(assessment.profile)
+    if oracle is None:
         raise SystemExit(
             f"no oracle for profile {assessment.profile!r}; this tool observes "
-            f"{', '.join(sorted(CASES))}"
+            f"{', '.join(sorted(ORACLES))}"
         )
     torch.manual_seed(0)
-    inputs, reference, distance = case(shapes, torch)
+    inputs = build_inputs(document, torch)
+    reference, distance = oracle(inputs, torch)
 
     with tempfile.TemporaryDirectory(prefix="cake-observe-") as directory:
         module_path = Path(directory) / f"{lowering.entry_point}.py"

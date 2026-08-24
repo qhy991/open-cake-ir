@@ -1,0 +1,41 @@
+{
+ "schema_version": 2,
+ "observed_at": "2026-08-24T05:00:00Z",
+ "purpose": "lowered_kernel_correctness",
+ "scientific_claim_authorized": false,
+ "performance_measured": false,
+ "host": "verda-b200x4",
+ "device": "NVIDIA B200",
+ "compute_capability": [
+  10,
+  0
+ ],
+ "toolchain": {
+  "cutlass": "4.7.0",
+  "torch": "2.13.0+cu130"
+ },
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v4",
+  "revision_sha256": "91728c879d41ecdb3cbd041158dd64d9f9f9100a42a8fcf7ec9faf922ec3d48e"
+ },
+ "schedule": {
+  "path": "corpus/schedules/flash-kmeans-assignment-full.json",
+  "schedule_id": "flash-kmeans-assignment-full-explicit-sm100a-v1",
+  "canonical_sha256": "6818329b64842d7df94141d0b77f7fab9fbb91ec00b95eaba214600da697ba4b"
+ },
+ "lowering": {
+  "generated": true,
+  "entry_point": "cake_flash_kmeans_assignment_full",
+  "source_sha256": "677ba240be22861de2416180bb3e11eeb3265252599186cd607e9f6c3a285406",
+  "source_lines": 337
+ },
+ "result": {
+  "compiled": true,
+  "launched": true,
+  "total_elements": 128,
+  "mismatch_count": 0,
+  "max_chosen_distance_excess": 0.0,
+  "passed": true
+ },
+ "note": "Compiler.lower generated this source from the Schedule; there is no checked-in template for this profile. Correctness only -- no timing was taken. Reproduce with tools/observe_lowered_kernel.py."
+}

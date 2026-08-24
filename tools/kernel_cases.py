@@ -1,20 +1,36 @@
-"""How to build one call's inputs for each profile this repository emits.
+"""One call's arguments for any Schedule, and the answer for each profile that has one.
 
 Shared because two instruments need it and neither owns it: `observe_lowered_kernel.py`
 compares the result against the oracle here, and `profile_lowered_kernel.py` throws the
 result away and measures the launch. Writing the inputs twice would let one instrument
 profile a kernel the other never checked.
 
-Each case returns `(inputs, reference, distance)`. `distance` is None for a float-valued
-kernel, where the question is how far off the answer is rather than whether the index it
-chose was as good.
+The split is where the ownership is. **Shapes, dtypes and argument order belong to the
+Schedule** -- the emitted host function already validates them against the same
+declarations -- so `build_inputs` derives them rather than restating them per operator,
+and a new operator adds nothing here for its tensors. **The answer belongs to the
+operator**, and no amount of declaration produces it, so that is the one thing an oracle
+is.
+
+An oracle reads the inputs that were built rather than assuming a relation between them.
+Flash-KMeans is called in production with a centroid-norm vector equal to the squared row
+sums of its centroids, and the earlier version of this file constructed one -- which made
+the check test the kernel on the single input family it was designed for. The kernel's
+contract is arithmetic over whatever vector it is handed, and that is what is checked.
 """
 
 from __future__ import annotations
 
+_TORCH_DTYPE = {
+    "fp32": "float32",
+    "fp16": "float16",
+    "bf16": "bfloat16",
+    "int32": "int32",
+}
+
 
 def global_shapes(document: dict) -> dict[str, tuple[int, ...]]:
-    """Each global buffer's declared shape, which is what a case builds tensors from."""
+    """Each global buffer's declared shape."""
 
     return {
         buffer["name"]: tuple(buffer["shape"])
@@ -23,58 +39,60 @@ def global_shapes(document: dict) -> dict[str, tuple[int, ...]]:
     }
 
 
-def _flash_kmeans_case(shapes, torch):
-    """Inputs and the float32 answer for the assignment kernel.
+def build_inputs(document: dict, torch) -> tuple:
+    """One call's arguments, in the order the entry point takes them.
 
-    The oracle is independent of the kernel: argmin of squared euclidean distance with
-    the token norm elided, which is constant per row and cannot change the argmin.
+    The emitted host function takes the global buffers in declaration order, so that
+    order is the argument order and nothing here needs to know it. An input buffer gets
+    values; anything the kernel writes gets zeros, because its contents before the launch
+    are not part of what is being checked.
     """
 
-    tokens_n, dimension = shapes["tokens"]
-    centroids_k, _ = shapes["centroids"]
-    tokens = torch.randn(tokens_n, dimension, device="cuda", dtype=torch.bfloat16)
-    centroids = torch.randn(centroids_k, dimension, device="cuda", dtype=torch.bfloat16)
-    left, right = tokens.to(torch.float32), centroids.to(torch.float32)
-    distance = (right * right).sum(dim=1)[None, :] - 2.0 * (left @ right.t())
-    inputs = (
-        tokens,
-        centroids,
-        (right * right).sum(dim=1).contiguous(),
-        torch.empty(tokens_n, centroids_k, device="cuda", dtype=torch.float32),
-        torch.full((tokens_n,), -1, device="cuda", dtype=torch.int32),
+    arguments = []
+    for buffer in document["buffers"]:
+        if buffer["space"] != "global":
+            continue
+        dtype = getattr(torch, _TORCH_DTYPE[buffer["dtype"]])
+        shape = tuple(buffer["shape"])
+        if buffer["mode"] == "input" and dtype.is_floating_point:
+            arguments.append(torch.randn(shape, dtype=dtype, device="cuda"))
+        else:
+            arguments.append(torch.zeros(shape, dtype=dtype, device="cuda"))
+    return tuple(arguments)
+
+
+def _flash_kmeans_oracle(inputs, torch):
+    """Float32 argmin of the distance the kernel is asked to minimise.
+
+    The token norm is elided because it is constant per row and cannot change an argmin.
+    The centroid-norm vector is whatever was handed in, so this checks the arithmetic and
+    not a relation the caller happened to satisfy.
+    """
+
+    tokens, centroids, centroid_sq, _, _ = inputs
+    distance = centroid_sq[None, :] - 2.0 * (
+        tokens.to(torch.float32) @ centroids.to(torch.float32).t()
     )
-    return inputs, torch.argmin(distance, dim=1).to(torch.int32), distance
+    return torch.argmin(distance, dim=1).to(torch.int32), distance
 
 
-def _softmax_case(shapes, torch):
-    """Inputs and the float32 answer for the row softmax.
+def _softmax_oracle(inputs, torch):
+    """`torch.softmax`, so the comparison is against an implementation that did not come
+    from the same reasoning the Schedule did."""
 
-    torch.softmax is the oracle rather than a hand-written exp-and-divide, so the
-    comparison is against an implementation that did not come from the same reasoning
-    the Schedule did.
-    """
-
-    x = torch.randn(shapes["x"], device="cuda", dtype=torch.float32)
-    reference = torch.softmax(x, dim=-1)
-    return (x, torch.empty_like(x)), reference, None
+    return torch.softmax(inputs[0], dim=-1), None
 
 
-def _rmsnorm_case(shapes, torch):
-    """Inputs and the float32 answer for the row RMSNorm.
+def _rmsnorm_oracle(inputs, torch):
+    """Written from the definition rather than from the Schedule's own decomposition, so
+    it does not inherit the Schedule's reasoning about where epsilon goes."""
 
-    The oracle is written from the definition rather than from the Schedule's own
-    decomposition, so it does not inherit the Schedule's reasoning about epsilon
-    placement -- which is the part a normalization gets wrong.
-    """
-
-    x = torch.randn(shapes["x"], device="cuda", dtype=torch.float32)
-    gamma = torch.randn(shapes["gamma"], device="cuda", dtype=torch.float32)
-    inverse = torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + 1e-6)
-    return (x, gamma, torch.empty_like(x)), x * inverse * gamma, None
+    x, gamma, _ = inputs
+    return x * torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + 1e-6) * gamma, None
 
 
-CASES = {
-    "rmsnorm_b8_smoke": _rmsnorm_case,
-    "flash_kmeans_assignment_full": _flash_kmeans_case,
-    "softmax_b8_smoke": _softmax_case,
+ORACLES = {
+    "flash_kmeans_assignment_full": _flash_kmeans_oracle,
+    "softmax_b8_smoke": _softmax_oracle,
+    "rmsnorm_b8_smoke": _rmsnorm_oracle,
 }

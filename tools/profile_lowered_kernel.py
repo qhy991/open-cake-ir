@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from kernel_cases import CASES, global_shapes  # noqa: E402
+from kernel_cases import ORACLES, build_inputs  # noqa: E402
 from open_cake_ir.compiler.analysis import residency_upper_bound  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
 from open_cake_ir.compiler.ir import Schedule  # noqa: E402
@@ -54,7 +54,7 @@ import importlib.util, json, sys
 from pathlib import Path
 sys.path.insert(0, {tools!r})
 sys.path.insert(0, {src!r})
-from kernel_cases import CASES, global_shapes
+from kernel_cases import build_inputs
 import torch
 
 document = json.loads(Path({schedule!r}).read_text())
@@ -64,7 +64,7 @@ specification.loader.exec_module(module)
 launch = getattr(module, "launch_once", None) or getattr(module, {entry!r})
 
 torch.manual_seed(0)
-inputs, _, _ = CASES[{profile!r}](global_shapes(document), torch)
+inputs = build_inputs(document, torch)
 launch(*inputs)
 torch.cuda.synchronize()
 '''
@@ -130,8 +130,11 @@ def main() -> int:
     if not assessment.lowering_eligible:
         codes = ", ".join(finding.code for finding in assessment.findings)
         raise SystemExit(f"the gates refused this Schedule: {codes}")
-    if assessment.profile not in CASES:
-        raise SystemExit(f"no inputs for profile {assessment.profile!r}")
+    if assessment.profile not in ORACLES:
+        # The instruments share one input builder so that a kernel this profiles is a
+        # kernel the other checked. Profiling one with no oracle would measure something
+        # nothing has established computes the right answer.
+        raise SystemExit(f"no oracle for profile {assessment.profile!r}")
     lowering = compiler.lower(assessment)
 
     target = Target.from_dict(
@@ -147,7 +150,6 @@ def main() -> int:
     if predicted is None or predicted.binding is None:
         raise SystemExit("the analysis says nothing about this Schedule's residency")
 
-    global_shapes(document)  # fail here rather than inside the profiled subprocess
     with tempfile.TemporaryDirectory(prefix="cake-profile-") as directory:
         module_path = Path(directory) / f"{lowering.entry_point}.py"
         module_path.write_text(lowering.source, encoding="utf-8")
@@ -159,7 +161,6 @@ def main() -> int:
                 schedule=str(schedule_path),
                 module=str(module_path),
                 entry=lowering.entry_point,
-                profile=assessment.profile,
             ),
             encoding="utf-8",
         )

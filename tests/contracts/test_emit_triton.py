@@ -410,6 +410,29 @@ class ComposedArithmeticTest(unittest.TestCase):
         self.assertIn("x_tile", escapes[0].message)
 
 
+class ElementwiseArityTest(unittest.TestCase):
+    """The backend's templates and the IR's arity must agree about every operator.
+
+    `ElementwiseOp.arity` is what the verifier gates on; whether a template mentions a
+    second operand is what the backend actually emits. Nothing connects them, so a unary
+    op added to the enum and given a two-operand template would pass every gate and raise
+    while formatting -- and a binary op with a one-operand template would silently drop
+    an operand the Schedule declared, which is worse.
+    """
+
+    def test_every_template_uses_exactly_the_operands_its_arity_declares(self) -> None:
+        from open_cake_ir.compiler.emit_triton import _TritonEmitter
+        from open_cake_ir.compiler.ir import ElementwiseOp
+
+        templates = _TritonEmitter._ELEMENTWISE_TEXT
+        # Every operator the IR admits has a body, or the gate admits what cannot lower.
+        self.assertEqual(set(templates), set(ElementwiseOp))
+        for op, template in templates.items():
+            with self.subTest(op=op.value):
+                self.assertIn("{a}", template)
+                self.assertEqual("{b}" in template, op.arity == 2)
+
+
 class EmittedObservationTest(unittest.TestCase):
     """The retained B200 observations for the operators this backend emits.
 
