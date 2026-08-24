@@ -393,10 +393,10 @@ class LabContractTests(unittest.TestCase):
 
     def test_current_study_successors_bind_the_current_executor(self) -> None:
         for name in (
-            "matched-search-infrastructure-v22.json",
-            "matched-search-system-qualification-v22.json",
-            "artifact-optimization-v22.json",
-            "flash-kmeans-r45-portfolio-reconstruction-v22.json",
+            "matched-search-infrastructure-v23.json",
+            "matched-search-system-qualification-v23.json",
+            "artifact-optimization-v23.json",
+            "flash-kmeans-r45-portfolio-reconstruction-v23.json",
         ):
             lock = Lab(ROOT).preflight(ROOT / "contracts/studies" / name)
             executor = lock.document["execution"]["executor_revision"]
@@ -443,7 +443,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_system_qualification_preflight_binds_non_scientific_one_run_per_arm(self) -> None:
         lock = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-v22.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-v23.json"
         )
 
         self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
@@ -452,7 +452,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_artifact_optimization_preflight_binds_full_features_without_an_estimand(self) -> None:
         lock = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/artifact-optimization-v22.json"
+            ROOT / "contracts/studies/artifact-optimization-v23.json"
         )
 
         self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
@@ -483,7 +483,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_closed_provider_receipt_cannot_authorize_artifact_optimization(self) -> None:
         study = json.loads(
-            (ROOT / "contracts/studies/artifact-optimization-v22.json").read_text()
+            (ROOT / "contracts/studies/artifact-optimization-v23.json").read_text()
         )
         for arm in study["arms"].values():
             provider = arm["provider"]
@@ -516,7 +516,7 @@ class LabContractTests(unittest.TestCase):
         study = json.loads(
             (
                 ROOT
-                / "contracts/studies/matched-search-system-qualification-v22.json"
+                / "contracts/studies/matched-search-system-qualification-v23.json"
             ).read_text()
         )
         anchor = {"path": "anchor.json", "canonical_sha256": "a" * 64}
@@ -534,7 +534,7 @@ class LabContractTests(unittest.TestCase):
         study = json.loads(
             (
                 ROOT
-                / "contracts/studies/matched-search-system-qualification-v22.json"
+                / "contracts/studies/matched-search-system-qualification-v23.json"
             ).read_text()
         )
         study["analysis_plan"]["estimand"] = "forbidden pilot contrast"
@@ -548,7 +548,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_preflight_rejects_a_changed_direct_candidate_skeleton(self) -> None:
         study = json.loads(
-            (ROOT / "contracts/studies/matched-search-infrastructure-v22.json").read_text()
+            (ROOT / "contracts/studies/matched-search-infrastructure-v23.json").read_text()
         )
         study["arms"]["direct_cuda"]["candidate_skeleton"]["sha256"] = "a" * 64
         with tempfile.TemporaryDirectory() as directory:
@@ -586,7 +586,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-v22.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-v23.json"
         )
         provider = UnderCheckpointProvider()
         resolved = lock.document["resolved_inputs"]
@@ -724,7 +724,7 @@ class LabContractTests(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-v22.json")
+        lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-v23.json")
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
             json.dumps(
@@ -798,7 +798,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-v22.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-v23.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -977,7 +977,7 @@ class LabContractTests(unittest.TestCase):
         )
 
     def test_preflight_rejects_a_draft_compiler_revision(self) -> None:
-        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v22.json").read_text())
+        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v23.json").read_text())
         draft = json.loads((ROOT / "compiler/revision.json").read_text())
         draft_sha256 = sha256(
             json.dumps(
@@ -999,7 +999,7 @@ class LabContractTests(unittest.TestCase):
                 Lab(ROOT).preflight(path)
 
     def test_preflight_rejects_an_unsupported_analysis_plan(self) -> None:
-        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v22.json").read_text())
+        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-v23.json").read_text())
         study["analysis_plan"]["contrast"] = "unsupported_nonsense"
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "study.json"
@@ -1007,9 +1007,23 @@ class LabContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "analysis_plan"):
                 Lab(ROOT).preflight(path)
 
+    def test_preflight_rejects_an_unknown_event_vocabulary(self) -> None:
+        study = json.loads(
+            (
+                ROOT
+                / "contracts/studies/matched-search-infrastructure-v23.json"
+            ).read_text()
+        )
+        study["evidence"]["event_vocabulary"] = "unpublished_matched_events"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "study.json"
+            path.write_text(json.dumps(study))
+            with self.assertRaisesRegex(ValueError, "study.evidence"):
+                Lab(ROOT).preflight(path)
+
     def test_lab_owns_two_turn_resume_budget_evaluation_and_terminal(self) -> None:
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v22.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v23.json")
         provider = FakeProvider()
         resolved = lock.document["resolved_inputs"]
         arm_environments = resolved["arm_environments"]
@@ -1073,7 +1087,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1123,7 +1137,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1166,7 +1180,7 @@ class LabContractTests(unittest.TestCase):
     def test_missing_archive_is_counted_as_missing_data(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         )
         with tempfile.TemporaryDirectory() as directory:
             evidence = EvidenceStore.create(Path(directory).resolve() / "evidence")
@@ -1212,7 +1226,7 @@ class LabContractTests(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v22.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v23.json")
         provider = FakeProvider()
         arm_environments = lock.document["resolved_inputs"]["arm_environments"]
         protocol_sha256 = sha256(
@@ -1250,7 +1264,7 @@ class LabContractTests(unittest.TestCase):
     def test_semantic_replay_rejects_raw_broker_counter_that_differs_from_ledger(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1314,7 +1328,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1350,7 +1364,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1426,7 +1440,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_r42_turn_discrete_missing_cell_keeps_estimand_unavailable(self) -> None:
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v22.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v23.json")
         legacy = json.loads(
             (ROOT / "evidence/historical/legacy/r42-index.json").read_text()
         )
@@ -1489,7 +1503,7 @@ class LabContractTests(unittest.TestCase):
     def test_candidate_rejection_is_observed_and_later_turn_cannot_backfill(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         )
         resolved = lock.document["resolved_inputs"]
 
@@ -1541,7 +1555,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_protocol_failures_are_intact_but_not_included(self) -> None:
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v22.json")
+        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-v23.json")
         with tempfile.TemporaryDirectory() as directory:
             evidence = EvidenceStore.create(Path(directory).resolve() / "evidence")
             for run_id in lock.run_order:
@@ -1562,7 +1576,7 @@ class LabContractTests(unittest.TestCase):
     def test_contamination_uses_the_same_terminal_schema_without_replacement(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         )
         resolved = lock.document["resolved_inputs"]
 
@@ -1629,7 +1643,7 @@ class LabContractTests(unittest.TestCase):
     def test_portfolio_semantic_replay_keeps_correctness_separate_from_timing(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v22.json"
+            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v23.json"
         )
         from open_cake_ir.compiler import Compiler
         from open_cake_ir.evaluation import (
@@ -1773,10 +1787,10 @@ class LabContractTests(unittest.TestCase):
 
     def test_preflight_resolves_variant_specific_inputs_into_one_lock(self) -> None:
         matched = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         )
         portfolio = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v22.json"
+            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-v23.json"
         )
 
         self.assertEqual(matched.study_kind, "matched_search")
@@ -1873,7 +1887,7 @@ class CandidateSetFilterTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         _enable_candidate_set(document, 3)
         with tempfile.TemporaryDirectory() as parent:
@@ -2011,6 +2025,41 @@ class CandidateSetFilterTest(unittest.TestCase):
                 MissingAttributionReplay(), audit, lock
             )
 
+            class ExtraEventReplay:
+                def replay_events(self, identifier):
+                    replayed = json.loads(json.dumps(store.replay_events(identifier)))
+                    replayed.insert(
+                        -2,
+                        {
+                            "kind": "unpublished_metric",
+                            "payload": {"value": 1},
+                        },
+                    )
+                    return replayed
+
+                def read_object(self, reference):
+                    return store.read_object(reference)
+
+            extra_event_rejected = not lab._replay_matched_run(
+                ExtraEventReplay(), audit, lock
+            )
+
+            class ChangedRunStartReplay:
+                def replay_events(self, identifier):
+                    replayed = json.loads(json.dumps(store.replay_events(identifier)))
+                    started = next(
+                        event for event in replayed if event["kind"] == "run_started"
+                    )
+                    started["payload"]["assigned_arm"] = "tampered_arm"
+                    return replayed
+
+                def read_object(self, reference):
+                    return store.read_object(reference)
+
+            changed_run_start_rejected = not lab._replay_matched_run(
+                ChangedRunStartReplay(), audit, lock
+            )
+
         self.assertTrue(events)
         first = events[0]["payload"]
         self.assertEqual(first["submitted"], 3)
@@ -2043,6 +2092,8 @@ class CandidateSetFilterTest(unittest.TestCase):
             )
         )
         self.assertTrue(missing_attribution_rejected)
+        self.assertTrue(extra_event_rejected)
+        self.assertTrue(changed_run_start_rejected)
 
         # The same set with its first launchable member unscored is not partially
         # reordered. Variant 2 has a cost and would lead under the former behavior;
@@ -2136,7 +2187,7 @@ class CandidateSetFilterTest(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+            ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -2296,7 +2347,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         current_executor = json.loads(
             (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
@@ -2376,7 +2427,7 @@ class SearchBudgetTest(unittest.TestCase):
 
     def _preflight(self, value, materiality=None, maximum_candidates=None):
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         if value is None:
             document["evaluation_protocol"].pop("searches_per_turn", None)
@@ -2476,7 +2527,7 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = 2
         document["evaluation_protocol"]["search_materiality_ratio"] = 1.05
@@ -2525,14 +2576,49 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
                 if event["kind"] == "diagnosis_routed"
                 and "collapsed" in event["payload"]
             ]
-            return searched, collapses
+            audit = store.audit_run(lock.run_order[0])
+
+            class ChangedDiagnosisReplay:
+                def replay_events(self, identifier):
+                    replayed = json.loads(json.dumps(store.replay_events(identifier)))
+                    for event in replayed:
+                        if (
+                            event["kind"] == "diagnosis_routed"
+                            and "collapsed" in event["payload"]
+                        ):
+                            event["payload"]["collapsed"][0]["semantic_sha256"] = (
+                                "f" * 64
+                            )
+                            break
+                    return replayed
+
+                def read_object(self, reference):
+                    return store.read_object(reference)
+
+            if same_program:
+                with self.assertRaisesRegex(
+                    ValueError, "diagnosis_routed is not derived"
+                ):
+                    lab._replay_matched_run(ChangedDiagnosisReplay(), audit, lock)
+                changed_diagnosis_rejected = True
+            else:
+                changed_diagnosis_rejected = not lab._replay_matched_run(
+                    ChangedDiagnosisReplay(), audit, lock
+                )
+            return searched, collapses, changed_diagnosis_rejected
 
     def test_one_program_is_measured_once_and_reported(self) -> None:
-        distinct_searched, distinct_collapses = self._run(same_program=False)
+        distinct_searched, distinct_collapses, distinct_tamper_rejected = self._run(
+            same_program=False
+        )
         self.assertEqual(distinct_collapses, [])
+        self.assertFalse(distinct_tamper_rejected)
 
-        same_searched, same_collapses = self._run(same_program=True)
+        same_searched, same_collapses, same_tamper_rejected = self._run(
+            same_program=True
+        )
         self.assertTrue(same_collapses)
+        self.assertTrue(same_tamper_rejected)
         for payload in same_collapses:
             self.assertEqual(payload["routed_to"], "candidate")
             for entry in payload["collapsed"]:
@@ -2671,7 +2757,7 @@ class QualifiedCandidateSelectionTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = 2
         document["evaluation_protocol"]["search_materiality_ratio"] = 1.05
@@ -2812,7 +2898,7 @@ class CostModelRouteTest(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        source = ROOT / "contracts/studies/matched-search-infrastructure-v22.json"
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v23.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = searches_per_turn
         document["evaluation_protocol"].pop("search_materiality_ratio", None)

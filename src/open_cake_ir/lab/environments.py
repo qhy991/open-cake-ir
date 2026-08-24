@@ -365,6 +365,11 @@ class EnvironmentResult:
             raise ValueError("Authoring Environment launchable boundary differs")
         if self.launchable is not None and self.launchable.candidate_sha256 != self.submission_sha256:
             raise ValueError("Authoring Environment replaced the sealed submission")
+        if self.semantic_sha256 is not None and (
+            len(self.semantic_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in self.semantic_sha256)
+        ):
+            raise ValueError("Authoring Environment semantic identity differs")
 
 
 class AuthoringEnvironment(Protocol):

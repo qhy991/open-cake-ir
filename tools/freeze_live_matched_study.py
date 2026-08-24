@@ -22,6 +22,7 @@ from open_cake_ir.lab import (  # noqa: E402
     NvccToolchainBuilder,
     ProviderQualificationReceipt,
     broker_execution_sha256,
+    matched_evidence_policy_v1,
     required_live_provider_qualification_scope,
     scientific_matched_analysis_plan_v2,
 )
@@ -141,6 +142,7 @@ def main() -> int:
         raise ValueError("live matched Study template policy differs")
     if study.get("claim_scope") == "scientific_matched_search":
         study["analysis_plan"] = dict(scientific_matched_analysis_plan_v2())
+    study["evidence"] = dict(matched_evidence_policy_v1())
     _replace_artifact_feedback_budget(
         study,
         provider_token_limit=arguments.provider_token_limit,

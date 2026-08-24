@@ -19,6 +19,7 @@ from open_cake_ir.lab import (  # noqa: E402
     ExecutorRevision,
     Lab,
     ProviderQualificationReceipt,
+    matched_evidence_policy_v1,
     scientific_matched_analysis_plan_v2,
 )
 
@@ -114,6 +115,9 @@ def main() -> int:
             raise ValueError("portfolio does not use matched-search authoring options")
         document["compiler_revision"] = compiler_reference
     else:
+        # A matched successor closes the semantic event vocabulary even when its
+        # source predates that policy. Frozen source Studies keep their bytes.
+        document["evidence"] = dict(matched_evidence_policy_v1())
         arms = _object(document.get("arms"), "Study.arms")
         open_cake = _object(arms.get("open_cake"), "Study.arms.open_cake")
         open_cake["compiler_revision"] = compiler_reference

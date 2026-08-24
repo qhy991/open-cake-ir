@@ -108,6 +108,32 @@ _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN = {
     "pooling": "forbidden",
     "scientific_inclusion": "forbidden",
 }
+_MATCHED_EVENT_VOCABULARY_V1 = "matched_run_v1"
+_MATCHED_EVENT_KINDS_V1 = frozenset(
+    {
+        "run_started",
+        "provider_turn_completed",
+        "candidate_set_filtered",
+        "candidate_rejected",
+        "launchable_candidate_sealed",
+        "evaluation_attempt_completed",
+        "candidate_evaluated",
+        "diagnosis_routed",
+        "candidate_selected",
+        "run_fault",
+        "checkpoints_projected",
+        "run_terminal",
+    }
+)
+_MATCHED_EVIDENCE_POLICY_V1 = {
+    "schema_version": 2,
+    "terminal_archive_required_for_every_run": True,
+    "event_vocabulary": _MATCHED_EVENT_VOCABULARY_V1,
+}
+_LEGACY_MATCHED_EVIDENCE_POLICY = {
+    "schema_version": 2,
+    "terminal_archive_required_for_every_run": True,
+}
 _SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2 = {
     "experimental_unit": "run",
     "target_population": "prescheduled_runs_under_exact_campaign_lock",
@@ -173,6 +199,32 @@ def _name(value: object, context: str) -> str:
     return value
 
 
+def _artifact_outcomes_are_closed(payload: Mapping[str, object]) -> bool:
+    """Validate the optional retained/rejected artifact-role partition."""
+
+    objects = payload.get("objects")
+    rejected = payload.get("artifact_rejections")
+    retained_roles: list[object] = []
+    if objects is not None:
+        if not isinstance(objects, list) or not objects:
+            return False
+        retained_roles = [
+            item.get("role") if isinstance(item, Mapping) else None
+            for item in objects
+        ]
+    if rejected is not None and (not isinstance(rejected, list) or not rejected):
+        return False
+    rejected_roles = rejected if isinstance(rejected, list) else []
+    roles = [*retained_roles, *rejected_roles]
+    if not all(
+        isinstance(role, str)
+        and re.fullmatch(r"[a-z][a-z0-9_]*", role) is not None
+        for role in roles
+    ):
+        return False
+    return len(roles) == len(set(roles))
+
+
 def _digest(value: object, context: str) -> str:
     if not isinstance(value, str) or _DIGEST.fullmatch(value) is None:
         raise ValueError(f"{context} must be a lowercase SHA256 digest")
@@ -186,6 +238,27 @@ def scientific_matched_analysis_plan_v2() -> Mapping[str, object]:
         Mapping[str, object],
         json.loads(_canonical_json_bytes(_SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2)),
     )
+
+
+def matched_evidence_policy_v1() -> Mapping[str, object]:
+    """Return the sole current matched semantic Evidence policy projection."""
+
+    return cast(
+        Mapping[str, object],
+        json.loads(_canonical_json_bytes(_MATCHED_EVIDENCE_POLICY_V1)),
+    )
+
+
+def _matched_evidence_policy_version(
+    policy: Mapping[str, object], context: str
+) -> str:
+    """Admit the closed vocabulary plus bounded frozen-policy compatibility."""
+
+    if policy == _MATCHED_EVIDENCE_POLICY_V1:
+        return _MATCHED_EVENT_VOCABULARY_V1
+    if policy == _LEGACY_MATCHED_EVIDENCE_POLICY:
+        return "legacy_open"
+    raise ValueError(f"{context} is unsupported")
 
 
 def _scientific_analysis_plan_version(
@@ -821,6 +894,159 @@ def _receipt_latency_ms(receipt: EvaluationReceipt | None) -> float | None:
     return float(value)
 
 
+def _matched_search_plan(
+    order: list[Mapping[str, object]], searches_per_turn: int
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Derive the unique programs to measure from the retained filter order."""
+
+    first_by_semantic: dict[str, str] = {}
+    searched: list[str] = []
+    collapsed: list[dict[str, str]] = []
+    for row in order:
+        if len(searched) >= searches_per_turn or row["disposition"] != "launchable":
+            break
+        candidate = cast(str, row["candidate_sha256"])
+        semantic = cast(str | None, row.get("semantic_sha256"))
+        if semantic is not None and semantic in first_by_semantic:
+            collapsed.append(
+                {
+                    "candidate_sha256": candidate,
+                    "same_program_as": first_by_semantic[semantic],
+                    "semantic_sha256": semantic,
+                }
+            )
+        else:
+            searched.append(candidate)
+            if semantic is not None:
+                first_by_semantic[semantic] = candidate
+    return searched, collapsed
+
+
+def _collapse_diagnosis(
+    turn: int, collapsed: list[dict[str, str]]
+) -> dict[str, object] | None:
+    if not collapsed:
+        return None
+    return {
+        "turn": turn,
+        "routed_to": CANDIDATE,
+        "routing_reason": (
+            f"{len(collapsed)} of the ranked candidates this Turn are the same "
+            "program as an earlier one under a different name"
+        ),
+        "collapsed": collapsed,
+    }
+
+
+def _matched_search_decision(
+    turn: int,
+    searched: list[tuple[str, EvaluationReceipt]],
+    *,
+    cost_order_applied: bool,
+    materiality_ratio: float,
+) -> tuple[list[int], int, dict[str, object] | None]:
+    """Choose the measured winner and derive the sole cost-order diagnosis."""
+
+    qualified = [
+        index for index, (_, receipt) in enumerate(searched) if _receipt_qualifies(receipt)
+    ]
+    measured = sorted(
+        qualified,
+        key=lambda index: _receipt_latency_ms(searched[index][1]) or float("inf"),
+    )
+    best = measured[0] if measured else 0
+    if not cost_order_applied or len(qualified) < 2 or best == qualified[0]:
+        return qualified, best, None
+    ranked_index = qualified[0]
+    ranked = _receipt_latency_ms(searched[ranked_index][1])
+    fastest = _receipt_latency_ms(searched[best][1])
+    ratio = ranked / fastest if ranked is not None and fastest else None
+    if ratio is None or ratio < materiality_ratio:
+        return qualified, best, None
+    ranked_sha = searched[ranked_index][0]
+    fastest_sha = searched[best][0]
+    return qualified, best, {
+        "turn": turn,
+        "routed_to": COST_MODEL,
+        "routing_reason": (
+            f"the filter ranked {ranked_sha} first and measurement put "
+            f"{fastest_sha} {ratio:.3f}x ahead of it, which the Study counts as "
+            f"material at {materiality_ratio}x"
+        ),
+        "ranked_first": ranked_sha,
+        "measured_first": fastest_sha,
+        "observed_ratio": round(ratio, 6),
+        "materiality_ratio": materiality_ratio,
+    }
+
+
+def _expected_matched_diagnoses_v1(
+    *,
+    filters: Mapping[int, Mapping[str, object]],
+    receipts: Mapping[tuple[int, str, str], EvaluationReceipt],
+    receipt_order: list[tuple[int, str, str]],
+    searches_per_turn: int,
+    materiality_ratio: float,
+) -> tuple[dict[int, list[dict[str, object]]], dict[int, list[str]]]:
+    """Replay the same search-plan and diagnosis primitives over retained facts."""
+
+    diagnoses: dict[int, list[dict[str, object]]] = {}
+    expected_searches: dict[int, list[str]] = {}
+    for turn, payload in sorted(filters.items()):
+        rows = cast(list[Mapping[str, object]], payload["order"])
+        planned, collapsed = _matched_search_plan(rows, searches_per_turn)
+        expected_searches[turn] = planned
+        projected = [item for item in (_collapse_diagnosis(turn, collapsed),) if item]
+        search_keys = [
+            key for key in receipt_order if key[0] == turn and key[1] == "search"
+        ]
+        if [key[2] for key in search_keys] == planned:
+            _, _, cost_diagnosis = _matched_search_decision(
+                turn,
+                [(key[2], receipts[key]) for key in search_keys],
+                cost_order_applied=all(
+                    row["cost"] is not None
+                    for row in rows
+                    if row["disposition"] == "launchable"
+                ),
+                materiality_ratio=materiality_ratio,
+            )
+            if cost_diagnosis is not None:
+                projected.append(cost_diagnosis)
+        diagnoses[turn] = projected
+    return diagnoses, expected_searches
+
+
+def _validate_matched_diagnoses_v1(
+    events: tuple[Mapping[str, object], ...],
+    *,
+    expected: Mapping[int, list[dict[str, object]]],
+    fault_turn: int | None,
+) -> None:
+    """Require every retained diagnosis to be the unique derived projection."""
+
+    observed: dict[int, list[Mapping[str, object]]] = {}
+    for event in events:
+        if event.get("kind") != "diagnosis_routed":
+            continue
+        payload = _object(event.get("payload"), "diagnosis_routed.payload")
+        turn = payload.get("turn")
+        if not isinstance(turn, int) or isinstance(turn, bool) or turn <= 0:
+            raise ValueError("diagnosis_routed Turn differs")
+        observed.setdefault(turn, []).append(payload)
+    if set(observed) - set(expected):
+        raise ValueError("diagnosis_routed Turn is outside the filtered set")
+    for turn, expected_payloads in expected.items():
+        actual = observed.get(turn, [])
+        admitted = (
+            expected_payloads[: len(actual)]
+            if turn == fault_turn
+            else expected_payloads
+        )
+        if [dict(payload) for payload in actual] != admitted:
+            raise ValueError("diagnosis_routed is not derived from retained evidence")
+
+
 def _promoted_artifact(
     evidence: EvidenceStore,
     audit: RunAudit,
@@ -1056,8 +1282,12 @@ class CampaignLock:
                 resolved.get("budget"), "campaign_lock.resolved_inputs.budget"
             )
             _object(resolved.get("run_protocol"), "campaign_lock.resolved_inputs.run_protocol")
-            _object(
+            evidence_policy = _object(
                 resolved.get("evidence_policy"),
+                "campaign_lock.resolved_inputs.evidence_policy",
+            )
+            _matched_evidence_policy_version(
+                evidence_policy,
                 "campaign_lock.resolved_inputs.evidence_policy",
             )
             expected_arms = (
@@ -1812,11 +2042,7 @@ class Lab:
             _scientific_analysis_plan_version(analysis, "study.analysis_plan")
             estimand = _name(analysis.get("estimand"), "study.analysis_plan.estimand")
         evidence_policy = _object(study.document.get("evidence"), "study.evidence")
-        if evidence_policy != {
-            "schema_version": 2,
-            "terminal_archive_required_for_every_run": True,
-        }:
-            raise ValueError("Study Contract Evidence policy differs")
+        _matched_evidence_policy_version(evidence_policy, "study.evidence")
 
         arm_digests = {
             name: sha256(_canonical_json_bytes(value)).hexdigest()
@@ -2093,6 +2319,13 @@ class Lab:
         resolved_inputs = _object(
             lock.document["resolved_inputs"], "campaign_lock.resolved_inputs"
         )
+        matched_event_vocabulary = _matched_evidence_policy_version(
+            _object(
+                resolved_inputs["evidence_policy"],
+                "campaign_lock.resolved_inputs.evidence_policy",
+            ),
+            "campaign_lock.resolved_inputs.evidence_policy",
+        )
         budget = _object(resolved_inputs["budget"], "campaign_lock.resolved_inputs.budget")
         checkpoints = cast(list[int], budget["checkpoints"])
         maximum_turns = cast(int, budget["maximum_turns"])
@@ -2332,6 +2565,26 @@ class Lab:
                         for index, (_, result) in enumerate(built)
                         if result.disposition != "launchable"
                     )
+                    filter_rows = [
+                        {
+                            "candidate_sha256": built[index][0].sha256,
+                            "disposition": built[index][1].disposition,
+                            "cost": (
+                                {
+                                    "device_fill": round(
+                                        built[index][1].cost.device_fill, 6
+                                    ),
+                                    "binding_resource": built[
+                                        index
+                                    ][1].cost.binding_resource,
+                                }
+                                if built[index][1].cost is not None
+                                else None
+                            ),
+                            "semantic_sha256": built[index][1].semantic_sha256,
+                        }
+                        for index in launchable_first
+                    ]
                     ledger.append(
                         "candidate_set_filtered",
                         {
@@ -2341,23 +2594,19 @@ class Lab:
                                 result.disposition == "launchable"
                                 for _, result in built
                             ),
-                            "order": [
-                                {
-                                    "candidate_sha256": built[index][0].sha256,
-                                    "disposition": built[index][1].disposition,
-                                    "cost": (
-                                        {
-                                            "device_fill": round(
-                                                built[index][1].cost.device_fill, 6
-                                            ),
-                                            "binding_resource": built[index][1].cost.binding_resource,
-                                        }
-                                        if built[index][1].cost is not None
-                                        else None
-                                    ),
-                                }
-                                for index in launchable_first
-                            ],
+                            "order": (
+                                filter_rows
+                                if matched_event_vocabulary
+                                == _MATCHED_EVENT_VOCABULARY_V1
+                                else [
+                                    {
+                                        key: value
+                                        for key, value in row.items()
+                                        if key != "semantic_sha256"
+                                    }
+                                    for row in filter_rows
+                                ]
+                            ),
                         },
                     )
                     # A rejected member remains evidence even when another member is
@@ -2478,33 +2727,20 @@ class Lab:
                         # Search-evaluate the candidates the filter kept, in its order.
                         # Search is the assay that exists to choose; confirmatory stays
                         # single because that one is the measurement a claim rests on.
-                        budget_k = evaluation_protocol.get("searches_per_turn", 1)
+                        budget_k = int(
+                            evaluation_protocol.get("searches_per_turn", 1)
+                        )
                         searched: list[_SearchedCandidate] = []
-                        # The paper's first stage asks for structurally distinct
-                        # candidates. Two Schedules that differ only in a name or in the
-                        # order of independent declarations are one kernel with two
-                        # spellings, and the second search buys nothing the first did not
-                        # already measure.
-                        spelled: dict[str, str] = {}
-                        collapsed: list[dict[str, str]] = []
-                        for position in launchable_first:
-                            if len(searched) >= budget_k:
-                                break
+                        planned_searches, collapsed = _matched_search_plan(
+                            filter_rows, budget_k
+                        )
+                        position_by_candidate = {
+                            submission.sha256: index
+                            for index, (submission, _) in enumerate(built)
+                        }
+                        for candidate_sha256 in planned_searches:
+                            position = position_by_candidate[candidate_sha256]
                             entry_submission, entry_result = built[position]
-                            if entry_result.disposition != "launchable":
-                                break
-                            semantic = entry_result.semantic_sha256
-                            if semantic is not None and semantic in spelled:
-                                collapsed.append(
-                                    {
-                                        "candidate_sha256": entry_submission.sha256,
-                                        "same_program_as": spelled[semantic],
-                                        "semantic_sha256": semantic,
-                                    }
-                                )
-                                continue
-                            if semantic is not None:
-                                spelled[semantic] = entry_submission.sha256
                             entry_launchable = entry_result.launchable
                             assert entry_launchable is not None
                             artifact_references = []
@@ -2580,96 +2816,37 @@ class Lab:
                                 )
                             )
 
-                        if collapsed:
+                        collapse_diagnosis = _collapse_diagnosis(
+                            turn_number, collapsed
+                        )
+                        if collapse_diagnosis is not None:
                             # Not a measurement's finding, so it does not wait for
                             # materiality: two spellings of one program is a fact about
                             # the set, visible before any of it ran.
                             ledger.append(
-                                "diagnosis_routed",
-                                {
-                                    "turn": turn_number,
-                                    "routed_to": CANDIDATE,
-                                    "routing_reason": (
-                                        f"{len(collapsed)} of the ranked candidates "
-                                        "this Turn are the same program as an earlier "
-                                        "one under a different name"
-                                    ),
-                                    "collapsed": collapsed,
-                                },
+                                "diagnosis_routed", collapse_diagnosis
                             )
 
-                        # Qualification precedes selection. An unstable or incorrect
-                        # timing remains evidence, but it cannot win a search whose sole
-                        # purpose is to choose the candidate worth confirming.
-                        qualified_search = [
-                            index
-                            for index, item in enumerate(searched)
-                            if _receipt_qualifies(item.receipt)
-                        ]
-
-                        # The filter's order can now be checked against trustworthy
-                        # measurements. When they disagree the candidate was not wrong --
-                        # the order was, and that is the cost model's to answer for.
-                        if len(qualified_search) > 1:
-                            measured = sorted(
-                                qualified_search,
-                                key=lambda index: (
-                                    _receipt_latency_ms(searched[index].receipt)
-                                    or float("inf")
+                        # Qualification and order diagnosis share this pure decision in
+                        # execution and replay, so the gate cannot manufacture a second
+                        # interpretation of the retained measurements.
+                        qualified_search, best, cost_diagnosis = (
+                            _matched_search_decision(
+                                turn_number,
+                                [
+                                    (item.launchable.candidate_sha256, item.receipt)
+                                    for item in searched
+                                ],
+                                cost_order_applied=cost_order_applied,
+                                materiality_ratio=float(
+                                    evaluation_protocol.get(
+                                        "search_materiality_ratio", math.inf
+                                    )
                                 ),
                             )
-                            ranked_index = qualified_search[0]
-                            ranked = _receipt_latency_ms(
-                                searched[ranked_index].receipt
-                            )
-                            fastest = _receipt_latency_ms(
-                                searched[measured[0]].receipt
-                            )
-                            ratio = (
-                                ranked / fastest
-                                if ranked is not None and fastest
-                                else None
-                            )
-                            threshold = evaluation_protocol["search_materiality_ratio"]
-                            if (
-                                cost_order_applied
-                                and measured[0] != ranked_index
-                                and ratio is not None
-                                and ratio >= threshold
-                            ):
-                                ledger.append(
-                                    "diagnosis_routed",
-                                    {
-                                        "turn": turn_number,
-                                        "routed_to": COST_MODEL,
-                                        "routing_reason": (
-                                            "the filter ranked "
-                                            f"{searched[ranked_index].launchable.candidate_sha256} first and "
-                                            "measurement put "
-                                            f"{searched[measured[0]].launchable.candidate_sha256} "
-                                            f"{ratio:.3f}x ahead of it, which the Study "
-                                            f"counts as material at {threshold}x"
-                                        ),
-                                        "ranked_first": searched[
-                                            ranked_index
-                                        ].launchable.candidate_sha256,
-                                        "measured_first": searched[
-                                            measured[0]
-                                        ].launchable.candidate_sha256,
-                                        "observed_ratio": round(ratio, 6),
-                                        "materiality_ratio": threshold,
-                                    },
-                                )
-                            # The faster candidate is still the one carried forward. What
-                            # materiality decides is whether the order was *wrong*, not
-                            # which measurement won.
-                            best = measured[0]
-                        elif qualified_search:
-                            best = qualified_search[0]
-                        else:
-                            # No candidate won. Keep the filter's first searched candidate
-                            # only as the diagnostic subject for the next Turn.
-                            best = 0
+                        )
+                        if cost_diagnosis is not None:
+                            ledger.append("diagnosis_routed", cost_diagnosis)
                         selected = searched[best]
                         submission = selected.submission
                         environment_result = selected.environment_result
@@ -3131,6 +3308,69 @@ class Lab:
         lock: CampaignLock,
     ) -> bool:
         events = evidence.replay_events(audit.run_id)
+        resolved_inputs = _object(
+            lock.document["resolved_inputs"], "resolved_inputs"
+        )
+        event_vocabulary = _matched_evidence_policy_version(
+            _object(
+                resolved_inputs["evidence_policy"],
+                "resolved_inputs.evidence_policy",
+            ),
+            "resolved_inputs.evidence_policy",
+        )
+        strict_events = event_vocabulary == _MATCHED_EVENT_VOCABULARY_V1
+        arm = audit.run_id.rsplit("-", 1)[0]
+        if strict_events:
+            kinds = [event.get("kind") for event in events]
+            if (
+                any(kind not in _MATCHED_EVENT_KINDS_V1 for kind in kinds)
+                or kinds.count("run_started") != 1
+                or kinds.count("checkpoints_projected") != 1
+                or kinds.count("run_terminal") != 1
+                or kinds[0] != "run_started"
+                or kinds[-2:] != ["checkpoints_projected", "run_terminal"]
+                or audit.run_id not in lock.run_order
+            ):
+                return False
+            start_payload = _object(
+                events[0].get("payload"), "run_started.payload"
+            )
+            if start_payload != {
+                "sequence": lock.run_order.index(audit.run_id) + 1,
+                "assigned_arm": arm,
+                "automatic_retries": 0,
+                "replacement_run": False,
+            }:
+                return False
+            terminal_payload = _object(
+                events[-1].get("payload"), "run_terminal.payload"
+            )
+            if terminal_payload != {
+                "protocol_adherence": audit.protocol_adherence,
+                "endpoint_observation": audit.endpoint_observation,
+                "endpoint": dict(audit.endpoint) if audit.endpoint is not None else None,
+            }:
+                return False
+            turn_events = [
+                _object(event.get("payload"), f"event.{event.get('kind')}.payload")[
+                    "turn"
+                ]
+                for event in events[1:-2]
+                if "turn"
+                in _object(
+                    event.get("payload"), f"event.{event.get('kind')}.payload"
+                )
+            ]
+            if (
+                any(
+                    not isinstance(turn, int)
+                    or isinstance(turn, bool)
+                    or turn <= 0
+                    for turn in turn_events
+                )
+                or turn_events != sorted(turn_events)
+            ):
+                return False
         provider_events = [event for event in events if event.get("kind") == "provider_turn_completed"]
         checkpoint_events = [event for event in events if event.get("kind") == "checkpoints_projected"]
         if len(checkpoint_events) != 1:
@@ -3144,6 +3384,32 @@ class Lab:
                 checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
             )
             checkpoints = checkpoint_payload.get("checkpoints")
+            if strict_events:
+                required_fault_fields = {
+                    "fault",
+                    "exception_type",
+                    "turn",
+                    "stage",
+                    "terminal_provider_tokens",
+                }
+                if (
+                    [event.get("kind") for event in events]
+                    != [
+                        "run_started",
+                        "run_fault",
+                        "checkpoints_projected",
+                        "run_terminal",
+                    ]
+                    or not required_fault_fields <= set(fault_payload)
+                    or set(fault_payload)
+                    - required_fault_fields
+                    - {"objects", "artifact_rejections"}
+                    or not isinstance(fault_payload.get("exception_type"), str)
+                    or not fault_payload.get("exception_type")
+                    or not _artifact_outcomes_are_closed(fault_payload)
+                    or set(checkpoint_payload) != {"checkpoints"}
+                ):
+                    return False
             fault_fields_present = any(
                 field in fault_payload
                 for field in ("turn", "stage", "terminal_provider_tokens")
@@ -3206,8 +3472,6 @@ class Lab:
         provider_candidates_by_turn: dict[int, tuple[str, ...]] = {}
         candidate_set_turns: set[int] = set()
         prior_cumulative = 0
-        arm = audit.run_id.rsplit("-", 1)[0]
-        resolved_inputs = _object(lock.document["resolved_inputs"], "resolved_inputs")
         replay_budget = _object(resolved_inputs["budget"], "resolved_inputs.budget")
         maximum_candidates_per_turn = int(
             replay_budget.get("maximum_candidates_per_turn", 1)
@@ -3240,6 +3504,20 @@ class Lab:
         )
         for expected_turn, event in enumerate(provider_events, start=1):
             payload = _object(event.get("payload"), "provider_turn.payload")
+            if strict_events:
+                expected_provider_fields = {
+                    "turn",
+                    "thread_id",
+                    "turn_provider_tokens",
+                    "cumulative_provider_tokens",
+                    "normalization",
+                    "candidate_count",
+                    "objects",
+                }
+                if "event_contract" in provider_authority:
+                    expected_provider_fields.add("auxiliary_activity")
+                if set(payload) != expected_provider_fields:
+                    return False
             if payload.get("turn") != expected_turn:
                 return False
             thread_id = payload.get("thread_id")
@@ -3385,6 +3663,24 @@ class Lab:
         fault_terminal_tokens: int | None = None
         if faults:
             fault_payload = _object(faults[0].get("payload"), "run_fault.payload")
+            if strict_events:
+                required_fault_fields = {
+                    "fault",
+                    "exception_type",
+                    "turn",
+                    "stage",
+                    "terminal_provider_tokens",
+                }
+                if (
+                    not required_fault_fields <= set(fault_payload)
+                    or set(fault_payload)
+                    - required_fault_fields
+                    - {"objects", "artifact_rejections"}
+                    or not isinstance(fault_payload.get("exception_type"), str)
+                    or not fault_payload.get("exception_type")
+                    or not _artifact_outcomes_are_closed(fault_payload)
+                ):
+                    return False
             if fault_payload.get("fault") != audit.protocol_adherence:
                 return False
             if "terminal_provider_tokens" in fault_payload:
@@ -3481,6 +3777,30 @@ class Lab:
             if kind == "candidate_rejected":
                 turn = payload.get("turn")
                 candidate_sha256 = payload.get("candidate_sha256")
+                feedback = payload.get("feedback")
+                if strict_events:
+                    required_rejection_fields = {
+                        "turn",
+                        "candidate_sha256",
+                        "feedback",
+                        "routed_to",
+                        "routing_reason",
+                    }
+                    if (
+                        not required_rejection_fields <= set(payload)
+                        or set(payload)
+                        - required_rejection_fields
+                        - {"objects", "artifact_rejections"}
+                        or not isinstance(feedback, Mapping)
+                        or not _artifact_outcomes_are_closed(payload)
+                    ):
+                        return False
+                    decision = route_rejection(feedback)
+                    if (
+                        payload.get("routed_to") != decision.destination
+                        or payload.get("routing_reason") != decision.reason
+                    ):
+                        return False
                 if (
                     not isinstance(turn, int)
                     or isinstance(turn, bool)
@@ -3495,6 +3815,13 @@ class Lab:
                 purpose = payload.get("purpose")
                 candidate_sha256 = payload.get("candidate_sha256")
                 if (
+                    (strict_events and set(payload) != {
+                        "turn",
+                        "purpose",
+                        "candidate_sha256",
+                        "objects",
+                    })
+                    or
                     not isinstance(turn, int)
                     or isinstance(turn, bool)
                     or purpose not in {"search", "confirmatory", "attribution"}
@@ -3554,6 +3881,12 @@ class Lab:
                     role: sha256(raw).hexdigest()
                     for role, raw in sorted(raw_payloads.items())
                 }:
+                    return False
+                if strict_events and {
+                    item.get("role")
+                    for item in objects
+                    if isinstance(item, Mapping)
+                } != {"evaluation_receipt", *expected_raw}:
                     return False
                 validated_receipt = EvaluationReceipt(
                     candidate_sha256=candidate_sha256,
@@ -3646,15 +3979,19 @@ class Lab:
             candidates: list[str] = []
             dispositions: dict[str, str] = {}
             for row in order:
-                if not isinstance(row, Mapping) or set(row) != {
+                expected_row_fields = {
                     "candidate_sha256",
                     "disposition",
                     "cost",
-                }:
+                }
+                if strict_events:
+                    expected_row_fields.add("semantic_sha256")
+                if not isinstance(row, Mapping) or set(row) != expected_row_fields:
                     return False
                 candidate_sha256 = row.get("candidate_sha256")
                 disposition = row.get("disposition")
                 cost = row.get("cost")
+                semantic_sha256 = row.get("semantic_sha256")
                 if (
                     not isinstance(candidate_sha256, str)
                     or _DIGEST.fullmatch(candidate_sha256) is None
@@ -3665,6 +4002,20 @@ class Lab:
                         and (
                             not isinstance(cost, Mapping)
                             or set(cost) != {"device_fill", "binding_resource"}
+                            or not isinstance(cost.get("device_fill"), (int, float))
+                            or isinstance(cost.get("device_fill"), bool)
+                            or not math.isfinite(float(cost["device_fill"]))
+                            or not 0 < float(cost["device_fill"]) <= 1
+                            or not isinstance(cost.get("binding_resource"), str)
+                            or not cost.get("binding_resource")
+                        )
+                    )
+                    or (
+                        strict_events
+                        and semantic_sha256 is not None
+                        and (
+                            not isinstance(semantic_sha256, str)
+                            or _DIGEST.fullmatch(semantic_sha256) is None
                         )
                     )
                 ):
@@ -3735,6 +4086,22 @@ class Lab:
             evaluation_protocol.get("searches_per_turn", 1)
         )
         attribution_evaluation = evaluation_protocol.get("attribution_evaluation")
+        expected_searches: dict[int, list[str]] = {}
+        if strict_events:
+            expected_diagnoses, expected_searches = _expected_matched_diagnoses_v1(
+                filters=filters,
+                receipts=receipts,
+                receipt_order=receipt_order,
+                searches_per_turn=searches_per_turn,
+                materiality_ratio=float(
+                    evaluation_protocol.get("search_materiality_ratio", math.inf)
+                ),
+            )
+            _validate_matched_diagnoses_v1(
+                events,
+                expected=expected_diagnoses,
+                fault_turn=fault_turn,
+            )
         for turn, provider_candidates in sorted(provider_candidates_by_turn.items()):
             if turn in candidate_set_turns:
                 if turn not in filters:
@@ -3784,6 +4151,17 @@ class Lab:
                     or any(dispositions.get(value) != "launchable" for value in searched_candidates)
                     or [order.index(value) for value in searched_candidates]
                     != sorted(order.index(value) for value in searched_candidates)
+                    or (
+                        strict_events
+                        and searched_candidates
+                        != (
+                            expected_searches[turn][
+                                : len(searched_candidates)
+                            ]
+                            if turn == fault_turn
+                            else expected_searches[turn]
+                        )
+                    )
                 ):
                     return False
                 qualified_search = [
@@ -3952,7 +4330,10 @@ class Lab:
         checkpoint_payload = _object(
             checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
         )
-        if checkpoint_payload.get("checkpoints") != expected_projection:
+        if (
+            (strict_events and set(checkpoint_payload) != {"checkpoints"})
+            or checkpoint_payload.get("checkpoints") != expected_projection
+        ):
             return False
         expected_observation, expected_endpoint = _matched_endpoint_from_checkpoint(
             projected[-1], audit.protocol_adherence

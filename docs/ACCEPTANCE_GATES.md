@@ -12,8 +12,8 @@ supports a broader scientific claim.
 | G2 | passed | deterministic public assess/lower, localized negative, exact Target and dependency isolation |
 | G3 | passed | v10 17-case Corpus Gate, released content-bound Revision lock, reviewed approval and 33-source closure; the scientific-v3 Triton warp-specialized argmin failure is retained as a lowering-ineligible regression |
 | G4 | passed for migrated evidence and the bounded attribution slice | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles, raw r45 replay, and raw-checked no-timing NCU attribution including all correct search survivors in the v18 qualification |
-| G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay and matched/Portfolio semantic replay pass |
-| G6 | passed | 334 tests + 223 subtests cover candidate-set transport/selection/replay, all-or-nothing calibrated ordering, every correctness-qualified search survivor's attribution and missing-profile rejection, two-part Estimand availability/missingness, tool-rich scratch lifecycles, artifact-only feedback-budget freezing, immutable CLI reports, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, preregistered ranking-calibration replay and all three matched Claim Scopes |
+| G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay, closed successor matched-event semantics and matched/Portfolio semantic replay pass |
+| G6 | passed | 335 tests + 223 subtests cover candidate-set transport/selection/replay, unknown/start/diagnosis event tampering, all-or-nothing calibrated ordering, every correctness-qualified search survivor's attribution and missing-profile rejection, two-part Estimand availability/missingness, tool-rich scratch lifecycles, artifact-only feedback-budget freezing, immutable CLI reports, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, preregistered ranking-calibration replay and all three matched Claim Scopes |
 | G7 | passed | r4 proves singleton continuity; Codex 0.144.4 closed and tool-rich successors prove the two-arm candidate-set add/update lifecycle |
 | G7F | passed | tool-rich v1 injects no feature disables and replays shell activity; its candidate-set successor preserves the single-writer envelope boundary, and artifact v4 replays one measured feedback transition per arm without claiming auxiliary-agent use |
 | G8 | passed | r6 passes the singleton pilot; candidate-set v2 covers selected-only attribution, and v3 adds two adhered v18 Runs with ten replayed Receipts and complete correct-search-survivor profiles |
@@ -87,7 +87,9 @@ Failure blocks Lab implementation and deletion of legacy evaluators.
 
 Require create-only no-follow writes, CAS rehash, append-only event order, one Terminal Archive schema for success
 and failure, deterministic fresh-process replay, secret exclusion, and regeneration of Run Audits after deleting
-all reports. Re-auditing the same Campaign must produce the same canonical Run Audits. Failure blocks live Lab work.
+all reports. A current matched Study must name one closed event vocabulary; replay rejects unknown kinds and derives
+selection and diagnoses from retained authorities rather than trusting their projections. Re-auditing the same
+Campaign must produce the same canonical Run Audits. Failure blocks live Lab work.
 
 ## G6 — Zero-GPU Lab contract tests pass
 
@@ -105,6 +107,7 @@ Tests through `preflight -> execute -> audit` must prove:
 - adhered candidate failure contributes an observed qualification endpoint, while an external fault or absent Run
   archive is missing data and cannot enter its denominator;
 - Checkpoints distinguish `unreached`, `reached_no_qualified_candidate` and `reached_with_best`;
+- successor matched Runs reject unknown events, changed Run starts and diagnoses not derivable from retained facts;
 - threshold-crossing Turns cannot backfill earlier Checkpoints;
 - a scientific Study Report estimates only the preregistered Estimand and reports availability/uncertainty, while a
   system-qualification report keeps those fields null;
@@ -225,4 +228,5 @@ uncertainty. Executor v21 and Compiler v10 repair the observed mechanisms only f
 also replaces the internally contradictory all-Runs-qualified availability rule for future Studies: a candidate
 failure remains an observed qualification outcome, the complete two-part Estimand needs zero missing Runs and at
 least one conditional latency per arm, and the estimate includes its declared qualification-rate difference. The
-legacy v3 plan, Runs and report remain unchanged.
+legacy v3 plan, Runs and report remain unchanged. Executor v23 preserves that Estimand and closes the semantic event
+vocabulary only for successor matched Studies; it does not manufacture additional historical endpoint evidence.

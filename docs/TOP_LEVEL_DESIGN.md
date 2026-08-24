@@ -148,7 +148,8 @@ layout, no-follow writes, manifests, ledger chaining, terminal sealing and rehas
 
 Every Run produces one Terminal Archive, whether successful, externally failed or protocol-invalid. There is no
 separate success archive and failure archive. Evidence never defines an Estimand; it supplies Run Audits to the
-Lab's preregistered Study Analysis.
+Lab's preregistered Study Analysis. A matched Study also owns its semantic event vocabulary: current successors use
+the closed `matched_run_v1` policy, while the replay adapter for earlier frozen Studies remains read-only and bounded.
 
 ## 5. Canonical owners
 
@@ -161,6 +162,7 @@ Lab's preregistered Study Analysis.
 | Compiler release eligibility | Corpus manifest + Corpus Gate report + human merge | test count, Git message |
 | Operator semantics, input domain and oracle | Workload Contract | task prompt, benchmark script |
 | Unit, treatment, endpoints and Estimand | Study Contract | Campaign name, report narrative |
+| Matched semantic event vocabulary | Study Contract Evidence policy | event writer, replay implementation |
 | Provider/scaffold/compiler/toolchain treatment | Authoring Environment revision referenced by Study Contract | command line |
 | One execution authorization | Campaign Lock | mutable environment variables |
 | Candidate bytes and lineage | Evidence Objects + Event Ledger | workspace copy, registry cache |

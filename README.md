@@ -60,20 +60,23 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   Receipts and profiles both correct search survivors in each arm, including the non-selected one. These are system
   qualifications, not arm comparisons.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
-- Current Executor Revision `open-cake-ir-b200-v22` binds the 34-source runtime closure, including deterministic
+- Current Executor Revision `open-cake-ir-b200-v23` binds the 34-source runtime closure, including deterministic
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
-  exact B200 host packages; v1–v5 are archived and v6–v21 are superseded descriptors. v19 canonically treats one
+  exact B200 host packages; v1–v5 are archived and v6–v22 are superseded descriptors. v19 canonically treats one
   observed same-path delete/add replacement as a resumed candidate update. v20 applies
   a cost order only when every launchable member is scored and emits a cost-model misranking diagnosis only when
   that order was actually applied; otherwise the whole set keeps provider order without inventing a ranking. v21
   also treats a resumed bare `add` label as the Lab-authoritative update after the pre-Turn existence check. v22
   gives successor scientific Studies a coherent two-part Estimand: adhered candidate failure is an observed
   qualification outcome, external faults remain missing, and the estimate includes the declared qualification-rate
-  contrast. The current matched Study fixtures retain a correctness-qualified, no-timing profile for every searched
+  contrast. v23 gives every successor matched Study one closed `matched_run_v1` event vocabulary: replay validates
+  the Run boundaries and payload/object coverage, and derives search selection and routed diagnoses from retained
+  filter rows and Evaluation Receipts instead of trusting them as parallel truths. The current matched Study fixtures
+  retain a correctness-qualified, no-timing profile for every searched
   survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command.
-  The current local suite passes 334 tests plus 223 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 335 tests plus 223 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
@@ -97,7 +100,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   and 10.084415 ms, while Open Cake qualifies in 0/3 at the turn-discrete 150k checkpoint. One provider fault and one
   harness fault leave the preregistered Estimand unavailable, so no causal estimate is reported. Executor v20/v21 and
   Compiler v10 are create-only successors for the three runtime/compiler defects exposed by that immutable Evidence;
-  Executor v22 corrects only the Analysis Plan of future Studies. This local
+  Executor v22 corrects only the Analysis Plan of future Studies; Executor v23 closes semantic events only for new
+  matched Studies. This local
   150k, task-informed package study is not the paper's 80M clean-start comparison; serving and paper reproduction
   remain unsupported.
 - Four bounded tool-rich artifact-optimization Campaigns are retained. v1 promoted one Open Cake artifact and

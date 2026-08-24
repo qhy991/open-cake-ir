@@ -157,7 +157,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--template",
                 str(
                     project
-                    / "contracts/studies/matched-search-system-qualification-v22.json"
+                    / "contracts/studies/matched-search-system-qualification-v23.json"
                 ),
                 "--qualification",
                 str(qualification_path),
@@ -217,7 +217,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             current_scientific = json.loads(
                 (
                     project
-                    / "contracts/studies/matched-search-infrastructure-v22.json"
+                    / "contracts/studies/matched-search-infrastructure-v23.json"
                 ).read_text()
             )
             scientific_output = project / "contracts/studies/live-scientific.json"
@@ -267,6 +267,10 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             self.assertEqual(
                 scientific_study["analysis_plan"],
                 current_scientific["analysis_plan"],
+            )
+            self.assertEqual(
+                scientific_study["evidence"],
+                current_scientific["evidence"],
             )
             self.assertEqual(scientific_output.stat().st_mode & 0o444, 0o444)
 

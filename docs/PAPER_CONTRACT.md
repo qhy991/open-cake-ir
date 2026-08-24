@@ -88,7 +88,8 @@ remeasurement or known-kernel lanes; they are prohibited clean-start inputs and 
 The currently cited public material does not provide the exact original compiler revision, full IR schema and
 semantics, verifier rules and coverage, cost model and calibration, agent scaffold/prompts, raw clean-start
 trajectories, complete token receipts and CUPTI samples, formal plateau definition, isolation implementation,
-or exact dispatcher shards. Therefore this project must not claim byte-for-byte CAKE reconstruction or compare any
+the inclusion boundary of reported active evolve time, the exact tuned FlashML baseline revision, or exact
+dispatcher shards. Therefore this project must not claim byte-for-byte CAKE reconstruction or compare any
 local artifact-optimization Campaign—including v4's 8M turn-discrete engineering horizon—with the paper's
 80M-token result.
 
@@ -103,11 +104,13 @@ an explicit treatment prior: the resulting Study can measure package effectivene
 | Treatment | Cake bundle vs direct CUDA/PTX | Name the local treatment `cake_like`; report it as independent reconstruction |
 | Harness evolution | Evidence-driven outer loop, corpus-gated | Freeze inside a campaign; change only between campaigns |
 | Token accounting | 80M-token budget; complete receipts and exact accounting definition unavailable | Define local `provider_tokens` as the provider's Turn-end `input_tokens + output_tokens`; reported cached input remains part of input. Observe boundaries only after a complete Turn, retain the raw usage, and do not compare the resulting count with 80M |
+| Active evolve time | Median active evolve time is reported per representation, but the clock's inclusion boundary is unpublished | Do not emit an `active_evolve_time` surrogate. A future local duration must use a distinct name and preregister whether provider wait, compilation, queueing and GPU evaluation are included |
 | Scientific endpoint | Table 2 reports best-at-budget plus a prespecified but unpublished plateau rule | Executor v22's successor-only two-part Estimand separates qualification rate from latency conditional on qualification. Adhered candidate failure is observed; external fault or absent archive is missing. The full estimate needs every prescheduled endpoint plus at least one qualified Run per arm and includes `open_cake_rate - direct_cuda_rate`. Frozen v1–v3 plans retain their earlier rule and are not reinterpreted |
 | Plateau | Prespecified but definition unavailable | Run the declared budget; compute plateau only as an offline diagnostic |
 | Isolation | Isolated clean start and post-run audit | Allowlisted workspace plus complete file/tool/event trace |
 | Timing | B200, CUPTI, cold-L2 samples | Freeze physical GPU and environment evidence; retain every raw sample |
 | Dynamic attribution | Benchmark and profiler evidence for evaluated survivors | Executor v18 composes the existing search and no-timing attribution purposes so every correctness-qualified searched survivor retains raw NCU CSV plus a replay-checked projection; only the selected survivor's profile becomes next-Turn feedback. Contract execution, missing-profile rejection and a bounded live two-arm B200 successor cover the complete relation. Scientific v3 executes the relation, but two preregistered missing Runs leave its Estimand unavailable; it is evidence about the local repaired package, not a paper reproduction |
+| Evidence semantics | Retained evidence supports post-run audit; the paper does not publish its event schema | Executor v23 successor matched Studies declare the closed `matched_run_v1` vocabulary. Replay rejects unknown events and derives selection and diagnoses from retained filter rows and Receipts. Earlier Studies retain bounded legacy replay; no frozen bytes are reinterpreted |
 | Static ranking | Calibrated pre-GPU cost ranking | The structural hypothesis is implemented and measurable, but v8 coverage is empty: declared-domain checks were insufficient, and a preregistered two-repeat test of the actual three-to-two Lab cut failed its 5% boundary at worst-case 35.95% and 8.16%; public ranking reports missing coverage |
 | Static feedback | Typed IR verifier and analysis vs compiler diagnostics | One static channel per arm, matched in kind: the Compiler's Findings for a Schedule, ptxas resource output for authored CUDA. A Study that opts into current attribution gives both arms one bounded raw-checked profiler observation per correct search survivor and routes only the selected projection to the next Turn |
 | Generalization | Separate portfolio stage | Implement only the frozen r45 three-shape reconstruction; do not call it arbitrary-shape or paper generalization |
