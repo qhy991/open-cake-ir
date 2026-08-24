@@ -17,6 +17,7 @@ does not record the check cannot be read as though one happened.
 
 | `residency-b200-rmsnorm-b8-smoke.json` | `tools/profile_lowered_kernel.py` | Both bounds sound; binding resource correct and measured uniquely. |
 | `residency-b200-softmax-b8-smoke.json` | same | Same, on the second Triton operator. |
+| `residency-b200-layernorm-b8-smoke.json` | same | Same again on the third, which is the operator that needed no new vocabulary. |
 | `residency-b200-flash-kmeans-assignment-full.json` | same | Bounds sound; the binding resource is a tie between registers and shared memory, so the prediction discriminated nothing. |
 
 These are measurements, not Study Contract evidence: no hash chain, no Executor Revision.

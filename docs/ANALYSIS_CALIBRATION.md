@@ -17,6 +17,10 @@ The raw records are in `evidence/calibration/residency-b200-*.json`.
 | registers per thread | >= 65 | 96 | lower bound holds |
 | resident CTAs | <= 7 | 5 | upper bound holds, loose by 2 |
 | binding resource | registers | registers | correct, and measured uniquely |
+| **layernorm**, Triton | | | |
+| registers per thread | >= 66 | 96 | lower bound holds |
+| resident CTAs | <= 7 | 5 | upper bound holds, loose by 2 |
+| binding resource | registers | registers | correct, and measured uniquely |
 | **flash-kmeans assignment**, CuTe-DSL | | | |
 | registers per thread | >= 1 | 99 | holds, but says nothing |
 | resident CTAs | <= 2 | 2 | upper bound holds, and is exact |
@@ -24,7 +28,7 @@ The raw records are in `evidence/calibration/residency-b200-*.json`.
 
 ## What this establishes
 
-**Both bounds are sound in the direction claimed, on three kernels across both backends.**
+**Both bounds are sound in the direction claimed, on four kernels across both backends.**
 The register figure is a lower bound on storage and was below the measured allocation every
 time; the residency figure is an upper bound on resident CTAs and was at or above the
 measured limit every time. Nothing here contradicts the analysis, which is not a given --
@@ -33,11 +37,11 @@ the analysis was renamed to say "bound" only after it was written.
 **The exact quantities are exact and the estimated one is loose, as claimed.** Shared memory
 is an explicit allocation the Schedule declares, and its bound came out equal to the
 measurement. Registers are inferred from declared buffers with liveness and aliasing, and
-that bound is 31% low on the two Triton kernels and vacuous on the third.
+that bound is about 31% low on all three Triton kernels and vacuous on the fourth.
 
 **The attribution is weaker than it looked.** This is the half the paper calls attribution
 and the half an author can act on -- being told that registers rather than shared memory
-limits residency points at which declaration to change. On the two Triton kernels the
+limits residency points at which declaration to change. On the three Triton kernels the
 measurement singles out one resource and the prediction names it. On flash-kmeans it does
 not: registers and shared memory both limit to 2, so "shared memory" is correct in the sense
 that it is one of the two, and it discriminated nothing. An earlier run of this measurement,
