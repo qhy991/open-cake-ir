@@ -78,12 +78,13 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   the candidate-set v2 system qualification pass on the remote B200 host. The latter has two adhered Runs and eight
   replayed Evaluation Receipts, but produces no treatment comparison: estimand, estimate and uncertainty remain
   null. No scientific Campaign, serving integration or paper-result claim has been run here.
-- Two bounded tool-rich artifact-optimization Campaigns are retained as mixed evidence. v1 promoted one Open Cake
-  artifact and exposed v14's scratch-file event classification defect. v2 promoted one Direct CUDA artifact and
-  exposed a remaining v15 assumption when Open Cake added and then updated the fixed envelope in one Turn. v16 uses
-  the smaller authority model already declared by ADR 0004: every tool-rich file-change event is typed auxiliary
-  activity, while only the final no-follow envelope is the submission authority. Historical Runs are not reclassified;
-  a separately frozen successor is required to qualify the repaired two-arm path.
+- Three bounded tool-rich artifact-optimization Campaigns are retained. v1 promoted one Open Cake artifact and
+  exposed v14's scratch-file event classification defect; v2 promoted one Direct CUDA artifact and exposed v15's
+  remaining assumption when Open Cake added and updated the fixed envelope in one Turn. v16 uses the smaller authority
+  model already declared by ADR 0004: every tool-rich file-change event is typed auxiliary activity, while only the
+  final no-follow envelope is the submission authority. The independent v3 successor passes end to end: both Runs
+  adhere, each promotes one confirmatory-qualified artifact, and fresh audit replays all evidence. This remains
+  non-scientific artifact optimization; no cross-arm estimate or paper claim is available.
 
 ## Read order by role
 

@@ -146,12 +146,15 @@ The Codex 0.144.4 candidate-set successor additionally freezes the KDA-inspired 
 may investigate read-only, the primary provider thread is the sole envelope writer, and the external Lab alone may
 evaluate Candidates. Qualification attests this transport boundary, not the quality of auxiliary-agent reasoning.
 
-Two bounded artifact-optimization Campaigns exercised that boundary beyond the transport probe. v1 promoted one Open
-Cake artifact and exposed v14's rejection of Direct CUDA scratch-file lifecycles. v2 promoted one Direct CUDA artifact
-and exposed v15's remaining rejection when Open Cake added and updated its fixed envelope in the same Turn. Executor
-v16 follows the already-declared authority boundary directly: every tool-rich file-change lifecycle is strict typed
-auxiliary activity, while the final no-follow envelope alone submits Candidates. Both earlier faults are immutable;
-a new Campaign, not replay reclassification, must qualify the repaired live path.
+Three bounded artifact-optimization Campaigns exercised that boundary beyond the transport probe. v1 promoted one
+Open Cake artifact and exposed v14's rejection of Direct CUDA scratch-file lifecycles. v2 promoted one Direct CUDA
+artifact and exposed v15's remaining rejection when Open Cake added and updated its fixed envelope in the same Turn.
+Executor v16 follows the already-declared authority boundary directly: every tool-rich file-change lifecycle is strict
+typed auxiliary activity, while the final no-follow envelope alone submits Candidates. Both earlier faults remain
+immutable. Their independent v3 successor has two adhered Runs, each with three authored Candidates, two searches,
+one confirmatory promotion and one attribution Receipt. Fresh audit reports integrity, semantic replay,
+`artifact_optimization_complete=true` and zero missing Runs under authority `b3d8002b…`; all scientific fields remain
+null, so this qualifies the engineering loop without estimating a treatment effect.
 
 ## G8 — Bounded end-to-end pilot passes
 

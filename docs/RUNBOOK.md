@@ -189,6 +189,12 @@ lowest-latency confirmatory-qualified Candidate per Run, with earliest Turn as
 tie-break; it never reports qualification rates, arm medians, ratios, uncertainty or scientific inclusion. External
 mutation and direct GPU measurement remain unauthorized even when those tools are visible.
 
+The retained Executor-v16 live qualification is
+`/home/qinhaiyan/open-cake-ir-evidence/campaigns/artifact-optimization-live-v3`. Both Runs adhere and promote one
+confirmatory-qualified artifact; fresh audit reports `artifact_optimization_complete=true`. Each first Turn exceeded
+the 150k provider-token budget, so neither Run resumed. The retained per-Run latencies are artifact-ranking evidence
+only and must not be compared as an arm effect.
+
 ## 5. Execute the exact-shape Portfolio
 
 Run the entire Portfolio CLI as one exclusive B200 job, using a config derived from

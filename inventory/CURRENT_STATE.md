@@ -92,7 +92,16 @@ causal effect, serving and paper reproduction are not.
   v15 incorrectly treated both event lifecycles as competing submissions and sealed a provider fault before GPU work.
   Executor v16 removes that second event authority: all tool-rich file changes are typed activity and the final
   no-follow envelope alone is the submission. Fresh audit preserves v2 integrity and semantic replay without
-  reclassifying it; a new Campaign must qualify v16. No cross-arm performance claim is available.
+  reclassifying it. No cross-arm performance claim is available.
+- Executor-v16 Study `open-cake-ir-artifact-optimization-live-v3` closes the same frozen two-arm path under Campaign
+  authority `b3d8002b9b52a0a990e11981f379329751e21ef0cc35112912c84d312955c63e` and Evidence root
+  `/home/qinhaiyan/open-cake-ir-evidence/campaigns/artifact-optimization-live-v3`. Each arm authored three Candidates,
+  searched two, adhered, and promoted one confirmatory-qualified artifact with a separate attribution Receipt: Open
+  Cake `af9e81e8…` at 1.524281 ms and direct CUDA `686b8856…` at 6.050733 ms. Fresh-process audit reconstructs archive
+  integrity, semantic replay, `artifact_optimization_complete=true`, and zero missing Runs. Both first Turns crossed
+  the 150k token budget (935,013 and 6,056,350), so no resume occurred and their checkpoint endpoints correctly remain
+  `no_qualified_candidate`; artifact promotion is a distinct per-Run confirmatory result. Estimand, estimate and
+  uncertainty remain null, so the latencies are not an arm comparison or a paper result.
 - The beginner `b32_smoke` path has a fresh B200 observation: one candidate kernel launch from the loaded CUBIN,
   16,384/16,384 exact assignments, no fallback, synchronized unload, and explicitly no performance or scientific
   claim.
@@ -117,7 +126,7 @@ causal effect, serving and paper reproduction are not.
 | Workload inputs/oracles | Workload Contracts + Evaluation adapters | migrated |
 | r41/r42 Turn/resume/checkpoint controls | matched Lab path | implemented and live-qualified by G7/G8 |
 | r43-r45 seed/specialists/dispatcher/timing | portfolio Lab + Evaluation path | implemented; new B200 rerun pending |
-| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | candidate-set envelope and single-writer boundary implemented; bounded v1/v2 each promote one arm and expose successive event-authority assumptions; v16 successor qualification pending |
+| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | implemented and live-qualified by Executor-v16 Campaign v3; both Runs adhere and promote one artifact, with no scientific comparison |
 | Beginner B200 teaching smoke | Compiler + common correctness Evaluation | implemented and live-qualified; performance deliberately absent |
 | Legacy raw/index/source bytes | final bundle + manifest + historical indexes | migrated by immutable reference |
 | rXX/vN runners and verifiers | legacy Git history | deliberately not active |
