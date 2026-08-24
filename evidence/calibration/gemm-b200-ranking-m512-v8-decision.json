@@ -1,0 +1,55 @@
+{
+  "calibration_id": "gemm-b200-ranking-m512-v8",
+  "decision": {
+    "all_repetitions_passed": false,
+    "maximum_survivor_regret_ratio": 1.05,
+    "promotion_scope": "only exact measured Schedule semantics under this Compiler Revision, and only candidate sets whose requested cut is decisive"
+  },
+  "plan": {
+    "path": "contracts/calibrations/gemm-b200-ranking-m512-v8.json",
+    "raw_sha256": "721b613a2f97bf974269bda6daa6a381786c8ffcda7d0c17f0841dcb72b04d85"
+  },
+  "repetitions": [
+    {
+      "abstained_candidate_set_count": 850,
+      "compiler_refused_count": 5,
+      "decisive_candidate_set_count": 1450,
+      "maximum_decisive_survivor_regret_ratio": 1.0572737372238186,
+      "measured_candidate_count": 25,
+      "observed_at": "2026-08-24T22:51:30Z",
+      "passed": false,
+      "path": "evidence/calibration/gemm-b200-ranking-m512-v8-repeat-1.json",
+      "raw_sha256": "f2ec001ffc373ed83b067b5dc06aaca104202b32c280c3776f286091c7f1e911",
+      "retained_survivors": [
+        "gemm-t32-r64-w8",
+        "gemm-t32-r64-w4"
+      ],
+      "worst_candidate_set": [
+        "gemm-t32-r64-w4",
+        "gemm-t32-r64-w8",
+        "gemm-t64-r224-w4"
+      ]
+    },
+    {
+      "abstained_candidate_set_count": 850,
+      "compiler_refused_count": 5,
+      "decisive_candidate_set_count": 1450,
+      "maximum_decisive_survivor_regret_ratio": 1.0278601466218906,
+      "measured_candidate_count": 25,
+      "observed_at": "2026-08-24T22:51:48Z",
+      "passed": true,
+      "path": "evidence/calibration/gemm-b200-ranking-m512-v8-repeat-2.json",
+      "raw_sha256": "88631b205bbbede9fad79972d9fa953502e1f54cf788d22031545aca2905f307",
+      "retained_survivors": [
+        "gemm-t32-r128-w8",
+        "gemm-t32-r224-w8"
+      ],
+      "worst_candidate_set": [
+        "gemm-t32-r128-w8",
+        "gemm-t32-r224-w4",
+        "gemm-t32-r224-w8"
+      ]
+    }
+  ],
+  "schema_version": 1
+}

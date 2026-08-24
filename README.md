@@ -37,15 +37,19 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v10` is content-bound to an exact `sm_100a` Target and a 17-case,
+- Compiler Revision `open-cake-ir-sm100a-v11` is content-bound to an exact `sm_100a` Target and a 17-case,
   33-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
   emitted MMA omit its instruction contract while still being marked lowering-eligible. v10 turns the pinned Triton
-  backend's unsupported warp-specialized value-and-index argmin into structured lowering feedback. Public ranking in
-  v10 obeys its calibration coverage; current coverage is empty rather than falling back to an uncalibrated order. A
+  backend's unsupported warp-specialized value-and-index argmin into structured lowering feedback. v11 separates the
+  performance-semantic cost preorder from deterministic `schedule_id` serialization, so a tied cut is an abstention
+  rather than an invented performance choice. Public ranking obeys its calibration coverage; current coverage remains
+  empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
-  eligible GEMM triplets and failed the fixed 5% boundary at 35.95% and 8.16%, so no coverage was promoted.
+  eligible GEMM triplets and failed the fixed 5% boundary at 35.95% and 8.16%. A drift-controlled successor then
+  classified every triplet as decisive or tied: 1,450 decisive cuts and 850 abstentions per repeat. One repeat still
+  failed the unchanged boundary at 5.73% regret (the other reached 2.79%), so no coverage was promoted.
 - The Lab implements two closed Study variants on the same control plane: `matched_search` and `portfolio`. The former
   owns provider Turns, resume, token checkpoints, candidate sealing and search/confirmatory Evaluation; the latter
   reconstructs the final three-shape specialist/dispatcher boundary without a new runtime mode. Within
@@ -80,7 +84,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command.
-  The current local suite passes 338 tests plus 223 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 340 tests plus 223 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
@@ -109,7 +113,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   150k, task-informed package study also freezes the provider's distinct `max` reasoning level and complete
   implementation skeletons; it is not the paper's `xhigh`, 80M clean-start comparison. Serving and paper
   reproduction remain unsupported.
-- `matched-search-clean-start-reference-v25.json` is a zero-GPU successor fixture that replaces both arm references
+- `matched-search-clean-start-reference-v26.json` is a zero-GPU successor fixture that replaces both arm references
   together: Open Cake receives only its authoring interface and direct CUDA receives a canonical ABI with an empty
   kernel body. Its contamination gate validates reference access only; its inherited 150k/`max` treatment still
   cannot support a paper comparison.

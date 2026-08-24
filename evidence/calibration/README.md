@@ -15,8 +15,14 @@ is reading, so a claim there can be checked rather than taken.
 | `gemm-b200-ranking-m512-v6-repeat-1.json` | same, under the frozen v6 calibration plan | The first preregistered exclusive-B200 repeat measures 25 correct candidates and retains 5 compiler refusals. |
 | `gemm-b200-ranking-m512-v6-repeat-2.json` | same, under the frozen v6 calibration plan | The independent repeat has the same complete disposition: 25 correct candidates and 5 compiler refusals. |
 | `gemm-b200-ranking-m512-v6-decision.json` | `tools/check_ranking_calibration.py` | Exhausting all 2,300 three-candidate subsets fails the 3-to-2, 5% survivor criterion in both repeats: worst regret is 35.95% and 8.16%. |
+| `gemm-b200-ranking-m512-v7-repeat-1.json` | `tools/calibrate_gemm_ranking_interleaved.py` | Complete interleaved measurement retained but not evaluated because the frozen v7 plan's display `schedule_id` disagrees with its own pinned Schedule bytes. |
+| `gemm-b200-ranking-m512-v7-repeat-2.json` | same | The second complete raw repetition has the same non-evaluable authority mismatch. |
+| `gemm-b200-ranking-m512-v7-harness-fault.json` | frozen-checker observation | Records the authority mismatch and forbids repairing or interpreting v7 after measurement. |
+| `gemm-b200-ranking-m512-v8-repeat-1.json` | `tools/calibrate_gemm_ranking_interleaved.py`, under the frozen v8 successor | Measures 25 correct candidates in 50 cyclically interleaved rounds and retains 5 compiler refusals. |
+| `gemm-b200-ranking-m512-v8-repeat-2.json` | same | The independent repeat retains the same complete disposition and sampling protocol. |
+| `gemm-b200-ranking-m512-v8-decision.json` | same source, read-only `check` mode | Each repeat classifies all 2,300 subsets as 1,450 decisive cuts and 850 tie abstentions. Worst decisive regret is 5.73% and 2.79%; the fixed every-repeat 5% rule fails. |
 
-Each new ranking row carries the candidate's own `max_deviation`, all 41 timing samples,
+Each ranking row carries the candidate's own `max_deviation`, every declared timing sample,
 and the evaluator/oracle source hashes. Refused and incorrect candidates remain in the
 declared domain as explicit exclusions. An incorrect candidate has no place in a ranking,
 and a file that does not record the check cannot be read as though one happened.

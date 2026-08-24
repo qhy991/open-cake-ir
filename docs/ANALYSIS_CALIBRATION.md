@@ -272,6 +272,45 @@ The current profile-name-only coverage spelling is also too broad for an exact-s
 result; a future release must make the evidence domain explicit rather than projecting
 one shape to every Schedule sharing the profile name.
 
+## Tie abstention and drift control still do not calibrate device fill
+
+The v6 failures identify two separable defects. `schedule_id` made the output stable but
+carried no performance fact, so Compiler v11 removes it from `Cost.order`: the model is a
+preorder, and `rank_for_cut` abstains when the requested survivor boundary splits equal
+keys. The first v6 repetition also timed all 41 samples of one candidate before visiting
+the next. Its worst candidate spans 26.72--73.28 us and moves from a 39.84 us median to
+26.98 us in the other repetition, so candidate identity and measurement time were
+confounded.
+
+The first interleaved successor, v7, correctly produced two complete raw measurements but
+its frozen plan misspelled the display `schedule_id` present in the pinned Schedule bytes.
+The checker stopped at authority validation, before reading performance. The plan and
+records remain retained as a harness fault; they are not repaired or interpreted.
+
+Calibration v8 changes only that authority spelling and collects new measurements. All
+25 correct candidates are built before timing, then every timing round visits each once;
+the starting row rotates, so 50 rounds give each candidate every position exactly twice.
+The fixed decision still covers all 2,300 three-row subsets. It partitions rather than
+cherry-picks them: a boundary tie is an explicit abstention, and every strictly separated
+cut must retain a candidate within 5% of the measured best.
+
+| repeat | correct | refused | decisive cuts | abstentions | worst decisive regret |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 25 | 5 | 1,450 | 850 | **5.73%** |
+| 2 | 25 | 5 | 1,450 | 850 | **2.79%** |
+
+The first repeat fails the unchanged 5% rule. Its worst set contains two tile-32
+candidates, which the fuller-device key retains, and one tile-64 candidate that is 5.73%
+faster than the better survivor. This is not a tie-break failure: the cut is strict under
+the model's own performance-semantic key. The same set is within the limit in repeat 2,
+but the preregistered rule requires every repetition to pass; cross-repeat uncertainty is
+not permission to select the convenient observation.
+
+No coverage is promoted. The result narrows the next question: a future cost term must
+explain per-CTA work or another declaration-derived performance fact, validate on fresh
+data, and preserve exact finite-domain ownership. Repeating device fill or loosening the
+threshold to 5.73% would only tune the gate to the result it just observed.
+
 ## The inner-loop profile is a different observation
 
 `profile_lowered_kernel.py` above calibrates a Compiler report. The matched Lab's

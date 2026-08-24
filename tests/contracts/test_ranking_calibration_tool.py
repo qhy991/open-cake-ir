@@ -19,6 +19,9 @@ from tools.calibrate_ranking_at_scale import (  # noqa: E402
     VARIANTS,
     main,
 )
+from tools.calibrate_gemm_ranking_interleaved import (  # noqa: E402
+    _check as evaluate_interleaved,
+)
 from tools.check_ranking_calibration import evaluate  # noqa: E402
 from tools.kernel_cases import ORACLES, global_shapes  # noqa: E402
 
@@ -181,6 +184,41 @@ class RankingCalibrationInstrumentTests(unittest.TestCase):
                 item["maximum_survivor_regret_ratio"] > 1.05
                 for item in replayed["repetitions"]
             )
+        )
+        revision = json.loads(
+            (ROOT / "compiler/revision.lock.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(revision["calibration_coverage"], [])
+
+    def test_interleaved_successor_retains_fault_then_fails_without_promotion(self) -> None:
+        v7 = ROOT / "contracts/calibrations/gemm-b200-ranking-m512-v7.json"
+        with self.assertRaisesRegex(ValueError, "authority or protocol differs"):
+            evaluate_interleaved(v7)
+
+        v8 = ROOT / "contracts/calibrations/gemm-b200-ranking-m512-v8.json"
+        retained = (
+            ROOT / "evidence/calibration/gemm-b200-ranking-m512-v8-decision.json"
+        )
+        replayed = evaluate_interleaved(v8)
+        rendered = json.dumps(replayed, indent=2, sort_keys=True) + "\n"
+
+        self.assertEqual(rendered, retained.read_text(encoding="utf-8"))
+        self.assertFalse(replayed["decision"]["all_repetitions_passed"])
+        self.assertEqual(
+            [item["decisive_candidate_set_count"] for item in replayed["repetitions"]],
+            [1450, 1450],
+        )
+        self.assertEqual(
+            [item["abstained_candidate_set_count"] for item in replayed["repetitions"]],
+            [850, 850],
+        )
+        self.assertGreater(
+            replayed["repetitions"][0]["maximum_decisive_survivor_regret_ratio"],
+            1.05,
+        )
+        self.assertLessEqual(
+            replayed["repetitions"][1]["maximum_decisive_survivor_regret_ratio"],
+            1.05,
         )
         revision = json.loads(
             (ROOT / "compiler/revision.lock.json").read_text(encoding="utf-8")

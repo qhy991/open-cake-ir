@@ -65,7 +65,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
     def test_clean_start_starters_expose_contract_without_implementation(self) -> None:
         study_path = (
             ROOT
-            / "contracts/studies/matched-search-clean-start-reference-v25.json"
+            / "contracts/studies/matched-search-clean-start-reference-v26.json"
         )
         lock = Lab(ROOT).preflight(study_path)
         study = json.loads(study_path.read_text(encoding="utf-8"))
@@ -182,7 +182,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v25.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v26.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -227,7 +227,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v25.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v26.json"
             ).read_text(encoding="utf-8")
         )
         environment = OpenCakeEnvironment(
@@ -268,7 +268,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v25.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v26.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -310,7 +310,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v25.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v26.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -359,7 +359,7 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v25.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v26.json"
             ).read_text(encoding="utf-8")
         )
         document = _headline_schedule(workload)

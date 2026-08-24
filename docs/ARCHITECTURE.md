@@ -292,7 +292,7 @@ graph LR
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
 | Deterministic lowering | `lower` generates for 6 of the 7 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke`, `layernorm_b8_smoke` and `gemm_bias_b1_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file |
 | Live candidate-set authoring | implemented and bounded-live exercised — both Codex 0.144.4 policies pass two-arm envelope qualification, and candidate-set v2 produced three launchable Candidates and searched two in each arm on B200; the Campaign is system qualification only |
-| The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but v8 exposes no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
+| The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but Compiler v11 exposes no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
 | Diagnosis routing | implemented — every rejection is routed to the candidate, the verifier, the IR vocabulary or the cost model, and each destination is inferred from a signal the loop already produces |
 | Cost-model ranking | mechanism implemented but no released coverage — the structural hypothesis remains measurable, while public ranking declines every current profile |
 
@@ -303,7 +303,7 @@ fallback to an unvalidated order.
 **What the filter does.** At the Lab Interface a provider Turn may submit a set. Every
 candidate in it is built, gated and sealed — a rejected one is evidence, not a discard.
 Two candidates that are the same program under different names are searched once. A
-released profile-specific cost would order eligible candidates before GPU time; with v8's
+released exact-domain cost would order eligible candidates before GPU time; with v11's
 empty coverage they retain provider order. Executor v17 applies that order only when every
 launchable member is scored; if the model declines one member, the whole set retains
 provider order because unknown is not slower. `searches_per_turn` bounds how many survive
@@ -316,12 +316,17 @@ past saturation. It used to sort on wave count first; a sweep across four predic
 boundaries found latency linear in CTA count and no step, so that term is gone. Expanded
 B200 domains then put device-fill top-1 regret at 1.72% in one non-preregistered GEMM
 sweep and 19.43% on Flash-KMeans (`docs/ANALYSIS_CALIBRATION.md`). The former is
-insufficient for promotion and the latter is negative evidence, so v8 publishes no cost
+insufficient for promotion and the latter is negative evidence, so v11 publishes no cost
 order rather than turning a coarse search hint into a claimed filter. A preregistered
 successor then tested the Lab's actual three-to-two cut over all 2,300 eligible GEMM
 triplets: two independent repeats failed the 5% boundary at 35.95% and 8.16%. This rules
-out promotion even for that measured shape and shows why a deterministic `schedule_id`
-tie-break is total ordering, not performance evidence.
+out the old total order and shows why a deterministic `schedule_id` tie-break is
+serialization, not performance evidence. Compiler v11 therefore makes the structural
+key a preorder: a requested cut through equal keys abstains. A successor with cyclically
+interleaved timing evaluated all 1,450 decisive subsets and reported all 850 abstentions
+per repeat. It still failed the unchanged rule because one repeat reached 5.73% worst
+decisive regret; the other reached 2.79%. Device fill is therefore still insufficient for
+safe pruning, even after non-semantic ties and serial measurement drift are removed.
 
 That is why the loop routes a wrong order to the cost model rather than to the author, and
 why a Study that searches more than one candidate has to declare how much faster counts as

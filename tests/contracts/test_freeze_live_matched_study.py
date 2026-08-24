@@ -171,7 +171,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--template",
                 str(
                     project
-                    / "contracts/studies/matched-search-system-qualification-v25.json"
+                    / "contracts/studies/matched-search-system-qualification-v26.json"
                 ),
                 "--qualification",
                 str(qualification_path),
@@ -236,12 +236,12 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             )
 
             scientific_template = (
-                project / "contracts/studies/matched-search-infrastructure-v21.json"
+                project / "contracts/studies/matched-search-infrastructure-v26.json"
             )
             current_scientific = json.loads(
                 (
                     project
-                    / "contracts/studies/matched-search-infrastructure-v25.json"
+                    / "contracts/studies/matched-search-infrastructure-v26.json"
                 ).read_text()
             )
             scientific_output = project / "contracts/studies/live-scientific.json"
@@ -343,7 +343,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--source",
                 str(
                     project
-                    / "contracts/studies/matched-search-infrastructure-v25.json"
+                    / "contracts/studies/matched-search-infrastructure-v26.json"
                 ),
                 "--output",
                 str(clean_output),

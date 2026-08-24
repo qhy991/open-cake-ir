@@ -51,3 +51,11 @@ plan or collecting its measurements cannot change live behavior.
 Compiler v10 and earlier retain their frozen ranking bytes. Calibration v6, its two raw
 records and its failed decision remain unchanged and replay through their original source
 closure.
+
+## Validation
+
+The v8 checker classifies 1,450 subsets as decisive and 850 as boundary-tied abstentions
+in each repetition. Worst decisive survivor regret is 5.73% and 2.79%. Because the first
+repeat exceeds the frozen 5% limit, the calibration fails and Compiler v11 retains empty
+coverage. The failing cut is strict under the structural key, so removing `schedule_id`
+fixed the semantic defect but did not make device fill a safe filter.
