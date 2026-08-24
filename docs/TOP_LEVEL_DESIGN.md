@@ -210,9 +210,11 @@ For the initial scientific matched-search reconstruction, the primary endpoint i
 2. best confirmed speedup by `B`, conditional on qualification.
 
 The scientific Study Report presents both rather than deleting Runs without a qualified candidate or assigning an
-arbitrary performance value. It requires at least three Runs per arm; three Runs per arm support only a descriptive
-contrast for the pinned setup, not a broad population claim. These endpoint and replicate rules do not apply to the
-non-scientific G8 system qualification.
+arbitrary performance value. The current successor plan requires every prescheduled endpoint to be observed and at
+least one qualified Run per arm: an adhered failure changes the qualification rate but does not erase the Estimand,
+while an external fault remains missing and cannot enter the rate denominator. It requires at least three Runs per
+arm; three Runs per arm support only a descriptive contrast for the pinned setup, not a broad population claim.
+These endpoint and replicate rules do not apply to the non-scientific G8 system qualification.
 
 `tool_surface` in each arm names the Candidate submission Interface (`submit_schedule` or `submit_cuda`), not the
 provider's auxiliary Apps/MCP/shell/browser/subagent catalog. The content-bound Provider Feature Policy owns that

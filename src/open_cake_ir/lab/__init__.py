@@ -19,6 +19,7 @@ from .core import (
     StudyContract,
     StudyReport,
     TurnRequest,
+    scientific_matched_analysis_plan_v2,
 )
 from .environments import (
     AuthoringEnvironment,
@@ -65,6 +66,7 @@ __all__ = [
     "TurnRequest",
     "TurnObservation",
     "project_checkpoints",
+    "scientific_matched_analysis_plan_v2",
     "AuthoringEnvironment",
     "BuildRequest",
     "CandidateSubmission",

@@ -157,7 +157,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--template",
                 str(
                     project
-                    / "contracts/studies/matched-search-system-qualification-v21.json"
+                    / "contracts/studies/matched-search-system-qualification-v22.json"
                 ),
                 "--qualification",
                 str(qualification_path),
@@ -214,6 +214,12 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             scientific_template = (
                 project / "contracts/studies/matched-search-infrastructure-v21.json"
             )
+            current_scientific = json.loads(
+                (
+                    project
+                    / "contracts/studies/matched-search-infrastructure-v22.json"
+                ).read_text()
+            )
             scientific_output = project / "contracts/studies/live-scientific.json"
             scientific_command = list(command)
             scientific_command[scientific_command.index("--template") + 1] = str(
@@ -242,7 +248,6 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             )
             scientific_lock = Lab(project).preflight(scientific_output)
             scientific_study = json.loads(scientific_output.read_text())
-            template_study = json.loads(scientific_template.read_text())
             self.assertEqual(scientific_lock.claim_scope, "scientific_matched_search")
             self.assertEqual(
                 scientific_lock.run_order,
@@ -257,10 +262,11 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             )
             self.assertEqual(
                 scientific_lock.estimand,
-                template_study["analysis_plan"]["estimand"],
+                current_scientific["analysis_plan"]["estimand"],
             )
             self.assertEqual(
-                scientific_study["analysis_plan"], template_study["analysis_plan"]
+                scientific_study["analysis_plan"],
+                current_scientific["analysis_plan"],
             )
             self.assertEqual(scientific_output.stat().st_mode & 0o444, 0o444)
 

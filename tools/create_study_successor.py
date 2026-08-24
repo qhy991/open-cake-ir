@@ -19,6 +19,7 @@ from open_cake_ir.lab import (  # noqa: E402
     ExecutorRevision,
     Lab,
     ProviderQualificationReceipt,
+    scientific_matched_analysis_plan_v2,
 )
 
 
@@ -116,6 +117,13 @@ def main() -> int:
         arms = _object(document.get("arms"), "Study.arms")
         open_cake = _object(arms.get("open_cake"), "Study.arms.open_cake")
         open_cake["compiler_revision"] = compiler_reference
+        if document.get("claim_scope") == "scientific_matched_search":
+            # A successor adopts the current canonical Analysis Plan. Frozen source
+            # Studies keep their bytes and remain readable through the bounded legacy
+            # adapter in Lab preflight/audit.
+            document["analysis_plan"] = dict(
+                scientific_matched_analysis_plan_v2()
+            )
         if arguments.maximum_candidates_per_turn is not None:
             if arguments.maximum_candidates_per_turn <= 0:
                 raise ValueError("maximum Candidates per Turn must be positive")

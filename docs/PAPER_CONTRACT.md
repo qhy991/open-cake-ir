@@ -103,6 +103,7 @@ an explicit treatment prior: the resulting Study can measure package effectivene
 | Treatment | Cake bundle vs direct CUDA/PTX | Name the local treatment `cake_like`; report it as independent reconstruction |
 | Harness evolution | Evidence-driven outer loop, corpus-gated | Freeze inside a campaign; change only between campaigns |
 | Token accounting | 80M-token budget; complete receipts and exact accounting definition unavailable | Define local `provider_tokens` as the provider's Turn-end `input_tokens + output_tokens`; reported cached input remains part of input. Observe boundaries only after a complete Turn, retain the raw usage, and do not compare the resulting count with 80M |
+| Scientific endpoint | Table 2 reports best-at-budget plus a prespecified but unpublished plateau rule | Executor v22's successor-only two-part Estimand separates qualification rate from latency conditional on qualification. Adhered candidate failure is observed; external fault or absent archive is missing. The full estimate needs every prescheduled endpoint plus at least one qualified Run per arm and includes `open_cake_rate - direct_cuda_rate`. Frozen v1–v3 plans retain their earlier rule and are not reinterpreted |
 | Plateau | Prespecified but definition unavailable | Run the declared budget; compute plateau only as an offline diagnostic |
 | Isolation | Isolated clean start and post-run audit | Allowlisted workspace plus complete file/tool/event trace |
 | Timing | B200, CUPTI, cold-L2 samples | Freeze physical GPU and environment evidence; retain every raw sample |

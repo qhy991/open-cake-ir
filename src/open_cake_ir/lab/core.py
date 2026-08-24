@@ -108,6 +108,36 @@ _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN = {
     "pooling": "forbidden",
     "scientific_inclusion": "forbidden",
 }
+_SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2 = {
+    "experimental_unit": "run",
+    "target_population": "prescheduled_runs_under_exact_campaign_lock",
+    "primary_endpoint": [
+        "qualified_by_budget",
+        "best_confirmed_latency_ms_if_qualified",
+    ],
+    "contrast": "two_part_open_cake_vs_direct_cuda",
+    "estimand": (
+        "terminal-budget qualification-rate difference and conditional confirmed "
+        "performance"
+    ),
+    "missingness": {
+        "candidate_failure": "observed_outcome",
+        "external_fault": "missing",
+        "replacement": "forbidden",
+    },
+    "pooling": "forbidden_without_successor_analysis_plan",
+    "availability": (
+        "all_prescheduled_runs_observed_and_each_arm_has_qualified_run"
+    ),
+    "summary_statistics": {
+        "qualification": "arm_rate",
+        "qualification_contrast": "open_cake_rate_minus_direct_cuda_rate",
+        "conditional_latency": "arm_median_ms",
+        "contrast": "direct_cuda_median_divided_by_open_cake_median",
+        "uncertainty": "per_arm_observed_range_ms",
+    },
+    "direction": "lower_latency_is_better",
+}
 _MATCHED_CLAIM_SCOPES = {
     "system_qualification_only",
     "artifact_optimization_only",
@@ -147,6 +177,66 @@ def _digest(value: object, context: str) -> str:
     if not isinstance(value, str) or _DIGEST.fullmatch(value) is None:
         raise ValueError(f"{context} must be a lowercase SHA256 digest")
     return value
+
+
+def scientific_matched_analysis_plan_v2() -> Mapping[str, object]:
+    """Return the sole current two-part scientific Analysis Plan projection."""
+
+    return cast(
+        Mapping[str, object],
+        json.loads(_canonical_json_bytes(_SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2)),
+    )
+
+
+def _scientific_analysis_plan_version(
+    analysis: Mapping[str, object], context: str
+) -> str:
+    """Admit the current plan plus bounded read compatibility for frozen v1 plans."""
+
+    if analysis == _SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2:
+        return "two_part_v2"
+    if set(analysis) != {
+        "experimental_unit",
+        "target_population",
+        "primary_endpoint",
+        "contrast",
+        "estimand",
+        "missingness",
+        "pooling",
+        "availability",
+        "summary_statistics",
+        "direction",
+    }:
+        raise ValueError(f"{context} fields differ")
+    if (
+        analysis.get("experimental_unit") != "run"
+        or analysis.get("primary_endpoint")
+        != ["qualified_by_budget", "best_confirmed_latency_ms_if_qualified"]
+        or analysis.get("contrast")
+        != "open_cake_minus_direct_cuda_descriptive"
+        or analysis.get("missingness")
+        != {
+            "candidate_failure": "observed_outcome",
+            "external_fault": "missing",
+            "replacement": "forbidden",
+        }
+        or analysis.get("pooling")
+        != "forbidden_without_successor_analysis_plan"
+        or analysis.get("availability")
+        != "all_prescheduled_runs_qualified_at_final_checkpoint"
+        or analysis.get("summary_statistics")
+        != {
+            "qualification": "arm_rate",
+            "conditional_latency": "arm_median_ms",
+            "contrast": "direct_cuda_median_divided_by_open_cake_median",
+            "uncertainty": "per_arm_observed_range_ms",
+        }
+        or analysis.get("direction") != "lower_latency_is_better"
+    ):
+        raise ValueError(f"{context} is unsupported")
+    _name(analysis.get("target_population"), f"{context}.target_population")
+    _name(analysis.get("estimand"), f"{context}.estimand")
+    return "legacy_v1"
 
 
 def _project_path(root: Path, value: object, context: str) -> tuple[str, Path]:
@@ -1030,6 +1120,11 @@ class CampaignLock:
             if analysis != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
                 raise ValueError("artifact optimization Campaign Lock Analysis Plan differs")
             estimand = None
+        elif study_kind == "matched_search":
+            _scientific_analysis_plan_version(
+                analysis, "campaign_lock.analysis_plan"
+            )
+            estimand = _name(raw_estimand, "campaign_lock.analysis_plan.estimand")
         else:
             estimand = _name(raw_estimand, "campaign_lock.analysis_plan.estimand")
         detached = cast(Mapping[str, object], json.loads(_canonical_json_bytes(document)))
@@ -1714,46 +1809,7 @@ class Lab:
                 raise ValueError("artifact optimization Analysis Plan differs")
             estimand = None
         else:
-            if set(analysis) != {
-                "experimental_unit",
-                "target_population",
-                "primary_endpoint",
-                "contrast",
-                "estimand",
-                "missingness",
-                "pooling",
-                "availability",
-                "summary_statistics",
-                "direction",
-            }:
-                raise ValueError("Study Contract Analysis Plan fields differ")
-            if (
-                analysis.get("experimental_unit") != "run"
-                or analysis.get("primary_endpoint")
-                != ["qualified_by_budget", "best_confirmed_latency_ms_if_qualified"]
-                or analysis.get("contrast")
-                != "open_cake_minus_direct_cuda_descriptive"
-                or analysis.get("missingness")
-                != {
-                    "candidate_failure": "observed_outcome",
-                    "external_fault": "missing",
-                    "replacement": "forbidden",
-                }
-                or analysis.get("pooling")
-                != "forbidden_without_successor_analysis_plan"
-                or analysis.get("availability")
-                != "all_prescheduled_runs_qualified_at_final_checkpoint"
-                or analysis.get("summary_statistics")
-                != {
-                    "qualification": "arm_rate",
-                    "conditional_latency": "arm_median_ms",
-                    "contrast": "direct_cuda_median_divided_by_open_cake_median",
-                    "uncertainty": "per_arm_observed_range_ms",
-                }
-                or analysis.get("direction") != "lower_latency_is_better"
-            ):
-                raise ValueError("Study Contract Analysis Plan is unsupported")
-            _name(analysis.get("target_population"), "study.analysis_plan.target_population")
+            _scientific_analysis_plan_version(analysis, "study.analysis_plan")
             estimand = _name(analysis.get("estimand"), "study.analysis_plan.estimand")
         evidence_policy = _object(study.document.get("evidence"), "study.evidence")
         if evidence_policy != {
@@ -3938,8 +3994,11 @@ class Lab:
                 except (OSError, TypeError, ValueError, json.JSONDecodeError):
                     semantic_replay_passed = False
                     break
-        missing_run_count = sum(
-            audit.endpoint_observation == "missing" or audit.protocol_adherence != "adhered"
+        missing_run_count = len(campaign.lock.run_order) - len(audits) + sum(
+            not audit.integrity
+            or audit.authority_sha256 != campaign.lock.canonical_sha256
+            or audit.endpoint_observation == "missing"
+            or audit.protocol_adherence != "adhered"
             for audit in audits
         )
         if campaign.lock.claim_scope == "artifact_optimization_only":
@@ -4055,6 +4114,10 @@ class Lab:
                 inclusions.append(
                     AnalysisInclusion(audit.run_id, False, False, "archive_integrity")
                 )
+            elif audit.authority_sha256 != campaign.lock.canonical_sha256:
+                inclusions.append(
+                    AnalysisInclusion(audit.run_id, False, False, "campaign_authority")
+                )
             elif audit.protocol_adherence != "adhered":
                 inclusions.append(
                     AnalysisInclusion(audit.run_id, False, False, "protocol_deviation")
@@ -4074,21 +4137,42 @@ class Lab:
                 )
             else:
                 inclusions.append(AnalysisInclusion(audit.run_id, True, True, "included"))
-        estimand_available = (
-            archive_integrity_passed
-            and semantic_replay_passed
-            and missing_run_count == 0
-            and campaign.lock.analysis_plan.get("availability")
-            == "all_prescheduled_runs_qualified_at_final_checkpoint"
-            and all(audit.endpoint_observation == "qualified" for audit in audits)
+        analysis_version = _scientific_analysis_plan_version(
+            campaign.lock.analysis_plan, "campaign_lock.analysis_plan"
         )
-        qualification_rate: dict[str, float] = {}
+        inclusion_by_run = {item.run_id: item for item in inclusions}
+        qualification_rate: dict[str, float | None] = {}
+        endpoint_counts: dict[str, dict[str, int]] = {}
         medians: dict[str, float | None] = {}
         ranges: dict[str, list[float] | None] = {}
         latencies: dict[str, dict[str, float]] = {}
         for arm, arm_audits in arm_runs.items():
-            qualified = [audit for audit in arm_audits if audit.endpoint_observation == "qualified"]
-            qualification_rate[arm] = len(qualified) / len(arm_audits) if arm_audits else 0.0
+            prescheduled = sum(
+                run_id.rsplit("-", 1)[0] == arm
+                for run_id in campaign.lock.run_order
+            )
+            observed = [
+                audit
+                for audit in arm_audits
+                if inclusion_by_run[audit.run_id].qualification_endpoint_included
+            ]
+            qualified = [
+                audit
+                for audit in observed
+                if audit.endpoint_observation == "qualified"
+            ]
+            denominator = len(arm_audits) if analysis_version == "legacy_v1" else len(observed)
+            qualification_rate[arm] = (
+                len(qualified) / denominator
+                if denominator
+                else (0.0 if analysis_version == "legacy_v1" else None)
+            )
+            endpoint_counts[arm] = {
+                "prescheduled": prescheduled,
+                "observed": len(observed),
+                "qualified": len(qualified),
+                "missing": prescheduled - len(observed),
+            }
             values: list[float] = []
             latencies[arm] = {}
             for audit in qualified:
@@ -4107,6 +4191,16 @@ class Lab:
                 latencies[arm][audit.run_id.rsplit("-", 1)[1]] = float(latency)
             medians[arm] = statistics.median(values) if values else None
             ranges[arm] = [min(values), max(values)] if values else None
+        estimand_available = (
+            archive_integrity_passed
+            and semantic_replay_passed
+            and missing_run_count == 0
+            and (
+                all(audit.endpoint_observation == "qualified" for audit in audits)
+                if analysis_version == "legacy_v1"
+                else all(medians[arm] is not None for arm in arm_runs)
+            )
+        )
         paired: list[dict[str, object]] = []
         for repetition in sorted(set(latencies["open_cake"]) | set(latencies["direct_cuda"])):
             open_latency = latencies["open_cake"].get(repetition)
@@ -4123,11 +4217,25 @@ class Lab:
                     ),
                 }
             )
-        descriptive: Mapping[str, object] = {
-            "qualification_rate": qualification_rate,
-            "median_confirmed_latency_ms": medians,
-            "paired_runs": paired,
-        }
+        if analysis_version == "legacy_v1":
+            descriptive: Mapping[str, object] = {
+                "qualification_rate": qualification_rate,
+                "median_confirmed_latency_ms": medians,
+                "paired_runs": paired,
+            }
+        else:
+            descriptive = {
+                "endpoint_counts": endpoint_counts,
+                "qualification_rate_among_observed": qualification_rate,
+                "qualification_rate_difference_among_observed": (
+                    cast(float, qualification_rate["open_cake"])
+                    - cast(float, qualification_rate["direct_cuda"])
+                    if all(value is not None for value in qualification_rate.values())
+                    else None
+                ),
+                "median_confirmed_latency_ms": medians,
+                "paired_runs": paired,
+            }
         estimate: Mapping[str, object] | None = None
         uncertainty: Mapping[str, object] | None = None
         if estimand_available:
@@ -4137,6 +4245,14 @@ class Lab:
                 "ratio_of_arm_medians": cast(float, medians["direct_cuda"])
                 / cast(float, medians["open_cake"]),
             }
+            if analysis_version == "two_part_v2":
+                estimate = {
+                    **estimate,
+                    "qualification_rate_difference": (
+                        cast(float, qualification_rate["open_cake"])
+                        - cast(float, qualification_rate["direct_cuda"])
+                    ),
+                }
             uncertainty = {"latency_range_ms": ranges}
         return StudyReport(
             study_id=campaign.lock.study_id,
