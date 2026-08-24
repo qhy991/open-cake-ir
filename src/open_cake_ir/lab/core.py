@@ -30,7 +30,7 @@ from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission
 from .executor import ExecutorRevision
 from .faults import RunProtocolFault
-from .routing import route_rejection
+from .routing import COST_MODEL, route_rejection
 from .portfolio import KernelSeed
 from .providers import (
     CODEX_DISABLED_FEATURES,
@@ -2194,61 +2194,111 @@ class Lab:
                             != launchable.launch_spec_sha256
                         ):
                             raise ValueError("LaunchableCandidate artifact custody is incomplete")
-                        artifact_references = []
-                        for role, payload in sorted(launchable.artifact_payloads.items()):
-                            artifact = evidence.put(
-                                payload,
-                                media_type=_candidate_artifact_media_type(role),
+                        # Search-evaluate the candidates the filter kept, in its order.
+                        # Search is the assay that exists to choose; confirmatory stays
+                        # single because that one is the measurement a claim rests on.
+                        budget_k = int(
+                            evaluation_protocol.get("searches_per_turn", 1)
+                        )
+                        searched: list[tuple[object, EvaluationReceipt]] = []
+                        for position in launchable_first[:budget_k]:
+                            entry_submission, entry_result = built[position]
+                            if entry_result.disposition != "launchable":
+                                break
+                            entry_launchable = entry_result.launchable
+                            assert entry_launchable is not None
+                            artifact_references = []
+                            for role, payload in sorted(
+                                entry_launchable.artifact_payloads.items()
+                            ):
+                                artifact = evidence.put(
+                                    payload,
+                                    media_type=_candidate_artifact_media_type(role),
+                                )
+                                artifact_references.append(artifact.reference(role))
+                            ledger.append(
+                                "launchable_candidate_sealed",
+                                {
+                                    "turn": turn_number,
+                                    "candidate_sha256": entry_launchable.candidate_sha256,
+                                    "candidate_record_sha256": entry_launchable.canonical_sha256,
+                                    "objects": artifact_references,
+                                },
                             )
-                            artifact_references.append(artifact.reference(role))
-                        ledger.append(
-                            "launchable_candidate_sealed",
-                            {
-                                "turn": turn_number,
-                                "candidate_sha256": launchable.candidate_sha256,
-                                "candidate_record_sha256": launchable.canonical_sha256,
-                                "objects": artifact_references,
-                            },
-                        )
-                        live_stage = "evaluation"
-                        search_attempt = evaluator.evaluate(
-                            launchable,
-                            case_id=case_id,
-                            purpose="search",
-                        )
-                        search = search_attempt.final_receipt
-                        search_attempt_references = _archive_logical_attempt(
-                            evidence, search_attempt
-                        )
-                        ledger.append(
-                            "evaluation_attempt_completed",
-                            {
-                                "turn": turn_number,
-                                "purpose": "search",
-                                "candidate_sha256": launchable.candidate_sha256,
-                                "objects": search_attempt_references,
-                            },
-                        )
-                        if search is None:
-                            raise RuntimeError("search Evaluation has no final receipt")
-                        _validate_receipt_authority(
-                            search,
-                            candidate=launchable,
-                            workload_sha256=workload_sha256,
-                            protocol_sha256=expected_protocol_sha256,
-                            case_id=case_id,
-                            purpose="search",
-                        )
-                        search_references = _archive_evaluation_receipt(evidence, search)
-                        ledger.append(
-                            "candidate_evaluated",
-                            {
-                                "turn": turn_number,
-                                "purpose": "search",
-                                "candidate_sha256": launchable.candidate_sha256,
-                                "objects": search_references,
-                            },
-                        )
+                            live_stage = "evaluation"
+                            entry_attempt = evaluator.evaluate(
+                                entry_launchable,
+                                case_id=case_id,
+                                purpose="search",
+                            )
+                            entry_search = entry_attempt.final_receipt
+                            ledger.append(
+                                "evaluation_attempt_completed",
+                                {
+                                    "turn": turn_number,
+                                    "purpose": "search",
+                                    "candidate_sha256": entry_launchable.candidate_sha256,
+                                    "objects": _archive_logical_attempt(
+                                        evidence, entry_attempt
+                                    ),
+                                },
+                            )
+                            if entry_search is None:
+                                raise RuntimeError("search Evaluation has no final receipt")
+                            _validate_receipt_authority(
+                                entry_search,
+                                candidate=entry_launchable,
+                                workload_sha256=workload_sha256,
+                                protocol_sha256=expected_protocol_sha256,
+                                case_id=case_id,
+                                purpose="search",
+                            )
+                            ledger.append(
+                                "candidate_evaluated",
+                                {
+                                    "turn": turn_number,
+                                    "purpose": "search",
+                                    "candidate_sha256": entry_launchable.candidate_sha256,
+                                    "objects": _archive_evaluation_receipt(
+                                        evidence, entry_search
+                                    ),
+                                },
+                            )
+                            searched.append((entry_launchable, entry_search))
+                            submission = entry_submission
+
+                        # The filter's order can now be checked against a measurement.
+                        # When they disagree the candidate was not wrong -- the order was,
+                        # and that is the cost model's to answer for.
+                        if len(searched) > 1:
+                            measured = sorted(
+                                range(len(searched)),
+                                key=lambda index: (
+                                    _receipt_latency_ms(searched[index][1]) or float("inf")
+                                ),
+                            )
+                            if measured[0] != 0:
+                                ledger.append(
+                                    "diagnosis_routed",
+                                    {
+                                        "turn": turn_number,
+                                        "routed_to": COST_MODEL,
+                                        "routing_reason": (
+                                            "the filter ranked "
+                                            f"{searched[0][0].candidate_sha256} first and "
+                                            "measurement put "
+                                            f"{searched[measured[0]][0].candidate_sha256} "
+                                            "ahead of it"
+                                        ),
+                                        "ranked_first": searched[0][0].candidate_sha256,
+                                        "measured_first": searched[measured[0]][0].candidate_sha256,
+                                    },
+                                )
+                            best = measured[0]
+                        else:
+                            best = 0
+                        launchable, search = searched[best]
+
                         confirmed: EvaluationReceipt | None = None
                         if _receipt_qualifies(search):
                             confirmed_attempt = evaluator.evaluate(

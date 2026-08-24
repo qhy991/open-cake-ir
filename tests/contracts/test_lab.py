@@ -1617,3 +1617,121 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
     def test_attribution_runs_only_when_the_study_declares_it(self) -> None:
         self.assertNotIn("attribution", self._run(declare_attribution=False))
         self.assertIn("attribution", self._run(declare_attribution=True))
+
+
+class CostModelRouteTest(unittest.TestCase):
+    """The fourth destination, unlocked by evaluating more than one candidate.
+
+    Deciding the order was wrong needs two measurements to compare, so this route stayed
+    named-but-uninferred while a Turn evaluated one candidate. With `searches_per_turn`
+    above one it becomes derivable, and the loop can finally record that the candidate was
+    fine and the ranking was not.
+    """
+
+    def _run(self, *, searches_per_turn: int):
+        class MisrankingEnvironment(FakeEnvironment):
+            def build(self, submission):
+                from open_cake_ir.compiler.ranking import Cost
+
+                variant = json.loads(submission.payload)["variant"]
+                result = super().build(submission)
+                candidate = result.launchable
+                assert candidate is not None
+                # The evaluator derives latency from the entry point, so folding the
+                # variant into it makes the later variant measurably faster while the
+                # cost below ranks it second. The filter is wrong on purpose.
+                renamed = LaunchableCandidate(
+                    candidate_sha256=candidate.candidate_sha256,
+                    target=candidate.target,
+                    entry_point=f"{self.arm}_turn_{variant + 1}",
+                    artifact_roles=candidate.artifact_roles,
+                    launch_spec_sha256=candidate.launch_spec_sha256,
+                    artifact_payloads=candidate.artifact_payloads,
+                )
+                return EnvironmentResult(
+                    result.disposition,
+                    result.submission_sha256,
+                    renamed,
+                    result.feedback,
+                    result.artifact_payloads,
+                    cost=Cost(
+                        schedule_id=f"v{variant}",
+                        ctas=1,
+                        ctas_per_multiprocessor=1,
+                        binding_resource="registers",
+                        waves=1 + variant,
+                        last_wave_occupancy=0.5,
+                    ),
+                )
+
+        class TwoCandidateProvider(FakeProvider):
+            def turn(self, request):
+                observed = super().turn(request)
+                payloads = tuple(
+                    json.dumps(
+                        {"run_id": request.run_id, "turn": request.turn, "variant": i},
+                        sort_keys=True,
+                    ).encode()
+                    for i in range(2)
+                )
+                return ProviderTurn(
+                    thread_id=observed.thread_id,
+                    provider_tokens=observed.provider_tokens,
+                    candidates=payloads,
+                    candidate_sha256s=tuple(sha256(p).hexdigest() for p in payloads),
+                    raw_events=observed.raw_events,
+                    raw_events_sha256=observed.raw_events_sha256,
+                    terminal_message=observed.terminal_message,
+                    terminal_message_count=observed.terminal_message_count,
+                    normalization=observed.normalization,
+                )
+
+        lab = Lab(ROOT)
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+        document = json.loads(source.read_text(encoding="utf-8"))
+        document["evaluation_protocol"]["searches_per_turn"] = searches_per_turn
+        with tempfile.TemporaryDirectory() as directory:
+            study_path = Path(directory) / "successor.json"
+            study_path.write_text(
+                json.dumps(document, sort_keys=True, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            lock = lab.preflight(study_path)
+            arms = lock.document["resolved_inputs"]["arm_environments"]
+            protocol_sha256 = sha256(
+                json.dumps(
+                    lock.document["evaluation_protocol"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+            campaign = lab.execute(
+                lock,
+                Path(directory) / "campaign-evidence",
+                provider=TwoCandidateProvider(),
+                environments={arm: MisrankingEnvironment(arm, arms[arm]) for arm in arms},
+                evaluator=FakeEvaluator(
+                    lock.document["evaluation_protocol"],
+                    protocol_sha256,
+                    lock.document["workload"]["canonical_sha256"],
+                ),
+            )
+            store = EvidenceStore.open(campaign.evidence_root)
+            return [
+                event["payload"]
+                for identifier in lock.run_order
+                for event in store.replay_events(identifier)
+                if event["kind"] == "diagnosis_routed"
+            ]
+
+    def test_a_wrong_order_is_the_cost_models_not_the_candidates(self) -> None:
+        # One search per Turn: nothing to compare, so nothing is claimed.
+        self.assertEqual(self._run(searches_per_turn=1), [])
+
+        routed = self._run(searches_per_turn=2)
+        self.assertTrue(routed)
+        for payload in routed:
+            self.assertEqual(payload["routed_to"], "cost_model")
+            # The claim has to name both candidates, or it is an accusation with no
+            # evidence attached to it.
+            self.assertNotEqual(payload["ranked_first"], payload["measured_first"])
