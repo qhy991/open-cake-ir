@@ -185,12 +185,14 @@ For `system_qualification_only`, exactly one Run per Authoring Environment execu
 `system_qualification_passed`; `estimand`, `estimate`, and `uncertainty` remain null and comparative statistics are
 forbidden.
 
-The accepted candidate-set v2 qualification also establishes one host precondition: every path needed by the
+The accepted candidate-set qualifications establish one host precondition: every path needed by the
 broker service user must be traversable, including all checkout parents. The immutable v1 attempt failed before a
 GPU launch because a temporary checkout had private parent permissions; v2 succeeded from a durable accessible
 worktree. Keep the runtime config, Campaign Lock and Evidence root outside the checkout, and test service-user path
 admission before execution. The retained v2 Evidence root is
-`/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v2`; it is system qualification only.
+`/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v2`. The current Executor-v18 successor
+at `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v3` additionally retains one profile
+for every correct searched survivor. Both are system qualification only.
 
 For `artifact_optimization_only`, one multi-Turn Run per Authoring Environment uses the same command. Auxiliary
 Apps/MCP/shell/browser/plugin/subagent activity is retained in raw Evidence, so the operator must approve its source

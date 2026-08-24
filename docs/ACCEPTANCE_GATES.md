@@ -11,12 +11,12 @@ supports a broader scientific claim.
 | G1 | passed | ADR 0001 plus the real second-use Portfolio extension in ADR 0002 |
 | G2 | passed | deterministic public assess/lower, localized negative, exact Target and dependency isolation |
 | G3 | passed | v8 16-case Corpus Gate, released content-bound Revision lock, reviewed approval and 32-source closure |
-| G4 | passed for migrated evidence and the bounded attribution slice | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles, raw r45 replay, and raw-checked no-timing NCU attribution |
+| G4 | passed for migrated evidence and the bounded attribution slice | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles, raw r45 replay, and raw-checked no-timing NCU attribution including all correct search survivors in the v18 qualification |
 | G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay and matched/Portfolio semantic replay pass |
 | G6 | passed | 326 tests + 223 subtests cover candidate-set transport/selection/replay, all-or-nothing calibrated ordering, every correctness-qualified search survivor's attribution and missing-profile rejection, tool-rich scratch lifecycles, artifact-only feedback-budget freezing, immutable CLI reports, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody, preregistered ranking-calibration replay and all three matched Claim Scopes |
 | G7 | passed | r4 proves singleton continuity; Codex 0.144.4 closed and tool-rich successors prove the two-arm candidate-set add/update lifecycle |
 | G7F | passed | tool-rich v1 injects no feature disables and replays shell activity; its candidate-set successor preserves the single-writer envelope boundary, and artifact v4 replays one measured feedback transition per arm without claiming auxiliary-agent use |
-| G8 | passed | r6 passes the singleton pilot; candidate-set v2 adds two adhered Runs, eight replayed Evaluation Receipts and an independent offline system-qualification pass |
+| G8 | passed | r6 passes the singleton pilot; candidate-set v2 covers selected-only attribution, and v3 adds two adhered v18 Runs with ten replayed Receipts and complete correct-search-survivor profiles |
 | G9 | passed | private `qhy991/open-cake-ir` main is the source authority; legacy is read-only with pinned rollback |
 | G10 | historical projection only | r42 estimand unavailable and r45 bounded timing instability are preserved, not rerun |
 
@@ -181,6 +181,20 @@ replay, adherence and `system_qualification_passed=true` under Campaign authorit
 `88605aa1b1557b58aec9dacb4e043290d9a03205b0847d507fa72fc68fad633b`. Open Cake ends below the 80k checkpoint and
 direct CUDA crosses it on the non-backfillable Turn, so their endpoint observations differ; both remain excluded
 from scientific analysis and all estimand fields remain null.
+
+Candidate-set v3 passes the current Executor-v18 protocol through frozen Study
+`contracts/studies/matched-search-candidate-set-system-v3.json` (canonical SHA
+`180c0d4787c4f2361e5fe7bd342fbb7e07def6ca0f0e5a7551993d8fe4364b7e`). Under Campaign
+authority `56bbcfe06caa4be7db31689d658ed59af3e2fe0ae2b4a88dc682ef9c8b373d8e`, each arm
+authors three launchable Candidates, searches two correct survivors, profiles both and
+freshly confirms the selected survivor. The ten Receipts—two search, two attribution and
+one confirmatory per arm—each observe one target launch and zero fallback; the four
+attribution Receipts retain eleven checked NCU metrics and structurally no timing. Fresh
+audit of `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v3`
+passes integrity, exact semantic replay and adherence with
+`system_qualification_passed=true`. Open Cake remains below the turn-discrete checkpoint
+and direct CUDA crosses it before confirmation can backfill the endpoint; scientific
+inclusion remains forbidden and every estimand field remains null.
 
 ## G9 — Cutover is safe
 

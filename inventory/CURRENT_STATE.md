@@ -1,7 +1,7 @@
 # Current-state inventory
 
 Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set envelope implementation and live
-system qualification, historical Executor-v10 NCU attribution validation, Executor v16 release and Compiler v8
+system qualification, historical Executor-v10 NCU attribution validation, Executor v18 release and Compiler v8
 release. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
@@ -45,7 +45,8 @@ causal effect, serving and paper reproduction are not.
   artifact-only live composition no longer rejects its own qualified provider.
 - Current matched Study fixtures profile every correctness-qualified search survivor through the existing no-timing
   attribution purpose and feed back only the selected survivor's checked projection. Frozen selected-only evidence
-  retains its earlier operation spelling; a current live successor has not yet been B200-qualified.
+  retains its earlier operation spelling; the current live v3 successor now passes this relation on B200 for both
+  selected and non-selected survivors in both arms.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
 - Lab owns matched Turn/budget/checkpoint control and the exact-shape Portfolio handoff; Compiler does not own
   KernelSeed or held-out policy.
@@ -81,6 +82,15 @@ causal effect, serving and paper reproduction are not.
   eight receipts pass tie-aware correctness with one target launch and zero fallback; fresh-process audit reconstructs
   integrity, semantic replay, adherence and `system_qualification_passed=true`. Estimand, estimate and uncertainty
   remain null, so the observed latency values are not an arm comparison.
+- The Executor-v18 successor passes under Study `open-cake-ir-candidate-set-system-v3` (canonical SHA
+  `180c0d4787c4f2361e5fe7bd342fbb7e07def6ca0f0e5a7551993d8fe4364b7e`), Campaign authority
+  `56bbcfe06caa4be7db31689d658ed59af3e2fe0ae2b4a88dc682ef9c8b373d8e` and Evidence root
+  `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v3`. Each arm authors three launchable
+  Candidates, searches two correct survivors, retains both NCU profiles and freshly confirms the selected survivor.
+  All ten Receipts pass tie-aware correctness with one target launch and zero fallback; each of the four attribution
+  Receipts has eleven replay-checked metrics and no timing. Fresh audit passes integrity, exact semantic replay,
+  adherence and `system_qualification_passed=true`. Scientific inclusion remains forbidden and all estimand fields
+  remain null.
 - The first bounded tool-rich Campaign is retained under
   `/home/qinhaiyan/open-cake-ir-evidence/campaigns/artifact-optimization-live-v1`. Open Cake supplied three launchable
   Candidates and promoted candidate `7141869d…` at a confirmed 1.556059 ms. Direct CUDA's raw provider stream also
@@ -112,8 +122,9 @@ causal effect, serving and paper reproduction are not.
   `/home/qinhaiyan/open-cake-ir-evidence/ncu-attribution-20260824-v1`: one profiled target launch, zero timing
   samples, 16,384/16,384 exact assignments, and a replay-checked 11-metric profile. Full/PM/source reports expose
   grid underfill, a theoretical shared-memory residency limit and long-scoreboard pressure. This validates the
-  evaluator mechanism and one frozen b32 Candidate; it is not current-kernel performance, every-survivor coverage
-  or a scientific Campaign. Canonical attempt 12 passed under historical v10 digest `23a2c79f…` and its retained raw
+  evaluator mechanism and one frozen b32 Candidate; by itself it is not current-kernel performance, every-survivor
+  coverage or a scientific Campaign. Current every-survivor coverage is the separate v3 system qualification above.
+  Canonical attempt 12 passed under historical v10 digest `23a2c79f…` and its retained raw
   CSV, projected profile and complete Evaluation Receipt replay. Attempt 11 was a pre-worker temporary-checkout
   permission failure and did no GPU work. Earlier attempts 8/9 omitted the runtime's frozen
   `GPUQ_JOB_ID` environment argument and therefore prove only fail-closed zero-work admission, not dirty cards;

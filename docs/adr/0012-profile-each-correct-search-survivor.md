@@ -43,5 +43,22 @@ operation spelling.
 
 Acceptance requires candidate-set contract evidence with at least two correct searched
 survivors, including a non-selected survivor, plus a negative replay in which one required
-profile is absent. GPU qualification remains a successor Study concern; historical raw
-evidence is immutable.
+profile is absent. GPU qualification had to use a successor Study rather than rewriting
+historical raw evidence.
+
+The successor Study `open-cake-ir-candidate-set-system-v3` (canonical SHA
+`180c0d4787c4f2361e5fe7bd342fbb7e07def6ca0f0e5a7551993d8fe4364b7e`) closes that
+bounded GPU concern under Executor v18. Its external Campaign authority SHA is
+`56bbcfe06caa4be7db31689d658ed59af3e2fe0ae2b4a88dc682ef9c8b373d8e`, and its Evidence
+root is `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v3`.
+Each arm authored three launchable Candidates and searched two correct survivors. Both
+the selected and non-selected survivor received attribution, so each Run retains two
+search, two attribution and one confirmatory Receipt. All ten Receipts observe one target
+kernel call and zero fallback calls; all four attribution Receipts carry eleven raw-checked
+NCU metrics and no timing. Fresh-process audit reconstructs archive integrity, exact
+profile coverage, semantic replay and adherence, and sets only
+`system_qualification_passed=true`. The terminal seals are
+`38a362b97a03747bd217bb070aa4a34e9f39de73f16012056ddbe52552dcd081` and
+`84afb88f11f42907bb6c9a66e1ff52c4471f7450954fc08200b0b33d1edaa030`.
+Estimand, estimate and uncertainty remain null; this is not a scientific Campaign or an
+arm comparison.

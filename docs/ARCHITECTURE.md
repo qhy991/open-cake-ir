@@ -173,10 +173,10 @@ stateDiagram-v2
     environment --> rejected: all candidates refused
     environment --> filter: launchable artifacts
     filter --> search: up to searches_per_turn
-    search --> confirm: select lowest qualified latency
-    confirm --> profile: qualified and Study opts in
-    confirm --> budget: not qualified / no attribution
-    profile --> budget: checked summary retained
+    search --> profile: correct survivor and Study opts in
+    profile --> search: checked summary retained / next survivor
+    search --> confirm: searches complete / select lowest qualified latency
+    confirm --> budget: fresh endpoint observation
     rejected --> budget: findings become feedback
 
     budget --> provider: budget remains
@@ -197,17 +197,18 @@ stateDiagram-v2
 The four paper stages have one internal control path: the provider Interface can return an
 ordered candidate tuple; every member is built and gated, equivalent programs are
 evaluated once, released ranking coverage may order them, and `searches_per_turn` bounds
-GPU work. Search selects one qualified Candidate for a fresh confirmatory assay. When the
-Study opts in, a separate correctness-qualified NCU launch explains that confirmed
-Candidate and its checked summary becomes next-Turn feedback.
+GPU work. Under the current attribution operation, every correctness-qualified search
+survivor receives a separate no-timing NCU launch before search timing selects one
+Candidate for a fresh confirmatory assay. All profiles remain Evidence; only the selected
+Candidate's checked summary becomes next-Turn feedback.
 
 That diagram is now also the bounded live candidate-set path. Successor
 `CodexRunProvider` prompts, file lifecycle and normalizer seal one canonical envelope and
 project its ordered members into the same build/filter/search path; frozen Studies retain
 their singleton compatibility edge. ADR 0009 records that boundary, and the non-scientific
-candidate-set v2 Campaign exercised it on B200. Remaining breadth gaps are released
-cost-ranking coverage, profiling every search survivor and a preregistered scientific
-Campaign.
+candidate-set v2 Campaign exercised it on B200, and the v3 successor exercised complete
+correct-search-survivor attribution under Executor v18. Remaining breadth gaps are
+released cost-ranking coverage and a preregistered scientific Campaign.
 
 ---
 
@@ -286,7 +287,7 @@ graph LR
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
 | Compile → external oracle → GPU timing | implemented, B200-verified on 5 emitted operators |
-| Profiler evidence in the inner loop | partial relative to the paper — Executor v18 composes the canonical no-timing NCU assay after every correctness-qualified search survivor, retains raw/profile replay for all of them and feeds back the selected profile; historical Executor v10 digest `23a2c79f…` passed one standalone B200 assay and Executor v14 replayed selected-only attribution, while a live v18 successor and a scientific Campaign are not yet covered |
+| Profiler evidence in the inner loop | partial relative to the paper — Executor v18 composes the canonical no-timing NCU assay after every correctness-qualified search survivor, retains raw/profile replay for all of them and feeds back the selected profile; a bounded live v18 two-arm successor covers selected and non-selected survivors, while a preregistered scientific Campaign is not yet covered |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
 | Deterministic lowering | `lower` generates for 6 of the 7 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke`, `layernorm_b8_smoke` and `gemm_bias_b1_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file |
 | Live candidate-set authoring | implemented and bounded-live exercised — both Codex 0.144.4 policies pass two-arm envelope qualification, and candidate-set v2 produced three launchable Candidates and searched two in each arm on B200; the Campaign is system qualification only |
