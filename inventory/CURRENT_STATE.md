@@ -68,3 +68,20 @@ causal effect, serving and paper reproduction are not.
 | rXX/vN runners and verifiers | legacy Git history | deliberately not active |
 | Provider credentials/HMAC key | external host custody | deliberately not migrated |
 | Serving | no owner yet | not implemented remotely or locally |
+
+## A note on the superseded kernel observation
+
+`EMITTED_KERNEL_OBSERVATION_20260823.json` records a correct B200 run and names compiler
+Revision `open-cake-ir-sm100a-v6`. No such Revision appears in the release history, which
+runs v1, v2, v3, v4 -- `compiler/releases/` holds v2 and v3 and nothing else, and there is
+no v5 anywhere in the repository. The id in that record cannot be resolved to a Revision.
+
+It is left as written. A record is what someone wrote down at the time, and correcting one
+after the fact is the failure mode the whole content-binding scheme exists to prevent. What
+the anomaly does establish is why the instrument belongs in the repository: that record was
+produced by a script outside it, and an id that no release ever issued is exactly what an
+outside script can write. `tools/observe_lowered_kernel.py` takes the Revision id from the
+Assessment, so it cannot name one that did not assess the Schedule.
+
+`EMITTED_KERNEL_OBSERVATION_20260824.json` supersedes it and is the one the contract test
+holds the lowering to.
