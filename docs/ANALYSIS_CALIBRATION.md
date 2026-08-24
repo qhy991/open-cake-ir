@@ -184,6 +184,12 @@ it: the term stops working at exactly the point the model stops claiming.
 `cost_model` diagnosis is the expected outcome on kernels like this rather than a signal
 that something broke.
 
+It also sets a bar. With 24 of 37 candidates inside 6% of the best, routing every inversion
+to the cost model would report mostly measurement error, so a Study that searches more than
+one candidate must declare `search_materiality_ratio` -- how much faster the measurement has
+to be before the order counts as wrong. The faster candidate is carried forward either way;
+what the ratio decides is whether a claim gets made about the model.
+
 
 ## Reproducing
 

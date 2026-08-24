@@ -1635,7 +1635,7 @@ class SearchBudgetTest(unittest.TestCase):
     faults has spent the GPU time this Lab exists to gate before spending it.
     """
 
-    def _preflight(self, value):
+    def _preflight(self, value, materiality=None):
         lab = Lab(ROOT)
         source = ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
         document = json.loads(source.read_text(encoding="utf-8"))
@@ -1643,6 +1643,8 @@ class SearchBudgetTest(unittest.TestCase):
             document["evaluation_protocol"].pop("searches_per_turn", None)
         else:
             document["evaluation_protocol"]["searches_per_turn"] = value
+        if materiality is not None:
+            document["evaluation_protocol"]["search_materiality_ratio"] = materiality
         with tempfile.TemporaryDirectory() as directory:
             study_path = Path(directory) / "successor.json"
             study_path.write_text(
@@ -1657,13 +1659,21 @@ class SearchBudgetTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self._preflight(value)
 
+        # Searching more than one candidate without saying what counts as material is
+        # asking the loop to call every inversion a cost-model defect.
+        with self.assertRaisesRegex(ValueError, "search_materiality_ratio"):
+            self._preflight(2)
+
         # Absent means one, which is the behaviour every Study had before the field.
         lock = self._preflight(None)
         self.assertNotIn("searches_per_turn", lock.document["evaluation_protocol"])
         # And a real budget survives into the Lock, where the run reads it without
         # re-parsing: preflight is the only place this value is judged.
-        lock = self._preflight(3)
+        lock = self._preflight(3, materiality=1.05)
         self.assertEqual(lock.document["evaluation_protocol"]["searches_per_turn"], 3)
+        self.assertEqual(
+            lock.document["evaluation_protocol"]["search_materiality_ratio"], 1.05
+        )
 
 
 class CostModelRouteTest(unittest.TestCase):
@@ -1675,7 +1685,7 @@ class CostModelRouteTest(unittest.TestCase):
     fine and the ranking was not.
     """
 
-    def _run(self, *, searches_per_turn: int):
+    def _run(self, *, searches_per_turn: int, materiality: float = 1.05):
         class MisrankingEnvironment(FakeEnvironment):
             def build(self, submission):
                 from open_cake_ir.compiler.ranking import Cost
@@ -1736,6 +1746,8 @@ class CostModelRouteTest(unittest.TestCase):
         source = ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = searches_per_turn
+        if searches_per_turn > 1:
+            document["evaluation_protocol"]["search_materiality_ratio"] = materiality
         with tempfile.TemporaryDirectory() as directory:
             study_path = Path(directory) / "successor.json"
             study_path.write_text(
@@ -1774,10 +1786,21 @@ class CostModelRouteTest(unittest.TestCase):
         # One search per Turn: nothing to compare, so nothing is claimed.
         self.assertEqual(self._run(searches_per_turn=1), [])
 
-        routed = self._run(searches_per_turn=2)
+        # The evaluator puts the second variant about 1.11x ahead of the first.
+        routed = self._run(searches_per_turn=2, materiality=1.05)
         self.assertTrue(routed)
         for payload in routed:
             self.assertEqual(payload["routed_to"], "cost_model")
             # The claim has to name both candidates, or it is an accusation with no
             # evidence attached to it.
             self.assertNotEqual(payload["ranked_first"], payload["measured_first"])
+            self.assertGreaterEqual(
+                payload["observed_ratio"], payload["materiality_ratio"]
+            )
+
+        # The same inversion, against a Study that counts nothing under 1.5x. The order
+        # is still wrong in the sense that the second candidate measured faster, and the
+        # loop still carries that one forward -- but "the cost model got it wrong" is not
+        # a claim this measurement supports, so it is not made. Most inversions live here:
+        # 24 of 37 candidates at one shape sit within 6% of the best.
+        self.assertEqual(self._run(searches_per_turn=2, materiality=1.5), [])

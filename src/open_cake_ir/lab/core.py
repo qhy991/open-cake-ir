@@ -1569,6 +1569,25 @@ class Lab:
         searches = evaluation.get("searches_per_turn", 1)
         if not isinstance(searches, int) or isinstance(searches, bool) or searches < 1:
             raise ValueError("Study Contract searches_per_turn differs")
+        # How much faster the measurement has to be before the order counts as wrong.
+        # A Study that searches more than one candidate has to say, because without it
+        # every inversion inside the noise would be routed to the cost model as a defect
+        # -- and the loss surface is a plateau, so most inversions are inside the noise
+        # (`docs/ANALYSIS_CALIBRATION.md`).
+        materiality = evaluation.get("search_materiality_ratio")
+        if searches > 1:
+            if (
+                not isinstance(materiality, float)
+                or not 1.0 < materiality < 100.0
+            ):
+                raise ValueError(
+                    "a Study searching more than one candidate declares "
+                    "search_materiality_ratio"
+                )
+        elif materiality is not None:
+            # No second candidate to compare against, so a ratio here would state a
+            # threshold nothing can cross.
+            raise ValueError("search_materiality_ratio without searches_per_turn above one")
         execution = _object(study.document.get("execution"), "study.execution")
         if set(execution) != {
             "target",
@@ -2284,7 +2303,15 @@ class Lab:
                                     _receipt_latency_ms(searched[index][1]) or float("inf")
                                 ),
                             )
-                            if measured[0] != 0:
+                            ranked = _receipt_latency_ms(searched[0][1])
+                            fastest = _receipt_latency_ms(searched[measured[0]][1])
+                            ratio = (
+                                ranked / fastest
+                                if ranked is not None and fastest
+                                else None
+                            )
+                            threshold = evaluation_protocol["search_materiality_ratio"]
+                            if measured[0] != 0 and ratio is not None and ratio >= threshold:
                                 ledger.append(
                                     "diagnosis_routed",
                                     {
@@ -2295,12 +2322,18 @@ class Lab:
                                             f"{searched[0][0].candidate_sha256} first and "
                                             "measurement put "
                                             f"{searched[measured[0]][0].candidate_sha256} "
-                                            "ahead of it"
+                                            f"{ratio:.3f}x ahead of it, which the Study "
+                                            f"counts as material at {threshold}x"
                                         ),
                                         "ranked_first": searched[0][0].candidate_sha256,
                                         "measured_first": searched[measured[0]][0].candidate_sha256,
+                                        "observed_ratio": round(ratio, 6),
+                                        "materiality_ratio": threshold,
                                     },
                                 )
+                            # The faster candidate is still the one carried forward. What
+                            # materiality decides is whether the order was *wrong*, not
+                            # which measurement won.
                             best = measured[0]
                         else:
                             best = 0

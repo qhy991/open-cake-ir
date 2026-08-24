@@ -17,8 +17,11 @@ Each destination is inferred from a signal the loop already produces, not from a
   declared everything the IR can express and it was not enough either way.
 * **cost_model** -- the order was wrong. This one is not inferred from a rejection, because
   it needs two measurements to compare: the Lab raises it when a Turn searches more than
-  one launchable candidate and the fastest is not the one the ranking put first. A Turn
-  that searches one candidate cannot reach the claim and does not make it.
+  one launchable candidate and the fastest is not the one the ranking put first, by more
+  than the Study says counts. A Turn that searches one candidate cannot reach the claim
+  and does not make it, and an inversion inside the noise is not one either -- the loss
+  surface is a plateau, so most inversions are inside the noise and routing them all
+  would bury the cost model in reports of its own measurement error.
 
 A route is a claim about what should change, so a wrong one is worse than none: routing a
 missing verifier rule to the candidate tells an author to fix a Schedule that was correct
