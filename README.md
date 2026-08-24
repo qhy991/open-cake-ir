@@ -48,9 +48,11 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   `matched_search`, `artifact_optimization_only` restores provider-default features while forbidding scientific
   comparison and promoting Candidates only through common confirmatory Evaluation.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
-- Current Executor Revision `open-cake-ir-b200-v8` binds the 33-source runtime closure, including deterministic
-  external Campaign custody, and exact B200 host packages; v1–v5 are archived and v6/v7 are superseded descriptors.
-  The current local suite passes 306 tests plus 214 subtests. The earlier remote qualification passed its frozen
+- Current Executor Revision `open-cake-ir-b200-v9` binds the 34-source runtime closure, including deterministic
+  external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
+  exact B200 host packages; v1–v5 are archived and v6–v8 are superseded descriptors. Current matched Study fixtures
+  opt into a correctness-qualified, no-timing profiler assay; a live Study must re-freeze its exact broker command.
+  The current local suite passes 309 tests plus 214 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no

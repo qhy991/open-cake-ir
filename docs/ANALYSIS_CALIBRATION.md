@@ -240,6 +240,45 @@ publishing an uncalibrated order. The structural cost function remains as an exp
 dormant hypothesis so this instrument can test it; only a later reviewed Revision with a
 predeclared profile domain and useful top-k behavior may expose it publicly.
 
+## The inner-loop profile is a different observation
+
+`profile_lowered_kernel.py` above calibrates a Compiler report. The matched Lab's
+`attribution_evaluation` instead explains the exact sealed Candidate that just passed
+confirmatory Evaluation. It uses the same canonical worker and external oracle, but a
+separate NCU launch with timing structurally absent. The raw long-form CSV is the
+observation; the 11 retained metrics and feedback summary are projections that replay
+recomputes and can reject.
+
+The bounded B200 mechanism check used the frozen, previously correctness-qualified Triton
+`b32_smoke` CUBIN. Its profiled launch again produced 16,384/16,384 exact assignments,
+one target-kernel call, zero fallback calls and zero timing samples. The targeted profile
+reported 163 registers/thread and a two-CTA residency limit bound by shared memory; the
+separate full report measured 83,208 bytes/CTA. SM, DRAM and L2 throughput were 7.22%,
+3.37% and 2.25%; active warps were 2.45%; long-scoreboard and barrier stalls were 37.36%
+and 1.41%.
+
+The full report also shows only 64 CTAs for 148 SMs (`launch__waves_per_multiprocessor =
+0.216`). The two-CTA shared-memory limit is therefore a theoretical occupancy bound, not
+the realized concurrency limit at this shape: reducing shared memory alone cannot fill an
+SM that has no CTA. The first actionable hypothesis is a finer token grid, measured against
+the extra centroid traffic it creates. The second is improving load/compute overlap: source
+sampling placed
+426 of 502 long-scoreboard samples at `lowered.py:62`; six unavailable CTC metrics and four
+requested PM throughput series are reported as missing, not passed. These observations do
+not prove either change is faster.
+
+The complete external diagnostic root is
+`/home/qinhaiyan/open-cake-ir-evidence/ncu-attribution-20260824-v1`. This establishes the
+evaluator/profile/replay seam for one frozen Candidate and shape. It does not measure
+profiler-free latency, current Compiler performance, every search survivor, or a paper
+Campaign.
+
+The mechanism observation used working-v9 digest `52fb920a…`. After the profiled-launch
+correctness invariant was made fail-closed, final Executor digest `b1c30a16…` received two
+bounded two-job validation pairs; clean-card admission rejected all four jobs before module
+load or launch. They establish fail-closed zero-work behavior, not a dynamic pass of the
+final digest.
+
 
 ## Reproducing
 

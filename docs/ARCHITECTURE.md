@@ -158,38 +158,49 @@ The Lab owns every transition. The provider and the evaluator only return observ
 ```mermaid
 stateDiagram-v2
     direction TB
-    state "provider<br/>one candidate authored" as provider
-    state "environment<br/>compile / lower / seal" as environment
-    state "evaluation<br/>oracle then timing" as evaluation
+    state "provider<br/>candidate set authored" as provider
+    state "environment<br/>build / gate / seal each" as environment
+    state "filter<br/>deduplicate + covered rank" as filter
+    state "search<br/>oracle then CUPTI" as search
+    state "confirm<br/>fresh oracle then CUPTI" as confirm
+    state "profile<br/>fresh oracle under NCU<br/>no timing" as profile
     state "fault<br/>classified by live stage" as fault
     state budget <<choice>>
 
     [*] --> run_started
     run_started --> provider: Turn N
-    provider --> environment: candidate sealed
-    environment --> rejected: compile or assess fails
-    environment --> evaluation: launchable artifact
+    provider --> environment: set sealed
+    environment --> rejected: all candidates refused
+    environment --> filter: launchable artifacts
+    filter --> search: up to searches_per_turn
+    search --> confirm: select lowest qualified latency
+    confirm --> profile: qualified and Study opts in
+    confirm --> budget: not qualified / no attribution
+    profile --> budget: checked summary retained
     rejected --> budget: findings become feedback
-    evaluation --> budget: receipt becomes feedback
 
     budget --> provider: budget remains
     budget --> checkpoints: budget exhausted
 
     provider --> fault: any exception
     environment --> fault
-    evaluation --> fault
+    filter --> fault
+    search --> fault
+    confirm --> fault
+    profile --> fault
     fault --> checkpoints
     checkpoints --> endpoint
     endpoint --> sealed: terminal archive
     sealed --> [*]
 ```
 
-The paper's inner loop has four stages — generate several structurally distinct
-candidates, **filter** them with construction checks, verifier gates and cost-model
-ranking before spending GPU time, evaluate the survivors, then route the evidence. The
-prompt here says *write exactly one candidate*, so there is no candidate set and the
-filter stage has nowhere to exist. That is the largest remaining divergence; diagram 6
-places it.
+The four paper stages now have one control path: a provider Turn can return a candidate
+set; every member is built and gated, equivalent programs are evaluated once, released
+ranking coverage may order them, and `searches_per_turn` bounds GPU work. Search selects
+one qualified Candidate for a fresh confirmatory assay. When the Study opts in, a separate
+correctness-qualified NCU launch explains that confirmed Candidate and its checked summary
+becomes next-Turn feedback. The remaining paper gap is breadth: this smallest slice does
+not profile every search survivor, and no scientific Campaign has exercised it.
 
 ---
 
@@ -244,7 +255,7 @@ graph LR
     CH --> FIL["<b>filter</b><br/>gates + covered rank<br/>before GPU time"]
     FIL --> EX["compile → oracle → CUPTI timing"]
     EX --> EVD["retained evidence"]
-    EX -.-> PROF["profiler attribution<br/><i>receipt/replay only</i>"]
+    EX --> PROF["profiler attribution<br/><i>correctness + raw-checked NCU</i>"]
     PROF -.-> EVD
     EVD -->|"inner loop: route to candidate ·<br/>verifier · vocabulary · cost model"| AE
     EVD -->|"outer loop<br/>corpus gate + human merge"| CH
@@ -268,7 +279,7 @@ graph LR
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
 | Compile → external oracle → GPU timing | implemented, B200-verified on 5 emitted operators |
-| Profiler evidence in the inner loop | partial — attribution receipt and replay are implemented, but the canonical B200 evaluator refuses attribution, so the paper's fourth-stage evidence bundle is not yet complete |
+| Profiler evidence in the inner loop | partial relative to the paper — the canonical no-timing NCU assay, raw/profile replay and next-Turn feedback are implemented and the mechanism is B200-exercised for one selected confirmed Candidate; the final Executor digest has only zero-work clean-card rejection evidence, while every evaluated survivor and a scientific Campaign are not yet covered |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
 | Deterministic lowering | `lower` generates for 6 of the 7 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke`, `layernorm_b8_smoke` and `gemm_bias_b1_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file |
 | The filter stage | partial — construction and verifier filtering are implemented, but v8 exposes no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |

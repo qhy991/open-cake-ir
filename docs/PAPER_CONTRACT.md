@@ -104,9 +104,9 @@ an explicit treatment prior: the resulting Study can measure package effectivene
 | Plateau | Prespecified but definition unavailable | Run the declared budget; compute plateau only as an offline diagnostic |
 | Isolation | Isolated clean start and post-run audit | Allowlisted workspace plus complete file/tool/event trace |
 | Timing | B200, CUPTI, cold-L2 samples | Freeze physical GPU and environment evidence; retain every raw sample |
-| Dynamic attribution | Benchmark and profiler evidence for evaluated survivors | Attribution receipt/replay is implemented, but the canonical B200 evaluator refuses profiler assays; the current inner loop is therefore short of the paper |
+| Dynamic attribution | Benchmark and profiler evidence for evaluated survivors | The canonical evaluator now runs a separate correctness-qualified NCU assay, retains raw CSV plus a replay-checked projection, and routes the selected confirmed Candidate's profile without treating profiler duration as timing. This is a complete narrow vertical slice, but not yet profiler coverage for every evaluated survivor or a scientific Campaign |
 | Static ranking | Calibrated pre-GPU cost ranking | The structural hypothesis is implemented and measurable, but v8 coverage is empty after declared-domain B200 checks; public ranking reports missing coverage |
-| Static feedback | Typed IR verifier and analysis vs compiler diagnostics | One static channel per arm, matched in kind: the Compiler's Findings for a Schedule, ptxas resource output for authored CUDA. Neither arm receives profiler evidence, so the measured contrast is representation, not one author alone being told its register count |
+| Static feedback | Typed IR verifier and analysis vs compiler diagnostics | One static channel per arm, matched in kind: the Compiler's Findings for a Schedule, ptxas resource output for authored CUDA. A Study that opts into attribution gives both arms the same bounded, raw-checked profiler projection after confirmation |
 | Generalization | Separate portfolio stage | Implement only the frozen r45 three-shape reconstruction; do not call it arbitrary-shape or paper generalization |
 
 The final legacy r42 Campaign completed but its preregistered 150k checkpoint Estimand was unavailable. That does

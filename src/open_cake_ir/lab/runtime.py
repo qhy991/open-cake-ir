@@ -176,7 +176,11 @@ class CommandBrokerSubmitter:
     ) -> BrokerAttempt:
         """Run one job; BoundedBrokerEvaluator decides whether another is admitted."""
 
-        if attempt not in {1, 2} or not candidate.artifact_payloads:
+        if (
+            attempt not in {1, 2}
+            or purpose not in {"search", "confirmatory", "attribution"}
+            or not candidate.artifact_payloads
+        ):
             raise ValueError("broker attempt number or Candidate custody differs")
         with tempfile.TemporaryDirectory(prefix="open-cake-evaluation-") as directory:
             root = Path(directory).resolve()
@@ -211,12 +215,12 @@ class CommandBrokerSubmitter:
             os.chown(request_path, -1, self._service_gid)
             request_path.chmod(0o640)
             command = [
-                    *self._command,
-                    "--request",
-                    str(request_path),
-                    "--output",
-                    str(result_path),
-                ]
+                *self._command,
+                "--request",
+                str(request_path),
+                "--output",
+                str(result_path),
+            ]
             environment = sanitized_environment(tuple(self._REMOVED_ENVIRONMENT))
             try:
                 completed = run_supervised(
@@ -306,11 +310,15 @@ class CommandBrokerSubmitter:
                 }:
                     raise ValueError("evaluator receipt fields differ")
                 artifact_refs = receipt_value["artifacts"]
-                if not isinstance(artifact_refs, Mapping) or set(artifact_refs) != {
-                    "correctness_output",
-                    "launch_receipt",
-                    "timing_samples",
-                }:
+                expected_artifacts = (
+                    {"correctness_output", "launch_receipt", "profile"}
+                    if purpose == "attribution"
+                    else {"correctness_output", "launch_receipt", "timing_samples"}
+                )
+                if (
+                    not isinstance(artifact_refs, Mapping)
+                    or set(artifact_refs) != expected_artifacts
+                ):
                     raise ValueError("evaluator receipt artifact roles differ")
                 payloads = {
                     str(role): self._read_output_artifact(root, path, str(role))

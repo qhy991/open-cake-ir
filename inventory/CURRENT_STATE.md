@@ -1,7 +1,7 @@
 # Current-state inventory
 
 Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set replay repair,
-Executor v8 release and Compiler v8 release. The final legacy authority is clean revision
+inner-loop NCU attribution, Executor v9 release and Compiler v8 release. The final legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
 `migration/bundles/cake-repro-final-2fa79092.bundle` remains an independent complete-history copy. The 146-record
@@ -33,22 +33,22 @@ causal effect, serving and paper reproduction are not.
   `COMPILER_REVISION_IDENTITY_INCIDENT_20260824.json` records why v4 and v6 cannot be reused or treated as unique
   released identities. v8 exposes no uncalibrated cost order: its `calibration_coverage` is empty and eligible
   candidates retain provider order.
-- Current Executor Revision `open-cake-ir-b200-v8` binds 33 runtime sources, including deterministic external
-  Campaign custody and the GPU teaching smoke, plus
+- Current Executor Revision `open-cake-ir-b200-v9` binds 34 runtime sources, including deterministic external
+  Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
-  and no-GPU Triton-to-CUBIN
-  qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor. G8 r6 retains its exact v1
-  closure, later source baselines retain v2–v5, and v6/v7 are superseded;
-  `inventory/EXECUTOR_REVISIONS.json` resolves all eight revisions.
+  and no-GPU Triton-to-CUBIN qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor.
+  The Executor pins NCU 2026.1.1.0 by path, bytes and size. G8 r6 retains its exact v1 closure, later source baselines
+  retain v2–v5, and v6–v8 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all nine revisions.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
 - Lab owns matched Turn/budget/checkpoint control and the exact-shape Portfolio handoff; Compiler does not own
   KernelSeed or held-out policy.
 - Common Evaluation has sealed artifact custody, bounded broker-attempt semantics, shape-bound persistent Driver
-  loading, raw Portfolio cohorts and semantic replay. Candidate-set replay uses `(turn, candidate_sha256)` and
+  loading, raw Portfolio cohorts, raw-checked NCU attribution and semantic replay. Candidate-set replay uses `(turn, candidate_sha256)` and
   attempt replay uses `(turn, purpose, candidate_sha256)`; qualification precedes selection and the selected
-  candidate retains its own findings.
+  candidate retains its own findings. Attribution is a separate correctness-qualified launch with no timing; its
+  summary is recomputed from the retained CSV before archival and again during audit.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 306 tests plus 214 subtests; the earlier remote qualification passed its
+- The current local contract suite passes 309 tests plus 214 subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
@@ -58,6 +58,14 @@ causal effect, serving and paper reproduction are not.
 - The beginner `b32_smoke` path has a fresh B200 observation: one candidate kernel launch from the loaded CUBIN,
   16,384/16,384 exact assignments, no fallback, synchronized unload, and explicitly no performance or scientific
   claim.
+- The NCU vertical slice has a correctness-qualified B200 observation under
+  `/home/qinhaiyan/open-cake-ir-evidence/ncu-attribution-20260824-v1`: one profiled target launch, zero timing
+  samples, 16,384/16,384 exact assignments, and a replay-checked 11-metric profile. Full/PM/source reports expose
+  grid underfill, a theoretical shared-memory residency limit and long-scoreboard pressure. This validates the
+  evaluator mechanism and one frozen b32 Candidate; it is not current-kernel performance, every-survivor coverage
+  or a scientific Campaign. That mechanism pass used a v9 precursor. Two bounded validation pairs for the final
+  `b1c30a16…` closure were rejected by clean-card admission before any module load or launch, so no dynamic pass of
+  the final Executor digest is claimed.
 - New Campaign Locks and Evidence roots are create-only and must be outside the checkout; historical in-checkout
   Campaigns remain read-only replay inputs.
 

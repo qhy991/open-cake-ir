@@ -10,10 +10,10 @@ supports a broader scientific claim.
 | G0 | passed | final HEAD/tree, 146-record manifest and verified complete-history bundle |
 | G1 | passed | ADR 0001 plus the real second-use Portfolio extension in ADR 0002 |
 | G2 | passed | deterministic public assess/lower, localized negative, exact Target and dependency isolation |
-| G3 | passed | v7 16-case Corpus Gate, released content-bound Revision lock, reviewed approval and 32-source closure |
-| G4 | passed for migrated evidence | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles and raw r45 replay pass |
+| G3 | passed | v8 16-case Corpus Gate, released content-bound Revision lock, reviewed approval and 32-source closure |
+| G4 | passed for migrated evidence and the bounded attribution slice | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles, raw r45 replay, and raw-checked no-timing NCU attribution |
 | G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay and matched/Portfolio semantic replay pass |
-| G6 | passed | 303 contract tests + 212 subtests; candidate-set selection/replay, external Campaign custody, Lab authority, GPU tutorial custody and all three matched Claim Scopes pass |
+| G6 | passed | 309 tests + 214 subtests cover candidate-set selection/replay, external Campaign custody, Lab authority, GPU tutorial custody, attribution replay and all three matched Claim Scopes |
 | G7 | passed | r4 proves two-Turn add/update, thread/usage/sandbox/cwd/reference continuity and the closed feature denylist |
 | G7F | passed | tool-rich v1 injects no feature disables and replays shell activity on initial and resumed Turns |
 | G8 | passed | r6 has two adhered Runs, four replayed Evaluation Receipts and an independent offline system-qualification pass |
@@ -74,6 +74,9 @@ Require:
 - authored, lowered, compiler-expanded source, PTX, CUBIN and SASS remain distinct artifact kinds;
 - correctness always precedes timing and fallback/route counts are explicit;
 - one Candidate can receive separate search and confirmatory Evaluation Receipts;
+- a Study may add one post-confirmation attribution Receipt whose observed launch passes
+  the same external oracle, has no timing, retains the exact profiler output and rejects a
+  summary that cannot be recomputed from it;
 - measurement quality failure is distinct from candidate disposition.
 
 Failure blocks Lab implementation and deletion of legacy evaluators.

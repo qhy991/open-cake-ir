@@ -464,12 +464,16 @@ def _replay_broker_attempt_ledger(
                 raise ValueError("broker attempt receipt seal differs")
             receipt = _object(raw_receipt, "broker_record.receipt")
             artifacts = _object(receipt.get("artifacts"), "broker_record.receipt.artifacts")
+            expected_receipt_artifacts = (
+                {"correctness_output", "launch_receipt", "profile"}
+                if final_receipt.purpose == "attribution"
+                else {"correctness_output", "launch_receipt", "timing_samples"}
+            )
             if (
                 set(receipt) != receipt_fields
-                or set(artifacts)
-                != {"correctness_output", "launch_receipt", "timing_samples"}
+                or set(artifacts) != expected_receipt_artifacts
                 or any(not isinstance(path, str) or not path for path in artifacts.values())
-                or len(set(artifacts.values())) != 3
+                or len(set(artifacts.values())) != len(expected_receipt_artifacts)
                 or result.get("admitted") is not True
                 or result.get("error") is not None
                 or receipt.get("correctness_passed") is not final_receipt.correctness_passed
@@ -1493,14 +1497,23 @@ class Lab:
             "tool_surface"
         ) != ["submit_cuda"]:
             raise ValueError("Study Contract Authoring Environment tool surfaces differ")
+        attribution_evaluation = _object(
+            study.document.get("evaluation_protocol"),
+            "study.evaluation_protocol",
+        ).get("attribution_evaluation")
+        if attribution_evaluation not in {None, "correctness_then_profile"}:
+            raise ValueError("Study Contract attribution Evaluation differs")
+        profile_feedback = ["profile"] if attribution_evaluation is not None else []
         if open_cake.get("feedback") != [
             "findings",
             "correctness",
             "qualified_timing",
+            *profile_feedback,
         ] or direct_cuda.get("feedback") != [
             "compile",
             "correctness",
             "qualified_timing",
+            *profile_feedback,
         ]:
             raise ValueError("Study Contract Authoring Environment feedback differs")
         compiler_ref = _object(
@@ -2534,12 +2547,24 @@ class Lab:
                         # that did not would spend device time to explain a result nobody
                         # will act on, and the assay is declared by the Study rather than
                         # assumed so a Campaign that cannot afford it simply omits it.
+                        attribution: EvaluationReceipt | None = None
                         if qualified and "attribution_evaluation" in evaluation_protocol:
                             live_stage = "evaluation"
                             attribution_attempt = evaluator.evaluate(
                                 launchable,
                                 case_id=case_id,
                                 purpose="attribution",
+                            )
+                            ledger.append(
+                                "evaluation_attempt_completed",
+                                {
+                                    "turn": turn_number,
+                                    "purpose": "attribution",
+                                    "candidate_sha256": launchable.candidate_sha256,
+                                    "objects": _archive_logical_attempt(
+                                        evidence, attribution_attempt
+                                    ),
+                                },
                             )
                             attribution = attribution_attempt.final_receipt
                             if attribution is None:
@@ -2575,19 +2600,27 @@ class Lab:
                         # A measurement says what this candidate cost; the Environment's
                         # surviving findings say which declared resource is what bounds
                         # it. Only the pair is actionable, so the next Turn gets both.
-                        feedback = MappingProxyType(
-                            {
-                                "kind": "evaluation",
-                                "candidate_disposition": search.candidate_disposition,
-                                "measurement_quality": search.measurement_quality,
-                                "confirmed": qualified,
-                                "search_latency_ms": _receipt_latency_ms(search),
-                                "confirmed_latency_ms": latency,
-                                "findings": environment_result.feedback.get(
-                                    "findings", []
-                                ),
-                            }
-                        )
+                        feedback_document: dict[str, object] = {
+                            "kind": "evaluation",
+                            "candidate_disposition": search.candidate_disposition,
+                            "measurement_quality": search.measurement_quality,
+                            "confirmed": qualified,
+                            "search_latency_ms": _receipt_latency_ms(search),
+                            "confirmed_latency_ms": latency,
+                            "findings": environment_result.feedback.get("findings", []),
+                        }
+                        if "attribution_evaluation" in evaluation_protocol:
+                            attribution_feedback = (
+                                attribution.attribution_feedback
+                                if attribution is not None
+                                else None
+                            )
+                            feedback_document["profile"] = (
+                                dict(attribution_feedback)
+                                if attribution_feedback is not None
+                                else None
+                            )
+                        feedback = MappingProxyType(feedback_document)
                     if cumulative_tokens >= cast(int, budget["limit"]):
                         break
             except Exception as error:
@@ -3128,7 +3161,7 @@ class Lab:
                 or not isinstance(turn, int)
                 or isinstance(turn, bool)
                 or turn <= 0
-                or purpose not in {"search", "confirmatory"}
+                or purpose not in {"search", "confirmatory", "attribution"}
                 or not isinstance(candidate_sha256, str)
                 or _DIGEST.fullmatch(candidate_sha256) is None
                 or not isinstance(payload.get("objects"), list)
@@ -3228,7 +3261,8 @@ class Lab:
                     != {"correctness_output", "launch_receipt", "timing_samples"}
                 ) or (
                     purpose == "attribution"
-                    and not {"correctness_output", "launch_receipt"} <= set(expected_raw)
+                    and set(expected_raw)
+                    != {"correctness_output", "launch_receipt", "profile"}
                 ):
                     return False
                 raw_payloads: dict[str, bytes] = {}
@@ -3275,18 +3309,17 @@ class Lab:
                     return False
                 receipts[receipt_key] = validated_receipt
                 receipt_order.append(receipt_key)
-                if purpose in {"search", "confirmatory"}:
-                    attempt_payload = attempt_payloads.get(receipt_key)
-                    if attempt_payload is None:
-                        return False
-                    replayed_attempts.add(receipt_key)
-                    _replay_evaluation_attempt_event(
-                        evidence,
-                        attempt_payload,
-                        candidate=launchable,
-                        protocol_sha256=protocol_sha256,
-                        final_receipt=validated_receipt,
-                    )
+                attempt_payload = attempt_payloads.get(receipt_key)
+                if attempt_payload is None:
+                    return False
+                replayed_attempts.add(receipt_key)
+                _replay_evaluation_attempt_event(
+                    evidence,
+                    attempt_payload,
+                    candidate=launchable,
+                    protocol_sha256=protocol_sha256,
+                    final_receipt=validated_receipt,
+                )
         unreplayed_attempts = set(attempt_payloads) - replayed_attempts
         if unreplayed_attempts:
             if len(unreplayed_attempts) != 1 or len(faults) != 1:

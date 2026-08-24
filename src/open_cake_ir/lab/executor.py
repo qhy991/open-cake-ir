@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import importlib.util
 import json
+import os
 import sys
 from dataclasses import dataclass
 from hashlib import sha256
@@ -162,11 +163,15 @@ class ExecutorRevision:
 
     @staticmethod
     def _validate_host_document(host: Mapping[str, object]) -> None:
-        if set(host) != {
+        legacy_fields = {
             "python",
             "packages",
             "cupti_python",
             "flashinfer_helper",
+        }
+        if frozenset(host) not in {
+            frozenset(legacy_fields),
+            frozenset(legacy_fields | {"nsight_compute"}),
         }:
             raise ValueError("Executor host environment fields differ")
         python = host["python"]
@@ -224,6 +229,21 @@ class ExecutorRevision:
             or helper["size_bytes"] <= 0
         ):
             raise ValueError("Executor FlashInfer helper size differs")
+        if "nsight_compute" in host:
+            profiler = host["nsight_compute"]
+            if (
+                not isinstance(profiler, Mapping)
+                or set(profiler) != {"path", "version", "sha256", "size_bytes"}
+                or not isinstance(profiler["path"], str)
+                or not Path(profiler["path"]).is_absolute()
+                or not isinstance(profiler["version"], str)
+                or not profiler["version"]
+                or not isinstance(profiler["size_bytes"], int)
+                or isinstance(profiler["size_bytes"], bool)
+                or profiler["size_bytes"] <= 0
+            ):
+                raise ValueError("Executor Nsight Compute authority differs")
+            _digest(profiler["sha256"], "executor.nsight_compute.sha256")
 
     @property
     def reference(self) -> Mapping[str, str]:
@@ -304,3 +324,21 @@ class ExecutorRevision:
         if any(not callable(getattr(module, name, None)) for name in required):
             raise ValueError("Executor FlashInfer helper surface differs")
         return module
+
+    def admit_profiler(self) -> Mapping[str, object]:
+        """Verify and return the optional exact NCU executable for attribution."""
+
+        host = cast(Mapping[str, object], self.document["host_environment"])
+        if "nsight_compute" not in host:
+            raise ValueError("Executor Revision does not pin Nsight Compute")
+        profiler = cast(Mapping[str, object], host["nsight_compute"])
+        path = Path(str(profiler["path"]))
+        if path.is_symlink() or not path.is_file() or not os.access(path, os.X_OK):
+            raise ValueError("Executor Nsight Compute custody differs")
+        payload = path.read_bytes()
+        if (
+            sha256(payload).hexdigest() != profiler["sha256"]
+            or len(payload) != profiler["size_bytes"]
+        ):
+            raise ValueError("Executor Nsight Compute bytes differ")
+        return MappingProxyType(dict(profiler))

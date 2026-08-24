@@ -120,6 +120,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "open-cake-ir-live-g8-contract-fixture",
                 "--output",
                 str(output),
+                "--enable-attribution",
             ]
 
             completed = subprocess.run(
@@ -140,6 +141,12 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             self.assertEqual(output.stat().st_mode & 0o444, 0o444)
             study = json.loads(output.read_text())
             self.assertEqual(
+                study["evaluation_protocol"]["attribution_evaluation"],
+                "correctness_then_profile",
+            )
+            self.assertEqual(study["arms"]["open_cake"]["feedback"][-1], "profile")
+            self.assertEqual(study["arms"]["direct_cuda"]["feedback"][-1], "profile")
+            self.assertEqual(
                 study["arms"]["open_cake"]["provider"]["qualification_anchor"][
                     "canonical_sha256"
                 ],
@@ -156,6 +163,31 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 check=False,
             )
             self.assertNotEqual(repeated.returncode, 0)
+
+            generic_output = project / "contracts/studies/unsafe-generic-live.json"
+            generic = subprocess.run(
+                [
+                    sys.executable,
+                    str(project / "tools/create_study_successor.py"),
+                    "--project-root",
+                    str(project),
+                    "--source",
+                    str(output),
+                    "--output",
+                    str(generic_output),
+                    "--study-id",
+                    "unsafe-generic-live",
+                ],
+                cwd=project,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30,
+                check=False,
+            )
+            self.assertNotEqual(generic.returncode, 0)
+            self.assertIn(b"broker execution authority is refreshed", generic.stderr)
+            self.assertFalse(generic_output.exists())
 
 
 if __name__ == "__main__":

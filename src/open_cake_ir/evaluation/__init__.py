@@ -47,6 +47,12 @@ from .portfolio import (
     replay_portfolio_receipt,
 )
 from .portfolio_runtime import CuptiBenchmark, CuptiPortfolioAssay, StrictCuptiBenchmark
+from .profiler import (
+    NCU_ATTRIBUTION_METRICS,
+    build_ncu_attribution_profile,
+    load_ncu_attribution_profile,
+    ncu_attribution_feedback,
+)
 from .timing import (
     PairedTimingObservation,
     PairedTimingProtocol,
@@ -86,6 +92,10 @@ __all__ = [
     "CuptiBenchmark",
     "CuptiPortfolioAssay",
     "StrictCuptiBenchmark",
+    "NCU_ATTRIBUTION_METRICS",
+    "build_ncu_attribution_profile",
+    "load_ncu_attribution_profile",
+    "ncu_attribution_feedback",
     "replay_legacy_r45_result",
     "observe_exclusive_b200",
     "DispatchReceipt",

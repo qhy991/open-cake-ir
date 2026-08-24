@@ -67,6 +67,11 @@ def main() -> int:
     parser.add_argument("--runtime-config", type=Path, required=True)
     parser.add_argument("--study-id", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--enable-attribution",
+        action="store_true",
+        help="declare correctness_then_profile and expose its checked summary",
+    )
     arguments = parser.parse_args()
 
     root = arguments.project_root.resolve(strict=True)
@@ -177,6 +182,19 @@ def main() -> int:
         service_user=str(broker_config["service_user"]),
         service_group=str(broker_config["service_group"]),
     )
+    if arguments.enable_attribution:
+        evaluation = _object(
+            study.get("evaluation_protocol"), "study.evaluation_protocol"
+        )
+        if "attribution_evaluation" in evaluation:
+            raise ValueError("Study attribution Evaluation is already declared")
+        evaluation["attribution_evaluation"] = "correctness_then_profile"
+        for arm in arms.values():
+            environment = _object(arm, "study.arm")
+            feedback = environment.get("feedback")
+            if not isinstance(feedback, list) or "profile" in feedback:
+                raise ValueError("Study attribution feedback authority differs")
+            feedback.append("profile")
     study["study_id"] = arguments.study_id
 
     output.parent.resolve(strict=True)

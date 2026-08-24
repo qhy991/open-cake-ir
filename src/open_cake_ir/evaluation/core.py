@@ -16,6 +16,7 @@ from .flash_kmeans import (
     flash_kmeans_oracle,
     generate_flash_kmeans_case,
 )
+from .profiler import load_ncu_attribution_profile, ncu_attribution_feedback
 from .workload import WorkloadContract
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -235,6 +236,10 @@ class EvaluationReceipt:
             or self.kernel_calls != 1
             or self.fallback_calls != 0
             or (self.purpose == "attribution" and self.timing is not None)
+            # The profile describes this launch, not the earlier confirmatory one. An
+            # incorrect observed launch therefore cannot be attribution evidence even
+            # when the same sealed Candidate happened to pass before profiling.
+            or (self.purpose == "attribution" and not self.correctness_passed)
         ):
             raise ValueError("EvaluationReceipt identity or route differs")
         if self.artifact_payloads:
@@ -260,6 +265,12 @@ class EvaluationReceipt:
                 launch_raw = json.loads(self.artifact_payloads["launch_receipt"])
             except (UnicodeError, json.JSONDecodeError) as error:
                 raise ValueError("EvaluationReceipt raw artifacts are not JSON") from error
+            if self.purpose == "attribution":
+                load_ncu_attribution_profile(
+                    self.artifact_payloads["profile"],
+                    expected_candidate_sha256=self.candidate_sha256,
+                    expected_case_id=self.case_id,
+                )
             if not isinstance(correctness_raw, Mapping) or not isinstance(
                 launch_raw, Mapping
             ):
@@ -357,6 +368,19 @@ class EvaluationReceipt:
         if self.timing is None:
             return "not_measured"
         return "stable" if self.timing.get("measurement_quality_passed") is True else "unstable"
+
+    @property
+    def attribution_feedback(self) -> Mapping[str, object] | None:
+        """Return the raw-checked profiler projection for the next authoring Turn."""
+
+        if self.purpose != "attribution" or not self.artifact_payloads:
+            return None
+        profile = load_ncu_attribution_profile(
+            self.artifact_payloads["profile"],
+            expected_candidate_sha256=self.candidate_sha256,
+            expected_case_id=self.case_id,
+        )
+        return ncu_attribution_feedback(profile)
 
     @property
     def canonical_sha256(self) -> str:

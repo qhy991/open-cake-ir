@@ -18,12 +18,14 @@ from open_cake_ir.evaluation import (  # noqa: E402
     ExactShapeDispatcher,
     LaunchableCandidate,
     LaunchObservation,
+    NCU_ATTRIBUTION_METRICS,
     PairedTimingProtocol,
     PortfolioArtifact,
     PortfolioCaseObservation,
     WorkloadContract,
     assignment_raw_sha256,
     audit_flash_kmeans_assignment,
+    build_ncu_attribution_profile,
     classify_flash_kmeans_output,
     derive_paired_timing,
     evaluate_flash_kmeans,
@@ -39,6 +41,23 @@ from open_cake_ir.evaluation import (  # noqa: E402
     tensor_raw_sha256,
     tinygemm_oracle,
 )
+
+
+def _profile_fixture(candidate_sha256: str, case_id: str, kernel_name: str) -> bytes:
+    values = (95, 2, 2, 16, 8, 61.0, 24.0, 41.0, 37.0, 18.0, 3.0)
+    lines = ['"ID","Kernel Name","Metric Name","Metric Unit","Metric Value"']
+    for index, (metric, value) in enumerate(zip(NCU_ATTRIBUTION_METRICS, values)):
+        unit = "%" if "pct" in metric else "count"
+        lines.append(f'"{index}","{kernel_name}","{metric}","{unit}","{value}"')
+    return build_ncu_attribution_profile(
+        candidate_sha256=candidate_sha256,
+        case_id=case_id,
+        kernel_name=kernel_name,
+        ncu_version="2026.1.1.0",
+        ncu_executable_sha256="e" * 64,
+        stdout=("\n".join(lines) + "\n").encode(),
+        stderr=b"==PROF== fixture\n",
+    )
 
 
 class EvaluationContractTests(unittest.TestCase):
@@ -792,5 +811,64 @@ class AttributionAssayTest(unittest.TestCase):
                     "correctness_output": correctness,
                     "launch_receipt": launch,
                     "timing_samples": b"[]",
+                },
+            )
+
+    def test_profile_summary_is_recomputed_from_retained_ncu_csv(self) -> None:
+        launch = json.dumps(
+            {"candidate_sha256": "a" * 64, "purpose": "attribution"},
+            sort_keys=True,
+        ).encode()
+        correctness = json.dumps(
+            {"passed": True, "metrics": {"tie_aware_distance_match": True}},
+            sort_keys=True,
+        ).encode()
+        profile = _profile_fixture("a" * 64, "headline_b32", "kernel")
+        receipt = self._receipt(
+            launch_receipt_sha256=sha256(launch).hexdigest(),
+            artifact_payloads={
+                "correctness_output": correctness,
+                "launch_receipt": launch,
+                "profile": profile,
+            },
+        )
+        self.assertEqual(
+            receipt.attribution_feedback["occupancy"]["binding_resources"],
+            ["registers", "shared_memory"],
+        )
+        self.assertEqual(
+            receipt.attribution_feedback["signals"]["long_scoreboard_stall_pct"],
+            18.0,
+        )
+
+        tampered = json.loads(profile)
+        tampered["summary"]["occupancy"]["resident_ctas_per_sm"] = 3.0
+        with self.assertRaisesRegex(ValueError, "projection differs"):
+            self._receipt(
+                launch_receipt_sha256=sha256(launch).hexdigest(),
+                artifact_payloads={
+                    "correctness_output": correctness,
+                    "launch_receipt": launch,
+                    "profile": json.dumps(
+                        tampered, sort_keys=True, separators=(",", ":")
+                    ).encode(),
+                },
+            )
+
+    def test_profiled_launch_must_itself_pass_correctness(self) -> None:
+        launch = b'{"candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+        correctness = json.dumps(
+            {"passed": False, "metrics": {"tie_aware_distance_match": False}},
+            sort_keys=True,
+        ).encode()
+        with self.assertRaisesRegex(ValueError, "identity or route differs"):
+            self._receipt(
+                correctness_passed=False,
+                correctness={"tie_aware_distance_match": False},
+                launch_receipt_sha256=sha256(launch).hexdigest(),
+                artifact_payloads={
+                    "correctness_output": correctness,
+                    "launch_receipt": launch,
+                    "profile": _profile_fixture("a" * 64, "headline_b32", "kernel"),
                 },
             )

@@ -268,6 +268,27 @@ fixed CompilerRevision + fixed Study/Workload Contracts
   -> next Turn or terminal
 ```
 
+For a Study that declares `attribution_evaluation`, the smallest complete profiler slice
+stays inside that same Evaluation path:
+
+- the outcome is one correctness-qualified candidate launch observed by Nsight Compute,
+  retained and routed into the next Turn; profiler latency is a non-goal;
+- the Study owns whether the assay runs, the Executor owns the exact NCU executable, and
+  the `profile` artifact owns the raw NCU CSV. Its metric summary is a checked projection
+  recomputed from those bytes, never a second handwritten observation;
+- `purpose=attribution` selects the assay in the existing evaluator. NCU launches an
+  internal child of that evaluator for the same sealed CUBIN, Workload case, oracle and
+  launch manifest; this is not another runtime, Candidate route or acceptance path;
+- timing is structurally absent. Missing target-kernel rows, missing declared metrics,
+  malformed values, incorrect output, profiler failure or mismatched tool bytes fail the
+  attribution attempt instead of reading as coverage;
+- released Study and Executor bytes remain history. Successor Studies can opt into the
+  assay; legacy descriptors remain loadable only as bounded read compatibility and cannot
+  execute an attribution request without a pinned profiler;
+- acceptance evidence is a contract test that rejects a summary/raw mismatch, semantic
+  replay of the retained artifact, and one brokered exclusive-B200 run that produces the
+  declared metric set without contributing a timing value.
+
 ### Outer loop: compiler evolution
 
 ```text

@@ -51,6 +51,14 @@ class ExecutorRevisionContractTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             executor.document["host_environment"]["packages"]["torch"] = "changed"
 
+    def test_current_executor_pins_the_attribution_profiler(self) -> None:
+        profiler = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR).admit_profiler()
+        self.assertEqual(profiler["version"], "2026.1.1.0")
+        self.assertEqual(
+            profiler["sha256"],
+            sha256(Path(str(profiler["path"])).read_bytes()).hexdigest(),
+        )
+
     def test_g8_inventory_resolves_the_complete_historical_executor(self) -> None:
         inventory = json.loads(
             (ROOT / "inventory/G8_SYSTEM_QUALIFICATION_20260822.json").read_text()

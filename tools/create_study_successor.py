@@ -39,6 +39,11 @@ def main() -> int:
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--study-id", required=True)
+    parser.add_argument(
+        "--enable-attribution",
+        action="store_true",
+        help="declare correctness_then_profile and expose its checked summary",
+    )
     arguments = parser.parse_args()
 
     root = arguments.project_root.resolve(strict=True)
@@ -66,6 +71,14 @@ def main() -> int:
     current_executor = _object(inventory.get("current"), "current Executor")
     executor = ExecutorRevision.load(root, root / str(current_executor["path"]))
     execution = _object(document.get("execution"), "Study.execution")
+    if (
+        document.get("kind") != "portfolio"
+        and execution.get("broker_execution_sha256") != "c" * 64
+    ):
+        raise ValueError(
+            "live Study successors require freeze_live_matched_study.py so the "
+            "broker execution authority is refreshed"
+        )
     execution["executor_revision"] = dict(executor.reference)
 
     compiler = Compiler.load(root, root / "compiler/revision.lock.json")
@@ -78,11 +91,24 @@ def main() -> int:
         "canonical_sha256": gate.compiler_revision_sha256,
     }
     if document.get("kind") == "portfolio":
+        if arguments.enable_attribution:
+            raise ValueError("portfolio does not use matched-search attribution")
         document["compiler_revision"] = compiler_reference
     else:
         arms = _object(document.get("arms"), "Study.arms")
         open_cake = _object(arms.get("open_cake"), "Study.arms.open_cake")
         open_cake["compiler_revision"] = compiler_reference
+        if arguments.enable_attribution:
+            evaluation = _object(
+                document.get("evaluation_protocol"), "Study.evaluation_protocol"
+            )
+            evaluation["attribution_evaluation"] = "correctness_then_profile"
+            for arm in arms.values():
+                environment = _object(arm, "Study.arm")
+                feedback = environment.get("feedback")
+                if not isinstance(feedback, list) or "profile" in feedback:
+                    raise ValueError("Study attribution feedback authority differs")
+                feedback.append("profile")
     document["study_id"] = arguments.study_id
 
     with tempfile.NamedTemporaryFile(
