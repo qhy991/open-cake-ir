@@ -1626,6 +1626,45 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
         self.assertIn("attribution", self._run(declare_attribution=True))
 
 
+class SearchBudgetTest(unittest.TestCase):
+    """A malformed search budget is refused at the boundary, not partway through a run.
+
+    `searches_per_turn` reaches a slice of the ranked candidates, so zero would index an
+    empty list and a string would raise while the run was already under way. A run that
+    faults has spent the GPU time this Lab exists to gate before spending it.
+    """
+
+    def _preflight(self, value):
+        lab = Lab(ROOT)
+        source = ROOT / "contracts/studies/matched-search-infrastructure-v4.json"
+        document = json.loads(source.read_text(encoding="utf-8"))
+        if value is None:
+            document["evaluation_protocol"].pop("searches_per_turn", None)
+        else:
+            document["evaluation_protocol"]["searches_per_turn"] = value
+        with tempfile.TemporaryDirectory() as directory:
+            study_path = Path(directory) / "successor.json"
+            study_path.write_text(
+                json.dumps(document, sort_keys=True, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            return lab.preflight(study_path)
+
+    def test_only_a_positive_count_is_admitted(self) -> None:
+        for value in (0, -1, "two", 1.5, True, [2]):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    self._preflight(value)
+
+        # Absent means one, which is the behaviour every Study had before the field.
+        lock = self._preflight(None)
+        self.assertNotIn("searches_per_turn", lock.document["evaluation_protocol"])
+        # And a real budget survives into the Lock, where the run reads it without
+        # re-parsing: preflight is the only place this value is judged.
+        lock = self._preflight(3)
+        self.assertEqual(lock.document["evaluation_protocol"]["searches_per_turn"], 3)
+
+
 class CostModelRouteTest(unittest.TestCase):
     """The fourth destination, unlocked by evaluating more than one candidate.
 

@@ -1563,6 +1563,12 @@ class Lab:
             study.document.get("evaluation_protocol"), "study.evaluation_protocol"
         )
         workload.case(_name(evaluation.get("case_id"), "study.evaluation_protocol.case_id"))
+        # How many candidates a Turn search-evaluates. Checked here because a Study that
+        # asks for none, or for a word, would otherwise fault partway through a run --
+        # and a run that faults has already spent the GPU time this Lab exists to gate.
+        searches = evaluation.get("searches_per_turn", 1)
+        if not isinstance(searches, int) or isinstance(searches, bool) or searches < 1:
+            raise ValueError("Study Contract searches_per_turn differs")
         execution = _object(study.document.get("execution"), "study.execution")
         if set(execution) != {
             "target",
@@ -2200,9 +2206,7 @@ class Lab:
                         # Search-evaluate the candidates the filter kept, in its order.
                         # Search is the assay that exists to choose; confirmatory stays
                         # single because that one is the measurement a claim rests on.
-                        budget_k = int(
-                            evaluation_protocol.get("searches_per_turn", 1)
-                        )
+                        budget_k = evaluation_protocol.get("searches_per_turn", 1)
                         searched: list[tuple[object, EvaluationReceipt]] = []
                         for position in launchable_first[:budget_k]:
                             entry_submission, entry_result = built[position]
