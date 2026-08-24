@@ -88,8 +88,9 @@ remeasurement or known-kernel lanes; they are prohibited clean-start inputs and 
 The currently cited public material does not provide the exact original compiler revision, full IR schema and
 semantics, verifier rules and coverage, cost model and calibration, agent scaffold/prompts, raw clean-start
 trajectories, complete token receipts and CUPTI samples, formal plateau definition, isolation implementation,
-or exact dispatcher shards. Therefore this project must not claim byte-for-byte CAKE reconstruction or compare
-its 150k-token local campaign directly with the paper's 80M-token result.
+or exact dispatcher shards. Therefore this project must not claim byte-for-byte CAKE reconstruction or compare any
+local artifact-optimization Campaign—including v4's 8M turn-discrete engineering horizon—with the paper's
+80M-token result.
 
 Clean-start provenance must include the Compiler Revision, its Corpus, scaffold, memory, diagnostic surface and
 the complete frozen reference bundle embedded in each Turn prompt. If a local compiler was evolved from prior observations of the same task, that history is

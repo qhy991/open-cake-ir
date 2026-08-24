@@ -37,3 +37,14 @@ closed semantic vocabulary, provide no candidate implementation, use no GPU, and
 - The terminal token checkpoint remains observational and turn-discrete; overshoot does not backfill it.
 - Artifact promotion remains non-scientific and per-Run. The new horizon cannot support an arm comparison or paper
   claim.
+
+## Validation
+
+Artifact Campaign v4 binds Study SHA `3e698c91c152bfabe03ee7c4b9abe545e8b391cbc68de959d9881931de43b124`
+and Campaign Lock SHA `45c2d30e39e14e7f0afd732f5efe0494e12a07d408826eb50a68d22f94ce4611`.
+Both Runs adhere and execute exactly two same-thread Turns. Open Cake changes its second candidate set in response to
+retained timing/NCU feedback
+and improves its own confirmation from 1.851297 ms to 1.417239 ms. Direct CUDA also changes its second set but regresses
+from 4.156109 ms to 8.814379 ms, so the per-Run promotion correctly retains Turn 1. Fresh audit reports archive
+integrity and semantic replay true, zero missing Runs, and no Estimand. No Turn emits an auxiliary-agent lifecycle;
+the Campaign validates feedback and role separation, not multi-agent effectiveness.

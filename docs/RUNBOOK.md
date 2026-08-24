@@ -194,11 +194,21 @@ lowest-latency confirmatory-qualified Candidate per Run, with earliest Turn as
 tie-break; it never reports qualification rates, arm medians, ratios, uncertainty or scientific inclusion. External
 mutation and direct GPU measurement remain unauthorized even when those tools are visible.
 
-The retained Executor-v16 live qualification is
-`/home/qinhaiyan/open-cake-ir-evidence/campaigns/artifact-optimization-live-v3`. Both Runs adhere and promote one
-confirmatory-qualified artifact; fresh audit reports `artifact_optimization_complete=true`. Each first Turn exceeded
-the 150k provider-token budget, so neither Run resumed. The retained per-Run latencies are artifact-ranking evidence
-only and must not be compared as an arm effect.
+The current retained Executor-v16 feedback Campaign is
+`/home/qinhaiyan/open-cake-ir-evidence/campaigns/artifact-optimization-live-v4`. It declares one 8M terminal
+provider-token checkpoint and a hard two-Turn bound. Both Runs adhere, resume the same thread once, and fresh audit
+reports archive integrity, semantic replay and `artifact_optimization_complete=true`. Open Cake uses 2,921,505 total
+provider tokens and promotes its Turn-2 artifact at 1.417239 ms after a 1.851297 ms Turn-1 confirmation. Direct CUDA
+uses 16,934,227 total provider tokens and retains its 4.156109 ms Turn-1 artifact after the Turn-2 selection confirms
+at 8.814379 ms. The Open Cake checkpoint is `unreached`; Direct CUDA's crossing Turn cannot backfill the checkpoint,
+so its Turn-1 artifact remains the endpoint at 8M. Artifact promotion remains a separate per-Run view over every
+confirmatory receipt.
+
+All four raw provider Turns contain command/file activity and no auxiliary-agent lifecycle. Feature exposure is not
+evidence that an agent was used. v4 validates a KDA-style authority boundary—one resumed writer and an external
+judge—not a multi-agent result. The retained per-Run latencies and provider usage are artifact-ranking observations
+only and must not be compared as an arm effect or with the paper's 80M-token Study. v3 remains the immutable earlier
+Campaign that exposed the ineffective 150k feedback horizon.
 
 ## 5. Execute the exact-shape Portfolio
 

@@ -57,7 +57,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
   exact B200 host packages; v1–v5 are archived and v6–v15 are superseded descriptors. Current matched Study fixtures
   opt into a correctness-qualified, no-timing profiler assay; a live Study must re-freeze its exact broker command.
-  The current local suite passes 323 tests plus 223 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 325 tests plus 223 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
@@ -78,12 +78,16 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   the candidate-set v2 system qualification pass on the remote B200 host. The latter has two adhered Runs and eight
   replayed Evaluation Receipts, but produces no treatment comparison: estimand, estimate and uncertainty remain
   null. No scientific Campaign, serving integration or paper-result claim has been run here.
-- Three bounded tool-rich artifact-optimization Campaigns are retained. v1 promoted one Open Cake artifact and
+- Four bounded tool-rich artifact-optimization Campaigns are retained. v1 promoted one Open Cake artifact and
   exposed v14's scratch-file event classification defect; v2 promoted one Direct CUDA artifact and exposed v15's
   remaining assumption when Open Cake added and updated the fixed envelope in one Turn. v16 uses the smaller authority
   model already declared by ADR 0004: every tool-rich file-change event is typed auxiliary activity, while only the
   final no-follow envelope is the submission authority. The independent v3 successor passes end to end: both Runs
-  adhere, each promotes one confirmatory-qualified artifact, and fresh audit replays all evidence. This remains
+  adhere and fresh audit replays all evidence, but its 150k boundary prevents a resumed Turn. v4 adds only an explicit
+  8M terminal checkpoint and two-Turn hard bound. Both Runs then receive measured feedback: Open Cake promotes its
+  Turn-2 artifact at 1.417239 ms after 1.851297 ms in Turn 1, while direct CUDA retains its 4.156109 ms Turn-1 artifact
+  after Turn 2 reaches 8.814379 ms. All four v4 provider Turns emit command/file activity but no auxiliary-agent
+  lifecycle, so v4 validates feedback and single-writer/judge separation—not multi-agent use. It remains
   non-scientific artifact optimization; no cross-arm estimate or paper claim is available.
 
 ## Read order by role
