@@ -38,6 +38,12 @@ the script will not take for you.
 Expectations are never regenerated inside a release. `tools/refresh_corpus_expectations.py` prints the diff and exits
 non-zero; `--write` adopts it. Read the diff first: adopting before reading is how a gate becomes a tautology.
 
+`attribution_evaluation` is a Study Contract field the Lab honours and the checked-in
+evaluator does not implement: an attribution assay carries profiler evidence and no timing,
+and `tools/evaluate_flash_candidate.py` produces the opposite. It refuses such a request by
+name rather than building a receipt the contract then rejects. A Study that wants one needs
+an evaluator that profiles.
+
 ## Instruments
 
 These produce evidence rather than artifacts. Each one is checked in so a claim it supports can be repeated instead

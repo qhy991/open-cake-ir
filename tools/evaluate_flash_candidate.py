@@ -143,6 +143,16 @@ def main() -> int:
         )
         if candidate.canonical_sha256 != request["candidate_record_sha256"]:
             raise ValueError("worker Candidate record differs")
+        purpose = str(request["purpose"])
+        if purpose == "attribution":
+            # An attribution assay carries profiler evidence and no timing, and this
+            # evaluator produces the opposite. Without this the receipt is built, the
+            # contract refuses its artifact roles, and the run faults on a shape error
+            # far from the thing that is actually missing.
+            raise ValueError(
+                "this evaluator produces timing, not profiler evidence; a Study that "
+                "declares attribution_evaluation needs an evaluator that does"
+            )
         case_id = str(request["case_id"])
         case = workload.case(case_id)
         shape = _object(case["shape"], "workload.case.shape")
