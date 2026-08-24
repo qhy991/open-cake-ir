@@ -213,6 +213,41 @@ class RankingTest(unittest.TestCase):
         # invented rather than derived.
         self.assertFalse({f for f in fields if "time" in f or "latency" in f or "cycle" in f})
 
+    def test_the_model_declines_a_grid_that_overfills_the_device(self) -> None:
+        """The measured limit of this model, kept as a boundary rather than a caveat.
+
+        Wave count was the term that separated candidates past one round of the device.
+        A sweep of one Schedule's grid across four predicted wave boundaries found latency
+        linear in CTA count, with no step at any of them and none at any other wave size
+        either (`docs/ANALYSIS_CALIBRATION.md`). With that term gone the model has nothing
+        left to say past one round, so it says nothing instead of saying it confidently.
+        """
+
+        from open_cake_ir.compiler import ranking
+        from open_cake_ir.compiler.ir import Schedule
+
+        base = json.loads(
+            (ROOT / "corpus/schedules/rmsnorm-b8-smoke.json").read_text(encoding="utf-8")
+        )
+
+        def at_batch(batch: int) -> Schedule:
+            document = json.loads(json.dumps(base))
+            for buffer in document["buffers"]:
+                if buffer["name"] in ("x", "y"):
+                    buffer["shape"][0] = batch
+            document["schedule_id"] = f"rmsnorm-b{batch}"
+            return Schedule.from_dict(document)
+
+        fits = ranking.cost(at_batch(8), TARGET)
+        assert fits is not None
+        self.assertLessEqual(fits.device_fill, 1.0)
+        self.assertIsNone(ranking.cost(at_batch(512), TARGET))
+
+        scored, unscored = ranking.rank([at_batch(512), at_batch(8)], TARGET)
+        self.assertEqual([c.schedule_id for c in scored], ["rmsnorm-b8"])
+        # Named, not dropped: the model declined to judge it, which is not a verdict.
+        self.assertEqual(unscored, ("rmsnorm-b512",))
+
     def test_an_unscorable_candidate_is_named_not_dropped(self) -> None:
         from open_cake_ir.compiler import ranking
         from open_cake_ir.compiler.target import Target

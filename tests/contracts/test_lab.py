@@ -1444,13 +1444,16 @@ class CandidateSetFilterTest(unittest.TestCase):
                     result.launchable,
                     result.feedback,
                     result.artifact_payloads,
-                    cost=Cost(
+                    # The middle candidate is one the model declined to score, so this
+                    # also fixes where an unscored candidate belongs in the order.
+                    cost=None
+                    if index == 1
+                    else Cost(
                         schedule_id=f"v{index}",
                         ctas=1,
                         ctas_per_multiprocessor=1,
                         binding_resource="registers",
-                        waves=3 - index,
-                        last_wave_occupancy=0.5,
+                        device_fill=0.25 * (index + 1),
                     ),
                 )
 
@@ -1516,9 +1519,13 @@ class CandidateSetFilterTest(unittest.TestCase):
         first = events[0]["payload"]
         self.assertEqual(first["submitted"], 3)
         self.assertEqual(first["launchable"], 3)
-        # Ordered by cost, so the cheapest -- written last -- leads.
-        self.assertEqual(first["order"][0]["cost"]["waves"], 1)
-        self.assertEqual([row["cost"]["waves"] for row in first["order"]], [1, 2, 3])
+        # Ordered by cost, so the fullest device -- written last -- leads, and the one
+        # the model declined to score sorts behind every one it did. Sorting it first
+        # would read a refusal to judge as a good judgement.
+        self.assertEqual(
+            [row["cost"] and row["cost"]["device_fill"] for row in first["order"]],
+            [0.75, 0.25, None],
+        )
         # And every candidate was built, not only the survivor -- counted across the whole
         # campaign, because the recording environment is shared by every run and arm.
         self.assertEqual(len(built), 3 * campaign_wide)
@@ -1659,8 +1666,7 @@ class CostModelRouteTest(unittest.TestCase):
                         ctas=1,
                         ctas_per_multiprocessor=1,
                         binding_resource="registers",
-                        waves=1 + variant,
-                        last_wave_occupancy=0.5,
+                        device_fill=0.9 - 0.4 * variant,
                     ),
                 )
 

@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "67e7e040115d125a6cd82c374571f50dc728639737d3e96d690be0d8c76e73bd"
+    "canonical_sha256": "e7778ebe6eaf0946a42080df3681236d3689774907b2d7494ec05542918af2e2"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Compiler.rank: the pre-GPU filter stage, gated candidates only"
+  "approval_basis": "wave term refuted on B200; ranking declines past one round of the device"
 }

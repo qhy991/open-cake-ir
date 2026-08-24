@@ -9,10 +9,18 @@ declares no clock and no bandwidth, so a predicted time would be derived from ne
 same choice is visible in production: DeepGEMM's own layout comparison ranks on wave count
 and last-wave utilisation, and its `num_cycles` field is hardwired to zero behind a TODO.
 
-What it ranks on is what measurement supports. Profiling on a B200 found the predicted
-*binding resource* correct on both kernels tested, while the magnitudes were loose -- so the
-order here is built from wave structure and the residency ceiling, both of which follow from
-declarations, and never from an estimated latency (`docs/ANALYSIS_CALIBRATION.md`).
+What it ranks on is what measurement supports, and it declines where measurement withdrew
+support. This model used to sort on wave count first -- how many full rounds of resident
+CTAs the grid takes -- on the reasoning that a partial final round is a round of dead time.
+A sweep of one Schedule's grid across four predicted wave boundaries found latency linear
+in CTA count with no step at any of them, and no step at any other wave size either: the
+staircase the term describes is not there (`docs/ANALYSIS_CALIBRATION.md`). So the term is
+gone, and with it the ability to order a grid that overfills the device -- `cost` returns
+None for those rather than ordering them on a refuted basis.
+
+What survives is device fill, which the nine-tiling calibration did test and which came out
+concordant on twenty-nine of thirty-six pairs. That is the whole model: among candidates
+that fit within one round of the device, prefer the one that fills more of it.
 
 Ranking is advisory by construction. It orders candidates that have already passed the
 gates; it never admits or rejects one. On-device measurement remains the authority.
@@ -32,32 +40,34 @@ from .target import Target
 class Cost:
     """What is known about one candidate before it runs.
 
-    Every field is derived from the Schedule and the Target. `waves` is how many full
-    rounds of resident CTAs the declared grid takes, and `last_wave_occupancy` is the
-    fraction of a wave the final round fills -- a candidate that needs 2.05 waves wastes
-    almost a whole round, which is the classic reason a slightly smaller tile wins.
+    Every field is derived from the Schedule and the Target. `device_fill` is the fraction
+    of the device's resident capacity the declared grid occupies -- CTAs over CTAs the
+    device can hold at once. A Cost exists only where that fraction is at most one, so a
+    grid that overfills the device has no Cost rather than a low-confidence one.
+
+    That ceiling is itself optimistic. `ctas_per_multiprocessor` comes from an upper bound,
+    so a grid the model believes fits in one round may not: the calibration predicted seven
+    resident CTAs where the profiler measured five.
     """
 
     schedule_id: str
     ctas: int
     ctas_per_multiprocessor: int
     binding_resource: str
-    waves: int
-    last_wave_occupancy: float
+    device_fill: float
 
     @property
     def order(self) -> tuple:
         """Sort key, lower is better.
 
-        Fewer waves first, because a wave is a round of the whole device. Then a fuller
-        last wave, because the tail is dead time. Then the higher residency ceiling, which
+        A fuller device first, because every candidate here fits within one round and the
+        unused capacity is idle multiprocessors. Then the higher residency ceiling, which
         breaks ties toward the candidate with more room to hide latency. `schedule_id` ends
         the key so the order is total and reproducible rather than dependent on input
         order -- a ranking that is not deterministic cannot be evidence.
         """
 
-        return (self.waves, -self.last_wave_occupancy, -self.ctas_per_multiprocessor,
-                self.schedule_id)
+        return (-self.device_fill, -self.ctas_per_multiprocessor, self.schedule_id)
 
 
 def _grid_ctas(schedule: Schedule) -> int | None:
@@ -77,7 +87,13 @@ def _grid_ctas(schedule: Schedule) -> int | None:
 
 
 def cost(schedule: Schedule, target: Target) -> Cost | None:
-    """What is knowable about one candidate, or None when the Target says too little."""
+    """What is knowable about one candidate, or None when nothing rankable is.
+
+    None means one of two things, and both are the model declining rather than failing:
+    the Target does not say enough to derive a residency ceiling, or the declared grid
+    overfills the device. The second is the measured limit of this model -- beyond one
+    round of the device the only term it had was wave count, and that term is refuted.
+    """
 
     bound: ResidencyUpperBound | None = residency_upper_bound(schedule, target)
     if bound is None or bound.binding is None:
@@ -88,16 +104,15 @@ def cost(schedule: Schedule, target: Target) -> Cost | None:
     if not resident or ctas is None or facts is None:
         return None
 
-    per_wave = resident * facts.multiprocessor_count
-    waves = (ctas + per_wave - 1) // per_wave
-    remainder = ctas - (waves - 1) * per_wave
+    capacity = resident * facts.multiprocessor_count
+    if ctas > capacity:
+        return None
     return Cost(
         schedule_id=schedule.schedule_id,
         ctas=ctas,
         ctas_per_multiprocessor=resident,
         binding_resource=bound.binding.resource,
-        waves=waves,
-        last_wave_occupancy=remainder / per_wave,
+        device_fill=ctas / capacity,
     )
 
 
@@ -108,7 +123,9 @@ def rank(
 
     The unranked list is returned rather than dropped. A candidate the model cannot score
     has not been judged inferior, and silently losing it would let a ranking report a
-    complete order over an incomplete set.
+    complete order over an incomplete set. A workload large enough to overfill the device
+    puts every candidate there, which is the honest state of this model rather than a bug:
+    the term that would have separated them did not survive measurement.
     """
 
     scored: list[Cost] = []

@@ -2102,6 +2102,10 @@ class Lab:
                         range(len(built)),
                         key=lambda index: (
                             built[index][1].disposition != "launchable",
+                            # A candidate the model declined to score sorts behind every
+                            # candidate it did score. An empty key would sort it first,
+                            # which would read a refusal to judge as a good judgement.
+                            built[index][1].cost is None,
                             built[index][1].cost.order
                             if built[index][1].cost is not None
                             else (),
@@ -2123,9 +2127,8 @@ class Lab:
                                     "disposition": built[index][1].disposition,
                                     "cost": (
                                         {
-                                            "waves": built[index][1].cost.waves,
-                                            "last_wave_occupancy": round(
-                                                built[index][1].cost.last_wave_occupancy, 6
+                                            "device_fill": round(
+                                                built[index][1].cost.device_fill, 6
                                             ),
                                             "binding_resource": built[index][1].cost.binding_resource,
                                         }

@@ -75,7 +75,63 @@ worse than position two would be reading precision the model does not have.
 One thing the run exposed about the model rather than the kernels: every candidate at this
 shape fits in a single wave, so the wave term did no work and the whole order came from how
 much of the device the grid fills. A workload with more tiles than the device holds would
-exercise the term that is actually about tail waste, and has not been tested.
+exercise the term that is actually about tail waste. That measurement is below.
+
+## The wave term, measured -- and removed
+
+`Cost.order` sorted on wave count first, on the reasoning that a wave is a round of the
+whole device and a partial final round is a round of dead time. Nothing had tested it.
+
+`tools/calibrate_wave_term.py` sweeps one Schedule's batch extent with the tile fixed, so
+per-CTA work is constant and the only thing that changes is how the grid quantises against
+the device. 171 points, 60 to 400 batches, median of 41 samples with L2 flushed between
+them, exclusive B200, compiler `open-cake-ir-sm100a-v4`.
+
+Under the wave model, latency across four predicted wave bands should be four flat levels.
+Measured, it is a straight line:
+
+```
+latency_us = 21.73 + 9.514 * (ctas / 1000)     R^2 = 0.9728, residual rms 1.26us
+```
+
+The staircase is not there. At the model's own boundary -- seven resident CTAs, 1036 per
+round -- a wave step would have to be 9.86us; the measured jump across it is +0.14us,
+well under the 0.61us typical jump between any two adjacent points. And it is not that the
+boundary was merely in the wrong place: every wave size from one to twelve resident CTAs
+was tested against its own required step height, and none came close.
+
+| resident | per round | step the model requires | step measured |
+| --- | --- | --- | --- |
+| 1 | 148 | 1.41us | +0.26us |
+| 4 | 592 | 5.63us | +0.13us |
+| 5 | 740 | 7.04us | +0.66us |
+| 7 | 1036 | 9.86us | +0.14us |
+| 8 | 1184 | 11.27us | -0.05us |
+| 10 | 1480 | 14.08us | +0.18us |
+
+The largest mean jump at any wave size in the sweep is +0.70us, where that size's own step
+would have to be 16.90us. Two of the twelve gave a *negative* mean jump at their
+boundaries. This is noise, which is the point: there is no signal to find.
+
+**What changed.** `waves` and `last_wave_occupancy` are gone from `Cost`, and `cost()`
+returns None for a grid that overfills the device. Wave count was the only term that
+separated candidates past one round, so past one round the model now declines rather than
+ordering on a refuted basis. What is left is device fill, which the nine-tiling run above
+did test. The model got smaller and its domain got explicit.
+
+Declining costs real capability, and the sweep shows how much: of its 171 grids the model
+now ranks 35 and declines the rest, the boundary falling exactly where capacity does. That is the honest state. A confident wrong order is worse than
+none, and it is worse now than it was before: the loop routes a ranking that disagrees
+with measurement to the cost model, so a refuted term would have generated a steady stream
+of diagnoses that were really this term firing.
+
+**What this does not establish.** Wave quantisation is a real effect on kernels whose CTAs
+run long enough that a partial final round is a full round of wall time. This kernel's CTAs
+are short and the hardware streams them, and one kernel on one device is the whole sample.
+The claim here is narrow and it is about the model, not the hardware: the term was in the
+sort key without evidence, and the one direct test of it refuted it. Restoring it takes a
+measurement showing the staircase, not an argument that it should be there -- timing-model
+coverage is per-target evidence and is never inherited.
 
 ## Reproducing
 
