@@ -146,6 +146,30 @@ survey does not settle which:
 The megakernel family is out of scope for either. A megakernel is an interpreter and its
 schedule is its input; the distance from a Schedule is not a field.
 
+## Accidental guards
+
+Twice now a hazard in this repository turned out to be blocked by a rule about something
+else. Both were found by probing rather than by reading, and both would have been missed by
+a test suite that only asks whether the bad Schedule is refused -- it was, every time.
+
+* **Tensor-memory ownership.** The backend picked the warp that issues `tcgen05.alloc` from
+  the order operations were written in, which two roles reading tensor memory would have
+  made ambiguous. `OP_CROSS_ROLE_RACE` refused those Schedules, for a reason about
+  synchronisation. Closed properly: `Allocation.allocating_role` names the role.
+* **Contraction accumulators.** The Triton backend assigns a `tl.dot` rather than
+  accumulating, so an mma in a loop over the contraction axis would overwrite.
+  `BUFFER_ESCAPES_LOOP` refuses those Schedules, for a reason about register lifetime.
+  Not closed: it needs a Triton GEMM to settle what the emitter should derive.
+
+The pattern is worth naming because the danger is not the hazard, it is the *reason* the
+block exists. A rule written for one purpose can be relaxed, scoped or replaced by someone
+who has checked every consequence they know about -- and this one is not among them.
+`BUFFER_ESCAPES_LOOP` was itself scoped to register space partway through this repository's
+history, which is exactly the kind of change that would have opened the second case.
+
+So: when a probe shows a hazard is refused, ask which rule refused it. If it is not a rule
+about that hazard, either close it properly or write down that the block is on loan.
+
 ## The two backends disagree about where an accumulator lives
 
 A contraction accumulated across a loop is what a GEMM is, and the two emitted backends
