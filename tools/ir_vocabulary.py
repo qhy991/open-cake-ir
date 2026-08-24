@@ -104,6 +104,9 @@ def main() -> int:
 
         used = _used_members()
         print(f"\n# enum members no corpus Schedule selects")
+        print("# (a member the IR derives rather than a Schedule declares is not")
+        print("#  selected and appears here: PipelineKind is derived from a producer's")
+        print("#  own kind and movement, and both of its members reach the backend.)")
         idle = []
         for name, obj in sorted(vars(ir).items()):
             if not (isinstance(obj, type) and issubclass(obj, Enum) and obj is not Enum):
@@ -111,9 +114,10 @@ def main() -> int:
             absent = [m.value for m in obj if m not in used]
             if absent:
                 idle.append(f"{name:22s} {', '.join(absent)}")
-        # Not a defect list. Vocabulary may lead the corpus deliberately -- but a member
-        # nothing selects has never been emitted, never been run, and is a promise on
-        # the strength of an argument rather than a kernel.
+        # Not a defect list, and not a dead-code list either. A member here may be
+        # supported and merely unused, or derived rather than declared. What it is good
+        # for is the question: is this one a promise on the strength of an argument
+        # rather than a kernel? That question found `int64`.
         print("\n".join(idle) if idle else "(every member is selected by some Schedule)")
 
         print(f"\n# what a backend can lower")

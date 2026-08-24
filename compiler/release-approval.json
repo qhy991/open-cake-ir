@@ -6,5 +6,5 @@
     "canonical_sha256": "36d96c116cf9d3100a863ca32eba604e896dd4b24ea6ce3d75b5e2c0f414bcce"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "keep every enum-keyed backend table total or declared partial"
+  "approval_basis": "say what an idle enum member is and is not"
 }
