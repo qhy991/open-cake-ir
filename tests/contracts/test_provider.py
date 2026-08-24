@@ -897,6 +897,9 @@ class ProviderContractTests(unittest.TestCase):
         self.assertNotIn("resume", adapter.invocations[0].argv)
         self.assertIn("resume", adapter.invocations[1].argv)
         self.assertNotEqual(first.candidate_sha256s, second.candidate_sha256s)
+        expected_reference = b'===== workload.json =====\n{"outer":{"inner":true}}'
+        self.assertEqual(first.reference_bundle, expected_reference)
+        self.assertEqual(second.reference_bundle, expected_reference)
 
     def test_concrete_candidate_set_provider_owns_one_envelope_and_no_other_file(self) -> None:
         for extra_file in (False, True):

@@ -2443,6 +2443,18 @@ class Lab:
             ),
             "campaign_lock.workload.canonical_sha256",
         )
+        executor_id = str(
+            _object(
+                _object(lock.document["execution"], "campaign_lock.execution")[
+                    "executor_revision"
+                ],
+                "campaign_lock.execution.executor_revision",
+            )["executor_id"]
+        )
+        executor_match = re.fullmatch(r"open-cake-ir-b200-v(\d+)", executor_id)
+        if executor_match is None:
+            raise ValueError("Campaign Lock Executor identity differs")
+        reference_bundle_required = int(executor_match.group(1)) >= 25
         evidence = EvidenceStore.create(root)
         for sequence, run_id in enumerate(lock.run_order, start=1):
             arm = run_id.rsplit("-", 1)[0]
@@ -2485,6 +2497,34 @@ class Lab:
                         raise ValueError("provider resume thread identity differs")
                     thread_id = provider_turn.thread_id
                     cumulative_tokens += provider_turn.provider_tokens
+                    reference_bundle = provider_turn.reference_bundle
+                    if reference_bundle is None:
+                        if reference_bundle_required:
+                            raise RunProtocolFault(
+                                "harness_fault",
+                                "provider reference bundle observation is missing",
+                            )
+                        reference_object = None
+                    else:
+                        if (
+                            not isinstance(reference_bundle, bytes)
+                            or not reference_bundle
+                        ):
+                            raise RunProtocolFault(
+                                "harness_fault",
+                                "provider reference bundle observation differs",
+                            )
+                        try:
+                            reference_bundle.decode("utf-8")
+                        except UnicodeError as error:
+                            raise RunProtocolFault(
+                                "harness_fault",
+                                "provider reference bundle is not UTF-8",
+                            ) from error
+                        reference_object = evidence.put(
+                            reference_bundle,
+                            media_type="text/plain",
+                        )
                     events_object = evidence.put(
                         provider_turn.raw_events,
                         media_type="application/x-ndjson",
@@ -2519,6 +2559,15 @@ class Lab:
                         "normalization": provider_turn.normalization,
                         "candidate_count": len(candidate_objects),
                         "objects": [
+                            *(
+                                [
+                                    reference_object.reference(
+                                        "provider_reference_bundle"
+                                    )
+                                ]
+                                if reference_object is not None
+                                else []
+                            ),
                             events_object.reference("provider_events"),
                             *(
                                 item.reference(f"candidate_submission_{index:04d}")
@@ -3497,6 +3546,9 @@ class Lab:
         executor_match = re.fullmatch(
             r"open-cake-ir-b200-v(\d+)", str(executor_revision.get("executor_id"))
         )
+        reference_bundle_required = (
+            executor_match is not None and int(executor_match.group(1)) >= 25
+        )
         # Tool-rich Executors before v16 projected the fixed Candidate lifecycle
         # separately from auxiliary activity. Preserve that frozen replay boundary;
         # current Turns use the final no-follow file as their sole submission authority.
@@ -3540,6 +3592,12 @@ class Lab:
                 for item in objects
                 if isinstance(item, Mapping) and item.get("role") == "provider_events"
             ]
+            reference_bundle_references = [
+                cast(Mapping[str, object], item)
+                for item in objects
+                if isinstance(item, Mapping)
+                and item.get("role") == "provider_reference_bundle"
+            ]
             candidate_count = payload.get("candidate_count")
             legacy_single_candidate = "candidate_count" not in payload
             if legacy_single_candidate:
@@ -3573,21 +3631,40 @@ class Lab:
                 ]
             if (
                 len(event_references) != 1
+                or len(reference_bundle_references) > 1
+                or (
+                    reference_bundle_required
+                    and len(reference_bundle_references) != 1
+                )
                 or not isinstance(candidate_count, int)
                 or isinstance(candidate_count, bool)
                 or candidate_count <= 0
                 or candidate_count > maximum_candidates_per_turn
                 or len(candidate_references) != candidate_count
-                or len(objects) != candidate_count + 1
+                or len(objects)
+                != candidate_count + 1 + len(reference_bundle_references)
             ):
                 return False
             raw_events = evidence.read_object(event_references[0])
+            reference_bundle = (
+                evidence.read_object(reference_bundle_references[0])
+                if reference_bundle_references
+                else None
+            )
             candidates = tuple(
                 evidence.read_object(reference) for reference in candidate_references
             )
             candidate_digests = tuple(sha256(candidate).hexdigest() for candidate in candidates)
             if (
                 sha256(raw_events).hexdigest() != event_references[0].get("sha256")
+                or (
+                    reference_bundle is not None
+                    and (
+                        not reference_bundle
+                        or sha256(reference_bundle).hexdigest()
+                        != reference_bundle_references[0].get("sha256")
+                    )
+                )
                 or any(
                     digest != reference.get("sha256")
                     for digest, reference in zip(candidate_digests, candidate_references)
@@ -3595,6 +3672,11 @@ class Lab:
                 or len(set(candidate_digests)) != len(candidate_digests)
             ):
                 return False
+            if reference_bundle is not None:
+                try:
+                    reference_bundle.decode("utf-8")
+                except UnicodeError:
+                    return False
             terminal_document: dict[str, object] = {
                 "arm": arm,
                 "candidate_written": True,

@@ -316,6 +316,9 @@ study may estimate package effectiveness but cannot claim task-naive discovery w
 The clean-start reference fixture keeps this boundary concrete without another runtime mode: its Open Cake document
 cannot parse as a complete Schedule and its direct CUDA function body is empty; both references change together in
 one frozen Study successor.
+For v25+ Runs the rendered bundle itself is also a retained Evidence object on every completed Turn. The Study owns
+what content is permitted; retention proves which bytes crossed the authoring boundary and missing bytes make the
+endpoint unavailable.
 
 ## 9. Claim-stage handoffs
 

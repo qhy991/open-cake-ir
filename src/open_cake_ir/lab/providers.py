@@ -6,7 +6,7 @@ import json
 import os
 import re
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Mapping, Protocol, cast
@@ -237,6 +237,8 @@ class ProviderTurn:
     terminal_message_count: int
     normalization: str
     tool_activity: tuple["ProviderAuxiliaryActivity", ...] = ()
+    reference_bundle: bytes | None = None
+    """Exact rendered reference bytes embedded in this Turn, when one exists."""
 
 
 @dataclass(frozen=True)
@@ -1007,7 +1009,10 @@ class CodexRunProvider:
                 )
         if read_frozen_reference_bundle(reference_root)[0] != reference_sha256:
             raise RunProtocolFault("contamination", "provider references changed during Turn")
-        return result
+        return replace(
+            result,
+            reference_bundle=self._references[request.run_id][2].encode("utf-8"),
+        )
 
 
 class CodexInvocationBuilder:
