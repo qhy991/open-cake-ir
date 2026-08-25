@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Release the Compiler Revision that matches the current sources.
 #
-#   release_compiler_cycle.sh "<approval basis>"
+#   release_compiler_cycle.sh
 #
 # Any edit to a Revision-bound source invalidates the released lock, which is the
-# governance working as designed. This drives the documented pipeline end to end: settle
-# the id, run the Corpus Gate, record the approval, release, and verify. Frozen Study
-# Contracts are never re-stamped; a new release is consumed by a successor contract.
+# governance working as designed. This settles the id and runs the Corpus Gate, but it
+# never writes the approval it consumes. A reviewer outside this automation must inspect
+# the gate and write `compiler/release-approval.json`; rerunning the cycle then validates
+# that exact artifact, releases, and verifies. Frozen Study Contracts are never
+# re-stamped; a new release is consumed by a successor contract.
 #
 # The id is derived, not passed. A Revision that some sealed evidence run was produced
 # under is history and its bytes are immutable, so an edit after one of those must bump.
@@ -16,17 +18,21 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONPATH=src
-
-BASIS="${1:?usage: release_compiler_cycle.sh <approval-basis>}"
+if [ "$#" -ne 0 ]; then
+  echo "usage: release_compiler_cycle.sh" >&2
+  exit 2
+fi
+COMPILER_RELEASE_TMP=$(mktemp -d compiler/.release-cycle.XXXXXX)
+export COMPILER_RELEASE_TMP
+trap 'rm -r -- "$COMPILER_RELEASE_TMP"' EXIT
 
 eval "$(python3 - <<'PY'
 import json, pathlib, re
 
 from tools.compiler_revision_witnesses import compiler_revision_witnesses
 
-# A refused gate leaves no lock behind, so the draft is the fallback authority for the
-# current id. Without it a single failed cycle would strand the repository with no way to
-# name the Revision it was releasing.
+# A legacy or interrupted cycle may leave only the draft. Use it as the current-id
+# fallback when no released lock exists.
 locked = pathlib.Path("compiler/revision.lock.json")
 source = locked if locked.exists() else pathlib.Path("compiler/revision.json")
 current = json.loads(source.read_text())["revision_id"].removesuffix("-draft").rsplit("-", 1)[-1]
@@ -119,46 +125,41 @@ p.write_text(json.dumps(d, indent=2) + "\n")
 print(f"--- draft -> {d['revision_id']} ---")
 PY
 
-# Gate before retiring the released lock. A refused gate must leave the last released
-# Revision standing, not strand the repository between two of them.
+# Preparing a Gate cannot manufacture a successor lock. The old lock bytes stay in place
+# until a separately written approval validates and a verified replacement is ready; a
+# source edit may of course already make that old lock unloadable.
 rm -f compiler/corpus-gate-report.json
 python3 tools/release_compiler.py --project-root . \
   --proposal compiler/revision.json --source-set compiler/source_set.json \
   --output compiler/corpus-gate-report.json --prepare-gate
-rm -f compiler/revision.lock.json
-
-python3 - "$BASIS" <<'PY'
-import hashlib, json, pathlib, sys
-
-def canon(obj):
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-
+python3 - <<'PY'
+import json, pathlib
 gate = json.loads(pathlib.Path("compiler/corpus-gate-report.json").read_text())
 assert gate["matched_case_count"] == gate["case_count"], "corpus gate did not match"
 print(f"    gate {gate['compiler_revision_id']}  {gate['matched_case_count']}/{gate['case_count']}"
       f"  {len(gate['sources'])} sources")
-pathlib.Path("compiler/release-approval.json").write_text(json.dumps({
-    "schema_version": 1,
-    "decision": "approved",
-    "gate_report": {
-        "path": "compiler/corpus-gate-report.json",
-        "canonical_sha256": hashlib.sha256(canon(gate)).hexdigest(),
-    },
-    "reviewer": "repository_owner",
-    "approval_basis": sys.argv[1],
-}, indent=2) + "\n")
 PY
 
-echo "--- release ---"
-for pass in write verify; do
-  extra=""
-  [ "$pass" = "verify" ] && extra="--verify"
-  python3 tools/release_compiler.py --project-root . \
+if [ ! -f compiler/release-approval.json ]; then
+  echo "--- external approval required: review the Gate and write compiler/release-approval.json ---" >&2
+  exit 3
+fi
+
+echo "--- validate external approval and build release ---"
+if ! python3 tools/release_compiler.py --project-root . \
     --proposal compiler/revision.json --source-set compiler/source_set.json \
     --gate-report compiler/corpus-gate-report.json \
     --approval compiler/release-approval.json \
-    --output compiler/revision.lock.json $extra
-done
+    --output "$COMPILER_RELEASE_TMP/revision.lock.json"; then
+  echo "--- external approval required: it must bind this exact Gate digest ---" >&2
+  exit 3
+fi
+python3 tools/release_compiler.py --project-root . \
+    --proposal compiler/revision.json --source-set compiler/source_set.json \
+    --gate-report compiler/corpus-gate-report.json \
+    --approval compiler/release-approval.json \
+    --output "$COMPILER_RELEASE_TMP/revision.lock.json" --verify
+mv -f "$COMPILER_RELEASE_TMP/revision.lock.json" compiler/revision.lock.json
 
 python3 - <<'PY'
 import hashlib, json, pathlib

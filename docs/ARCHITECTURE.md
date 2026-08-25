@@ -240,7 +240,8 @@ graph TD
     E["edit Compiler source"] --> D["<b>revision.json</b><br/>state: draft<br/><i>no source-hash check</i>"]
     D --> G["<b>Corpus Gate</b><br/>32 cases · exact finding codes<br/>exact lowering digests"]
     G -->|"any case differs"| STOP["release refused"]
-    G -->|"32/32 matched"| AP["<b>release-approval.json</b><br/>binds the gate digest<br/>records who authorized it"]
+    G -->|"32/32 matched"| R["external reviewer<br/>inspects the exact Gate"]
+    R --> AP["<b>release-approval.json</b><br/>binds the gate digest<br/>records reviewer and basis"]
     AP --> L["<b>revision.lock.json</b><br/>state: released<br/>binds every source by digest"]
     L --> AR["<b>compiler/releases/vN/</b><br/>immutable history"]
 
@@ -249,12 +250,15 @@ graph TD
     SC -.->|"cannot be mutated —<br/>mint a successor"| SC2["Study Contract vN+1"]
 
     style STOP fill:#f8d7da,stroke:#c00
-    linkStyle 7 stroke:#c00,stroke-dasharray:4 3
+    linkStyle 8 stroke:#c00,stroke-dasharray:4 3
 ```
 
-`tools/release_compiler_cycle.sh` drives the cycle end to end, because a single
-Compiler-source edit requires all of it again. Frozen Study Contracts are consumed through
-explicit successors rather than being re-stamped.
+`tools/release_compiler_cycle.sh` derives the id and prepares the Gate, then stops unless
+an externally written approval binds that exact Gate. Rerunning the same command consumes
+the approval through the single release validator. The cycle cannot write its own approval
+(ADR 0030). The current v24 approval predates that boundary and is not independent review.
+Frozen Study Contracts are consumed through explicit successors rather than being
+re-stamped.
 
 ---
 
@@ -305,7 +309,7 @@ graph LR
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
 | Compile → external oracle → GPU timing | correctness is implemented. Historical B200 observations cover eleven pre-v24 emitted Schedule slices, including the KDA-derived standalone SwiGLU, Top-K, block-scale contraction, valid-prefix, ragged grouped-GEMM and runtime-indexed gather slices. The route migration changed Schedule/source bytes, so those frozen observations are historical rather than current-v24 proof; successor observations are still missing |
 | Profiler evidence in the inner loop | partial relative to the paper — Executor v18 composes the canonical no-timing NCU assay after every correctness-qualified search survivor, retains raw/profile replay for all of them and feeds back the selected profile; a bounded live v18 two-arm successor covers selected and non-selected survivors, and scientific v3 executes it, but two missing Runs prevent the preregistered estimate |
-| Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
+| Retained evidence and the outer loop gate | implemented; successor releases enforce an external approval-writer boundary, while the current v24 record remains same-actor evidence rather than independent review |
 | Deterministic lowering | one typed route selects mechanism, not Workload. `triton` and `cutlass_cute_dsl` generate operation bodies from arbitrary conforming Schedules in their supported subsets. `checked_cuda_asset` has one bounded entry, `cake_tinygemm2_stage4_split_k`; it stamps a digest into a checked-in file and reports `generated=false` rather than conflating materialization with generation |
 | Live candidate-set authoring | implemented and bounded-live exercised — both Codex 0.144.4 policies pass two-arm envelope qualification, the closed policy separately passes at the exact `xhigh` treatment, and candidate-set v2 produced three launchable Candidates and searched two in each arm on B200; qualification proves transport and the Campaign is system qualification only, so neither is an 80M scientific result |
 | The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but Compiler v24 retains no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |

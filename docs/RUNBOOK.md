@@ -29,8 +29,14 @@ Every new Campaign custody root must be outside the checkout. `lab preflight --o
 --evidence-root` reject in-checkout paths before writing files or invoking execution inputs. Historical in-checkout
 Locks and Evidence remain valid only for read-only `lab audit`.
 
-`tools/release_compiler_cycle.sh "<basis>"` drives that pipeline end to end and derives the id, but it does not
-re-pin a **Target definition**: `compiler/revision.json` holds each Target's `canonical_sha256`, and editing
+Run `bash tools/release_compiler_cycle.sh` to derive the id and prepare the Corpus Gate. The command never writes
+`compiler/release-approval.json`; it exits with status 3 when the existing approval is missing or does not bind the
+new Gate. A reviewer outside that automation must inspect the exact Gate diff, then write the sole approval artifact
+with `schema_version`, `decision: "approved"`, the Gate path and canonical SHA-256, a reviewer identity and an
+approval basis. Rerun the same no-argument command to validate that artifact and install the verified lock. The
+current v24 approval predates this protocol and must not be described as independent review.
+
+The cycle does not re-pin a **Target definition**: `compiler/revision.json` holds each Target's `canonical_sha256`, and editing
 `compiler/targets/*.json` means updating that pin by hand first, or the cycle stops at `target definition ... bytes
 differ`. That is deliberate — a source edit is routine and a hardware description changing is not — but it is a step
 the script will not take for you.

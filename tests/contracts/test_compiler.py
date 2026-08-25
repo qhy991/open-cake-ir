@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -361,6 +362,86 @@ class CompilerContractTests(unittest.TestCase):
         )
         self.assertEqual(released_gate.compiler_revision_id, released["revision_id"])
         self.assertTrue(released_gate.passed)
+
+    def test_release_cycle_prepares_but_cannot_write_its_own_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "open-cake-ir"
+
+            def ignored(path: str, names: list[str]) -> set[str]:
+                omitted = {".git", "__pycache__", ".pytest_cache"}
+                if Path(path).resolve() == ROOT:
+                    omitted |= {"evidence", "migration", "runtime", "tests"}
+                return omitted & set(names)
+
+            shutil.copytree(ROOT, project, ignore=ignored)
+            approval_path = project / "compiler/release-approval.json"
+            lock_path = project / "compiler/revision.lock.json"
+            prior_approval = approval_path.read_bytes()
+            prior_lock = lock_path.read_bytes()
+            authoring_contract = project / "compiler/AUTHORING_CONTRACT.md"
+            authoring_contract.write_text(
+                authoring_contract.read_text(encoding="utf-8")
+                + "\nTemporary release-protocol fixture.\n",
+                encoding="utf-8",
+            )
+
+            first = subprocess.run(
+                ["bash", "tools/release_compiler_cycle.sh"],
+                cwd=project,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(first.returncode, 3, first.stdout + first.stderr)
+            self.assertIn("external approval required", first.stderr)
+            self.assertEqual(approval_path.read_bytes(), prior_approval)
+            self.assertEqual(lock_path.read_bytes(), prior_lock)
+            gate_path = project / "compiler/corpus-gate-report.json"
+            gate = json.loads(gate_path.read_text(encoding="utf-8"))
+            self.assertEqual(gate["matched_case_count"], gate["case_count"])
+            gate_sha256 = sha256(
+                json.dumps(
+                    gate,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode()
+            ).hexdigest()
+            approval = {
+                "schema_version": 1,
+                "decision": "approved",
+                "gate_report": {
+                    "path": "compiler/corpus-gate-report.json",
+                    "canonical_sha256": gate_sha256,
+                },
+                "reviewer": "independent_fixture_reviewer",
+                "approval_basis": "Reviewed the exact temporary Gate diff.",
+            }
+            approval_path.write_text(
+                json.dumps(approval, indent=2) + "\n", encoding="utf-8"
+            )
+
+            second = subprocess.run(
+                ["bash", "tools/release_compiler_cycle.sh"],
+                cwd=project,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+            released = json.loads(lock_path.read_text(encoding="utf-8"))
+            self.assertEqual(released["state"], "released")
+            self.assertEqual(
+                released["release_approval"]["canonical_sha256"],
+                sha256(
+                    json.dumps(
+                        approval,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    ).encode()
+                ).hexdigest(),
+            )
 
     def test_the_architecture_map_names_the_lowering_mechanisms(self) -> None:
         """The architecture documents mechanisms, not a growing use-case registry."""

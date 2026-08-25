@@ -14,7 +14,7 @@ worktree; every conclusion below was reproduced or falsified again on the curren
 | 3 | committed Evidence can fail custody checks after clone | operational repair added; archive design open |
 | 4 | historical ranking checker duplicates current order | refuted; historical/current split is intentional |
 | 5 | residency provenance was operator-supplied | fixed; host and time derive from the run |
-| 6 | Compiler release writes its own approval | open governance defect |
+| 6 | Compiler release writes its own approval | successor mechanism fixed; current v24 approval is not independent |
 | 7 | revision identities cause Study successor churn | fixed by stable templates and exact CampaignLocks |
 | 8 | lowering profile is both routing and workload constraint | fixed in Compiler v24 |
 | 9 | emitter preconditions were late failures | fixed in Compiler v23 |
@@ -65,12 +65,20 @@ ranking uses the newer preorder implementation. Editing the old checker would co
 negative evidence. Residency instruments now obtain UTC time and hostname from the
 machine. Frozen calibration-v6 tooling is unchanged.
 
-### 6: approval is still not an independent gate
+### 6: successor preparation no longer approves itself
 
-`release_compiler_cycle.sh` still materializes `release-approval.json` after computing
-the gate it approves. The Corpus expectations can fail, but the approval is a record of
-the same actor's decision, not independent review. Until a distinct reviewer produces
-that artifact, documentation and paper claims must not call it independent evidence.
+`release_compiler_cycle.sh` now prepares the full failing-capable Corpus Gate but never
+creates or changes `release-approval.json`. A missing, malformed or stale approval stops
+the cycle with the prior lock and approval bytes intact. After a reviewer outside that
+automation writes an approval bound to the exact Gate digest, rerunning the same command
+consumes it through the existing release validator. An executable contract proves both
+the refusal and success transitions.
+
+The current v24 approval predates this repair and records the releasing repository
+owner, so it is not retroactively independent evidence. The successor mechanism is
+fixed; the evidence limitation closes only when a distinct reviewer actually approves a
+future release. ADR 0030 owns this boundary without adding signatures, accounts or a
+second release implementation.
 
 ### 7: stable design templates, exact execution locks
 
@@ -110,6 +118,6 @@ block only lowering, not IR acceptance. The reduction drift Corpus case is there
 Frozen pre-v24 observations and ranking calibrations keep their old Schedule/source
 bytes. They are not re-labelled as v24 evidence: successor B200 observations and a
 successor ranking calibration instrument are currently missing. The v24 Corpus Gate is
-32/32 and the zero-GPU contract suite passes 386 tests plus 322 parameterized subtests;
+32/32 and the zero-GPU contract suite passes 387 tests plus 322 parameterized subtests;
 those gates validate the ownership migration but do not substitute for the missing
 on-device successors.

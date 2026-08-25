@@ -72,7 +72,9 @@ causal effect, serving and paper reproduction are not.
   emitted signature, while Workload shape/oracle checks remain in Lab. A GEMM bias-extent variant is consequently
   lowerable, whereas three-part reduction and wrong-epilogue TinyGEMM2 variants are valid IR but cannot use the
   retained asset. Frozen pre-v24 GPU observations and ranking decisions remain historical; no current v24 B200 or
-  ranking successor is inferred from them. The reviewed
+  ranking successor is inferred from them. Release-cycle automation now prepares but cannot write the approval it
+  consumes; a stale approval leaves the prior lock intact until an external reviewer binds the exact new Gate. The
+  current v24 approval predates that repair and remains same-actor evidence. The reviewed
   KDA snapshot
   remains 0/57 for complete-version expressibility because routing/group formation, valid-tile work acquisition,
   the second contraction, scatter and the multi-kernel program DAG are still absent; no KDA performance claim is
@@ -124,7 +126,7 @@ causal effect, serving and paper reproduction are not.
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 386 tests and 322 parameterized subtests; the earlier remote qualification passed its
+- The current local contract suite passes 387 tests and 322 parameterized subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
