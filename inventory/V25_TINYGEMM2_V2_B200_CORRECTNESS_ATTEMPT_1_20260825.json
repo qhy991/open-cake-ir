@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "purpose": "current_checked_asset_correctness",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "plan": {
+    "path": "inventory/V25_TINYGEMM2_V2_B200_CORRECTNESS_PLAN_20260825.json",
+    "raw_sha256": "03fa0eaa989ed004c3b9f4486e372b926479db0f083ecf00dddf78bafefb00db"
+  },
+  "execution": {
+    "broker_job_id": "gpuq-30cb1f5be4ae",
+    "mode": "shared",
+    "gpu_count": 1,
+    "automatic_retries": 0,
+    "broker_exit_code": 1
+  },
+  "result": {
+    "status": "failed_before_observer",
+    "materialized_case_count": 0,
+    "kernel_calls": 0,
+    "fallback_calls": 0,
+    "failure_code": "staged_package_initializer_imports_unstaged_modules",
+    "failure_boundary": "instrument_import",
+    "exception_type": "ModuleNotFoundError",
+    "message": "The retained cakerepro package initializer imported cakerepro.contracts, which was outside the three-module runtime slice. No Workload materialization or CUDA call executed."
+  },
+  "disposition": {
+    "passed": false,
+    "checked_asset_partition": "missing",
+    "successor_required": true,
+    "note": "A successor may remove only the unnecessary staged package initializer and import the same digest-bound launcher, driver and ABI modules as a namespace package. All product, binary, Workload and acceptance authorities remain unchanged."
+  }
+}
