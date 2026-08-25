@@ -793,6 +793,68 @@ class EvaluationContractTests(unittest.TestCase):
         self.assertEqual(observed.device.type, "cpu")
         self.assertTrue(torch.equal(observed, expected))
 
+    def test_current_tinygemm_observation_replays_the_frozen_plan(self) -> None:
+        result = json.loads(
+            (
+                ROOT
+                / "inventory/V25_TINYGEMM2_V2_B200_CORRECTNESS_RESULT_20260825.json"
+            ).read_text()
+        )
+        plan_path = ROOT / result["plan"]["path"]
+        observation_path = ROOT / result["raw_observation"]["path"]
+        plan = json.loads(plan_path.read_text())
+        observation = json.loads(observation_path.read_text())
+        self.assertEqual(observation["plan"], result["plan"])
+        self.assertEqual(plan["route"]["backend"], "checked_cuda_asset")
+        self.assertFalse(plan["route"]["generated"])
+        self.assertEqual(plan["execution"]["automatic_retries"], 0)
+        self.assertEqual(plan["execution"]["timing"], "none")
+        self.assertEqual(len(observation["authority_byte_checks"]), 17)
+        self.assertTrue(all(observation["authority_byte_checks"].values()))
+        self.assertEqual(
+            set(observation["materialized"]), set(plan["expected"]["materialized"])
+        )
+        close = observation["launch"]["close_receipt"]
+        self.assertEqual(close["kernel_calls"], 1)
+        self.assertEqual(close["fallback_calls"], 0)
+        self.assertTrue(close["module_unloaded_after_synchronize"])
+        self.assertEqual(observation["correctness"], {
+            "bitwise_parent_equal": True,
+            "maximum_absolute_error": 0.000244140625,
+            "tolerance_equal": True,
+        })
+        self.assertTrue(observation["passed"])
+        self.assertFalse(observation["performance_measured"])
+        self.assertFalse(observation["scientific_claim_authorized"])
+        summary = result["result"]
+        self.assertEqual(summary["status"], "passed")
+        self.assertEqual(
+            summary["authority_byte_check_count"],
+            len(observation["authority_byte_checks"]),
+        )
+        self.assertTrue(summary["all_authority_byte_checks_passed"])
+        self.assertTrue(summary["all_materialized_receipts_passed"])
+        self.assertEqual(summary["kernel_calls"], close["kernel_calls"])
+        self.assertEqual(summary["fallback_calls"], close["fallback_calls"])
+        self.assertEqual(
+            summary["module_unloaded_after_synchronize"],
+            close["module_unloaded_after_synchronize"],
+        )
+        self.assertEqual(summary["bitwise_parent_equal"], True)
+        self.assertEqual(
+            summary["maximum_absolute_error"],
+            observation["correctness"]["maximum_absolute_error"],
+        )
+        self.assertEqual(summary["tolerance_equal"], True)
+        self.assertEqual(result["disposition"], {
+            "passed": observation["passed"],
+            "checked_asset_partition": "passed",
+            "historical_r31_relabelled": False,
+            "performance_claim_authorized": observation[
+                "scientific_claim_authorized"
+            ],
+        })
+
     def test_r39_raw_samples_rederive_the_fixed_pair_observation(self) -> None:
         raw = json.loads((ROOT / "tests/fixtures/r39-paired-timing-result.json").read_text())
         protocol = PairedTimingProtocol(

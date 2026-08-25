@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "purpose": "current_checked_asset_correctness",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "plan": {
+    "path": "inventory/V25_TINYGEMM2_V2_B200_CORRECTNESS_SUCCESSOR_3_PLAN_20260825.json",
+    "raw_sha256": "c742782bcfeb2d7c32e016b3cda0d55d26542be9f5334330ed55e184bee35b8f"
+  },
+  "execution": {
+    "broker_job_id": "gpuq-b6053f720096",
+    "mode": "shared",
+    "gpu_count": 1,
+    "automatic_retries": 0,
+    "broker_exit_code": 0
+  },
+  "raw_observation": {
+    "path": "inventory/V25_TINYGEMM2_V2_B200_CORRECTNESS_OBSERVATION_20260825.json",
+    "raw_sha256": "cd6a80af629611750c9f5599c898779494f08852853eb828866a0010aa67f429"
+  },
+  "result": {
+    "status": "passed",
+    "authority_byte_check_count": 17,
+    "all_authority_byte_checks_passed": true,
+    "all_materialized_receipts_passed": true,
+    "kernel_calls": 1,
+    "fallback_calls": 0,
+    "module_unloaded_after_synchronize": true,
+    "output_sha256": "0c8d33850077810413ef9de0626f513c0d1743f058a57bf57702bf594c84e32b",
+    "bitwise_parent_equal": true,
+    "tolerance_equal": true,
+    "maximum_absolute_error": 0.000244140625
+  },
+  "disposition": {
+    "passed": true,
+    "checked_asset_partition": "passed",
+    "historical_r31_relabelled": false,
+    "performance_claim_authorized": false
+  }
+}

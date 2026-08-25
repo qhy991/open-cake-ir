@@ -19,7 +19,7 @@ disposition.
 | 8 | lowering profile is both routing and workload constraint | fixed in Compiler v24 |
 | 9 | emitter preconditions were late failures | fixed in Compiler v23 |
 | 10 | tiled accesses used the coordinate owner's extent instead of the accessed Buffer's extent | fixed in Compiler v25; B200 successor retains two separate numerical failures |
-| 11 | TinyGEMM2 regenerated a different input distribution and compared output bitwise to its own oracle | fixed by Workload v2 and Executor v29; current checked-asset launch remains missing |
+| 11 | TinyGEMM2 regenerated a different input distribution and compared output bitwise to its own oracle | fixed by Workload v2 and Executor v29; current checked-asset launch passes |
 
 ## Re-verification and action
 
@@ -125,11 +125,10 @@ block only lowering, not IR acceptance. The reduction drift Corpus case is there
 Frozen pre-v24 observations and ranking calibrations keep their old Schedule/source
 bytes. They were not re-labelled as v24 evidence. The frozen v24 diagnostic attempt and
 the v25 successor now provide the historical/current split for generated lowering, while
-a successor ranking calibration remains missing. The TinyGEMM2 checked-asset partition
-also remains missing because the historical r31 launch is not current-v25 binary
-evidence. The v25 Corpus Gate is 32/32 and the zero-GPU suite passes 397 pytest items;
-those gates validate the ownership migration but do not substitute for either missing
-successor.
+a successor ranking calibration remains missing. TinyGEMM2 separately has a current-v25
+checked-asset observation; the historical r31 launch was not relabelled. The v25 Corpus
+Gate is 32/32 and the zero-GPU suite passes 398 pytest items. Those gates validate the
+ownership migration but do not substitute for the missing ranking successor.
 
 ### 10: an access is bounded by the Buffer it addresses
 
@@ -153,8 +152,8 @@ drift now reaches a durable result, closing both crash paths. Twelve records pas
 GEMM rows remain failed under the unchanged `1e-5` maximum-absolute tolerance, with
 maximum deviation `3.814697265625e-05` and 3,997/3,993 violating elements respectively.
 That is retained numerical evidence, not a reason to widen the threshold or claim the
-generated partition passed. The current TinyGEMM2 checked-asset partition remains
-separately missing.
+generated partition passed. The current TinyGEMM2 checked-asset partition passes
+separately and does not change those generated-lowering dispositions.
 
 ### 11: materialized input and parent output are separate authorities
 
@@ -188,6 +187,13 @@ three generated input receipts, then failed before candidate launch. The adapter
 evaluated the receipt-pinned historical CPU oracle with CUDA matmul, producing different
 BF16 bytes. Executor v29 makes the existing declaration executable without adding a mode:
 it moves all three operands to CPU, calls FP32 linear, rounds to BF16, and compares output
-and oracle metrics on CPU. This repairs the second self-consistent oracle defect; it does
-not relabel r31 or the failed v28 attempt as a current Compiler-v25 binary launch, so the
-checked-asset partition remains missing pending one successor observation.
+and oracle metrics on CPU. This repairs the second self-consistent oracle defect.
+
+The preregistered successor (`gpuq-b6053f720096`, shared B200, no timing, zero retries)
+then passed all 17 byte-authority checks and the four generated receipts. It launched the
+pinned CUBIN exactly once with zero fallback, synchronized and unloaded the module,
+matched the retained parent output bitwise, and matched the independent CPU oracle at
+maximum absolute error `0.000244140625` under the unchanged `0.01/0.01` tolerance. The
+raw observation is retained byte-for-byte. Neither r31 nor the failed v28 attempt was
+relabelled; the current checked-asset partition now passes without authorizing a
+performance or scientific claim.

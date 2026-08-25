@@ -82,8 +82,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   program invalid. A frozen v24 B200 attempt exposed an out-of-bounds bias mask plus two observation crashes. v25
   bounds each tiled access by the Buffer it addresses and repairs batched tie auditing without adding a primitive or
   mode. Its no-timing successor compiled and launched all 14 generated lowerings: 12 pass, while both GEMM rows remain
-  failed at maximum deviation `3.814697265625e-05` under the unchanged `1e-5` threshold. TinyGEMM2's current checked-
-  asset observation and a current ranking calibration remain missing; historical evidence is not relabelled. These
+  failed at maximum deviation `3.814697265625e-05` under the unchanged `1e-5` threshold. TinyGEMM2's current checked
+  asset passes separately; a current ranking calibration remains missing. Historical evidence is not relabelled. These
   slices prove primitive expressibility and diagnostic lowering correctness only, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
@@ -133,9 +133,10 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   exact `/8` CUDA inputs, independent FP32 oracle and retained parent output, then evaluates parent-bitwise equality
   separately from oracle tolerance. Its first fully admitted B200 observer then caught that the adapter evaluated
   the pinned CPU oracle with CUDA matmul. v29 restores the historical CPU FP32-linear execution and performs both
-  metric operands on CPU. The failed pre-kernel observation is retained; a successor current checked-asset launch
-  remains missing.
-  The current local suite passes 397 pytest items. The earlier remote qualification passed its frozen
+  metric operands on CPU. The failed pre-kernel observation is retained. Its preregistered shared-B200 successor
+  passes all 17 authority checks, all four materialized receipts, one kernel launch, zero fallback, parent-bitwise
+  equality and oracle tolerance at maximum absolute error `0.000244140625`, without timing or a scientific claim.
+  The current local suite passes 398 pytest items. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no

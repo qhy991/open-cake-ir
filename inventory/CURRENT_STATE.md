@@ -76,8 +76,8 @@ causal effect, serving and paper reproduction are not.
   Buffer's own dimension, repairs the batched tie audit and models the already-declared masked-zero bias semantics
   without adding IR vocabulary. Its preregistered successor writes all 14 records after compile and launch: 12 pass,
   while both GEMM rows retain maximum deviation `3.814697265625e-05` above the unchanged `1e-5` boundary. Thus both
-  v24 crash paths are closed but the generated partition is still failed. The current TinyGEMM2 checked-asset
-  observation and a current ranking calibration remain missing; historical evidence is not relabelled. Release-cycle
+  v24 crash paths are closed but the generated partition is still failed. The current TinyGEMM2 checked asset passes
+  separately; a current ranking calibration remains missing. Historical evidence is not relabelled. Release-cycle
   automation prepared the v25 Gate but could not write its approval. The tmux 882 window1 reviewer rejected two stale
   intermediate Gates, independently checked the final 48-source/32-case closure, and wrote only the final approval.
   The reviewed
@@ -112,7 +112,10 @@ causal effect, serving and paper reproduction are not.
   fails before launch on any byte drift, and implements parent-bitwise equality separately from FP32-oracle
   tolerance. A fully admitted v28 B200 attempt then failed before kernel launch because the adapter used CUDA
   matmul for the receipt-pinned CPU oracle. v29 executes the historical CPU FP32 linear exactly and compares metric
-  operands on CPU; the failure remains frozen and a successor launch is still required. The Lab makes Claim Scope the
+  operands on CPU. Its preregistered shared-B200 successor (`gpuq-b6053f720096`, no timing, zero retries) passes all
+  17 authority checks and four materialized receipts, launches the pinned CUBIN once with zero fallback, unloads
+  after synchronization, matches the parent bytes and stays within oracle tolerance at maximum absolute error
+  `0.000244140625`. The Lab makes Claim Scope the
   single authority for choosing the
   closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
@@ -125,7 +128,7 @@ causal effect, serving and paper reproduction are not.
   Cake interface with an empty-body CUDA ABI starter; it validates reference access only and retains the local
   150k/`max` factors rather than claiming paper alignment.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles. TinyGEMM2 v1 remains immutable history; v2 is
-  current and its B200 materialization reproduction passes, while the current checked asset is still unlaunched.
+  current, and both its B200 materialization reproduction and current checked-asset correctness partition pass.
 - Lab owns matched Turn/budget/checkpoint control and the exact-shape Portfolio handoff; Compiler does not own
   KernelSeed or held-out policy.
 - Common Evaluation has sealed artifact custody, bounded broker-attempt semantics, shape-bound persistent Driver
@@ -141,7 +144,7 @@ causal effect, serving and paper reproduction are not.
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema, fresh-process replay and one
   RunAudit authority for separate archive-integrity and filesystem-custody facts.
-- The current local contract suite passes 397 pytest items; the earlier remote qualification passed its
+- The current local contract suite passes 398 pytest items; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain

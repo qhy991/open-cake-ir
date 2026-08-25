@@ -1,0 +1,201 @@
+{
+  "authority_byte_checks": {
+    "adapter": true,
+    "compiler_lock": true,
+    "cubin": true,
+    "executor_descriptor": true,
+    "instrument": true,
+    "nvcc": true,
+    "runtime_abi": true,
+    "runtime_contract_schema": true,
+    "runtime_contracts": true,
+    "runtime_driver": true,
+    "runtime_jsonio": true,
+    "runtime_launcher": true,
+    "sass": true,
+    "schedule": true,
+    "source": true,
+    "workload": true,
+    "workload_consumer": true
+  },
+  "automatic_retries": 0,
+  "correctness": {
+    "bitwise_parent_equal": true,
+    "maximum_absolute_error": 0.000244140625,
+    "tolerance_equal": true
+  },
+  "environment": {
+    "cuda_runtime": "13.0",
+    "device": "NVIDIA B200",
+    "torch": "2.13.0+cu130",
+    "visible_device_count": 1
+  },
+  "fallback_calls": 0,
+  "instrument_raw_sha256": "03792ca6160333fe307f8555a911ff30f77465ee52e9e9fcf4f29d6e801f96db",
+  "launch": {
+    "close_receipt": {
+      "automatic_retries": 0,
+      "block": [
+        384,
+        1,
+        1
+      ],
+      "candidate_compiler_invocations": 0,
+      "candidate_host_code_executed": false,
+      "candidate_shared_library_loaded": false,
+      "cubin_sha256": "2bcd2c1c235b3bb7f8f59640d8a56bea76f8a6690fdd16fa420092cbad4f8d00",
+      "dynamic_shared_memory_bytes": 52352,
+      "fallback_calls": 0,
+      "grid": [
+        64,
+        1,
+        1
+      ],
+      "kernel_calls": 1,
+      "kernel_name": "cake_tinygemm2_stage4_split_k",
+      "module_unloaded_after_synchronize": true,
+      "resources": {
+        "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 100,
+        "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+        "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 384,
+        "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0,
+        "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+        "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+        "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0
+      },
+      "runtime_arguments": 4,
+      "same_cubin": true,
+      "schema_version": 1,
+      "status": "synchronized_and_unloaded",
+      "tensor_map_encodes": 2,
+      "tensor_maps": {
+        "activation": {
+          "box_dim": [
+            64,
+            8
+          ],
+          "element_strides": [
+            1,
+            1
+          ],
+          "global_dim": [
+            1024,
+            8
+          ],
+          "global_strides_bytes": [
+            2048
+          ]
+        },
+        "weight": {
+          "box_dim": [
+            64,
+            16
+          ],
+          "element_strides": [
+            1,
+            1
+          ],
+          "global_dim": [
+            1024,
+            1024
+          ],
+          "global_strides_bytes": [
+            2048
+          ]
+        }
+      }
+    },
+    "tensor_contract": {
+      "bias": {
+        "contiguous": true,
+        "device": "cuda:0",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          1024
+        ]
+      },
+      "input": {
+        "contiguous": true,
+        "device": "cuda:0",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          8,
+          1024
+        ]
+      },
+      "output": {
+        "contiguous": true,
+        "device": "cuda:0",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          8,
+          1024
+        ]
+      },
+      "weight": {
+        "contiguous": true,
+        "device": "cuda:0",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          1024,
+          1024
+        ]
+      }
+    }
+  },
+  "materialized": {
+    "bias": {
+      "dtype": "torch.bfloat16",
+      "sha256": "5016f991298a8c84667331a17da8b0272cc58b42ef856ce5e0ee3b65439b3770",
+      "shape": [
+        1024
+      ],
+      "size_bytes": 2048
+    },
+    "fp32_linear_bf16_oracle": {
+      "dtype": "torch.bfloat16",
+      "sha256": "55ed28390a00e242bc2a767fea4a1e4489eef1981d869f1a6f6c9489b2fb898d",
+      "shape": [
+        8,
+        1024
+      ],
+      "size_bytes": 16384
+    },
+    "input": {
+      "dtype": "torch.bfloat16",
+      "sha256": "535c3a56f5f805329316bcb0445dff3ce71673e5c7b2ec0f5441e6af9b0c84d5",
+      "shape": [
+        8,
+        1024
+      ],
+      "size_bytes": 16384
+    },
+    "weight": {
+      "dtype": "torch.bfloat16",
+      "sha256": "a2edd5848ee7631ff8d4daed47fbccf8bbd570e19dd0098dc4cb68fa7ad5ecaa",
+      "shape": [
+        1024,
+        1024
+      ],
+      "size_bytes": 2097152
+    }
+  },
+  "output": {
+    "dtype": "torch.bfloat16",
+    "sha256": "0c8d33850077810413ef9de0626f513c0d1743f058a57bf57702bf594c84e32b",
+    "shape": [
+      8,
+      1024
+    ],
+    "size_bytes": 16384
+  },
+  "passed": true,
+  "performance_measured": false,
+  "plan": {
+    "path": "inventory/V25_TINYGEMM2_V2_B200_CORRECTNESS_SUCCESSOR_3_PLAN_20260825.json",
+    "raw_sha256": "c742782bcfeb2d7c32e016b3cda0d55d26542be9f5334330ed55e184bee35b8f"
+  },
+  "purpose": "current_checked_asset_correctness",
+  "schema_version": 1,
+  "scientific_claim_authorized": false
+}
