@@ -65,6 +65,24 @@ things to do because the rules above did not stop either one.
   accumulator by a lifetime rule -- and either can be scoped later by someone who checked
   every consequence they knew of. Close it properly or record that the block is borrowed.
 
+## SHA checks are exceptional
+
+- Do not compute, re-check, enumerate or report SHA-256 digests as a routine review,
+  test or status ritual. A byte-identity relation already verified remains settled until
+  one of its inputs or its owning boundary changes.
+- A digest check is allowed only when exact byte identity is the live uncertainty at a
+  frozen-release, external-handoff or explicitly pinned-evidence boundary, and a mismatch
+  would change the next action. State that boundary instead of treating the digest as
+  evidence of semantic correctness.
+- Check each required identity relation once at that boundary, preferably through its
+  existing release or audit command. Do not manually re-hash every referenced file, repeat
+  the same check in later reviews, or mirror a digest catalogue in semantic contract tests.
+- Reviews and status reports name artifact ids, paths and commits by default. Include a
+  digest only for a newly established boundary, an actual mismatch or an explicit user
+  request.
+- Do not add new digest fields, projections, inventories or hash-only tests unless they
+  replace materially more expensive work and their result selects a different action.
+
 ## Compiler evolution (S3, outer loop)
 
 - A proposal is checked against P1-P8 before it is implemented. A new primitive must be
