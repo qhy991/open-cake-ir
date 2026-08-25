@@ -249,6 +249,36 @@
         "schedule_sha256": "fc202dd8378d0223593a5b3b7e4b4ab52ddcff29f95614b47619427a96ddae25",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "swiglu-accepted",
+      "schedule": "corpus/schedules/swiglu-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "3ef0676387f56df9261a4e5873f8bcc90935638f0aa57c193fd2144ef9558199",
+        "lowering_source_sha256": "3fcfdee560ddd7361db232083b18006b648c35d3ea6e164756dc99ce221c2dac"
+      }
+    },
+    {
+      "case_id": "swiglu-shape-drift",
+      "schedule": "corpus/schedules/swiglu-b8-smoke-shape-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "PROFILE_SHAPE_MISMATCH",
+          "ACCESS_TILE_MISMATCH",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "e466daface523c4059f67fb32306fc26a91ddd71780e82e9e33229b01483150f",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

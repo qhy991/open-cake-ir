@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "386a56c89fd387822ec0794e186c043f2bb14cc3429d35cabfa976134e74b353"
+    "canonical_sha256": "75f29e87205b352ef7dabbd44ee7b7d8d6ebf352d87d2dc4aa2f6df684258106"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Lowering.generated exposes backend emission versus closed asset materialization without changing either source."
+  "approval_basis": "Repair the agent authoring schema against all 19 Corpus schedules and admit the KDA-derived tanh SwiGLU slice with an independently failing shape-drift case."
 }

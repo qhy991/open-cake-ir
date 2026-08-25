@@ -30,7 +30,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from kernel_cases import ORACLES, build_inputs  # noqa: E402
+from kernel_cases import build_inputs  # noqa: E402
+from kernel_oracles import ORACLES  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
 
 

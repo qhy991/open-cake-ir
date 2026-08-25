@@ -1,15 +1,10 @@
 """Project the typed IR into a JSON Schema.
 
-`compiler/schedule.schema.json` is embedded in every Turn prompt, so an agent authoring
-a Schedule reads it rather than the Python. It used to be maintained by hand beside
-`ir.py`, which made it a second authority for the same facts -- and it had already
-drifted: the checked-in schema restricted an Allocation to shared or tensor memory while
-the parser accepted every space the Target admits.
-
-The file is now a projection with a refresh path. Closed vocabularies come from the
-enums and field sets from the dataclasses, so a vocabulary cannot diverge from the code
-that enforces it. `tools/refresh_schedule_schema.py` rewrites it; a contract test fails
-if the checked-in bytes fall behind.
+`schedule.schema.json` is generated into every Turn's reference bundle, so an agent
+authoring a Schedule reads it rather than the Python. It is a projection, not a second
+checked-in authority: `lab.compose` calls `schedule_schema_bytes()` when it builds the
+bundle. Closed vocabularies come from the IR enums, and a contract test holds the
+projection against every Compiler Corpus document.
 """
 
 from __future__ import annotations
@@ -24,13 +19,16 @@ from .ir import (
     BoundaryPolicy,
     BufferMode,
     DType,
+    ElementwiseOp,
     EpilogueFormula,
     LoadMovement,
     LoadReuse,
     MemorySpace,
+    NaNPolicy,
     OperandMajorMode,
     OperandSource,
     OperationKind,
+    ReduceOp,
     ReductionScope,
     Swizzle,
 )
@@ -88,11 +86,11 @@ _PARAMETERS = {
         {
             "tile_shape": _mnk("The tile this operation walks, as M, N and K."),
             "instruction": _object(
+                {"contract": {
+                    "type": "string",
+                    "description": "Must be admitted by the Target.",
+                }},
                 {
-                    "contract": {
-                        "type": "string",
-                        "description": "Must be admitted by the Target.",
-                    },
                     "shape": _mnk("The atom's M, N and K, which is not the tile's."),
                     "cta_group": {"enum": [1, 2]},
                     "operand_source": _enum(OperandSource),
@@ -122,11 +120,22 @@ _PARAMETERS = {
         },
     ),
     OperationKind.REDUCE_ARGMIN: _object(
-        {"tie_break": _enum(ArgminTieBreak), "nan_policy": {"enum": ["reject_input"]}},
+        {"tie_break": _enum(ArgminTieBreak), "nan_policy": _enum(NaNPolicy)},
         {"across_loop": {"type": "boolean"}},
     ),
     OperationKind.REDUCE: _object(
-        {"axis": _NONNEGATIVE, "scope": _enum(ReductionScope)}
+        {
+            "op": _enum(ReduceOp),
+            "axis": _NONNEGATIVE,
+            "scope": _enum(ReductionScope),
+        }
+    ),
+    OperationKind.ELEMENTWISE: _object(
+        {"op": _enum(ElementwiseOp)},
+        {
+            "scalar": {"type": "number"},
+            "broadcast_axis": _NONNEGATIVE,
+        },
     ),
     OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),
 }
@@ -171,7 +180,7 @@ def schedule_schema() -> dict[str, Any]:
         "title": "Open Cake Schedule v1",
         "description": (
             "Generated from src/open_cake_ir/compiler/ir.py by "
-            "tools/refresh_schedule_schema.py. Do not edit by hand."
+            "open_cake_ir.compiler.schema.schedule_schema_bytes()."
         ),
         "type": "object",
         "additionalProperties": False,
@@ -225,7 +234,11 @@ def schedule_schema() -> dict[str, Any]:
                             }
                         ),
                     }
-                }
+                },
+                {
+                    "persistent": {"type": "boolean"},
+                    "traversal": _NAMES,
+                },
             ),
             "roles": {
                 "type": "array",
@@ -262,7 +275,8 @@ def schedule_schema() -> dict[str, Any]:
                         "tensor_columns": dict(
                             _POSITIVE,
                             description="Tensor-memory column range; must agree with size_bytes.",
-                        )
+                        ),
+                        "allocating_role": _NAME,
                     },
                 ),
             },
@@ -368,12 +382,17 @@ def schedule_schema() -> dict[str, Any]:
                         "pipeline": _NAME,
                         "parameters": {"type": "object"},
                     },
+                    # Index the complete IR enum: an unprojected new kind must fail
+                    # while this schema is built, not silently accept unconstrained
+                    # parameters for authoring.
                     "allOf": [
                         {
                             "if": {"properties": {"kind": {"const": kind.value}}},
-                            "then": {"properties": {"parameters": parameters}},
+                            "then": {
+                                "properties": {"parameters": _PARAMETERS[kind]}
+                            },
                         }
-                        for kind, parameters in _PARAMETERS.items()
+                        for kind in OperationKind
                     ],
                 },
             },

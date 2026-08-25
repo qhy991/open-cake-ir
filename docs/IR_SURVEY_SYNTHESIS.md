@@ -297,9 +297,11 @@ vocabulary either -- the IR already said everything it needed -- but it did need
 Triton emitter to tell the two shapes apart and accumulate for one of them, which is
 backend work rather than a new thing a Schedule can say.
 
-So the tally across five emitted operators is: two needed vocabulary, one needed a
-derivation, two needed neither. What has stopped growing is the set of words. What has
-not is what a backend must be able to do with them, and those are different claims.
+SwiGLU then added one reusable unary word, `tanh`, after the KDA v12 delta showed the same
+primitive in both activation and routing paths. So the tally across six emitted operators
+is: three needed vocabulary, one needed a derivation, two needed neither. What is slowing
+is the growth of words; what has not stopped is what a backend must do with them, and
+those are different claims.
 
 The gate earned its keep twice here. It refused the two-pass-in-a-loop Schedule that would
 have computed a softmax over stale maxima, and the profile rule refused a drift case with
@@ -319,6 +321,6 @@ before the fact would have shown and a corpus of six families cannot.
 
 ## Corpus coverage, restated
 
-Sixteen cases across six operator families, against the paper's roughly four hundred across
-twenty-eight. Attention, MoE, quantized GEMM and fused graph kernels -- the four families
-these surveys are about -- have no local representation at all.
+Nineteen cases across eight admitted profiles, against the paper's roughly four hundred
+across twenty-eight. The standalone SwiGLU arithmetic slice is local now; attention,
+complete MoE, quantized GEMM and fused graph kernels are not.

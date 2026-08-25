@@ -158,6 +158,7 @@ class ElementwiseOp(str, Enum):
     SQUARE = "square"
     RSQRT = "rsqrt"
     EXP = "exp"
+    TANH = "tanh"
     ADD = "add"
     SUB = "sub"
     MUL = "mul"
@@ -165,7 +166,17 @@ class ElementwiseOp(str, Enum):
 
     @property
     def arity(self) -> int:
-        return 1 if self in (ElementwiseOp.SQUARE, ElementwiseOp.RSQRT, ElementwiseOp.EXP) else 2
+        return (
+            1
+            if self
+            in (
+                ElementwiseOp.SQUARE,
+                ElementwiseOp.RSQRT,
+                ElementwiseOp.EXP,
+                ElementwiseOp.TANH,
+            )
+            else 2
+        )
 
 
 class ReductionScope(str, Enum):

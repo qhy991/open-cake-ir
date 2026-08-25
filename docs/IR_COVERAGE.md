@@ -159,6 +159,13 @@ relative to the weights -- which is a family the corpus does not cover at all.
 
 ## Corpus coverage
 
-Eight cases across three families, against the paper's roughly four hundred cases across
-twenty-eight. Attention and MoE, which are what the surveyed work is actually about, have
-no representation here at all.
+The current Compiler Corpus has 19 cases across eight admitted profiles, against the
+paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
+the surveyed work is actually about, still have no complete representation here.
+
+The independent 57-version KDA MoE evolution sharpens that statement. Cake can name
+several isolated deltas, but it cannot describe even the complete v1 baseline, so the
+complete-version coverage is 0/57 rather than a count of matching knobs. The snapshot,
+ownership boundary and first minimal slice are recorded in
+[`ADR 0020`](adr/0020-kda-deltas-are-an-external-expressibility-corpus.md); the external
+history remains the evidence authority instead of being copied into this repository.

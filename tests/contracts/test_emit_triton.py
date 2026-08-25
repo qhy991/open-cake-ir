@@ -433,6 +433,18 @@ class ElementwiseArityTest(unittest.TestCase):
                 self.assertIn("{a}", template)
                 self.assertEqual("{b}" in template, op.arity == 2)
 
+    def test_tanh_is_emitted_only_when_the_schedule_declares_it(self) -> None:
+        swiglu = emit(
+            Schedule.load(ROOT / "corpus" / "schedules" / "swiglu-b8-smoke.json"),
+            TARGET,
+        ).source
+        self.assertIn("from triton.language.extra import libdevice", swiglu)
+        self.assertIn("tanh_gate = libdevice.tanh(half_gate)", swiglu)
+        self.assertIn("silu_gate = gate_tile * sigmoid_gate", swiglu)
+
+        existing = emit(Schedule.load(SCHEDULE), TARGET).source
+        self.assertNotIn("triton.language.extra", existing)
+
 
 class EmittedObservationTest(unittest.TestCase):
     """The retained B200 observations for the operators this backend emits.
@@ -461,6 +473,7 @@ class EmittedObservationTest(unittest.TestCase):
             "PERSISTENT_OBSERVATION_20260824.json",
             "rmsnorm-b128-persistent.json",
         ),
+        ("swiglu", "SWIGLU_OBSERVATION_20260825.json", "swiglu-b8-smoke.json"),
     )
 
     LOOPLESS = (

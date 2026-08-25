@@ -17,6 +17,8 @@ import json
 import unittest
 from pathlib import Path
 
+from jsonschema import Draft202012Validator
+
 from open_cake_ir.compiler.ir import (
     AccessIndexKind,
     BoundaryPolicy,
@@ -32,6 +34,7 @@ from open_cake_ir.compiler.ir import (
     Schedule,
     ScheduleParseError,
 )
+from open_cake_ir.compiler.schema import schedule_schema
 
 ROOT = Path(__file__).resolve().parents[2]
 # The manifest is what the Corpus is; the directory also holds schedules
@@ -69,7 +72,7 @@ def _op(document: dict, op_id: str) -> dict:
 
 class RetainedScheduleTest(unittest.TestCase):
     def test_every_corpus_schedule_parses(self) -> None:
-        self.assertEqual(len(CORPUS), 17)
+        self.assertEqual(len(CORPUS), 19)
         for path in CORPUS:
             with self.subTest(schedule=path.name):
                 schedule = Schedule.load(path)
@@ -77,6 +80,30 @@ class RetainedScheduleTest(unittest.TestCase):
                 self.assertEqual(schedule.target, "sm_100a")
                 self.assertTrue(schedule.operations)
                 self.assertTrue(schedule.outputs)
+
+    def test_every_corpus_schedule_is_admitted_by_the_authoring_schema(self) -> None:
+        """The prompt projection may not refuse bytes the canonical parser admits.
+
+        The schema is the agent's authoring surface. A parser-only test missed fields and
+        operation parameters that made sixteen of seventeen current Corpus documents
+        invalid JSON-Schema instances even though the Compiler accepted them.
+        """
+
+        validator = Draft202012Validator(schedule_schema())
+        for path in CORPUS:
+            with self.subTest(schedule=path.name):
+                errors = sorted(
+                    validator.iter_errors(_document(path)),
+                    key=lambda error: tuple(str(part) for part in error.absolute_path),
+                )
+                self.assertEqual(
+                    errors,
+                    [],
+                    "\n".join(
+                        f"{'.'.join(map(str, error.absolute_path))}: {error.message}"
+                        for error in errors
+                    ),
+                )
 
     def test_gpu_quickstart_schedule_parses(self) -> None:
         schedule = Schedule.load(ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke-v2.json")

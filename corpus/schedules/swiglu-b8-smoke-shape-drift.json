@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "schedule_id": "swiglu-b8-smoke-shape-drift-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "up", "space": "global", "dtype": "fp32", "shape": [8, 512, 128], "mode": "input"},
+    {"name": "gate", "space": "global", "dtype": "fp32", "shape": [8, 512, 128], "mode": "input"},
+    {"name": "y", "space": "global", "dtype": "fp32", "shape": [8, 512, 64], "mode": "output"},
+    {"name": "up_tile", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"},
+    {"name": "gate_tile", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"},
+    {"name": "half_gate", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"},
+    {"name": "tanh_gate", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"},
+    {"name": "shifted_gate", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"},
+    {"name": "sigmoid_gate", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"},
+    {"name": "silu_gate", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"},
+    {"name": "y_tile", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_up", "kind": "load", "role": "compute", "reads": ["up"], "writes": ["up_tile"], "parameters": {"movement": "global", "reuse": "reused"}},
+    {"id": "load_gate", "kind": "load", "role": "compute", "reads": ["gate"], "writes": ["gate_tile"], "parameters": {"movement": "global", "reuse": "reused"}},
+    {"id": "half_gate", "kind": "elementwise", "role": "compute", "reads": ["gate_tile"], "writes": ["half_gate"], "depends_on": ["load_gate"], "parameters": {"op": "mul", "scalar": 0.5}},
+    {"id": "tanh_gate", "kind": "elementwise", "role": "compute", "reads": ["half_gate"], "writes": ["tanh_gate"], "depends_on": ["half_gate"], "parameters": {"op": "tanh"}},
+    {"id": "shift_gate", "kind": "elementwise", "role": "compute", "reads": ["tanh_gate"], "writes": ["shifted_gate"], "depends_on": ["tanh_gate"], "parameters": {"op": "add", "scalar": 1.0}},
+    {"id": "sigmoid_gate", "kind": "elementwise", "role": "compute", "reads": ["shifted_gate"], "writes": ["sigmoid_gate"], "depends_on": ["shift_gate"], "parameters": {"op": "mul", "scalar": 0.5}},
+    {"id": "weight_gate", "kind": "elementwise", "role": "compute", "reads": ["gate_tile", "sigmoid_gate"], "writes": ["silu_gate"], "depends_on": ["load_gate", "sigmoid_gate"], "parameters": {"op": "mul"}},
+    {"id": "apply_gate", "kind": "elementwise", "role": "compute", "reads": ["up_tile", "silu_gate"], "writes": ["y_tile"], "depends_on": ["load_up", "weight_gate"], "parameters": {"op": "mul"}},
+    {"id": "store_y", "kind": "store", "role": "compute", "reads": ["y_tile"], "writes": ["y"], "depends_on": ["apply_gate"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["y"],
+  "program_map": {
+    "axes": [
+      {"name": "row_block", "axis": 0, "buffer": "up", "dimension": 1, "tile": 64},
+      {"name": "batch", "axis": 1, "buffer": "up", "dimension": 0, "tile": 1}
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_up", "buffer": "up", "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_gate", "buffer": "gate", "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_y", "buffer": "y", "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"profile": "swiglu_b8_smoke", "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 128}
+}

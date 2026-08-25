@@ -355,6 +355,36 @@ def _gemm_bias_b1_smoke_conformance(buffers, operations) -> list["Finding"]:
     ]
 
 
+def _swiglu_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """SwiGLU is two equally shaped inputs and one equally shaped output.
+
+    This is deliberately only the arithmetic slice exercised by the KDA v12 delta. The
+    grouped-GEMM producer, quantization scales and routed scatter are separate missing
+    mechanisms, so accepting this profile does not call the complete MoE kernel
+    expressible.
+    """
+
+    up = _shape_of(buffers, "up")
+    gate = _shape_of(buffers, "gate")
+    coheres = (
+        up is not None
+        and len(up) == 3
+        and gate == up
+        and _shape_of(buffers, "y") == up
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.up.shape",
+            "SwiGLU requires up, gate and y to have the same rank-3 shape",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
 @dataclass(frozen=True)
 class _Profile:
     """One admitted lowering profile and every fact that follows from admitting it.
@@ -488,6 +518,17 @@ _PROFILES: Mapping[str, _Profile] = {
             "entry_abi": "three_cuda_tensors_current_stream",
         },
         conformance=_rmsnorm_b8_smoke_conformance,
+        backend=emit_triton,
+    ),
+    "swiglu_b8_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_swiglu_b8_smoke",
+            "target": "sm_100a",
+            "entry_abi": "three_cuda_tensors_current_stream",
+        },
+        conformance=_swiglu_b8_smoke_conformance,
         backend=emit_triton,
     ),
     "tinygemm2_stage4_split_k": _Profile(
