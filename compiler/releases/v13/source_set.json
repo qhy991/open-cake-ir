@@ -20,8 +20,6 @@
     "corpus/schedules/softmax-b8-smoke.json",
     "corpus/schedules/swiglu-b8-smoke-shape-drift.json",
     "corpus/schedules/swiglu-b8-smoke.json",
-    "corpus/schedules/top-k-b8-smoke-shape-drift.json",
-    "corpus/schedules/top-k-b8-smoke.json",
     "corpus/schedules/tinygemm2-stage4-split-k-reduction-drift.json",
     "corpus/schedules/tinygemm2-stage4-split-k.json",
     "src/open_cake_ir/compiler/__init__.py",

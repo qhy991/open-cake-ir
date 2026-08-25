@@ -385,6 +385,45 @@ def _swiglu_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
     ]
 
 
+def _top_k_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """Eight deterministic expert indices from each resident 256-score row.
+
+    This binds the standalone indexed-selection slice, not DeepSeek group routing. The
+    generic verifier owns top_k's rank, dtype and result rules; this profile owns only the
+    workload shape and the one operation that connects its named tiles.
+    """
+
+    selection = next(
+        (operation for operation in operations if operation.get("id") == "select_experts"),
+        None,
+    )
+    parameters = selection.get("parameters") if isinstance(selection, Mapping) else None
+    coheres = (
+        _shape_of(buffers, "scores") == (8, 256)
+        and _shape_of(buffers, "indices") == (8, 8)
+        and isinstance(selection, Mapping)
+        and selection.get("kind") == "top_k"
+        and selection.get("reads") == ["score_row"]
+        and selection.get("writes") == ["top_values", "top_indices"]
+        and isinstance(parameters, Mapping)
+        and parameters.get("k") == 8
+        and parameters.get("tie_break") == "lowest_index"
+        and parameters.get("nan_policy") == "reject_input"
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.scores.shape",
+            "the Top-K smoke profile selects eight deterministic indices from each "
+            "of eight 256-score rows",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
 @dataclass(frozen=True)
 class _Profile:
     """One admitted lowering profile and every fact that follows from admitting it.
@@ -529,6 +568,17 @@ _PROFILES: Mapping[str, _Profile] = {
             "entry_abi": "three_cuda_tensors_current_stream",
         },
         conformance=_swiglu_b8_smoke_conformance,
+        backend=emit_triton,
+    ),
+    "top_k_b8_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_top_k_b8_smoke",
+            "target": "sm_100a",
+            "entry_abi": "two_cuda_tensors_current_stream",
+        },
+        conformance=_top_k_b8_smoke_conformance,
         backend=emit_triton,
     ),
     "tinygemm2_stage4_split_k": _Profile(

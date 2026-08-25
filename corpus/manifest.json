@@ -279,6 +279,34 @@
         "schedule_sha256": "e466daface523c4059f67fb32306fc26a91ddd71780e82e9e33229b01483150f",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "top-k-accepted",
+      "schedule": "corpus/schedules/top-k-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "348447d466d9a0a3087c54ff9e9bbd23a752faa4fd877a92e2683a87ff0ca27b",
+        "lowering_source_sha256": "5b0d473c29126d80d66a028eee183dbe0807f6c2dfbda9e5fd700b67bb374e42"
+      }
+    },
+    {
+      "case_id": "top-k-shape-drift",
+      "schedule": "corpus/schedules/top-k-b8-smoke-shape-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "PROFILE_SHAPE_MISMATCH",
+          "TOP_K_SHAPE_MISMATCH",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "498146c778e0676405ec7553ed925923b0ec1ed90acf9412c17165a48a66c09f",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

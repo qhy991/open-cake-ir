@@ -22,9 +22,9 @@ from .ir import (
     LoadReuse,
     AccessIndexKind,
     AccessMap,
-    ArgminTieBreak,
     Buffer,
     DType,
+    IndexTieBreak,
     LoadMovement,
     MemorySpace,
     OperationKind,
@@ -90,6 +90,7 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.LOAD: "_emit_load",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
     OperationKind.REDUCE: "_emit_reduce",
+    OperationKind.TOP_K: "_emit_top_k",
     OperationKind.STORE: "_emit_store",
 }
 
@@ -98,6 +99,7 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.MMA: "_emit_mma",
     OperationKind.REDUCE_ARGMIN: "_emit_argmin",
     OperationKind.REDUCE: "_emit_reduce",
+    OperationKind.TOP_K: "_emit_top_k",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
 }
 
@@ -740,7 +742,7 @@ class _TritonEmitter:
     def _emit_argmin(self, operation, pad: str) -> None:
         source = operation.reads[0]
         best = operation.writes[0]
-        lowest = operation.parameters.tie_break is ArgminTieBreak.LOWEST_INDEX
+        lowest = operation.parameters.tie_break is IndexTieBreak.LOWEST_INDEX
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}block_position = tl.argmin(")
         self.line(f"{pad}    {source}, axis=1, tie_break_left={lowest},")
@@ -757,6 +759,52 @@ class _TritonEmitter:
         self.line(f"{pad}update = better | tie")
         self.line(f"{pad}best_distance = tl.where(update, block_distance, best_distance)")
         self.line(f"{pad}{best} = tl.where(update, candidate_index, {best})")
+
+    def _emit_top_k(self, operation, pad: str) -> None:
+        """Select a deterministic descending prefix from one resident score tile.
+
+        The current SM100 Triton path has one physical implementation: repeated maximum
+        value and minimum matching-index reductions. An explicit selected-position mask
+        keeps legal negative-infinity values distinct; replacing a winner with negative
+        infinity alone would select it again when every remaining value is also -inf.
+        """
+
+        source = self.schedule.buffer(operation.reads[0])
+        _require(source is not None, f"top_k reads unknown buffer {operation.reads[0]!r}")
+        values, indices = operation.writes
+        k = operation.parameters.k
+        prefix = operation.op_id
+        selected = f"{prefix}_selected"
+        slots = f"{prefix}_slots"
+        positions = f"{prefix}_source_positions"
+
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f'{pad}{values} = tl.full(({k},), float("-inf"), tl.float32)')
+        self.line(f"{pad}{indices} = tl.zeros(({k},), tl.int32)")
+        self.line(f"{pad}{slots} = tl.arange(0, {k})")
+        self.line(f"{pad}{positions} = tl.arange(0, {source.shape[0]})")
+        self.line(f"{pad}{selected} = tl.zeros(({source.shape[0]},), tl.int1)")
+        for slot in range(k):
+            value = f"{prefix}_value_{slot}"
+            index = f"{prefix}_index_{slot}"
+            candidates = f"{prefix}_candidates_{slot}"
+            matching = f"{prefix}_matching_{slot}"
+            self.line(
+                f'{pad}{candidates} = tl.where(~{selected}, '
+                f'{operation.reads[0]}, float("-inf"))'
+            )
+            self.line(f"{pad}{value} = tl.max({candidates}, axis=0)")
+            self.line(
+                f"{pad}{matching} = (~{selected}) & "
+                f"({operation.reads[0]} == {value})"
+            )
+            self.line(
+                f"{pad}{index} = tl.min(tl.where({matching}, {positions}, "
+                f"{source.shape[0]}), axis=0)"
+            )
+            self.line(f"{pad}{values} = tl.where({slots} == {slot}, {value}, {values})")
+            self.line(f"{pad}{indices} = tl.where({slots} == {slot}, {index}, {indices})")
+            self.line(f"{pad}{selected} |= {positions} == {index}")
 
     def _emit_store(self, operation, pad: str) -> None:
         access = self.schedule.access_map(operation.op_id, operation.writes[0])

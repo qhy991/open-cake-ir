@@ -159,7 +159,7 @@ relative to the weights -- which is a family the corpus does not cover at all.
 
 ## Corpus coverage
 
-The current Compiler Corpus has 19 cases across eight admitted profiles, against the
+The current Compiler Corpus has 21 cases across nine admitted profiles, against the
 paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
 the surveyed work is actually about, still have no complete representation here.
 
@@ -169,3 +169,6 @@ complete-version coverage is 0/57 rather than a count of matching knobs. The sna
 ownership boundary and first minimal slice are recorded in
 [`ADR 0020`](adr/0020-kda-deltas-are-an-external-expressibility-corpus.md); the external
 history remains the evidence authority instead of being copied into this repository.
+ADR 0021 closes the standalone deterministic indexed-selection primitive and validates it
+on B200, but grouping and mask/update composition are still needed before the three-stage
+v1 routing chain can be represented as one Schedule.

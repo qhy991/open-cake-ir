@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
 B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 ASSIGNMENT_FULL = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
+TOP_K = ROOT / "corpus" / "schedules" / "top-k-b8-smoke.json"
 
 
 class ObservedFactsTest(unittest.TestCase):
@@ -73,6 +74,12 @@ class ResidencyTest(unittest.TestCase):
         self.assertEqual(bound.binding.resource, "logical_register_storage")
         self.assertEqual(bound.binding.ctas, 1)
         self.assertEqual(logical_registers_per_thread_lower_bound(schedule, TARGET), 289)
+
+    def test_top_k_charges_source_values_and_indices_while_they_are_live(self) -> None:
+        # At selection the 256 score values and both eight-element results coexist. The
+        # logical lower bound therefore sees 272 registers across 128 CTA threads.
+        schedule = Schedule.load(TOP_K)
+        self.assertEqual(logical_registers_per_thread_lower_bound(schedule, TARGET), 3)
 
     def test_a_smaller_tile_relaxes_the_bound(self) -> None:
         """Halving the token tile halves the register buffers and doubles residency."""

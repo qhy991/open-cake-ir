@@ -446,6 +446,22 @@ class ElementwiseArityTest(unittest.TestCase):
         self.assertNotIn("triton.language.extra", existing)
 
 
+class TopKEmissionTest(unittest.TestCase):
+    def test_selection_is_ordered_distinct_and_inspectable(self) -> None:
+        source = emit(
+            Schedule.load(ROOT / "corpus" / "schedules" / "top-k-b8-smoke.json"),
+            TARGET,
+        ).source
+
+        ast.parse(source)
+        self.assertEqual(source.count(" = tl.max(select_experts_candidates_"), 8)
+        self.assertEqual(source.count(" = tl.min(tl.where(select_experts_matching_"), 8)
+        self.assertEqual(source.count("select_experts_selected |= "), 8)
+        self.assertIn("top_values = tl.where(select_experts_slots == 7", source)
+        self.assertIn("top_indices = tl.where(select_experts_slots == 7", source)
+        self.assertNotIn("return_indices_tie_break_left", source)
+
+
 class EmittedObservationTest(unittest.TestCase):
     """The retained B200 observations for the operators this backend emits.
 
@@ -474,6 +490,7 @@ class EmittedObservationTest(unittest.TestCase):
             "rmsnorm-b128-persistent.json",
         ),
         ("swiglu", "SWIGLU_OBSERVATION_20260825.json", "swiglu-b8-smoke.json"),
+        ("top-k", "TOP_K_OBSERVATION_20260825.json", "top-k-b8-smoke.json"),
     )
 
     LOOPLESS = (
@@ -499,9 +516,13 @@ class EmittedObservationTest(unittest.TestCase):
                     lowering.source_sha256, record["lowering"]["source_sha256"]
                 )
                 self.assertEqual(record["result"]["mismatch_count"], 0)
-                self.assertLessEqual(
-                    record["result"]["max_deviation"], record["result"]["tolerance"]
-                )
+                if "exact_match" in record["result"]:
+                    self.assertTrue(record["result"]["exact_match"])
+                else:
+                    self.assertLessEqual(
+                        record["result"]["max_deviation"],
+                        record["result"]["tolerance"],
+                    )
                 self.assertTrue(record["result"]["passed"])
                 self.assertFalse(record["performance_measured"])
 

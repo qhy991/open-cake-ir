@@ -1162,6 +1162,112 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
 
 def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> None:
     category = FindingCategory.DATA_CONSISTENCY
+    if operation.kind is OperationKind.TOP_K:
+        if len(operation.reads) != 1 or len(operation.writes) != 2:
+            out.add(
+                "TOP_K_ARITY",
+                path,
+                "top_k reads exactly one score tile and writes values then int32 "
+                f"indices, got {len(operation.reads)} read(s) and "
+                f"{len(operation.writes)} write(s)",
+                category,
+            )
+        else:
+            source = buffers.get(operation.reads[0])
+            values = buffers.get(operation.writes[0])
+            indices = buffers.get(operation.writes[1])
+            k = operation.parameters.k
+            if source is not None:
+                if len(source.shape) != 1:
+                    out.add(
+                        "TOP_K_SOURCE_RANK",
+                        f"{path}.reads",
+                        f"top_k selects from one resident rank-one tile, but "
+                        f"{source.name!r} has shape {list(source.shape)}",
+                        category,
+                    )
+                elif k > source.shape[0]:
+                    out.add(
+                        "TOP_K_K_OUT_OF_RANGE",
+                        f"{path}.parameters.k",
+                        f"top_k asks for {k} values from {source.name!r} with extent "
+                        f"{source.shape[0]}",
+                        category,
+                    )
+                if source.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "TOP_K_SOURCE_SPACE",
+                        f"{path}.reads",
+                        f"top_k reduces a resident register tile, but {source.name!r} "
+                        f"is in {source.space.value}",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+                if source.dtype is not DType.FP32:
+                    out.add(
+                        "TOP_K_VALUE_DTYPE",
+                        f"{path}.reads",
+                        f"the admitted top_k lowering reduces fp32 scores, but "
+                        f"{source.name!r} is {source.dtype.value}",
+                        category,
+                    )
+            if values is not None:
+                if values.shape != (k,):
+                    out.add(
+                        "TOP_K_SHAPE_MISMATCH",
+                        f"{path}.writes",
+                        f"top_k with k={k} writes values[{k}], but {values.name!r} has "
+                        f"shape {list(values.shape)}",
+                        category,
+                    )
+                if source is not None and values.dtype is not source.dtype:
+                    out.add(
+                        "TOP_K_VALUE_DTYPE",
+                        f"{path}.writes",
+                        f"top_k values preserve {source.name!r}'s {source.dtype.value} "
+                        f"dtype, but {values.name!r} is {values.dtype.value}",
+                        category,
+                    )
+                if values.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "TOP_K_RESULT_SPACE",
+                        f"{path}.writes",
+                        f"top_k values stay in registers before an explicit store, but "
+                        f"{values.name!r} is in {values.space.value}",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+            if indices is not None:
+                if indices.shape != (k,):
+                    out.add(
+                        "TOP_K_SHAPE_MISMATCH",
+                        f"{path}.writes",
+                        f"top_k with k={k} writes indices[{k}], but {indices.name!r} "
+                        f"has shape {list(indices.shape)}",
+                        category,
+                    )
+                if indices.dtype is not DType.INT32:
+                    out.add(
+                        "TOP_K_INDEX_DTYPE",
+                        f"{path}.writes",
+                        f"top_k source positions are int32, but {indices.name!r} is "
+                        f"{indices.dtype.value}",
+                        category,
+                    )
+                if indices.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "TOP_K_RESULT_SPACE",
+                        f"{path}.writes",
+                        f"top_k indices stay in registers before an explicit store, but "
+                        f"{indices.name!r} is in {indices.space.value}",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+            if k & (k - 1):
+                out.add(
+                    "TOP_K_K_UNLOWERABLE",
+                    f"{path}.parameters.k",
+                    f"the admitted SM100 Triton top_k lowering requires power-of-two k, "
+                    f"but k is {k}",
+                    FindingCategory.HARDWARE_CONFORMANCE,
+                )
     expected = _ARITY.get(operation.kind)
     if expected is not None:
         reads, writes, label = expected

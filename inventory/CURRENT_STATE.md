@@ -1,8 +1,8 @@
 # Current-state inventory
 
-Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set envelope implementation and live
-system qualification, historical Executor-v10 NCU attribution validation, Executor v26 release and Compiler v13
-KDA-delta expressibility slice. The final
+Snapshot: 2026-08-25 after declared-domain ranking calibration, candidate-set envelope implementation and live
+system qualification, historical Executor-v10 NCU attribution validation, Executor v26 release and Compiler v14
+KDA-derived primitive expressibility slices. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
@@ -29,8 +29,8 @@ causal effect, serving and paper reproduction are not.
 
 ## New repository state
 
-- Compiler Revision `open-cake-ir-sm100a-v13` binds the exact Target, public Schedule authoring contract, 35-source
-  closure, 19-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
+- Compiler Revision `open-cake-ir-sm100a-v14` binds the exact Target, public Schedule authoring contract, 37-source
+  closure, 21-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
   remain immutable history; v7 and v8 are archived byte-for-byte because retained calibration and Study authorities
   witness them. v9 makes an otherwise-lowerable backend-emitted MMA without an instruction contract a structured,
   candidate-actionable Finding instead of a late emitter exception. v10 similarly makes the pinned Triton backend's
@@ -47,8 +47,12 @@ causal effect, serving and paper reproduction are not.
   standalone SwiGLU positive/shape-drift pair. Seven backend-emitted profiles report true while the closed
   TinyGEMM2 asset reports false. A B200 correctness-only observation compiled and launched the SwiGLU lowering over
   524,288 FP32 outputs with zero tolerance violations and maximum deviation 4.76837158203125e-07. The reviewed KDA
-  snapshot remains 0/57 for complete-version expressibility because grouped/ragged work, indexed top-k,
-  quantization-scale relations and scatter are still absent; no KDA performance claim is made.
+  v1 chain then exposed the paper-claimed Top-K vocabulary gap. v14 admits one deterministic indexed-selection
+  primitive and a positive/shape-drift pair; eight backend-emitted profiles now report true. Its brokered B200
+  correctness-only observation compiled and launched the generated lowering and matched all 64 ordered indices
+  exactly under forced ties and negative infinities. The reviewed KDA snapshot remains 0/57 for complete-version
+  expressibility because grouping/masking, quantization-scale relations, grouped/ragged work, scatter and the
+  multi-kernel program DAG are still absent; no KDA performance claim is made.
 - Current Executor Revision `open-cake-ir-b200-v26` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
@@ -71,11 +75,11 @@ causal effect, serving and paper reproduction are not.
   single authority for choosing the
   closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
-- Current matched Study v28 fixtures bind Compiler v13 and Executor v26, profile every correctness-qualified search
+- Current matched Study v29 fixtures bind Compiler v14 and Executor v26, profile every correctness-qualified search
   survivor through the existing no-timing attribution purpose, and feed back only the selected survivor's checked
   projection. Frozen selected-only evidence
   retains its earlier operation spelling; the current live v3 successor now passes this relation on B200 for both
-  selected and non-selected survivors in both arms. A separate v28 reference fixture pairs an operation-free Open
+  selected and non-selected survivors in both arms. A separate v29 reference fixture pairs an operation-free Open
   Cake interface with an empty-body CUDA ABI starter; it validates reference access only and retains the local
   150k/`max` factors rather than claiming paper alignment.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
@@ -93,7 +97,7 @@ causal effect, serving and paper reproduction are not.
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 343 tests plus 254 subtests; the earlier remote qualification passed its
+- The current local contract suite passes 348 tests, including its parameterized contract cases; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain

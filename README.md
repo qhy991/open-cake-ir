@@ -37,8 +37,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v13` is content-bound to an exact `sm_100a` Target and a 19-case,
-  35-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
+- Compiler Revision `open-cake-ir-sm100a-v14` is content-bound to an exact `sm_100a` Target and a 21-case,
+  37-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
   emitted MMA omit its instruction contract while still being marked lowering-eligible. v10 turns the pinned Triton
@@ -47,9 +47,12 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   rather than an invented performance choice. v12 makes the existing lowering boundary public: `generated=true`
   means a backend emitted operation bodies from the Schedule, while TinyGEMM2's closed asset reports `false` instead
   of being indistinguishable from generation. v13 repairs the agent authoring schema against every Corpus Schedule
-  and adds one KDA-derived `tanh` primitive with a standalone SwiGLU positive/shape-drift pair. The reviewed KDA
-  baseline still has 0/57 complete-version coverage; this slice proves arithmetic expressibility, not MoE or
-  performance reproduction. Public ranking obeys its calibration
+  and adds one KDA-derived `tanh` primitive with a standalone SwiGLU positive/shape-drift pair. v14 adds one
+  deterministic indexed `top_k` primitive after KDA v1 exposed the paper-claimed vocabulary gap; its positive and
+  shape-drift pair is gated, and a brokered B200 observation matches 64 ordered indices exactly under forced ties
+  and negative infinities. The reviewed KDA baseline still has 0/57 complete-version coverage: grouping/masking,
+  quantization-scale relations, grouped/ragged work, scatter and the program DAG remain absent. These slices prove
+  primitive expressibility, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
   eligible GEMM triplets and failed the fixed 5% boundary at 35.95% and 8.16%. A drift-controlled successor then
@@ -90,7 +93,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command.
-  The current local suite passes 343 tests plus 254 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 348 tests, including its parameterized contract cases. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
@@ -122,7 +125,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   150k, task-informed package study also freezes the provider's distinct `max` reasoning level and complete
   implementation skeletons. The later `xhigh` capability qualification does not rewrite that frozen treatment or
   supply an 80M clean-start Study. Serving and paper reproduction remain unsupported.
-- `matched-search-clean-start-reference-v28.json` is a zero-GPU successor fixture that replaces both arm references
+- `matched-search-clean-start-reference-v29.json` is a zero-GPU successor fixture that replaces both arm references
   together: Open Cake receives only its authoring interface and direct CUDA receives a canonical ABI with an empty
   kernel body. Its contamination gate validates reference access only; its inherited 150k/`max` treatment still
   cannot support a paper comparison.

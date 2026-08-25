@@ -22,4 +22,29 @@ def _swiglu_oracle(inputs, torch):
     return up * gate * (0.5 * (torch.tanh(0.5 * gate) + 1.0)), None
 
 
-ORACLES = {**_RETAINED_ORACLES, "swiglu_b8_smoke": _swiglu_oracle}
+def _top_k_oracle(inputs, torch):
+    """Stable descending source indices for the standalone selection slice.
+
+    The fixed prefix makes ties and negative infinity part of every observation rather
+    than hoping random input happens to cover them. Stable sort is independent of the
+    lowering's repeated reductions and defines the declared lowest-index tie break.
+    """
+
+    scores, _ = inputs
+    scores.fill_(float("-inf"))
+    prefix = torch.tensor(
+        [10.0, 10.0, 9.0, 9.0, 8.0, 8.0, float("-inf"), float("-inf")],
+        dtype=scores.dtype,
+        device=scores.device,
+    )
+    scores[:, : prefix.numel()] = prefix
+    return torch.argsort(scores, dim=-1, descending=True, stable=True)[:, :8].to(
+        torch.int32
+    ), None
+
+
+ORACLES = {
+    **_RETAINED_ORACLES,
+    "swiglu_b8_smoke": _swiglu_oracle,
+    "top_k_b8_smoke": _top_k_oracle,
+}

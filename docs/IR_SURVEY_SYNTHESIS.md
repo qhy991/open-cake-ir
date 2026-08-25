@@ -298,10 +298,13 @@ Triton emitter to tell the two shapes apart and accumulate for one of them, whic
 backend work rather than a new thing a Schedule can say.
 
 SwiGLU then added one reusable unary word, `tanh`, after the KDA v12 delta showed the same
-primitive in both activation and routing paths. So the tally across six emitted operators
-is: three needed vocabulary, one needed a derivation, two needed neither. What is slowing
-is the growth of words; what has not stopped is what a backend must do with them, and
-those are different claims.
+primitive in both activation and routing paths. KDA v1 subsequently exposed one larger
+but still orthogonal missing word: deterministic indexed `top_k`, used three times by its
+group-routing chain. The admitted slice returns ordered values and indices; grouping and
+masking remain separate gaps rather than flags on the selection primitive. So the tally
+across seven emitted operators is: four needed vocabulary, one needed a derivation, two
+needed neither. What is slowing is the growth of words; what has not stopped is what a
+backend must do with them, and those are different claims.
 
 The gate earned its keep twice here. It refused the two-pass-in-a-loop Schedule that would
 have computed a softmax over stale maxima, and the profile rule refused a drift case with
@@ -321,6 +324,6 @@ before the fact would have shown and a corpus of six families cannot.
 
 ## Corpus coverage, restated
 
-Nineteen cases across eight admitted profiles, against the paper's roughly four hundred
-across twenty-eight. The standalone SwiGLU arithmetic slice is local now; attention,
-complete MoE, quantized GEMM and fused graph kernels are not.
+Twenty-one cases across nine admitted profiles, against the paper's roughly four hundred
+across twenty-eight. Standalone SwiGLU arithmetic and deterministic indexed selection are
+local now; attention, complete MoE, quantized GEMM and fused graph kernels are not.

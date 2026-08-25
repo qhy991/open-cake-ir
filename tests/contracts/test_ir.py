@@ -25,14 +25,17 @@ from open_cake_ir.compiler.ir import (
     DType,
     EpilogueFormula,
     EpilogueParameters,
+    IndexTieBreak,
     LoadMovement,
     MemorySpace,
+    NaNPolicy,
     OperationKind,
     ReduceOp,
     ReduceParameters,
     ReductionScope,
     Schedule,
     ScheduleParseError,
+    TopKParameters,
 )
 from open_cake_ir.compiler.schema import schedule_schema
 
@@ -48,6 +51,7 @@ CORPUS = sorted(
 B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 TINYGEMM = ROOT / "corpus" / "schedules" / "tinygemm2-stage4-split-k.json"
 ASSIGNMENT_FULL = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
+TOP_K = ROOT / "corpus" / "schedules" / "top-k-b8-smoke.json"
 
 
 def _document(path: Path) -> dict:
@@ -72,7 +76,7 @@ def _op(document: dict, op_id: str) -> dict:
 
 class RetainedScheduleTest(unittest.TestCase):
     def test_every_corpus_schedule_parses(self) -> None:
-        self.assertEqual(len(CORPUS), 19)
+        self.assertEqual(len(CORPUS), 21)
         for path in CORPUS:
             with self.subTest(schedule=path.name):
                 schedule = Schedule.load(path)
@@ -177,6 +181,31 @@ class UnifiedVocabularyTest(unittest.TestCase):
             {member.value for member in OperationKind},
         )
         self.assertIn("elementwise", {member.value for member in OperationKind})
+        self.assertIn("top_k", {member.value for member in OperationKind})
+
+    def test_top_k_has_one_deterministic_spelling(self) -> None:
+        operation = Schedule.load(TOP_K).operation("select_experts")
+        assert operation is not None
+        self.assertIs(operation.kind, OperationKind.TOP_K)
+        self.assertEqual(
+            operation.parameters,
+            TopKParameters(
+                k=8,
+                tie_break=IndexTieBreak.LOWEST_INDEX,
+                nan_policy=NaNPolicy.REJECT_INPUT,
+            ),
+        )
+
+        # Descending and ordered are the operation contract, not independent modes.
+        with self.assertRaisesRegex(ScheduleParseError, "unknown fields.*largest"):
+            Schedule.from_dict(
+                _mutated(
+                    TOP_K,
+                    lambda d: _op(d, "select_experts")["parameters"].update(
+                        largest=True
+                    ),
+                )
+            )
 
     def test_warp_specialized_roles_carry_their_pipeline(self) -> None:
         schedule = Schedule.load(ASSIGNMENT_FULL)
@@ -331,7 +360,7 @@ class LocalizedDiagnosticTest(unittest.TestCase):
                 B32,
                 lambda d: _op(d, "load_centroids").update(kind="tma_load"),
                 "schedule.operations[1].kind",
-                "epilogue, load, mma, reduce, reduce_argmin, store",
+                "elementwise, epilogue, load, mma, reduce, reduce_argmin, store, top_k",
             ),
             (
                 B32,

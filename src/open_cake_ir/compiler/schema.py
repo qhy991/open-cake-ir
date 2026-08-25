@@ -14,13 +14,13 @@ from typing import Any
 
 from .ir import (
     AccessIndexKind,
-    ArgminTieBreak,
     BarrierMechanism,
     BoundaryPolicy,
     BufferMode,
     DType,
     ElementwiseOp,
     EpilogueFormula,
+    IndexTieBreak,
     LoadMovement,
     LoadReuse,
     MemorySpace,
@@ -120,7 +120,7 @@ _PARAMETERS = {
         },
     ),
     OperationKind.REDUCE_ARGMIN: _object(
-        {"tie_break": _enum(ArgminTieBreak), "nan_policy": _enum(NaNPolicy)},
+        {"tie_break": _enum(IndexTieBreak), "nan_policy": _enum(NaNPolicy)},
         {"across_loop": {"type": "boolean"}},
     ),
     OperationKind.REDUCE: _object(
@@ -128,6 +128,13 @@ _PARAMETERS = {
             "op": _enum(ReduceOp),
             "axis": _NONNEGATIVE,
             "scope": _enum(ReductionScope),
+        }
+    ),
+    OperationKind.TOP_K: _object(
+        {
+            "k": _POSITIVE,
+            "tie_break": _enum(IndexTieBreak),
+            "nan_policy": _enum(NaNPolicy),
         }
     ),
     OperationKind.ELEMENTWISE: _object(

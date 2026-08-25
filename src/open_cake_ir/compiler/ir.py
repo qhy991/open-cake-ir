@@ -84,8 +84,9 @@ class OperationKind(str, Enum):
     `REDUCE` is one kind carrying an operator rather than one kind per operator, which is
     the shape `ELEMENTWISE` already had. A second reduction was the moment to pick: a
     `reduce_max` kind beside `reduce_sum` would have been two spellings of collapsing an
-    axis. `REDUCE_ARGMIN` stays separate because it returns an index rather than a value,
-    and that is what makes its tie-break and NaN policy observable at all.
+    axis. `REDUCE_ARGMIN` stays separate because it collapses a tiled search to one
+    index; `TOP_K` instead preserves a selected axis and returns both values and indices.
+    They therefore have different result types even when k is one.
     """
 
     LOAD = "load"
@@ -93,6 +94,7 @@ class OperationKind(str, Enum):
     EPILOGUE = "epilogue"
     REDUCE_ARGMIN = "reduce_argmin"
     REDUCE = "reduce"
+    TOP_K = "top_k"
     ELEMENTWISE = "elementwise"
     STORE = "store"
 
@@ -128,7 +130,9 @@ class LoadReuse(str, Enum):
     STREAMED = "streamed"
 
 
-class ArgminTieBreak(str, Enum):
+class IndexTieBreak(str, Enum):
+    """Deterministic ordering when an indexed selection sees equal values."""
+
     LOWEST_INDEX = "lowest_index"
 
 
@@ -896,7 +900,7 @@ class EpilogueParameters:
 
 @dataclass(frozen=True)
 class ReduceArgminParameters:
-    tie_break: ArgminTieBreak
+    tie_break: IndexTieBreak
     nan_policy: NaNPolicy
     across_loop: bool
 
@@ -918,6 +922,19 @@ class ReduceParameters:
     op: ReduceOp
     axis: int
     scope: ReductionScope
+
+
+@dataclass(frozen=True)
+class TopKParameters:
+    """Greatest values and source positions from one resident rank-one tile.
+
+    Descending result order is part of the operation rather than an optional spelling.
+    Group formation and batched routing remain separate operations.
+    """
+
+    k: int
+    tie_break: IndexTieBreak
+    nan_policy: NaNPolicy
 
 
 @dataclass(frozen=True)
@@ -960,6 +977,8 @@ OperationParameters = Union[
     EpilogueParameters,
     ReduceArgminParameters,
     ReduceParameters,
+    TopKParameters,
+    ElementwiseParameters,
     StoreParameters,
     FenceProxyParameters,
 ]
@@ -1059,7 +1078,7 @@ def _operation_parameters(
             context=context,
         )
         return ReduceArgminParameters(
-            _enum(ArgminTieBreak, obj["tie_break"], f"{context}.tie_break"),
+            _enum(IndexTieBreak, obj["tie_break"], f"{context}.tie_break"),
             _enum(NaNPolicy, obj["nan_policy"], f"{context}.nan_policy"),
             _boolean(obj.get("across_loop", False), f"{context}.across_loop"),
         )
@@ -1070,6 +1089,18 @@ def _operation_parameters(
             _enum(ReduceOp, obj["op"], f"{context}.op"),
             _nonnegative_int(obj["axis"], f"{context}.axis"),
             _enum(ReductionScope, obj["scope"], f"{context}.scope"),
+        )
+
+    if kind is OperationKind.TOP_K:
+        obj = _strict_object(
+            value,
+            required={"k", "tie_break", "nan_policy"},
+            context=context,
+        )
+        return TopKParameters(
+            _positive_int(obj["k"], f"{context}.k"),
+            _enum(IndexTieBreak, obj["tie_break"], f"{context}.tie_break"),
+            _enum(NaNPolicy, obj["nan_policy"], f"{context}.nan_policy"),
         )
 
     if kind is OperationKind.ELEMENTWISE:

@@ -87,7 +87,7 @@ def main() -> int:
         observed = launch(*inputs)
         torch.cuda.synchronize()
 
-    if distance is None:
+    if reference.dtype.is_floating_point:
         # A float-valued kernel is judged by how far it is, not by whether it matches:
         # an exact-equality rule would call float32 softmax wrong for reassociating a
         # sum, which is not a defect and is not something the Schedule chose.
@@ -98,6 +98,13 @@ def main() -> int:
             "tolerance": arguments.tolerance,
         }
         passed = measured["max_deviation"] <= arguments.tolerance
+    elif distance is None:
+        # A deterministic index-valued operation such as top-k owns the exact source
+        # positions and their order. Unlike nearest-neighbour assignment, there is no
+        # separate distance oracle under which a different index may be equally legal.
+        mismatch = int((observed != reference).sum().item())
+        measured = {"exact_match": mismatch == 0}
+        passed = mismatch == 0
     else:
         mismatch = int((observed != reference).sum().item())
         rows = torch.arange(observed.shape[0], device=observed.device)
