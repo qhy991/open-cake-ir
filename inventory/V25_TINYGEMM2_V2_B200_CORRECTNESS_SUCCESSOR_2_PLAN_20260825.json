@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "purpose": "current_checked_asset_correctness",
+  "repository_path": "inventory/V25_TINYGEMM2_V2_B200_CORRECTNESS_SUCCESSOR_2_PLAN_20260825.json",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "base_plan": {
+    "path": "/home/qinhaiyan/tinygemm-v28-launch.1c05047/base-plan.json",
+    "repository_path": "inventory/V25_TINYGEMM2_V2_B200_CORRECTNESS_SUCCESSOR_PLAN_20260825.json",
+    "raw_sha256": "35f17b1895c3c6fe57e446ca0e0d1be1c4b5482e09af088bf542c4854247b089"
+  },
+  "supersedes": {
+    "failed_attempt_path": "inventory/V25_TINYGEMM2_V2_B200_CORRECTNESS_ATTEMPT_2_20260825.json",
+    "failed_attempt_raw_sha256": "49b2e6cb263019847e25d5a761121fa9c82dceed3768f592851219a8aa80df81",
+    "only_change": "add the exact transitive contracts/jsonio/contract_schema import closure and make observer imports durable"
+  },
+  "file_authority_additions": {
+    "runtime_contracts": {"path": "/home/qinhaiyan/tinygemm-v28-launch.1c05047/runtime/cakerepro/contracts.py", "raw_sha256": "963ec18e43600c6d79be81fdb6f4bfd8e2a723e90d56073e1cbc45a9bba7d8bf"},
+    "runtime_jsonio": {"path": "/home/qinhaiyan/tinygemm-v28-launch.1c05047/runtime/cakerepro/jsonio.py", "raw_sha256": "0028464672025cdeacf8b1d39f92745150d24ce8b6d77830a7ba37127d7eb21a"},
+    "runtime_contract_schema": {"path": "/home/qinhaiyan/tinygemm-v28-launch.1c05047/runtime/cakerepro/contract_schema.py", "raw_sha256": "c8e73cdf4e28af213215e797fb3945979bbec00ccbff38a4b8606c23f725f8ef"},
+    "instrument": {"path": "/home/qinhaiyan/tinygemm-v28-launch.1c05047/observe.py", "raw_sha256": "283bbad29baf5e776ec5bf18cd66a89ed1bdb325c4977203f8d1f45ce197ee73"}
+  },
+  "execution_label": "ocir-tiny-v28-correct-s2",
+  "inherited_invariants": {
+    "product_binary_workload_runtime_and_expected_results_unchanged": true,
+    "automatic_retries": 0,
+    "timing": "none",
+    "write_result_on_failure": true
+  }
+}
