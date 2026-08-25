@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "state": "frozen",
+  "planned_at": "2026-08-25T07:16:08Z",
+  "purpose": "successor_lowering_correctness_after_v24_negative_evidence",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "selection_authority": {
+    "compiler_revision_path": "compiler/revision.lock.json",
+    "compiler_revision_id": "open-cake-ir-sm100a-v25",
+    "compiler_revision_sha256": "d7129c4d2530bc8f62df02659f0eef828699539fbe5ca14c21bb9cec9b51633f",
+    "corpus_manifest_path": "corpus/manifest.json",
+    "corpus_manifest_canonical_sha256": "ffed8e3e458c62b12e77ee0945b63fee2993de6756936f8ddc99c6c9beb6b562",
+    "predicate": "manifest order where expected.accepted=true and expected.lowering_eligible=true"
+  },
+  "generated_external_oracle": {
+    "predicate": "Lowering.generated=true and entry_point is registered in tools/kernel_oracles.py",
+    "case_ids": [
+      "flash-kmeans-r16-accepted",
+      "flash-kmeans-r25-accepted",
+      "rmsnorm-accepted",
+      "rmsnorm-persistent",
+      "softmax-accepted",
+      "layernorm-accepted",
+      "gemm-bias-accepted",
+      "gemm-bias-shape-drift",
+      "swiglu-accepted",
+      "top-k-accepted",
+      "block-scaled-gemm-accepted",
+      "ragged-zero-pad-accepted",
+      "ragged-grouped-gemm-accepted",
+      "indexed-gather-accepted"
+    ],
+    "expected_case_count": 14,
+    "protocol": {
+      "broker_mode": "shared",
+      "gpu_count": 1,
+      "seed": 0,
+      "float_max_absolute_tolerance": 1e-05,
+      "tolerance_changed_from_v24": false,
+      "timing": false,
+      "automatic_case_retries": 0,
+      "retain_failures": true
+    }
+  },
+  "checked_cuda_asset": {
+    "predicate": "Lowering.generated=false",
+    "expected_case_count": 1,
+    "case_id": "tinygemm2-r31-accepted",
+    "protocol": "report separately as missing until a current successor launch or exact current-lowering-to-observed-binary identity chain exists; never relabel historical r31 evidence"
+  },
+  "acceptance": {
+    "generated_partition": "all 14 selected cases write a durable record after compile and launch, and pass their external oracle under the unchanged tolerance",
+    "checked_asset_partition": "reported separately as passed, failed or missing; absence cannot count as a pass",
+    "failure_semantics": "retain every record and any pre-record failure; no failure authorizes a retry, tolerance change or evidence rewrite",
+    "non_claim": "does not establish performance, end-to-end framework correctness, ranking quality, KDA-version expressibility or paper reproduction"
+  }
+}
