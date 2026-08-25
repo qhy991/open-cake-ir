@@ -301,6 +301,32 @@ class BackendCoverageTest(unittest.TestCase):
             emit_cutedsl.SUPPORTED_OPERATION_KINDS, emit_triton.SUPPORTED_OPERATION_KINDS
         )
 
+    def test_backend_constructor_requirements_have_one_preflight_owner(self) -> None:
+        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+
+        triton_document = json.loads(
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
+        )
+        triton_document["roles"].append({"name": "unused", "warps": [4]})
+        triton_failures = emit_triton.preflight(
+            Schedule.from_dict(triton_document), TARGET
+        )
+        self.assertIn("TRITON_ROLE_COUNT", {item.code for item in triton_failures})
+
+        cute_document = json.loads(SCHEDULE.read_text())
+        next(
+            operation
+            for operation in cute_document["operations"]
+            if operation["kind"] == "epilogue"
+        )["parameters"]["formula"] = "bias_add_bf16_round"
+        cute_failures = emit_cutedsl.preflight(
+            Schedule.from_dict(cute_document), TARGET
+        )
+        self.assertEqual(
+            [item.code for item in cute_failures],
+            ["CUTE_EPILOGUE_FORMULA_UNSUPPORTED"],
+        )
+
 
 class AllocationOwnershipTest(unittest.TestCase):
     """Who takes out the tensor-memory allocation is the Schedule's decision.
@@ -459,10 +485,10 @@ class EmittedKernelObservationTest(unittest.TestCase):
     Correctness only. No timing was taken and no comparison against the hand-written
     artifact is claimed.
 
-    The record names the artifact that ran, so a change to the lowering detaches the
-    evidence from the code and this test says so. The answer is a new observation, taken
-    with `tools/observe_lowered_kernel.py`, never an edit to a record: the earlier ones
-    stay as history for the Revision and the inputs they were taken under.
+    The record names the artifact that ran. Compiler v24 changed Schedule and generated
+    source bytes when it replaced profiles with lowering routes, so this test preserves
+    that historical/current split. The answer to the gap is a successor observation,
+    never an edit or relabelling of this frozen record.
 
     This one is stronger than the records it supersedes. They were taken with a
     centroid-norm vector constructed to equal the squared row sums of the centroids, which
@@ -473,14 +499,21 @@ class EmittedKernelObservationTest(unittest.TestCase):
 
     RECORD = ROOT / "inventory" / "FLASH_KMEANS_OBSERVATION_20260824.json"
 
-    def test_the_observation_matches_what_the_compiler_lowers_now(self) -> None:
+    def test_the_observation_remains_historical_after_route_migration(self) -> None:
         from open_cake_ir.compiler import Compiler
 
         record = json.loads(self.RECORD.read_text(encoding="utf-8"))
         compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
         lowering = compiler.lower(compiler.assess_file(SCHEDULE))
-        self.assertEqual(lowering.source_sha256, record["lowering"]["source_sha256"])
         self.assertEqual(lowering.generated, record["lowering"]["generated"])
+        self.assertNotEqual(
+            lowering.schedule_sha256, record["schedule"]["canonical_sha256"]
+        )
+        self.assertNotEqual(lowering.source_sha256, record["lowering"]["source_sha256"])
+        self.assertNotEqual(
+            lowering.compiler_revision_id,
+            record["compiler_revision"]["revision_id"],
+        )
         self.assertEqual(record["result"]["mismatch_count"], 0)
         self.assertEqual(record["result"]["max_chosen_distance_excess"], 0.0)
         self.assertTrue(record["result"]["passed"])

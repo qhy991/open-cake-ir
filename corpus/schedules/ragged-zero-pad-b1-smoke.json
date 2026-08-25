@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "schedule_id": "ragged-zero-pad-b1-smoke-v1",
+  "target": "sm_100a",
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [0, 1, 2, 3]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "ragged",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [4, 8, 16],
+      "mode": "input",
+      "valid_extent": {
+        "dimension": 1,
+        "buffer": "lengths",
+        "indexed_by": [0]
+      }
+    },
+    {
+      "name": "lengths",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [4],
+      "mode": "input"
+    },
+    {
+      "name": "dense",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [4, 8, 16],
+      "mode": "output"
+    },
+    {
+      "name": "tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [8, 16],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_ragged",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["ragged"],
+      "writes": ["tile"],
+      "parameters": {"movement": "global", "reuse": "streamed"}
+    },
+    {
+      "id": "store_dense",
+      "kind": "store",
+      "role": "compute",
+      "reads": ["tile"],
+      "writes": ["dense"],
+      "depends_on": ["load_ragged"],
+      "parameters": {"coalesced": true}
+    }
+  ],
+  "outputs": ["dense"],
+  "program_map": {
+    "axes": [
+      {
+        "name": "group",
+        "axis": 0,
+        "buffer": "ragged",
+        "dimension": 0,
+        "tile": 1
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_ragged",
+      "buffer": "ragged",
+      "indices": [
+        {"source": "program", "name": "group"},
+        {"source": "dimension", "dimension": 1},
+        {"source": "dimension", "dimension": 2}
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_dense",
+      "buffer": "dense",
+      "indices": [
+        {"source": "program", "name": "group"},
+        {"source": "dimension", "dimension": 1},
+        {"source": "dimension", "dimension": 2}
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {
+    "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "residency": {
+    "ctas_per_multiprocessor": 4,
+    "registers_per_thread": 64
+  },
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_ragged_zero_pad_b1_smoke"
+  }
+}

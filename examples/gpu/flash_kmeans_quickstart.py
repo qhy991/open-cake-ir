@@ -68,7 +68,10 @@ def _summary(project_root: Path, schedule_bytes: bytes) -> dict[str, object]:
             "schedule_id": assessment.schedule_id,
             "schedule_sha256": assessment.schedule_sha256,
             "target": assessment.target,
-            "profile": assessment.profile,
+            "lowering": {
+                "backend": assessment.route.backend.value,
+                "entry_point": assessment.route.entry_point,
+            },
             "accepted": assessment.accepted,
             "lowering_eligible": assessment.lowering_eligible,
             "findings": findings,
@@ -94,7 +97,7 @@ def _summary(project_root: Path, schedule_bytes: bytes) -> dict[str, object]:
         "shape": case["shape"],
     }
     summary["lowering"] = {
-        "entry_point": lowering.entry_point,
+        "entry_point": lowering.route.entry_point,
         "source_sha256": lowering.source_sha256,
         "source_bytes": len(lowering.source.encode()),
     }
@@ -170,7 +173,12 @@ def _run_gpu(
     environment = OpenCakeEnvironment(
         compiler,
         TritonToolchainBuilder(),
-        authority_document={"schedule_profile": "flash_kmeans_b32_smoke"},
+        authority_document={
+            "lowering_route": {
+                "backend": "triton",
+                "entry_point": "cake_flash_kmeans_assign",
+            }
+        },
         workload=workload,
         case_id=_CASE_ID,
     )

@@ -568,10 +568,51 @@ def _verify_instruction_commitments(
     buffers = {buffer.name: buffer for buffer in schedule.buffers}
 
     for index, operation in enumerate(schedule.operations):
-        if operation.kind is not OperationKind.MMA:
-            continue
         path = f"operations[{index}].parameters"
         instruction = getattr(operation.parameters, "instruction", None)
+        if (
+            instruction is not None
+            and instruction.contract not in target.instruction_contracts
+        ):
+            out.add(
+                "TARGET_INSTRUCTION_UNSUPPORTED",
+                f"{path}.instruction.contract",
+                f"instruction {instruction.contract!r} is not admitted by Target "
+                f"{target.target_id!r}",
+                category,
+            )
+
+        if operation.kind is OperationKind.ELEMENTWISE:
+            expected = _ELEMENTWISE_INSTRUCTION_DTYPES.get(
+                instruction.contract if instruction is not None else ""
+            )
+            if (
+                instruction is not None
+                and instruction.contract in target.instruction_contracts
+                and expected is None
+            ):
+                out.add(
+                    "ELEMENTWISE_INSTRUCTION_KIND_DIFFERS",
+                    f"{path}.instruction.contract",
+                    f"contract {instruction.contract!r} is admitted by the Target but "
+                    "does not implement an elementwise operation",
+                    category,
+                )
+            elif expected is not None:
+                for name in (*operation.reads, *operation.writes):
+                    buffer = buffers.get(name)
+                    if buffer is not None and buffer.dtype is not expected:
+                        out.add(
+                            "ELEMENTWISE_INSTRUCTION_DTYPE_DIFFERS",
+                            f"{path}.instruction.contract",
+                            f"contract {instruction.contract!r} consumes and produces "
+                            f"{expected.value}, but {name!r} is {buffer.dtype.value}",
+                            category,
+                        )
+            continue
+
+        if operation.kind is not OperationKind.MMA:
+            continue
         tile = getattr(operation.parameters, "tile_shape", None)
 
         if instruction is None:
@@ -593,7 +634,8 @@ def _verify_instruction_commitments(
             admitted = _CONTRACT_DTYPES.get(instruction.contract)
             if admitted is not None:
                 operands, accumulate = admitted
-                for name in operation.reads:
+                data_reads = operation.reads[:2]
+                for name in data_reads:
                     buffer = buffers.get(name)
                     if buffer is not None and buffer.dtype not in operands:
                         out.add(
@@ -604,6 +646,17 @@ def _verify_instruction_commitments(
                             f"{name!r} is {buffer.dtype.value}",
                             category,
                         )
+                if instruction.contract == _BLOCK_SCALE_MMA_CONTRACT:
+                    for name in operation.reads[2:]:
+                        buffer = buffers.get(name)
+                        if buffer is not None and buffer.dtype is not DType.FP32:
+                            out.add(
+                                "MMA_SCALE_DTYPE_DIFFERS",
+                                f"{path}.instruction.contract",
+                                f"contract {instruction.contract!r} reads fp32 scales "
+                                f"but {name!r} is {buffer.dtype.value}",
+                                category,
+                            )
                 written = buffers.get(operation.writes[0]) if operation.writes else None
                 if written is not None and written.dtype is not accumulate:
                     out.add(
@@ -614,14 +667,6 @@ def _verify_instruction_commitments(
                         f"{written.dtype.value}",
                         category,
                     )
-            if instruction.contract not in target.instruction_contracts:
-                out.add(
-                    "TARGET_INSTRUCTION_UNSUPPORTED",
-                    f"{path}.instruction.contract",
-                    f"instruction {instruction.contract!r} is not admitted by Target "
-                    f"{target.target_id!r}",
-                    category,
-                )
             _verify_atom_placement(operation, instruction, path, out)
             if (
                 instruction.shape is not None
@@ -647,7 +692,7 @@ def _verify_instruction_commitments(
                     category,
                 )
             if instruction.operand_source is OperandSource.SHARED:
-                for name in operation.reads:
+                for name in operation.reads[:2]:
                     operand = buffers.get(name)
                     if operand is not None and operand.space is not MemorySpace.SHARED:
                         out.add(
@@ -826,7 +871,7 @@ def _verify_swizzle_commitments(schedule: Schedule, out: _Collector) -> None:
         name
         for operation in schedule.operations
         if operation.kind is OperationKind.MMA
-        for name in operation.reads
+        for name in operation.reads[:2]
     }
     for index, buffer in enumerate(schedule.buffers):
         if (
@@ -853,6 +898,13 @@ _CONTRACT_DTYPES = {
     "tcgen05.mma.cta_group::1.kind::f16": ({DType.BF16, DType.FP16}, DType.FP32),
     "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32": ({DType.BF16}, DType.FP32),
     "triton.dot.bf16_fp32": ({DType.BF16}, DType.FP32),
+    "triton.dot.fp8e4m3_block_scale_fp32": ({DType.FP8_E4M3}, DType.FP32),
+}
+
+_BLOCK_SCALE_MMA_CONTRACT = "triton.dot.fp8e4m3_block_scale_fp32"
+
+_ELEMENTWISE_INSTRUCTION_DTYPES = {
+    "libdevice.tanh.f32": DType.FP32,
 }
 
 
@@ -866,6 +918,219 @@ _ARITY = {
 }
 
 
+def _verify_scale_relations(schedule: Schedule, buffers, out: _Collector) -> None:
+    """Hold scale storage to the FP8 tensor relation that gives it meaning."""
+
+    category = FindingCategory.DATA_CONSISTENCY
+    for index, scale in enumerate(schedule.buffers):
+        relation = scale.scale_of
+        if relation is None:
+            continue
+        path = f"buffers[{index}].scale_of"
+        data = buffers.get(relation.buffer)
+        if data is None:
+            out.add(
+                "SCALE_TARGET_UNKNOWN",
+                f"{path}.buffer",
+                f"scale buffer {scale.name!r} names unknown data buffer "
+                f"{relation.buffer!r}",
+                category,
+            )
+            continue
+        if data is scale:
+            out.add(
+                "SCALE_TARGET_SELF",
+                f"{path}.buffer",
+                f"scale buffer {scale.name!r} cannot scale itself",
+                category,
+            )
+            continue
+        if data.dtype is not DType.FP8_E4M3:
+            out.add(
+                "SCALE_DATA_DTYPE",
+                f"{path}.buffer",
+                f"block scales describe fp8_e4m3 data, but {data.name!r} is "
+                f"{data.dtype.value}",
+                category,
+            )
+        if scale.dtype is not DType.FP32:
+            out.add(
+                "SCALE_DTYPE",
+                f"buffers[{index}].dtype",
+                f"block scale {scale.name!r} must be fp32, not {scale.dtype.value}",
+                category,
+            )
+        rank = len(data.shape)
+        if len(relation.granularity) != rank:
+            out.add(
+                "SCALE_GRANULARITY_RANK",
+                f"{path}.granularity",
+                f"scale granularity has rank {len(relation.granularity)} but "
+                f"{data.name!r} has rank {rank}",
+                category,
+            )
+        if tuple(sorted(relation.axis_order)) != tuple(range(rank)):
+            out.add(
+                "SCALE_AXIS_ORDER",
+                f"{path}.axis_order",
+                f"scale axis order {list(relation.axis_order)} is not a permutation "
+                f"of all {rank} axes of {data.name!r}",
+                category,
+            )
+        if len(relation.granularity) == rank and tuple(
+            sorted(relation.axis_order)
+        ) == tuple(range(rank)):
+            grouped = tuple(
+                (extent + granularity - 1) // granularity
+                for extent, granularity in zip(data.shape, relation.granularity)
+            )
+            expected = tuple(grouped[axis] for axis in relation.axis_order)
+            if scale.shape != expected:
+                out.add(
+                    "SCALE_SHAPE_MISMATCH",
+                    f"buffers[{index}].shape",
+                    f"{scale.name!r} shape {list(scale.shape)} differs from the "
+                    f"derived grouped shape {list(expected)} for {data.name!r}",
+                    category,
+                )
+
+    # A load changes storage, not meaning. The scale load and the data load together
+    # establish which staged tile the staged scale describes.
+    loads = [
+        operation
+        for operation in schedule.operations
+        if operation.kind is OperationKind.LOAD
+    ]
+    load_edges = {
+        (operation.reads[0], operation.writes[0])
+        for operation in loads
+        if len(operation.reads) == 1 and len(operation.writes) == 1
+    }
+    for operation_index, operation in enumerate(schedule.operations):
+        if operation.kind is not OperationKind.LOAD:
+            continue
+        if len(operation.reads) != 1 or len(operation.writes) != 1:
+            continue
+        source = buffers.get(operation.reads[0])
+        destination = buffers.get(operation.writes[0])
+        if source is None or destination is None:
+            continue
+        before = source.scale_of
+        after = destination.scale_of
+        if (before is None) != (after is None):
+            out.add(
+                "SCALE_RELATION_DROPPED",
+                f"operations[{operation_index}]",
+                f"load {operation.op_id!r} changes whether {source.name!r}/"
+                f"{destination.name!r} is a scale buffer",
+                category,
+            )
+            continue
+        if before is None or after is None:
+            continue
+        if (
+            before.granularity != after.granularity
+            or before.axis_order != after.axis_order
+            or (before.buffer, after.buffer) not in load_edges
+        ):
+            out.add(
+                "SCALE_RELATION_DRIFT",
+                f"operations[{operation_index}]",
+                f"load {operation.op_id!r} does not preserve the scale relation and "
+                "the corresponding data-load edge",
+                category,
+            )
+
+
+def _verify_valid_extents(schedule: Schedule, buffers, out: _Collector) -> None:
+    """Type-check the one runtime authority for a padded Buffer's valid prefix."""
+
+    category = FindingCategory.DATA_CONSISTENCY
+    for index, data in enumerate(schedule.buffers):
+        relation = data.valid_extent
+        if relation is None:
+            continue
+        path = f"buffers[{index}].valid_extent"
+        if data.space is not MemorySpace.GLOBAL:
+            out.add(
+                "VALID_EXTENT_DATA_SPACE",
+                path,
+                f"runtime valid extents apply to global padded storage, but "
+                f"{data.name!r} is {data.space.value}",
+                category,
+            )
+        extent = buffers.get(relation.buffer)
+        if extent is None:
+            out.add(
+                "VALID_EXTENT_BUFFER_UNKNOWN",
+                f"{path}.buffer",
+                f"{data.name!r} names unknown extent buffer {relation.buffer!r}",
+                category,
+            )
+        elif extent is data:
+            out.add(
+                "VALID_EXTENT_SELF",
+                f"{path}.buffer",
+                f"{data.name!r} cannot supply its own runtime extent",
+                category,
+            )
+        else:
+            if extent.dtype is not DType.INT32:
+                out.add(
+                    "VALID_EXTENT_DTYPE",
+                    f"buffers[{schedule.buffers.index(extent)}].dtype",
+                    f"extent buffer {extent.name!r} must be int32, not "
+                    f"{extent.dtype.value}",
+                    category,
+                )
+            if extent.space is not MemorySpace.GLOBAL or extent.mode is not BufferMode.INPUT:
+                out.add(
+                    "VALID_EXTENT_BUFFER_CONTRACT",
+                    f"buffers[{schedule.buffers.index(extent)}]",
+                    f"extent buffer {extent.name!r} must be a global input",
+                    category,
+                )
+
+        rank = len(data.shape)
+        axes_valid = True
+        if relation.dimension >= rank:
+            axes_valid = False
+            out.add(
+                "VALID_EXTENT_DIMENSION",
+                f"{path}.dimension",
+                f"valid dimension {relation.dimension} is outside rank-{rank} "
+                f"buffer {data.name!r}",
+                category,
+            )
+        for position, axis in enumerate(relation.indexed_by):
+            if axis >= rank:
+                axes_valid = False
+                out.add(
+                    "VALID_EXTENT_INDEX_AXIS",
+                    f"{path}.indexed_by[{position}]",
+                    f"index axis {axis} is outside rank-{rank} buffer {data.name!r}",
+                    category,
+                )
+        if relation.dimension in relation.indexed_by:
+            axes_valid = False
+            out.add(
+                "VALID_EXTENT_INDEX_AXIS",
+                f"{path}.indexed_by",
+                f"valid dimension {relation.dimension} cannot also index its lengths",
+                category,
+            )
+        if extent is not None and extent is not data and axes_valid:
+            expected = tuple(data.shape[axis] for axis in relation.indexed_by)
+            if extent.shape != expected:
+                out.add(
+                    "VALID_EXTENT_SHAPE_MISMATCH",
+                    f"buffers[{schedule.buffers.index(extent)}].shape",
+                    f"extent buffer {extent.name!r} shape {list(extent.shape)} differs "
+                    f"from indexed data extents {list(expected)}",
+                    category,
+                )
+
+
 def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     category = FindingCategory.DATA_CONSISTENCY
 
@@ -873,6 +1138,9 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     allocations = {item.name: item for item in schedule.allocations}
     roles = {role.name for role in schedule.roles}
     pipelines = {pipeline.name for pipeline in schedule.pipelines}
+
+    _verify_scale_relations(schedule, buffers, out)
+    _verify_valid_extents(schedule, buffers, out)
 
     # ---- buffer placement -------------------------------------------------
     for index, buffer in enumerate(schedule.buffers):
@@ -1160,8 +1428,195 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     _verify_access_maps(schedule, buffers, out)
 
 
+def _verify_block_scaled_mma(operation, path: str, buffers, out: _Collector) -> None:
+    """Prove scale association, then gate the first backend's exact static subset."""
+
+    if len(operation.reads) != 4:
+        return
+    a, b, scale_a, scale_b = (buffers.get(name) for name in operation.reads)
+    if any(buffer is None for buffer in (a, b, scale_a, scale_b)):
+        return
+    association_ok = True
+    for position, (scale, data) in enumerate(((scale_a, a), (scale_b, b)), start=2):
+        relation = scale.scale_of
+        if relation is None or relation.buffer != data.name:
+            association_ok = False
+            out.add(
+                "MMA_SCALE_ASSOCIATION",
+                f"{path}.reads[{position}]",
+                f"scale operand {scale.name!r} does not declare that it scales "
+                f"data operand {data.name!r}",
+                FindingCategory.DATA_CONSISTENCY,
+            )
+    if not association_ok:
+        return
+
+    relation_a = scale_a.scale_of
+    relation_b = scale_b.scale_of
+    assert relation_a is not None and relation_b is not None
+    tile = operation.parameters.tile_shape
+    supported = (
+        len(a.shape) == len(b.shape) == 2
+        and a.space is not MemorySpace.GLOBAL
+        and b.space is not MemorySpace.GLOBAL
+        and scale_a.space is not MemorySpace.GLOBAL
+        and scale_b.space is not MemorySpace.GLOBAL
+        and a.shape[1] == b.shape[1]
+        and len(relation_a.granularity) == len(relation_b.granularity) == 2
+        and relation_a.granularity[0] == 1
+        and relation_a.axis_order == (1, 0)
+        and relation_b.axis_order == (0, 1)
+        and relation_b.granularity[0] == b.shape[0]
+        and relation_a.granularity[1] == relation_b.granularity[1]
+        and a.shape[1] % relation_a.granularity[1] == 0
+        and a.shape[1] // relation_a.granularity[1] == 2
+        and tile == (a.shape[0], b.shape[0], a.shape[1])
+    )
+    if not supported:
+        out.add(
+            "MMA_BLOCK_SCALE_UNLOWERABLE",
+            f"{path}.parameters",
+            "the Triton block-scale lowering requires rank-2 staged A/B, A "
+            "granularity [1, block_k] stored [K-block, M], B granularity "
+            "[N, block_k] stored [N-block, K-block], equal divisible K blocks, "
+            "exactly two K blocks, and a tile equal to the staged contraction",
+            FindingCategory.HARDWARE_CONFORMANCE,
+        )
+
+
 def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> None:
     category = FindingCategory.DATA_CONSISTENCY
+    if operation.kind is OperationKind.REDUCE_ARGMIN:
+        # `reduce_argmin` is not a generic numeric reduction with an incidental
+        # output type.  The admitted operation compares fp32 distances and returns
+        # int32 source positions; making that contract explicit prevents a backend
+        # gaining a new storage dtype from silently widening every argmin use.
+        if operation.reads:
+            source = buffers.get(operation.reads[0])
+            if source is not None and source.dtype is not DType.FP32:
+                out.add(
+                    "REDUCE_ARGMIN_VALUE_DTYPE",
+                    f"{path}.reads",
+                    f"reduce_argmin compares fp32 values, but {source.name!r} is "
+                    f"{source.dtype.value}",
+                    category,
+                )
+        if operation.writes:
+            indices = buffers.get(operation.writes[0])
+            if indices is not None and indices.dtype is not DType.INT32:
+                out.add(
+                    "REDUCE_ARGMIN_INDEX_DTYPE",
+                    f"{path}.writes",
+                    f"reduce_argmin returns int32 source positions, but "
+                    f"{indices.name!r} is {indices.dtype.value}",
+                    category,
+                )
+    if operation.kind is OperationKind.TOP_K:
+        if len(operation.reads) != 1 or len(operation.writes) != 2:
+            out.add(
+                "TOP_K_ARITY",
+                path,
+                "top_k reads exactly one score tile and writes values then int32 "
+                f"indices, got {len(operation.reads)} read(s) and "
+                f"{len(operation.writes)} write(s)",
+                category,
+            )
+        else:
+            source = buffers.get(operation.reads[0])
+            values = buffers.get(operation.writes[0])
+            indices = buffers.get(operation.writes[1])
+            k = operation.parameters.k
+            if source is not None:
+                if len(source.shape) != 1:
+                    out.add(
+                        "TOP_K_SOURCE_RANK",
+                        f"{path}.reads",
+                        f"top_k selects from one resident rank-one tile, but "
+                        f"{source.name!r} has shape {list(source.shape)}",
+                        category,
+                    )
+                elif k > source.shape[0]:
+                    out.add(
+                        "TOP_K_K_OUT_OF_RANGE",
+                        f"{path}.parameters.k",
+                        f"top_k asks for {k} values from {source.name!r} with extent "
+                        f"{source.shape[0]}",
+                        category,
+                    )
+                if source.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "TOP_K_SOURCE_SPACE",
+                        f"{path}.reads",
+                        f"top_k reduces a resident register tile, but {source.name!r} "
+                        f"is in {source.space.value}",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+                if source.dtype is not DType.FP32:
+                    out.add(
+                        "TOP_K_VALUE_DTYPE",
+                        f"{path}.reads",
+                        f"the admitted top_k lowering reduces fp32 scores, but "
+                        f"{source.name!r} is {source.dtype.value}",
+                        category,
+                    )
+            if values is not None:
+                if values.shape != (k,):
+                    out.add(
+                        "TOP_K_SHAPE_MISMATCH",
+                        f"{path}.writes",
+                        f"top_k with k={k} writes values[{k}], but {values.name!r} has "
+                        f"shape {list(values.shape)}",
+                        category,
+                    )
+                if source is not None and values.dtype is not source.dtype:
+                    out.add(
+                        "TOP_K_VALUE_DTYPE",
+                        f"{path}.writes",
+                        f"top_k values preserve {source.name!r}'s {source.dtype.value} "
+                        f"dtype, but {values.name!r} is {values.dtype.value}",
+                        category,
+                    )
+                if values.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "TOP_K_RESULT_SPACE",
+                        f"{path}.writes",
+                        f"top_k values stay in registers before an explicit store, but "
+                        f"{values.name!r} is in {values.space.value}",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+            if indices is not None:
+                if indices.shape != (k,):
+                    out.add(
+                        "TOP_K_SHAPE_MISMATCH",
+                        f"{path}.writes",
+                        f"top_k with k={k} writes indices[{k}], but {indices.name!r} "
+                        f"has shape {list(indices.shape)}",
+                        category,
+                    )
+                if indices.dtype is not DType.INT32:
+                    out.add(
+                        "TOP_K_INDEX_DTYPE",
+                        f"{path}.writes",
+                        f"top_k source positions are int32, but {indices.name!r} is "
+                        f"{indices.dtype.value}",
+                        category,
+                    )
+                if indices.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "TOP_K_RESULT_SPACE",
+                        f"{path}.writes",
+                        f"top_k indices stay in registers before an explicit store, but "
+                        f"{indices.name!r} is in {indices.space.value}",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+            if k & (k - 1):
+                out.add(
+                    "TOP_K_K_UNLOWERABLE",
+                    f"{path}.parameters.k",
+                    f"the admitted SM100 Triton top_k lowering requires power-of-two k, "
+                    f"but k is {k}",
+                    FindingCategory.HARDWARE_CONFORMANCE,
+                )
     expected = _ARITY.get(operation.kind)
     if expected is not None:
         reads, writes, label = expected
@@ -1174,7 +1629,11 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                 category,
             )
     if operation.kind is OperationKind.LOAD:
-        for name in operation.reads:
+        # The first read is the data source. Later reads are permitted only as
+        # AccessMap-owned runtime coordinates; _verify_access_maps proves their exact
+        # set, placement and dtype. Treating every read as a second data source made the
+        # operation graph unable to name those real dependencies.
+        for name in operation.reads[:1]:
             buffer = buffers.get(name)
             if buffer is not None and buffer.space is not MemorySpace.GLOBAL:
                 out.add(
@@ -1194,27 +1653,29 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     f"store destination {name!r} is {buffer.mode.value}, not an output",
                     category,
                 )
-    # A contraction reads its two operands and nothing else. It used to be able to name
-    # a third, which a formula then folded in, so the arithmetic after the dot lived
-    # inside the same operation. With that arithmetic declared separately a third read
-    # has no meaning, and an emitter that simply contracts the first two would drop it
-    # and produce a kernel that computes something else without saying so.
+    # An ordinary contraction reads two data operands. The one admitted block-scale
+    # contract reads the same pair followed by their two related scales; the contract,
+    # rather than a flag, is the single owner of that arity and meaning.
     if operation.kind is OperationKind.MMA:
+        instruction = operation.parameters.instruction
+        contract = instruction.contract if instruction is not None else None
+        expected_reads = 4 if contract == _BLOCK_SCALE_MMA_CONTRACT else 2
         staged = [
             name
             for name in operation.reads
             if (buffer := buffers.get(name)) is not None
             and buffer.space is not MemorySpace.GLOBAL
         ]
-        if len(operation.reads) != 2 or len(staged) != 2:
+        if len(operation.reads) != expected_reads or len(staged) != expected_reads:
             out.add(
                 "MMA_OPERAND_COUNT",
                 f"{path}.reads",
-                f"a contraction reads exactly two staged operands, got "
-                f"{list(operation.reads)}; arithmetic over its result is a separate "
-                "operation",
+                f"contract {contract!r} reads exactly {expected_reads} staged "
+                f"operands, got {list(operation.reads)}",
                 category,
             )
+        elif contract == _BLOCK_SCALE_MMA_CONTRACT:
+            _verify_block_scaled_mma(operation, path, buffers, out)
 
     # An arithmetic primitive takes what its op says it takes. A binary op reads two
     # buffers, or one buffer and a declared scalar; anything else is a Schedule asking
@@ -1382,6 +1843,32 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         f"unknown loop iterator {component.name!r}",
                         category,
                     )
+            elif component.source is AccessIndexKind.BUFFER:
+                index_buffer = buffers.get(component.name)
+                if index_buffer is None:
+                    out.add(
+                        "ACCESS_INDEX_BUFFER_UNKNOWN",
+                        component_path,
+                        f"unknown runtime index buffer {component.name!r}",
+                        category,
+                    )
+                else:
+                    if index_buffer.space is not MemorySpace.REGISTER:
+                        out.add(
+                            "ACCESS_INDEX_BUFFER_SPACE",
+                            component_path,
+                            f"runtime index buffer {component.name!r} is in "
+                            f"{index_buffer.space.value}, not registers",
+                            category,
+                        )
+                    if index_buffer.dtype is not DType.INT32:
+                        out.add(
+                            "ACCESS_INDEX_BUFFER_DTYPE",
+                            component_path,
+                            f"runtime index buffer {component.name!r} is "
+                            f"{index_buffer.dtype.value}, not int32",
+                            category,
+                        )
             else:
                 if component.name not in axis_names:
                     out.add(
@@ -1401,6 +1888,157 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         "offset vector; use source 'program'",
                         category,
                     )
+                elif component.source is AccessIndexKind.PROGRAM:
+                    axis = schedule.program_map.axis(component.name)
+                    owner = buffers.get(axis.buffer) if axis is not None else None
+                    if (
+                        axis is not None
+                        and owner is not None
+                        and axis.dimension < len(owner.shape)
+                        and position < len(buffer.shape)
+                    ):
+                        program_extent = axis.tile_count(owner.shape[axis.dimension])
+                        if program_extent > buffer.shape[position]:
+                            out.add(
+                                "ACCESS_PROGRAM_EXTENT_MISMATCH",
+                                component_path,
+                                f"program axis {component.name!r} spans "
+                                f"{program_extent} coordinate(s), but dimension "
+                                f"{position} of {access.buffer!r} has extent "
+                                f"{buffer.shape[position]}",
+                                category,
+                            )
+
+        indirect = [
+            component
+            for component in access.indices
+            if component.source is AccessIndexKind.BUFFER
+        ]
+        if indirect:
+            index_names = tuple(dict.fromkeys(component.name for component in indirect))
+            if operation.kind is not OperationKind.LOAD:
+                out.add(
+                    "ACCESS_INDEXED_OPERATION_UNLOWERABLE",
+                    path,
+                    "the admitted runtime-indexed subset applies to global loads only",
+                    FindingCategory.HARDWARE_CONFORMANCE,
+                )
+            else:
+                if operation.parameters.movement is not LoadMovement.GLOBAL:
+                    out.add(
+                        "ACCESS_INDEXED_MOVEMENT_UNLOWERABLE",
+                        path,
+                        "runtime-indexed loads use direct global movement; TMA transfer "
+                        "semantics are not admitted",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+                expected_reads = (access.buffer,) + index_names
+                if operation.reads != expected_reads:
+                    out.add(
+                        "ACCESS_INDEX_BUFFER_READS",
+                        f"operations[{schedule.operations.index(operation)}].reads",
+                        f"runtime-indexed load reads data then its first-use ordered "
+                        f"index buffers {list(expected_reads)}, got "
+                        f"{list(operation.reads)}",
+                        category,
+                    )
+
+            index_buffers = [buffers.get(name) for name in index_names]
+            known = [item for item in index_buffers if item is not None]
+            if len(known) == len(index_buffers):
+                shapes = {item.shape for item in known}
+                if any(len(item.shape) != 1 for item in known):
+                    out.add(
+                        "ACCESS_INDEX_DOMAIN_RANK",
+                        path,
+                        "the admitted runtime index domain is rank one",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+                elif len(shapes) != 1:
+                    out.add(
+                        "ACCESS_INDEX_DOMAIN_MISMATCH",
+                        path,
+                        f"runtime index buffers must share one zipped domain, got "
+                        f"{[list(item.shape) for item in known]}",
+                        category,
+                    )
+
+            # This first slice is a load whose one local result has the zipped index
+            # domain once, plus every independent tile/full-dimension domain in access
+            # order. That is the exact shape the Triton address branch emits.
+            if operation.kind is OperationKind.LOAD and len(operation.writes) == 1:
+                staged = buffers.get(operation.writes[0])
+                source = buffer
+                expected_shape: list[int] = []
+                added_index_domain = False
+                shape_known = len(known) == len(index_buffers) and bool(known)
+                for component in access.indices:
+                    if component.source is AccessIndexKind.PROGRAM:
+                        continue
+                    if component.source is AccessIndexKind.BUFFER:
+                        if not added_index_domain and shape_known:
+                            expected_shape.extend(known[0].shape)
+                            added_index_domain = True
+                        continue
+                    if component.source is AccessIndexKind.PROGRAM_TILE:
+                        axis = (
+                            schedule.program_map.axis(component.name)
+                            if schedule.program_map is not None
+                            else None
+                        )
+                        if axis is not None:
+                            expected_shape.append(axis.tile)
+                    elif component.source is AccessIndexKind.LOOP_TILE:
+                        loop = next(
+                            (
+                                item
+                                for item in schedule.tile_loops
+                                if item.iterator == component.name
+                            ),
+                            None,
+                        )
+                        if loop is not None:
+                            expected_shape.append(loop.tile)
+                    elif (
+                        component.dimension is not None
+                        and component.dimension < len(source.shape)
+                    ):
+                        expected_shape.append(source.shape[component.dimension])
+                if staged is not None and shape_known:
+                    if staged.shape != tuple(expected_shape):
+                        out.add(
+                            "ACCESS_INDEXED_RESULT_SHAPE",
+                            f"operations[{schedule.operations.index(operation)}].writes",
+                            f"runtime-indexed access yields {expected_shape}, but "
+                            f"{staged.name!r} has shape {list(staged.shape)}",
+                            category,
+                        )
+                    if staged.dtype is not source.dtype:
+                        out.add(
+                            "ACCESS_INDEXED_RESULT_DTYPE",
+                            f"operations[{schedule.operations.index(operation)}].writes",
+                            f"runtime-indexed load preserves {source.name!r}'s "
+                            f"{source.dtype.value}, but {staged.name!r} is "
+                            f"{staged.dtype.value}",
+                            category,
+                        )
+
+        relation = buffer.valid_extent
+        if relation is not None and relation.indexed_by:
+            supported = (
+                len(relation.indexed_by) == 1
+                and relation.indexed_by[0] < len(access.indices)
+                and access.indices[relation.indexed_by[0]].source
+                is AccessIndexKind.PROGRAM
+            )
+            if not supported:
+                out.add(
+                    "VALID_EXTENT_ACCESS_UNLOWERABLE",
+                    path,
+                    "the Triton valid-extent lowering requires one extent axis "
+                    "indexed by one scalar program axis",
+                    FindingCategory.HARDWARE_CONFORMANCE,
+                )
 
     # A tile axis produces a staged extent. If the axis says 128 and the buffer it
     # stages into says 256, the two disagree about the same tile and one of them is
@@ -1426,6 +2064,14 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
         )
         source = buffers.get(access.buffer)
         if staged is None or source is None or source.space is not MemorySpace.GLOBAL:
+            continue
+        # Buffer-valued accesses have one zipped domain no matter how many coordinates
+        # it supplies. The dedicated check above derives that shape; the legacy loop
+        # below intentionally remains byte-for-byte the path for all existing cases.
+        if any(
+            component.source is AccessIndexKind.BUFFER
+            for component in access.indices
+        ):
             continue
         if len(staged.shape) != sum(1 for c in access.indices if c.is_vector):
             continue

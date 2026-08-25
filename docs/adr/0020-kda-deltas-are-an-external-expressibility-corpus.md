@@ -74,7 +74,11 @@ uses `tanh(..., approx=True)`; this slice names the tanh identity but does not y
 an accuracy/approximation commitment, so it also does not claim instruction-equivalent
 reproduction of v12.
 
-Baseline prerequisites order later work: indexed extrema/top-k, quantization-scale
-relations, grouped/ragged work acquisition, and atomic/direct scatter with DSMEM. Only
-after a baseline multi-kernel program is representable is a program-DAG/PDL authority
-justified.
+ADR 0021 closes the first prerequisite as a standalone deterministic indexed `top_k`
+primitive, including a shape-drift falsifier and B200 correctness observation. That does
+not make the v1 chain representable: group formation, selection masks and score updates
+still have no composition path. Remaining prerequisites are quantization-scale relations,
+routing/group formation, valid-tile work acquisition, and atomic/direct scatter with
+DSMEM. ADR 0025 shows that the grouped/ragged contraction itself composes from existing
+primitives, so it does not add a grouped-GEMM operation. Only after a baseline
+multi-kernel program is representable is a program-DAG/PDL authority justified.

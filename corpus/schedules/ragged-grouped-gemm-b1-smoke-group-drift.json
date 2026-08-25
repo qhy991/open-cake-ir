@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "schedule_id": "ragged-grouped-gemm-b1-smoke-group-drift-v1",
+  "target": "sm_100a",
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [0, 1, 2, 3]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "a",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [4, 16, 32],
+      "mode": "input",
+      "valid_extent": {
+        "dimension": 1,
+        "buffer": "lengths",
+        "indexed_by": [0]
+      }
+    },
+    {
+      "name": "b",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [1, 16, 32],
+      "mode": "input"
+    },
+    {
+      "name": "lengths",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [4],
+      "mode": "input"
+    },
+    {
+      "name": "c",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [4, 16, 16],
+      "mode": "output"
+    },
+    {
+      "name": "a_tile",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [16, 16],
+      "mode": "scratch"
+    },
+    {
+      "name": "b_tile",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [16, 16],
+      "mode": "scratch"
+    },
+    {
+      "name": "acc",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [16, 16],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_a",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["a"],
+      "writes": ["a_tile"],
+      "parameters": {"movement": "global", "reuse": "streamed"}
+    },
+    {
+      "id": "load_b",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["b"],
+      "writes": ["b_tile"],
+      "parameters": {"movement": "global", "reuse": "streamed"}
+    },
+    {
+      "id": "dot",
+      "kind": "mma",
+      "role": "compute",
+      "reads": ["a_tile", "b_tile"],
+      "writes": ["acc"],
+      "parameters": {
+        "accumulator": "fp32",
+        "instruction": {"contract": "triton.dot.bf16_fp32"},
+        "tile_shape": [16, 16, 16]
+      },
+      "depends_on": ["load_a", "load_b"]
+    },
+    {
+      "id": "store_c",
+      "kind": "store",
+      "role": "compute",
+      "reads": ["acc"],
+      "writes": ["c"],
+      "parameters": {"coalesced": true},
+      "depends_on": ["dot"]
+    }
+  ],
+  "outputs": ["c"],
+  "program_map": {
+    "axes": [
+      {"name": "group", "axis": 0, "buffer": "a", "dimension": 0, "tile": 1},
+      {"name": "m_block", "axis": 1, "buffer": "a", "dimension": 1, "tile": 16},
+      {"name": "n_block", "axis": 2, "buffer": "b", "dimension": 1, "tile": 16}
+    ]
+  },
+  "tile_loops": [
+    {
+      "name": "k_loop",
+      "iterator": "k",
+      "buffer": "a",
+      "dimension": 2,
+      "tile": 16,
+      "body": ["load_a", "load_b", "dot"],
+      "range_options": {
+        "num_stages": 2,
+        "loop_unroll_factor": 1,
+        "flatten": false,
+        "warp_specialize": false,
+        "disallow_acc_multi_buffer": true,
+        "disable_licm": false
+      }
+    }
+  ],
+  "access_maps": [
+    {
+      "operation": "load_a",
+      "buffer": "a",
+      "indices": [
+        {"source": "program", "name": "group"},
+        {"source": "program_tile", "name": "m_block"},
+        {"source": "loop_tile", "name": "k"}
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_b",
+      "buffer": "b",
+      "indices": [
+        {"source": "program", "name": "group"},
+        {"source": "program_tile", "name": "n_block"},
+        {"source": "loop_tile", "name": "k"}
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_c",
+      "buffer": "c",
+      "indices": [
+        {"source": "program", "name": "group"},
+        {"source": "program_tile", "name": "m_block"},
+        {"source": "program_tile", "name": "n_block"}
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {
+    "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "residency": {
+    "ctas_per_multiprocessor": 4,
+    "registers_per_thread": 64
+  },
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_ragged_grouped_gemm_b1_smoke"
+  }
+}

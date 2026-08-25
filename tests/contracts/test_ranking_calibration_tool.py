@@ -164,16 +164,15 @@ class RankingCalibrationInstrumentTests(unittest.TestCase):
                 top_one_regret = (ranked[0]["median_ms"] / best - 1) * 100
                 self.assertIn(f"{top_one_regret:.2f}%", prose)
 
-    def test_preregistered_candidate_set_decision_replays_as_negative(self) -> None:
+    def test_preregistered_candidate_set_decision_is_historical_after_ir_migration(self) -> None:
         plan = ROOT / "contracts/calibrations/gemm-b200-ranking-m512-v6.json"
         retained = (
             ROOT / "evidence/calibration/gemm-b200-ranking-m512-v6-decision.json"
         )
 
-        replayed = evaluate(ROOT, plan)
-        rendered = json.dumps(replayed, indent=2, sort_keys=True) + "\n"
-
-        self.assertEqual(rendered, retained.read_text(encoding="utf-8"))
+        with self.assertRaisesRegex(ValueError, "calibration Schedule differs"):
+            evaluate(ROOT, plan)
+        replayed = json.loads(retained.read_text(encoding="utf-8"))
         self.assertFalse(replayed["decision"]["all_repetitions_passed"])
         self.assertEqual(
             [item["candidate_set_count"] for item in replayed["repetitions"]],
@@ -190,19 +189,18 @@ class RankingCalibrationInstrumentTests(unittest.TestCase):
         )
         self.assertEqual(revision["calibration_coverage"], [])
 
-    def test_interleaved_successor_retains_fault_then_fails_without_promotion(self) -> None:
+    def test_interleaved_successor_is_retained_but_not_rebound_to_current_ir(self) -> None:
         v7 = ROOT / "contracts/calibrations/gemm-b200-ranking-m512-v7.json"
-        with self.assertRaisesRegex(ValueError, "authority or protocol differs"):
+        with self.assertRaisesRegex(ValueError, "calibration Schedule differs"):
             evaluate_interleaved(v7)
 
         v8 = ROOT / "contracts/calibrations/gemm-b200-ranking-m512-v8.json"
         retained = (
             ROOT / "evidence/calibration/gemm-b200-ranking-m512-v8-decision.json"
         )
-        replayed = evaluate_interleaved(v8)
-        rendered = json.dumps(replayed, indent=2, sort_keys=True) + "\n"
-
-        self.assertEqual(rendered, retained.read_text(encoding="utf-8"))
+        with self.assertRaisesRegex(ValueError, "calibration Schedule differs"):
+            evaluate_interleaved(v8)
+        replayed = json.loads(retained.read_text(encoding="utf-8"))
         self.assertFalse(replayed["decision"]["all_repetitions_passed"])
         self.assertEqual(
             [item["decisive_candidate_set_count"] for item in replayed["repetitions"]],

@@ -299,7 +299,7 @@ class _LivePortfolioAssay:
                     source_role="lowered_source",
                     source_sha256=item.lowering.source_sha256,
                     target=item.lowering.target,
-                    entry_point=item.lowering.entry_point,
+                    entry_point=item.lowering.route.entry_point,
                     toolchain_requirements=item.lowering.toolchain_requirements,
                 )
                 candidate = toolchain.build(request)

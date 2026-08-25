@@ -123,7 +123,10 @@
       "reads": ["half_gate"],
       "writes": ["tanh_gate"],
       "depends_on": ["half_gate"],
-      "parameters": {"op": "tanh"}
+      "parameters": {
+        "op": "tanh",
+        "instruction": {"contract": "libdevice.tanh.f32"}
+      }
     },
     {
       "id": "shift_gate",
@@ -224,11 +227,14 @@
     }
   ],
   "metadata": {
-    "profile": "swiglu_b8_smoke",
     "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "residency": {
     "ctas_per_multiprocessor": 4,
     "registers_per_thread": 128
+  },
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_swiglu_b8_smoke"
   }
 }

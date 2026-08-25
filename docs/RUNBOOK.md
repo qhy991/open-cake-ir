@@ -29,8 +29,14 @@ Every new Campaign custody root must be outside the checkout. `lab preflight --o
 --evidence-root` reject in-checkout paths before writing files or invoking execution inputs. Historical in-checkout
 Locks and Evidence remain valid only for read-only `lab audit`.
 
-`tools/release_compiler_cycle.sh "<basis>"` drives that pipeline end to end and derives the id, but it does not
-re-pin a **Target definition**: `compiler/revision.json` holds each Target's `canonical_sha256`, and editing
+Run `bash tools/release_compiler_cycle.sh` to derive the id and prepare the Corpus Gate. The command never writes
+`compiler/release-approval.json`; it exits with status 3 when the existing approval is missing or does not bind the
+new Gate. A reviewer outside that automation must inspect the exact Gate diff, then write the sole approval artifact
+with `schema_version`, `decision: "approved"`, the Gate path and canonical SHA-256, a reviewer identity and an
+approval basis. Rerun the same no-argument command to validate that artifact and install the verified lock. The
+current v24 approval predates this protocol and must not be described as independent review.
+
+The cycle does not re-pin a **Target definition**: `compiler/revision.json` holds each Target's `canonical_sha256`, and editing
 `compiler/targets/*.json` means updating that pin by hand first, or the cycle stops at `target definition ... bytes
 differ`. That is deliberate — a source edit is routine and a hardware description changing is not — but it is a step
 the script will not take for you.
@@ -57,48 +63,48 @@ of trusted; `docs/ANALYSIS_CALIBRATION.md` reads their output and `evidence/cali
 ```bash
 python tools/calibrate_wave_term.py --first 60 --last 400 --step 2      # exclusive: benchmark
 python tools/calibrate_ranking_at_scale.py --size 512 --observed-at <iso8601> \
-  --out /new/path/ranking.json                                          # exclusive: benchmark
+  --out /new/path/ranking.json                  # historical pre-v24 closure only
 python tools/check_ranking_calibration.py                               # no GPU; exit 1 is a retained negative decision
-python tools/normalize_evidence_custody.py                              # no GPU; run after a fresh checkout, see below
+python tools/normalize_evidence_custody.py                              # no GPU; check clone-time mode custody
 python tools/observe_lowered_kernel.py --out inventory/<NEW>.json
 python tools/profile_lowered_kernel.py --schedule <path> --out <NEW>.json
 python tools/ir_vocabulary.py                                           # no GPU
 ```
 
-`normalize_evidence_custody.py` exists because git records the executable bit and nothing
-else. `EvidenceStore` refuses a directory that is group- or other-writable, so a fresh
-checkout materialises the committed archives under the caller's umask and the store then
-refuses to read its own evidence: two contract tests fail with `evidence directory
-'objects' is group/other writable`, and the re-audit gates cannot run in-repository. Run
-the checker after cloning and `--apply` once. It never repairs what it reports unless
-asked, so its exit status is evidence rather than an outcome it produced.
+Git does not preserve group/other write bits. After a fresh checkout, run
+`python tools/normalize_evidence_custody.py`; if it reports paths, use `--apply` once
+before replaying committed Evidence. The default is check-only and exits nonzero, so it
+does not report a state it silently repaired. This is an operational prerequisite, not
+proof that an archived Run retained live filesystem custody; see the audit register.
 
-`observed-at` is still supplied by the operator for `calibrate_ranking_at_scale.py`. That
-tool is pinned by the frozen calibration v6 contract and `check_ranking_calibration.py`
-verifies its digest, so the field cannot be moved to the clock without a successor
-calibration. The two residency instruments below take it from the clock.
-
-The ranking calibration measures the dormant structural hypothesis even when the released
-Compiler has no profile coverage. Its output informs a later reviewed Revision; running
-the instrument never changes `calibration_coverage`. A decision plan must be committed
-before measurement. The checker applies that frozen rule and exits nonzero when the
-evidence fails; do not change its threshold or regenerate the raw records to make it pass.
+The retained ranking drivers and v6-v8 plans bind pre-v24 Schedule syntax and exact source
+bytes. They are historical evidence, not current instruments: in the current checkout the
+checker fails explicitly with `calibration Schedule differs`. A v24 successor driver and
+plan must be created before another measurement; old thresholds, records and drivers are
+never rewritten. Released `calibration_coverage` remains empty.
 
 Both `observe_lowered_kernel.py` and `profile_lowered_kernel.py` build their inputs from
-`tools/kernel_cases.py`, so a kernel one of them profiles is a kernel the other checked.
+`tools/kernel_inputs.py`, so a kernel one of them profiles is a kernel the other checked.
 Shapes, dtypes and argument order are derived from the Schedule's global buffers, because
 that is where they are already declared and where the emitted host function validates
-them. Current correctness answers come from `tools/kernel_oracles.py`; it projects the
-retained base registry because `kernel_cases.py` bytes are part of frozen ranking
-calibration authority and cannot be rewritten to add a new operator.
+them. The adapter projects the retained builder and owns only post-freeze inputs such as
+FP8 E4M3 tensors and the fixed empty/partial/full runtime extents of the admitted ragged
+slice. Current correctness answers come from `tools/kernel_oracles.py`; it likewise
+projects the retained base registry because `kernel_cases.py` bytes are part of frozen
+ranking calibration authority and cannot be rewritten to add a new operator.
 
 `observe_lowered_kernel.py` refuses to overwrite. A record is what happened once, so renewing one means a new file
 and a new date; the earlier record stays as history for the Revision it was taken under.
 
 ## 2. Resolve a Study
 
+The checked-in zero-GPU fixtures are stable `template` Studies. Their sole moving
+spelling is `{"binding":"current_release"}`; preflight resolves that once into exact
+Compiler and Executor references in the CampaignLock. A live or historical `frozen`
+Study always carries exact references and never follows the inventory.
+
 ```bash
-open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v28.json \
+open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-template.json \
   --output /new/path/campaign.lock.json
 ```
 
@@ -108,29 +114,29 @@ validates it through Lab preflight. It deliberately refuses a live Study because
 broker command digest; `freeze_live_matched_study.py` is the sole path that refreshes that complete authority. The
 names below were current when written.
 
-The current checked-in scientific matched contract, `matched-search-infrastructure-v28.json`, uses a zero-GPU fixture
+The current checked-in scientific matched contract, `matched-search-infrastructure-template.json`, uses a zero-GPU fixture
 provider and intentionally cannot start a live provider. Its Analysis Plan is the ADR 0013 successor: the terminal
 budget comes only from `budget.limit`, candidate failure is observed, external failure is missing, and a complete
 estimate requires conditional latency in both arms. Its Evidence policy is the ADR 0014 successor: every event kind
 is closed, Run boundaries are checked, and search/diagnosis projections are derived during replay. The current
-non-scientific G8 template is `matched-search-system-qualification-v28.json`; earlier versions remain frozen
+non-scientific G8 template is `matched-search-system-qualification-template.json`; earlier versions remain frozen
 historical records. Freeze
 a live successor only after a real two-Turn qualification emits a receipt with
 the matching closed or tool-rich scope and binds the exact executable, model, reasoning effort, service tier, output
 schema, prompt/scaffold bytes, removed environment, reference visibility, feature overrides and event contract.
-`artifact-optimization-v28.json` is the current zero-GPU contract fixture. The frozen
+`artifact-optimization-template.json` is the current zero-GPU contract fixture. The frozen
 `artifact-optimization-verda-v7.json` remains a historical live authority for Executor v8; it is not executable
 from the current source closure. Re-freeze a successor with the exact accessible checkout and broker command before
 launching a live Campaign. Earlier revisions remain historical.
 
-`matched-search-clean-start-reference-v28.json` is the reference-access fixture. It inherits the scientific
+`matched-search-clean-start-reference-template.json` is the reference-access fixture. It inherits the scientific
 template's local 150k/`max` factors, so preflight validates only that both arms receive implementation-free starters;
 it is not a runnable paper result. Create later reference successors through the paired operation below so one arm
 cannot silently retain a task implementation:
 
 ```bash
 python tools/create_study_successor.py \
-  --source contracts/studies/matched-search-infrastructure-v28.json \
+  --source contracts/studies/matched-search-infrastructure-template.json \
   --output contracts/studies/<new-clean-reference-study>.json \
   --study-id <new-clean-reference-study-id> \
   --open-cake-schedule-skeleton contracts/scaffolds/open-cake-clean-start-v1.json \
@@ -187,10 +193,10 @@ Then freeze either non-scientific Study from its matching receipt, seal anchor a
 ```bash
 python tools/freeze_live_matched_study.py \
   --project-root . \
-  --template contracts/studies/matched-search-system-qualification-v28.json \
+  --template contracts/studies/matched-search-system-qualification-template.json \
   --qualification contracts/providers/<new-live-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-live-anchor>.json \
-  --executor runtime/executors/open-cake-ir-b200-v26.json \
+  --executor "$(jq -r '.current.path' inventory/EXECUTOR_REVISIONS.json)" \
   --runtime-config /new/path/runtime.json \
   --reasoning-effort xhigh \
   --study-id <new-g8-study-id> \

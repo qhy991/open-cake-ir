@@ -3,23 +3,30 @@
 Surveyed against the typed IR. Thirty-one axes across FP8 and FP4 block-wise GEMM,
 grouped and masked variants, and a fused MoE megakernel. Paths under `DeepGEMM-upstream/`.
 
-The IR has `fp8_e4m3` in its dtype set. That is the whole of its quantization support, and
-this survey is mostly about why that is not the interesting part.
+The IR originally had only `fp8_e4m3` in its dtype set. Compiler v17 now adds the first
+non-trivial slice: an FP32 scale buffer can name its FP8 data buffer, granularity in data-
+axis order, and physical grouped-axis order. The verifier derives its shape, preserves the
+relation across loads and associates explicit MMA scale reads. The released two-K-block
+Triton lowering validates the KDA v1 scale shape and arithmetic on B200. This survey is
+mostly about what that deliberately narrow slice still does not cover.
 
 ## A scale tensor is a relation, not a buffer
 
-Three things are missing and they compound.
+Three concerns compound; v17 closes only the unpadded static relation.
 
-**There is no "scales of" relation.** `MmaParameters` has one accumulator and no scale
-operand; `Buffer` has a mode of input, output or scratch and no way to say a buffer holds
-another buffer's scales.
+**The base relation now exists.** `Buffer.scale_of` names the data buffer and owns one
+granularity value per data axis. `axis_order` is a full permutation, so KDA activation
+scales `[K/128, M]` and weight scales `[N/128, K/128]` are derived rather than recognized
+by name. The block-scaled MMA contract reads data A, data B, scale(A), scale(B), and refuses
+an association drift before lowering.
 
-**The layout relationship is non-trivial and cannot be stated.** The operand is K-major and
+**DeepGEMM's remaining layout relationship cannot be stated.** The operand is K-major and
 its scale tensor is MN-major -- transposed relative to what it scales. The scale's MN extent
 is `get_tma_aligned_size(mn, element_size)`, which is *padded*, and its K extent is `k`
 divided by both the granularity and four, because UE8M0 bytes are packed four to an int32.
-Writing those as plain integers would lose the relation, so the IR could neither verify the
-scale shape nor re-derive it after a tile change.
+The v17 relation handles the axis transposition and grouped extents, but deliberately has
+no padding or packing rule. Writing those residual extents as plain integers would still
+lose their cause.
 
 **And the padded stride is a function of a dynamic dimension.** For every m-grouped and
 masked path, `mn` is not known at codegen time. `Buffer.shape` is a static integer list.
@@ -31,6 +38,10 @@ means per-token, `128` means per-block. That triple picks among three kernel fam
 one where scales are MMA operands, one where they are applied by hand in the mainloop, and
 one with no scales at all -- and the choice then feeds back into stage counting and into
 which block-N candidates are legal.
+
+v17 can state the triple and admits one explicit register-mainloop implementation contract;
+it does not select a kernel family from it. The Target contract remains an authored,
+verifiable choice rather than a hidden dispatch heuristic.
 
 The tile is not free either: `block_k = 128 / element_size`, because 128 is the scale block
 size, and the kernel asserts it.
@@ -46,6 +57,11 @@ accumulator comes out already correct.
 running rescaled total are separate register arrays, and each k-block multiplies one into
 the other. `ElementwiseOp{mul}` with `broadcast_axis` describes that arithmetic exactly and
 says nothing about its placement, which is the part that matters.
+
+The v17 smoke lowering covers the arithmetic core of this form for exactly two static K
+blocks: each FP8 partial dot is multiplied by its related FP32 A/B scales before FP32
+accumulation. It does not yet model the two-accumulator placement or an arbitrary block
+count.
 
 **By the epilogue, for the next GEMM.** In the fused MoE kernel the L1 epilogue computes
 SwiGLU, reduces an absolute maximum across warp pairs through shared memory, derives a
@@ -82,8 +98,11 @@ needed.
 ## What does fit
 
 Persistent grid with swizzled traversal, warp-role specialisation, the barrier topology,
-CTA occupancy, per-operand swizzle, and the epilogue store atom all map directly. That is
-six of thirty-one, and they are the parts a non-quantized GEMM would also need.
+CTA occupancy, per-operand swizzle, and the epilogue store atom all map directly. v17 adds
+unpadded FP8/FP32 scale association, per-axis granularity, grouped-axis order and a narrow
+register-mainloop consumer. Padded/packed scale storage, dynamic extents, TMA/TMEM scale
+placement and a quantizing producer remain absent, so the complete DeepGEMM families are
+still outside the IR.
 
 Worth noting that the barrier topology fits *including* a barrier that exists only because
 scales need an extra transpose hop, and that the warp-role vocabulary fits *including* a

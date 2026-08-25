@@ -33,10 +33,10 @@ Ordered by how often the surveyed work exercised each axis.
 | 11 | ILP, independent accumulator count | NO | `RangeOptions` carries Triton loop knobs, not an accumulator count |
 | 12 | Split-K reduction decomposition | YES | `reduce_sum(axis, scope)` plus roles |
 | 13 | Two kernel configs in one dispatch | NO | one Schedule is one kernel |
-| 14 | Weight precision and scale granularity | NO | `fp8_e4m3` exists; scale tensors and group size do not |
+| 14 | Weight precision and scale granularity | ~ | v17 relates FP32 scales to FP8 E4M3 data by per-axis granularity and physical grouped-axis order; padded/packed, dynamic and generated scales remain absent |
 | 15 | GEMM orientation (transposed decode) | ~ | buffers can be declared transposed; scale-config major mode cannot |
 
-Five of fifteen fully expressible, one partial. Of the five most-exercised axes, three are now
+Five of fifteen are fully expressible and five are partial. Of the five most-exercised axes, three are now
 `YES`, one `~`, and one belongs to the portfolio stage rather than to a Schedule.
 
 Closed since this note was written, each with a hardware check that the declaration reaches
@@ -66,10 +66,13 @@ a device flag with both kernels' parameters resident, an environment-variable co
 pushed to the deployer, and a precomputed work-tile table -- rather than the host-side
 branch each of those replaces.
 
-Cake IR cannot say that a fact is device-resident, and therefore cannot reject a Schedule
-that would require reading it on the host. This is a verifiable property and squarely the
-verifier's business, and it does not appear in the paper's own list because the paper's
-corpus is standalone kernels rather than a captured serving path.
+Cake IR v19 can now say one narrow version of that fact: a global INT32 input owns the
+runtime-valid prefix of one padded Buffer axis, and lowering consumes it on-device without
+a host read. It still cannot express a general device-resident scheduler flag, problem
+list or work-tile table, so it cannot yet reject every Schedule or program composition
+that would force host synchronization. That broader property remains verifier work and
+does not appear in the paper's own list because the paper's corpus is standalone kernels
+rather than a captured serving path.
 
 ## Where the two surveys diverge
 
@@ -139,7 +142,8 @@ belongs to one Schedule at all.
    turn on this and nothing else.
 4. Separate the pipeline kinds (axis 4). One `stages` field conflates three distinct
    pipelines that the real sweeps tune independently.
-5. Device residency as a declared, verifiable property.
+5. General device residency as a declared, verifiable property. v19 closes only the
+   valid-prefix Buffer relation; scheduler flags and work tables remain separate.
 
 **Does not belong to one Schedule**
 
@@ -154,12 +158,15 @@ integration uses destination-passing deliberately, to write into a symmetric col
 buffer and delete a copy per rank. "Unnecessary" is doing real work in that principle and
 the boundary should be drawn explicitly rather than assumed.
 
-Axis 14 needs a quantization model -- scale tensors, group granularity, where scales live
-relative to the weights -- which is a family the corpus does not cover at all.
+Axis 14 now has one deliberately narrow model: `Buffer.scale_of` owns the FP8 data buffer,
+per-data-axis granularity and physical grouped-axis order. The verifier derives the scale
+shape, preserves the relation across loads and proves the four MMA reads are associated.
+It is not a general quantization model: padding, packing, dynamic extents, generated scales
+and sub-rate pipelines remain separate missing mechanisms.
 
 ## Corpus coverage
 
-The current Compiler Corpus has 19 cases across eight admitted profiles, against the
+The current Compiler Corpus has 32 cases across thirteen program slices, against the
 paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
 the surveyed work is actually about, still have no complete representation here.
 
@@ -169,3 +176,38 @@ complete-version coverage is 0/57 rather than a count of matching knobs. The sna
 ownership boundary and first minimal slice are recorded in
 [`ADR 0020`](adr/0020-kda-deltas-are-an-external-expressibility-corpus.md); the external
 history remains the evidence authority instead of being copied into this repository.
+ADR 0021 closes the standalone deterministic indexed-selection primitive and validates it
+on B200, but grouping and mask/update composition are still needed before the three-stage
+v1 routing chain can be represented as one Schedule.
+
+ADR 0022 closes a subtler KDA-derived gap: the mathematical word `tanh` did not say which
+target implementation realized it. The standalone positive now declares
+`libdevice.tanh.f32`; KDA's actual `tanh.approx.f32` spelling is structurally expressible
+but rejected by the current Target. A brokered diagnostic exceeded the unchanged standalone
+`1e-5` tolerance, so approximate math remains an explicit unsupported contract rather than
+an implicit emitter choice or a conveniently widened oracle. Complete KDA coverage remains
+0/57.
+
+ADR 0023 closes the first KDA v1 quantization relation without claiming the complete
+kernel. The static smoke slice uses KDA's FP8 E4M3 data, FP32 scales, activation storage
+`[K/128, M]`, weight storage `[N/128, K/128]` and two independently scaled K contractions.
+Its released v17 source compiled and matched 2,048/2,048 B200 outputs at maximum deviation
+`1.788e-7` under the preregistered `1e-5` gate. General K-block counts, grouped routing and
+scatter are still outside the lowering domain, so complete-version coverage stays 0/57.
+
+ADR 0024 closes the independent valid-row prerequisite. A padded Buffer owns one
+device-resident INT32 length relation; lowering reuses AccessMap coordinates to load the
+length and mask invalid rows. Its v19 generated source matched 512/512 B200 outputs with
+zero deviation. This does not schedule only-valid tiles, perform grouped GEMM or scatter
+results, so it does not change complete-version coverage.
+
+ADR 0025 then tests composition instead of adding vocabulary. Ordinary `ProgramMap`
+group/M/N axes, group-indexed `AccessMap`s, the existing K `TileLoop`, `mma` and
+`valid_extent` lower one four-group ragged BF16 contraction without a schema, IR,
+verifier or emitter change. Compiler v20 matched 1,024/1,024 B200 outputs with maximum
+deviation `1.9073486328125e-06` under the fixed `1e-5` gate. This closes the arithmetic
+core of one KDA v1 grouped GEMM, not routing/group formation, valid-tile work acquisition,
+the second contraction, scatter or their program DAG; complete-version coverage remains
+0/57 and no performance claim is made. Review of its drift case exposed one generic
+address-safety gap: Compiler v21 now rejects a scalar program coordinate when its derived
+program range exceeds the indexed dimension of another Buffer. No lowering digest changed.

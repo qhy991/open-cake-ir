@@ -319,11 +319,14 @@
     }
   ],
   "metadata": {
-    "profile": "gemm_bias_b1_smoke",
     "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "residency": {
     "ctas_per_multiprocessor": 4,
     "registers_per_thread": 128
+  },
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_gemm_bias_b1_smoke"
   }
 }

@@ -37,8 +37,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v13` is content-bound to an exact `sm_100a` Target and a 19-case,
-  35-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
+- Compiler Revision `open-cake-ir-sm100a-v24` is content-bound to an exact `sm_100a` Target and a 32-case,
+  48-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
   emitted MMA omit its instruction contract while still being marked lowering-eligible. v10 turns the pinned Triton
@@ -47,9 +47,40 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   rather than an invented performance choice. v12 makes the existing lowering boundary public: `generated=true`
   means a backend emitted operation bodies from the Schedule, while TinyGEMM2's closed asset reports `false` instead
   of being indistinguishable from generation. v13 repairs the agent authoring schema against every Corpus Schedule
-  and adds one KDA-derived `tanh` primitive with a standalone SwiGLU positive/shape-drift pair. The reviewed KDA
-  baseline still has 0/57 complete-version coverage; this slice proves arithmetic expressibility, not MoE or
-  performance reproduction. Public ranking obeys its calibration
+  and adds one KDA-derived `tanh` primitive with a standalone SwiGLU positive/shape-drift pair. v14 adds one
+  deterministic indexed `top_k` primitive after KDA v1 exposed the paper-claimed vocabulary gap; its positive and
+  shape-drift pair is gated, and a brokered B200 observation matches 64 ordered indices exactly under forced ties
+  and negative infinities. v15 makes `tanh` name its target implementation contract: the standalone path declares
+  `libdevice.tanh.f32` and again passes the frozen B200 FP32 gate, while KDA's real `tanh.approx.f32` spelling is a
+  target-unsupported Corpus negative. A diagnostic B200 probe exceeded the unchanged `1e-5` boundary on 2,304 of
+  524,288 outputs, so the release does not disguise the numerical mismatch by relaxing the oracle. v16 additionally
+  rejects a Target-admitted contract attached to the wrong operation kind before lowering, closing the verifier/emitter
+  boundary exposed by source review. v17 adds one canonical `scale_of` axis relation and
+  a two-K-block FP8 E4M3/FP32-scale contraction. Its negative sibling proves scale/data
+  association can fail before lowering; the released generated source compiled and matched all 2,048 outputs on a
+  brokered B200 at maximum deviation `1.788e-7` under the unchanged `1e-5` gate. v18 closes the
+  resulting dtype-boundary leak: `reduce_argmin` keeps its FP32-value/INT32-index contract even though
+  the backend can now name FP8, and a dedicated drift case proves that widening is rejected. The reviewed KDA
+  baseline still has 0/57 complete-version coverage. v19 adds one `valid_extent` Buffer relation: an INT32
+  device input owns the valid prefix of one padded data axis, AccessMap remains the coordinate SSOT, and the
+  Triton backend derives the row mask. The released source matched all 512 outputs on B200 with zero deviation.
+  v20 adds no IR vocabulary: it proves that ordinary group/M/N `ProgramMap` axes, group-indexed
+  `AccessMap`s, a K `TileLoop`, `mma` and `valid_extent` compose into the arithmetic core of one
+  KDA v1 ragged grouped GEMM. Its released source matched all 1,024 B200 outputs with maximum deviation
+  `1.9073486328125e-06` under the unchanged `1e-5` boundary. Group formation and routing updates,
+  valid-tile work acquisition, the second grouped contraction, scatter and the program DAG remain absent.
+  v21 adds only the generic scalar-address safety rule exposed by the drift case: a program coordinate
+  cannot index a second Buffer dimension shorter than its derived program range. All lowering digests remain
+  unchanged. v22 adds runtime INT32 Buffer coordinates to the existing AccessMap, which is enough to express
+  the data-dependent gather shared by KDA v1 route/combine; its generated source compiled on B200 and matched
+  all 1,024 outputs exactly. v23 makes emitter preconditions visible before lowering and explicitly refuses a
+  CuTe epilogue formula the backend does not implement; TinyGEMM2 now checks its bias/BF16-round formula rather
+  than relying only on a whole-Schedule digest. v24 removes the thirteen-name lowering profile registry: one typed
+  `{backend, entry_point}` route selects two generated mechanisms or the bounded TinyGEMM2 asset, while the Lab owns
+  Workload tensor/oracle conformance. The executable ABI is derived from global Buffers. A GEMM bias-extent variant
+  now lowers without a Workload-name exception, and TinyGEMM2 asset mismatches block lowering without making the IR
+  program invalid. Pre-v24 B200 observations and ranking plans remain historical rather than being relabelled as
+  v24 evidence. These slices prove primitive expressibility, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
   eligible GEMM triplets and failed the fixed 5% boundary at 35.95% and 8.16%. A drift-controlled successor then
@@ -69,7 +100,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   Receipts and profiles both correct search survivors in each arm, including the non-selected one. These are system
   qualifications, not arm comparisons.
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
-- Current Executor Revision `open-cake-ir-b200-v26` binds the 34-source runtime closure, including deterministic
+- Current Executor Revision `open-cake-ir-b200-v27` binds the 34-source runtime closure, including deterministic
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
   exact B200 host packages; v1–v5 are archived and v6–v25 are superseded descriptors. v19 canonically treats one
   observed same-path delete/add replacement as a resumed candidate update. v20 applies
@@ -85,12 +116,14 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   changing it without a matching qualification fails preflight. v25 retains the exact rendered reference bundle
   supplied on every provider Turn as a replay-checked Evidence object; absence becomes a harness fault and missing
   endpoint rather than an unverifiable clean-start pass. v26 projects the Compiler-owned lowering-generation fact
-  through the public CLI without changing execution semantics. The current matched Study fixtures
+  through the public CLI without changing execution semantics. v27 lets stable Study templates defer only Compiler
+  and Executor identity to preflight; the resulting CampaignLock remains exact, while frozen Studies never follow
+  current state. The current matched Study fixtures
   retain a correctness-qualified, no-timing profile for every searched
   survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command.
-  The current local suite passes 343 tests plus 254 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 383 tests and 322 parameterized subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
@@ -122,7 +155,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   150k, task-informed package study also freezes the provider's distinct `max` reasoning level and complete
   implementation skeletons. The later `xhigh` capability qualification does not rewrite that frozen treatment or
   supply an 80M clean-start Study. Serving and paper reproduction remain unsupported.
-- `matched-search-clean-start-reference-v28.json` is a zero-GPU successor fixture that replaces both arm references
+- `matched-search-clean-start-reference-template.json` is a zero-GPU successor fixture that replaces both arm references
   together: Open Cake receives only its authoring interface and direct CUDA receives a canonical ABI with an empty
   kernel body. Its contamination gate validates reference access only; its inherited 150k/`max` treatment still
   cannot support a paper comparison.

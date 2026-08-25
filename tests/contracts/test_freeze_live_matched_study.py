@@ -171,7 +171,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--template",
                 str(
                     project
-                    / "contracts/studies/matched-search-system-qualification-v28.json"
+                    / "contracts/studies/matched-search-system-qualification-template.json"
                 ),
                 "--qualification",
                 str(qualification_path),
@@ -214,6 +214,15 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             self.assertIsNone(lock.estimand)
             self.assertEqual(output.stat().st_mode & 0o444, 0o444)
             study = json.loads(output.read_text())
+            self.assertEqual(study["state"], "frozen")
+            self.assertEqual(
+                set(study["arms"]["open_cake"]["compiler_revision"]),
+                {"revision_id", "path", "canonical_sha256"},
+            )
+            self.assertEqual(
+                set(study["execution"]["executor_revision"]),
+                {"executor_id", "path", "canonical_sha256"},
+            )
             self.assertEqual(
                 study["arms"]["open_cake"]["provider"]["reasoning_effort"],
                 "xhigh",
@@ -236,12 +245,12 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             )
 
             scientific_template = (
-                project / "contracts/studies/matched-search-infrastructure-v28.json"
+                project / "contracts/studies/matched-search-infrastructure-template.json"
             )
             current_scientific = json.loads(
                 (
                     project
-                    / "contracts/studies/matched-search-infrastructure-v28.json"
+                    / "contracts/studies/matched-search-infrastructure-template.json"
                 ).read_text()
             )
             scientific_output = project / "contracts/studies/live-scientific.json"
@@ -343,7 +352,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--source",
                 str(
                     project
-                    / "contracts/studies/matched-search-infrastructure-v28.json"
+                    / "contracts/studies/matched-search-infrastructure-template.json"
                 ),
                 "--output",
                 str(clean_output),
@@ -366,6 +375,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             self.assertEqual(clean.returncode, 0, clean.stderr.decode())
             clean_study = json.loads(clean_output.read_text(encoding="utf-8"))
             Lab(project).preflight(clean_output)
+            self.assertEqual(clean_study["state"], "frozen")
             self.assertEqual(
                 clean_study["arms"]["open_cake"]["schedule_skeleton"]["path"],
                 "contracts/scaffolds/open-cake-clean-start-v1.json",

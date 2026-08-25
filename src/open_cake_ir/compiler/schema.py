@@ -14,15 +14,16 @@ from typing import Any
 
 from .ir import (
     AccessIndexKind,
-    ArgminTieBreak,
     BarrierMechanism,
     BoundaryPolicy,
     BufferMode,
     DType,
     ElementwiseOp,
     EpilogueFormula,
+    IndexTieBreak,
     LoadMovement,
     LoadReuse,
+    LoweringBackend,
     MemorySpace,
     NaNPolicy,
     OperandMajorMode,
@@ -37,6 +38,7 @@ _NAME = {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
 _NAMES = {"type": "array", "items": _NAME}
 _POSITIVE = {"type": "integer", "minimum": 1}
 _NONNEGATIVE = {"type": "integer", "minimum": 0}
+_SHA256 = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
 
 
 def _values(enum_type: type) -> list[str]:
@@ -120,7 +122,7 @@ _PARAMETERS = {
         },
     ),
     OperationKind.REDUCE_ARGMIN: _object(
-        {"tie_break": _enum(ArgminTieBreak), "nan_policy": _enum(NaNPolicy)},
+        {"tie_break": _enum(IndexTieBreak), "nan_policy": _enum(NaNPolicy)},
         {"across_loop": {"type": "boolean"}},
     ),
     OperationKind.REDUCE: _object(
@@ -130,13 +132,42 @@ _PARAMETERS = {
             "scope": _enum(ReductionScope),
         }
     ),
-    OperationKind.ELEMENTWISE: _object(
-        {"op": _enum(ElementwiseOp)},
+    OperationKind.TOP_K: _object(
         {
-            "scalar": {"type": "number"},
-            "broadcast_axis": _NONNEGATIVE,
-        },
+            "k": _POSITIVE,
+            "tie_break": _enum(IndexTieBreak),
+            "nan_policy": _enum(NaNPolicy),
+        }
     ),
+    OperationKind.ELEMENTWISE: {
+        "oneOf": [
+            _object(
+                {
+                    "op": {"const": ElementwiseOp.TANH.value},
+                    "instruction": _object({"contract": {"type": "string"}}),
+                },
+                {
+                    "scalar": {"type": "number"},
+                    "broadcast_axis": _NONNEGATIVE,
+                },
+            ),
+            _object(
+                {
+                    "op": {
+                        "enum": [
+                            member.value
+                            for member in ElementwiseOp
+                            if member is not ElementwiseOp.TANH
+                        ]
+                    }
+                },
+                {
+                    "scalar": {"type": "number"},
+                    "broadcast_axis": _NONNEGATIVE,
+                },
+            ),
+        ]
+    },
     OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),
 }
 
@@ -188,6 +219,7 @@ def schedule_schema() -> dict[str, Any]:
             "allocations",
             "barriers",
             "buffers",
+            "lowering",
             "metadata",
             "operations",
             "outputs",
@@ -205,6 +237,12 @@ def schedule_schema() -> dict[str, Any]:
             "schema_version": {"const": 1},
             "schedule_id": {"type": "string", "minLength": 1},
             "target": {"type": "string", "minLength": 1},
+            "lowering": _object(
+                {
+                    "backend": _enum(LoweringBackend),
+                    "entry_point": _NAME,
+                }
+            ),
             "grid": {
                 "type": "array",
                 "minItems": 3,
@@ -300,6 +338,34 @@ def schedule_schema() -> dict[str, Any]:
                         "byte_offset": _NONNEGATIVE,
                         "stages": _POSITIVE,
                         "swizzle": _enum(Swizzle),
+                        "scale_of": _object(
+                            {
+                                "buffer": _NAME,
+                                "granularity": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": _POSITIVE,
+                                },
+                                "axis_order": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "uniqueItems": True,
+                                    "items": _NONNEGATIVE,
+                                },
+                            }
+                        ),
+                        "valid_extent": _object(
+                            {
+                                "dimension": _NONNEGATIVE,
+                                "buffer": _NAME,
+                                "indexed_by": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "uniqueItems": True,
+                                    "items": _NONNEGATIVE,
+                                },
+                            }
+                        ),
                     },
                 ),
             },
@@ -399,8 +465,17 @@ def schedule_schema() -> dict[str, Any]:
             "outputs": _NAMES,
             "metadata": {
                 "type": "object",
-                "required": ["profile"],
-                "properties": {"profile": {"type": "string", "minLength": 1}},
+                "additionalProperties": False,
+                "properties": {
+                    "workload_contract_sha256": _SHA256,
+                    "legacy_source": _object(
+                        {
+                            "revision": {"type": "string", "minLength": 1},
+                            "path": {"type": "string", "minLength": 1},
+                            "canonical_json_sha256": _SHA256,
+                        }
+                    ),
+                },
             },
         },
     }

@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "75f29e87205b352ef7dabbd44ee7b7d8d6ebf352d87d2dc4aa2f6df684258106"
+    "canonical_sha256": "4e2c9376080db1af163eb633b15c5412354912634d32cd1161933f7fba1bfb15"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Repair the agent authoring schema against all 19 Corpus schedules and admit the KDA-derived tanh SwiGLU slice with an independently failing shape-drift case."
+  "approval_basis": "Repository-owner-authorized Finding 8 migration: replace workload profiles with explicit lowering routes, keep Workload semantics in Lab, bind TinyGEMM2 checked-asset semantics, and adopt the separately reviewed 32-case expectation diff."
 }

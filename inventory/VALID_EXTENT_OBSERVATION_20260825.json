@@ -1,0 +1,42 @@
+{
+ "schema_version": 2,
+ "observed_at": "2026-08-25T02:59:49Z",
+ "purpose": "lowered_kernel_correctness",
+ "scientific_claim_authorized": false,
+ "performance_measured": false,
+ "host": "verda-b200x4",
+ "device": "NVIDIA B200",
+ "compute_capability": [
+  10,
+  0
+ ],
+ "toolchain": {
+  "cutlass": "4.7.0",
+  "torch": "2.13.0+cu130"
+ },
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v19",
+  "revision_sha256": "33e07657212f79a38d3ef5e5bd6af8640e5009123271cfefa818b74e8fc91901"
+ },
+ "schedule": {
+  "path": "corpus/schedules/ragged-zero-pad-b1-smoke.json",
+  "schedule_id": "ragged-zero-pad-b1-smoke-v1",
+  "canonical_sha256": "ae6503370f5b8ecbd122237b7b46cce733fa1bbe57d0389996925365b4682492"
+ },
+ "lowering": {
+  "generated": true,
+  "entry_point": "cake_ragged_zero_pad_b1_smoke",
+  "source_sha256": "637f0cfbb95359b968c1e0a89eedfddf5f999ba8d5d718d2e87954695b2706b0",
+  "source_lines": 79
+ },
+ "result": {
+  "compiled": true,
+  "launched": true,
+  "total_elements": 512,
+  "mismatch_count": 0,
+  "max_deviation": 0.0,
+  "tolerance": 1e-05,
+  "passed": true
+ },
+ "note": "Compiler.lower generated this source from the Schedule; there is no checked-in template for this profile. Correctness only -- no timing was taken. Reproduce with tools/observe_lowered_kernel.py."
+}

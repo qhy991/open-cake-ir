@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "schedule_id": "indexed-gather-b8-smoke-dtype-drift-v1",
+  "target": "sm_100a",
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [0, 1, 2, 3]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "expert_rows", "space": "global", "dtype": "bf16", "shape": [4, 8, 16], "mode": "input"},
+    {"name": "expert_ids", "space": "global", "dtype": "int32", "shape": [8, 8], "mode": "input"},
+    {"name": "row_ids", "space": "global", "dtype": "fp32", "shape": [8, 8], "mode": "input"},
+    {"name": "gathered_rows", "space": "global", "dtype": "bf16", "shape": [8, 8, 16], "mode": "output"},
+    {"name": "expert_id_tile", "space": "register", "dtype": "int32", "shape": [8], "mode": "scratch"},
+    {"name": "row_id_tile", "space": "register", "dtype": "fp32", "shape": [8], "mode": "scratch"},
+    {"name": "gathered_tile", "space": "register", "dtype": "bf16", "shape": [8, 16], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_expert_ids", "kind": "load", "role": "compute", "reads": ["expert_ids"], "writes": ["expert_id_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_row_ids", "kind": "load", "role": "compute", "reads": ["row_ids"], "writes": ["row_id_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_selected_rows", "kind": "load", "role": "compute", "reads": ["expert_rows", "expert_id_tile", "row_id_tile"], "writes": ["gathered_tile"], "depends_on": ["load_expert_ids", "load_row_ids"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "store_gathered_rows", "kind": "store", "role": "compute", "reads": ["gathered_tile"], "writes": ["gathered_rows"], "depends_on": ["load_selected_rows"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["gathered_rows"],
+  "program_map": {"axes": [{"name": "token", "axis": 0, "buffer": "expert_ids", "dimension": 0, "tile": 1}]},
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_expert_ids", "buffer": "expert_ids", "indices": [{"source": "program", "name": "token"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_row_ids", "buffer": "row_ids", "indices": [{"source": "program", "name": "token"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_selected_rows", "buffer": "expert_rows", "indices": [{"source": "buffer", "name": "expert_id_tile"}, {"source": "buffer", "name": "row_id_tile"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_gathered_rows", "buffer": "gathered_rows", "indices": [{"source": "program", "name": "token"}, {"source": "dimension", "dimension": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_indexed_gather_b8_smoke"
+  }
+}

@@ -1,8 +1,8 @@
 # Current-state inventory
 
-Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set envelope implementation and live
-system qualification, historical Executor-v10 NCU attribution validation, Executor v26 release and Compiler v13
-KDA-delta expressibility slice. The final
+Snapshot: 2026-08-25 after declared-domain ranking calibration, candidate-set envelope implementation and live
+system qualification, historical Executor-v10 NCU attribution validation, Executor v27 release and Compiler v24
+lowering-route/Workload ownership separation over the KDA-derived primitive slices. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
@@ -29,8 +29,8 @@ causal effect, serving and paper reproduction are not.
 
 ## New repository state
 
-- Compiler Revision `open-cake-ir-sm100a-v13` binds the exact Target, public Schedule authoring contract, 35-source
-  closure, 19-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
+- Compiler Revision `open-cake-ir-sm100a-v24` binds the exact Target, public Schedule authoring contract, 48-source
+  closure, 32-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
   remain immutable history; v7 and v8 are archived byte-for-byte because retained calibration and Study authorities
   witness them. v9 makes an otherwise-lowerable backend-emitted MMA without an instruction contract a structured,
   candidate-actionable Finding instead of a late emitter exception. v10 similarly makes the pinned Triton backend's
@@ -47,14 +47,44 @@ causal effect, serving and paper reproduction are not.
   standalone SwiGLU positive/shape-drift pair. Seven backend-emitted profiles report true while the closed
   TinyGEMM2 asset reports false. A B200 correctness-only observation compiled and launched the SwiGLU lowering over
   524,288 FP32 outputs with zero tolerance violations and maximum deviation 4.76837158203125e-07. The reviewed KDA
-  snapshot remains 0/57 for complete-version expressibility because grouped/ragged work, indexed top-k,
-  quantization-scale relations and scatter are still absent; no KDA performance claim is made.
-- Current Executor Revision `open-cake-ir-b200-v26` binds 34 runtime sources, including deterministic external
+  v1 chain then exposed the paper-claimed Top-K vocabulary gap. v14 admits one deterministic indexed-selection
+  primitive and a positive/shape-drift pair; eight backend-emitted profiles now report true. Its brokered B200
+  correctness-only observation compiled and launched the generated lowering and matched all 64 ordered indices
+  exactly under forced ties and negative infinities. v15 requires `tanh` to name its target implementation contract.
+  The positive standalone Schedule declares `libdevice.tanh.f32`; its brokered B200 successor again compiles and
+  launches 524,288 FP32 outputs with zero `1e-5` violations and maximum deviation 4.76837158203125e-07. The KDA-used
+  `tanh.approx.f32` spelling is retained as a target-unsupported Corpus negative: a diagnostic B200 probe produced
+  2,304 violations and maximum deviation 3.24249267578125e-05, so neither the Target nor the frozen oracle was
+  broadened. v16 also rejects a contract admitted for a different operation kind before lowering; the flat Target
+  instruction set can no longer let an MMA spelling reach the elementwise emitter. v17 adds the canonical
+  `scale_of` relation and validates a two-K-block FP8 E4M3/FP32-scale contraction; v18 repairs the resulting
+  `reduce_argmin` dtype boundary. v19 adds a device-resident `valid_extent` Buffer relation and matches 512/512
+  B200 zero-padding outputs exactly. v20 adds no vocabulary: the existing group/M/N `ProgramMap`, group-indexed
+  accesses, K loop, `mma` and `valid_extent` compose into a ragged grouped-GEMM arithmetic slice that matches
+  1,024/1,024 B200 outputs with maximum deviation `1.9073486328125e-06` under `1e-5`. v21 then rejects a scalar
+  program coordinate whose derived range exceeds the indexed dimension of another Buffer; this generic safety
+  successor changes no lowering digest. v22 adds runtime INT32 Buffer coordinates to the existing AccessMap; the
+  KDA-derived route/combine gather generated, compiled on B200 and matched all 1,024 outputs exactly. v23 moves
+  emitter preconditions into backend preflight and explicitly rejects unsupported CuTe epilogue formulas;
+  TinyGEMM2 now checks its bias/BF16-round formula while truthfully remaining a closed source asset. v24 removes the
+  thirteen use-case `profile` spellings and their duplicated Workload rules. One typed `{backend, entry_point}` route
+  now chooses between two generated mechanisms and the bounded TinyGEMM2 checked asset; global Buffers derive the
+  emitted signature, while Workload shape/oracle checks remain in Lab. A GEMM bias-extent variant is consequently
+  lowerable, whereas three-part reduction and wrong-epilogue TinyGEMM2 variants are valid IR but cannot use the
+  retained asset. Frozen pre-v24 GPU observations and ranking decisions remain historical; no current v24 B200 or
+  ranking successor is inferred from them. Release-cycle automation now prepares but cannot write the approval it
+  consumes; a stale approval leaves the prior lock intact until an external reviewer binds the exact new Gate. The
+  current v24 approval predates that repair and remains same-actor evidence. The reviewed
+  KDA snapshot
+  remains 0/57 for complete-version expressibility because routing/group formation, valid-tile work acquisition,
+  the second contraction, scatter and the multi-kernel program DAG are still absent; no KDA performance claim is
+  made.
+- Current Executor Revision `open-cake-ir-b200-v27` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
   and no-GPU Triton-to-CUBIN qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor.
   The Executor pins NCU 2026.1.1.0 by path, bytes and size. G8 r6 retains its exact v1 closure, later source baselines
-  retain v2–v5, and v6–v25 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all twenty-six revisions. v19
+  retain v2–v5, and v6–v26 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all twenty-seven revisions. v19
   normalizes the observed same-path delete/add replacement lifecycle to the single canonical resumed update, while
   rejecting different paths, orderings and kinds. v20 routes a measured order inversion to the cost model only when
   complete released cost coverage actually ordered the candidate set; provider order with null costs no longer
@@ -67,15 +97,18 @@ causal effect, serving and paper reproduction are not.
   diagnosis projections from retained authorities; v24 makes reasoning effort an explicit, qualification-bound
   treatment factor shared by both arms. v25 retains the exact rendered authoring bundle as a replay-checked Evidence
   object for every completed provider Turn and makes its absence a harness fault. v26 adds only the public CLI
-  projection of the Compiler-owned generation fact. The Lab makes Claim Scope the
+  projection of the Compiler-owned generation fact. v27 separates stable Study templates from exact execution:
+  preflight resolves current Compiler/Executor references into the CampaignLock, while frozen Studies never follow
+  inventory state. The Lab makes Claim Scope the
   single authority for choosing the
   closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
-- Current matched Study v28 fixtures bind Compiler v13 and Executor v26, profile every correctness-qualified search
+- Five current Study templates resolve Compiler v24 and Executor v27 into exact CampaignLocks without revision-only
+  Study successors. The matched templates profile every correctness-qualified search
   survivor through the existing no-timing attribution purpose, and feed back only the selected survivor's checked
   projection. Frozen selected-only evidence
   retains its earlier operation spelling; the current live v3 successor now passes this relation on B200 for both
-  selected and non-selected survivors in both arms. A separate v28 reference fixture pairs an operation-free Open
+  selected and non-selected survivors in both arms. The clean-start reference template pairs an operation-free Open
   Cake interface with an empty-body CUDA ABI starter; it validates reference access only and retains the local
   150k/`max` factors rather than claiming paper alignment.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
@@ -93,7 +126,7 @@ causal effect, serving and paper reproduction are not.
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 343 tests plus 254 subtests; the earlier remote qualification passed its
+- The current local contract suite passes 387 tests and 322 parameterized subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain

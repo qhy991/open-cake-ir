@@ -1,22 +1,9 @@
 #!/usr/bin/env python3
-"""Report, and on request restore, the filesystem custody committed Evidence needs.
+"""Check, and only on request restore, committed Evidence filesystem custody.
 
-`EvidenceStore` refuses a directory whose mode carries `0o022`, because a live Run's
-tamper-evidence rests on nobody else being able to write the objects it is about to hash.
-That is the right check for a Run. It is also a check git cannot satisfy: git records the
-executable bit and nothing else, so every fresh checkout materialises the committed
-archives under the caller's umask, and the store then refuses to read its own evidence.
-
-The visible consequence is that two contract tests fail on a clean clone with
-`evidence directory 'objects' is group/other writable`, and the re-audit gates in
-`docs/ACCEPTANCE_GATES.md` cannot be executed in-repository at all.
-
-This does not decide whether the store should audit an archive differently from a Run --
-that is a Compiler/Executor-successor question recorded in `docs/AUDIT_FINDINGS_20260825.md`.
-It makes the undocumented manual step explicit and runnable.
-
-`--check` is the default and never writes. Restoring custody is `--apply`, because a tool
-that repaired what it reports would report a state it had just produced.
+Git does not preserve group/other write bits. A checkout created under a permissive
+umask can therefore be unreadable by `EvidenceStore`, even though its bytes are intact.
+The default mode reports and exits nonzero; `--apply` is the explicit operational repair.
 """
 
 from __future__ import annotations
@@ -28,23 +15,21 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-
 DIRECTORY_MODE = 0o750
 FILE_MODE = 0o440
 
 
 def _nonconforming(root: Path) -> list[tuple[Path, int, int]]:
-    """Every path under `root` whose mode differs from the custody the store requires."""
-
     findings: list[tuple[Path, int, int]] = []
     for current, directories, files in os.walk(root):
         directories.sort()
         files.sort()
-        for path, wanted in (
+        candidates = (
             [(Path(current), DIRECTORY_MODE)]
             + [(Path(current) / name, DIRECTORY_MODE) for name in directories]
             + [(Path(current) / name, FILE_MODE) for name in files]
-        ):
+        )
+        for path, wanted in candidates:
             if path.is_symlink():
                 continue
             observed = stat.S_IMODE(path.lstat().st_mode)
@@ -59,18 +44,18 @@ def main() -> int:
         "--root",
         action="append",
         default=None,
-        help="evidence root to inspect; repeatable. Defaults to evidence/.",
+        help="repository-relative evidence root; repeatable, defaults to evidence/",
     )
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="restore the required modes instead of only reporting them",
+        help="restore required modes instead of only reporting",
     )
     arguments = parser.parse_args()
 
-    roots = [ROOT / item for item in (arguments.root or ["evidence"])]
     findings: list[tuple[Path, int, int]] = []
-    for root in roots:
+    for relative in arguments.root or ["evidence"]:
+        root = ROOT / relative
         if not root.is_dir():
             raise SystemExit(f"{root} is not a directory")
         findings.extend(_nonconforming(root))

@@ -15,13 +15,14 @@ The legacy split forced two workarounds that do not survive here:
 
 Parsing is strict: unknown fields are rejected, every closed vocabulary is an `Enum`,
 and every parameter set is bound to its operation kind. Structural admissibility only
--- semantic gates (resource limits, synchronization, profile rules) belong to the
+-- semantic gates (resource limits, synchronization, backend preflight) belong to the
 verifier, not to this module.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -84,8 +85,9 @@ class OperationKind(str, Enum):
     `REDUCE` is one kind carrying an operator rather than one kind per operator, which is
     the shape `ELEMENTWISE` already had. A second reduction was the moment to pick: a
     `reduce_max` kind beside `reduce_sum` would have been two spellings of collapsing an
-    axis. `REDUCE_ARGMIN` stays separate because it returns an index rather than a value,
-    and that is what makes its tie-break and NaN policy observable at all.
+    axis. `REDUCE_ARGMIN` stays separate because it collapses a tiled search to one
+    index; `TOP_K` instead preserves a selected axis and returns both values and indices.
+    They therefore have different result types even when k is one.
     """
 
     LOAD = "load"
@@ -93,8 +95,17 @@ class OperationKind(str, Enum):
     EPILOGUE = "epilogue"
     REDUCE_ARGMIN = "reduce_argmin"
     REDUCE = "reduce"
+    TOP_K = "top_k"
     ELEMENTWISE = "elementwise"
     STORE = "store"
+
+
+class LoweringBackend(str, Enum):
+    """Mechanism that materializes source, independent of operator or Workload."""
+
+    TRITON = "triton"
+    CUTLASS_CUTE_DSL = "cutlass_cute_dsl"
+    CHECKED_CUDA_ASSET = "checked_cuda_asset"
 
 
 class ReduceOp(str, Enum):
@@ -128,7 +139,9 @@ class LoadReuse(str, Enum):
     STREAMED = "streamed"
 
 
-class ArgminTieBreak(str, Enum):
+class IndexTieBreak(str, Enum):
+    """Deterministic ordering when an indexed selection sees equal values."""
+
     LOWEST_INDEX = "lowest_index"
 
 
@@ -251,6 +264,7 @@ class AccessIndexKind(str, Enum):
     PROGRAM_TILE = "program_tile"
     LOOP_TILE = "loop_tile"
     DIMENSION = "dimension"
+    BUFFER = "buffer"
 
 
 class BoundaryPolicy(str, Enum):
@@ -448,6 +462,81 @@ class Allocation:
 
 
 @dataclass(frozen=True)
+class ScaleRelation:
+    """How one scale buffer partitions and names its FP8 data buffer.
+
+    ``granularity`` is written in data-axis order. ``axis_order`` is the permutation
+    that turns those grouped axes into the scale buffer's physical shape.  The target
+    buffer supplies the rank and extents, so the verifier owns the dependent checks.
+    """
+
+    buffer: str
+    granularity: tuple[int, ...]
+    axis_order: tuple[int, ...]
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "ScaleRelation":
+        obj = _strict_object(
+            value,
+            required={"buffer", "granularity", "axis_order"},
+            context=context,
+        )
+        granularity = _object_list(
+            obj["granularity"], f"{context}.granularity", allow_empty=False
+        )
+        axis_order = _object_list(
+            obj["axis_order"], f"{context}.axis_order", allow_empty=False
+        )
+        parsed_order = tuple(
+            _nonnegative_int(axis, f"{context}.axis_order[{index}]")
+            for index, axis in enumerate(axis_order)
+        )
+        if len(set(parsed_order)) != len(parsed_order):
+            raise ScheduleParseError(f"{context}.axis_order repeats a data axis")
+        return cls(
+            _string(obj["buffer"], f"{context}.buffer"),
+            tuple(
+                _positive_int(extent, f"{context}.granularity[{index}]")
+                for index, extent in enumerate(granularity)
+            ),
+            parsed_order,
+        )
+
+
+@dataclass(frozen=True)
+class ValidExtentRelation:
+    """One padded data axis whose runtime-valid region is a device prefix.
+
+    ``indexed_by`` maps extent-buffer axes to data-buffer axes.  AccessMap remains the
+    coordinate authority; lowering reuses those coordinates to load the one extent.
+    """
+
+    dimension: int
+    buffer: str
+    indexed_by: tuple[int, ...]
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "ValidExtentRelation":
+        obj = _strict_object(
+            value,
+            required={"dimension", "buffer", "indexed_by"},
+            context=context,
+        )
+        axes = _object_list(obj["indexed_by"], f"{context}.indexed_by", allow_empty=False)
+        indexed_by = tuple(
+            _nonnegative_int(axis, f"{context}.indexed_by[{index}]")
+            for index, axis in enumerate(axes)
+        )
+        if len(set(indexed_by)) != len(indexed_by):
+            raise ScheduleParseError(f"{context}.indexed_by repeats a data axis")
+        return cls(
+            _nonnegative_int(obj["dimension"], f"{context}.dimension"),
+            _string(obj["buffer"], f"{context}.buffer"),
+            indexed_by,
+        )
+
+
+@dataclass(frozen=True)
 class Buffer:
     name: str
     space: MemorySpace
@@ -458,6 +547,8 @@ class Buffer:
     byte_offset: int
     stages: int
     swizzle: Swizzle | None
+    scale_of: ScaleRelation | None
+    valid_extent: ValidExtentRelation | None
 
     @property
     def elements(self) -> int:
@@ -481,12 +572,21 @@ class Buffer:
         obj = _strict_object(
             value,
             required={"name", "space", "dtype", "shape", "mode"},
-            optional={"allocation", "byte_offset", "stages", "swizzle"},
+            optional={
+                "allocation",
+                "byte_offset",
+                "stages",
+                "swizzle",
+                "scale_of",
+                "valid_extent",
+            },
             context=context,
         )
         shape = _object_list(obj["shape"], f"{context}.shape", allow_empty=False)
         allocation = obj.get("allocation")
         swizzle = obj.get("swizzle")
+        scale_of = obj.get("scale_of")
+        valid_extent = obj.get("valid_extent")
         return cls(
             _string(obj["name"], f"{context}.name"),
             _enum(MemorySpace, obj["space"], f"{context}.space"),
@@ -500,6 +600,14 @@ class Buffer:
             _nonnegative_int(obj.get("byte_offset", 0), f"{context}.byte_offset"),
             _positive_int(obj.get("stages", 1), f"{context}.stages"),
             None if swizzle is None else _enum(Swizzle, swizzle, f"{context}.swizzle"),
+            None
+            if scale_of is None
+            else ScaleRelation.from_dict(scale_of, f"{context}.scale_of"),
+            None
+            if valid_extent is None
+            else ValidExtentRelation.from_dict(
+                valid_extent, f"{context}.valid_extent"
+            ),
         )
 
 
@@ -564,6 +672,11 @@ class ProgramAxis:
         """A tile of 1 is a scalar program index; anything wider carries an offset vector."""
 
         return self.tile > 1
+
+    def tile_count(self, extent: int) -> int:
+        """Number of program coordinates needed to cover an owned buffer extent."""
+
+        return (extent + self.tile - 1) // self.tile
 
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "ProgramAxis":
@@ -896,7 +1009,7 @@ class EpilogueParameters:
 
 @dataclass(frozen=True)
 class ReduceArgminParameters:
-    tie_break: ArgminTieBreak
+    tie_break: IndexTieBreak
     nan_policy: NaNPolicy
     across_loop: bool
 
@@ -921,6 +1034,37 @@ class ReduceParameters:
 
 
 @dataclass(frozen=True)
+class TopKParameters:
+    """Greatest values and source positions from one resident rank-one tile.
+
+    Descending result order is part of the operation rather than an optional spelling.
+    Group formation and batched routing remain separate operations.
+    """
+
+    k: int
+    tie_break: IndexTieBreak
+    nan_policy: NaNPolicy
+
+
+@dataclass(frozen=True)
+class ElementwiseInstruction:
+    """The target instruction selected for arithmetic with multiple realizations.
+
+    Most elementwise primitives have no separately admitted instruction in the current
+    vocabulary. Tanh does: the KDA corpus relies on the approximate PTX instruction, whose
+    cost and numerical behaviour differ from a libdevice call. Leaving it to the backend
+    would make those two physical schedules have one spelling.
+    """
+
+    contract: str
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "ElementwiseInstruction":
+        obj = _strict_object(value, required={"contract"}, context=context)
+        return cls(_string(obj["contract"], f"{context}.contract"))
+
+
+@dataclass(frozen=True)
 class ElementwiseParameters:
     """One arithmetic primitive over the operation's reads.
 
@@ -931,6 +1075,7 @@ class ElementwiseParameters:
     op: ElementwiseOp
     scalar: float | None
     broadcast_axis: int | None
+    instruction: ElementwiseInstruction | None
     """Which axis of the result a narrower operand spans.
 
     Trailing-axis alignment is the array convention, but it only covers half the cases
@@ -960,6 +1105,8 @@ OperationParameters = Union[
     EpilogueParameters,
     ReduceArgminParameters,
     ReduceParameters,
+    TopKParameters,
+    ElementwiseParameters,
     StoreParameters,
     FenceProxyParameters,
 ]
@@ -1059,7 +1206,7 @@ def _operation_parameters(
             context=context,
         )
         return ReduceArgminParameters(
-            _enum(ArgminTieBreak, obj["tie_break"], f"{context}.tie_break"),
+            _enum(IndexTieBreak, obj["tie_break"], f"{context}.tie_break"),
             _enum(NaNPolicy, obj["nan_policy"], f"{context}.nan_policy"),
             _boolean(obj.get("across_loop", False), f"{context}.across_loop"),
         )
@@ -1072,13 +1219,36 @@ def _operation_parameters(
             _enum(ReductionScope, obj["scope"], f"{context}.scope"),
         )
 
+    if kind is OperationKind.TOP_K:
+        obj = _strict_object(
+            value,
+            required={"k", "tie_break", "nan_policy"},
+            context=context,
+        )
+        return TopKParameters(
+            _positive_int(obj["k"], f"{context}.k"),
+            _enum(IndexTieBreak, obj["tie_break"], f"{context}.tie_break"),
+            _enum(NaNPolicy, obj["nan_policy"], f"{context}.nan_policy"),
+        )
+
     if kind is OperationKind.ELEMENTWISE:
         obj = _strict_object(
             value,
             required={"op"},
-            optional={"scalar", "broadcast_axis"},
+            optional={"scalar", "broadcast_axis", "instruction"},
             context=context,
         )
+        op = _enum(ElementwiseOp, obj["op"], f"{context}.op")
+        instruction = obj.get("instruction")
+        if op is ElementwiseOp.TANH and instruction is None:
+            raise ScheduleParseError(
+                f"{context}.instruction is required for tanh so the backend does not "
+                "choose its numerical and performance contract"
+            )
+        if op is not ElementwiseOp.TANH and instruction is not None:
+            raise ScheduleParseError(
+                f"{context}.instruction has no defined effect for {op.value}"
+            )
         scalar = obj.get("scalar")
         if scalar is not None and (
             not isinstance(scalar, (int, float)) or isinstance(scalar, bool)
@@ -1086,9 +1256,14 @@ def _operation_parameters(
             raise ScheduleParseError(f"{context}.scalar must be a number")
         axis = obj.get("broadcast_axis")
         return ElementwiseParameters(
-            _enum(ElementwiseOp, obj["op"], f"{context}.op"),
+            op,
             float(scalar) if scalar is not None else None,
             _nonnegative_int(axis, f"{context}.broadcast_axis") if axis is not None else None,
+            None
+            if instruction is None
+            else ElementwiseInstruction.from_dict(
+                instruction, f"{context}.instruction"
+            ),
         )
 
     if kind is OperationKind.STORE:
@@ -1157,6 +1332,7 @@ _SCHEDULE_REQUIRED = {
     "schema_version",
     "schedule_id",
     "target",
+    "lowering",
     "roles",
     "allocations",
     "buffers",
@@ -1213,10 +1389,77 @@ class Residency:
 
 
 @dataclass(frozen=True)
+class LoweringRoute:
+    """The only lowering choice a Schedule writes explicitly.
+
+    The emitter derives the argument signature from global Buffers. Keeping an ABI label
+    here would restate that signature and had already produced a false four-tensor label
+    for a two-tensor Softmax Schedule.
+    """
+
+    backend: LoweringBackend
+    entry_point: str
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str = "schedule.lowering") -> "LoweringRoute":
+        obj = _strict_object(
+            value,
+            required={"backend", "entry_point"},
+            context=context,
+        )
+        entry_point = _string(obj["entry_point"], f"{context}.entry_point")
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", entry_point) is None:
+            raise ScheduleParseError(f"{context}.entry_point must be an identifier")
+        return cls(
+            backend=_enum(LoweringBackend, obj["backend"], f"{context}.backend"),
+            entry_point=entry_point,
+        )
+
+
+def _metadata(value: Any) -> Mapping[str, Any]:
+    obj = _strict_object(
+        value,
+        required=set(),
+        optional={"workload_contract_sha256", "legacy_source"},
+        context="schedule.metadata",
+    )
+    workload = obj.get("workload_contract_sha256")
+    if workload is not None and (
+        not isinstance(workload, str)
+        or len(workload) != 64
+        or any(character not in "0123456789abcdef" for character in workload)
+    ):
+        raise ScheduleParseError(
+            "schedule.metadata.workload_contract_sha256 must be a lowercase SHA256 digest"
+        )
+    legacy = obj.get("legacy_source")
+    if legacy is not None:
+        source = _strict_object(
+            legacy,
+            required={"revision", "path", "canonical_json_sha256"},
+            context="schedule.metadata.legacy_source",
+        )
+        _string(source["revision"], "schedule.metadata.legacy_source.revision")
+        _string(source["path"], "schedule.metadata.legacy_source.path")
+        digest = source["canonical_json_sha256"]
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ScheduleParseError(
+                "schedule.metadata.legacy_source.canonical_json_sha256 must be a "
+                "lowercase SHA256 digest"
+            )
+    return dict(obj)
+
+
+@dataclass(frozen=True)
 class Schedule:
     schema_version: int
     schedule_id: str
     target: str
+    lowering: LoweringRoute
     grid: tuple[int, int, int] | None
     program_map: ProgramMap | None
     residency: Residency | None
@@ -1256,9 +1499,17 @@ class Schedule:
         if access is None:
             return None
         axis = 0
+        saw_buffer_domain = False
         for component in access.indices:
             if component.source is AccessIndexKind.PROGRAM:
                 continue
+            if component.source is AccessIndexKind.BUFFER:
+                # All buffer-valued coordinates in one access are zipped over one
+                # common domain. Counting each coordinate separately would turn
+                # [expert[k], row[k]] into a k-by-k product and shift every later axis.
+                if saw_buffer_domain:
+                    continue
+                saw_buffer_domain = True
             if (
                 component.source is AccessIndexKind.LOOP_TILE
                 and component.name == loop.iterator
@@ -1335,11 +1586,6 @@ class Schedule:
         )
 
     @property
-    def profile(self) -> str | None:
-        value = self.metadata.get("profile")
-        return value if isinstance(value, str) else None
-
-    @property
     def total_warp_extent(self) -> int:
         """One past the highest warp index used by any role."""
 
@@ -1382,10 +1628,6 @@ class Schedule:
                 _positive_int(raw_grid[2], "schedule.grid[2]"),
             )
 
-        metadata = obj["metadata"]
-        if not isinstance(metadata, Mapping):
-            raise ScheduleParseError("schedule.metadata must be an object")
-
         def parse_list(field: str, factory: Any) -> tuple[Any, ...]:
             items = _object_list(obj.get(field, []), f"schedule.{field}")
             return tuple(
@@ -1397,6 +1639,7 @@ class Schedule:
             schema_version=1,
             schedule_id=_string(obj["schedule_id"], "schedule.schedule_id"),
             target=_string(obj["target"], "schedule.target"),
+            lowering=LoweringRoute.from_dict(obj["lowering"]),
             grid=grid,
             program_map=(
                 ProgramMap.from_dict(obj["program_map"], "schedule.program_map")
@@ -1417,5 +1660,5 @@ class Schedule:
             access_maps=parse_list("access_maps", AccessMap.from_dict),
             operations=parse_list("operations", Operation.from_dict),
             outputs=_string_tuple(obj["outputs"], "schedule.outputs"),
-            metadata=dict(metadata),
+            metadata=_metadata(obj["metadata"]),
         )

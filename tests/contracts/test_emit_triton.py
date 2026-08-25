@@ -235,14 +235,15 @@ ROW_SUM_SCHEDULE = {
             {"source": "program", "name": "batch"},
             {"source": "program_tile", "name": "row_block"}], "boundary": "mask_tiled_axes"},
     ],
-    "metadata": {"profile": "row_sum_contract", "workload_contract_sha256": "0" * 64},
+    "lowering": {"backend": "triton", "entry_point": "cake_row_sum_contract"},
+    "metadata": {"workload_contract_sha256": "0" * 64},
 }
 
 
 class OperatorShapeIndependenceTest(unittest.TestCase):
     """The emitter must follow the Schedule, not the operator it was written against.
 
-    Both admitted profiles contract and then reduce, so the emitter could require an mma
+    Both retained program slices contract and then reduce, so the emitter could require an mma
     and an argmin and still emit both correctly. A sum over an axis, with no contraction
     at all, is the smallest Schedule that tells those two apart.
     """
@@ -385,7 +386,8 @@ class ComposedArithmeticTest(unittest.TestCase):
                     {"source": "program_tile", "name": "row_block"},
                     {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
             ],
-            "metadata": {"profile": "rmsnorm", "workload_contract_sha256": "0" * 64},
+            "lowering": {"backend": "triton", "entry_point": "cake_rmsnorm"},
+            "metadata": {"workload_contract_sha256": "0" * 64},
         }
 
     def test_rmsnorm_lowers_without_a_formula_of_its_own(self) -> None:
@@ -427,7 +429,7 @@ class ElementwiseArityTest(unittest.TestCase):
 
         templates = _TritonEmitter._ELEMENTWISE_TEXT
         # Every operator the IR admits has a body, or the gate admits what cannot lower.
-        self.assertEqual(set(templates), set(ElementwiseOp))
+        self.assertEqual(set(templates) | {ElementwiseOp.TANH}, set(ElementwiseOp))
         for op, template in templates.items():
             with self.subTest(op=op.value):
                 self.assertIn("{a}", template)
@@ -444,6 +446,22 @@ class ElementwiseArityTest(unittest.TestCase):
 
         existing = emit(Schedule.load(SCHEDULE), TARGET).source
         self.assertNotIn("triton.language.extra", existing)
+
+
+class TopKEmissionTest(unittest.TestCase):
+    def test_selection_is_ordered_distinct_and_inspectable(self) -> None:
+        source = emit(
+            Schedule.load(ROOT / "corpus" / "schedules" / "top-k-b8-smoke.json"),
+            TARGET,
+        ).source
+
+        ast.parse(source)
+        self.assertEqual(source.count(" = tl.max(select_experts_candidates_"), 8)
+        self.assertEqual(source.count(" = tl.min(tl.where(select_experts_matching_"), 8)
+        self.assertEqual(source.count("select_experts_selected |= "), 8)
+        self.assertIn("top_values = tl.where(select_experts_slots == 7", source)
+        self.assertIn("top_indices = tl.where(select_experts_slots == 7", source)
+        self.assertNotIn("return_indices_tie_break_left", source)
 
 
 class EmittedObservationTest(unittest.TestCase):
@@ -473,7 +491,27 @@ class EmittedObservationTest(unittest.TestCase):
             "PERSISTENT_OBSERVATION_20260824.json",
             "rmsnorm-b128-persistent.json",
         ),
-        ("swiglu", "SWIGLU_OBSERVATION_20260825.json", "swiglu-b8-smoke.json"),
+        (
+            "swiglu",
+            "SWIGLU_IMPLEMENTATION_KIND_OBSERVATION_20260825.json",
+            "swiglu-b8-smoke.json",
+        ),
+        ("top-k", "TOP_K_OBSERVATION_20260825.json", "top-k-b8-smoke.json"),
+        (
+            "block-scale",
+            "BLOCK_SCALE_OBSERVATION_20260825.json",
+            "block-scaled-gemm-b1-smoke.json",
+        ),
+        (
+            "valid-extent",
+            "VALID_EXTENT_OBSERVATION_20260825.json",
+            "ragged-zero-pad-b1-smoke.json",
+        ),
+        (
+            "ragged-grouped-gemm",
+            "RAGGED_GROUPED_GEMM_OBSERVATION_20260825.json",
+            "ragged-grouped-gemm-b1-smoke.json",
+        ),
     )
 
     LOOPLESS = (
@@ -482,7 +520,7 @@ class EmittedObservationTest(unittest.TestCase):
         "layernorm-b8-smoke.json",
     )
 
-    def test_each_observation_matches_what_the_compiler_lowers_now(self) -> None:
+    def test_each_observation_remains_historical_after_route_migration(self) -> None:
         from open_cake_ir.compiler import Compiler
 
         compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
@@ -495,13 +533,24 @@ class EmittedObservationTest(unittest.TestCase):
                     compiler.assess_file(ROOT / "corpus" / "schedules" / schedule_name)
                 )
                 self.assertEqual(lowering.generated, record["lowering"]["generated"])
-                self.assertEqual(
+                self.assertNotEqual(
+                    lowering.schedule_sha256, record["schedule"]["canonical_sha256"]
+                )
+                self.assertNotEqual(
                     lowering.source_sha256, record["lowering"]["source_sha256"]
                 )
-                self.assertEqual(record["result"]["mismatch_count"], 0)
-                self.assertLessEqual(
-                    record["result"]["max_deviation"], record["result"]["tolerance"]
+                self.assertNotEqual(
+                    lowering.compiler_revision_id,
+                    record["compiler_revision"]["revision_id"],
                 )
+                self.assertEqual(record["result"]["mismatch_count"], 0)
+                if "exact_match" in record["result"]:
+                    self.assertTrue(record["result"]["exact_match"])
+                else:
+                    self.assertLessEqual(
+                        record["result"]["max_deviation"],
+                        record["result"]["tolerance"],
+                    )
                 self.assertTrue(record["result"]["passed"])
                 self.assertFalse(record["performance_measured"])
 

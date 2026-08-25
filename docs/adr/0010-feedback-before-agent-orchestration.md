@@ -48,3 +48,22 @@ and improves its own confirmation from 1.851297 ms to 1.417239 ms. Direct CUDA a
 from 4.156109 ms to 8.814379 ms, so the per-Run promotion correctly retains Turn 1. Fresh audit reports archive
 integrity and semantic replay true, zero missing Runs, and no Estimand. No Turn emits an auxiliary-agent lifecycle;
 the Campaign validates feedback and role separation, not multi-agent effectiveness.
+
+## KDA-internal reference audit, 2026-08-25
+
+The current local KDA-internal experiment supplies a concrete future design without
+changing this decision. Its persona flow gives a fresh, read-only manager only a compact
+progress snapshot; the manager selects exactly one of `neutral`, `explore`, `exploit` or
+`recover`, gives no technical solution, uses no tools or GPU, and falls back to neutral
+when its structured output is invalid. A separate worker owns edits, while the
+out-of-container judge remains authoritative. The manager decision and rendered persona
+are archived per round.
+
+Those mechanics satisfy the constraints above better than an unconstrained supervisor or
+several writable workers would. They are a reference, not an authority imported into this
+Lab: the inspected KDA-internal working tree is itself under active local modification,
+and its continuous kernel-optimization rounds have a different state machine from a
+frozen Open Cake Study. Adding the flow here would still require a Study-owned invocation
+budget, sealed manager output/token use and retained evidence that the existing Lab
+feedback leaves a recurring steering decision unresolved. None is currently present, so
+this audit adds no manager field, mode, adapter or provider call.

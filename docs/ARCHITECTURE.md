@@ -48,7 +48,8 @@ and a human merge can create the next Revision — see diagram 5.
 
 ## 2. The Compiler pipeline
 
-`assess` composes three owners; `lower` is a fourth stage that has not caught up.
+`assess` composes structural, target and backend contracts; `lower` follows the one
+declared materialization route. Workload conformance is deliberately outside this box.
 
 ```mermaid
 graph LR
@@ -59,7 +60,7 @@ graph LR
         IR["<b>ir.py</b><br/>typed Schedule<br/><i>structural admissibility</i>"]
         VER["<b>verifier.py</b><br/>target-derived hard gates"]
         TGT["<b>target.py</b><br/>exact hardware contract"]
-        PROF["profile rules<br/><i>semantic digest pin</i>"]
+        PROF["backend preflight<br/><i>checked-asset semantic pin</i>"]
         IR --> VER
         TGT --> VER
         IR --> PROF
@@ -76,13 +77,18 @@ graph LR
     style PROF fill:#fff3cd,stroke:#b8860b
 ```
 
-`lower` generates the warp-specialized profile from its Schedule — warp dispatch,
+`lower` through `cutlass_cute_dsl` generates the warp-specialized program from its
+Schedule — warp dispatch,
 mbarrier storage and participants, TMA descriptors, TMEM custody, the loop nest and every
-operation body — verified on a B200 at 128/128 exact assignments. The one remaining
-TinyGEMM2 profile stamps a checked-in file: its Schedule does not yet carry the lane
+operation body — historically verified on a B200 at 128/128 exact assignments. The
+`checked_cuda_asset` route for `cake_tinygemm2_stage4_split_k` stamps a checked-in file:
+its Schedule does not yet carry the lane
 mapping, access maps and loop commitments needed to generate the body. `Lowering.generated`
-therefore reports `false` for that path, while all seven emitter-backed profiles report
-`true`; the profile rule pins the whole-document semantics until a real emitter replaces it.
+therefore reports `false` for that path, while the `triton` and `cutlass_cute_dsl`
+backends report `true`; the asset route pins whole-document semantics until a real
+emitter replaces it.
+Its four-part CTA sum and bias-add/BF16-round epilogue are checked explicitly, but full
+Schedule-to-source generation remains open work.
 
 ### Findings
 
@@ -203,6 +209,15 @@ survivor receives a separate no-timing NCU launch before search timing selects o
 Candidate for a fresh confirmatory assay. All profiles remain Evidence; only the selected
 Candidate's checked summary becomes next-Turn feedback.
 
+The local KDA-internal control loop is a useful implementation comparison, but not a new
+Compiler dependency. Open Cake keeps the four invariants that transfer: one primary
+author owns the submitted bytes; specialist/auxiliary agents are read-only investigations;
+local probes are advisory while the external Lab Evaluation is authoritative; and each
+sealed Candidate plus Receipt is immutable and append-only. KDA's personas, continuous
+goal prompt, submission throttle and kernel-specific score vocabulary remain experiment
+policy. Adding them to Schedule IR or introducing parallel writable candidate authorities
+would duplicate owners the Lab already has.
+
 That diagram is now also the bounded live candidate-set path. Successor
 `CodexRunProvider` prompts, file lifecycle and normalizer seal one canonical envelope and
 project its ordered members into the same build/filter/search path; frozen Studies retain
@@ -223,9 +238,10 @@ a gated event rather than a commit.
 ```mermaid
 graph TD
     E["edit Compiler source"] --> D["<b>revision.json</b><br/>state: draft<br/><i>no source-hash check</i>"]
-    D --> G["<b>Corpus Gate</b><br/>16 cases · exact finding codes<br/>exact lowering digests"]
+    D --> G["<b>Corpus Gate</b><br/>32 cases · exact finding codes<br/>exact lowering digests"]
     G -->|"any case differs"| STOP["release refused"]
-    G -->|"16/16 matched"| AP["<b>release-approval.json</b><br/>binds the gate digest<br/>records who authorized it"]
+    G -->|"32/32 matched"| R["external reviewer<br/>inspects the exact Gate"]
+    R --> AP["<b>release-approval.json</b><br/>binds the gate digest<br/>records reviewer and basis"]
     AP --> L["<b>revision.lock.json</b><br/>state: released<br/>binds every source by digest"]
     L --> AR["<b>compiler/releases/vN/</b><br/>immutable history"]
 
@@ -234,12 +250,15 @@ graph TD
     SC -.->|"cannot be mutated —<br/>mint a successor"| SC2["Study Contract vN+1"]
 
     style STOP fill:#f8d7da,stroke:#c00
-    linkStyle 7 stroke:#c00,stroke-dasharray:4 3
+    linkStyle 8 stroke:#c00,stroke-dasharray:4 3
 ```
 
-`tools/release_compiler_cycle.sh` drives the cycle end to end, because a single
-Compiler-source edit requires all of it again. Frozen Study Contracts are consumed through
-explicit successors rather than being re-stamped.
+`tools/release_compiler_cycle.sh` derives the id and prepares the Gate, then stops unless
+an externally written approval binds that exact Gate. Rerunning the same command consumes
+the approval through the single release validator. The cycle cannot write its own approval
+(ADR 0030). The current v24 approval predates that boundary and is not independent review.
+Frozen Study Contracts are consumed through explicit successors rather than being
+re-stamped.
 
 ---
 
@@ -288,14 +307,14 @@ graph LR
 | Authoring Environment, both arms | implemented |
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
-| Compile → external oracle → GPU timing | implemented; B200 correctness observations cover six emitted operators, including the KDA-derived standalone SwiGLU slice. Its observation takes no timing and supports no performance claim |
+| Compile → external oracle → GPU timing | correctness is implemented. Historical B200 observations cover eleven pre-v24 emitted Schedule slices, including the KDA-derived standalone SwiGLU, Top-K, block-scale contraction, valid-prefix, ragged grouped-GEMM and runtime-indexed gather slices. The route migration changed Schedule/source bytes, so those frozen observations are historical rather than current-v24 proof; successor observations are still missing |
 | Profiler evidence in the inner loop | partial relative to the paper — Executor v18 composes the canonical no-timing NCU assay after every correctness-qualified search survivor, retains raw/profile replay for all of them and feeds back the selected profile; a bounded live v18 two-arm successor covers selected and non-selected survivors, and scientific v3 executes it, but two missing Runs prevent the preregistered estimate |
-| Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
-| Deterministic lowering | `lower` generates for 7 of the 8 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke`, `layernorm_b8_smoke`, `gemm_bias_b1_smoke` and `swiglu_b8_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file, and the public result exposes `generated=false` rather than conflating it with emission |
+| Retained evidence and the outer loop gate | implemented; successor releases enforce an external approval-writer boundary, while the current v24 record remains same-actor evidence rather than independent review |
+| Deterministic lowering | one typed route selects mechanism, not Workload. `triton` and `cutlass_cute_dsl` generate operation bodies from arbitrary conforming Schedules in their supported subsets. `checked_cuda_asset` has one bounded entry, `cake_tinygemm2_stage4_split_k`; it stamps a digest into a checked-in file and reports `generated=false` rather than conflating materialization with generation |
 | Live candidate-set authoring | implemented and bounded-live exercised — both Codex 0.144.4 policies pass two-arm envelope qualification, the closed policy separately passes at the exact `xhigh` treatment, and candidate-set v2 produced three launchable Candidates and searched two in each arm on B200; qualification proves transport and the Campaign is system qualification only, so neither is an 80M scientific result |
-| The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but Compiler v13 retains no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
+| The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but Compiler v24 retains no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
 | Diagnosis routing | implemented — every rejection is routed to the candidate, the verifier, the IR vocabulary or the cost model, and each destination is inferred from a signal the loop already produces |
-| Cost-model ranking | mechanism implemented but no released coverage — the structural hypothesis remains measurable, while public ranking declines every current profile |
+| Cost-model ranking | mechanism implemented but no released coverage — the structural hypothesis remains measurable, while public ranking declines every current semantic digest |
 
 The filter box is amber because its hard gates are active but its cost ranking has no
 released calibration coverage. Missing coverage is an observable state, not a silent

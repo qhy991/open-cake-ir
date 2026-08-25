@@ -158,7 +158,7 @@ the closed `matched_run_v1` policy, while the replay adapter for earlier frozen 
 | Schedule vocabulary and semantics | Compiler Revision | examples, docs, generated source |
 | Exact target capabilities | Target inside Compiler Revision | GPU name, backend flag |
 | Findings and analysis coverage | Compiler Revision + Assessment | stderr, prompt feedback |
-| Lowering lineage and whether operation bodies were generated | Lowering record | filename, profile inference |
+| Lowering route, lineage and whether operation bodies were generated | Lowering record | filename or Workload inference |
 | Compiler release eligibility | Corpus manifest + Corpus Gate report + human merge | test count, Git message |
 | Operator semantics, input domain and oracle | Workload Contract | task prompt, benchmark script |
 | Unit, treatment, endpoints and Estimand | Study Contract | Campaign name, report narrative |
@@ -315,7 +315,8 @@ only the agent workspace. A compiler evolved from the same task history is an ex
 study may estimate package effectiveness but cannot claim task-naive discovery without a stronger firewall.
 The clean-start reference fixture keeps this boundary concrete without another runtime mode: its Open Cake document
 cannot parse as a complete Schedule and its direct CUDA function body is empty; both references change together in
-one frozen Study successor.
+one frozen Study successor. Stable zero-GPU Study templates defer only Compiler and Executor identity to preflight;
+the exact CampaignLock, never the template, is execution authority.
 For v25+ Runs the rendered bundle itself is also a retained Evidence object on every completed Turn. The Study owns
 what content is permitted; retention proves which bytes crossed the authoring boundary and missing bytes make the
 endpoint unavailable.

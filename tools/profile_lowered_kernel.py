@@ -34,8 +34,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from kernel_cases import build_inputs  # noqa: E402
-from kernel_oracles import ORACLES  # noqa: E402
+from kernel_inputs import build_inputs  # noqa: E402
+from kernel_oracles import ORACLE_BY_ENTRY_POINT  # noqa: E402
 from open_cake_ir.compiler.analysis import residency_upper_bound  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
 from open_cake_ir.compiler.ir import Schedule  # noqa: E402
@@ -57,7 +57,7 @@ import importlib.util, json, sys
 from pathlib import Path
 sys.path.insert(0, {tools!r})
 sys.path.insert(0, {src!r})
-from kernel_cases import build_inputs
+from kernel_inputs import build_inputs
 import torch
 
 document = json.loads(Path({schedule!r}).read_text())
@@ -132,11 +132,12 @@ def main() -> int:
     if not assessment.lowering_eligible:
         codes = ", ".join(finding.code for finding in assessment.findings)
         raise SystemExit(f"the gates refused this Schedule: {codes}")
-    if assessment.profile not in ORACLES:
+    entry_point = assessment.route.entry_point
+    if entry_point not in ORACLE_BY_ENTRY_POINT:
         # The instruments share one input builder so that a kernel this profiles is a
         # kernel the other checked. Profiling one with no oracle would measure something
         # nothing has established computes the right answer.
-        raise SystemExit(f"no oracle for profile {assessment.profile!r}")
+        raise SystemExit(f"no oracle for entry point {entry_point!r}")
     lowering = compiler.lower(assessment)
 
     target = Target.from_dict(
@@ -153,7 +154,7 @@ def main() -> int:
         raise SystemExit("the analysis says nothing about this Schedule's residency")
 
     with tempfile.TemporaryDirectory(prefix="cake-profile-") as directory:
-        module_path = Path(directory) / f"{lowering.entry_point}.py"
+        module_path = Path(directory) / f"{entry_point}.py"
         module_path.write_text(lowering.source, encoding="utf-8")
         driver = Path(directory) / "driver.py"
         driver.write_text(
@@ -162,7 +163,7 @@ def main() -> int:
                 src=str(ROOT / "src"),
                 schedule=str(schedule_path),
                 module=str(module_path),
-                entry=lowering.entry_point,
+                entry=entry_point,
             ),
             encoding="utf-8",
         )
@@ -200,7 +201,7 @@ def main() -> int:
         },
         "lowering": {
             "generated": lowering.generated,
-            "entry_point": lowering.entry_point,
+            "entry_point": entry_point,
             "source_sha256": lowering.source_sha256,
         },
         "predicted": {

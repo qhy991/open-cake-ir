@@ -41,7 +41,7 @@ B=32 batches, N=512 tokens, K=1024 centroids, D=128 dimensions
 ```
 
 完整 Schedule 位于
-[`examples/gpu/flash-kmeans-b32-smoke.json`](../examples/gpu/flash-kmeans-b32-smoke.json)。下面只是帮助阅读的
+[`examples/gpu/flash-kmeans-b32-smoke-v2.json`](../examples/gpu/flash-kmeans-b32-smoke-v2.json)。下面只是帮助阅读的
 摘录，不是另一份配置：
 
 ```json

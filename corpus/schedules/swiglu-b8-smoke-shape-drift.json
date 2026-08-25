@@ -23,7 +23,7 @@
     {"id": "load_up", "kind": "load", "role": "compute", "reads": ["up"], "writes": ["up_tile"], "parameters": {"movement": "global", "reuse": "reused"}},
     {"id": "load_gate", "kind": "load", "role": "compute", "reads": ["gate"], "writes": ["gate_tile"], "parameters": {"movement": "global", "reuse": "reused"}},
     {"id": "half_gate", "kind": "elementwise", "role": "compute", "reads": ["gate_tile"], "writes": ["half_gate"], "depends_on": ["load_gate"], "parameters": {"op": "mul", "scalar": 0.5}},
-    {"id": "tanh_gate", "kind": "elementwise", "role": "compute", "reads": ["half_gate"], "writes": ["tanh_gate"], "depends_on": ["half_gate"], "parameters": {"op": "tanh"}},
+    {"id": "tanh_gate", "kind": "elementwise", "role": "compute", "reads": ["half_gate"], "writes": ["tanh_gate"], "depends_on": ["half_gate"], "parameters": {"op": "tanh", "instruction": {"contract": "libdevice.tanh.f32"}}},
     {"id": "shift_gate", "kind": "elementwise", "role": "compute", "reads": ["tanh_gate"], "writes": ["shifted_gate"], "depends_on": ["tanh_gate"], "parameters": {"op": "add", "scalar": 1.0}},
     {"id": "sigmoid_gate", "kind": "elementwise", "role": "compute", "reads": ["shifted_gate"], "writes": ["sigmoid_gate"], "depends_on": ["shift_gate"], "parameters": {"op": "mul", "scalar": 0.5}},
     {"id": "weight_gate", "kind": "elementwise", "role": "compute", "reads": ["gate_tile", "sigmoid_gate"], "writes": ["silu_gate"], "depends_on": ["load_gate", "sigmoid_gate"], "parameters": {"op": "mul"}},
@@ -43,6 +43,10 @@
     {"operation": "load_gate", "buffer": "gate", "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
     {"operation": "store_y", "buffer": "y", "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"}
   ],
-  "metadata": {"profile": "swiglu_b8_smoke", "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
-  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 128}
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 128},
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_swiglu_b8_smoke"
+  }
 }

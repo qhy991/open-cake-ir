@@ -1,0 +1,42 @@
+{
+ "schema_version": 2,
+ "observed_at": "2026-08-25T01:28:41Z",
+ "purpose": "lowered_kernel_correctness",
+ "scientific_claim_authorized": false,
+ "performance_measured": false,
+ "host": "verda-b200x4",
+ "device": "NVIDIA B200",
+ "compute_capability": [
+  10,
+  0
+ ],
+ "toolchain": {
+  "cutlass": "4.7.0",
+  "torch": "2.13.0+cu130"
+ },
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v15",
+  "revision_sha256": "6b304990dc016eab8f9b746dc3a9539c00d5a6bae0b961c616b7d5de4ef69664"
+ },
+ "schedule": {
+  "path": "corpus/schedules/swiglu-b8-smoke.json",
+  "schedule_id": "swiglu-b8-smoke-v1",
+  "canonical_sha256": "08862ee1e78395ad05876ce55ee88f0c8f9106be326086ad89f17c5839bc855c"
+ },
+ "lowering": {
+  "generated": true,
+  "entry_point": "cake_swiglu_b8_smoke",
+  "source_sha256": "6d3c4b5e173380bd17ff9c6e9b19d9164c456c78ad6949c328f050bcf210a34c",
+  "source_lines": 113
+ },
+ "result": {
+  "compiled": true,
+  "launched": true,
+  "total_elements": 524288,
+  "mismatch_count": 0,
+  "max_deviation": 4.76837158203125e-07,
+  "tolerance": 1e-05,
+  "passed": true
+ },
+ "note": "Compiler.lower generated this source from the Schedule; there is no checked-in template for this profile. Correctness only -- no timing was taken. Reproduce with tools/observe_lowered_kernel.py."
+}

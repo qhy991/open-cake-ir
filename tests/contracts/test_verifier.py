@@ -39,6 +39,8 @@ CORPUS = sorted(
 B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 TINYGEMM = ROOT / "corpus" / "schedules" / "tinygemm2-stage4-split-k.json"
 ASSIGNMENT_FULL = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
+TOP_K = ROOT / "corpus" / "schedules" / "top-k-b8-smoke.json"
+SWIGLU = ROOT / "corpus" / "schedules" / "swiglu-b8-smoke.json"
 
 
 def _mutated(path: Path, mutate) -> Schedule:
@@ -169,6 +171,17 @@ class ScheduleSemanticsTest(unittest.TestCase):
 
 
 class HardwareConformanceTest(unittest.TestCase):
+    def test_current_top_k_lowering_refuses_non_power_of_two_k(self) -> None:
+        schedule = _mutated(
+            TOP_K,
+            lambda d: _op(d, "select_experts")["parameters"].update(k=7),
+        )
+        finding = next(
+            f for f in verify(schedule, TARGET) if f.code == "TOP_K_K_UNLOWERABLE"
+        )
+        self.assertIs(finding.category, FindingCategory.HARDWARE_CONFORMANCE)
+        self.assertEqual(finding.path, "operations[1].parameters.k")
+
     def test_warp_index_beyond_the_target_range_is_reported(self) -> None:
         """`len(warps)` treats a warp id as a count; the range check does not."""
 
@@ -222,6 +235,48 @@ class HardwareConformanceTest(unittest.TestCase):
 
 
 class DataConsistencyTest(unittest.TestCase):
+    def test_top_k_contract_failures_are_local(self) -> None:
+        cases = (
+            (
+                "arity",
+                lambda d: _op(d, "select_experts").update(writes=["top_indices"]),
+                "TOP_K_ARITY",
+            ),
+            (
+                "rank",
+                lambda d: next(
+                    b for b in d["buffers"] if b["name"] == "score_row"
+                ).update(shape=[1, 256]),
+                "TOP_K_SOURCE_RANK",
+            ),
+            (
+                "extent",
+                lambda d: _op(d, "select_experts")["parameters"].update(k=512),
+                "TOP_K_K_OUT_OF_RANGE",
+            ),
+            (
+                "dtype",
+                lambda d: next(
+                    b for b in d["buffers"] if b["name"] == "score_row"
+                ).update(dtype="fp16"),
+                "TOP_K_VALUE_DTYPE",
+            ),
+            (
+                "shape",
+                lambda d: next(
+                    b for b in d["buffers"] if b["name"] == "top_indices"
+                ).update(shape=[4]),
+                "TOP_K_SHAPE_MISMATCH",
+            ),
+        )
+        for label, mutate, code in cases:
+            with self.subTest(contract=label):
+                finding = next(
+                    f for f in verify(_mutated(TOP_K, mutate), TARGET) if f.code == code
+                )
+                self.assertTrue(finding.blocks_lowering)
+                self.assertRegex(finding.path, r"^operations\[1\]")
+
     def test_buffers_sharing_an_allocation_must_not_overlap(self) -> None:
         """Hand-authored byte offsets are the only thing keeping these tiles apart."""
 
@@ -581,6 +636,48 @@ class HardwareCommitmentTest(unittest.TestCase):
         )
         self.assertTrue(unsupported.blocks_lowering)
 
+    def test_elementwise_instruction_is_target_backed_and_dtype_checked(self) -> None:
+        admitted = verify(Schedule.load(SWIGLU), TARGET)
+        self.assertNotIn("TARGET_INSTRUCTION_UNSUPPORTED", _codes(admitted))
+        self.assertNotIn("ELEMENTWISE_INSTRUCTION_DTYPE_DIFFERS", _codes(admitted))
+
+        unsupported = verify(
+            _mutated(
+                SWIGLU,
+                lambda d: _op(d, "tanh_gate")["parameters"]["instruction"].update(
+                    contract="tanh.approx.f32"
+                ),
+            ),
+            TARGET,
+        )
+        finding = next(
+            f for f in unsupported if f.code == "TARGET_INSTRUCTION_UNSUPPORTED"
+        )
+        self.assertTrue(finding.blocks_lowering)
+        self.assertIn("operations[3].parameters.instruction.contract", finding.path)
+
+        wrong_kind = verify(
+            _mutated(
+                SWIGLU,
+                lambda d: _op(d, "tanh_gate")["parameters"]["instruction"].update(
+                    contract="triton.dot.bf16_fp32"
+                ),
+            ),
+            TARGET,
+        )
+        self.assertIn("ELEMENTWISE_INSTRUCTION_KIND_DIFFERS", _codes(wrong_kind))
+
+        wrong_dtype = verify(
+            _mutated(
+                SWIGLU,
+                lambda d: next(
+                    b for b in d["buffers"] if b["name"] == "half_gate"
+                ).update(dtype="fp16"),
+            ),
+            TARGET,
+        )
+        self.assertIn("ELEMENTWISE_INSTRUCTION_DTYPE_DIFFERS", _codes(wrong_dtype))
+
     def test_mma_tile_must_match_its_accumulator(self) -> None:
         matching = verify(
             _mutated(
@@ -832,4 +929,3 @@ class UnmodelledResourceReportTest(unittest.TestCase):
         assignment = self._residency_message("flash-kmeans-assignment-full.json")
         self.assertNotIn("declares no", assignment)
         self.assertIn("tensor_memory", assignment)
-

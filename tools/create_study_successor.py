@@ -74,8 +74,8 @@ def main() -> int:
     ):
         raise ValueError("Study successor custody or identity differs")
     document = _object(json.loads(source.read_text(encoding="utf-8")), "Study")
-    if document.get("state") != "frozen":
-        raise ValueError("Study successor source is not frozen")
+    if document.get("state") not in {"template", "frozen"}:
+        raise ValueError("Study successor source state differs")
     skeletons = (
         arguments.open_cake_schedule_skeleton,
         arguments.direct_cuda_candidate_skeleton,
@@ -244,6 +244,7 @@ def main() -> int:
                     raise ValueError("Study attribution feedback authority differs")
                 if "profile" not in feedback:
                     feedback.append("profile")
+    document["state"] = "frozen"
     document["study_id"] = arguments.study_id
 
     with tempfile.NamedTemporaryFile(

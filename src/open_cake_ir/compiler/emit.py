@@ -16,6 +16,15 @@ class EmitError(ValueError):
 
 
 @dataclass(frozen=True)
+class BackendPrecondition:
+    """One backend-owned reason a well-formed Schedule cannot be emitted."""
+
+    code: str
+    path: str
+    message: str
+
+
+@dataclass(frozen=True)
 class Emission:
     source: str
     entry_point: str

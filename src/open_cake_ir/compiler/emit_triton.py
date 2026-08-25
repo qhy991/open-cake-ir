@@ -16,15 +16,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .emit import Emission, EmitError, require as _require
+from .emit import BackendPrecondition, Emission, EmitError, require as _require
 from .ir import (
     ElementwiseOp,
     LoadReuse,
     AccessIndexKind,
     AccessMap,
-    ArgminTieBreak,
     Buffer,
     DType,
+    IndexTieBreak,
     LoadMovement,
     MemorySpace,
     OperationKind,
@@ -39,6 +39,7 @@ _TL_DTYPE = {
     DType.BF16: "tl.bfloat16",
     DType.FP16: "tl.float16",
     DType.FP32: "tl.float32",
+    DType.FP8_E4M3: "tl.float8e4nv",
     DType.INT32: "tl.int32",
 }
 
@@ -46,6 +47,7 @@ _TORCH_DTYPE = {
     DType.BF16: "torch.bfloat16",
     DType.FP16: "torch.float16",
     DType.FP32: "torch.float32",
+    DType.FP8_E4M3: "torch.float8_e4m3fn",
     DType.INT32: "torch.int32",
 }
 
@@ -88,8 +90,10 @@ REDUCTIONS: dict[ReduceOp, _Reduction] = {
 # the position-dependence a stated fact rather than the shape of two elif chains.
 OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.LOAD: "_emit_load",
+    OperationKind.MMA: "_emit_mma",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
     OperationKind.REDUCE: "_emit_reduce",
+    OperationKind.TOP_K: "_emit_top_k",
     OperationKind.STORE: "_emit_store",
 }
 
@@ -98,6 +102,7 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.MMA: "_emit_mma",
     OperationKind.REDUCE_ARGMIN: "_emit_argmin",
     OperationKind.REDUCE: "_emit_reduce",
+    OperationKind.TOP_K: "_emit_top_k",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
 }
 
@@ -109,6 +114,101 @@ SUPPORTED_OPERATION_KINDS = frozenset(OUTSIDE_LOOP_EMITTERS) | frozenset(
 )
 
 
+def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, ...]:
+    """Return the constructor's backend-owned lowering requirements.
+
+    The Compiler projects these into Findings and direct emitter users fail on the same
+    list.  Keep semantic and dataflow legality in the common Verifier; these are only
+    constraints imposed by this emitter's program shape and dispatch.
+    """
+
+    findings: list[BackendPrecondition] = []
+
+    def add(condition: object, code: str, path: str, message: str) -> None:
+        if not condition:
+            findings.append(BackendPrecondition(code, path, message))
+
+    add(
+        schedule.program_map is not None,
+        "TRITON_PROGRAM_MAP_REQUIRED",
+        "program_map",
+        "the Triton backend requires a program map",
+    )
+    add(
+        bool(schedule.access_maps),
+        "TRITON_ACCESS_MAP_REQUIRED",
+        "access_maps",
+        "the Triton backend requires access maps",
+    )
+    add(
+        len(schedule.tile_loops) <= 1,
+        "TRITON_TILE_LOOP_COUNT",
+        "tile_loops",
+        "the Triton backend supports at most one tile loop",
+    )
+    add(
+        len(schedule.roles) == 1,
+        "TRITON_ROLE_COUNT",
+        "roles",
+        "the Triton backend requires exactly one role",
+    )
+
+    counts = {
+        kind: sum(operation.kind is kind for operation in schedule.operations)
+        for kind in (OperationKind.STORE, OperationKind.MMA, OperationKind.REDUCE_ARGMIN)
+    }
+    add(
+        counts[OperationKind.STORE] == 1,
+        "TRITON_STORE_COUNT",
+        "operations",
+        "the Triton backend requires exactly one store operation",
+    )
+    add(
+        counts[OperationKind.MMA] <= 1,
+        "TRITON_MMA_COUNT",
+        "operations",
+        "the Triton backend supports at most one mma operation",
+    )
+    add(
+        counts[OperationKind.REDUCE_ARGMIN] <= 1,
+        "TRITON_ARGMIN_COUNT",
+        "operations",
+        "the Triton backend supports at most one reduce_argmin operation",
+    )
+    for index, operation in enumerate(schedule.operations):
+        if operation.kind is OperationKind.MMA:
+            add(
+                operation.parameters.instruction is not None,
+                "BACKEND_MMA_INSTRUCTION_REQUIRED",
+                f"operations[{index}].parameters.instruction",
+                "the Triton backend requires every mma to name an instruction contract",
+            )
+        if operation.kind is OperationKind.LOAD:
+            add(
+                operation.parameters.movement is LoadMovement.GLOBAL,
+                "TRITON_LOAD_MOVEMENT",
+                f"operations[{index}].parameters.movement",
+                "the Triton backend only emits direct global loads",
+            )
+
+    if len(schedule.tile_loops) <= 1:
+        in_loop = set(schedule.tile_loops[0].body) if schedule.tile_loops else set()
+        for index, operation in enumerate(schedule.operations):
+            admitted = (
+                operation.kind in INSIDE_LOOP_EMITTERS
+                if operation.op_id in in_loop
+                else operation.kind in OUTSIDE_LOOP_EMITTERS
+            )
+            add(
+                admitted,
+                "TRITON_OPERATION_POSITION",
+                f"operations[{index}].kind",
+                f"the Triton backend has no {operation.kind.value!r} body at this loop position",
+            )
+
+    return tuple(findings)
+
+
 class _TritonEmitter:
     def __init__(
         self, schedule: Schedule, target: Target, entry_point: str | None = None
@@ -116,18 +216,13 @@ class _TritonEmitter:
         self.schedule = schedule
         self.target = target
         self.lines: list[str] = []
-        # The entry point is the artifact's contract with whatever launches it, so the
-        # Revision names it rather than the emitter inventing one from the profile.
-        self.entry_point = entry_point or f"cake_{schedule.profile}"
+        # The route owns the external symbol; the emitter derives its signature from
+        # global Buffers rather than consulting an operator-named profile.
+        self.entry_point = entry_point or schedule.lowering.entry_point
 
-        _require(schedule.program_map is not None, "a Triton Schedule maps its program")
-        _require(schedule.access_maps, "a Triton Schedule declares its access maps")
-        # At most one, not exactly one. A Schedule whose whole reduced axis is resident
-        # has nothing to iterate, and requiring a loop there made the backend emit a trip
-        # count of one with an unused iterator -- and forced a two-pass operator to carry
-        # a value out of a loop, which is the one thing a loop must not do.
-        _require(len(schedule.tile_loops) <= 1, "expected at most one tile loop")
-        _require(len(schedule.roles) == 1, "expected exactly one role")
+        failures = preflight(schedule, target)
+        if failures:
+            raise EmitError(failures[0].message)
         self.loop = schedule.tile_loops[0] if schedule.tile_loops else None
         self.role = schedule.roles[0]
 
@@ -140,17 +235,11 @@ class _TritonEmitter:
         self.reduce = self._at_most_one(OperationKind.REDUCE_ARGMIN, "reduce_argmin")
         if self.mma is not None:
             instruction = self.mma.parameters.instruction
-            _require(instruction is not None, "the mma must name an instruction contract")
+            assert instruction is not None
             _require(
                 instruction.contract in target.instruction_contracts,
                 f"instruction {instruction.contract!r} is not admitted by {target.target_id!r}",
             )
-        for load in schedule.operations:
-            if load.kind is OperationKind.LOAD:
-                _require(
-                    load.parameters.movement is LoadMovement.GLOBAL,
-                    f"load {load.op_id!r} must move from global memory on this backend",
-                )
 
     # ---------------------------------------------------------------- derivation
 
@@ -217,7 +306,7 @@ class _TritonEmitter:
     def _axis_tiles(self, axis) -> int:
         buffer = self.schedule.buffer(axis.buffer)
         _require(buffer is not None, f"axis {axis.name!r} names an unknown buffer")
-        return (buffer.shape[axis.dimension] + axis.tile - 1) // axis.tile
+        return axis.tile_count(buffer.shape[axis.dimension])
 
     def grid(self) -> tuple[int, int, int]:
         assert self.schedule.program_map is not None
@@ -296,6 +385,12 @@ class _TritonEmitter:
     def _address(self, access: AccessMap, pad: str) -> tuple[str, str]:
         """Pointer expression and mask for one access map."""
 
+        if any(
+            component.source is AccessIndexKind.BUFFER
+            for component in access.indices
+        ):
+            return self._indexed_address(access, pad)
+
         buffer = self.schedule.buffer(access.buffer)
         _require(buffer is not None, f"access map names unknown buffer {access.buffer!r}")
         _require(
@@ -329,6 +424,31 @@ class _TritonEmitter:
             bound = self._bound(access, buffer, vector)
             if bound is not None:
                 masks.append(f"{vector}{self._broadcast(vector, vectors)} < {bound}")
+        relation = buffer.valid_extent
+        if relation is not None:
+            _require(
+                len(relation.indexed_by) == 1,
+                "the Triton valid-extent subset has one indexed axis",
+            )
+            extent_axis = relation.indexed_by[0]
+            _require(
+                extent_axis < len(expressions),
+                "the valid-extent index axis is present in the access map",
+            )
+            extent_buffer = self.schedule.buffer(relation.buffer)
+            _require(
+                extent_buffer is not None and len(extent_buffer.shape) == 1,
+                "the Triton valid-extent subset uses a rank-1 extent buffer",
+            )
+            extent_name = f"{access.operation}_{access.buffer}_valid_extent"
+            self.line(
+                f"{pad}{extent_name} = tl.load("
+                f"{relation.buffer} + {expressions[extent_axis]})"
+            )
+            coordinate = expressions[relation.dimension]
+            masks.append(
+                f"{coordinate}{self._broadcast(coordinate, vectors)} < {extent_name}"
+            )
         # `&` binds tighter than `<` in Python, so an unparenthesized conjunction of
         # comparisons silently becomes a chained comparison against a bitwise and. No
         # existing profile masked two axes at once, so the emitted text was correct
@@ -336,6 +456,106 @@ class _TritonEmitter:
         if len(masks) > 1:
             return pointer, " & ".join(f"({mask})" for mask in masks)
         return pointer, " & ".join(masks)
+
+    def _indexed_address(self, access: AccessMap, pad: str) -> tuple[str, str]:
+        """Address one zipped runtime-index domain and ordinary independent axes.
+
+        All buffer-valued components share the `_runtime_index` domain. Giving each
+        component its own broadcast axis would produce a Cartesian product instead of
+        the `[expert[k], row[k]]` tuples the Schedule declares.
+        """
+
+        buffer = self.schedule.buffer(access.buffer)
+        _require(buffer is not None, f"access map names unknown buffer {access.buffer!r}")
+        domains: list[str] = []
+        expressions: list[str] = []
+        component_domains: list[str | None] = []
+        for component in access.indices:
+            if component.source is AccessIndexKind.PROGRAM:
+                expression = str(component.name)
+                domain = None
+            elif component.source is AccessIndexKind.PROGRAM_TILE:
+                expression = f"{component.name}_offsets"
+                domain = expression
+            elif component.source is AccessIndexKind.LOOP_TILE:
+                expression = f"{component.name}_offsets"
+                domain = expression
+            elif component.source is AccessIndexKind.DIMENSION:
+                expression = f"{buffer.name}_d{component.dimension}_offsets"
+                domain = expression
+            else:
+                expression = str(component.name)
+                domain = "_runtime_index"
+            expressions.append(expression)
+            component_domains.append(domain)
+            if domain is not None and domain not in domains:
+                domains.append(domain)
+
+        stride_names = [
+            "1"
+            if index == len(buffer.shape) - 1
+            else " * ".join(
+                self._extent(buffer.name, later)
+                for later in range(index + 1, len(buffer.shape))
+            )
+            for index in range(len(buffer.shape))
+        ]
+
+        def shaped(expression: str, domain: str | None) -> str:
+            if domain is None or len(domains) < 2:
+                return expression
+            position = domains.index(domain)
+            suffix = "[" + ", ".join(
+                ":" if index == position else "None"
+                for index in range(len(domains))
+            ) + "]"
+            return expression + suffix
+
+        terms = [
+            shaped(expression, domain)
+            + ("" if stride == "1" else f" * {stride}")
+            for expression, domain, stride in zip(
+                expressions, component_domains, stride_names
+            )
+        ]
+        pointer = f"{buffer.name} + " + " + ".join(terms)
+
+        masks: list[str] = []
+        for position, (component, expression, domain) in enumerate(
+            zip(access.indices, expressions, component_domains)
+        ):
+            coordinate = shaped(expression, domain)
+            if component.source is AccessIndexKind.PROGRAM_TILE:
+                axis = self._axis(component.name)
+                masks.append(f"{coordinate} < {self._extent(axis.buffer, axis.dimension)}")
+            elif component.source is AccessIndexKind.LOOP_TILE:
+                _require(self.loop is not None, f"{expression} indexes a loop there is none of")
+                masks.append(
+                    f"{coordinate} < {self._extent(self.loop.buffer, self.loop.dimension)}"
+                )
+            elif component.source is AccessIndexKind.BUFFER:
+                bound = self._extent(buffer.name, position)
+                masks.append(f"({coordinate} >= 0) & ({coordinate} < {bound})")
+
+        relation = buffer.valid_extent
+        if relation is not None:
+            _require(
+                len(relation.indexed_by) == 1,
+                "the Triton valid-extent subset has one indexed axis",
+            )
+            extent_axis = relation.indexed_by[0]
+            extent_name = f"{access.operation}_{access.buffer}_valid_extent"
+            self.line(
+                f"{pad}{extent_name} = tl.load("
+                f"{relation.buffer} + {expressions[extent_axis]})"
+            )
+            coordinate = shaped(
+                expressions[relation.dimension],
+                component_domains[relation.dimension],
+            )
+            masks.append(f"{coordinate} < {extent_name}")
+
+        return pointer, " & ".join(f"({mask})" for mask in masks)
 
     @staticmethod
     def _broadcast(expression: str, vectors: list[str]) -> str:
@@ -368,6 +588,7 @@ class _TritonEmitter:
         DType.BF16: "*bf16",
         DType.FP16: "*fp16",
         DType.FP32: "*fp32",
+        DType.FP8_E4M3: "*fp8e4nv",
         DType.INT32: "*i32",
     }
 
@@ -414,12 +635,10 @@ class _TritonEmitter:
         if any(
             operation.kind is OperationKind.ELEMENTWISE
             and operation.parameters.op is ElementwiseOp.TANH
+            and operation.parameters.instruction is not None
+            and operation.parameters.instruction.contract == "libdevice.tanh.f32"
             for operation in self.schedule.operations
         ):
-            # Triton exposes tanh through libdevice rather than `triton.language`.
-            # Import it only when the Schedule asks for it: adding one primitive must
-            # not change the generated bytes (and detach observations) of every other
-            # profile.
             self.line("from triton.language.extra import libdevice")
         self.line()
         self.line()
@@ -523,8 +742,8 @@ class _TritonEmitter:
     def _emit_load(self, operation, pad: str) -> None:
         access = self.schedule.access_map(operation.op_id, operation.reads[0])
         _require(access is not None, f"load {operation.op_id!r} has no access map")
-        pointer, mask = self._address(access, pad)
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        pointer, mask = self._address(access, pad)
         self.line(f"{pad}{operation.op_id}_ptrs = {pointer}")
         self.line(f"{pad}{operation.writes[0]} = tl.load(")
         self.line(f"{pad}    {operation.op_id}_ptrs,")
@@ -626,7 +845,6 @@ class _TritonEmitter:
         ElementwiseOp.SQUARE: "{a} * {a}",
         ElementwiseOp.RSQRT: "tl.rsqrt({a})",
         ElementwiseOp.EXP: "tl.exp({a})",
-        ElementwiseOp.TANH: "libdevice.tanh({a})",
         ElementwiseOp.ADD: "{a} + {b}",
         ElementwiseOp.SUB: "{a} - {b}",
         ElementwiseOp.MUL: "{a} * {b}",
@@ -648,10 +866,19 @@ class _TritonEmitter:
         operands = [self._operand(name, operation) for name in operation.reads]
         if parameters.scalar is not None:
             operands.append(repr(parameters.scalar))
-        template = self._ELEMENTWISE_TEXT[parameters.op]
-        expression = template.format(
-            a=operands[0], b=operands[1] if len(operands) > 1 else ""
-        )
+        if parameters.op is ElementwiseOp.TANH:
+            instruction = parameters.instruction
+            _require(
+                instruction is not None
+                and instruction.contract == "libdevice.tanh.f32",
+                "the Triton tanh body requires the admitted libdevice.tanh.f32 contract",
+            )
+            expression = f"libdevice.tanh({operands[0]})"
+        else:
+            template = self._ELEMENTWISE_TEXT[parameters.op]
+            expression = template.format(
+                a=operands[0], b=operands[1] if len(operands) > 1 else ""
+            )
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}{operation.writes[0]} = {expression}")
 
@@ -707,7 +934,7 @@ class _TritonEmitter:
         """The contraction, and nothing else.
 
         This used to emit the dot and the distance formula together, because MmaFormula
-        named the pair as one thing. Two of the three admitted profiles already declared
+        named the pair as one thing. Two of the three retained program slices declared
         a bare contraction with the arithmetic in a following operation; this is now the
         only shape, so the same kernel is written down one way.
         """
@@ -718,11 +945,62 @@ class _TritonEmitter:
             if (buffer := self.schedule.buffer(name)) is not None
             and buffer.space is not MemorySpace.GLOBAL
         ]
+        instruction = operation.parameters.instruction
+        contract = instruction.contract if instruction is not None else None
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        if contract == "triton.dot.fp8e4m3_block_scale_fp32":
+            _require(
+                len(operation.reads) == 4 and len(tiles) == 4,
+                "the block-scaled dot takes staged A, B, scale(A), scale(B)",
+            )
+            a = self.schedule.buffer(tiles[0])
+            b = self.schedule.buffer(tiles[1])
+            scale_a = self.schedule.buffer(tiles[2])
+            _require(a is not None and b is not None and scale_a is not None, "missing tile")
+            relation = scale_a.scale_of
+            _require(relation is not None, "scale(A) has no relation")
+            block_k = relation.granularity[1]
+            groups = a.shape[1] // block_k
+            _require(groups == 2, "the initial block-scale lowering takes two K blocks")
+            output = operation.writes[0]
+            self.line(
+                f"{pad}{tiles[0]}_pairs = tl.permute(tl.reshape({tiles[0]}, "
+                f"({a.shape[0]}, {groups}, {block_k})), (0, 2, 1))"
+            )
+            self.line(
+                f"{pad}{tiles[1]}_pairs = tl.permute(tl.reshape({tiles[1]}, "
+                f"({b.shape[0]}, {groups}, {block_k})), (0, 2, 1))"
+            )
+            self.line(
+                f"{pad}{tiles[0]}_block_0, {tiles[0]}_block_1 = "
+                f"tl.split({tiles[0]}_pairs)"
+            )
+            self.line(
+                f"{pad}{tiles[1]}_block_0, {tiles[1]}_block_1 = "
+                f"tl.split({tiles[1]}_pairs)"
+            )
+            self.line(
+                f"{pad}{tiles[2]}_block_0, {tiles[2]}_block_1 = "
+                f"tl.split(tl.trans({tiles[2]}))"
+            )
+            self.line(
+                f"{pad}{tiles[3]}_block_0, {tiles[3]}_block_1 = tl.split({tiles[3]})"
+            )
+            if not self._accumulating(operation):
+                self.line(
+                    f"{pad}{output} = tl.zeros(({a.shape[0]}, {b.shape[0]}), tl.float32)"
+                )
+            for block in range(groups):
+                self.line(
+                    f"{pad}{output} += tl.dot({tiles[0]}_block_{block}, "
+                    f"tl.trans({tiles[1]}_block_{block}), out_dtype=tl.float32) * "
+                    f"{tiles[2]}_block_{block}[:, None] * {tiles[3]}_block_{block}"
+                )
+            return
         _require(
             len(operation.reads) == 2 and len(tiles) == 2,
             "the dot takes exactly two staged operands and reads nothing else",
         )
-        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         assign = "+=" if self._accumulating(operation) else "="
         self.line(
             f"{pad}{operation.writes[0]} {assign} tl.dot({tiles[0]}, tl.trans({tiles[1]}))"
@@ -740,7 +1018,7 @@ class _TritonEmitter:
     def _emit_argmin(self, operation, pad: str) -> None:
         source = operation.reads[0]
         best = operation.writes[0]
-        lowest = operation.parameters.tie_break is ArgminTieBreak.LOWEST_INDEX
+        lowest = operation.parameters.tie_break is IndexTieBreak.LOWEST_INDEX
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}block_position = tl.argmin(")
         self.line(f"{pad}    {source}, axis=1, tie_break_left={lowest},")
@@ -758,11 +1036,57 @@ class _TritonEmitter:
         self.line(f"{pad}best_distance = tl.where(update, block_distance, best_distance)")
         self.line(f"{pad}{best} = tl.where(update, candidate_index, {best})")
 
+    def _emit_top_k(self, operation, pad: str) -> None:
+        """Select a deterministic descending prefix from one resident score tile.
+
+        The current SM100 Triton path has one physical implementation: repeated maximum
+        value and minimum matching-index reductions. An explicit selected-position mask
+        keeps legal negative-infinity values distinct; replacing a winner with negative
+        infinity alone would select it again when every remaining value is also -inf.
+        """
+
+        source = self.schedule.buffer(operation.reads[0])
+        _require(source is not None, f"top_k reads unknown buffer {operation.reads[0]!r}")
+        values, indices = operation.writes
+        k = operation.parameters.k
+        prefix = operation.op_id
+        selected = f"{prefix}_selected"
+        slots = f"{prefix}_slots"
+        positions = f"{prefix}_source_positions"
+
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f'{pad}{values} = tl.full(({k},), float("-inf"), tl.float32)')
+        self.line(f"{pad}{indices} = tl.zeros(({k},), tl.int32)")
+        self.line(f"{pad}{slots} = tl.arange(0, {k})")
+        self.line(f"{pad}{positions} = tl.arange(0, {source.shape[0]})")
+        self.line(f"{pad}{selected} = tl.zeros(({source.shape[0]},), tl.int1)")
+        for slot in range(k):
+            value = f"{prefix}_value_{slot}"
+            index = f"{prefix}_index_{slot}"
+            candidates = f"{prefix}_candidates_{slot}"
+            matching = f"{prefix}_matching_{slot}"
+            self.line(
+                f'{pad}{candidates} = tl.where(~{selected}, '
+                f'{operation.reads[0]}, float("-inf"))'
+            )
+            self.line(f"{pad}{value} = tl.max({candidates}, axis=0)")
+            self.line(
+                f"{pad}{matching} = (~{selected}) & "
+                f"({operation.reads[0]} == {value})"
+            )
+            self.line(
+                f"{pad}{index} = tl.min(tl.where({matching}, {positions}, "
+                f"{source.shape[0]}), axis=0)"
+            )
+            self.line(f"{pad}{values} = tl.where({slots} == {slot}, {value}, {values})")
+            self.line(f"{pad}{indices} = tl.where({slots} == {slot}, {index}, {indices})")
+            self.line(f"{pad}{selected} |= {positions} == {index}")
+
     def _emit_store(self, operation, pad: str) -> None:
         access = self.schedule.access_map(operation.op_id, operation.writes[0])
         _require(access is not None, f"store {operation.op_id!r} has no access map")
-        pointer, mask = self._address(access, pad)
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        pointer, mask = self._address(access, pad)
         self.line(f"{pad}tl.store(")
         self.line(f"{pad}    {pointer},")
         self.line(f"{pad}    {operation.reads[0]},")
