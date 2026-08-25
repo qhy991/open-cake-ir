@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "purpose": "tinygemm2_workload_v2_materialization_regeneration",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "plan": {
+    "path": "inventory/TINYGEMM2_WORKLOAD_V2_MATERIALIZATION_SUCCESSOR_PLAN_20260825.json",
+    "raw_sha256": "950a99d8849127e68130278c1449e5ef09e6eb74a7a23ac17716ea8111294515"
+  },
+  "execution": {
+    "broker_job_id": "gpuq-f5c26074936e",
+    "mode": "shared",
+    "gpu_count": 1,
+    "device": "NVIDIA B200",
+    "torch": "2.13.0+cu130",
+    "cuda_runtime": "13.0",
+    "automatic_retries": 0,
+    "kernel_launches": 0,
+    "broker_exit_code": 0,
+    "instrument_raw_sha256": "0681e2dc133165c93a1b5d554f61f49d3e78072eb37cf00cc34a2d602dfe9154",
+    "raw_observation_path": "/home/qinhaiyan/tinygemm-materialization-observe-7890af3/observation.json",
+    "raw_observation_sha256": "54e5335b5d2a3c9a9226524ccc79475e30383b7d5da97ff316f4f1c676d9ac73"
+  },
+  "observed_materialization": {
+    "input": {"sha256": "535c3a56f5f805329316bcb0445dff3ce71673e5c7b2ec0f5441e6af9b0c84d5", "size_bytes": 16384},
+    "weight": {"sha256": "a2edd5848ee7631ff8d4daed47fbccf8bbd570e19dd0098dc4cb68fa7ad5ecaa", "size_bytes": 2097152},
+    "bias": {"sha256": "5016f991298a8c84667331a17da8b0272cc58b42ef856ce5e0ee3b65439b3770", "size_bytes": 2048},
+    "fp32_linear_bf16_oracle": {"sha256": "55ed28390a00e242bc2a767fea4a1e4489eef1981d869f1a6f6c9489b2fb898d", "size_bytes": 16384}
+  },
+  "retained_parent_output": {
+    "source_path": "inventory/legacy/R31_TINYGEMM2_CORRECTNESS_RESULT.json",
+    "source_raw_sha256": "1e391ffa17c54202a5b93e3c0ad7e86aecb4dd0781d10c72a91c1fcfa9a3de93",
+    "legacy_source_path": "/home/qinhaiyan/cake-repro-runs/r31-tinygemm2-correctness-v2-juWOEW/result.json",
+    "legacy_source_raw_sha256": "7c6331c2f62750873acaa1b32ddc5d524a8a21d4ae32e0e5dd2537887388dca4",
+    "repository_projection": "legacy bytes plus one trailing LF",
+    "parent_revision": "339a8f4cb2644fb85de79f3eed3624a1e91183d1",
+    "parent_source_sha256": "ea4d87f058b269e2f15d04f945849d7b26604c5b76eed55a06eb8e08d7bc891d",
+    "parent_library_sha256": "f716b14e806a19c8f419943481ce4cb100747a8d7b4aae61f3f1ec929398970d",
+    "parent_stage4_calls": 1,
+    "candidate_bitwise_parent_match": true,
+    "sha256": "0c8d33850077810413ef9de0626f513c0d1743f058a57bf57702bf594c84e32b",
+    "size_bytes": 16384
+  },
+  "result": {
+    "selected_case_count": 1,
+    "materialized_case_count": 1,
+    "required_exact_fact_matches": 4,
+    "exact_fact_match_count": 4,
+    "passed": true
+  },
+  "disposition": {
+    "workload_v2_authorized": true,
+    "checked_asset_correctness": "missing",
+    "note": "The four regenerated facts match retained r31 bytes exactly. The parent output remains a retained r31 authority, not a newly launched result. No kernel correctness or performance claim is authorized."
+  }
+}

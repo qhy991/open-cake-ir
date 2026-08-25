@@ -21,6 +21,37 @@ from open_cake_ir.lab import ExecutorRevision  # noqa: E402
 
 
 class ExecutorRevisionContractTests(unittest.TestCase):
+    def test_inventory_observation_plans_keep_bound_executor_bytes_resolvable(self) -> None:
+        bindings: list[tuple[str, str]] = []
+
+        def collect(value: object) -> None:
+            if isinstance(value, dict):
+                if {
+                    "executor_descriptor",
+                    "executor_descriptor_raw_sha256",
+                } <= set(value):
+                    bindings.append(
+                        (
+                            str(value["executor_descriptor"]),
+                            str(value["executor_descriptor_raw_sha256"]),
+                        )
+                    )
+                for child in value.values():
+                    collect(child)
+            elif isinstance(value, list):
+                for child in value:
+                    collect(child)
+
+        for path in (ROOT / "inventory").glob("*.json"):
+            collect(json.loads(path.read_text(encoding="utf-8")))
+
+        self.assertTrue(bindings)
+        for relative, expected_sha256 in bindings:
+            with self.subTest(path=relative):
+                source = ROOT / relative
+                self.assertTrue(source.is_file())
+                self.assertEqual(sha256(source.read_bytes()).hexdigest(), expected_sha256)
+
     def test_released_executor_covers_the_complete_runtime_source_closure(self) -> None:
         executor = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR)
         self.assertEqual(executor.executor_id, _INVENTORY["current"]["executor_id"])

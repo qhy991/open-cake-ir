@@ -7,6 +7,8 @@ import unittest
 from hashlib import sha256
 from pathlib import Path
 
+import torch
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -39,7 +41,7 @@ from open_cake_ir.evaluation import (  # noqa: E402
     replay_legacy_r45_result,
     replay_portfolio_receipt,
     tensor_raw_sha256,
-    tinygemm_oracle,
+    tinygemm_metrics,
 )
 
 
@@ -662,19 +664,35 @@ class EvaluationContractTests(unittest.TestCase):
 
     def test_workload_contracts_own_semantics_without_study_policy(self) -> None:
         flash = WorkloadContract.load(ROOT / "contracts/workloads/flash-kmeans-assign.json")
-        tiny = WorkloadContract.load(ROOT / "contracts/workloads/tinygemm2-stage4.json")
+        tiny = WorkloadContract.load(ROOT / "contracts/workloads/tinygemm2-stage4-v2.json")
 
         self.assertEqual(flash.case_ids, ("tail_nk", "batched_tail", "b32_smoke", "duplicate_tie", "public_b1", "headline_b32"))
         self.assertEqual(flash.case("headline_b32")["shape"], {"B": 32, "N": 65536, "K": 1024, "D": 128})
         self.assertEqual(tiny.case_ids, ("stage4_n8_m1024_k1024",))
+        materialization = tiny.document["provenance"][1]
+        materialization_path = ROOT / materialization["path"]
+        self.assertEqual(
+            sha256(materialization_path.read_bytes()).hexdigest(),
+            materialization["raw_sha256"],
+        )
+        attempt = json.loads(materialization_path.read_text())
+        parent = attempt["retained_parent_output"]
+        parent_source = ROOT / parent["source_path"]
+        parent_bytes = parent_source.read_bytes()
+        self.assertEqual(sha256(parent_bytes).hexdigest(), parent["source_raw_sha256"])
+        self.assertTrue(parent_bytes.endswith(b"\n"))
+        self.assertEqual(
+            sha256(parent_bytes[:-1]).hexdigest(),
+            parent["legacy_source_raw_sha256"],
+        )
         for contract in (flash, tiny):
             self.assertNotIn("provider", contract.document)
             self.assertNotIn("budget", contract.document)
             self.assertNotIn("estimand", contract.document)
 
-    def test_tinygemm_uses_the_same_launchable_candidate_receipt_boundary(self) -> None:
+    def test_tinygemm_v2_fails_closed_before_non_cuda_launch(self) -> None:
         workload = WorkloadContract.load(
-            ROOT / "contracts/workloads/tinygemm2-stage4.json"
+            ROOT / "contracts/workloads/tinygemm2-stage4-v2.json"
         )
         protocol = EvaluationProtocol(
             protocol_id="tinygemm-confirmatory-v1",
@@ -691,27 +709,54 @@ class EvaluationContractTests(unittest.TestCase):
             launch_spec_sha256="c" * 64,
         )
 
-        class OracleLauncher:
+        class MustNotLaunch:
             def launch(self, selected, input_tensor, weight, bias):
-                return LaunchObservation(
-                    tinygemm_oracle(workload, input_tensor, weight, bias),
-                    1,
-                    0,
-                    "d" * 64,
-                )
+                raise AssertionError("candidate launched before materialization admission")
 
-        receipt = evaluate_tinygemm(
-            candidate,
-            workload,
-            protocol,
-            OracleLauncher(),
-            device="cpu",
+        with self.assertRaisesRegex(ValueError, "exact materialization requires CUDA"):
+            evaluate_tinygemm(
+                candidate,
+                workload,
+                protocol,
+                MustNotLaunch(),
+                device="cpu",
+            )
+
+    def test_tinygemm_separates_parent_exactness_from_oracle_tolerance(self) -> None:
+        document = json.loads(
+            (ROOT / "contracts/workloads/tinygemm2-stage4-v2.json").read_text()
         )
+        parent_output = torch.zeros((8, 1024), dtype=torch.bfloat16)
+        oracle = parent_output.clone()
+        oracle[0, 0] = 0.0078125
+        parent_raw = parent_output.view(torch.uint8).numpy().tobytes(order="C")
+        document["cases"][0]["materialized"]["parent_output"] = {
+            "sha256": sha256(parent_raw).hexdigest(),
+            "size_bytes": len(parent_raw),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "workload.json"
+            path.write_text(json.dumps(document))
+            workload = WorkloadContract.load(path)
 
-        self.assertTrue(receipt.correctness_passed)
-        self.assertTrue(receipt.correctness["bitwise_equal"])
-        self.assertEqual(receipt.kernel_calls, 1)
-        self.assertEqual(receipt.fallback_calls, 0)
+        metrics = tinygemm_metrics(
+            workload,
+            parent_output,
+            oracle,
+            case_id="stage4_n8_m1024_k1024",
+        )
+        self.assertTrue(metrics["bitwise_parent_equal"])
+        self.assertTrue(metrics["tolerance_equal"])
+        self.assertGreater(metrics["maximum_absolute_error"], 0.0)
+
+        old_self_consistent = tinygemm_metrics(
+            workload,
+            oracle,
+            oracle,
+            case_id="stage4_n8_m1024_k1024",
+        )
+        self.assertFalse(old_self_consistent["bitwise_parent_equal"])
+        self.assertTrue(old_self_consistent["tolerance_equal"])
 
     def test_r39_raw_samples_rederive_the_fixed_pair_observation(self) -> None:
         raw = json.loads((ROOT / "tests/fixtures/r39-paired-timing-result.json").read_text())

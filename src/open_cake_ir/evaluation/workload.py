@@ -124,10 +124,12 @@ def _validate_flash_contract(document: Mapping[str, object]) -> None:
 
 
 def _validate_tinygemm_contract(document: Mapping[str, object]) -> None:
-    if (
-        document.get("workload_id") != "tinygemm2-stage4-independent-v1"
-        or document.get("revision") != "1"
-    ):
+    workload_id = document.get("workload_id")
+    revision = document.get("revision")
+    if (workload_id, revision) not in {
+        ("tinygemm2-stage4-independent-v1", "1"),
+        ("tinygemm2-stage4-independent-v2", "2"),
+    }:
         raise ValueError("TinyGEMM2 workload identity or revision differs")
     expected_tensors = {
         "input": {
@@ -189,6 +191,19 @@ def _validate_tinygemm_contract(document: Mapping[str, object]) -> None:
         "random_normal",
     ):
         raise ValueError("TinyGEMM2 workload cases differ")
+    materialized = cases[0].get("materialized")
+    if revision == "1" and materialized is not None:
+        raise ValueError("TinyGEMM2 v1 unexpectedly owns materialization")
+    if revision == "2" and set(
+        _object(materialized, "TinyGEMM2 v2 materialized authority")
+    ) != {
+        "input",
+        "weight",
+        "bias",
+        "fp32_linear_bf16_oracle",
+        "parent_output",
+    }:
+        raise ValueError("TinyGEMM2 v2 materialized authority differs")
 
 
 class WorkloadContract:

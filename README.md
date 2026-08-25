@@ -106,9 +106,9 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis and one terminal schema. Read-only
   audit separates replayed archive integrity from current filesystem custody; weak clone modes never gain claim
   authority, while writer admission remains strict.
-- Current Executor Revision `open-cake-ir-b200-v27` binds the 34-source runtime closure, including deterministic
+- Current Executor Revision `open-cake-ir-b200-v28` binds the 34-source runtime closure, including deterministic
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
-  exact B200 host packages; v1–v5 are archived and v6–v25 are superseded descriptors. v19 canonically treats one
+  exact B200 host packages; v1–v5 are archived and v6–v27 are superseded descriptors. v19 canonically treats one
   observed same-path delete/add replacement as a resumed candidate update. v20 applies
   a cost order only when every launchable member is scored and emits a cost-model misranking diagnosis only when
   that order was actually applied; otherwise the whole set keeps provider order without inventing a ranking. v21
@@ -124,13 +124,16 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   endpoint rather than an unverifiable clean-start pass. v26 projects the Compiler-owned lowering-generation fact
   through the public CLI without changing execution semantics. v27 lets stable Study templates defer only Compiler
   and Executor identity to preflight; the resulting CampaignLock remains exact, while frozen Studies never follow
-  current state. Its current unwitnessed working release also separates archive integrity from filesystem custody;
+  current state. It also separates archive integrity from filesystem custody;
   weak clone modes preserve content replay but block promotion, qualification and estimates. The current matched Study fixtures
   retain a correctness-qualified, no-timing profile for every searched
   survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
-  after re-freezing its broker command.
-  The current local suite passes 393 pytest items. The earlier remote qualification passed its frozen
+  after re-freezing its broker command. v28 repairs TinyGEMM2's Workload adapter: current v2 materialization pins the
+  exact `/8` CUDA inputs, independent FP32 oracle and retained parent output, then evaluates parent-bitwise equality
+  separately from oracle tolerance. This closes the self-consistent input/oracle defect, not the still-missing
+  current checked-asset launch.
+  The current local suite passes 396 pytest items. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no

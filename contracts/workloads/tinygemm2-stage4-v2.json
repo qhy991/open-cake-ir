@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "workload_id": "tinygemm2-stage4-independent-v2",
+  "revision": "2",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "supersedes_workload",
+      "workload_id": "tinygemm2-stage4-independent-v1",
+      "canonical_sha256": "4c3be31cfb34a0101d32eb2e1a30dab869ef30f400e606576446dfb91bdc4bd5"
+    },
+    {
+      "kind": "materialization_observation",
+      "path": "inventory/TINYGEMM2_WORKLOAD_V2_MATERIALIZATION_ATTEMPT_2_20260825.json",
+      "raw_sha256": "680f2ba078812db09d3e18ec0aa288847bbb2df605759225d07f51c6830c293b"
+    },
+    {
+      "kind": "upstream_git",
+      "repository": "https://github.com/flashinfer-ai/flashinfer",
+      "revision": "339a8f4cb2644fb85de79f3eed3624a1e91183d1"
+    }
+  ],
+  "operator": "tinygemm2_bf16_linear",
+  "cases": [
+    {
+      "case_id": "stage4_n8_m1024_k1024",
+      "shape": {"batch": 8, "output_features": 1024, "input_features": 1024},
+      "seed": 0,
+      "mode": "random_normal",
+      "materialized": {
+        "input": {"sha256": "535c3a56f5f805329316bcb0445dff3ce71673e5c7b2ec0f5441e6af9b0c84d5", "size_bytes": 16384},
+        "weight": {"sha256": "a2edd5848ee7631ff8d4daed47fbccf8bbd570e19dd0098dc4cb68fa7ad5ecaa", "size_bytes": 2097152},
+        "bias": {"sha256": "5016f991298a8c84667331a17da8b0272cc58b42ef856ce5e0ee3b65439b3770", "size_bytes": 2048},
+        "fp32_linear_bf16_oracle": {"sha256": "55ed28390a00e242bc2a767fea4a1e4489eef1981d869f1a6f6c9489b2fb898d", "size_bytes": 16384},
+        "parent_output": {"sha256": "0c8d33850077810413ef9de0626f513c0d1743f058a57bf57702bf594c84e32b", "size_bytes": 16384}
+      }
+    }
+  ],
+  "tensors": {
+    "input": {"shape": ["batch", "input_features"], "dtype": "bf16", "layout": "contiguous_row_major"},
+    "weight": {"shape": ["output_features", "input_features"], "dtype": "bf16", "layout": "contiguous_row_major"},
+    "bias": {"shape": ["output_features"], "dtype": "bf16", "layout": "contiguous"},
+    "output": {"shape": ["batch", "output_features"], "dtype": "bf16", "layout": "contiguous_row_major"}
+  },
+  "semantics": {
+    "definition": "bf16_round(input_fp32 @ weight_fp32^T + bias_fp32)",
+    "accumulator_dtype": "fp32",
+    "tie_break": "not_applicable",
+    "nonfinite": "equal_nan_false"
+  },
+  "oracle": {
+    "kind": "fp32_linear_then_bf16_round",
+    "source_sha256": "9cea3117f9202051a5ff9c63221aa81d212aed7fe38b597c7aa540e96c5cb060",
+    "atol": 0.01,
+    "rtol": 0.01
+  },
+  "validation": {
+    "canonical": "bitwise_equal_to_pinned_stage4_parent_and_tolerance_equal_to_fp32_oracle",
+    "parent_revision": "339a8f4cb2644fb85de79f3eed3624a1e91183d1",
+    "paper_acceptance_rule": "not_applicable_known_kernel_lane"
+  }
+}

@@ -40,6 +40,13 @@ for path in pathlib.Path("evidence").rglob("authority.json"):
     witnessed.update(re.findall(r"open-cake-ir-b200-v\d+", path.read_text()))
 for path in pathlib.Path("contracts/studies").glob("*.json"):
     witnessed.update(re.findall(r"open-cake-ir-b200-v\d+", path.read_text()))
+# An inventory observation plan that binds a descriptor's raw bytes witnesses that
+# Executor even before it becomes a sealed Study or Evidence run. Without this boundary,
+# a later release could reclaim the id while retaining a plan that names the old bytes.
+for path in pathlib.Path("inventory").glob("*.json"):
+    text = path.read_text()
+    if "executor_descriptor_raw_sha256" in text:
+        witnessed.update(re.findall(r"open-cake-ir-b200-v\d+", text))
 
 history = max((ordinal(value) for value in witnessed), default=0)
 keep = f"open-cake-ir-b200-v{history + 1}"

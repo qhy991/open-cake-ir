@@ -19,6 +19,7 @@ disposition.
 | 8 | lowering profile is both routing and workload constraint | fixed in Compiler v24 |
 | 9 | emitter preconditions were late failures | fixed in Compiler v23 |
 | 10 | tiled accesses used the coordinate owner's extent instead of the accessed Buffer's extent | fixed in Compiler v25; B200 successor retains two separate numerical failures |
+| 11 | TinyGEMM2 regenerated a different input distribution and compared output bitwise to its own oracle | fixed by Workload v2 and Executor v28; current checked-asset launch remains missing |
 
 ## Re-verification and action
 
@@ -126,7 +127,7 @@ bytes. They were not re-labelled as v24 evidence. The frozen v24 diagnostic atte
 the v25 successor now provide the historical/current split for generated lowering, while
 a successor ranking calibration remains missing. The TinyGEMM2 checked-asset partition
 also remains missing because the historical r31 launch is not current-v25 binary
-evidence. The v25 Corpus Gate is 32/32 and the zero-GPU suite passes 393 pytest items;
+evidence. The v25 Corpus Gate is 32/32 and the zero-GPU suite passes 396 pytest items;
 those gates validate the ownership migration but do not substitute for either missing
 successor.
 
@@ -154,3 +155,29 @@ maximum deviation `3.814697265625e-05` and 3,997/3,993 violating elements respec
 That is retained numerical evidence, not a reason to widen the threshold or claim the
 generated partition passed. The current TinyGEMM2 checked-asset partition remains
 separately missing.
+
+### 11: materialized input and parent output are separate authorities
+
+The frozen TinyGEMM2 v1 Contract named the upstream and historical generator but reduced
+its case to `mode=random_normal`. The historical generator divides input and weight by
+eight before BF16 conversion; the current adapter did not. Because the same adapter also
+created the FP32 oracle, its CPU test was internally consistent while exercising a
+different distribution. A second dormant error treated bitwise equality to that oracle
+as bitwise equality to the pinned upstream parent, even though retained r31 evidence
+shows those outputs are close but not bitwise identical.
+
+ADR 0033 leaves v1 unchanged and makes v2 the current authority. Its sole case pins five
+raw receipts: input, weight, bias, independent FP32-linear/BF16 oracle and retained
+upstream-parent output. One preregistered shared-B200 regeneration initially failed before
+materialization because the broker worker could not traverse the temporary worktree; the
+failure is retained. Its custody-only successor (`gpuq-f5c26074936e`, no kernel, no
+timing, zero retries) reproduced all four generated receipts exactly. The parent receipt
+remains bound to the separate r31 upstream-parent invocation.
+
+Executor v28 restores `/8` scaling, verifies each generated receipt before candidate
+launch, and implements the two declared predicates independently: output bytes must
+equal the pinned parent and output values must satisfy the unchanged FP32-oracle
+tolerance. An inventory plan that binds exact Executor descriptor bytes now witnesses
+that revision during release, preventing another observed descriptor from being reclaimed
+in place. This fixes the Workload and Evaluation semantics; it does not relabel r31 as a
+current Compiler-v25 binary launch, so the checked-asset partition remains missing.
