@@ -2406,7 +2406,13 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         component.dimension is not None
                         and component.dimension < len(source.shape)
                     ):
-                        expected_shape.append(source.shape[component.dimension])
+                        # The value domain is what the access covers. Reading the axis
+                        # size here demanded a staged buffer sized for elements a
+                        # sub-range never addresses, which blocked a gather the emitter
+                        # already lowered correctly.
+                        expected_shape.append(
+                            component.span(source.shape[component.dimension])
+                        )
                 if staged is not None and shape_known:
                     if staged.shape != tuple(expected_shape):
                         out.add(

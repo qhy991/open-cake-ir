@@ -879,16 +879,18 @@ class AccessIndex:
                 optional={"offset", "extent"},
                 context=context,
             )
-            extent = obj.get("extent")
-            offset = obj.get("offset")
+            # Presence, not value: `obj.get` would read an explicit `null` as an absent
+            # key, so `{"offset": null}` would parse as the omitted spelling. Same
+            # program, different Schedule bytes -- a second identity for one kernel,
+            # admitted by the parser even though the authoring Schema refuses it.
             return cls(
                 source,
                 None,
                 _nonnegative_int(obj["dimension"], f"{context}.dimension"),
                 # An absent offset is 0; a written 0 would be a second spelling of the
                 # same thing, so only a real displacement may be written.
-                0 if offset is None else _positive_int(offset, f"{context}.offset"),
-                None if extent is None else _positive_int(extent, f"{context}.extent"),
+                _positive_int(obj["offset"], f"{context}.offset") if "offset" in obj else 0,
+                _positive_int(obj["extent"], f"{context}.extent") if "extent" in obj else None,
             )
         obj = _strict_object(value, required={"source", "name"}, context=context)
         return cls(source, _string(obj["name"], f"{context}.name"), None)

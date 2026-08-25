@@ -548,6 +548,61 @@ class DimensionSubRangeTest(unittest.TestCase):
                 )
             )
 
+    def test_a_sub_range_composes_with_a_runtime_indexed_gather(self) -> None:
+        """Two primitives that each work must work together, or they are not orthogonal.
+
+        The indexed value-domain derivation read the axis size while the emitter read
+        the sub-range, so a gather the backend lowered correctly was refused for staging
+        a buffer sized to what the access actually covers.
+        """
+
+        document = json.loads(
+            (ROOT / "corpus" / "schedules" / "indexed-gather-b8-smoke.json")
+            .read_text(encoding="utf-8")
+        )
+        for access in document["access_maps"]:
+            if access["operation"] == "load_selected_rows":
+                access["indices"][2] = {"source": "dimension", "dimension": 2, "extent": 8}
+        for buffer in document["buffers"]:
+            if buffer["name"] == "gathered_tile":
+                buffer["shape"] = [8, 8]
+            elif buffer["name"] == "gathered_rows":
+                buffer["shape"] = [8, 8, 8]
+
+        assessment = Compiler.load(ROOT, DRAFT).assess(document)
+
+        self.assertNotIn(
+            "ACCESS_INDEXED_VALUE_SHAPE", [f.code for f in assessment.findings]
+        )
+        self.assertTrue(assessment.accepted)
+        self.assertTrue(assessment.lowering_eligible)
+        self.assertIn(
+            "expert_rows_d2_o0_e8_offsets = tl.arange(0, 8)",
+            emit(Schedule.from_dict(document), TARGET).source,
+        )
+
+    def test_an_explicit_null_is_not_an_omitted_key(self) -> None:
+        """`Compiler.assess` takes a document, so `null` reaches the parser directly.
+
+        Reading the field with `.get` made `{"offset": null}` parse as the omitted
+        spelling: identical kernel body, different Schedule bytes, so one program held
+        two identities -- and the typed parser admitted what its own authoring Schema
+        refuses. Presence of the key is what decides, not the value behind it.
+        """
+
+        for field, component in (
+            ("offset", {"source": "dimension", "dimension": 2, "offset": None, "extent": 64}),
+            ("extent", {"source": "dimension", "dimension": 2, "offset": 64, "extent": None}),
+        ):
+            with self.subTest(field=field):
+                document = self._with_hi_component(component)
+                with self.assertRaises(ScheduleParseError):
+                    Schedule.from_dict(document)
+                # and it must not slip through the public interface either
+                assessment = Compiler.load(ROOT, DRAFT).assess(document)
+                self.assertFalse(assessment.accepted)
+                self.assertFalse(assessment.lowering_eligible)
+
 
 class MultiOutputHostTest(unittest.TestCase):
     """A kernel with several outputs must hand back a host wrapper that can run.
