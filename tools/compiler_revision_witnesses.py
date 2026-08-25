@@ -5,18 +5,43 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Mapping
 
-_PREFIX = "open-cake-ir-sm100a-v"
+_REVISION_ID = re.compile(r"open-cake-ir-(?:sm100a-)?v([1-9][0-9]*)")
+_REVISION_LABEL = re.compile(r"v([1-9][0-9]*)")
 _FROZEN_GLOBS = (
     "compiler/releases/*/revision.lock.json",
     "contracts/studies/*.json",
     "evidence/**/*.json",
     "inventory/*.json",
 )
+
+
+def _is_compiler_revision_id(value: object) -> bool:
+    """Admit the historical single-Target lineage and generic successors."""
+
+    return isinstance(value, str) and _REVISION_ID.fullmatch(value) is not None
+
+
+def compiler_revision_ordinal(value: object) -> int | None:
+    """Return one released Compiler ordinal, independent of its valid lineage."""
+
+    if not isinstance(value, str):
+        return None
+    match = _REVISION_ID.fullmatch(value)
+    return int(match.group(1)) if match is not None else None
+
+
+def generic_compiler_revision_id(label: object, *, draft: bool = False) -> str:
+    """Name a multi-Target Compiler Revision from one derived ordinal label."""
+
+    if not isinstance(label, str) or _REVISION_LABEL.fullmatch(label) is None:
+        raise ValueError("Compiler Revision label differs")
+    return f"open-cake-ir-{label}{'-draft' if draft else ''}"
 
 
 def _canonical_sha256(value: object) -> str:
@@ -38,6 +63,15 @@ class CompilerRevisionWitness:
     revision_sha256: str | None = None
 
 
+@dataclass(frozen=True)
+class CompilerRevisionCyclePlan:
+    """The release-cycle transition derived from frozen Revision witnesses."""
+
+    next_label: str
+    archive_label: str | None
+    stale_labels: tuple[str, ...]
+
+
 def _walk_references(
     value: object,
     *,
@@ -49,10 +83,10 @@ def _walk_references(
     found: list[CompilerRevisionWitness] = []
     if isinstance(value, Mapping):
         identity = value.get("compiler_revision_id")
-        if isinstance(identity, str) and identity.startswith(_PREFIX):
+        if _is_compiler_revision_id(identity):
             found.append(CompilerRevisionWitness(identity, path))
         identity = value.get("revision_id")
-        if isinstance(identity, str) and identity.startswith(_PREFIX):
+        if _is_compiler_revision_id(identity):
             digest = value.get("revision_sha256", value.get("canonical_sha256"))
             found.append(
                 CompilerRevisionWitness(
@@ -79,7 +113,7 @@ def _walk_references(
                     if digest == current_sha256
                     else known_revision_by_sha256.get(digest)
                 )
-            if isinstance(identity, str) and identity.startswith(_PREFIX):
+            if _is_compiler_revision_id(identity):
                 found.append(
                     CompilerRevisionWitness(
                         identity,
@@ -121,7 +155,7 @@ def compiler_revision_witnesses(root: Path) -> tuple[CompilerRevisionWitness, ..
     if lock_path.exists():
         lock = json.loads(lock_path.read_text(encoding="utf-8"))
         identity = lock.get("revision_id") if isinstance(lock, Mapping) else None
-        if isinstance(identity, str) and identity.startswith(_PREFIX):
+        if _is_compiler_revision_id(identity):
             current_id = identity
             current_sha256 = _canonical_sha256(lock)
     paths = {
@@ -156,7 +190,7 @@ def compiler_revision_witnesses(root: Path) -> tuple[CompilerRevisionWitness, ..
         )
         if relative.startswith("compiler/releases/") and isinstance(document, Mapping):
             identity = document.get("revision_id")
-            if isinstance(identity, str) and identity.startswith(_PREFIX):
+            if _is_compiler_revision_id(identity):
                 witnesses.add(
                     CompilerRevisionWitness(
                         identity,
@@ -207,6 +241,42 @@ def compiler_revision_witnesses(root: Path) -> tuple[CompilerRevisionWitness, ..
             ),
         )
     )
+
+
+def plan_compiler_revision_cycle(
+    root: Path, current_revision_id: object
+) -> CompilerRevisionCyclePlan:
+    """Derive archive/reuse policy without mutating release state.
+
+    Ordinals are shared across the historical ``sm100a`` lineage and the generic
+    multi-Target lineage. A frozen reference to either spelling reserves that ordinal.
+    """
+
+    current_ordinal = compiler_revision_ordinal(current_revision_id)
+    if current_ordinal is None:
+        raise ValueError("current Compiler Revision identity differs")
+    witnessed_ordinals = {
+        ordinal
+        for item in compiler_revision_witnesses(root)
+        if (ordinal := compiler_revision_ordinal(item.revision_id)) is not None
+    }
+    history = max(witnessed_ordinals, default=0)
+    next_label = f"v{history + 1}"
+    if current_ordinal in witnessed_ordinals:
+        return CompilerRevisionCyclePlan(next_label, f"v{current_ordinal}", ())
+
+    root = root.resolve(strict=True)
+    stale = tuple(
+        sorted(
+            path.name
+            for path in (root / "compiler/releases").glob("v*")
+            if (
+                (match := _REVISION_LABEL.fullmatch(path.name)) is not None
+                and int(match.group(1)) > history
+            )
+        )
+    )
+    return CompilerRevisionCyclePlan(next_label, None, stale)
 
 
 def main() -> int:

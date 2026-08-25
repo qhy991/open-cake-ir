@@ -59,6 +59,8 @@ from .timing import (
     derive_paired_timing,
     summarize_cohort,
 )
+from .swiglu import generate_swiglu_case, swiglu_metrics, swiglu_oracle
+from .rmsnorm import generate_rmsnorm_case, rmsnorm_metrics, rmsnorm_oracle
 from .tinygemm import (
     TinyGemmLauncher,
     evaluate_tinygemm,
@@ -124,4 +126,10 @@ __all__ = [
     "launch_candidate_once",
     "derive_paired_timing",
     "summarize_cohort",
+    "generate_swiglu_case",
+    "swiglu_metrics",
+    "swiglu_oracle",
+    "generate_rmsnorm_case",
+    "rmsnorm_metrics",
+    "rmsnorm_oracle",
 ]

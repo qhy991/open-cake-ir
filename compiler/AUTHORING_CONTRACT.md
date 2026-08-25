@@ -49,6 +49,20 @@ The executable argument signature is derived from global Buffers and is never re
 an ABI label. Metadata may bind a Workload digest, but the Compiler does not infer a
 Workload from a route or hard-code its tensor shapes.
 
+Target schema v2 owns architecture-neutral execution-group and workgroup facts. It does
+not require a CUDA compute capability, tensor-memory capacity, or register-budget issue
+width from hardware that has none. The exact `gfx1151` Target declares wave32,
+global/shared/register memory, its observed workgroup limits, and only the operations and
+instruction contracts this Revision can lower. The `triton` route remains one
+materialization mechanism across Targets; the Target and runtime receipt determine CUDA
+versus HIP compilation and binary custody.
+
+`AccessMap` owns scalar versus vector program addressing: `source: program` is scalar and
+`source: program_tile` carries an offset vector. Consequently a program tile of one may
+still be an explicit one-element vector. The emitter must derive `BLOCK_*`, `tl.arange`
+and address broadcasting from the AccessMap source rather than infer them from
+`ProgramAxis.tile > 1`.
+
 For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics, tie handling and oracle. A Study
 narrows the public Compiler to one exact lowering route and supplies a complete `schedule-skeleton.json`; start from
 that skeleton. A Schedule may change admitted block sizes, warps and stages, but must preserve its route, external

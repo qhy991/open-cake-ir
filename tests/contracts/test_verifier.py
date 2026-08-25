@@ -95,7 +95,11 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         ]
         for path in paths:
             with self.subTest(schedule=path.name):
-                self.assertEqual(_blocking(verify(Schedule.load(path), TARGET)), ())
+                schedule = Schedule.load(path)
+                target = Target.load(
+                    ROOT / "compiler" / "targets" / f"{schedule.target}.json"
+                )
+                self.assertEqual(_blocking(verify(schedule, target)), ())
 
     def test_a_broadcast_axis_no_shape_rule_could_infer_is_checked(self) -> None:
         """The one arithmetic fact shapes cannot settle.

@@ -206,6 +206,153 @@ def _validate_tinygemm_contract(document: Mapping[str, object]) -> None:
         raise ValueError("TinyGEMM2 v2 materialized authority differs")
 
 
+def _validate_swiglu_contract(document: Mapping[str, object]) -> None:
+    if (
+        document.get("workload_id") != "swiglu-fp32-independent-v1"
+        or document.get("revision") != "1"
+    ):
+        raise ValueError("SwiGLU workload identity or revision differs")
+    expected_tensors = {
+        "up": {
+            "shape": ["B", "N", "D"],
+            "dtype": "fp32",
+            "layout": "contiguous_row_major",
+            "finite_only": True,
+        },
+        "gate": {
+            "shape": ["B", "N", "D"],
+            "dtype": "fp32",
+            "layout": "contiguous_row_major",
+            "finite_only": True,
+        },
+        "y": {
+            "shape": ["B", "N", "D"],
+            "dtype": "fp32",
+            "layout": "contiguous_row_major",
+        },
+    }
+    expected_semantics = {
+        "definition": "y = up * gate * 0.5 * (tanh(gate * 0.5) + 1.0)",
+        "input_dtype": "fp32",
+        "output_dtype": "fp32",
+        "nonfinite": "reject_before_oracle",
+    }
+    expected_oracle = {
+        "kind": "cpu_fp64_composition_then_fp32_round",
+        "source_sha256": "36161c3cd947d663d9d9e75dd7babb0dff2d799ad021ae80d55508150f217036",
+    }
+    expected_validation = {
+        "canonical": "torch_isclose_against_cpu_fp64_composition",
+        "atol": 0.000002,
+        "rtol": 0.00002,
+        "performance_measured": False,
+    }
+    if document.get("tensors") != expected_tensors:
+        raise ValueError("SwiGLU workload tensors differ")
+    if document.get("semantics") != expected_semantics:
+        raise ValueError("SwiGLU workload semantics differ")
+    if document.get("oracle") != expected_oracle:
+        raise ValueError("SwiGLU workload oracle differs")
+    if document.get("validation") != expected_validation:
+        raise ValueError("SwiGLU workload validation differs")
+    expected_cases = (
+        (
+            "seeded_random",
+            {"B": 8, "N": 512, "D": 128},
+            20260825,
+            "random_standard_normal",
+        ),
+        (
+            "signed_saturation",
+            {"B": 8, "N": 512, "D": 128},
+            None,
+            "constructed_signed_saturation",
+        ),
+    )
+    cases = cast(list[Mapping[str, object]], document["cases"])
+    observed = tuple(
+        (case.get("case_id"), case.get("shape"), case.get("seed"), case.get("mode"))
+        for case in cases
+    )
+    if observed != expected_cases:
+        raise ValueError("SwiGLU workload cases differ")
+
+
+def _validate_llama_rmsnorm_contract(document: Mapping[str, object]) -> None:
+    if (document.get("workload_id"), document.get("revision")) not in {
+        ("llama-rmsnorm-mul-fp32-independent-v1", "1"),
+        ("llama-rmsnorm-mul-fp32-independent-v2", "2"),
+    }:
+        raise ValueError("llama RMSNorm workload identity or revision differs")
+    expected_tensors = {
+        "x": {
+            "shape": ["B", "N", "D"],
+            "dtype": "fp32",
+            "layout": "contiguous_row_major",
+            "finite_only": True,
+        },
+        "gamma": {
+            "shape": ["D"],
+            "dtype": "fp32",
+            "layout": "contiguous",
+            "finite_only": True,
+        },
+        "y": {
+            "shape": ["B", "N", "D"],
+            "dtype": "fp32",
+            "layout": "contiguous_row_major",
+        },
+    }
+    expected_semantics = {
+        "definition": "y = x * gamma * rsqrt(mean_D(x * x) + epsilon)",
+        "epsilon": 0.000001,
+        "reduction_axis": "last",
+        "input_dtype": "fp32",
+        "output_dtype": "fp32",
+        "nonfinite": "reject_before_oracle",
+        "llama_slice": "GGML_OP_RMS_NORM + GGML_OP_MUL",
+    }
+    expected_oracle = {
+        "kind": "cpu_fp64_rmsnorm_mul_then_fp32_round",
+        "source_sha256": "49da17ec8f983be6fa72dd04ef0018b4dd50b8b79a09895fbf95bd61b7c6b1dd",
+    }
+    expected_validation = {
+        "canonical": "torch_isclose_against_cpu_fp64_rmsnorm_mul",
+        "atol": 0.000005,
+        "rtol": 0.00005,
+        "performance_measured": False,
+    }
+    if document.get("tensors") != expected_tensors:
+        raise ValueError("llama RMSNorm workload tensors differ")
+    if document.get("semantics") != expected_semantics:
+        raise ValueError("llama RMSNorm workload semantics differ")
+    if document.get("oracle") != expected_oracle:
+        raise ValueError("llama RMSNorm workload oracle differs")
+    if document.get("validation") != expected_validation:
+        raise ValueError("llama RMSNorm workload validation differs")
+    expected_cases = (
+        (
+            "seeded_random",
+            {"B": 8, "N": 512, "D": 128},
+            20260825,
+            "random_standard_normal_signed_gamma",
+        ),
+        (
+            "reduction_rsqrt_stress",
+            {"B": 8, "N": 512, "D": 128},
+            None,
+            "constructed_reduction_rsqrt_stress",
+        ),
+    )
+    cases = cast(list[Mapping[str, object]], document["cases"])
+    observed = tuple(
+        (case.get("case_id"), case.get("shape"), case.get("seed"), case.get("mode"))
+        for case in cases
+    )
+    if observed != expected_cases:
+        raise ValueError("llama RMSNorm workload cases differ")
+
+
 class WorkloadContract:
     """Canonical operator semantics, cases and correctness authority."""
 
@@ -283,6 +430,10 @@ class WorkloadContract:
             _validate_flash_contract(document)
         elif document.get("operator") == "tinygemm2_bf16_linear":
             _validate_tinygemm_contract(document)
+        elif document.get("operator") == "swiglu_fp32":
+            _validate_swiglu_contract(document)
+        elif document.get("operator") == "rmsnorm_mul_fp32":
+            _validate_llama_rmsnorm_contract(document)
         else:
             raise ValueError("workload operator is unsupported")
         return cls(document, source)

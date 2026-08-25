@@ -1,8 +1,12 @@
 {
   "schema_version": 1,
-  "revision_id": "open-cake-ir-sm100a-v28-draft",
+  "revision_id": "open-cake-ir-v29-draft",
   "state": "draft",
   "target_definitions": {
+    "gfx1151": {
+      "path": "compiler/targets/gfx1151.json",
+      "canonical_sha256": "e924a27f4b667bc474b515402e9ce2ddfa6ea22649a6e1a0b6b0d99652ea65fe"
+    },
     "sm_100a": {
       "path": "compiler/targets/sm_100a.json",
       "canonical_sha256": "c7428b203489d4790f9c65a96fbc031f396fd3273716781c525a75b5b55bc816"

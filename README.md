@@ -12,6 +12,11 @@ Compiler 管线、Schedule 的硬件承诺、一次 Study Run 的状态机、Com
 [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) 开始。** 它用一个已经在 B200 上验证的真实例子解释
 Schedule、Assessment、Lowering、CUBIN 和正确性检查，并提供可直接复制的命令。
 
+**AMD `gfx1151` 独立优化分支请看
+[`docs/GETTING_STARTED_AMD.md`](docs/GETTING_STARTED_AMD.md)。** 当前提议的 v29 具有 39-case
+multi-Target Gate 已准备完成，但依照 ADR 0030 仍等待 Agent 之外的精确审批；在此之前没有新的正式 GPU
+性能结论。
+
 In plain language: you describe *how* a GPU should divide and order work in a typed JSON Schedule; the Compiler
 checks that plan and lowers it to inspectable target source. The optional Research Lab then lets agents improve
 Candidates under frozen evaluation and evidence rules.

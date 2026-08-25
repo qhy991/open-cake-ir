@@ -14,7 +14,11 @@ _SOURCE_ROOTS = (
     "src/open_cake_ir/evidence",
 )
 _SOURCE_FILES = (
+    "examples/gpu/amd_triton_quickstart.py",
     "examples/gpu/flash_kmeans_quickstart.py",
+    "examples/gpu/rmsnorm_amd_quickstart.py",
+    "examples/gpu/rmsnorm_amd_search.py",
+    "examples/gpu/swiglu_amd_quickstart.py",
     "src/open_cake_ir/__init__.py",
     "src/open_cake_ir/cli.py",
     "tools/evaluate_flash_candidate.py",

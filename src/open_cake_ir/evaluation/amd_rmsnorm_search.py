@@ -1,0 +1,544 @@
+"""Pure contracts and decisions for the bounded gfx1151 llama RMSNorm search."""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass
+from hashlib import sha256
+from pathlib import Path
+from typing import Mapping, cast
+
+from open_cake_ir.compiler.ir import Schedule
+
+from .timing import (
+    PairedTimingObservation,
+    PairedTimingProtocol,
+    derive_paired_timing,
+)
+from .workload import WorkloadContract
+
+
+TARGET = "gfx1151"
+ROUTE_BACKEND = "triton"
+ROW_TILES = (1,)
+NUM_WARPS = (1, 2, 4, 8)
+TEMPLATE_GEOMETRY = (1, 8)
+BASELINE_GEOMETRY = (64, 4)
+
+LEAF_TIMING_WIN = "LEAF_TIMING_WIN"
+STOP_CLOSE_NULL = "STOP_CLOSE_NULL"
+STOP_BASELINE_FASTER = "STOP_BASELINE_FASTER"
+INCONCLUSIVE_MEASUREMENT_QUALITY = "INCONCLUSIVE_MEASUREMENT_QUALITY"
+
+_TOP_LEVEL_FIELDS = {
+    "schema_version",
+    "search_id",
+    "state",
+    "target",
+    "route",
+    "compiler",
+    "executor",
+    "template",
+    "workload",
+    "geometry",
+    "screening",
+    "confirmatory",
+}
+_REFERENCE_FIELDS = {"path", "canonical_sha256"}
+_COMPILER_REFERENCE_FIELDS = {*_REFERENCE_FIELDS, "revision_id"}
+_EXECUTOR_REFERENCE_FIELDS = {*_REFERENCE_FIELDS, "executor_id"}
+_GEOMETRY = {
+    "row_tiles": list(ROW_TILES),
+    "num_warps": list(NUM_WARPS),
+    "candidate_count": len(ROW_TILES) * len(NUM_WARPS),
+    "baseline_geometry": {"row_tile": 64, "num_warps": 4},
+    "prior_screening_winner": {
+        "row_tile": 8,
+        "num_warps": 8,
+        "disposition": "STOP_CLOSE_NULL",
+    },
+}
+_SCREENING = {
+    "case_id": "seeded_random",
+    "rounds_per_candidate": 5,
+    "warmup_launches": 5,
+    "samples_per_round": 10,
+    "launches_per_sample": 50,
+    "l2_flush_bytes": 268435456,
+    "maximum_cv": 0.05,
+}
+_CONFIRMATORY = {
+    "arms": ["candidate", "baseline"],
+    "pair_order": [
+        ["candidate", "baseline"],
+        ["baseline", "candidate"],
+        ["baseline", "candidate"],
+        ["candidate", "baseline"],
+    ],
+    "samples_per_cohort": 25,
+    "warmup_launches_per_cohort": 5,
+    "launches_per_sample": 50,
+    "route_calls_per_cohort": 1255,
+    "maximum_cv": 0.05,
+    "materiality_ratio": 1.05,
+    "required_pair_wins": 3,
+}
+_ROW_MATRIX_BUFFERS = frozenset({"x_tile", "sq", "normed", "y_tile"})
+_ROW_SCALAR_BUFFERS = frozenset({"sumsq", "meansq", "shifted", "inv_rms"})
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _strict_json(payload: bytes, context: str) -> object:
+    def object_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"{context} contains duplicate key {key!r}")
+            result[key] = value
+        return result
+
+    def invalid_constant(value: str) -> object:
+        raise ValueError(f"{context} contains non-finite number {value}")
+
+    try:
+        return json.loads(
+            payload,
+            object_pairs_hook=object_pairs,
+            parse_constant=invalid_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"{context} is not valid UTF-8 JSON") from error
+
+
+def _object(value: object, context: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{context} must be an object")
+    return cast(Mapping[str, object], value)
+
+
+def _exact_fields(
+    value: object, expected: set[str], context: str
+) -> Mapping[str, object]:
+    document = _object(value, context)
+    if set(document) != expected:
+        raise ValueError(f"{context} fields differ")
+    return document
+
+
+def _name(value: object, context: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{context} must be a non-empty string")
+    return value
+
+
+def _sha(value: object, context: str) -> str:
+    digest = _name(value, context)
+    if _SHA256.fullmatch(digest) is None:
+        raise ValueError(f"{context} must be a lowercase SHA-256")
+    return digest
+
+
+def _resolve_owned(project_root: Path, value: object, context: str) -> Path:
+    relative = Path(_name(value, context))
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"{context} must be a project-relative path")
+    resolved = (project_root / relative).resolve(strict=True)
+    if resolved == project_root or project_root not in resolved.parents:
+        raise ValueError(f"{context} escapes the project root")
+    if not resolved.is_file():
+        raise ValueError(f"{context} must name a file")
+    return resolved
+
+
+def _load_reference(
+    project_root: Path,
+    value: object,
+    *,
+    context: str,
+    fields: set[str] = _REFERENCE_FIELDS,
+) -> tuple[Mapping[str, object], Path, Mapping[str, object], bytes]:
+    reference = _exact_fields(value, fields, context)
+    path = _resolve_owned(project_root, reference.get("path"), f"{context}.path")
+    document = _object(_strict_json(path.read_bytes(), str(path)), str(path))
+    canonical = _canonical_json_bytes(document)
+    expected = _sha(reference.get("canonical_sha256"), f"{context}.canonical_sha256")
+    if sha256(canonical).hexdigest() != expected:
+        raise ValueError(f"{context} canonical SHA-256 differs")
+    return reference, path, document, canonical
+
+
+def _row_tile(document: Mapping[str, object]) -> int:
+    program_map = _object(document.get("program_map"), "template.program_map")
+    axes = program_map.get("axes")
+    if not isinstance(axes, list):
+        raise ValueError("template.program_map.axes must be a list")
+    matches = [
+        _object(axis, "template.program_map.axes[]")
+        for axis in axes
+        if isinstance(axis, Mapping) and axis.get("name") == "row_block"
+    ]
+    if len(matches) != 1:
+        raise ValueError("template must have one row_block program axis")
+    tile = matches[0].get("tile")
+    if not isinstance(tile, int) or isinstance(tile, bool):
+        raise ValueError("template row tile must be an integer")
+    return tile
+
+
+def _num_warps(document: Mapping[str, object]) -> int:
+    roles = document.get("roles")
+    if not isinstance(roles, list) or len(roles) != 1:
+        raise ValueError("template must have one role")
+    role = _object(roles[0], "template.roles[0]")
+    warps = role.get("warps")
+    if not isinstance(warps, list) or warps != list(range(len(warps))):
+        raise ValueError("template warps must be contiguous from zero")
+    return len(warps)
+
+
+def _validate_template(
+    document: Mapping[str, object], workload_sha256: str
+) -> None:
+    schedule = Schedule.from_dict(document)
+    if (
+        schedule.target != TARGET
+        or schedule.lowering.backend.value != ROUTE_BACKEND
+    ):
+        raise ValueError("template Target or lowering route differs")
+    if (_row_tile(document), _num_warps(document)) != TEMPLATE_GEOMETRY:
+        raise ValueError("template one-row geometry differs")
+    metadata = _object(document.get("metadata"), "template.metadata")
+    if metadata.get("workload_contract_sha256") != workload_sha256:
+        raise ValueError("template is not bound to the frozen Workload")
+
+    buffers = document.get("buffers")
+    if not isinstance(buffers, list):
+        raise ValueError("template.buffers must be a list")
+    shapes = {
+        _name(_object(item, "template.buffers[]").get("name"), "buffer.name"):
+        _object(item, "template.buffers[]").get("shape")
+        for item in buffers
+    }
+    for name in _ROW_MATRIX_BUFFERS:
+        if shapes.get(name) != [1, 128]:
+            raise ValueError(f"template buffer {name!r} one-row shape differs")
+    for name in _ROW_SCALAR_BUFFERS:
+        if shapes.get(name) != [1]:
+            raise ValueError(f"template buffer {name!r} one-row shape differs")
+
+
+@dataclass(frozen=True)
+class AmdRmsNormScreeningProtocol:
+    """Frozen, non-confirmatory ranking measurements for the complete domain."""
+
+    case_id: str
+    rounds_per_candidate: int
+    warmup_launches: int
+    samples_per_round: int
+    launches_per_sample: int
+    l2_flush_bytes: int
+    maximum_cv: float
+
+
+@dataclass(frozen=True)
+class AmdRmsNormConfirmatoryProtocol:
+    """Paired decision protocol plus the launch aggregation it does not model."""
+
+    timing: PairedTimingProtocol
+    warmup_launches_per_cohort: int
+    launches_per_sample: int
+
+
+@dataclass(frozen=True)
+class AmdRmsNormCandidate:
+    """One immutable materialized Schedule in the closed geometry domain."""
+
+    candidate_id: str
+    row_tile: int
+    num_warps: int
+    schedule_bytes: bytes
+
+    @property
+    def canonical_sha256(self) -> str:
+        return sha256(self.schedule_bytes).hexdigest()
+
+    @property
+    def document(self) -> dict[str, object]:
+        return cast(dict[str, object], _strict_json(self.schedule_bytes, self.candidate_id))
+
+    @property
+    def schedule(self) -> Schedule:
+        return Schedule.from_dict(self.document)
+
+
+@dataclass(frozen=True)
+class AmdRmsNormSearchContract:
+    """Validated authority for the one bounded gfx1151 hardware search."""
+
+    project_root: Path
+    path: Path
+    canonical_sha256: str
+    search_id: str
+    compiler_path: Path
+    compiler_revision_id: str
+    compiler_sha256: str
+    executor_path: Path
+    executor_id: str
+    executor_sha256: str
+    template_path: Path
+    template_sha256: str
+    workload_path: Path
+    workload_sha256: str
+    screening: AmdRmsNormScreeningProtocol
+    confirmatory: AmdRmsNormConfirmatoryProtocol
+    _template_bytes: bytes
+
+    @classmethod
+    def load(
+        cls, project_root: str | Path, path: str | Path
+    ) -> "AmdRmsNormSearchContract":
+        root = Path(project_root).resolve(strict=True)
+        contract_path = Path(path)
+        if not contract_path.is_absolute():
+            contract_path = root / contract_path
+        contract_path = contract_path.resolve(strict=True)
+        if root not in contract_path.parents or not contract_path.is_file():
+            raise ValueError("search contract must be a file inside the project root")
+        raw = _object(
+            _strict_json(contract_path.read_bytes(), str(contract_path)),
+            "search contract",
+        )
+        document = _exact_fields(raw, _TOP_LEVEL_FIELDS, "search contract")
+        if document.get("schema_version") != 1:
+            raise ValueError("search contract schema_version differs")
+        search_id = _name(document.get("search_id"), "search contract.search_id")
+        if document.get("state") != "frozen":
+            raise ValueError("search contract must be frozen")
+        if document.get("target") != TARGET or document.get("route") != {
+            "backend": ROUTE_BACKEND
+        }:
+            raise ValueError("search contract Target or route differs")
+        if document.get("geometry") != _GEOMETRY:
+            raise ValueError("search contract geometry differs")
+        if document.get("screening") != _SCREENING:
+            raise ValueError("search contract screening protocol differs")
+        if document.get("confirmatory") != _CONFIRMATORY:
+            raise ValueError("search contract confirmatory protocol differs")
+
+        compiler_ref, compiler_path, compiler, _ = _load_reference(
+            root,
+            document.get("compiler"),
+            context="search contract.compiler",
+            fields=_COMPILER_REFERENCE_FIELDS,
+        )
+        compiler_id = _name(
+            compiler_ref.get("revision_id"), "search contract.compiler.revision_id"
+        )
+        if compiler.get("revision_id") != compiler_id or compiler.get("state") != "released":
+            raise ValueError("search contract Compiler identity or state differs")
+
+        executor_ref, executor_path, executor, _ = _load_reference(
+            root,
+            document.get("executor"),
+            context="search contract.executor",
+            fields=_EXECUTOR_REFERENCE_FIELDS,
+        )
+        executor_id = _name(
+            executor_ref.get("executor_id"), "search contract.executor.executor_id"
+        )
+        if executor.get("executor_id") != executor_id or executor.get("state") != "released":
+            raise ValueError("search contract Executor identity or state differs")
+
+        workload_ref, workload_path, _, _ = _load_reference(
+            root, document.get("workload"), context="search contract.workload"
+        )
+        workload = WorkloadContract.load(workload_path)
+        workload_sha256 = _sha(
+            workload_ref.get("canonical_sha256"),
+            "search contract.workload.canonical_sha256",
+        )
+        if (
+            workload.canonical_sha256 != workload_sha256
+            or workload.workload_id != "llama-rmsnorm-mul-fp32-independent-v2"
+        ):
+            raise ValueError("search contract Workload identity differs")
+
+        template_ref, template_path, template, template_bytes = _load_reference(
+            root, document.get("template"), context="search contract.template"
+        )
+        _validate_template(template, workload_sha256)
+
+        confirmatory = cast(Mapping[str, object], document["confirmatory"])
+        timing = PairedTimingProtocol(
+            arms=cast(tuple[str, str], tuple(confirmatory["arms"])),
+            pair_order=tuple(
+                cast(tuple[str, str], tuple(pair))
+                for pair in cast(list[list[str]], confirmatory["pair_order"])
+            ),
+            samples_per_cohort=cast(int, confirmatory["samples_per_cohort"]),
+            route_calls_per_cohort=cast(int, confirmatory["route_calls_per_cohort"]),
+            maximum_cv=cast(float, confirmatory["maximum_cv"]),
+            materiality_ratio=cast(float, confirmatory["materiality_ratio"]),
+            required_pair_wins=cast(int, confirmatory["required_pair_wins"]),
+        )
+        warmups = cast(int, confirmatory["warmup_launches_per_cohort"])
+        launches_per_sample = cast(int, confirmatory["launches_per_sample"])
+        expected_route_calls = warmups + timing.samples_per_cohort * launches_per_sample
+        if timing.route_calls_per_cohort != expected_route_calls:
+            raise ValueError("confirmatory route_calls_per_cohort differs")
+
+        screening = cast(Mapping[str, object], document["screening"])
+        return cls(
+            project_root=root,
+            path=contract_path,
+            canonical_sha256=sha256(_canonical_json_bytes(document)).hexdigest(),
+            search_id=search_id,
+            compiler_path=compiler_path,
+            compiler_revision_id=compiler_id,
+            compiler_sha256=cast(str, compiler_ref["canonical_sha256"]),
+            executor_path=executor_path,
+            executor_id=executor_id,
+            executor_sha256=cast(str, executor_ref["canonical_sha256"]),
+            template_path=template_path,
+            template_sha256=cast(str, template_ref["canonical_sha256"]),
+            workload_path=workload_path,
+            workload_sha256=workload_sha256,
+            screening=AmdRmsNormScreeningProtocol(
+                case_id=cast(str, screening["case_id"]),
+                rounds_per_candidate=cast(int, screening["rounds_per_candidate"]),
+                warmup_launches=cast(int, screening["warmup_launches"]),
+                samples_per_round=cast(int, screening["samples_per_round"]),
+                launches_per_sample=cast(int, screening["launches_per_sample"]),
+                l2_flush_bytes=cast(int, screening["l2_flush_bytes"]),
+                maximum_cv=cast(float, screening["maximum_cv"]),
+            ),
+            confirmatory=AmdRmsNormConfirmatoryProtocol(
+                timing=timing,
+                warmup_launches_per_cohort=warmups,
+                launches_per_sample=launches_per_sample,
+            ),
+            _template_bytes=template_bytes,
+        )
+
+
+@dataclass(frozen=True)
+class AmdRmsNormSearchDecision:
+    """Terminal leaf-only interpretation of one retained paired measurement."""
+
+    status: str
+    observation: PairedTimingObservation
+
+
+def candidate_id(row_tile: int, num_warps: int) -> str:
+    """Return the stable identity of one member of the closed geometry domain."""
+
+    if (
+        type(row_tile) is not int
+        or type(num_warps) is not int
+        or row_tile not in ROW_TILES
+        or num_warps not in NUM_WARPS
+    ):
+        raise ValueError("candidate geometry is outside the frozen domain")
+    return f"r{row_tile}-w{num_warps}"
+
+
+def materialize_candidates(
+    contract: AmdRmsNormSearchContract,
+) -> tuple[AmdRmsNormCandidate, ...]:
+    """Derive every candidate from fresh template bytes without mutating authority."""
+
+    candidates: list[AmdRmsNormCandidate] = []
+    for row_tile in ROW_TILES:
+        for num_warps in NUM_WARPS:
+            identity = candidate_id(row_tile, num_warps)
+            document = cast(
+                dict[str, object],
+                _strict_json(contract._template_bytes, "search template"),
+            )
+            document["schedule_id"] = (
+                "llama-rmsnorm-mul-b8-n512-d128-gfx1151-"
+                f"{identity}-v1"
+            )
+            roles = cast(list[dict[str, object]], document["roles"])
+            roles[0]["warps"] = list(range(num_warps))
+            program_map = cast(dict[str, object], document["program_map"])
+            for axis in cast(list[dict[str, object]], program_map["axes"]):
+                if axis.get("name") == "row_block":
+                    axis["tile"] = row_tile
+            for buffer in cast(list[dict[str, object]], document["buffers"]):
+                name = buffer.get("name")
+                if name in _ROW_MATRIX_BUFFERS:
+                    buffer["shape"] = [row_tile, 128]
+                elif name in _ROW_SCALAR_BUFFERS:
+                    buffer["shape"] = [row_tile]
+            lowering = cast(dict[str, object], document["lowering"])
+            lowering["entry_point"] = (
+                f"cake_llama_rmsnorm_mul_gfx1151_r{row_tile}_w{num_warps}"
+            )
+            payload = _canonical_json_bytes(document)
+            Schedule.from_dict(document)
+            candidates.append(
+                AmdRmsNormCandidate(
+                    candidate_id=identity,
+                    row_tile=row_tile,
+                    num_warps=num_warps,
+                    schedule_bytes=payload,
+                )
+            )
+    return tuple(candidates)
+
+
+def derive_confirmatory_decision(
+    contract: AmdRmsNormSearchContract,
+    measurements: object,
+) -> AmdRmsNormSearchDecision:
+    """Recompute the paired observation and map it to the frozen leaf-only status."""
+
+    observation = derive_paired_timing(
+        measurements,
+        contract.confirmatory.timing,
+    )
+    statuses = {
+        "first_arm_faster": LEAF_TIMING_WIN,
+        "second_arm_faster": STOP_BASELINE_FASTER,
+        "close_null": STOP_CLOSE_NULL,
+        "measurement_quality_failed": INCONCLUSIVE_MEASUREMENT_QUALITY,
+    }
+    try:
+        status = statuses[observation.classification]
+    except KeyError as error:
+        raise ValueError("paired timing classification is unsupported") from error
+    return AmdRmsNormSearchDecision(status=status, observation=observation)
+
+
+__all__ = [
+    "AmdRmsNormCandidate",
+    "AmdRmsNormConfirmatoryProtocol",
+    "AmdRmsNormScreeningProtocol",
+    "AmdRmsNormSearchContract",
+    "AmdRmsNormSearchDecision",
+    "INCONCLUSIVE_MEASUREMENT_QUALITY",
+    "LEAF_TIMING_WIN",
+    "NUM_WARPS",
+    "BASELINE_GEOMETRY",
+    "ROUTE_BACKEND",
+    "TEMPLATE_GEOMETRY",
+    "ROW_TILES",
+    "STOP_BASELINE_FASTER",
+    "STOP_CLOSE_NULL",
+    "TARGET",
+    "candidate_id",
+    "derive_confirmatory_decision",
+    "materialize_candidates",
+]

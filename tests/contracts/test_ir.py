@@ -82,11 +82,15 @@ def _op(document: dict, op_id: str) -> dict:
 class RetainedScheduleTest(unittest.TestCase):
     def test_every_corpus_schedule_parses(self) -> None:
         self.assertTrue(CORPUS)
+        revision = json.loads(
+            (ROOT / "compiler/revision.json").read_text(encoding="utf-8")
+        )
+        targets = set(revision["target_definitions"])
         for path in CORPUS:
             with self.subTest(schedule=path.name):
                 schedule = Schedule.load(path)
                 self.assertEqual(schedule.schema_version, 1)
-                self.assertEqual(schedule.target, "sm_100a")
+                self.assertIn(schedule.target, targets)
                 self.assertTrue(schedule.operations)
                 self.assertTrue(schedule.outputs)
 

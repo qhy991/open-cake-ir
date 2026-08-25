@@ -1,0 +1,962 @@
+#!/usr/bin/env python3
+"""Run the bounded Cake-IR llama RMSNorm+Mul search on exact gfx1151."""
+
+from __future__ import annotations
+
+import argparse
+import importlib.metadata
+import json
+import math
+import platform
+import shutil
+import subprocess
+import sys
+import traceback
+from dataclasses import dataclass
+from hashlib import sha256
+from pathlib import Path
+from typing import Mapping, cast
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(ROOT / "src"))
+
+from open_cake_ir.compiler import Compiler  # noqa: E402
+from open_cake_ir.evaluation import (  # noqa: E402
+    WorkloadContract,
+    generate_rmsnorm_case,
+    rmsnorm_metrics,
+    rmsnorm_oracle,
+    summarize_cohort,
+)
+from open_cake_ir.evaluation.amd_rmsnorm_search import (  # noqa: E402
+    INCONCLUSIVE_MEASUREMENT_QUALITY,
+    LEAF_TIMING_WIN,
+    AmdRmsNormCandidate,
+    AmdRmsNormSearchContract,
+    derive_confirmatory_decision,
+    materialize_candidates,
+)
+from open_cake_ir.evaluation.triton_hip import (  # noqa: E402
+    admit_exact_hip,
+    artifact_records,
+    canonical_json_bytes,
+    extract_artifacts,
+    git_state,
+    load_generated_module,
+    require_object,
+    resolve_new_external_directory,
+    write_new_json,
+)
+from open_cake_ir.lab import ExecutorRevision  # noqa: E402
+
+
+DEFAULT_CONTRACT = (
+    "contracts/calibrations/llama-rmsnorm-mul-gfx1151-one-row-search-v2.json"
+)
+BASELINE_SCHEDULE = "corpus/schedules/llama-rmsnorm-mul-b8-gfx1151-r64-w4.json"
+
+
+@dataclass
+class _CaseMaterial:
+    inputs: tuple[object, ...]
+    reference: object
+    shape: tuple[int, int, int]
+
+
+@dataclass
+class _RuntimeCandidate:
+    candidate_id: str
+    row_tile: int
+    num_warps: int
+    schedule: dict[str, object]
+    assessment: object
+    lowering: object
+    kernel: object
+    generated_directory: object
+    constants: dict[str, object]
+    options: dict[str, object]
+    grid: tuple[int, int, int]
+    compiled: object
+    artifacts: dict[str, bytes]
+    outputs: dict[str, object]
+    launch_calls: int = 0
+
+    def launch(self, case_id: str, material: _CaseMaterial) -> object:
+        compiled = self.kernel.run(
+            *material.inputs,
+            self.outputs[case_id],
+            **self.constants,
+            **self.options,
+            grid=self.grid,
+            warmup=False,
+        )
+        self.launch_calls += 1
+        return compiled
+
+    def cleanup(self) -> None:
+        self.generated_directory.cleanup()
+
+
+class _Evidence:
+    def __init__(self, root: Path) -> None:
+        root.mkdir(mode=0o700)
+        self.root = root
+        self.events = root / "events.jsonl"
+
+    def json(self, relative: str, value: object) -> Path:
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_new_json(path, value)
+        return path
+
+    def bytes(self, relative: str, payload: bytes) -> Path:
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("xb") as stream:
+            stream.write(payload)
+        return path
+
+    def event(self, event: str, payload: Mapping[str, object]) -> None:
+        record = {"schema_version": 1, "event": event, "payload": dict(payload)}
+        with self.events.open("ab") as stream:
+            stream.write(canonical_json_bytes(record) + b"\n")
+
+    def manifest(self) -> dict[str, object]:
+        records = []
+        for path in sorted(self.root.rglob("*")):
+            if not path.is_file() or path.name == "manifest.json":
+                continue
+            payload = path.read_bytes()
+            records.append(
+                {
+                    "path": path.relative_to(self.root).as_posix(),
+                    "sha256": sha256(payload).hexdigest(),
+                    "size_bytes": len(payload),
+                }
+            )
+        document = {
+            "schema_version": 1,
+            "kind": "open_cake_gfx1151_rmsnorm_search_manifest_v2",
+            "files": records,
+        }
+        self.json("manifest.json", document)
+        return document
+
+
+def _assessment_document(assessment: object) -> dict[str, object]:
+    return {
+        "schedule_id": assessment.schedule_id,
+        "schedule_sha256": assessment.schedule_sha256,
+        "target": assessment.target,
+        "route": (
+            None
+            if assessment.route is None
+            else {
+                "backend": assessment.route.backend.value,
+                "entry_point": assessment.route.entry_point,
+            }
+        ),
+        "accepted": assessment.accepted,
+        "lowering_eligible": assessment.lowering_eligible,
+        "calibration_available": assessment.calibration_available,
+        "findings": [
+            {
+                "code": item.code,
+                "path": item.path,
+                "message": item.message,
+                "blocks_acceptance": item.blocks_acceptance,
+                "blocks_lowering": item.blocks_lowering,
+            }
+            for item in assessment.findings
+        ],
+    }
+
+
+def _canonical_document(path: Path) -> tuple[dict[str, object], str]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must contain an object")
+    return value, sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def _amd_smi(arguments: list[str]) -> dict[str, object]:
+    executable = shutil.which("amd-smi")
+    if executable is None:
+        return {"available": False, "arguments": arguments}
+    completed = subprocess.run(
+        [executable, *arguments, "--json"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    result: dict[str, object] = {
+        "available": True,
+        "arguments": arguments,
+        "returncode": completed.returncode,
+        "stdout_sha256": sha256(completed.stdout).hexdigest(),
+        "stderr": completed.stderr.decode("utf-8", errors="replace"),
+    }
+    try:
+        result["document"] = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        result["stdout"] = completed.stdout.decode("utf-8", errors="replace")
+    return result
+
+
+def _no_foreign_processes(snapshot: Mapping[str, object]) -> bool:
+    document = snapshot.get("document")
+    if not isinstance(document, list) or len(document) != 1:
+        return False
+    gpu = document[0]
+    if not isinstance(gpu, Mapping):
+        return False
+    processes = gpu.get("process_list")
+    return (
+        isinstance(processes, list)
+        and len(processes) == 1
+        and isinstance(processes[0], Mapping)
+        and processes[0].get("process_info") == "No running processes detected"
+    )
+
+
+def _runtime_document(torch: object, triton: object, properties: object) -> dict[str, object]:
+    return {
+        "python": platform.python_version(),
+        "torch": importlib.metadata.version("torch"),
+        "torch_hip": str(torch.version.hip),
+        "triton": importlib.metadata.version("triton"),
+        "device_name": str(properties.name),
+        "gcn_arch_name": str(properties.gcnArchName),
+        "warp_size": int(properties.warp_size),
+        "multiprocessor_count": int(properties.multi_processor_count),
+        "total_memory_bytes": int(properties.total_memory),
+        "timer": "torch.cuda.Event backed by HIP events",
+    }
+
+
+def _case_materials(
+    workload: WorkloadContract, torch: object
+) -> dict[str, _CaseMaterial]:
+    result: dict[str, _CaseMaterial] = {}
+    for case_id in workload.case_ids:
+        case = workload.case(case_id)
+        shape_value = require_object(case["shape"], "workload.case.shape")
+        shape = tuple(int(shape_value[name]) for name in ("B", "N", "D"))
+        inputs = generate_rmsnorm_case(workload, case_id, device="cuda")
+        reference = rmsnorm_oracle(workload, *inputs)
+        if tuple(inputs[0].shape) != shape:
+            raise RuntimeError("Workload materialization shape differs")
+        result[case_id] = _CaseMaterial(inputs, reference, cast(tuple[int, int, int], shape))
+    torch.cuda.synchronize()
+    return result
+
+
+def _artifact_suffix(role: str) -> str:
+    return "bin" if role == "hsaco" else "txt"
+
+
+def _compile_candidate(
+    *,
+    compiler: Compiler,
+    candidate_id: str,
+    row_tile: int,
+    num_warps: int,
+    schedule: dict[str, object],
+    cases: Mapping[str, _CaseMaterial],
+    torch: object,
+    evidence: _Evidence,
+    relative_root: str,
+) -> _RuntimeCandidate:
+    root = f"{relative_root}/{candidate_id}"
+    evidence.json(f"{root}/schedule.json", schedule)
+    assessment = compiler.assess(schedule)
+    evidence.json(f"{root}/assessment.json", _assessment_document(assessment))
+    if not assessment.lowering_eligible:
+        raise ValueError(
+            "candidate is not lowering eligible: "
+            + ",".join(item.code for item in assessment.findings)
+        )
+    lowering = compiler.lower(assessment)
+    requirements = require_object(lowering.toolchain_requirements, "lowering.toolchain")
+    if (
+        requirements.get("target") != "gfx1151"
+        or requirements.get("compiler") != "triton"
+        or requirements.get("binary_role") != "hsaco"
+        or set(require_object(requirements.get("signature"), "signature"))
+        != {"x", "gamma", "y"}
+    ):
+        raise ValueError("candidate lowering toolchain differs")
+    module, generated_directory = load_generated_module(lowering)
+    try:
+        kernel = getattr(module, str(requirements["kernel_entry_point"]), None)
+        if kernel is None:
+            raise RuntimeError("generated Triton kernel is missing")
+        constants = dict(
+            require_object(requirements["compile_constants"], "compile_constants")
+        )
+        options = dict(require_object(requirements["compile_options"], "compile_options"))
+        grid_value = requirements["grid"]
+        if not isinstance(grid_value, (list, tuple)) or len(grid_value) != 3:
+            raise ValueError("candidate grid differs")
+        grid = tuple(int(item) for item in grid_value)
+        outputs = {
+            case_id: torch.empty(material.shape, dtype=torch.float32, device="cuda")
+            for case_id, material in cases.items()
+        }
+        first_case_id = next(iter(cases))
+        compiled = kernel.run(
+            *cases[first_case_id].inputs,
+            outputs[first_case_id],
+            **constants,
+            **options,
+            grid=grid,
+            warmup=False,
+        )
+        torch.cuda.synchronize()
+        if compiled is None:
+            raise RuntimeError("Triton launch returned no compiled kernel")
+        artifacts = extract_artifacts(compiled)
+        evidence.bytes(f"{root}/generated.py", lowering.source.encode())
+        for role, payload in artifacts.items():
+            evidence.bytes(
+                f"{root}/kernel.{role}.{_artifact_suffix(role)}", payload
+            )
+        evidence.json(
+            f"{root}/build.json",
+            {
+                "source_sha256": lowering.source_sha256,
+                "entry_point": lowering.route.entry_point,
+                "kernel_name": str(compiled.metadata.name),
+                "grid": list(grid),
+                "block": [num_warps * 32, 1, 1],
+                "shared_memory_bytes": int(compiled.metadata.shared),
+                "artifacts": artifact_records(artifacts),
+            },
+        )
+        return _RuntimeCandidate(
+            candidate_id=candidate_id,
+            row_tile=row_tile,
+            num_warps=num_warps,
+            schedule=schedule,
+            assessment=assessment,
+            lowering=lowering,
+            kernel=kernel,
+            generated_directory=generated_directory,
+            constants=constants,
+            options=options,
+            grid=cast(tuple[int, int, int], grid),
+            compiled=compiled,
+            artifacts=artifacts,
+            outputs=outputs,
+            launch_calls=1,
+        )
+    except BaseException:
+        generated_directory.cleanup()
+        raise
+
+
+def _correctness(
+    candidate: _RuntimeCandidate,
+    workload: WorkloadContract,
+    cases: Mapping[str, _CaseMaterial],
+    torch: object,
+) -> dict[str, object]:
+    records = []
+    expected_artifacts = artifact_records(candidate.artifacts)
+    for case_id, material in cases.items():
+        compiled = candidate.launch(case_id, material)
+        torch.cuda.synchronize()
+        if artifact_records(extract_artifacts(compiled)) != expected_artifacts:
+            raise RuntimeError("correctness cases used different compiled artifacts")
+        metrics = rmsnorm_metrics(
+            workload, candidate.outputs[case_id], material.reference
+        )
+        records.append({"case_id": case_id, **metrics})
+    return {
+        "passed": all(bool(item["passed"]) for item in records),
+        "cases": records,
+        "fallback_calls": 0,
+    }
+
+
+def _flush_l2(torch: object, buffer: object) -> None:
+    buffer.add_(1.0)
+    torch.cuda.synchronize()
+
+
+def _event_sample_ms(
+    torch: object,
+    candidate: _RuntimeCandidate,
+    case_id: str,
+    material: _CaseMaterial,
+    flush: object,
+    launches: int,
+) -> float:
+    _flush_l2(torch, flush)
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
+    for _ in range(launches):
+        candidate.launch(case_id, material)
+    end.record()
+    end.synchronize()
+    elapsed = float(start.elapsed_time(end)) / launches
+    if not math.isfinite(elapsed) or elapsed <= 0:
+        raise RuntimeError("HIP event timing sample is not finite and positive")
+    return elapsed
+
+
+def _warmup(
+    torch: object,
+    candidate: _RuntimeCandidate,
+    case_id: str,
+    material: _CaseMaterial,
+    launches: int,
+) -> None:
+    for _ in range(launches):
+        candidate.launch(case_id, material)
+    torch.cuda.synchronize()
+
+
+def _screen(
+    *,
+    contract: AmdRmsNormSearchContract,
+    candidates: Mapping[str, _RuntimeCandidate],
+    cases: Mapping[str, _CaseMaterial],
+    torch: object,
+    flush: object,
+    evidence: _Evidence,
+) -> tuple[str | None, dict[str, object]]:
+    protocol = contract.screening
+    case_id = protocol.case_id
+    material = cases[case_id]
+    ids = sorted(candidates)
+    if not ids:
+        result = {
+            "case_id": case_id,
+            "orders": [],
+            "candidates": {},
+            "quality_qualified_candidate_ids": [],
+            "selected_candidate_id": None,
+            "selection_scope": "fixed_four_candidate_one_row_domain_had_no_correctness_survivor",
+        }
+        evidence.json("screening/result.json", result)
+        return None, result
+    raw: dict[str, list[list[float]]] = {candidate_id: [] for candidate_id in ids}
+    orders = []
+    for round_index in range(protocol.rounds_per_candidate):
+        offset = round_index % len(ids)
+        order = ids[offset:] + ids[:offset]
+        if round_index % 2:
+            order = list(reversed(order))
+        orders.append(order)
+        for candidate_id in order:
+            candidate = candidates[candidate_id]
+            _warmup(
+                torch,
+                candidate,
+                case_id,
+                material,
+                protocol.warmup_launches,
+            )
+            samples = [
+                _event_sample_ms(
+                    torch,
+                    candidate,
+                    case_id,
+                    material,
+                    flush,
+                    protocol.launches_per_sample,
+                )
+                for _ in range(protocol.samples_per_round)
+            ]
+            raw[candidate_id].append(samples)
+            evidence.event(
+                "screening_cohort",
+                {
+                    "candidate_id": candidate_id,
+                    "round_index": round_index,
+                    "samples_ms": samples,
+                    "summary": summarize_cohort(samples),
+                },
+            )
+    summaries: dict[str, object] = {}
+    qualified = []
+    for candidate_id, cohorts in raw.items():
+        pooled = [sample for cohort in cohorts for sample in cohort]
+        summary = summarize_cohort(pooled)
+        cohort_summaries = [summarize_cohort(cohort) for cohort in cohorts]
+        quality = (
+            float(summary["cv"]) <= protocol.maximum_cv
+            and all(
+                float(item["cv"]) <= protocol.maximum_cv
+                for item in cohort_summaries
+            )
+        )
+        summaries[candidate_id] = {
+            "cohorts_ms": cohorts,
+            "cohort_summaries": cohort_summaries,
+            "pooled_summary": summary,
+            "measurement_quality_passed": quality,
+        }
+        if quality:
+            qualified.append(candidate_id)
+    selected = (
+        min(
+            qualified,
+            key=lambda candidate_id: cast(
+                Mapping[str, object], summaries[candidate_id]
+            )["pooled_summary"]["median_ms"],
+        )
+        if qualified
+        else None
+    )
+    result = {
+        "case_id": case_id,
+        "orders": orders,
+        "candidates": summaries,
+        "quality_qualified_candidate_ids": qualified,
+        "selected_candidate_id": selected,
+        "selection_scope": "fastest_quality_qualified_member_of_fixed_four_candidate_one_row_domain",
+    }
+    evidence.json("screening/result.json", result)
+    return selected, result
+
+
+def _confirm(
+    *,
+    contract: AmdRmsNormSearchContract,
+    candidate: _RuntimeCandidate,
+    baseline: _RuntimeCandidate,
+    cases: Mapping[str, _CaseMaterial],
+    torch: object,
+    flush: object,
+    evidence: _Evidence,
+) -> tuple[object, list[dict[str, object]]]:
+    protocol = contract.confirmatory
+    case_id = contract.screening.case_id
+    material = cases[case_id]
+    arms = {"candidate": candidate, "baseline": baseline}
+    measurements: list[dict[str, object]] = []
+    for pair_index, order in enumerate(protocol.timing.pair_order):
+        records: dict[str, object] = {}
+        for position, arm in enumerate(order):
+            runtime = arms[arm]
+            _warmup(
+                torch,
+                runtime,
+                case_id,
+                material,
+                protocol.warmup_launches_per_cohort,
+            )
+            samples = [
+                _event_sample_ms(
+                    torch,
+                    runtime,
+                    case_id,
+                    material,
+                    flush,
+                    protocol.launches_per_sample,
+                )
+                for _ in range(protocol.timing.samples_per_cohort)
+            ]
+            records[arm] = {
+                "position": position,
+                "samples_ms": samples,
+                "summary": summarize_cohort(samples),
+                "route_calls": protocol.timing.route_calls_per_cohort,
+            }
+        measurement = {
+            "pair_index": pair_index,
+            "order": list(order),
+            "arms": records,
+        }
+        measurements.append(measurement)
+        evidence.event("confirmatory_pair", cast(Mapping[str, object], measurement))
+    decision = derive_confirmatory_decision(contract, measurements)
+    evidence.json("confirmatory/measurements.json", measurements)
+    return decision, measurements
+
+
+def _observation_document(decision: object) -> dict[str, object]:
+    observation = decision.observation
+    return {
+        "measurement_quality_passed": observation.measurement_quality_passed,
+        "pair_wins": dict(observation.pair_wins),
+        "tied_pairs": observation.tied_pairs,
+        "pooled_sample_counts": dict(observation.pooled_sample_counts),
+        "pooled_medians_ms": dict(observation.pooled_medians_ms),
+        "speedup": observation.speedup,
+        "classification": observation.classification,
+    }
+
+
+def _prepare(
+    root: Path, contract: AmdRmsNormSearchContract
+) -> tuple[Compiler, ExecutorRevision, tuple[AmdRmsNormCandidate, ...], dict[str, object]]:
+    compiler = Compiler.load(root, contract.compiler_path)
+    gate = compiler.check_corpus()
+    if (
+        gate.compiler_revision_id != contract.compiler_revision_id
+        or gate.compiler_revision_sha256 != contract.compiler_sha256
+        or compiler.state != "released"
+        or not gate.passed
+    ):
+        raise ValueError("search Compiler authority differs")
+    executor = ExecutorRevision.load(root, contract.executor_path)
+    if (
+        executor.executor_id != contract.executor_id
+        or executor.canonical_sha256 != contract.executor_sha256
+    ):
+        raise ValueError("search Executor authority differs")
+    candidates = materialize_candidates(contract)
+    assessments = [compiler.assess(item.document) for item in candidates]
+    if any(not item.lowering_eligible for item in assessments):
+        raise ValueError("the frozen search domain contains a non-lowerable candidate")
+    prepared = {
+        "schema_version": 1,
+        "kind": "open_cake_gfx1151_llama_rmsnorm_search_v2",
+        "status": "prepared",
+        "search_id": contract.search_id,
+        "search_contract_sha256": contract.canonical_sha256,
+        "compiler": {
+            "revision_id": gate.compiler_revision_id,
+            "canonical_sha256": gate.compiler_revision_sha256,
+        },
+        "executor": {
+            "executor_id": executor.executor_id,
+            "canonical_sha256": executor.canonical_sha256,
+        },
+        "candidate_count": len(candidates),
+        "candidate_ids": [item.candidate_id for item in candidates],
+        "gpu_submitted": False,
+        "performance_measured": False,
+    }
+    return compiler, executor, candidates, prepared
+
+
+def _run(
+    *,
+    root: Path,
+    contract: AmdRmsNormSearchContract,
+    compiler: Compiler,
+    candidate_specs: tuple[AmdRmsNormCandidate, ...],
+    artifact_dir: Path,
+) -> tuple[int, dict[str, object]]:
+    source = git_state(root)
+    process_initial = _amd_smi(["process"])
+    if not bool(source["tree_clean"]):
+        raise RuntimeError("a clean Git tree is required for retained timing")
+    if not _no_foreign_processes(process_initial):
+        raise RuntimeError("gfx1151 has another or unobservable compute process")
+    evidence = _Evidence(artifact_dir)
+    evidence.json("protocol.json", json.loads(contract.path.read_text(encoding="utf-8")))
+    evidence.json("source-custody.json", source)
+    evidence.json("amd-smi-process-initial.json", process_initial)
+    evidence.event("run_started", {"search_id": contract.search_id})
+
+    runtimes: list[_RuntimeCandidate] = []
+    try:
+        baseline_document, _ = _canonical_document(root / BASELINE_SCHEDULE)
+        baseline_assessment = compiler.assess(baseline_document)
+        baseline_lowering = compiler.lower(baseline_assessment)
+        baseline_requirements = require_object(
+            baseline_lowering.toolchain_requirements, "baseline.toolchain"
+        )
+        torch, triton, properties = admit_exact_hip(baseline_requirements)
+        evidence.json("runtime.json", _runtime_document(torch, triton, properties))
+        workload = WorkloadContract.load(contract.workload_path)
+        cases = _case_materials(workload, torch)
+        l2_elements = contract.screening.l2_flush_bytes // 4
+        flush = torch.zeros(l2_elements, dtype=torch.float32, device="cuda")
+        torch.cuda.synchronize()
+
+        baseline = _compile_candidate(
+            compiler=compiler,
+            candidate_id="baseline-r64-w4",
+            row_tile=64,
+            num_warps=4,
+            schedule=baseline_document,
+            cases=cases,
+            torch=torch,
+            evidence=evidence,
+            relative_root="candidates",
+        )
+        runtimes.append(baseline)
+        baseline_correctness = _correctness(baseline, workload, cases, torch)
+        evidence.json(
+            "candidates/baseline-r64-w4/correctness.json", baseline_correctness
+        )
+        if not baseline_correctness["passed"]:
+            raise RuntimeError("baseline correctness failed")
+
+        survivors: dict[str, _RuntimeCandidate] = {}
+        dispositions: dict[str, object] = {}
+        for spec in candidate_specs:
+            try:
+                runtime = _compile_candidate(
+                    compiler=compiler,
+                    candidate_id=spec.candidate_id,
+                    row_tile=spec.row_tile,
+                    num_warps=spec.num_warps,
+                    schedule=spec.document,
+                    cases=cases,
+                    torch=torch,
+                    evidence=evidence,
+                    relative_root="candidates",
+                )
+                runtimes.append(runtime)
+                correctness = _correctness(runtime, workload, cases, torch)
+                evidence.json(
+                    f"candidates/{spec.candidate_id}/correctness.json", correctness
+                )
+                if correctness["passed"]:
+                    survivors[spec.candidate_id] = runtime
+                    disposition = "correctness_qualified"
+                else:
+                    disposition = "CORRECTNESS_REJECTED"
+                dispositions[spec.candidate_id] = {
+                    "status": disposition,
+                    "correctness": correctness,
+                }
+            except Exception as error:
+                dispositions[spec.candidate_id] = {
+                    "status": "COMPILE_REJECTED",
+                    "error": f"{type(error).__name__}: {error}",
+                }
+            evidence.event(
+                "candidate_disposition",
+                {
+                    "candidate_id": spec.candidate_id,
+                    **cast(Mapping[str, object], dispositions[spec.candidate_id]),
+                },
+            )
+        evidence.json("candidate-dispositions.json", dispositions)
+
+        selected_id, screening = _screen(
+            contract=contract,
+            candidates=survivors,
+            cases=cases,
+            torch=torch,
+            flush=flush,
+            evidence=evidence,
+        )
+        profiler = next(
+            (value for value in ("rocprofv3", "rocprof", "omniperf") if shutil.which(value)),
+            None,
+        )
+        if selected_id is None:
+            result = {
+                "schema_version": 1,
+                "kind": "open_cake_gfx1151_llama_rmsnorm_search_v2",
+                "status": INCONCLUSIVE_MEASUREMENT_QUALITY,
+                "search_id": contract.search_id,
+                "search_contract_sha256": contract.canonical_sha256,
+                "source_custody": source,
+                "correctness_qualified_candidate_count": len(survivors),
+                "screening": screening,
+                "performance_measured": True,
+                "profiler_tooling_available": profiler is not None,
+                "profiler_evidence_collected": False,
+                "promotion_authorized": False,
+                "llama_cpp_e2e_claim": False,
+            }
+            evidence.json("result.json", result)
+            evidence.manifest()
+            return 3, result
+
+        selected_spec = next(
+            item for item in candidate_specs if item.candidate_id == selected_id
+        )
+        confirm_candidate = _compile_candidate(
+            compiler=compiler,
+            candidate_id="candidate",
+            row_tile=selected_spec.row_tile,
+            num_warps=selected_spec.num_warps,
+            schedule=selected_spec.document,
+            cases=cases,
+            torch=torch,
+            evidence=evidence,
+            relative_root="confirmatory",
+        )
+        confirm_baseline = _compile_candidate(
+            compiler=compiler,
+            candidate_id="baseline",
+            row_tile=64,
+            num_warps=4,
+            schedule=baseline_document,
+            cases=cases,
+            torch=torch,
+            evidence=evidence,
+            relative_root="confirmatory",
+        )
+        runtimes.extend((confirm_candidate, confirm_baseline))
+        preflight = {
+            "candidate": _correctness(confirm_candidate, workload, cases, torch),
+            "baseline": _correctness(confirm_baseline, workload, cases, torch),
+        }
+        evidence.json("confirmatory/preflight-correctness.json", preflight)
+        if not all(bool(value["passed"]) for value in preflight.values()):
+            raise RuntimeError("confirmatory preflight correctness failed")
+        decision, measurements = _confirm(
+            contract=contract,
+            candidate=confirm_candidate,
+            baseline=confirm_baseline,
+            cases=cases,
+            torch=torch,
+            flush=flush,
+            evidence=evidence,
+        )
+        postflight = {
+            "candidate": _correctness(confirm_candidate, workload, cases, torch),
+            "baseline": _correctness(confirm_baseline, workload, cases, torch),
+        }
+        evidence.json("confirmatory/postflight-correctness.json", postflight)
+        if not all(bool(value["passed"]) for value in postflight.values()):
+            raise RuntimeError("confirmatory postflight correctness failed")
+
+        observation = _observation_document(decision)
+        profiler_available = profiler is not None
+        result = {
+            "schema_version": 1,
+            "kind": "open_cake_gfx1151_llama_rmsnorm_search_v2",
+            "status": decision.status,
+            "search_id": contract.search_id,
+            "search_contract_sha256": contract.canonical_sha256,
+            "compiler_revision": {
+                "revision_id": contract.compiler_revision_id,
+                "canonical_sha256": contract.compiler_sha256,
+            },
+            "executor": {
+                "executor_id": contract.executor_id,
+                "canonical_sha256": contract.executor_sha256,
+            },
+            "workload": {
+                "workload_id": workload.workload_id,
+                "canonical_sha256": workload.canonical_sha256,
+                "case_ids": list(workload.case_ids),
+            },
+            "source_custody": source,
+            "selected_candidate": {
+                "candidate_id": selected_id,
+                "row_tile": selected_spec.row_tile,
+                "num_warps": selected_spec.num_warps,
+                "schedule_sha256": confirm_candidate.assessment.schedule_sha256,
+                "source_sha256": confirm_candidate.lowering.source_sha256,
+                "hsaco_sha256": artifact_records(confirm_candidate.artifacts)["hsaco"][
+                    "sha256"
+                ],
+            },
+            "baseline": {
+                "route": {
+                    "backend": baseline.assessment.route.backend.value,
+                    "entry_point": baseline.assessment.route.entry_point,
+                },
+                "row_tile": 64,
+                "num_warps": 4,
+                "schedule_sha256": confirm_baseline.assessment.schedule_sha256,
+                "source_sha256": confirm_baseline.lowering.source_sha256,
+                "hsaco_sha256": artifact_records(confirm_baseline.artifacts)["hsaco"][
+                    "sha256"
+                ],
+            },
+            "candidate_dispositions": dispositions,
+            "screening": screening,
+            "confirmatory": {
+                "preflight_correctness": preflight,
+                "measurements": measurements,
+                "observation": observation,
+                "postflight_correctness": postflight,
+            },
+            "performance_measured": True,
+            "timer_scope": "direct Triton JIT kernel on current HIP stream",
+            "fallback_calls": 0,
+            "profiler_tooling_available": profiler_available,
+            "profiler_executable": profiler,
+            "profiler_evidence_collected": False,
+            "leaf_timing_claim": decision.status == LEAF_TIMING_WIN,
+            "promotion_authorized": False,
+            "llama_cpp_build_claim": False,
+            "llama_cpp_e2e_claim": False,
+        }
+        evidence.json("amd-smi-metric-final.json", _amd_smi(["metric"]))
+        evidence.json("result.json", result)
+        evidence.event(
+            "run_completed",
+            {
+                "status": decision.status,
+                "selected_candidate_id": selected_id,
+                "speedup": observation["speedup"],
+            },
+        )
+        evidence.manifest()
+        exit_code = 0 if decision.status == LEAF_TIMING_WIN else 2
+        return exit_code, result
+    except BaseException as error:
+        failure = {
+            "schema_version": 1,
+            "kind": "open_cake_gfx1151_llama_rmsnorm_search_failure_v2",
+            "status": "BLOCKED_ENVIRONMENT",
+            "error": f"{type(error).__name__}: {error}",
+            "traceback": traceback.format_exc(),
+            "performance_conclusion_authorized": False,
+        }
+        if not (artifact_dir / "failure.json").exists():
+            evidence.json("failure.json", failure)
+            evidence.event("run_failed", {"error": failure["error"]})
+            if not (artifact_dir / "manifest.json").exists():
+                evidence.manifest()
+        raise
+    finally:
+        for runtime in runtimes:
+            runtime.cleanup()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project-root", type=Path, default=ROOT)
+    parser.add_argument("--contract", type=Path)
+    parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--artifact-dir", type=Path)
+    parser.add_argument("--output", type=Path)
+    arguments = parser.parse_args()
+
+    root = arguments.project_root.resolve(strict=True)
+    contract_path = arguments.contract or root / DEFAULT_CONTRACT
+    contract = AmdRmsNormSearchContract.load(root, contract_path)
+    compiler, _, candidates, prepared = _prepare(root, contract)
+    artifact_dir: Path | None = None
+    if arguments.artifact_dir is not None:
+        try:
+            artifact_dir = resolve_new_external_directory(root, arguments.artifact_dir)
+        except ValueError as error:
+            parser.error(str(error))
+    if arguments.prepare_only:
+        result = prepared
+        exit_code = 0
+    else:
+        if artifact_dir is None:
+            parser.error("--artifact-dir is required unless --prepare-only is used")
+        exit_code, result = _run(
+            root=root,
+            contract=contract,
+            compiler=compiler,
+            candidate_specs=candidates,
+            artifact_dir=artifact_dir,
+        )
+    payload = canonical_json_bytes(result) + b"\n"
+    if arguments.output is not None:
+        output = arguments.output.absolute()
+        output = output.parent.resolve(strict=True) / output.name
+        if output.exists() or output.is_symlink():
+            parser.error("--output must be a new path")
+        with output.open("xb") as stream:
+            stream.write(payload)
+    sys.stdout.buffer.write(payload)
+    return exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

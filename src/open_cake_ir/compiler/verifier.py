@@ -418,6 +418,8 @@ def _verify_hardware_conformance(
             category,
         )
 
+    _verify_role_register_split(schedule, target, out)
+
     for index, operation in enumerate(schedule.operations):
         if operation.kind not in target.operation_kinds:
             out.add(
@@ -552,7 +554,12 @@ def _verify_tensor_columns(allocation, index: int, limits, out: _Collector) -> N
             category,
         )
 
-    capacity = limits.maximum_tensor_memory_bytes // TMEM_COLUMN_BYTES
+    capacity_bytes = limits.maximum_tensor_memory_bytes
+    if capacity_bytes is None:
+        # The Target-space finding already says tensor memory is unsupported.  Its
+        # absence is not a zero-byte budget and must not be turned into one here.
+        return
+    capacity = capacity_bytes // TMEM_COLUMN_BYTES
     if allocation.tensor_columns > capacity:
         out.add(
             "TARGET_TENSOR_COLUMN_LIMIT",
@@ -1954,11 +1961,6 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
         if schedule.program_map is not None
         else set()
     )
-    tiled_axes = (
-        {axis.name for axis in schedule.program_map.axes if axis.is_tiled}
-        if schedule.program_map is not None
-        else set()
-    )
     loop_iterators = {loop.iterator for loop in schedule.tile_loops}
 
     for index, access in enumerate(schedule.access_maps):
@@ -2084,17 +2086,6 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         "ACCESS_PROGRAM_AXIS_UNKNOWN",
                         component_path,
                         f"unknown program axis {component.name!r}",
-                        category,
-                    )
-                elif (
-                    component.source is AccessIndexKind.PROGRAM_TILE
-                    and component.name not in tiled_axes
-                ):
-                    out.add(
-                        "ACCESS_PROGRAM_AXIS_UNTILED",
-                        component_path,
-                        f"program axis {component.name!r} has tile 1 and carries no "
-                        "offset vector; use source 'program'",
                         category,
                     )
                 elif component.source is AccessIndexKind.PROGRAM:
@@ -2764,6 +2755,15 @@ def _verify_role_register_split(schedule: Schedule, target: Target, out: _Collec
         return
 
     warps_per_group = target.warps_per_warpgroup
+    if warps_per_group is None:
+        out.add(
+            "ROLE_REGISTERS_TARGET_UNSUPPORTED",
+            "roles",
+            f"Target {target.target_id!r} declares no execution-group scope for "
+            "per-role register budgets",
+            category,
+        )
+        return
     for index, role in enumerate(schedule.roles):
         if role.registers_per_thread is None:
             continue
@@ -2828,7 +2828,6 @@ def _verify_residency_commitment(
     author its occupancy and telling it which declaration to change.
     """
 
-    _verify_role_register_split(schedule, target, out)
     commitment = schedule.residency
     if commitment is None:
         return

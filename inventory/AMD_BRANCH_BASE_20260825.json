@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "kind": "amd_optimization_branch_base",
+  "state": "frozen",
+  "observed_at": "2026-08-25T19:30:00+08:00",
+  "repository": "qhy991/open-cake-ir",
+  "branch": "codex/amd-gfx1151-optimization",
+  "main": {
+    "revision": "f02320b17ee1f6ed12d1d858e3439bc16b9da4ed",
+    "tree": "beac009bb5e6974b60ad228612c32776c4709ecf",
+    "prior_revision": "81ad3a827004743339c02c57a7b56373f3677c85",
+    "compiler_revision": {
+      "revision_id": "open-cake-ir-sm100a-v28",
+      "canonical_sha256": "46c6bd0fbc6c7043092c766d1d262126c1e24ec77cb7eb9c0376c0c45a6e4331"
+    },
+    "executor_revision": {
+      "executor_id": "open-cake-ir-b200-v29",
+      "canonical_sha256": "457e9d89623ab370392476e9be73d022c46cdcd2493f35d558f27c5b81f0e490"
+    }
+  },
+  "legacy_amd_branch": {
+    "branch": "codex/amd-gfx1151-tuning",
+    "revision": "9d000f3",
+    "tree": "3ab42449c98d27b8277848145a32068065a3ac5d",
+    "compiler_revision": {
+      "revision_id": "open-cake-ir-v17",
+      "canonical_sha256": "68cab7d1c2ef426c27499c2dd131164368b62431ece006409f0fd3af186ad023"
+    },
+    "executor_revision": {
+      "executor_id": "open-cake-ir-b200-v29",
+      "canonical_sha256": "ed3795aa01ca9b78e6a439c0382e7c2651f9663d3da7cb9bdf21792650baf5bf",
+      "executor_descriptor_raw_sha256": "8afd1e1d3c856eee5028d87668f2680f22f99a7e655fc0cf4a4fbcb055e0e00c"
+    },
+    "terminal_result": "STOP_CLOSE_NULL",
+    "result_sha256": "3c85892d16a056ff3852147d60da0d44ccf6cba96dabf519647a24da078dfcbe"
+  },
+  "llama_cpp": {
+    "revision": "eb25b7263e1604b4382295563f5a924002d6f87c",
+    "prior_revision": "f280b26983ad0fdb705a0d9ebf0503e76f2899b0",
+    "amd_operator_delta": "none"
+  },
+  "alignment_policy": {
+    "main_is_never_modified": true,
+    "force_push_forbidden": true,
+    "conflict_resolution": "blocked_for_human_review",
+    "required_before_fast_forward": [
+      "full_contract_tests_except_b200_only_profiler_custody",
+      "gfx1151_swiglu_correctness",
+      "gfx1151_llama_rmsnorm_correctness"
+    ]
+  }
+}

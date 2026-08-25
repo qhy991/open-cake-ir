@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "target_id": "gfx1151",
+  "architecture": "gfx1151",
+  "execution_group_width": 32,
+  "device_names": [
+    "AMD Radeon Graphics"
+  ],
+  "memory_spaces": [
+    "global",
+    "shared",
+    "register"
+  ],
+  "operation_kinds": [
+    "load",
+    "reduce",
+    "elementwise",
+    "store"
+  ],
+  "resource_limits": {
+    "maximum_threads_per_workgroup": 1024,
+    "maximum_threadgroup_memory_bytes": 65536,
+    "maximum_grid": {
+      "x": 2147483647,
+      "y": 65535,
+      "z": 65535
+    }
+  },
+  "instruction_contracts": [
+    "libdevice.tanh.f32"
+  ],
+  "synchronization_contracts": [],
+  "citations": [
+    {
+      "kind": "device_observation",
+      "source": "rocminfo 7.2.1 on AMD Strix Halo",
+      "locator": "gfx1151; wavefront 32; workgroup 1024; group memory 64 KiB; observed 2026-08-25"
+    },
+    {
+      "kind": "device_observation",
+      "source": "hipGetDeviceProperties with HIP 7.2.53211",
+      "locator": "warpSize 32; maxThreadsPerBlock 1024; sharedMemPerBlock 65536; observed 2026-08-25"
+    }
+  ]
+}
