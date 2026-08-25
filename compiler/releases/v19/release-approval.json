@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "3060891b5e8a31e4a19d8db4a02daf16a164451076e5bfd6fa67ac42f6e3fbda"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Reviewed valid_extent Buffer relation and 27-case expectations; all prior 25 cases and lowering digests unchanged; schema/verifier/emitter contract tests pass; brokered B200 draft preflight compiled and matched 512/512 elements with max deviation 0 under the unchanged 1e-5 tolerance on 2026-08-25."
+}

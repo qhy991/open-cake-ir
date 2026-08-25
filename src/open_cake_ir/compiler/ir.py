@@ -663,6 +663,11 @@ class ProgramAxis:
 
         return self.tile > 1
 
+    def tile_count(self, extent: int) -> int:
+        """Number of program coordinates needed to cover an owned buffer extent."""
+
+        return (extent + self.tile - 1) // self.tile
+
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "ProgramAxis":
         obj = _strict_object(

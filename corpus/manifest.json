@@ -393,6 +393,34 @@
         "schedule_sha256": "5f0da4c411dafe9f62c68ed6fde7e1815667789c38e04f309abc92dfdb2c023f",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "ragged-grouped-gemm-accepted",
+      "schedule": "corpus/schedules/ragged-grouped-gemm-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ad5d2d4949d656516cd2db7a965392fa46adce24f8f4c4cb529f69608af1aabb",
+        "lowering_source_sha256": "009839aaec0596616936a743fd5e514d914a406b187c5c04fc5f8e3092f73041"
+      }
+    },
+    {
+      "case_id": "ragged-grouped-gemm-group-drift",
+      "schedule": "corpus/schedules/ragged-grouped-gemm-b1-smoke-group-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "PROFILE_SHAPE_MISMATCH",
+          "ACCESS_PROGRAM_EXTENT_MISMATCH",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "a343852aaba09d30169e8c457e5607b2915449cd37de49857c956b6b273713aa",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

@@ -78,5 +78,7 @@ ADR 0021 closes the first prerequisite as a standalone deterministic indexed `to
 primitive, including a shape-drift falsifier and B200 correctness observation. That does
 not make the v1 chain representable: group formation, selection masks and score updates
 still have no composition path. Remaining prerequisites are quantization-scale relations,
-grouped/ragged work acquisition, and atomic/direct scatter with DSMEM. Only after a
-baseline multi-kernel program is representable is a program-DAG/PDL authority justified.
+routing/group formation, valid-tile work acquisition, and atomic/direct scatter with
+DSMEM. ADR 0025 shows that the grouped/ragged contraction itself composes from existing
+primitives, so it does not add a grouped-GEMM operation. Only after a baseline
+multi-kernel program is representable is a program-DAG/PDL authority justified.

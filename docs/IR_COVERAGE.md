@@ -166,7 +166,7 @@ and sub-rate pipelines remain separate missing mechanisms.
 
 ## Corpus coverage
 
-The current Compiler Corpus has 27 cases across eleven admitted profiles, against the
+The current Compiler Corpus has 29 cases across twelve admitted profiles, against the
 paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
 the surveyed work is actually about, still have no complete representation here.
 
@@ -200,3 +200,14 @@ device-resident INT32 length relation; lowering reuses AccessMap coordinates to 
 length and mask invalid rows. Its v19 generated source matched 512/512 B200 outputs with
 zero deviation. This does not schedule only-valid tiles, perform grouped GEMM or scatter
 results, so it does not change complete-version coverage.
+
+ADR 0025 then tests composition instead of adding vocabulary. Ordinary `ProgramMap`
+group/M/N axes, group-indexed `AccessMap`s, the existing K `TileLoop`, `mma` and
+`valid_extent` lower one four-group ragged BF16 contraction without a schema, IR,
+verifier or emitter change. Compiler v20 matched 1,024/1,024 B200 outputs with maximum
+deviation `1.9073486328125e-06` under the fixed `1e-5` gate. This closes the arithmetic
+core of one KDA v1 grouped GEMM, not routing/group formation, valid-tile work acquisition,
+the second contraction, scatter or their program DAG; complete-version coverage remains
+0/57 and no performance claim is made. Review of its drift case exposed one generic
+address-safety gap: Compiler v21 now rejects a scalar program coordinate when its derived
+program range exceeds the indexed dimension of another Buffer. No lowering digest changed.

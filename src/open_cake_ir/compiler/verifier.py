@@ -1858,6 +1858,26 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         "offset vector; use source 'program'",
                         category,
                     )
+                elif component.source is AccessIndexKind.PROGRAM:
+                    axis = schedule.program_map.axis(component.name)
+                    owner = buffers.get(axis.buffer) if axis is not None else None
+                    if (
+                        axis is not None
+                        and owner is not None
+                        and axis.dimension < len(owner.shape)
+                        and position < len(buffer.shape)
+                    ):
+                        program_extent = axis.tile_count(owner.shape[axis.dimension])
+                        if program_extent > buffer.shape[position]:
+                            out.add(
+                                "ACCESS_PROGRAM_EXTENT_MISMATCH",
+                                component_path,
+                                f"program axis {component.name!r} spans "
+                                f"{program_extent} coordinate(s), but dimension "
+                                f"{position} of {access.buffer!r} has extent "
+                                f"{buffer.shape[position]}",
+                                category,
+                            )
 
         relation = buffer.valid_extent
         if relation is not None and relation.indexed_by:

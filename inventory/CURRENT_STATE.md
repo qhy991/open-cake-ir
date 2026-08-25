@@ -1,7 +1,7 @@
 # Current-state inventory
 
 Snapshot: 2026-08-25 after declared-domain ranking calibration, candidate-set envelope implementation and live
-system qualification, historical Executor-v10 NCU attribution validation, Executor v26 release and Compiler v16
+system qualification, historical Executor-v10 NCU attribution validation, Executor v26 release and Compiler v21
 KDA-derived primitive expressibility slices. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
@@ -29,8 +29,8 @@ causal effect, serving and paper reproduction are not.
 
 ## New repository state
 
-- Compiler Revision `open-cake-ir-sm100a-v16` binds the exact Target, public Schedule authoring contract, 38-source
-  closure, 22-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
+- Compiler Revision `open-cake-ir-sm100a-v21` binds the exact Target, public Schedule authoring contract, 45-source
+  closure, 29-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
   remain immutable history; v7 and v8 are archived byte-for-byte because retained calibration and Study authorities
   witness them. v9 makes an otherwise-lowerable backend-emitted MMA without an instruction contract a structured,
   candidate-actionable Finding instead of a late emitter exception. v10 similarly makes the pinned Triton backend's
@@ -56,10 +56,17 @@ causal effect, serving and paper reproduction are not.
   `tanh.approx.f32` spelling is retained as a target-unsupported Corpus negative: a diagnostic B200 probe produced
   2,304 violations and maximum deviation 3.24249267578125e-05, so neither the Target nor the frozen oracle was
   broadened. v16 also rejects a contract admitted for a different operation kind before lowering; the flat Target
-  instruction set can no longer let an MMA spelling reach the elementwise emitter. The reviewed KDA snapshot remains
-  0/57 for complete-version
-  expressibility because grouping/masking, quantization-scale relations, grouped/ragged work, scatter and the
-  multi-kernel program DAG are still absent; no KDA performance claim is made.
+  instruction set can no longer let an MMA spelling reach the elementwise emitter. v17 adds the canonical
+  `scale_of` relation and validates a two-K-block FP8 E4M3/FP32-scale contraction; v18 repairs the resulting
+  `reduce_argmin` dtype boundary. v19 adds a device-resident `valid_extent` Buffer relation and matches 512/512
+  B200 zero-padding outputs exactly. v20 adds no vocabulary: the existing group/M/N `ProgramMap`, group-indexed
+  accesses, K loop, `mma` and `valid_extent` compose into a ragged grouped-GEMM arithmetic slice that matches
+  1,024/1,024 B200 outputs with maximum deviation `1.9073486328125e-06` under `1e-5`. v21 then rejects a scalar
+  program coordinate whose derived range exceeds the indexed dimension of another Buffer; this generic safety
+  successor changes no lowering digest. The reviewed KDA snapshot
+  remains 0/57 for complete-version expressibility because routing/group formation, valid-tile work acquisition,
+  the second contraction, scatter and the multi-kernel program DAG are still absent; no KDA performance claim is
+  made.
 - Current Executor Revision `open-cake-ir-b200-v26` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
@@ -104,7 +111,7 @@ causal effect, serving and paper reproduction are not.
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 350 tests, including its parameterized contract cases; the earlier remote qualification passed its
+- The current local contract suite passes 370 tests, including its parameterized contract cases; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain

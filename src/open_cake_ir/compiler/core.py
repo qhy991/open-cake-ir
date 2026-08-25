@@ -414,6 +414,32 @@ def _ragged_zero_pad_b1_smoke_conformance(buffers, operations) -> list["Finding"
     ]
 
 
+def _ragged_grouped_gemm_b1_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """Four group-specific contractions whose padded A rows have runtime lengths."""
+
+    coheres = (
+        _shape_of(buffers, "a") == (4, 16, 32)
+        and _shape_of(buffers, "b") == (4, 16, 32)
+        and _shape_of(buffers, "lengths") == (4,)
+        and _shape_of(buffers, "c") == (4, 16, 16)
+        and _shape_of(buffers, "a_tile") == (16, 16)
+        and _shape_of(buffers, "b_tile") == (16, 16)
+        and _shape_of(buffers, "acc") == (16, 16)
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.a.shape",
+            "the grouped-ragged smoke profile has four 16x16x32 contractions "
+            "whose A rows share one runtime length per group",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
 def _swiglu_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
     """SwiGLU is two equally shaped inputs and one equally shaped output.
 
@@ -616,6 +642,17 @@ _PROFILES: Mapping[str, _Profile] = {
             "entry_abi": "three_cuda_tensors_current_stream",
         },
         conformance=_ragged_zero_pad_b1_smoke_conformance,
+        backend=emit_triton,
+    ),
+    "ragged_grouped_gemm_b1_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_ragged_grouped_gemm_b1_smoke",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_ragged_grouped_gemm_b1_smoke_conformance,
         backend=emit_triton,
     ),
     "layernorm_b8_smoke": _Profile(

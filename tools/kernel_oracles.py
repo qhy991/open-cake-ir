@@ -69,10 +69,24 @@ def _ragged_zero_pad_oracle(inputs, torch):
     return torch.where(valid[:, :, None], ragged, torch.zeros_like(ragged)), None
 
 
+def _ragged_grouped_gemm_oracle(inputs, torch):
+    """Mask routed rows, then evaluate one independent dense GEMM per group."""
+
+    a, b, lengths, _ = inputs
+    rows = torch.arange(a.shape[1], device=a.device)
+    masked_a = torch.where(
+        (rows[None, :] < lengths[:, None])[:, :, None],
+        a,
+        torch.zeros_like(a),
+    )
+    return torch.bmm(masked_a.float(), b.float().transpose(1, 2)), None
+
+
 ORACLES = {
     **_RETAINED_ORACLES,
     "swiglu_b8_smoke": _swiglu_oracle,
     "top_k_b8_smoke": _top_k_oracle,
     "block_scaled_gemm_b1_smoke": _block_scaled_gemm_oracle,
     "ragged_zero_pad_b1_smoke": _ragged_zero_pad_oracle,
+    "ragged_grouped_gemm_b1_smoke": _ragged_grouped_gemm_oracle,
 }

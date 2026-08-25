@@ -505,6 +505,11 @@ class EmittedObservationTest(unittest.TestCase):
             "VALID_EXTENT_OBSERVATION_20260825.json",
             "ragged-zero-pad-b1-smoke.json",
         ),
+        (
+            "ragged-grouped-gemm",
+            "RAGGED_GROUPED_GEMM_OBSERVATION_20260825.json",
+            "ragged-grouped-gemm-b1-smoke.json",
+        ),
     )
 
     LOOPLESS = (

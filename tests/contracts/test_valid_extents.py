@@ -16,6 +16,10 @@ from open_cake_ir.compiler.verifier import verify
 
 ROOT = Path(__file__).resolve().parents[2]
 POSITIVE = ROOT / "corpus" / "schedules" / "ragged-zero-pad-b1-smoke.json"
+GROUPED = ROOT / "corpus" / "schedules" / "ragged-grouped-gemm-b1-smoke.json"
+GROUP_DRIFT = (
+    ROOT / "corpus" / "schedules" / "ragged-grouped-gemm-b1-smoke-group-drift.json"
+)
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
 
 
@@ -84,6 +88,25 @@ class ValidExtentContractTest(unittest.TestCase):
             source,
         )
         self.assertNotIn("valid_extent", source.split("# CAKE_OP:store_dense", 1)[1])
+
+    def test_grouped_gemm_composes_without_new_vocabulary(self) -> None:
+        schedule = Schedule.load(GROUPED)
+        self.assertEqual(_codes(json.loads(GROUPED.read_text())), {
+            "RESIDENCY_BOUND"
+        })
+        source = emit(schedule, TARGET).source
+        self.assertIn("group = tl.program_id(0)", source)
+        self.assertIn("load_a_a_valid_extent = tl.load(lengths + group)", source)
+        self.assertIn("group * N_M_BLOCK * N_K_LOOP", source)
+        self.assertIn("group * N_N_BLOCK * D_B_2", source)
+        self.assertIn("group * D_C_1 * D_C_2", source)
+        self.assertIn("acc = tl.zeros((16, 16), tl.float32)", source)
+        self.assertIn("acc += tl.dot(a_tile, tl.trans(b_tile))", source)
+        self.assertEqual(source.count("for k in tl.range("), 1)
+
+    def test_scalar_program_extent_cannot_overrun_another_buffer(self) -> None:
+        document = json.loads(GROUP_DRIFT.read_text(encoding="utf-8"))
+        self.assertIn("ACCESS_PROGRAM_EXTENT_MISMATCH", _codes(document))
 
 
 if __name__ == "__main__":

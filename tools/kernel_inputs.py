@@ -37,14 +37,18 @@ def build_inputs(document: dict, torch) -> tuple:
         shape = tuple(buffer["shape"])
         if buffer["name"] in extent_contracts:
             capacity = extent_contracts[buffer["name"]]
-            # Empty, partial, full and another partial group are all observable in the
-            # one admitted profile. The relation verifier proves this input has four
-            # entries, so this adapter does not invent a fallback distribution.
-            if shape != (4,) or capacity != 8:
+            # Empty, partial, full and another partial group are all observable. The
+            # relation verifier proves this input has four entries; the values derive
+            # from its one owned fact, capacity, rather than from profile names.
+            if shape != (4,) or capacity < 2:
                 raise ValueError(
                     "no observation input is registered for this extent contract"
                 )
-            value = torch.tensor([0, 3, 8, 5], dtype=dtype, device="cuda")
+            value = torch.tensor(
+                [0, capacity // 2 - 1, capacity, capacity // 2 + 1],
+                dtype=dtype,
+                device="cuda",
+            )
         elif buffer["mode"] != "input":
             value = torch.zeros(shape, dtype=dtype, device="cuda")
         elif buffer.get("scale_of") is not None:

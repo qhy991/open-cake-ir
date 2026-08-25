@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "3060891b5e8a31e4a19d8db4a02daf16a164451076e5bfd6fa67ac42f6e3fbda"
+    "canonical_sha256": "f4a7a02978ffbe04b439a62a69404de6d62888057aad9bad92df71711191cd3f"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Reviewed valid_extent Buffer relation and 27-case expectations; all prior 25 cases and lowering digests unchanged; schema/verifier/emitter contract tests pass; brokered B200 draft preflight compiled and matched 512/512 elements with max deviation 0 under the unchanged 1e-5 tolerance on 2026-08-25."
+  "approval_basis": "Reviewed the generic scalar ProgramAxis cross-buffer extent invariant exposed by the grouped-GEMM drift case: only that negative expectation changed, from profile-only lowering refusal to acceptance rejection with ACCESS_PROGRAM_EXTENT_MISMATCH; all 29 Schedule and lowering-source digests are unchanged; the 29/29 Gate, contract tests, and prior brokered B200 positive observation pass; no lowering bytes or performance claim changed."
 }

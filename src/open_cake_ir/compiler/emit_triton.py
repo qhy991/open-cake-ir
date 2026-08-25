@@ -222,7 +222,7 @@ class _TritonEmitter:
     def _axis_tiles(self, axis) -> int:
         buffer = self.schedule.buffer(axis.buffer)
         _require(buffer is not None, f"axis {axis.name!r} names an unknown buffer")
-        return (buffer.shape[axis.dimension] + axis.tile - 1) // axis.tile
+        return axis.tile_count(buffer.shape[axis.dimension])
 
     def grid(self) -> tuple[int, int, int]:
         assert self.schedule.program_map is not None
