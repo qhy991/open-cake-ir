@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "state": "frozen",
+  "planned_at": "2026-08-25T06:41:04Z",
+  "purpose": "current_lowering_correctness",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "selection_authority": {
+    "compiler_revision_path": "compiler/revision.lock.json",
+    "compiler_revision_id": "open-cake-ir-sm100a-v24",
+    "compiler_revision_sha256": "12918f42e08118b2ec227ae866110cddc5b98b2b601f4fba9b6366932dcde073",
+    "corpus_manifest_path": "corpus/manifest.json",
+    "corpus_manifest_canonical_sha256": "6241053c42bd635232e22c828e01aa0833c3b8c2189535e6da01f34d9e6bedae",
+    "predicate": "manifest order where expected.accepted=true and expected.lowering_eligible=true"
+  },
+  "partitions": {
+    "generated_external_oracle": {
+      "predicate": "Lowering.generated=true and entry_point is registered in tools/kernel_oracles.py",
+      "expected_case_count": 14,
+      "protocol": "one broker-shared correctness-only invocation per case, seed 0, no timing, no automatic retry; retain every result including failures"
+    },
+    "checked_cuda_asset": {
+      "predicate": "Lowering.generated=false",
+      "expected_case_count": 1,
+      "expected_case_id": "tinygemm2-r31-accepted",
+      "protocol": "do not relabel the historical r31 launch as v24 evidence; require a successor launch or an exact current-lowering-to-observed-binary identity chain"
+    }
+  },
+  "acceptance": {
+    "generated_partition": "all 14 selected records compile, launch and pass their external oracle",
+    "checked_asset_partition": "reported separately as passed, failed or missing; absence cannot count as a pass",
+    "non_claim": "does not establish performance, end-to-end framework correctness, ranking quality, KDA-version expressibility or paper reproduction"
+  }
+}
