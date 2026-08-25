@@ -206,3 +206,26 @@ maximum absolute error `0.000244140625` under the unchanged `0.01/0.01` toleranc
 raw observation is retained byte-for-byte. Neither r31 nor the failed v28 attempt was
 relabelled; the current checked-asset partition now passes without authorizing a
 performance or scientific claim.
+
+### 12: unique slot ownership is state plus returned-old-value RMW
+
+The KDA v-01 route kernel exposed the next prerequisite after runtime-indexed load: a
+relaxed device-scope atomic add reserves one unique per-expert position by returning the
+old counter. Encoding that as `route`, `slot` or `counter` would turn one use case into
+vocabulary and leave mutation ownership implicit.
+
+ADR 0035 assigns the two necessary facts separately. A global `state` Buffer is supplied
+by the caller and must be both read and written; `atomic_rmw` owns add/value/order/scope
+and returned-old-value semantics, while `AccessMap` remains the sole address owner. The
+review removed duplicate generic/specialized arity and target-space findings, bounded the
+scalar to signed INT32 before toolchain entry, and made both Triton host ABIs share one
+launch-option emitter so mutable state cannot drop `maxnreg` or `num_stages`.
+
+Compiler v27 passed its 50-source/34-case Gate after external review. The frozen
+zero-retry shared-B200 observation compiled and launched once and checked concurrency by
+invariants rather than lane order: all 64 outputs formed each expert's exact old-counter
+range, invalid routes returned zero and final counters were exact. This closes unique slot
+reservation only. Runtime-indexed store conflict semantics, routing/group formation,
+dispatch and the program DAG remain missing, so complete KDA coverage stays 0/57 and no
+performance claim is authorized. TinyGEMM2 is unchanged; its earlier passing checked-asset
+observation remains historical evidence rather than being relabelled under v27.

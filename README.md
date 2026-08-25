@@ -37,8 +37,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v26` is content-bound to an exact `sm_100a` Target and a 33-case,
-  49-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
+- Compiler Revision `open-cake-ir-sm100a-v27` is content-bound to an exact `sm_100a` Target and a 34-case,
+  50-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
   emitted MMA omit its instruction contract while still being marked lowering-eligible. v10 turns the pinned Triton
@@ -91,9 +91,13 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   compute correctness, but a late Cutlass metadata import failed before the result was written; both failures are
   retained and neither is called a pass. The instrument now imports metadata dependencies before GPU work, and a
   fully preflighted second successor compiled and launched once on B200 and matched all 128 BF16 outputs with zero
-  deviation. ADR 0034 is accepted for this arithmetic slice only. Historical evidence is not
-  relabelled. These
-  slices prove primitive expressibility and diagnostic lowering correctness only, not MoE or performance reproduction. Public ranking obeys its calibration
+  deviation. v27 adds two orthogonal primitives needed by the preceding KDA route stage: caller-owned global
+  `state` and returned-old-value `atomic_rmw`. The first closed lowering is a masked INT32 add with relaxed
+  device scope; one zero-retry B200 run compiled and launched it once, returned each expert's old counter range as
+  an unordered permutation, kept invalid routes zero and produced the exact final counters across all 64 outputs.
+  Indexed store/dispatch, group formation and the program DAG remain absent. ADRs 0034 and 0035 are accepted only
+  for these arithmetic and reservation slices. Historical evidence is not relabelled. These slices prove primitive
+  expressibility and diagnostic lowering correctness only, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
   eligible GEMM triplets and failed the fixed 5% boundary at 35.95% and 8.16%. A drift-controlled successor then
@@ -145,7 +149,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   metric operands on CPU. The failed pre-kernel observation is retained. Its preregistered shared-B200 successor
   passes all 17 authority checks, all four materialized receipts, one kernel launch, zero fallback, parent-bitwise
   equality and oracle tolerance at maximum absolute error `0.000244140625`, without timing or a scientific claim.
-  The current local suite passes 408 pytest items plus 284 subtests. The earlier remote qualification passed its frozen
+  The v27 Corpus Gate and focused compiler/observation suites pass. A final all-tests collection omitted the required
+  `PYTHONPATH=src` and stopped at imports, so it is not reported as full-suite evidence. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no

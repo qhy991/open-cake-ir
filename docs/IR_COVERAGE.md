@@ -166,7 +166,7 @@ and sub-rate pipelines remain separate missing mechanisms.
 
 ## Corpus coverage
 
-The current Compiler Corpus has 33 cases across fourteen program slices, against the
+The current Compiler Corpus has 34 cases across fifteen program slices, against the
 paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
 the surveyed work is actually about, still have no complete representation here.
 
@@ -219,12 +219,17 @@ load with existing `mul`, `sum` and `store` primitives to express the arithmetic
 KDA v1's non-fused weighted combine. Compiler v26 makes the implied numeric contract
 explicit: loads preserve dtype, BF16 multiplied by FP32 produces FP32, the admitted
 reduction produces FP32, and the final store may narrow to BF16. No `moe`, `combine`,
-`scatter`, `cast` or program-DAG vocabulary was added. Route/group formation, atomic
-reservation and dispatch, both grouped contractions, workspace reset, fused scatter and
-the multi-kernel DAG remain absent, so complete-version coverage stays 0/57. The first
-B200 attempt stopped before compilation because the broker worker could not import Torch.
+`scatter`, `cast` or program-DAG vocabulary was added. The first B200 attempt stopped
+before compilation because the broker worker could not import Torch.
 The first successor executed but lost its result to a late Cutlass metadata import; both
 failures are retained and neither supports correctness. The metadata import now precedes
 GPU work; the fully preflighted second successor compiled and launched once on B200 and
 matched 128/128 BF16 outputs with zero deviation. The check remains correctness-only and
-cannot establish a performance or complete-MoE claim.
+cannot establish a performance or complete-MoE claim. Compiler v27 then adds caller-owned
+global `state` and one returned-old-value `atomic_rmw`, rather than a route or slot mode.
+Its first admitted form is masked INT32 add with relaxed device scope and an AccessMap-owned
+rank-one runtime index. The frozen zero-retry B200 check compiled and launched once; all 64
+outputs formed the exact per-expert old-counter permutations, invalid routes were zero and
+final counters were exact. Route/group formation, runtime-indexed store and dispatch, both
+grouped contractions, workspace reset, fused scatter and the multi-kernel DAG remain absent,
+so complete-version coverage stays 0/57.

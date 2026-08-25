@@ -15,6 +15,49 @@ from observe_lowered_kernel import measure_correctness  # noqa: E402
 
 
 class ObservationInstrumentTest(unittest.TestCase):
+    def test_atomic_reservation_observation_retains_its_contention_claim(self) -> None:
+        plan = json.loads(
+            (
+                ROOT
+                / "inventory"
+                / "V27_ATOMIC_RESERVATION_B200_PLAN_20260825.json"
+            ).read_text()
+        )
+        record = json.loads(
+            (
+                ROOT
+                / "inventory"
+                / "ATOMIC_RESERVATION_B200_OBSERVATION_20260825.json"
+            ).read_text()
+        )
+
+        self.assertEqual(plan["state"], "frozen")
+        self.assertEqual(plan["protocol"]["automatic_retries"], 0)
+        self.assertEqual(
+            record["compiler_revision"]["revision_id"],
+            plan["selection_authority"]["compiler_revision"],
+        )
+        self.assertEqual(record["device"], "NVIDIA B200")
+        self.assertEqual(
+            record["lowering"]["entry_point"],
+            plan["selection_authority"]["entry_point"],
+        )
+        self.assertEqual(
+            record["result"],
+            {
+                "compiled": True,
+                "launched": True,
+                "total_elements": 64,
+                "mismatch_count": 0,
+                "unique_old_values": True,
+                "masked_zero": True,
+                "final_counts_match": True,
+                "passed": True,
+            },
+        )
+        self.assertFalse(record["performance_measured"])
+        self.assertFalse(record["scientific_claim_authorized"])
+
     def test_kda_weighted_combine_b200_observation_retains_its_claim_boundary(self) -> None:
         record = json.loads(
             (

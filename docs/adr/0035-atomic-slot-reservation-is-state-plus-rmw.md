@@ -1,6 +1,6 @@
 # ADR 0035: atomic slot reservation is state plus RMW
 
-Status: proposed, 2026-08-25.
+Status: accepted, 2026-08-25.
 
 ## Outcome and non-goals
 
@@ -78,8 +78,10 @@ reservation spelling.
    intended localized reasons;
 4. generated source contains one masked relaxed GPU-scope atomic add and returns its old
    values;
-5. one brokered B200 correctness run satisfies the contention invariant from non-zero
-   initial state, with no timing and no retry.
+5. the frozen zero-retry plan produced
+   [`ATOMIC_RESERVATION_B200_OBSERVATION_20260825.json`](../../inventory/ATOMIC_RESERVATION_B200_OBSERVATION_20260825.json):
+   one brokered B200 compile and launch satisfied all 64 contention outputs from non-zero
+   initial state, with no mismatch and no timing.
 
 Passing this slice proves unique slot ownership only. Runtime-indexed store conflict
 semantics remain the next prerequisite before route/dispatch can be claimed.

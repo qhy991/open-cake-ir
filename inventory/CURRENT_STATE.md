@@ -1,8 +1,8 @@
 # Current-state inventory
 
 Snapshot: 2026-08-25 after declared-domain ranking calibration, candidate-set envelope implementation and live
-system qualification, historical Executor-v10 NCU attribution validation, Executor v29 release and Compiler v26
-KDA weighted-combine successor over the v25 access-boundary repair. The final
+system qualification, historical Executor-v10 NCU attribution validation, Executor v29 release and Compiler v27
+KDA atomic-reservation successor over the v26 weighted-combine slice. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
@@ -29,8 +29,8 @@ causal effect, serving and paper reproduction are not.
 
 ## New repository state
 
-- Compiler Revision `open-cake-ir-sm100a-v26` binds the exact Target, public Schedule authoring contract, 49-source
-  closure, 33-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
+- Compiler Revision `open-cake-ir-sm100a-v27` binds the exact Target, public Schedule authoring contract, 50-source
+  closure, 34-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
   remain immutable history; v7 and v8 are archived byte-for-byte because retained calibration and Study authorities
   witness them. v9 makes an otherwise-lowerable backend-emitted MMA without an instruction contract a structured,
   candidate-actionable Finding instead of a late emitter exception. v10 similarly makes the pinned Triton backend's
@@ -89,9 +89,12 @@ causal effect, serving and paper reproduction are not.
   import. Both failures are retained; the import now precedes GPU work and a fully preflighted second successor is
   frozen. That successor (`gpuq-edf9524fdebd`) compiled and launched once on B200 and matched 128/128 BF16 outputs
   with zero deviation and no timing. ADR 0034 is accepted for the arithmetic slice. The reviewed KDA snapshot
-  remains 0/57 for complete-version expressibility because routing/group formation, valid-tile work acquisition,
-  the second contraction, scatter and the multi-kernel program DAG are still absent; no KDA performance claim is
-  made.
+  then led to v27's caller-owned global `state` and returned-old-value `atomic_rmw`. The external reviewer removed
+  duplicate arity/space ownership and approved the final 50-source/34-case Gate. Its frozen zero-retry shared-B200
+  run compiled and launched once; all 64 outputs satisfied per-expert old-counter permutations, masked-zero and
+  final-counter invariants. ADR 0035 is accepted for reservation only. Complete-version expressibility remains
+  0/57 because routing/group formation, runtime-indexed store/dispatch, valid-tile work acquisition, the second
+  contraction, scatter and the multi-kernel DAG are still absent; no KDA performance claim is made.
 - Current Executor Revision `open-cake-ir-b200-v29` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
@@ -126,7 +129,7 @@ causal effect, serving and paper reproduction are not.
   single authority for choosing the
   closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
-- Five current Study templates resolve Compiler v26 and Executor v29 into exact CampaignLocks without revision-only
+- Five current Study templates resolve Compiler v27 and Executor v29 into exact CampaignLocks without revision-only
   Study successors. The matched templates profile every correctness-qualified search
   survivor through the existing no-timing attribution purpose, and feed back only the selected survivor's checked
   projection. Frozen selected-only evidence
@@ -136,7 +139,7 @@ causal effect, serving and paper reproduction are not.
   150k/`max` factors rather than claiming paper alignment.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles. TinyGEMM2 v1 remains immutable history; v2 is
   current, and both its B200 materialization reproduction and v25 checked-asset correctness observation pass. v26
-  changes neither its Schedule nor source asset and does not relabel that evidence.
+  and v27 change neither its Schedule nor source asset and do not relabel that evidence.
 - Lab owns matched Turn/budget/checkpoint control and the exact-shape Portfolio handoff; Compiler does not own
   KernelSeed or held-out policy.
 - Common Evaluation has sealed artifact custody, bounded broker-attempt semantics, shape-bound persistent Driver
@@ -152,7 +155,8 @@ causal effect, serving and paper reproduction are not.
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema, fresh-process replay and one
   RunAudit authority for separate archive-integrity and filesystem-custody facts.
-- The current local contract suite passes 408 pytest items plus 284 subtests; the earlier remote qualification passed its
+- The v27 Corpus Gate and focused compiler/observation suites pass. A final all-tests collection omitted the required
+  `PYTHONPATH=src` and stopped at imports, so it supplies no full-suite result. The earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain

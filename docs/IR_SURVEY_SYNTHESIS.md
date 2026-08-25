@@ -315,9 +315,14 @@ Buffer dtype, BF16-by-FP32 multiplication and the admitted reduction produce FP3
 final store may narrow to BF16. It deliberately does not add `combine`, `cast` or `moe`.
 The released source subsequently matched all 128 BF16 outputs with zero deviation in one
 no-timing B200 observation.
-This is not complete KDA coverage: workspace reset, routing and group formation, atomic
-slot reservation, dispatch, both grouped contractions, fused scatter and the program DAG
-remain outside the slice.
+
+The preceding route-stage gap also decomposes. Compiler v27 adds caller-owned `state` and
+one generic returned-old-value `atomic_rmw`; the address remains an `AccessMap` fact, while
+operation, scalar, memory order and scope remain semantic commitments. Its zero-retry B200
+observation satisfied the unordered old-counter ranges, invalid-route zeroes and final
+counters for all 64 outputs. This is still not complete KDA coverage: workspace reset,
+routing and group formation, runtime-indexed store/dispatch, both grouped contractions,
+fused scatter and the program DAG remain outside the slice.
 
 KDA v12 also showed that counting the word was too generous. Its `tanh` requests an
 approximate target instruction, while the standalone emitter had silently chosen a
