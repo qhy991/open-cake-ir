@@ -13,6 +13,13 @@ lowering; omitting it is a lowering-blocking candidate Finding rather than a lat
 asset profiles remain valid because they do not emit operation bodies.
 Register findings are static bounds over declared logical storage, never a claim about ptxas's physical allocation.
 
+Lowering selection is exact by `(target, metadata.profile)`. A profile implemented on one
+Target never falls back to that Adapter on another Target, and Calibration coverage is
+scoped to the same exact pair. The first `apple_gpu_family9` Adapter is deliberately
+finite: `flash_kmeans_b32_smoke`, four or eight 32-wide SIMDgroups, one unstaged centroid
+loop, BF16 8x8x8 SIMDgroup MMA, canonical access maps and the fixed four-buffer ABI.
+Anything outside that subset is a lowering Finding rather than an inferred Metal choice.
+
 For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics, tie handling and oracle. A Study
 narrows the public Compiler to one admitted profile and supplies a complete `schedule-skeleton.json`; start from that
 skeleton. A Schedule may change admitted block sizes, warps and stages, but must preserve its profile, external tensor

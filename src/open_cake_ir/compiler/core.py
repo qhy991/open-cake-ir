@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from collections import Counter
 from dataclasses import dataclass
 from hashlib import sha256
@@ -11,12 +10,13 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence, cast
 
-from . import emit_cutedsl, emit_triton
-from .emit_cutedsl import EmitError
+from . import emit_cutedsl, emit_metal, emit_triton
+from .emit import EmitError
 from .ir import (
     _SCHEDULE_OPTIONAL,
     _SCHEDULE_REQUIRED,
     DType,
+    MemorySpace,
     OperationKind,
     Schedule,
     ScheduleParseError,
@@ -84,26 +84,17 @@ class Lowering:
 
 
 @dataclass(frozen=True)
-class TargetDefinition:
-    """Revision-bound exact target capabilities used by assessment/lowering."""
+class _BoundTarget:
+    """One typed Target plus the exact Revision bytes that bind it.
 
-    target_id: str
+    `Target` is the sole semantic authority.  The canonical digest and immutable
+    document remain here only for release provenance; callers must not reinterpret the
+    JSON into a second Target interface.
+    """
+
+    target: Target
     canonical_sha256: str
-    device_names: tuple[str, ...]
-    compute_capability: tuple[int, int]
-    memory_spaces: frozenset[str]
-    operation_kinds: frozenset[str]
-    maximum_threads_per_cta: int
-    maximum_warps_per_cta: int
-    maximum_shared_memory_bytes: int
-    maximum_tensor_memory_bytes: int
-    maximum_grid: tuple[int, int, int]
-    instruction_contracts: frozenset[str]
-    synchronization_contracts: frozenset[str]
-    citations: tuple[Mapping[str, object], ...]
     document: Mapping[str, object]
-    """The Revision-bound source document, retained so the contract verifier can build
-    its own typed Target from the same bytes this definition was parsed from."""
 
 
 @dataclass(frozen=True)
@@ -386,27 +377,15 @@ def _swiglu_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
 
 
 @dataclass(frozen=True)
-class _Profile:
-    """One admitted lowering profile and every fact that follows from admitting it.
+class _ProfileImplementation:
+    """One exact Target/profile Adapter at the Lowering seam.
 
-    These facts used to live in five dictionaries and an `elif` chain keyed by the same
-    profile string, so adding an operator meant finding all six and keeping them in step.
-    One record owns them, and a profile that omits one is a construction error rather than
-    a lookup that silently returns nothing.
-
-    `backend` is the module that generates the source from the Schedule; `asset` is the
-    older path that fills a digest into a checked-in template, and only that path needs
-    `closed_semantics` -- the file matches one Schedule, so a pin is what keeps a second
-    one from reaching it.
-
-    The backend is held as a module rather than as its `emit` function so that the kinds
-    it can lower travel with it. Naming them separately would let a profile pair one
-    backend's emitter with another's coverage, which is the class of mistake this record
-    exists to make impossible.
+    Backend coverage, Adapter constraints, source generation and toolchain facts travel
+    together.  The Target is deliberately the registry key rather than another value in
+    `toolchain`: one exact pair is selected before any of these facts can be observed.
     """
 
     toolchain: Mapping[str, object]
-    conformance: "Callable[[Mapping[str, object], Sequence[Mapping[str, object]]], list[Finding]]"
     backend: Any | None = None
     asset: tuple[str, str, str] | None = None
     closed_semantics: str | None = None
@@ -436,34 +415,86 @@ class _Profile:
         return self.backend.SUPPORTED_DTYPES
 
     def __post_init__(self) -> None:
+        if "target" in self.toolchain:
+            raise CompilerError(
+                "a Target/profile implementation derives target from its registry key"
+            )
         if (self.backend is None) == (self.asset is None):
-            raise CompilerError("a profile lowers through exactly one of backend or asset")
+            raise CompilerError(
+                "a Target/profile implementation lowers through exactly one of backend or asset"
+            )
         if self.asset is None and self.closed_semantics is not None:
-            raise CompilerError("an emitted profile pins no closed semantics digest")
+            raise CompilerError("an emitted implementation pins no closed semantics digest")
+
+
+@dataclass(frozen=True)
+class _Profile:
+    """Profile-level semantics plus every Target-specific implementation.
+
+    Shape conformance is shared because it describes the operator profile.  Everything
+    that can differ by architecture stays behind the exact implementation seam, which
+    prevents a known profile from silently borrowing another Target's Adapter.
+    """
+
+    conformance: "Callable[[Mapping[str, object], Sequence[Mapping[str, object]]], list[Finding]]"
+    implementations: Mapping[str, _ProfileImplementation]
+
+    def __post_init__(self) -> None:
+        if not self.implementations:
+            raise CompilerError("an admitted profile requires at least one implementation")
+        object.__setattr__(
+            self,
+            "implementations",
+            MappingProxyType(dict(self.implementations)),
+        )
+
+    def implementation(self, target: str) -> _ProfileImplementation | None:
+        return self.implementations.get(target)
+
+
+def _triton(entry_point: str, entry_abi: str) -> _ProfileImplementation:
+    return _ProfileImplementation(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": entry_point,
+            "entry_abi": entry_abi,
+        },
+        backend=emit_triton,
+    )
 
 
 _PROFILES: Mapping[str, _Profile] = {
     "flash_kmeans_b32_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_flash_kmeans_assign",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
         conformance=_flash_kmeans_b32_smoke_conformance,
-        backend=emit_triton,
+        implementations={
+            "sm_100a": _triton(
+                "cake_flash_kmeans_assign", "four_cuda_tensors_current_stream"
+            ),
+            "apple_gpu_family9": _ProfileImplementation(
+                toolchain={
+                    "source_language": "metal_shading_language",
+                    "compiler": "xcrun metal/metallib",
+                    "entry_point": "cake_flash_kmeans_assign",
+                    "entry_abi": "four_contiguous_metal_buffers",
+                },
+                backend=emit_metal,
+            ),
+        },
     ),
     "flash_kmeans_assignment_full": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "cutlass_cute_dsl",
-            "entry_point": "cake_flash_kmeans_assignment_full",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
         conformance=_flash_kmeans_assignment_full_conformance,
-        backend=emit_cutedsl,
+        implementations={
+            "sm_100a": _ProfileImplementation(
+                toolchain={
+                    "source_language": "python",
+                    "compiler": "cutlass_cute_dsl",
+                    "entry_point": "cake_flash_kmeans_assignment_full",
+                    "entry_abi": "four_cuda_tensors_current_stream",
+                },
+                backend=emit_cutedsl,
+            )
+        },
     ),
     # The first operator admitted after the registry became one record. It needed no
     # emitter change, no formula of its own and no entry anywhere else: an operator is
@@ -472,15 +503,12 @@ _PROFILES: Mapping[str, _Profile] = {
     # additions -- a max fold and `exp`/`div` -- and no emitter structure at all, which
     # is the claim the registry was reshaped to make testable.
     "softmax_b8_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_softmax_b8_smoke",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
         conformance=_softmax_b8_smoke_conformance,
-        backend=emit_triton,
+        implementations={
+            "sm_100a": _triton(
+                "cake_softmax_b8_smoke", "four_cuda_tensors_current_stream"
+            )
+        },
     ),
     # The third operator admitted through the same row, and the first that needed no
     # vocabulary at all: two folds, seven arithmetic primitives and two broadcasts that
@@ -488,66 +516,55 @@ _PROFILES: Mapping[str, _Profile] = {
     # The first admitted operator whose loop walks the contraction rather than an output
     # axis, which is what a GEMM is and what the accumulation derivation exists for.
     "gemm_bias_b1_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_gemm_bias_b1_smoke",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
         conformance=_gemm_bias_b1_smoke_conformance,
-        backend=emit_triton,
+        implementations={
+            "sm_100a": _triton(
+                "cake_gemm_bias_b1_smoke", "four_cuda_tensors_current_stream"
+            )
+        },
     ),
     "layernorm_b8_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_layernorm_b8_smoke",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
         conformance=_layernorm_b8_smoke_conformance,
-        backend=emit_triton,
+        implementations={
+            "sm_100a": _triton(
+                "cake_layernorm_b8_smoke", "four_cuda_tensors_current_stream"
+            )
+        },
     ),
     "rmsnorm_b8_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_rmsnorm_b8_smoke",
-            "target": "sm_100a",
-            "entry_abi": "three_cuda_tensors_current_stream",
-        },
         conformance=_rmsnorm_b8_smoke_conformance,
-        backend=emit_triton,
+        implementations={
+            "sm_100a": _triton(
+                "cake_rmsnorm_b8_smoke", "three_cuda_tensors_current_stream"
+            )
+        },
     ),
     "swiglu_b8_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_swiglu_b8_smoke",
-            "target": "sm_100a",
-            "entry_abi": "three_cuda_tensors_current_stream",
-        },
         conformance=_swiglu_b8_smoke_conformance,
-        backend=emit_triton,
+        implementations={
+            "sm_100a": _triton(
+                "cake_swiglu_b8_smoke", "three_cuda_tensors_current_stream"
+            )
+        },
     ),
     "tinygemm2_stage4_split_k": _Profile(
-        toolchain={
-            "source_language": "cuda_cpp",
-            "compiler": "nvcc",
-            "target": "sm_100a",
-            "entry_abi": "tinygemm2_tensor_map_v1",
-        },
         conformance=_tinygemm2_stage4_split_k_conformance,
-        asset=(
-            "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
-            "@@SCHEDULE_SHA256@@",
-            "cake_tinygemm2_stage4_split_k",
-        ),
-        # Re-pinned when reduce_sum became reduce with op: sum. The pin says which
-        # Schedule may reach this checked-in template, and the kernel it describes
-        # did not change -- only how the Schedule writes it down.
-        closed_semantics="7aa2fdb287d7d8af141ef83b84cf17409a2a4de8c4f90c6eaac3a4490865e799",
+        implementations={
+            "sm_100a": _ProfileImplementation(
+                toolchain={
+                    "source_language": "cuda_cpp",
+                    "compiler": "nvcc",
+                    "entry_abi": "tinygemm2_tensor_map_v1",
+                },
+                asset=(
+                    "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
+                    "@@SCHEDULE_SHA256@@",
+                    "cake_tinygemm2_stage4_split_k",
+                ),
+                # Re-pinned when reduce_sum became reduce with op: sum.
+                closed_semantics="7aa2fdb287d7d8af141ef83b84cf17409a2a4de8c4f90c6eaac3a4490865e799",
+            )
+        },
     ),
 }
 
@@ -620,106 +637,29 @@ def _load_target_definition(
     target_id: str,
     value: object,
     context: str,
-) -> TargetDefinition:
+) -> _BoundTarget:
     reference = _object(value, context)
     if set(reference) != {"path", "canonical_sha256"}:
         raise CompilerError(f"{context} fields differ")
     _, path = _project_path(root, reference.get("path"), f"{context}.path")
-    document = _object(
-        json.loads(path.read_text(encoding="utf-8")),
-        f"target_definition.{target_id}",
-    )
-    expected_fields = {
-        "schema_version",
-        "target_id",
-        "architecture",
-        "device_names",
-        "compute_capability",
-        "memory_spaces",
-        "operation_kinds",
-        "resource_limits",
-        "instruction_contracts",
-        "synchronization_contracts",
-        "citations",
-    }
-    optional_fields = {"occupancy"}
-    if (
-        not expected_fields <= set(document) <= expected_fields | optional_fields
-        or document.get("schema_version") != 1
-    ):
-        raise CompilerError(f"target definition {target_id!r} fields differ")
-    if document.get("target_id") != target_id:
+    try:
+        document = _object(
+            json.loads(path.read_text(encoding="utf-8")),
+            f"target_definition.{target_id}",
+        )
+        target = Target.from_dict(document)
+    except (json.JSONDecodeError, TargetParseError) as error:
+        raise CompilerError(
+            f"target definition {target_id!r} is inadmissible: {error}"
+        ) from error
+    if target.target_id != target_id:
         raise CompilerError(f"target definition {target_id!r} identity differs")
     canonical_sha256 = sha256(_canonical_json_bytes(document)).hexdigest()
     if reference.get("canonical_sha256") != canonical_sha256:
         raise CompilerError(f"target definition {target_id!r} bytes differ")
-    capability = document.get("compute_capability")
-    if (
-        not isinstance(capability, list)
-        or len(capability) != 2
-        or any(not isinstance(item, int) or isinstance(item, bool) or item < 0 for item in capability)
-    ):
-        raise CompilerError(f"target definition {target_id!r} compute capability differs")
-    limits = _object(document.get("resource_limits"), f"target_definition.{target_id}.resource_limits")
-    if set(limits) != {
-        "maximum_threads_per_cta",
-        "maximum_warps_per_cta",
-        "maximum_shared_memory_bytes",
-        "maximum_tensor_memory_bytes",
-        "grid",
-    }:
-        raise CompilerError(f"target definition {target_id!r} resource limits differ")
-    grid = _object(limits.get("grid"), f"target_definition.{target_id}.resource_limits.grid")
-    if set(grid) != {"x", "y", "z"}:
-        raise CompilerError(f"target definition {target_id!r} grid limits differ")
-    citations = _objects(document.get("citations"), f"target_definition.{target_id}.citations")
-    if not citations:
-        raise CompilerError(f"target definition {target_id!r} requires citations")
-    return TargetDefinition(
-        target_id=target_id,
+    return _BoundTarget(
+        target=target,
         canonical_sha256=canonical_sha256,
-        device_names=_strings(document.get("device_names"), f"target_definition.{target_id}.device_names"),
-        compute_capability=(cast(list[int], capability)[0], cast(list[int], capability)[1]),
-        memory_spaces=frozenset(
-            _strings(document.get("memory_spaces"), f"target_definition.{target_id}.memory_spaces")
-        ),
-        operation_kinds=frozenset(
-            _strings(document.get("operation_kinds"), f"target_definition.{target_id}.operation_kinds")
-        ),
-        maximum_threads_per_cta=_positive_int(
-            limits.get("maximum_threads_per_cta"),
-            f"target_definition.{target_id}.maximum_threads_per_cta",
-        ),
-        maximum_warps_per_cta=_positive_int(
-            limits.get("maximum_warps_per_cta"),
-            f"target_definition.{target_id}.maximum_warps_per_cta",
-        ),
-        maximum_shared_memory_bytes=_positive_int(
-            limits.get("maximum_shared_memory_bytes"),
-            f"target_definition.{target_id}.maximum_shared_memory_bytes",
-        ),
-        maximum_tensor_memory_bytes=_positive_int(
-            limits.get("maximum_tensor_memory_bytes"),
-            f"target_definition.{target_id}.maximum_tensor_memory_bytes",
-        ),
-        maximum_grid=(
-            _positive_int(grid.get("x"), f"target_definition.{target_id}.grid.x"),
-            _positive_int(grid.get("y"), f"target_definition.{target_id}.grid.y"),
-            _positive_int(grid.get("z"), f"target_definition.{target_id}.grid.z"),
-        ),
-        instruction_contracts=frozenset(
-            _strings(
-                document.get("instruction_contracts"),
-                f"target_definition.{target_id}.instruction_contracts",
-            )
-        ),
-        synchronization_contracts=frozenset(
-            _strings(
-                document.get("synchronization_contracts"),
-                f"target_definition.{target_id}.synchronization_contracts",
-            )
-        ),
-        citations=tuple(MappingProxyType(dict(item)) for item in citations),
         document=MappingProxyType(dict(document)),
     )
 
@@ -808,9 +748,9 @@ class Compiler:
         revision_id: str,
         revision_sha256: str,
         state: str,
-        target_definitions: Mapping[str, TargetDefinition],
+        target_definitions: Mapping[str, _BoundTarget],
         corpus_path: Path,
-        calibration_coverage: frozenset[str],
+        calibration_coverage: frozenset[tuple[str, str]],
     ) -> None:
         self._project_root = project_root
         self._revision_id = revision_id
@@ -876,10 +816,34 @@ class Compiler:
             for target_id, reference in target_references.items()
         }
         calibration = revision.get("calibration_coverage")
-        if not isinstance(calibration, list) or any(
-            not isinstance(item, str) or not item for item in calibration
-        ):
+        if not isinstance(calibration, list):
             raise CompilerError("compiler revision calibration_coverage must be a list")
+        calibration_pairs: set[tuple[str, str]] = set()
+        for index, value in enumerate(calibration):
+            item = _object(value, f"compiler_revision.calibration_coverage[{index}]")
+            if set(item) != {"target", "profile"}:
+                raise CompilerError(
+                    f"compiler_revision.calibration_coverage[{index}] fields differ"
+                )
+            target_id = _name(
+                item.get("target"),
+                f"compiler_revision.calibration_coverage[{index}].target",
+            )
+            profile_name = _name(
+                item.get("profile"),
+                f"compiler_revision.calibration_coverage[{index}].profile",
+            )
+            profile_definition = _PROFILES.get(profile_name)
+            if target_id not in targets or profile_definition is None or not profile_definition.implementation(target_id):
+                raise CompilerError(
+                    "compiler revision calibration_coverage names an unimplemented Target/profile pair"
+                )
+            pair = (target_id, profile_name)
+            if pair in calibration_pairs:
+                raise CompilerError(
+                    "compiler revision calibration_coverage repeats a Target/profile pair"
+                )
+            calibration_pairs.add(pair)
         if state == "draft":
             _, corpus_path = _project_path(
                 root, revision.get("corpus_manifest"), "compiler_revision.corpus_manifest"
@@ -965,7 +929,7 @@ class Compiler:
             state=cast(str, state),
             target_definitions=targets,
             corpus_path=corpus_path,
-            calibration_coverage=frozenset(cast(list[str], calibration)),
+            calibration_coverage=frozenset(calibration_pairs),
         )
 
     def check_corpus(self) -> CorpusGateReport:
@@ -1120,8 +1084,16 @@ class Compiler:
             warp for role in typed_schedule.roles for warp in role.warps
         }
 
-        if target_definition is not None:
-            for axis, (observed, maximum) in enumerate(zip(parsed_grid, target_definition.maximum_grid)):
+        target_contract = (
+            None if target_definition is None else target_definition.target
+        )
+        maximum_grid = (
+            None
+            if target_contract is None
+            else target_contract.resource_limits.maximum_grid
+        )
+        if maximum_grid is not None:
+            for axis, (observed, maximum) in enumerate(zip(parsed_grid, maximum_grid)):
                 if observed > maximum:
                     findings.append(
                         Finding(
@@ -1138,7 +1110,10 @@ class Compiler:
         allocation_spaces: Counter[str] = Counter()
         for index, allocation in enumerate(allocations):
             space = _name(allocation.get("space"), f"allocations[{index}].space")
-            if target_definition is not None and space not in target_definition.memory_spaces:
+            if (
+                target_contract is not None
+                and MemorySpace(space) not in target_contract.memory_spaces
+            ):
                 findings.append(
                     Finding(
                         "TARGET_MEMORY_SPACE_UNSUPPORTED",
@@ -1147,8 +1122,11 @@ class Compiler:
                     )
                 )
             allocation_spaces[space] += allocation_sizes[_name(allocation.get("name"), f"allocations[{index}].name")]
-        if target_definition is not None:
-            if allocation_spaces["shared"] > target_definition.maximum_shared_memory_bytes:
+        if target_contract is not None:
+            if (
+                allocation_spaces["shared"]
+                > target_contract.resource_limits.maximum_threadgroup_memory_bytes
+            ):
                 findings.append(
                     Finding(
                         "TARGET_SHARED_MEMORY_LIMIT",
@@ -1156,7 +1134,13 @@ class Compiler:
                         "Schedule exceeds the Target shared-memory limit",
                     )
                 )
-            if allocation_spaces["tensor"] > target_definition.maximum_tensor_memory_bytes:
+            tensor_capacity = (
+                target_contract.resource_limits.maximum_tensor_memory_bytes
+            )
+            if (
+                tensor_capacity is not None
+                and allocation_spaces["tensor"] > tensor_capacity
+            ):
                 findings.append(
                     Finding(
                         "TARGET_TENSOR_MEMORY_LIMIT",
@@ -1167,7 +1151,10 @@ class Compiler:
         for index, buffer in enumerate(buffers):
             dtype = _name(buffer.get("dtype"), f"buffers[{index}].dtype")
             space = _name(buffer.get("space"), f"buffers[{index}].space")
-            if target_definition is not None and space not in target_definition.memory_spaces:
+            if (
+                target_contract is not None
+                and MemorySpace(space) not in target_contract.memory_spaces
+            ):
                 findings.append(
                     Finding(
                         "TARGET_MEMORY_SPACE_UNSUPPORTED",
@@ -1232,7 +1219,10 @@ class Compiler:
                 findings.append(
                     Finding("OPERATION_UNSUPPORTED", f"operations[{index}].kind", f"operation {kind!r} is unsupported")
                 )
-            elif target_definition is not None and kind not in target_definition.operation_kinds:
+            elif (
+                target_contract is not None
+                and OperationKind(kind) not in target_contract.operation_kinds
+            ):
                 findings.append(
                     Finding(
                         "TARGET_OPERATION_UNSUPPORTED",
@@ -1310,9 +1300,9 @@ class Compiler:
         instruction = metadata.get("mma_instruction")
         if (
             instruction is not None
-            and target_definition is not None
+            and target_contract is not None
             and _name(instruction, "metadata.mma_instruction")
-            not in target_definition.instruction_contracts
+            not in target_contract.instruction_contracts
         ):
             findings.append(
                 Finding(
@@ -1323,13 +1313,26 @@ class Compiler:
             )
         profile = _name(metadata.get("profile"), "metadata.profile")
         lowering_parameters: dict[str, int] = {}
-        definition = _PROFILES.get(profile)
-        if definition is None:
+        profile_definition = _PROFILES.get(profile)
+        implementation: _ProfileImplementation | None = None
+        if profile_definition is None:
             findings.append(
                 Finding("LOWERING_PROFILE_UNSUPPORTED", "metadata.profile", f"profile {profile!r} is unsupported")
             )
         else:
-            findings.extend(definition.conformance(buffer_by_name, operations))
+            findings.extend(profile_definition.conformance(buffer_by_name, operations))
+            if target_definition is not None:
+                implementation = profile_definition.implementation(target)
+                if implementation is None:
+                    findings.append(
+                        Finding(
+                            "LOWERING_TARGET_PROFILE_UNSUPPORTED",
+                            "metadata.profile",
+                            f"profile {profile!r} has no implementation for Target {target!r}",
+                            blocks_acceptance=False,
+                            blocks_lowering=True,
+                        )
+                    )
             # A kind this profile's backend has no body for cannot be lowered wherever it
             # is placed, and that is knowable here rather than when emission raises. The
             # Schedule is not ill-formed -- the IR expresses the kind and the Target
@@ -1339,11 +1342,13 @@ class Compiler:
             # Only for a profile that emits. The asset path fills a digest into a
             # checked-in template and has no operation bodies at all, so it has no
             # coverage to be outside of.
-            for index, buffer in enumerate(buffers if definition.backend else ()):
+            for index, buffer in enumerate(
+                buffers if implementation is not None and implementation.backend else ()
+            ):
                 dtype = buffer.get("dtype") if isinstance(buffer, Mapping) else None
                 if dtype not in _DTYPE_BYTES:
                     continue
-                if DType(dtype) not in definition.emittable_dtypes:
+                if DType(dtype) not in implementation.emittable_dtypes:
                     findings.append(
                         Finding(
                             "PROFILE_DTYPE_UNEMITTABLE",
@@ -1354,11 +1359,15 @@ class Compiler:
                             blocks_lowering=True,
                         )
                     )
-            for index, operation in enumerate(operations if definition.backend else ()):
+            for index, operation in enumerate(
+                operations
+                if implementation is not None and implementation.backend
+                else ()
+            ):
                 kind = operation.get("kind")
                 if kind not in _SUPPORTED_OPERATION_KINDS:
                     continue
-                if OperationKind(kind) not in definition.emittable_kinds:
+                if OperationKind(kind) not in implementation.emittable_kinds:
                     findings.append(
                         Finding(
                             "PROFILE_OPERATION_UNEMITTABLE",
@@ -1373,7 +1382,7 @@ class Compiler:
             # reduction in the specialized loop to have one result. `reduce_argmin`
             # returns both value and index, so this exact combination is a known
             # backend legality failure rather than an in-process toolchain crash.
-            if definition.backend is emit_triton:
+            if implementation is not None and implementation.backend is emit_triton:
                 operations_by_id = {
                     operation.get("id"): operation for operation in operations
                 }
@@ -1400,13 +1409,13 @@ class Compiler:
                                 blocks_lowering=True,
                             )
                         )
-        if definition is not None and definition.closed_semantics is not None:
+        if implementation is not None and implementation.closed_semantics is not None:
             semantic_sha = _semantic_schedule_sha256(schedule)
             known_delta = any(
                 finding.code in {"PROFILE_SHAPE_MISMATCH", "REDUCE_SUM_SEMANTICS"}
                 for finding in findings
             )
-            if semantic_sha != definition.closed_semantics and not known_delta:
+            if semantic_sha != implementation.closed_semantics and not known_delta:
                 findings.append(
                     Finding(
                         "PROFILE_SEMANTICS_MISMATCH",
@@ -1419,13 +1428,31 @@ class Compiler:
 
         findings.extend(self._contract_findings(typed_schedule, target))
 
+        if (
+            implementation is not None
+            and implementation.backend is not None
+            and target_contract is not None
+        ):
+            findings.extend(
+                Finding(
+                    constraint.code,
+                    constraint.path,
+                    constraint.message,
+                    blocks_acceptance=False,
+                    blocks_lowering=True,
+                )
+                for constraint in implementation.backend.constraints(
+                    typed_schedule, target_contract
+                )
+            )
+
         # The IR permits instruction-free MMA assets, but an otherwise-lowerable
         # backend profile must choose the Target contract that determines its lowering.
         # This is an eligibility-completeness check, not a redundant linter: a Schedule
         # already blocked for another exact reason retains that stable Finding set.
         if (
-            definition is not None
-            and definition.backend
+            implementation is not None
+            and implementation.backend
             and not any(finding.blocks_lowering for finding in findings)
         ):
             for index, operation in enumerate(operations):
@@ -1468,7 +1495,7 @@ class Compiler:
             findings=tuple(findings),
             analysis=analysis,
             lowering_parameters=MappingProxyType(dict(lowering_parameters)),
-            calibration_available=profile in self._calibration_coverage,
+            calibration_available=(target, profile) in self._calibration_coverage,
             schedule_bytes=_canonical_json_bytes(schedule),
         )
 
@@ -1503,20 +1530,29 @@ class Compiler:
             schedule_bytes=_canonical_json_bytes(schedule),
         )
 
-    def _emit(self, assessment: Assessment, emitter) -> Lowering:
+    def _emit(
+        self,
+        assessment: Assessment,
+        implementation: _ProfileImplementation,
+    ) -> Lowering:
         """Generate the target source from the Schedule."""
 
-        definition = self._target_definitions.get(assessment.target)
-        if definition is None:
+        binding = self._target_definitions.get(assessment.target)
+        if binding is None:
             raise CompilerError(f"Target {assessment.target!r} is not bound by this Revision")
+        emitter = implementation.emitter
+        if emitter is None:
+            raise CompilerError(
+                f"lowering profile {assessment.profile!r} has no generated Adapter"
+            )
         schedule = Schedule.from_dict(
             _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
         )
         try:
             emission = emitter(
                 schedule,
-                Target.from_dict(dict(definition.document)),
-                entry_point=_PROFILES[assessment.profile].toolchain["entry_point"],
+                binding.target,
+                entry_point=implementation.toolchain["entry_point"],
             )
         except EmitError as error:
             raise CompilerError(f"Schedule does not determine its source: {error}") from error
@@ -1535,7 +1571,8 @@ class Compiler:
             source_map=MappingProxyType(_source_map(source)),
             toolchain_requirements=MappingProxyType(
                 {
-                    **_PROFILES[assessment.profile].toolchain,
+                    "target": assessment.target,
+                    **implementation.toolchain,
                     **(emission.toolchain or {}),
                 }
             ),
@@ -1553,15 +1590,11 @@ class Compiler:
         than its behaviour, and stay out.
         """
 
-        definition = self._target_definitions.get(target)
-        if definition is None:
-            return []
-        try:
-            typed_target = Target.from_dict(dict(definition.document))
-        except TargetParseError:
+        binding = self._target_definitions.get(target)
+        if binding is None:
             return []
         findings: list[Finding] = []
-        for item in verify_contracts(schedule, typed_target):
+        for item in verify_contracts(schedule, binding.target):
             if item.blocks_lowering:
                 findings.append(Finding(item.code, item.path, item.message))
             elif item.severity is FindingSeverity.REPORT:
@@ -1594,8 +1627,7 @@ class Compiler:
         `docs/ANALYSIS_CALIBRATION.md` records the measurements required to activate it.
         """
 
-        eligible: list[Schedule] = []
-        withheld: list[str] = []
+        replayed_assessments: list[Assessment] = []
         for assessment in assessments:
             if (
                 assessment.compiler_revision_id != self._revision_id
@@ -1609,6 +1641,15 @@ class Compiler:
                 raise CompilerError(
                     "assessment fields differ from canonical Schedule replay"
                 )
+            replayed_assessments.append(assessment)
+
+        targets = {assessment.target for assessment in replayed_assessments}
+        if len(targets) > 1:
+            raise CompilerError("ranking candidates must share one Target")
+
+        eligible: list[Schedule] = []
+        withheld: list[str] = []
+        for assessment in replayed_assessments:
             if not assessment.lowering_eligible:
                 withheld.append(assessment.schedule_id)
                 continue
@@ -1626,10 +1667,11 @@ class Compiler:
             )
         if not eligible:
             return (), tuple(withheld)
-        target = Target.from_dict(
-            dict(self._target_definitions[assessments[0].target].document)
-        )
-        scored, unscored = rank_candidates(eligible, target)
+        target_id = next(iter(targets))
+        binding = self._target_definitions.get(target_id)
+        if binding is None:
+            return (), tuple(withheld)
+        scored, unscored = rank_candidates(eligible, binding.target)
         return scored, tuple(withheld) + unscored
 
     def lower(self, assessment: Assessment) -> Lowering:
@@ -1648,11 +1690,20 @@ class Compiler:
         if not assessment.lowering_eligible:
             codes = ", ".join(finding.code for finding in assessment.findings)
             raise CompilerError(f"assessment is not lowering eligible: {codes}")
-        definition = _PROFILES[assessment.profile]
-        emitter = definition.emitter
-        if emitter is not None:
-            return self._emit(assessment, emitter)
-        asset = definition.asset
+        profile_definition = _PROFILES.get(assessment.profile)
+        implementation = (
+            None
+            if profile_definition is None
+            else profile_definition.implementation(assessment.target)
+        )
+        if implementation is None:
+            raise CompilerError(
+                f"lowering Target/profile pair {assessment.target!r}/{assessment.profile!r} "
+                "is not implemented"
+            )
+        if implementation.emitter is not None:
+            return self._emit(assessment, implementation)
+        asset = implementation.asset
         if asset is None:
             raise CompilerError(f"lowering profile {assessment.profile!r} is not implemented")
         relative_path, placeholder, entry_point = asset
@@ -1662,7 +1713,7 @@ class Compiler:
             raise CompilerError(f"lowering template for {assessment.profile!r} has an invalid placeholder")
         source = template.replace(placeholder, assessment.schedule_sha256)
         source_map = _source_map(source)
-        requirements = dict(definition.toolchain)
+        requirements = {"target": assessment.target, **implementation.toolchain}
         return Lowering(
             compiler_revision_id=self._revision_id,
             compiler_revision_sha256=self._revision_sha256,

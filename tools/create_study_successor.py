@@ -263,7 +263,7 @@ def main() -> int:
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
-    print(output.relative_to(root))
+    print(output.resolve(strict=True).relative_to(root))
     return 0
 
 

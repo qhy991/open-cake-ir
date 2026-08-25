@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .emit import Emission, EmitError, require as _require
+from .emit import Emission, EmissionConstraint, EmitError, require as _require
 from .ir import (
     ElementwiseOp,
     LoadReuse,
@@ -31,7 +31,6 @@ from .ir import (
     ProgramAxis,
     ReduceOp,
     Schedule,
-    TileLoop,
 )
 from .target import Target
 
@@ -107,6 +106,17 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
 SUPPORTED_OPERATION_KINDS = frozenset(OUTSIDE_LOOP_EMITTERS) | frozenset(
     INSIDE_LOOP_EMITTERS
 )
+
+
+def constraints(schedule: Schedule, target: Target) -> tuple[EmissionConstraint, ...]:
+    """Return Adapter constraints known before emission.
+
+    Existing Triton-specific gates remain in the Compiler while they are migrated to
+    this seam.  The empty result makes the backend Interface explicit without changing
+    any v13 observation.
+    """
+
+    return ()
 
 
 class _TritonEmitter:

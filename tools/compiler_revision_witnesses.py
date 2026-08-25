@@ -5,18 +5,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Mapping
 
-_PREFIX = "open-cake-ir-sm100a-v"
+_REVISION_ID = re.compile(r"open-cake-ir-(?:sm100a-)?v[1-9][0-9]*")
 _FROZEN_GLOBS = (
     "compiler/releases/*/revision.lock.json",
     "contracts/studies/*.json",
     "evidence/**/*.json",
     "inventory/*.json",
 )
+
+
+def _is_compiler_revision_id(value: object) -> bool:
+    """Admit the historical single-Target lineage and the generic successor lineage."""
+
+    return isinstance(value, str) and _REVISION_ID.fullmatch(value) is not None
 
 
 def _canonical_sha256(value: object) -> str:
@@ -49,10 +56,10 @@ def _walk_references(
     found: list[CompilerRevisionWitness] = []
     if isinstance(value, Mapping):
         identity = value.get("compiler_revision_id")
-        if isinstance(identity, str) and identity.startswith(_PREFIX):
+        if _is_compiler_revision_id(identity):
             found.append(CompilerRevisionWitness(identity, path))
         identity = value.get("revision_id")
-        if isinstance(identity, str) and identity.startswith(_PREFIX):
+        if _is_compiler_revision_id(identity):
             digest = value.get("revision_sha256", value.get("canonical_sha256"))
             found.append(
                 CompilerRevisionWitness(
@@ -79,7 +86,7 @@ def _walk_references(
                     if digest == current_sha256
                     else known_revision_by_sha256.get(digest)
                 )
-            if isinstance(identity, str) and identity.startswith(_PREFIX):
+            if _is_compiler_revision_id(identity):
                 found.append(
                     CompilerRevisionWitness(
                         identity,
@@ -121,7 +128,7 @@ def compiler_revision_witnesses(root: Path) -> tuple[CompilerRevisionWitness, ..
     if lock_path.exists():
         lock = json.loads(lock_path.read_text(encoding="utf-8"))
         identity = lock.get("revision_id") if isinstance(lock, Mapping) else None
-        if isinstance(identity, str) and identity.startswith(_PREFIX):
+        if _is_compiler_revision_id(identity):
             current_id = identity
             current_sha256 = _canonical_sha256(lock)
     paths = {
@@ -156,7 +163,7 @@ def compiler_revision_witnesses(root: Path) -> tuple[CompilerRevisionWitness, ..
         )
         if relative.startswith("compiler/releases/") and isinstance(document, Mapping):
             identity = document.get("revision_id")
-            if isinstance(identity, str) and identity.startswith(_PREFIX):
+            if _is_compiler_revision_id(identity):
                 witnesses.add(
                     CompilerRevisionWitness(
                         identity,

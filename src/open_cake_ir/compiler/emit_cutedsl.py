@@ -18,7 +18,7 @@ reproducing them would mean hardcoding the thing this module exists to compute.
 
 from __future__ import annotations
 
-from .emit import Emission, EmitError, require as _require
+from .emit import Emission, EmissionConstraint, EmitError, require as _require
 
 from .ir import (
     AccessIndexKind,
@@ -88,6 +88,16 @@ BODY_EMITTERS: dict[OperationKind, str] = {
 }
 
 SUPPORTED_OPERATION_KINDS = frozenset(BODY_EMITTERS)
+
+
+def constraints(schedule: Schedule, target: Target) -> tuple[EmissionConstraint, ...]:
+    """Return Adapter constraints known before emission.
+
+    The retained CuTe DSL preconditions predate this seam and are unchanged in this
+    successor.  Metal uses the same Interface to fail closed before its emitter runs.
+    """
+
+    return ()
 
 
 class _Emitter:

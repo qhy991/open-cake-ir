@@ -47,7 +47,7 @@ if current in witnessed:
     print(f"NEXT=v{history + 1}")
     print(f"ARCHIVE={current}")
 else:
-    # The working Revision's number carries no fact, so it sits directly above witnessed
+    # The working Revision number carries no fact, so it sits directly above witnessed
     # history rather than climbing once per edit. Numbers stranded there by earlier
     # unwitnessed releases are reclaimed, so repeated edits keep releasing the same id.
     stale = sorted(p.name for p in pathlib.Path("compiler/releases").glob("v*")
@@ -114,7 +114,7 @@ fi
 python3 - "$NEXT" <<'PY'
 import json, pathlib, sys
 p = pathlib.Path("compiler/revision.json"); d = json.loads(p.read_text())
-d["revision_id"] = f"open-cake-ir-sm100a-{sys.argv[1]}-draft"
+d["revision_id"] = f"open-cake-ir-{sys.argv[1]}-draft"
 p.write_text(json.dumps(d, indent=2) + "\n")
 print(f"--- draft -> {d['revision_id']} ---")
 PY

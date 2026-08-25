@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "target_id": "apple_gpu_family9",
+  "architecture": "apple_gpu_family9",
+  "execution_group_width": 32,
+  "memory_spaces": [
+    "global",
+    "shared",
+    "register"
+  ],
+  "operation_kinds": [
+    "load",
+    "mma",
+    "reduce_argmin",
+    "elementwise",
+    "store"
+  ],
+  "resource_limits": {
+    "maximum_threads_per_workgroup": 1024,
+    "maximum_threadgroup_memory_bytes": 32768
+  },
+  "instruction_contracts": [
+    {
+      "name": "metal.simdgroup_mma.m8n8k8.bf16_bf16_fp32",
+      "operand_dtypes": [
+        "bf16"
+      ],
+      "accumulator_dtype": "fp32",
+      "atom_shapes": [
+        [
+          8,
+          8,
+          8
+        ]
+      ],
+      "placement": "backend",
+      "shape": "explicit"
+    }
+  ],
+  "synchronization_contracts": [
+    "simdgroup_barrier"
+  ],
+  "citations": [
+    {
+      "kind": "vendor_documentation",
+      "source": "Apple Metal feature set tables",
+      "locator": "Apple GPU family 9 implementation limits and SIMD-scoped matrix operations"
+    },
+    {
+      "kind": "toolchain_observation",
+      "source": "tools/probe_metal_toolchain.py",
+      "locator": "Apple M4; Metal 3.2 BF16 8x8x8 dispatch; observed 2026-08-25"
+    }
+  ]
+}

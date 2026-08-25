@@ -1,147 +1,132 @@
-# ADR 0021: Stage Apple Silicon Metal through a successor Compiler Revision
+# ADR 0021: Add Apple GPU family 9 as a successor Compiler Target
 
-Status: proposed, 2026-08-25.
+Status: accepted, 2026-08-25 by Compiler Revision `open-cake-ir-v14`.
 
 ## Context
 
-The released `open-cake-ir-sm100a-v3` Compiler works on Apple Silicon for parsing, assessment, deterministic
-Lowering and its six-case Corpus Gate because those operations do not execute GPU code. That does not make its
-Lowerings portable: the three retained profiles emit Triton, CuTe DSL or CUDA C++, and Evaluation admits only
-CUDA launch artifacts.
+The predecessor authority was `open-cake-ir-sm100a-v13`: one typed Schedule language,
+eight admitted profiles, a nineteen-case Corpus Gate, structural Triton and CuTe DSL
+emitters, and one retained CUDA asset. Schedule v1 already accepts a non-empty Target
+identifier. The obsolete v3 assumptions in the first version of this proposal -- six
+Corpus cases, three profiles, `target: const sm_100a`, and a second shadow compiler --
+no longer describe the repository.
 
-The current extension surface is also more NVIDIA-specific than the Target abstraction suggests. Schedule v1
-fixes `target` to `sm_100a` in its JSON Schema and names execution groups `warps`. Target schema v1 requires CUDA
-compute capability, CTA, warp and tensor-memory fields. Lowering assets, toolchain requirements and Calibration
-coverage are keyed only by profile, so a second Target could accidentally select an `sm_100a` template or inherit
-its Calibration. The b32 static-semantics digest and the closed-profile semantic digests include the Target as well.
+The real multi-Target gaps are narrower and more load-bearing. Target schema v1 requires
+CUDA device names and compute capability, uses CTA/warp/shared-memory names, and gives
+the Compiler a second handwritten Target parser beside the typed `Target` Module.
+Lowering is selected by profile alone, so an understood profile can silently select an
+`sm_100a` Adapter for another Target. Calibration coverage is also profile-only, and
+ranking can accept a mixed-Target candidate set while selecting the first candidate's
+Target for all of it.
 
-Most importantly, the v3 release descriptor hashes the live `src/open_cake_ir/compiler/core.py` path. Editing that
-file would make the released Revision fail its own source-closure verification and would invalidate frozen Lab
-inputs. The Apple port therefore cannot begin as an in-place edit to v3 or as a Target JSON containing invented
-CUDA values.
+The checked-in Metal probe establishes a capability seam on the local Apple M4: Xcode
+compiles and links Metal 3.2 BF16 source, Apple GPU family 9 admits 32-wide SIMDgroups,
+and an 8x8x8 BF16 SIMDgroup matrix multiply dispatches correctly. It does not establish
+Flash-KMeans correctness, a Launchable Candidate, an Evaluation Receipt, or a
+performance claim.
 
-Apple's public Metal tables identify M4 as Apple GPU family 9, list 1,024 threads and 32 KiB threadgroup memory as
-the family limits, and expose BF16 and SIMD-scoped matrix operations. Metal also requires the actual SIMD width and
-per-pipeline thread limit to be checked from `MTLComputePipelineState`. The local Apple M4/Xcode installation can
-compile Metal 3.2 `bfloat` source, link a metallib and dispatch a compute pipeline. These facts establish a viable
-toolchain seam, not a released Compiler Target, Workload correctness result or Evaluation Receipt.
+ApxInf supplies two relevant implementation lessons. First, an operator Adapter must
+derive its SIMDgroup count, threadgroup size, bounded scratch, reduction order and
+lowest-index tie rule from the frozen shape and tuning decisions; a source file that
+only substitutes a digest is another capability probe. Second, full intermediate
+materialization is the wrong locality: Flash-KMeans should stream 8x8 score fragments
+into a running argmin rather than materialize a 256x64 FP32 distance tile, which alone
+would require 64 KiB and exceed the observed 32 KiB threadgroup-memory limit.
 
-Primary references:
+ApxInf's larger wins -- persistent buffers, one command buffer/one wait, multi-kernel
+fusion and atomic active/scratch state -- do not belong to this Compiler slice. ADR 0020
+keeps one Schedule equal to one kernel; those transaction commitments belong to program
+composition and Evaluation above Schedule.
 
-- [Metal GPU family definitions](https://developer.apple.com/documentation/metal/mtlgpufamily)
-- [Metal feature-set and implementation-limit tables](https://developer.apple.com/metal/capabilities/)
-- [`MTLComputePipelineState.threadExecutionWidth`](https://developer.apple.com/documentation/metal/mtlcomputepipelinestate/threadexecutionwidth)
-- [`MTLComputePipelineState.maxTotalThreadsPerThreadgroup`](https://developer.apple.com/documentation/metal/mtlcomputepipelinestate/maxtotalthreadsperthreadgroup)
+## Decision
 
-## Proposed decision
+Add Metal through the normal successor Compiler Revision. Do not duplicate the typed
+IR, verifier, Corpus machinery or live compiler into a shadow engine. The release cycle
+archives the witnessed v13 content manifest before minting its successor; historical
+source bytes remain recoverable through the bound Git history and retained Evidence,
+while Study Contracts and observations remain immutable.
 
-Add Metal through a new shadow Compiler engine and a successor Compiler Revision. Do not modify any file bound by
-`open-cake-ir-sm100a-v3`, and do not add a generic `apple_metal` Target. The first Target will be the narrow,
-content-addressed `apple_m4` contract: Apple family 9, exact admitted device names, Metal language/toolchain
-requirements and resource limits backed by Apple documentation plus a reproducible device observation.
+The first architecture contract is `apple_gpu_family9`, not a physical `MTLDevice`
+name. A Target owns architecture semantics; exact device name, registry id, SDK path,
+unified-memory observation and pipeline admission remain Evaluation/Executor facts.
 
-The shadow remains Python for this migration so it can reuse the frozen v3 verifier behavior without coupling the
-Metal port to a language rewrite. ADR 0003 remains proposed, but its Rust-v4 sequencing is deferred: any Rust
-shadow starts only after the multi-Target Python semantics and Corpus are released, with its Revision numbering
-reconsidered at that time.
+Target schema v2 expresses a 32-wide execution group and workgroup/threadgroup resource
+limits without invented CUDA fields. The typed `Target` Module is the sole parser and
+normalizes v1 and v2 documents for the verifier, analysis and emitters. Schedule v1 and
+its historical `roles[].warps` spelling remain unchanged; for this Target each index is
+interpreted as one 32-wide SIMDgroup. A language rename is a separate migration and is
+not required to add a second Target.
 
-The successor uses the lifecycle layout from ADR 0005:
+An admitted profile owns one or more exact Target implementations. Each implementation
+selects its emitter or retained asset, toolchain contract and closed-semantics rule.
+Assessment looks up the exact `(Target, profile)` pair. A missing pair produces a stable
+blocking Finding and never falls back to another Target's Adapter. Calibration coverage
+is likewise an exact Target/profile pair, and ranking refuses mixed-Target sets.
 
-```text
-definitions/compiler/targets/       immutable Target documents
-definitions/compiler/corpora/       successor Corpus manifests and Schedules
-definitions/compiler/schemas/       successor Schedule and Target schemas
-proposals/compiler/                  mutable draft Revision and source-set review inputs
-releases/compiler/                  human-approved released descriptors only
-```
+The first generated Metal Lowering is the fixed-shape Flash-KMeans b32 assignment
+kernel. It preserves the four-buffer row-major ABI and derives these decisions from the
+Schedule:
 
-The `proposals/` review lifecycle is an explicit extension to ADR 0005. Draft descriptors are neither immutable
-Compiler definitions nor released identities; promotion regenerates the released descriptor under
-`releases/compiler/` and does not retain a compatibility copy.
+- four declared execution groups become 128 threads per threadgroup; an eight-group
+  variant becomes 256 threads and must produce different source and launch requirements;
+- the 256x64x128 macro tile is composed from Metal BF16 8x8x8 SIMDgroup MMA atoms;
+- the loop-invariant token load retains sixteen distributed 8x8 BF16 fragments per token
+  atom and reuses them across every centroid tile, matching the Schedule's loop placement;
+- each SIMDgroup keeps only one 8x8 FP32 score fragment and a running per-token best
+  score/index, with deterministic lowest-index ties;
+- the declared token tile and centroid tile determine work division and grid;
+- the first Adapter admits `num_stages=1`; unsupported range options produce Findings
+  rather than being ignored or falling back to a scalar kernel.
 
-Target schema v2 uses architecture-neutral execution terms: workgroup, execution group, execution-group width,
-per-memory-space limits and source-language memory bindings. Schedule memory spaces remain the Compiler vocabulary
-(`global`, `shared`, `register`, and, where admitted, `tensor`); Metal Lowering maps them to `device`, `threadgroup`
-and thread-local storage. Successor Schedule schema v2 replaces v1's `target: const sm_100a` with a non-empty Target
-identifier that must be bound by the Compiler Revision. It deliberately retains `roles[].warps`; the shadow
-interprets those values only through the Target's declared 32-wide execution-group contract. A later language
-proposal may rename that field, but the Metal port will not silently change its semantics.
+The Lowering is `generated=true`. It contains operation source markers and Metal
+toolchain requirements, but it is not a metallib and is not launchable. MSL-to-AIR and
+AIR-to-metallib custody, runtime buffer ownership, correctness, timing and profiling
+remain later Lab/Evaluation work.
 
-Lowering and toolchain selection become a closed `(target, profile)` registry. An understood profile without an
-exact Target implementation produces a stable blocking Finding; it never falls back to another Target's template.
-Closed-semantics digests and Calibration coverage are also keyed by `(target, profile)`. No latency or performance
-Calibration transfers from B200.
+The 1,024-byte four-group or 2,048-byte eight-group score-fragment array is
+backend-introduced threadgroup scratch, not a logical 64 KiB Schedule distance-tile
+allocation. Its exact bound is checked against the Target and exposed in the Lowering
+toolchain receipt. Compilation fixes Metal 3.2, safe math and disabled FP contraction;
+these flags constrain code generation but do not create a numerical Evaluation result.
 
-The first Compiler-to-Metal slice is one complete Flash-KMeans smoke Schedule and one rejected sibling, a
-deterministic MSL template, source map and Metal toolchain requirements. The existing six `sm_100a` Corpus cases
-remain byte-identical. The successor Corpus Gate contains those six cases plus the accepted and rejected Apple
-cases, and differential conformance must preserve every v3 Finding and Lowering observation. The Apple draft cannot
-be promoted until that complete gate passes and a human approves it.
+## Smallest complete slice
 
-Common Evaluation remains a later boundary. A Metal artifact becomes a LaunchableCandidate only after its complete
-metallib, entry point, buffer ABI and dispatch manifest are sealed. MTLDevice discovery, metallib loading, MTLBuffer
-ownership, correctness oracles and timing do not enter Compiler source. MLX, MPS and Torch may be Evaluation or Lab
-integration choices, never Target semantics.
-
-## Delivery plan
-
-1. **Toolchain and dispatch probe.** Compile a tiny Metal 3.2 BF16 SIMDgroup-matrix kernel to AIR/metallib, load it
-   through `MTLDevice`, dispatch it and verify a fixed result. Keep this an engineering probe: no Compiler Revision,
-   Campaign, Evaluation Receipt or performance claim.
-2. **Successor Compiler shadow.** Add Schedule and Target schema v2, `apple_m4`, explicit engine dispatch,
-   Target/profile keyed Lowering and Calibration, the six byte-identical v3 cases, one accepted and one rejected
-   Apple Corpus case, and a deterministic MSL Lowering. Keep v3-bound sources untouched.
-3. **Lab-owned Metal artifact builder.** Add compile-only custody for MSL to metallib and bind Xcode, SDK, language
-   standard, source digest, metallib digest and entry-point reflection into a sealed LaunchableCandidate. This still
-   authorizes zero kernel measurements and is not yet selected by an Authoring Environment.
-4. **Common Evaluation slice.** Add a Metal LaunchableCandidate adapter, run the Workload-owned correctness assay,
-   retain raw results and only then add timing. Torch MPS interop is admitted only with an explicit ownership and
-   synchronization contract; the baseline may use a small Swift or Objective-C++ bridge with owned MTLBuffers.
-5. **Lab integration.** Select the Metal artifact builder and machine admission in a future Authoring Environment.
-   Freeze a new Study Contract and Executor Revision before any formal run. Provider/GPUQ campaign work remains
-   last.
-
-Each step must be independently removable and must not broaden the claim established by the previous step.
-
-This proposal implements step 1 only. Run the fixed probe with:
-
-```bash
-python tools/probe_metal_toolchain.py
-```
-
-After command-line arguments are accepted, success writes one canonical JSON observation to stdout; an operational
-failure writes one fail-closed JSON document to stderr and returns nonzero. Standard `argparse` usage errors retain
-their normal text diagnostics and exit code 2. AIR and metallib files live in a temporary directory and are removed
-after their digests and the dispatch observation have been collected. The probe sources live under
-`tools/metal_probe/` and are not Compiler Lowering assets.
+1. Replace the duplicate Compiler-side Target parsing with the typed Target Module and
+   admit Target schema v2 alongside the unchanged `sm_100a` v1 document.
+2. Make profile implementation and Calibration selection exact by Target, with no
+   fallback and mixed-Target ranking refused.
+3. Add the `apple_gpu_family9` Target, one accepted Flash-KMeans Schedule, one sibling
+   refused for an unsupported Metal scheduling commitment, and a deterministic MSL
+   emitter that consumes the declared execution-group and tile decisions.
+4. Preserve all nineteen v13 Corpus observations and extend the successor Corpus Gate
+   to twenty-one cases.
+5. Compile the emitted source to AIR and metallib on the local Apple M4. This is a
+   toolchain check only; operator correctness and performance remain unclaimed.
 
 ## Acceptance gates
 
-The toolchain probe passes only when `xcrun metal` and `xcrun metallib` succeed, the metallib loads, the named
-pipeline dispatches, the fixed BF16 matrix result is exact, and the probe reports toolchain/source/artifact digests.
-It does not establish Flash-KMeans correctness or performance.
-
-The successor Compiler slice additionally requires deterministic repeated Lowering, no cross-Target fallback, no
-cross-Target Calibration, exact Target capability Findings, the six byte-identical v3 cases plus an accepted and
-rejected Apple case, differential v3 conformance, the full declared Corpus Gate, contract tests on non-Metal hosts,
-an optional macOS syntax/toolchain test, and human review.
-
-Evaluation support requires an external oracle comparison before timing. Lab support requires the applicable
-acceptance gates in `docs/ACCEPTANCE_GATES.md`, a released Compiler Revision, a released Executor Revision and a new
-Campaign Lock outside the checkout.
+- All nineteen v13 cases retain their accepted/lowerable dispositions, Finding codes,
+  Schedule digests and Lowering source digests.
+- The Apple accepted case lowers deterministically with `generated=true`, exact Metal
+  toolchain requirements and all Schedule operation markers.
+- Changing four SIMDgroups to eight changes both source bytes and the derived
+  threads-per-threadgroup requirement without changing the operator ABI.
+- An unsupported Target/profile pair and an unsupported Metal range option each produce
+  stable blocking Findings; neither reaches an emitter or another Target's Adapter.
+- Apple Calibration is absent, and ranking refuses a mixed-Target set.
+- Contract tests run without Metal. On a qualifying Mac, Xcode compiles and links the
+  emitted MSL and the existing BF16 probe continues to dispatch exactly.
+- No result from this slice is described as Workload correctness, latency, speedup,
+  Calibration, Evaluation or Campaign evidence.
 
 ## Consequences
 
-- The front-end remains usable on Apple Silicon today, while GPU support advances without rewriting historical
-  Compiler or Evidence identities.
-- The first committed executable is deliberately smaller than a Flash-KMeans port. It proves the uncertain Metal
-  compile/load/dispatch seam and cannot be cited as a migrated workload.
-- Target v2 and Target/profile dispatch are real compiler work, not data-only registration. They are isolated in a
-  successor engine because v3's live-path source closure is immutable.
-- A scalar MSL implementation cannot satisfy a hardware-explicit `mma` Schedule merely because its numeric output
-  matches. The Apple Corpus template must preserve the admitted operation and execution-group commitments; a
-  correctness-only scalar reference belongs in Evaluation.
-- SIMDgroup matrix support does not by itself imply useful speedup. Performance claims require Apple-specific
-  Calibration and confirmatory Evaluation.
-- M1, M2, M3, M4 Pro/Max and future chips are not aliases of `apple_m4`; they require an explicitly justified Target
-  admission or a later family-level Target proposal.
+The new Seam is real because Triton/CuTe/CUDA and Metal are independent Target
+implementations behind the same Lowering Interface. Target changes gain Locality in the
+typed Target Module, and exact route selection prevents CUDA assumptions and Calibration
+from leaking into Metal.
+
+The first slice deliberately stops before runtime optimization. ApxInf's command-buffer
+residency, persistent state and measurement protocol become useful only after Metal has
+a sealed Launchable Artifact and a host-canonical correctness assay; adding them to this
+Schedule would violate ADR 0020 and manufacture evidence the Compiler does not own.

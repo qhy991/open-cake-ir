@@ -12,7 +12,6 @@ The IR is the single owner of Schedule structure. These tests fix three properti
 
 from __future__ import annotations
 
-import copy
 import json
 import unittest
 from pathlib import Path
@@ -72,14 +71,17 @@ def _op(document: dict, op_id: str) -> dict:
 
 class RetainedScheduleTest(unittest.TestCase):
     def test_every_corpus_schedule_parses(self) -> None:
-        self.assertEqual(len(CORPUS), 19)
+        self.assertEqual(len(CORPUS), 21)
+        targets: list[str] = []
         for path in CORPUS:
             with self.subTest(schedule=path.name):
                 schedule = Schedule.load(path)
                 self.assertEqual(schedule.schema_version, 1)
-                self.assertEqual(schedule.target, "sm_100a")
+                targets.append(schedule.target)
                 self.assertTrue(schedule.operations)
                 self.assertTrue(schedule.outputs)
+        self.assertEqual(targets.count("sm_100a"), 19)
+        self.assertEqual(targets.count("apple_gpu_family9"), 2)
 
     def test_every_corpus_schedule_is_admitted_by_the_authoring_schema(self) -> None:
         """The prompt projection may not refuse bytes the canonical parser admits.

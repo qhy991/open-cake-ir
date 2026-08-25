@@ -16,6 +16,15 @@ class EmitError(ValueError):
 
 
 @dataclass(frozen=True)
+class EmissionConstraint:
+    """One Adapter precondition the Compiler can surface as a blocking Finding."""
+
+    code: str
+    path: str
+    message: str
+
+
+@dataclass(frozen=True)
 class Emission:
     source: str
     entry_point: str

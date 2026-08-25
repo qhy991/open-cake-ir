@@ -159,9 +159,10 @@ relative to the weights -- which is a family the corpus does not cover at all.
 
 ## Corpus coverage
 
-The current Compiler Corpus has 19 cases across eight admitted profiles, against the
-paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
-the surveyed work is actually about, still have no complete representation here.
+The current Compiler Corpus has 21 cases across eight admitted profiles and two exact
+Targets, against the paper's roughly four hundred cases across twenty-eight. The Apple
+Target currently adds one finite Flash-KMeans profile slice; Attention and MoE, which are
+what the surveyed work is actually about, still have no complete representation here.
 
 The independent 57-version KDA MoE evolution sharpens that statement. Cake can name
 several isolated deltas, but it cannot describe even the complete v1 baseline, so the

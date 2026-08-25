@@ -340,8 +340,8 @@ class CompilerContractTests(unittest.TestCase):
         )
 
         self.assertEqual(release.document["state"], "released")
-        self.assertEqual(release.document["corpus_gate"]["case_count"], 19)
-        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 19)
+        self.assertEqual(release.document["corpus_gate"]["case_count"], 21)
+        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 21)
         self.assertEqual(
             len(release.document["sources"]),
             len(json.loads((ROOT / "compiler" / "source_set.json").read_text())["paths"]),
@@ -380,7 +380,15 @@ class CompilerContractTests(unittest.TestCase):
         generating, total = (int(value) for value in match.groups())
         self.assertEqual(total, len(_PROFILES))
         self.assertEqual(
-            generating, sum(1 for profile in _PROFILES.values() if profile.backend)
+            generating,
+            sum(
+                1
+                for profile in _PROFILES.values()
+                if any(
+                    implementation.backend
+                    for implementation in profile.implementations.values()
+                )
+            ),
         )
         for name, profile in _PROFILES.items():
             with self.subTest(profile=name):
@@ -452,8 +460,41 @@ class CompilerContractTests(unittest.TestCase):
         stale = {p for p in bound if p.startswith("corpus/schedules/")} - gated
         self.assertEqual(stale, set())
 
-    def test_every_admitted_profile_has_a_corpus_case_that_lowers(self) -> None:
-        """A profile is admitted by a row; a row that nothing exercises is a claim.
+    def test_the_revision_binds_every_target_and_lowering_adapter(self) -> None:
+        from open_cake_ir.compiler.core import _PROFILES
+
+        source_set = json.loads(
+            (ROOT / "compiler/source_set.json").read_text(encoding="utf-8")
+        )
+        revision = json.loads(
+            (ROOT / "compiler/revision.json").read_text(encoding="utf-8")
+        )
+        bound = set(source_set["paths"])
+
+        self.assertTrue(
+            {
+                reference["path"]
+                for reference in revision["target_definitions"].values()
+            }
+            <= bound
+        )
+        for profile, definition in _PROFILES.items():
+            for target, implementation in definition.implementations.items():
+                with self.subTest(target=target, profile=profile):
+                    if implementation.backend is not None:
+                        path = (
+                            Path(implementation.backend.__file__)
+                            .resolve()
+                            .relative_to(ROOT)
+                            .as_posix()
+                        )
+                        self.assertIn(path, bound)
+                    else:
+                        assert implementation.asset is not None
+                        self.assertIn(implementation.asset[0], bound)
+
+    def test_every_target_profile_implementation_has_a_corpus_case_that_lowers(self) -> None:
+        """An exact implementation without a lowerable Corpus witness is only a claim.
 
         The registry was reshaped so that an operator is one record plus the Schedules
         that claim it. Nothing held the second half: a profile could be added with a
@@ -466,21 +507,24 @@ class CompilerContractTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "corpus/manifest.json").read_text(encoding="utf-8")
         )
-        lowering: dict[str, list[str]] = {}
+        lowering: dict[tuple[str, str], list[str]] = {}
         for case in manifest["cases"]:
             document = json.loads(
                 (ROOT / case["schedule"]).read_text(encoding="utf-8")
             )
             profile = document.get("metadata", {}).get("profile")
+            target = document.get("target")
             if case["expected"]["lowering_eligible"]:
-                lowering.setdefault(profile, []).append(case["case_id"])
+                lowering.setdefault((target, profile), []).append(case["case_id"])
 
-        for name in _PROFILES:
-            with self.subTest(profile=name):
-                self.assertTrue(
-                    lowering.get(name),
-                    f"profile {name!r} is admitted but no corpus case lowers through it",
-                )
+        for name, profile_definition in _PROFILES.items():
+            for target in profile_definition.implementations:
+                with self.subTest(target=target, profile=name):
+                    self.assertTrue(
+                        lowering.get((target, name)),
+                        f"Target/profile {target!r}/{name!r} is implemented but no "
+                        "Corpus case lowers through it",
+                    )
 
     def test_full_compiler_corpus_gate_passes(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
@@ -488,16 +532,16 @@ class CompilerContractTests(unittest.TestCase):
         report = compiler.check_corpus()
 
         self.assertTrue(report.passed, report.cases)
-        self.assertEqual(report.case_count, 19)
+        self.assertEqual(report.case_count, 21)
         # Every operator lands as a kernel plus the drift that proves its profile rule
         # fires. The three normalization drifts are rejected rather than merely
         # unlowerable: their staged tile contradicts the extent it addresses, which the
         # access-map rule could not see until it stopped comparing a store's global
         # output against the tile axes.
-        self.assertEqual(report.accepted_case_count, 13)
+        self.assertEqual(report.accepted_case_count, 15)
         self.assertEqual(report.rejected_case_count, 6)
-        self.assertEqual(report.lowerable_case_count, 9)
-        self.assertEqual(report.nonlowerable_case_count, 10)
+        self.assertEqual(report.lowerable_case_count, 10)
+        self.assertEqual(report.nonlowerable_case_count, 11)
 
     def test_r16_program_map_schedule_uses_the_canonical_compiler(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)

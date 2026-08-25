@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "corpus_id": "open-cake-ir-sm100a-v4",
+  "corpus_id": "open-cake-ir-multitarget-v5",
   "state": "draft",
   "cases": [
     {
@@ -277,6 +277,30 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "e466daface523c4059f67fb32306fc26a91ddd71780e82e9e33229b01483150f",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "flash-kmeans-metal-family9-accepted",
+      "schedule": "corpus/schedules/flash-kmeans-b32-metal-family9.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "a6562eb5589be7bb8bf65f5d96968ee9360dbf78c57dc4546b8433b327723798",
+        "lowering_source_sha256": "b1536421643f1e62915a9019a9d25413a9c1d751ae9ab0ae8415ba9912e8aced"
+      }
+    },
+    {
+      "case_id": "flash-kmeans-metal-family9-staged-unsupported",
+      "schedule": "corpus/schedules/flash-kmeans-b32-metal-family9-staged-unsupported.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "METAL_RANGE_OPTION_UNSUPPORTED"
+        ],
+        "schedule_sha256": "78208b04901d12ec1dc656b84393a2b4a7e3fdcdfd1b65a038201b7c3670df6f",
         "lowering_source_sha256": null
       }
     }

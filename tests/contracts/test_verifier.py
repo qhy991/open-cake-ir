@@ -28,6 +28,10 @@ from open_cake_ir.compiler.verifier import (
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
+APPLE_TARGET = Target.load(
+    ROOT / "compiler" / "targets" / "apple_gpu_family9.json"
+)
+TARGETS = {TARGET.target_id: TARGET, APPLE_TARGET.target_id: APPLE_TARGET}
 # The manifest is what the Corpus is; the directory also holds schedules
 # retained as history that the current Revision no longer admits.
 CORPUS = sorted(
@@ -93,7 +97,47 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         ]
         for path in paths:
             with self.subTest(schedule=path.name):
-                self.assertEqual(_blocking(verify(Schedule.load(path), TARGET)), ())
+                schedule = Schedule.load(path)
+                self.assertEqual(
+                    _blocking(verify(schedule, TARGETS[schedule.target])), ()
+                )
+
+    def test_architecture_optional_limits_never_make_verification_raise(self) -> None:
+        document = json.loads(
+            (
+                ROOT
+                / "corpus/schedules/flash-kmeans-b32-metal-family9.json"
+            ).read_text(encoding="utf-8")
+        )
+
+        literal_grid = copy.deepcopy(document)
+        literal_grid["grid"] = [2, 32, 1]
+        literal_grid.pop("program_map")
+        self.assertIsInstance(
+            verify(Schedule.from_dict(literal_grid), APPLE_TARGET), tuple
+        )
+
+        tensor = copy.deepcopy(document)
+        tensor["allocations"].append(
+            {
+                "name": "unsupported_tensor_memory",
+                "space": "tensor",
+                "size_bytes": 512,
+                "tensor_columns": 1,
+                "allocating_role": "compute",
+            }
+        )
+        self.assertIn(
+            "TARGET_MEMORY_SPACE_UNSUPPORTED",
+            _codes(verify(Schedule.from_dict(tensor), APPLE_TARGET)),
+        )
+
+        registers = copy.deepcopy(document)
+        registers["roles"][0]["registers_per_thread"] = 64
+        self.assertIn(
+            "TARGET_ROLE_REGISTER_BUDGET_UNSUPPORTED",
+            _codes(verify(Schedule.from_dict(registers), APPLE_TARGET)),
+        )
 
     def test_a_broadcast_axis_no_shape_rule_could_infer_is_checked(self) -> None:
         """The one arithmetic fact shapes cannot settle.
@@ -832,4 +876,3 @@ class UnmodelledResourceReportTest(unittest.TestCase):
         assignment = self._residency_message("flash-kmeans-assignment-full.json")
         self.assertNotIn("declares no", assignment)
         self.assertIn("tensor_memory", assignment)
-

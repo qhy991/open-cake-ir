@@ -9,7 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.compiler_revision_witnesses import compiler_revision_witnesses  # noqa: E402
+from tools.compiler_revision_witnesses import (  # noqa: E402
+    _is_compiler_revision_id,
+    compiler_revision_witnesses,
+)
 
 
 def _canonical_sha256(value: object) -> str:
@@ -24,6 +27,12 @@ def _canonical_sha256(value: object) -> str:
 
 
 class CompilerRevisionWitnessTests(unittest.TestCase):
+    def test_historical_and_generic_revision_lineages_are_both_strict(self) -> None:
+        self.assertTrue(_is_compiler_revision_id("open-cake-ir-sm100a-v13"))
+        self.assertTrue(_is_compiler_revision_id("open-cake-ir-v14"))
+        self.assertFalse(_is_compiler_revision_id("open-cake-ir-sm100a-v13-draft"))
+        self.assertFalse(_is_compiler_revision_id("open-cake-ir-apple-v14"))
+
     def test_inventory_observations_are_revision_witnesses(self) -> None:
         witnesses = compiler_revision_witnesses(ROOT)
         identities = {item.revision_id for item in witnesses}
@@ -82,7 +91,7 @@ class CompilerRevisionWitnessTests(unittest.TestCase):
         )
         successor = incident["resolution"]["successor_revision"]
 
-        self.assertEqual(current["revision_id"], "open-cake-ir-sm100a-v13")
+        self.assertEqual(current["revision_id"], "open-cake-ir-v14")
         self.assertEqual(successor["revision_id"], archived["revision_id"])
         self.assertEqual(successor["canonical_sha256"], _canonical_sha256(archived))
 

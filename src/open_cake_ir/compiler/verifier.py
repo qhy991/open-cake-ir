@@ -32,7 +32,6 @@ from .ir import (
     LoadMovement,
     MemorySpace,
     Operation,
-    DType,
     OperationKind,
     Schedule,
 )
@@ -40,7 +39,7 @@ from .analysis import (
     logical_registers_per_thread_lower_bound,
     residency_upper_bound,
 )
-from .target import Target
+from .target import InstructionPlacement, InstructionShape, Target
 
 
 class FindingCategory(str, Enum):
@@ -416,6 +415,10 @@ def _verify_hardware_conformance(
             category,
         )
 
+    # Register redistribution is a Target instruction contract, not an occupancy fact.
+    # A Target with no occupancy model must still refuse a role budget it cannot issue.
+    _verify_role_register_split(schedule, target, out)
+
     for index, operation in enumerate(schedule.operations):
         if operation.kind not in target.operation_kinds:
             out.add(
@@ -480,7 +483,7 @@ def _verify_hardware_conformance(
                 category,
             )
 
-    if schedule.grid is not None:
+    if schedule.grid is not None and limits.maximum_grid is not None:
         for axis, (extent_value, maximum) in enumerate(
             zip(schedule.grid, limits.maximum_grid)
         ):
@@ -550,7 +553,10 @@ def _verify_tensor_columns(allocation, index: int, limits, out: _Collector) -> N
             category,
         )
 
-    capacity = limits.maximum_tensor_memory_bytes // TMEM_COLUMN_BYTES
+    byte_capacity = limits.maximum_tensor_memory_bytes
+    if byte_capacity is None:
+        return
+    capacity = byte_capacity // TMEM_COLUMN_BYTES
     if allocation.tensor_columns > capacity:
         out.add(
             "TARGET_TENSOR_COLUMN_LIMIT",
@@ -585,36 +591,8 @@ def _verify_instruction_commitments(
                 FindingSeverity.HINT,
             )
         else:
-            # A contract names the dtypes the hardware will read and accumulate in. The
-            # Target admits contracts by name and nothing checked the name against the
-            # operands, so a Schedule could declare a bf16 contract over fp32 buffers:
-            # accepted, lowered, and 0.06 off on a B200, because `tl.dot` quietly picks
-            # TF32 for fp32 inputs. Adding a contract adds a row here.
-            admitted = _CONTRACT_DTYPES.get(instruction.contract)
-            if admitted is not None:
-                operands, accumulate = admitted
-                for name in operation.reads:
-                    buffer = buffers.get(name)
-                    if buffer is not None and buffer.dtype not in operands:
-                        out.add(
-                            "MMA_OPERAND_DTYPE_DIFFERS",
-                            f"{path}.instruction.contract",
-                            f"contract {instruction.contract!r} reads "
-                            f"{'/'.join(sorted(d.value for d in operands))} but "
-                            f"{name!r} is {buffer.dtype.value}",
-                            category,
-                        )
-                written = buffers.get(operation.writes[0]) if operation.writes else None
-                if written is not None and written.dtype is not accumulate:
-                    out.add(
-                        "MMA_ACCUMULATOR_DTYPE_DIFFERS",
-                        f"{path}.instruction.contract",
-                        f"contract {instruction.contract!r} accumulates in "
-                        f"{accumulate.value} but {written.name!r} is "
-                        f"{written.dtype.value}",
-                        category,
-                    )
-            if instruction.contract not in target.instruction_contracts:
+            contract = target.instruction(instruction.contract)
+            if contract is None:
                 out.add(
                     "TARGET_INSTRUCTION_UNSUPPORTED",
                     f"{path}.instruction.contract",
@@ -622,28 +600,45 @@ def _verify_instruction_commitments(
                     f"{target.target_id!r}",
                     category,
                 )
-            _verify_atom_placement(operation, instruction, path, out)
+            else:
+                for name in operation.reads:
+                    buffer = buffers.get(name)
+                    if buffer is not None and buffer.dtype not in contract.operand_dtypes:
+                        out.add(
+                            "MMA_OPERAND_DTYPE_DIFFERS",
+                            f"{path}.instruction.contract",
+                            f"contract {instruction.contract!r} reads "
+                            f"{'/'.join(sorted(d.value for d in contract.operand_dtypes))} "
+                            f"but {name!r} is {buffer.dtype.value}",
+                            category,
+                        )
+                written = buffers.get(operation.writes[0]) if operation.writes else None
+                if written is not None and written.dtype is not contract.accumulator_dtype:
+                    out.add(
+                        "MMA_ACCUMULATOR_DTYPE_DIFFERS",
+                        f"{path}.instruction.contract",
+                        f"contract {instruction.contract!r} accumulates in "
+                        f"{contract.accumulator_dtype.value} but {written.name!r} is "
+                        f"{written.dtype.value}",
+                        category,
+                    )
+                _verify_atom_placement(operation, instruction, contract, path, out)
             if (
                 instruction.shape is not None
                 and tile is not None
-                and tile[0] != instruction.shape[0]
+                and any(macro % atom for macro, atom in zip(tile, instruction.shape))
             ):
-                out.add(
-                    "MMA_TILE_INSTRUCTION_MISMATCH",
-                    f"{path}.tile_shape",
-                    f"tile M {tile[0]} differs from atom M {instruction.shape[0]}",
-                    category,
+                axis = next(
+                    name
+                    for name, macro, atom in zip("MNK", tile, instruction.shape)
+                    if macro % atom
                 )
-            if (
-                instruction.shape is not None
-                and tile is not None
-                and tile[2] % instruction.shape[2]
-            ):
+                position = "MNK".index(axis)
                 out.add(
                     "MMA_TILE_INSTRUCTION_MISMATCH",
                     f"{path}.tile_shape",
-                    f"tile K {tile[2]} is not a whole number of atom K steps "
-                    f"({instruction.shape[2]})",
+                    f"tile {axis} {tile[position]} is not a whole number of atom {axis} "
+                    f"steps ({instruction.shape[position]})",
                     category,
                 )
             if instruction.operand_source is OperandSource.SHARED:
@@ -736,22 +731,22 @@ def _verify_epilogue_commitments(schedule: Schedule, out: _Collector) -> None:
             )
 
 
-# A tensor-core atom places its operands explicitly; a tile-level dot leaves that to the
-# backend. Requiring both to say the same things would force one of them to invent an
-# answer, so the requirement follows the contract.
-_PLACED_CONTRACT_PREFIXES = ("tcgen05.", "mma.sync.", "wgmma.")
-_PLACEMENT_FIELDS = ("shape", "cta_group", "operand_source", "operand_major")
+# A Target contract, rather than a name prefix in this verifier, owns whether the
+# Schedule places operands and states the atom shape.  That lets Metal require its real
+# 8x8x8 atom without inventing CUDA CTA-group or operand-major fields.
+_PLACEMENT_FIELDS = ("cta_group", "operand_source", "operand_major")
 
 
-def _verify_atom_placement(operation, instruction, path: str, out: _Collector) -> None:
+def _verify_atom_placement(
+    operation, instruction, contract, path: str, out: _Collector
+) -> None:
     category = FindingCategory.HARDWARE_CONFORMANCE
-    placed = instruction.contract.startswith(_PLACED_CONTRACT_PREFIXES)
     declared = [
         field
         for field in _PLACEMENT_FIELDS
         if getattr(instruction, field, None) is not None
     ]
-    if placed:
+    if contract.placement is InstructionPlacement.EXPLICIT:
         missing = [f for f in _PLACEMENT_FIELDS if f not in declared]
         if missing:
             out.add(
@@ -768,6 +763,31 @@ def _verify_atom_placement(operation, instruction, path: str, out: _Collector) -
             f"{path}.instruction",
             f"instruction {instruction.contract!r} does not place its operands, so "
             f"{', '.join(declared)} would be a commitment the backend cannot honour",
+            category,
+        )
+
+    if contract.shape is InstructionShape.EXPLICIT:
+        if instruction.shape is None:
+            out.add(
+                "MMA_ATOM_SHAPE_UNDECLARED",
+                f"{path}.instruction.shape",
+                f"instruction {instruction.contract!r} requires an explicit atom shape",
+                category,
+                FindingSeverity.HINT,
+            )
+        elif instruction.shape not in contract.atom_shapes:
+            out.add(
+                "MMA_ATOM_SHAPE_UNSUPPORTED",
+                f"{path}.instruction.shape",
+                f"atom shape {instruction.shape} is not admitted by contract "
+                f"{instruction.contract!r}",
+                category,
+            )
+    elif instruction.shape is not None:
+        out.add(
+            "MMA_PLACEMENT_UNSUPPORTED",
+            f"{path}.instruction.shape",
+            f"instruction {instruction.contract!r} leaves its atom shape to the backend",
             category,
         )
 
@@ -821,7 +841,6 @@ def _verify_swizzle_commitments(schedule: Schedule, out: _Collector) -> None:
     """A shared operand feeding an MMA needs a declared swizzle to be reproducible."""
 
     category = FindingCategory.HARDWARE_CONFORMANCE
-    buffers = {buffer.name: buffer for buffer in schedule.buffers}
     operands = {
         name
         for operation in schedule.operations
@@ -845,16 +864,6 @@ def _verify_swizzle_commitments(schedule: Schedule, out: _Collector) -> None:
 
 
 # --------------------------------------------------------------- data consistency
-
-# What each admitted instruction contract reads and accumulates in. The Target names the
-# contracts it admits; this is what those names mean, and it is here rather than in the
-# Target because a Target describes hardware and this is a property of the instruction.
-_CONTRACT_DTYPES = {
-    "tcgen05.mma.cta_group::1.kind::f16": ({DType.BF16, DType.FP16}, DType.FP32),
-    "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32": ({DType.BF16}, DType.FP32),
-    "triton.dot.bf16_fp32": ({DType.BF16}, DType.FP32),
-}
-
 
 _ARITY = {
     OperationKind.LOAD: (1, 1, "load"),
@@ -1442,11 +1451,21 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                 expected = axis.tile if axis is not None else None
             elif component.source is AccessIndexKind.LOOP_TILE:
                 loop = next(
-                    (l for l in schedule.tile_loops if l.iterator == component.name), None
+                    (
+                        tile_loop
+                        for tile_loop in schedule.tile_loops
+                        if tile_loop.iterator == component.name
+                    ),
+                    None,
                 )
                 expected = loop.tile if loop is not None else None
             else:
-                expected = source.shape[component.dimension] if component.dimension is not None else None
+                expected = (
+                    source.shape[component.dimension]
+                    if component.dimension is not None
+                    and component.dimension < len(source.shape)
+                    else None
+                )
             if expected is not None and staged.shape[position] != expected:
                 out.add(
                     "ACCESS_TILE_MISMATCH",
@@ -1709,6 +1728,14 @@ def _verify_role_register_split(schedule: Schedule, target: Target, out: _Collec
         return
 
     warps_per_group = target.warps_per_warpgroup
+    if warps_per_group is None:
+        out.add(
+            "TARGET_ROLE_REGISTER_BUDGET_UNSUPPORTED",
+            "roles",
+            f"Target {target.target_id!r} declares no register-redistribution group",
+            category,
+        )
+        return
     for index, role in enumerate(schedule.roles):
         if role.registers_per_thread is None:
             continue
@@ -1773,7 +1800,6 @@ def _verify_residency_commitment(
     author its occupancy and telling it which declaration to change.
     """
 
-    _verify_role_register_split(schedule, target, out)
     commitment = schedule.residency
     if commitment is None:
         return

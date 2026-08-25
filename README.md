@@ -37,8 +37,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v13` is content-bound to an exact `sm_100a` Target and a 19-case,
-  35-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
+- Compiler Revision `open-cake-ir-v14` is content-bound to exact `sm_100a` and `apple_gpu_family9` Targets and a
+  21-case, 39-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
   emitted MMA omit its instruction contract while still being marked lowering-eligible. v10 turns the pinned Triton
@@ -49,7 +49,10 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   of being indistinguishable from generation. v13 repairs the agent authoring schema against every Corpus Schedule
   and adds one KDA-derived `tanh` primitive with a standalone SwiGLU positive/shape-drift pair. The reviewed KDA
   baseline still has 0/57 complete-version coverage; this slice proves arithmetic expressibility, not MoE or
-  performance reproduction. Public ranking obeys its calibration
+  performance reproduction. v14 adds architecture-neutral Target schema v2, exact Target/profile Adapter and
+  Calibration routing, mixed-Target ranking refusal, and a finite generated-MSL Flash-KMeans Adapter for Apple GPU
+  family 9. Its BF16 8x8x8 SIMDgroup MMA source compiles and links on Apple M4; runtime Evaluation and Metal
+  performance remain outside this Compiler-only release. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
   eligible GEMM triplets and failed the fixed 5% boundary at 35.95% and 8.16%. A drift-controlled successor then
@@ -90,8 +93,10 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command.
-  The current local suite passes 343 tests plus 254 subtests. The earlier remote qualification passed its frozen
-  contract suite, host admission and compile-only Triton check without launching a kernel.
+  The current Mac run passes 369 tests plus 299 subtests; its sole failure is the expected B200-host Nsight Compute
+  custody check because that pinned executable is absent on this Mac, and one host-specific test is skipped. The
+  opt-in Apple GPU family 9 compile/link/dispatch probe passes 6/6. The earlier remote qualification passed its
+  frozen contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
   scientific claim.
@@ -122,7 +127,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   150k, task-informed package study also freezes the provider's distinct `max` reasoning level and complete
   implementation skeletons. The later `xhigh` capability qualification does not rewrite that frozen treatment or
   supply an 80M clean-start Study. Serving and paper reproduction remain unsupported.
-- `matched-search-clean-start-reference-v28.json` is a zero-GPU successor fixture that replaces both arm references
+- `matched-search-clean-start-reference-v29.json` is a zero-GPU successor fixture that replaces both arm references
   together: Open Cake receives only its authoring interface and direct CUDA receives a canonical ABI with an empty
   kernel body. Its contamination gate validates reference access only; its inherited 150k/`max` treatment still
   cannot support a paper comparison.

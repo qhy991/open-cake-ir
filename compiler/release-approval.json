@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "75f29e87205b352ef7dabbd44ee7b7d8d6ebf352d87d2dc4aa2f6df684258106"
+    "canonical_sha256": "3db2f369926d13cb14a2a0ab6dfb79e994e4d280e020d6ddd108cc52c7793fea"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Repair the agent authoring schema against all 19 Corpus schedules and admit the KDA-derived tanh SwiGLU slice with an independently failing shape-drift case."
+  "approval_basis": "User-requested Apple GPU family 9 Compiler successor: exact Target/profile routing, generated MSL Adapter, two reviewed Metal Corpus cases, and unchanged v13 observations."
 }
