@@ -23,6 +23,7 @@ from .ir import (
     AccessIndexKind,
     AccessMap,
     Buffer,
+    BufferMode,
     DType,
     IndexTieBreak,
     LoadMovement,
@@ -94,6 +95,7 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.ELEMENTWISE: "_emit_elementwise",
     OperationKind.REDUCE: "_emit_reduce",
     OperationKind.TOP_K: "_emit_top_k",
+    OperationKind.ATOMIC_RMW: "_emit_atomic_rmw",
     OperationKind.STORE: "_emit_store",
 }
 
@@ -112,6 +114,8 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
 SUPPORTED_OPERATION_KINDS = frozenset(OUTSIDE_LOOP_EMITTERS) | frozenset(
     INSIDE_LOOP_EMITTERS
 )
+
+_ATOMIC_RMW_CONTRACT = "triton.atomic_add.i32.relaxed.gpu"
 
 
 def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, ...]:
@@ -189,6 +193,14 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
                 "TRITON_LOAD_MOVEMENT",
                 f"operations[{index}].parameters.movement",
                 "the Triton backend only emits direct global loads",
+            )
+        if operation.kind is OperationKind.ATOMIC_RMW:
+            add(
+                _ATOMIC_RMW_CONTRACT in target.instruction_contracts,
+                "TRITON_ATOMIC_CONTRACT_UNSUPPORTED",
+                f"operations[{index}].parameters",
+                f"Target {target.target_id!r} does not admit "
+                f"{_ATOMIC_RMW_CONTRACT!r}",
             )
 
     if len(schedule.tile_loops) <= 1:
@@ -1089,6 +1101,27 @@ class _TritonEmitter:
             self.line(f"{pad}{indices} = tl.where({slots} == {slot}, {index}, {indices})")
             self.line(f"{pad}{selected} |= {positions} == {index}")
 
+    def _emit_atomic_rmw(self, operation, pad: str) -> None:
+        """Emit the one admitted state transition and its returned old values."""
+
+        target = operation.writes[0]
+        result = operation.writes[1]
+        access = self.schedule.access_map(operation.op_id, target)
+        _require(access is not None, f"atomic_rmw {operation.op_id!r} has no access map")
+        pointer, mask = self._address(access, pad)
+        _require(bool(mask), "atomic_rmw requires a bounded runtime index")
+        old = f"{operation.op_id}_old"
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{old} = tl.atomic_add(")
+        self.line(f"{pad}    {pointer},")
+        self.line(f"{pad}    {operation.parameters.value},")
+        self.line(f'{pad}    sem="relaxed",')
+        self.line(f'{pad}    scope="gpu",')
+        if mask:
+            self.line(f"{pad}    mask={mask},")
+        self.line(f"{pad})")
+        self.line(f"{pad}{result} = tl.where({mask}, {old}, 0)")
+
     def _emit_store(self, operation, pad: str) -> None:
         access = self.schedule.access_map(operation.op_id, operation.writes[0])
         _require(access is not None, f"store {operation.op_id!r} has no access map")
@@ -1101,9 +1134,29 @@ class _TritonEmitter:
             self.line(f"{pad}    mask={mask},")
         self.line(f"{pad})")
 
+    def _emit_launch_options(self, constants: dict[str, int]) -> None:
+        """Emit every Schedule-owned launch option for either host ABI."""
+
+        for name, value in constants.items():
+            if name != "NUM_WARPS":
+                self.line(f"        {name}={value},")
+        self.line(f"        num_warps={constants['NUM_WARPS']},")
+        if "NUM_STAGES" in constants:
+            # Pipelining depth belongs to the loop's range options. With no loop there is
+            # nothing to pipeline and no declaration to carry, so the launch says nothing
+            # rather than inventing a depth the Schedule never asked for.
+            self.line(f"        num_stages={constants['NUM_STAGES']},")
+        residency = self.schedule.residency
+        if residency is not None and residency.registers_per_thread is not None:
+            self.line(f"        maxnreg={residency.registers_per_thread},")
+
     def _emit_host(self, entry: str, kernel: str) -> None:
         globals_in_order = self._globals()
         inputs = [b for b in globals_in_order if b.mode.value == "input"]
+        states = [b for b in globals_in_order if b.mode.value == "state"]
+        if states:
+            self._emit_host_with_state(entry, kernel, globals_in_order)
+            return
         output = next(b for b in globals_in_order if b.mode.value == "output")
         names = ", ".join(b.name for b in inputs)
         constants = self.constants()
@@ -1138,18 +1191,68 @@ class _TritonEmitter:
         self.line(f"    {kernel}[{self.grid()}](")
         for buffer in globals_in_order:
             self.line(f"        {'out' if buffer is output else buffer.name},")
-        for name, value in constants.items():
-            if name != "NUM_WARPS":
-                self.line(f"        {name}={value},")
-        self.line(f"        num_warps={constants['NUM_WARPS']},")
-        if "NUM_STAGES" in constants:
-            # Pipelining depth belongs to the loop's range options. With no loop there is
-            # nothing to pipeline and no declaration to carry, so the launch says nothing
-            # rather than inventing a depth the Schedule never asked for.
-            self.line(f"        num_stages={constants['NUM_STAGES']},")
-        residency = self.schedule.residency
-        if residency is not None and residency.registers_per_thread is not None:
-            self.line(f"        maxnreg={residency.registers_per_thread},")
+        self._emit_launch_options(constants)
+        self.line("    )")
+        self.line("    return out")
+
+    def _emit_host_with_state(
+        self, entry: str, kernel: str, globals_in_order: list[Buffer]
+    ) -> None:
+        """Accept caller-owned mutable state without changing legacy wrappers."""
+
+        caller_owned = [
+            buffer
+            for buffer in globals_in_order
+            if buffer.mode in {BufferMode.INPUT, BufferMode.STATE}
+        ]
+        output = next(
+            buffer for buffer in globals_in_order if buffer.mode is BufferMode.OUTPUT
+        )
+        names = ", ".join(buffer.name for buffer in caller_owned)
+        constants = self.constants()
+        anchor = caller_owned[0].name
+
+        self.line(f"def {entry}({names}, out=None):")
+        self.line("    for tensor, shape, dtype in (")
+        for buffer in caller_owned:
+            self.line(
+                f"        ({buffer.name}, {tuple(buffer.shape)}, {_TORCH_DTYPE[buffer.dtype]}),"
+            )
+        self.line("    ):")
+        self.line("        if tuple(tensor.shape) != shape:")
+        self.line(
+            '            raise ValueError("an input or state differs from the frozen shape")'
+        )
+        self.line("        if tensor.dtype != dtype:")
+        self.line(
+            '            raise TypeError("an input or state differs from the frozen dtype")'
+        )
+        self.line("        if not tensor.is_cuda or not tensor.is_contiguous():")
+        self.line(
+            '            raise ValueError("every input and state must be contiguous on CUDA")'
+        )
+        self.line(
+            f"    if any(t.device != {anchor}.device for t in ({names},)):"
+        )
+        self.line('        raise ValueError("every input and state must share one device")')
+        self.line("    if out is None:")
+        self.line(
+            f"        out = torch.empty({tuple(output.shape)}, "
+            f"dtype={_TORCH_DTYPE[output.dtype]}, device={anchor}.device)"
+        )
+        self.line(
+            f"    if tuple(out.shape) != {tuple(output.shape)} "
+            f"or out.dtype != {_TORCH_DTYPE[output.dtype]}:"
+        )
+        self.line('        raise ValueError("out differs from the frozen output contract")')
+        self.line(
+            f"    if out.device != {anchor}.device or not out.is_contiguous():"
+        )
+        self.line('        raise ValueError("out must be contiguous on the input device")')
+        self.line(f"    {kernel}[{self.grid()}](")
+        for buffer in globals_in_order:
+            self.line(f"        {'out' if buffer is output else buffer.name},")
+        self._emit_launch_options(constants)
         self.line("    )")
         self.line("    return out")
 

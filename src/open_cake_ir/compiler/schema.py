@@ -14,6 +14,9 @@ from typing import Any
 
 from .ir import (
     AccessIndexKind,
+    AtomicMemoryOrder,
+    AtomicMemoryScope,
+    AtomicOp,
     BarrierMechanism,
     BoundaryPolicy,
     BufferMode,
@@ -137,6 +140,14 @@ _PARAMETERS = {
             "k": _POSITIVE,
             "tie_break": _enum(IndexTieBreak),
             "nan_policy": _enum(NaNPolicy),
+        }
+    ),
+    OperationKind.ATOMIC_RMW: _object(
+        {
+            "op": _enum(AtomicOp),
+            "value": {"type": "integer"},
+            "order": _enum(AtomicMemoryOrder),
+            "scope": _enum(AtomicMemoryScope),
         }
     ),
     OperationKind.ELEMENTWISE: {

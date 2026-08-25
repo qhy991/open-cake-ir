@@ -3,7 +3,6 @@
     "compiler/AUTHORING_CONTRACT.md",
     "compiler/targets/sm_100a.json",
     "corpus/manifest.json",
-    "corpus/schedules/atomic-reservation-b8-smoke.json",
     "corpus/schedules/block-scaled-gemm-b1-smoke-scale-drift.json",
     "corpus/schedules/block-scaled-gemm-b1-smoke.json",
     "corpus/schedules/flash-kmeans-assignment-full-epilogue-drift.json",

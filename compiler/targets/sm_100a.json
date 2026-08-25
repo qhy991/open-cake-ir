@@ -22,6 +22,7 @@
     "reduce_argmin",
     "reduce",
     "top_k",
+    "atomic_rmw",
     "elementwise",
     "store"
   ],
@@ -41,6 +42,7 @@
     "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
     "triton.dot.bf16_fp32",
     "triton.dot.fp8e4m3_block_scale_fp32",
+    "triton.atomic_add.i32.relaxed.gpu",
     "libdevice.tanh.f32"
   ],
   "synchronization_contracts": [
@@ -59,6 +61,11 @@
       "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
       "path": "src/cakerepro/targets.py",
       "sha256": "b19d6179070e406b5dafcfd81f7e87b568335f342f2b05f29bf31927e2794273"
+    },
+    {
+      "kind": "toolchain_api",
+      "source": "https://triton-lang.org/main/python-api/generated/triton.language.atomic_add.html",
+      "locator": "atomic_add returns the prior value and admits relaxed semantics with gpu scope"
     },
     {
       "kind": "device_observation",

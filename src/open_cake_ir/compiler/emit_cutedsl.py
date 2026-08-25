@@ -24,6 +24,7 @@ from .ir import (
     AccessIndexKind,
     Barrier,
     BarrierMechanism,
+    BufferMode,
     DType,
     EpilogueFormula,
     LoadMovement,
@@ -135,6 +136,13 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         "operations",
         "the CuTe-DSL backend requires at least one load operation",
     )
+    for index, buffer in enumerate(schedule.buffers):
+        add(
+            buffer.mode is not BufferMode.STATE,
+            "CUTE_STATE_UNSUPPORTED",
+            f"buffers[{index}].mode",
+            "the CuTe-DSL backend does not implement caller-owned mutable state",
+        )
 
     for index, mma in kinds[OperationKind.MMA]:
         add(

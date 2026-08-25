@@ -31,7 +31,15 @@ An AccessMap index with `source: buffer` names a rank-one register INT32 Buffer 
 operation also reads. Multiple such coordinates share one shape and are zipped into one
 runtime-index domain; they are not a Cartesian product. `mask_tiled_axes` bounds both
 sides of each runtime coordinate, and an invalid indexed load yields zero. The admitted
-subset is a direct global load: TMA and indexed stores remain explicitly unlowerable.
+subset is a direct global load plus the atomic state transition below: TMA and indexed
+stores remain explicitly unlowerable.
+`state` is caller-owned global memory that an operation both reads and writes; read-only
+and write-only Buffers remain `input` and `output`. The admitted `atomic_rmw` reads one
+INT32 state target followed by its one runtime INT32 index, writes that same target and
+one register result, adds its declared signed INT32 scalar with `order: relaxed` and
+`scope: device`, and returns the old value. A masked coordinate has no memory effect and
+returns zero. The Triton route requires the exact Target atomic contract; no backend may
+silently strengthen, weaken or relocate the operation.
 `reduce_argmin` compares FP32 values and returns INT32 source positions; admitting FP8
 storage for another operation does not widen that semantic contract.
 

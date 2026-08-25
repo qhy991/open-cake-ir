@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "schedule_id": "atomic-reservation-b8-smoke-v1",
+  "target": "sm_100a",
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [0, 1, 2, 3]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "expert_ids",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [8, 8],
+      "mode": "input"
+    },
+    {
+      "name": "counts",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [4],
+      "mode": "state"
+    },
+    {
+      "name": "positions",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [8, 8],
+      "mode": "output"
+    },
+    {
+      "name": "expert_id_tile",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [8],
+      "mode": "scratch"
+    },
+    {
+      "name": "position_tile",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [8],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_expert_ids",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["expert_ids"],
+      "writes": ["expert_id_tile"],
+      "parameters": {"movement": "global", "reuse": "streamed"}
+    },
+    {
+      "id": "reserve_positions",
+      "kind": "atomic_rmw",
+      "role": "compute",
+      "reads": ["counts", "expert_id_tile"],
+      "writes": ["counts", "position_tile"],
+      "depends_on": ["load_expert_ids"],
+      "parameters": {
+        "op": "add",
+        "value": 1,
+        "order": "relaxed",
+        "scope": "device"
+      }
+    },
+    {
+      "id": "store_positions",
+      "kind": "store",
+      "role": "compute",
+      "reads": ["position_tile"],
+      "writes": ["positions"],
+      "depends_on": ["reserve_positions"],
+      "parameters": {"coalesced": true}
+    }
+  ],
+  "outputs": ["positions"],
+  "program_map": {
+    "axes": [
+      {
+        "name": "token",
+        "axis": 0,
+        "buffer": "expert_ids",
+        "dimension": 0,
+        "tile": 1
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_expert_ids",
+      "buffer": "expert_ids",
+      "indices": [
+        {"source": "program", "name": "token"},
+        {"source": "dimension", "dimension": 1}
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "reserve_positions",
+      "buffer": "counts",
+      "indices": [
+        {"source": "buffer", "name": "expert_id_tile"}
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_positions",
+      "buffer": "positions",
+      "indices": [
+        {"source": "program", "name": "token"},
+        {"source": "dimension", "dimension": 1}
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {
+    "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "residency": {
+    "ctas_per_multiprocessor": 4,
+    "registers_per_thread": 64
+  },
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_atomic_reservation_b8_smoke"
+  }
+}

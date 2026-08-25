@@ -18,6 +18,7 @@ def build_inputs(document: dict, torch) -> tuple:
     indexed_routes = {
         "cake_indexed_gather_b8_smoke",
         "cake_kda_weighted_combine_b8_smoke",
+        "cake_atomic_reservation_b8_smoke",
     }
     extent_contracts = {
         buffer["valid_extent"]["buffer"]: buffer["shape"][
@@ -83,6 +84,13 @@ def build_inputs(document: dict, torch) -> tuple:
             value = torch.stack(
                 [torch.roll(base, shifts=token) for token in range(shape[0])]
             )
+        elif (
+            entry_point == "cake_atomic_reservation_b8_smoke"
+            and buffer["name"] == "counts"
+        ):
+            # Non-zero caller state proves the atomic returns the preceding value rather
+            # than an index synthesized from a zero-based lane or program coordinate.
+            value = torch.tensor([3, 5, 7, 11], dtype=dtype, device="cuda")
         elif buffer["name"] in extent_contracts:
             capacity = extent_contracts[buffer["name"]]
             # Empty, partial, full and another partial group are all observable. The

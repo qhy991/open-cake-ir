@@ -67,6 +67,7 @@ class MemorySpace(str, Enum):
 class BufferMode(str, Enum):
     INPUT = "input"
     OUTPUT = "output"
+    STATE = "state"
     SCRATCH = "scratch"
 
 
@@ -96,6 +97,7 @@ class OperationKind(str, Enum):
     REDUCE_ARGMIN = "reduce_argmin"
     REDUCE = "reduce"
     TOP_K = "top_k"
+    ATOMIC_RMW = "atomic_rmw"
     ELEMENTWISE = "elementwise"
     STORE = "store"
 
@@ -137,6 +139,18 @@ class LoadReuse(str, Enum):
 
     REUSED = "reused"
     STREAMED = "streamed"
+
+
+class AtomicOp(str, Enum):
+    ADD = "add"
+
+
+class AtomicMemoryOrder(str, Enum):
+    RELAXED = "relaxed"
+
+
+class AtomicMemoryScope(str, Enum):
+    DEVICE = "device"
 
 
 class IndexTieBreak(str, Enum):
@@ -1047,6 +1061,20 @@ class TopKParameters:
 
 
 @dataclass(frozen=True)
+class AtomicRmwParameters:
+    """One atomic read-modify-write that returns the value preceding its effect.
+
+    The target address stays in AccessMap.  These parameters own the update and the
+    memory model, so neither an emitter nor a workload name chooses them implicitly.
+    """
+
+    op: AtomicOp
+    value: int
+    order: AtomicMemoryOrder
+    scope: AtomicMemoryScope
+
+
+@dataclass(frozen=True)
 class ElementwiseInstruction:
     """The target instruction selected for arithmetic with multiple realizations.
 
@@ -1106,6 +1134,7 @@ OperationParameters = Union[
     ReduceArgminParameters,
     ReduceParameters,
     TopKParameters,
+    AtomicRmwParameters,
     ElementwiseParameters,
     StoreParameters,
     FenceProxyParameters,
@@ -1229,6 +1258,22 @@ def _operation_parameters(
             _positive_int(obj["k"], f"{context}.k"),
             _enum(IndexTieBreak, obj["tie_break"], f"{context}.tie_break"),
             _enum(NaNPolicy, obj["nan_policy"], f"{context}.nan_policy"),
+        )
+
+    if kind is OperationKind.ATOMIC_RMW:
+        obj = _strict_object(
+            value,
+            required={"op", "value", "order", "scope"},
+            context=context,
+        )
+        update = obj["value"]
+        if not isinstance(update, int) or isinstance(update, bool):
+            raise ScheduleParseError(f"{context}.value must be an integer")
+        return AtomicRmwParameters(
+            _enum(AtomicOp, obj["op"], f"{context}.op"),
+            update,
+            _enum(AtomicMemoryOrder, obj["order"], f"{context}.order"),
+            _enum(AtomicMemoryScope, obj["scope"], f"{context}.scope"),
         )
 
     if kind is OperationKind.ELEMENTWISE:

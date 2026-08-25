@@ -472,6 +472,19 @@
         "schedule_sha256": "fd485a28e304a012121a0631dc2f704ce0862050267833c239565943bb74ef44",
         "lowering_source_sha256": "e678994ff8cabae2b6bdd65bcfa6c0903f9e0826a58026febd4b58679fa6d0b2"
       }
+    },
+    {
+      "case_id": "atomic-reservation-accepted",
+      "schedule": "corpus/schedules/atomic-reservation-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "c9acec5cf95ed1146dcfda7184f0494585039c40b20237e06c35f677d3d610a9",
+        "lowering_source_sha256": "3000b7c57936c46a226792033c8b7f79b75eb89c7c686406f38fdb6715094763"
+      }
     }
   ]
 }

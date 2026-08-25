@@ -9,7 +9,8 @@ and any change to the lowering left the evidence stranded with no way to renew i
 editing the record -- which is the one thing evidence must never allow.
 
 This is that instrument. It lowers the Schedule through the released Compiler, runs the
-result against a float32 oracle, and writes a new record. It does not edit an existing one.
+result against an independent oracle or invariant, and writes a new record. It does not
+edit an existing one.
 
 Correctness only. No timing is taken here, so nothing this writes supports a performance
 claim, and the record says so in a field the contract test asserts.
@@ -33,7 +34,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from kernel_inputs import build_inputs  # noqa: E402
-from kernel_oracles import ORACLE_BY_ENTRY_POINT  # noqa: E402
+from kernel_oracles import MEASURE_BY_ENTRY_POINT, ORACLE_BY_ENTRY_POINT  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
 
 
@@ -135,9 +136,20 @@ def main() -> int:
         observed = launch(*inputs)
         torch.cuda.synchronize()
 
-    mismatch, measured, passed = measure_correctness(
-        observed, reference, distance, torch, arguments.tolerance
-    )
+    custom_measure = MEASURE_BY_ENTRY_POINT.get(entry_point)
+    if custom_measure is None:
+        mismatch, measured, passed = measure_correctness(
+            observed, reference, distance, torch, arguments.tolerance
+        )
+    else:
+        mismatch, measured, passed = custom_measure(
+            observed,
+            reference,
+            distance,
+            inputs,
+            torch,
+            arguments.tolerance,
+        )
 
     device = torch.cuda.get_device_properties(0)
 

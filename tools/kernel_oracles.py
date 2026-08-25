@@ -124,6 +124,49 @@ def _kda_weighted_combine_oracle(inputs, torch):
     ).to(torch.bfloat16), None
 
 
+def _atomic_reservation_oracle(inputs, torch):
+    """Snapshot the two facts an unordered atomic result must preserve."""
+
+    expert_ids, counts, _ = inputs
+    return expert_ids.clone(), counts.clone()
+
+
+def _measure_atomic_reservation(
+    observed, expert_ids, initial_counts, inputs, torch, tolerance
+):
+    """Judge contention by ownership invariants, never an invented lane order."""
+
+    del tolerance
+    current_counts = inputs[1]
+    valid = (expert_ids >= 0) & (expert_ids < initial_counts.numel())
+    invalid_mismatch = int((observed[~valid] != 0).sum().item())
+
+    reservations_mismatch = 0
+    expected_counts = initial_counts.clone()
+    for expert in range(initial_counts.numel()):
+        selected = expert_ids == expert
+        count = int(selected.sum().item())
+        expected_counts[expert] += count
+        actual = torch.sort(observed[selected]).values
+        start = int(initial_counts[expert].item())
+        expected = torch.arange(
+            start,
+            start + count,
+            dtype=observed.dtype,
+            device=observed.device,
+        )
+        reservations_mismatch += int((actual != expected).sum().item())
+
+    count_mismatch = int((current_counts != expected_counts).sum().item())
+    mismatch = invalid_mismatch + reservations_mismatch + count_mismatch
+    measured = {
+        "unique_old_values": reservations_mismatch == 0,
+        "masked_zero": invalid_mismatch == 0,
+        "final_counts_match": count_mismatch == 0,
+    }
+    return mismatch, measured, mismatch == 0
+
+
 def _masked_gemm_bias_oracle(inputs, torch):
     """Dense contraction plus the AccessMap's masked-zero bias semantics.
 
@@ -149,6 +192,7 @@ ORACLES = {
     "ragged_grouped_gemm_b1_smoke": _ragged_grouped_gemm_oracle,
     "indexed_gather_b8_smoke": _indexed_gather_oracle,
     "kda_weighted_combine_b8_smoke": _kda_weighted_combine_oracle,
+    "atomic_reservation_b8_smoke": _atomic_reservation_oracle,
 }
 
 # Observation tools select an oracle by the executable interface the Compiler returns.
@@ -166,10 +210,15 @@ _WORKLOAD_BY_ENTRY_POINT = {
     "cake_ragged_grouped_gemm_b1_smoke": "ragged_grouped_gemm_b1_smoke",
     "cake_indexed_gather_b8_smoke": "indexed_gather_b8_smoke",
     "cake_kda_weighted_combine_b8_smoke": "kda_weighted_combine_b8_smoke",
+    "cake_atomic_reservation_b8_smoke": "atomic_reservation_b8_smoke",
     "cake_swiglu_b8_smoke": "swiglu_b8_smoke",
     "cake_top_k_b8_smoke": "top_k_b8_smoke",
 }
 ORACLE_BY_ENTRY_POINT = {
     entry_point: ORACLES[workload]
     for entry_point, workload in _WORKLOAD_BY_ENTRY_POINT.items()
+}
+
+MEASURE_BY_ENTRY_POINT = {
+    "cake_atomic_reservation_b8_smoke": _measure_atomic_reservation,
 }

@@ -1145,7 +1145,10 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     # ---- buffer placement -------------------------------------------------
     for index, buffer in enumerate(schedule.buffers):
         path = f"buffers[{index}]"
-        if buffer.mode in (BufferMode.INPUT, BufferMode.OUTPUT) and buffer.space is not MemorySpace.GLOBAL:
+        if (
+            buffer.mode in (BufferMode.INPUT, BufferMode.OUTPUT, BufferMode.STATE)
+            and buffer.space is not MemorySpace.GLOBAL
+        ):
             out.add(
                 "BUFFER_IO_SPACE",
                 f"{path}.space",
@@ -1263,6 +1266,18 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
                 writers.setdefault(name, []).append(operation.op_id)
         overlap = sorted(set(operation.reads) & set(operation.writes))
         for name in overlap:
+            buffer = buffers.get(name)
+            if (
+                operation.kind is OperationKind.ATOMIC_RMW
+                and operation.reads
+                and operation.writes
+                and name == operation.reads[0] == operation.writes[0]
+                and buffer is not None
+                and buffer.mode is BufferMode.STATE
+            ):
+                # Reading and writing one state location is the defined effect of RMW,
+                # not an accidental alias. Every other overlap remains illegal.
+                continue
             out.add(
                 "OP_SELF_READ_WRITE",
                 path,
@@ -1359,6 +1374,26 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
                 f"buffers[{schedule.buffers.index(buffer)}]",
                 f"scratch buffer {name!r} is read by {', '.join(sorted(ops))} but never "
                 "written",
+                category,
+            )
+    for buffer in schedule.buffers:
+        if buffer.mode is not BufferMode.STATE:
+            continue
+        position = schedule.buffers.index(buffer)
+        if buffer.name not in readers:
+            out.add(
+                "STATE_NOT_READ",
+                f"buffers[{position}].mode",
+                f"state buffer {buffer.name!r} is never read; use output for a "
+                "write-only result",
+                category,
+            )
+        if buffer.name not in writers:
+            out.add(
+                "STATE_NOT_WRITTEN",
+                f"buffers[{position}].mode",
+                f"state buffer {buffer.name!r} is never written; use input for "
+                "read-only data",
                 category,
             )
 
@@ -1668,6 +1703,65 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     "global memory",
                     category,
                 )
+    if operation.kind is OperationKind.ATOMIC_RMW:
+        if not -(1 << 31) <= operation.parameters.value < (1 << 31):
+            out.add(
+                "ATOMIC_VALUE_RANGE",
+                f"{path}.parameters.value",
+                "the admitted int32 atomic add scalar must be in signed 32-bit range",
+                FindingCategory.HARDWARE_CONFORMANCE,
+            )
+        if len(operation.reads) != 2 or len(operation.writes) != 2:
+            out.add(
+                "ATOMIC_EDGE_COUNT",
+                path,
+                "the admitted atomic_rmw reads target then one runtime index and "
+                "writes the same target then one returned-old-value buffer",
+                category,
+            )
+        if operation.reads and operation.writes:
+            target = buffers.get(operation.reads[0])
+            result = buffers.get(operation.writes[-1])
+            if operation.writes[0] != operation.reads[0]:
+                out.add(
+                    "ATOMIC_TARGET_EDGE",
+                    f"{path}.writes",
+                    "atomic_rmw must write the same state buffer it reads first",
+                    category,
+                )
+            if target is not None:
+                if target.mode is not BufferMode.STATE:
+                    out.add(
+                        "ATOMIC_TARGET_MODE",
+                        f"{path}.reads",
+                        f"atomic target {target.name!r} is {target.mode.value}, not state",
+                        category,
+                    )
+                if target.dtype is not DType.INT32:
+                    out.add(
+                        "ATOMIC_TARGET_DTYPE",
+                        f"{path}.reads",
+                        f"the admitted atomic add targets int32, but {target.name!r} is "
+                        f"{target.dtype.value}",
+                        category,
+                    )
+            if result is not None:
+                if result.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "ATOMIC_RESULT_SPACE",
+                        f"{path}.writes",
+                        f"atomic old values stay in registers before an explicit store, "
+                        f"but {result.name!r} is in {result.space.value}",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+                if result.dtype is not DType.INT32:
+                    out.add(
+                        "ATOMIC_RESULT_DTYPE",
+                        f"{path}.writes",
+                        f"int32 atomic add returns int32, but {result.name!r} is "
+                        f"{result.dtype.value}",
+                        category,
+                    )
     if operation.kind is OperationKind.STORE:
         for name in operation.writes:
             buffer = buffers.get(name)
@@ -2003,14 +2097,15 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                 )
         if indirect:
             index_names = tuple(dict.fromkeys(component.name for component in indirect))
-            if operation.kind is not OperationKind.LOAD:
+            if operation.kind not in {OperationKind.LOAD, OperationKind.ATOMIC_RMW}:
                 out.add(
                     "ACCESS_INDEXED_OPERATION_UNLOWERABLE",
                     path,
-                    "the admitted runtime-indexed subset applies to global loads only",
+                    "the admitted runtime-indexed subset applies to global loads and "
+                    "atomic_rmw only",
                     FindingCategory.HARDWARE_CONFORMANCE,
                 )
-            else:
+            elif operation.kind is OperationKind.LOAD:
                 if operation.parameters.movement is not LoadMovement.GLOBAL:
                     out.add(
                         "ACCESS_INDEXED_MOVEMENT_UNLOWERABLE",
@@ -2027,6 +2122,24 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         f"runtime-indexed load reads data then its first-use ordered "
                         f"index buffers {list(expected_reads)}, got "
                         f"{list(operation.reads)}",
+                        category,
+                    )
+            else:
+                if len(access.indices) != 1 or len(indirect) != 1:
+                    out.add(
+                        "ATOMIC_INDEX_FORM",
+                        f"{path}.indices",
+                        "the admitted atomic target is rank one and has exactly one "
+                        "runtime INT32 index",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+                expected_reads = (access.buffer,) + index_names
+                if operation.reads != expected_reads:
+                    out.add(
+                        "ATOMIC_INDEX_BUFFER_READS",
+                        f"operations[{schedule.operations.index(operation)}].reads",
+                        f"atomic_rmw reads target then its first-use ordered index "
+                        f"buffers {list(expected_reads)}, got {list(operation.reads)}",
                         category,
                     )
 
@@ -2053,8 +2166,13 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
             # This first slice is a load whose one local result has the zipped index
             # domain once, plus every independent tile/full-dimension domain in access
             # order. That is the exact shape the Triton address branch emits.
+            result_name = None
             if operation.kind is OperationKind.LOAD and len(operation.writes) == 1:
-                staged = buffers.get(operation.writes[0])
+                result_name = operation.writes[0]
+            elif operation.kind is OperationKind.ATOMIC_RMW and len(operation.writes) == 2:
+                result_name = operation.writes[1]
+            if result_name is not None:
+                staged = buffers.get(result_name)
                 source = buffer
                 expected_shape: list[int] = []
                 added_index_domain = False
@@ -2093,8 +2211,13 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         expected_shape.append(source.shape[component.dimension])
                 if staged is not None and shape_known:
                     if staged.shape != tuple(expected_shape):
+                        code = (
+                            "ACCESS_INDEXED_RESULT_SHAPE"
+                            if operation.kind is OperationKind.LOAD
+                            else "ATOMIC_RESULT_SHAPE"
+                        )
                         out.add(
-                            "ACCESS_INDEXED_RESULT_SHAPE",
+                            code,
                             f"operations[{schedule.operations.index(operation)}].writes",
                             f"runtime-indexed access yields {expected_shape}, but "
                             f"{staged.name!r} has shape {list(staged.shape)}",
