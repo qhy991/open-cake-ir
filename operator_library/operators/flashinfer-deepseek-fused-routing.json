@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "routing.deepseek_grouped_topk",
+  "implementation_id": "flashinfer.deepseek-fused-routing",
+  "source_id": "flashinfer-main-857bc3a",
+  "family": "routing",
+  "variant": "Blackwell fused sigmoid, group selection, expert selection, and weight normalization",
+  "scope": "kernel_family",
+  "semantic_role": "Select expert groups and experts from router logits, normalize selected weights, and materialize replayable routing metadata.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp32", "int32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Expert top-k is between 1 and 8", "Group top-k is between 1 and 4", "Token count is between 1 and 4096"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["dynamic_dispatch", "piecewise_activation", "programmatic_launch", "reduction", "top_k"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4587",
+      "revision": "6cbe7f17da27e3b8e497b9569aa7d1159313132f",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "csrc/fused_moe/cake_deepseek_fused_routing/cake_deepseek_fused_routing_kernels.cu",
+      "revision": "857bc3a11494aaa0b7142a65c4a956ad68066f69",
+      "git_object": "a0377e17d7024a83d6bdeba1c181a7a783bb0948",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "merged",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

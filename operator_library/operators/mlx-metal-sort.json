@@ -1,0 +1,30 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "selection.sort",
+  "implementation_id": "mlx.metal-sort",
+  "source_id": "mlx-main-1f8e74e",
+  "family": "selection",
+  "variant": "MLX Metal sort and argsort family",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Order values, optionally retaining source indices, with deterministic handling selected for dtype and axis width.",
+  "input_regime": {
+    "dtypes": [],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Axis width and whether indices are requested select the implementation"]
+  },
+  "hardware_targets": ["apple_silicon_metal"],
+  "mechanisms": ["dynamic_dispatch", "sorting", "threadgroup_barrier", "threadgroup_memory"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/sort.metal",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "d9bf20476f527c62c2f3a2cdaeb56840f54ffb13",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "repository_main",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

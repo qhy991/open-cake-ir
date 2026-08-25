@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "attention.vsa_block_sparse",
+  "implementation_id": "flashinfer.vsa-block-sparse-attention",
+  "source_id": "flashinfer-main-857bc3a",
+  "family": "attention",
+  "variant": "SM100 and SM103 persistent block-64 sparse attention",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Compute variable-sparsity block attention while dispatching among compact, direct, persistent, and partial-block schedules.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "int32"],
+    "extent_class": "ragged",
+    "shape_constraints": ["Block size is 64 or 128", "Density and sequence length select the schedule", "Partial final blocks remain legal"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["block_sparse_indexing", "dynamic_dispatch", "online_softmax", "persistent_work", "sparse_attention"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4593",
+      "revision": "2f519edced8b027f8aee960bc622346e510e2cfa",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "csrc/cake_vsa/cake_vsa_blk64_persistent_sm_100a.cu",
+      "revision": "857bc3a11494aaa0b7142a65c4a956ad68066f69",
+      "git_object": "838b08646ca65623d4586621b602b3b8c2971d17",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "merged",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

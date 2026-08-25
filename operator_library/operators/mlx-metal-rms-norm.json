@@ -1,0 +1,30 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "normalization.rms_norm",
+  "implementation_id": "mlx.metal-rms-norm",
+  "source_id": "mlx-main-1f8e74e",
+  "family": "normalization",
+  "variant": "MLX Metal row-wise RMS normalization family",
+  "scope": "kernel_family",
+  "semantic_role": "Normalize each row by its root mean square and apply a learned scale using FP32 reduction state.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["The normalized width is runtime dispatched", "Forward and gradient kernels coexist in the source family"]
+  },
+  "hardware_targets": ["apple_silicon_metal"],
+  "mechanisms": ["reduction", "simdgroup_reduction", "threadgroup_barrier", "threadgroup_memory"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/rms_norm.metal",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "eb9b5c0af1cde571570ea749c95969d963262882",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "repository_main",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

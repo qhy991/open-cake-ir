@@ -1,0 +1,20 @@
+{
+  "$schema": "../schema.json#/$defs/source_snapshot",
+  "schema_version": 1,
+  "source_id": "flash-kmeans-a44c93f",
+  "kind": "git_repository",
+  "title": "Flash-KMeans production Triton source tree",
+  "url": "https://github.com/svg-project/flash-kmeans",
+  "revision_kind": "git_commit",
+  "revision": "a44c93f2e7ae45a227803e0325a53e645cef6ce4",
+  "tree": "198fd6b1983f9cefb54f5e2f42c06af406a79975",
+  "observed_at": "2026-08-26",
+  "license_spdx": "Apache-2.0",
+  "visibility": "public",
+  "code_copied": false,
+  "authoring_access": {
+    "known_kernel_reproduction": true,
+    "clean_start": false
+  },
+  "catalog_entries": []
+}

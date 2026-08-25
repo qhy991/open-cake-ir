@@ -1,0 +1,20 @@
+{
+  "$schema": "../schema.json#/$defs/source_snapshot",
+  "schema_version": 1,
+  "source_id": "apxinf-qhy-main-df5c55a",
+  "kind": "git_repository",
+  "title": "ApxInf Apple Metal decode kernel source tree",
+  "url": "https://github.com/qhy991/ApxInf",
+  "revision_kind": "git_commit",
+  "revision": "df5c55a06140107b24964d9e4abbefd9fa2a4733",
+  "tree": "0d014cfe247a728fdf97f072ec82d7f1d89c997a",
+  "observed_at": "2026-08-26",
+  "license_spdx": "Apache-2.0",
+  "visibility": "public",
+  "code_copied": false,
+  "authoring_access": {
+    "known_kernel_reproduction": true,
+    "clean_start": false
+  },
+  "catalog_entries": []
+}

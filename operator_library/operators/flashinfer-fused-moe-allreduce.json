@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "collective.fused_moe_all_reduce",
+  "implementation_id": "flashinfer.fused-moe-allreduce",
+  "source_id": "flashinfer-cake-tracker-20260826",
+  "family": "collective",
+  "variant": "Incubating TRT-LLM fused MoE all-reduce",
+  "scope": "multi_kernel_program",
+  "semantic_role": "Reduce MoE outputs across ranks and fuse expert weighting, indexed finalization, residual handling, or normalization where selected.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp32", "int32"],
+    "extent_class": "device_runtime",
+    "shape_constraints": ["Hidden width is 7168 in the cited lane", "World size is 2 or 4", "Token counts include 1, 64, and 2048"]
+  },
+  "hardware_targets": ["sm_100a"],
+  "mechanisms": ["collective_all_reduce", "cuda_graph_capture", "gather", "programmatic_launch", "reduction"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4730",
+      "revision": "9c7a85a71d1e906cafd26e18ff84753e2bd019c2",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://github.com/flashinfer-ai/flashinfer/blob/9c7a85a71d1e906cafd26e18ff84753e2bd019c2/csrc/cake_moe_allreduce_fusion/cake_moe_allreduce_fusion_kernels.cu",
+      "revision": "9c7a85a71d1e906cafd26e18ff84753e2bd019c2",
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "collected",
+  "claim_scope": "source_fact_only"
+}

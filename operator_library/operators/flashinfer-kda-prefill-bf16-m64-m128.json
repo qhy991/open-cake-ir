@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "recurrent.kimi_delta_attention_prefill",
+  "implementation_id": "flashinfer.kda-prefill-bf16-m64-m128",
+  "source_id": "flashinfer-main-857bc3a",
+  "family": "recurrent",
+  "variant": "SM100 BF16 D128 recurrent prefill with M64 and M128 schedules",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Apply recurrent Kimi Delta Attention over fixed or packed multi-token sequences and update the caller's state allocation in place.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32", "int32", "int64"],
+    "extent_class": "ragged",
+    "shape_constraints": ["K=V=128", "Prefill requires T>1", "State is indexed by sequence and head"]
+  },
+  "hardware_targets": ["sm_100a"],
+  "mechanisms": ["in_place_state", "matrix_multiply", "ragged_work", "recurrence", "tensor_memory", "tma", "warp_roles"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4262",
+      "revision": "1d2fc15ca10a8d1b9979e41c1ab0141087a519af",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "csrc/kda/flashkda_bf16_fused_m128.cu",
+      "revision": "857bc3a11494aaa0b7142a65c4a956ad68066f69",
+      "git_object": "0dfa8fadc08e2e0f24b4e8af9ae63d76e35c9154",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "merged",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

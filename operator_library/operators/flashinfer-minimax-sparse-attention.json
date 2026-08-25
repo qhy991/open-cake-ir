@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "attention.minimax_sparse_attention",
+  "implementation_id": "flashinfer.minimax-sparse-attention",
+  "source_id": "flashinfer-main-857bc3a",
+  "family": "attention",
+  "variant": "Blackwell BF16 paged sparse decode with top-32 blocks",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Evaluate sparse prefill or decode attention over selected flat or paged KV blocks with an online normalization state.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp8_e4m3", "int32"],
+    "extent_class": "ragged",
+    "shape_constraints": ["Decode and prefill use distinct schedules", "KV may be flat or paged", "Sparse block indices are runtime inputs"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["online_softmax", "paged_indexing", "sparse_attention", "tensor_memory", "tma", "top_k"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4355",
+      "revision": "f910ea9fdf5cd2c39ba33f6294165e66605d5871",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "csrc/blackwell_msa/sm100a/blackwell_msa_decode_m16_bf16_paged_topk32.cu",
+      "revision": "857bc3a11494aaa0b7142a65c4a956ad68066f69",
+      "git_object": "7842542f0dd4fffa0bd10d9c252443c113ad5edc",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "merged",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "selection.quantized_projection_topk",
+  "implementation_id": "apxinf.metal-w8-lm-head-top4",
+  "source_id": "apxinf-qhy-main-df5c55a",
+  "family": "selection",
+  "variant": "Qwen3.5 W8 tied-embedding projection with global top-4",
+  "scope": "multi_kernel_program",
+  "semantic_role": "Project one FP32 hidden row through group-wise symmetric W8 weights, retain a deterministic global top-4 on Metal, and return candidate token IDs for exact FP32 reranking.",
+  "input_regime": {
+    "dtypes": ["fp32", "int8"],
+    "extent_class": "static",
+    "shape_constraints": ["Group size is 64", "Hidden width is divisible by 64", "The Qwen3.5-0.8B lane uses vocab 248320 and hidden 1024"]
+  },
+  "hardware_targets": ["apple_gpu_family9", "apple_m4"],
+  "mechanisms": ["multi_kernel_program", "quantized_arithmetic", "reduction", "threadgroup_barrier", "threadgroup_memory", "top_k"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "crates/apxinf-metal/src/metal_w8.metal",
+      "revision": "df5c55a06140107b24964d9e4abbefd9fa2a4733",
+      "git_object": "a1d1aa02c80b167bd2b63bffe94c808d945dd1fa",
+      "symbol": "w8_rows_topk4"
+    }
+  ],
+  "upstream_state": "local_main",
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_fact_only"
+}

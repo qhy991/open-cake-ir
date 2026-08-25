@@ -1,0 +1,20 @@
+{
+  "$schema": "../schema.json#/$defs/source_snapshot",
+  "schema_version": 1,
+  "source_id": "mlx-main-1f8e74e",
+  "kind": "git_repository",
+  "title": "MLX production Metal kernel source tree",
+  "url": "https://github.com/ml-explore/mlx",
+  "revision_kind": "git_commit",
+  "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+  "tree": "05433bcb7241af2b3531e7ee94f1eed07d4bf15c",
+  "observed_at": "2026-08-26",
+  "license_spdx": "MIT",
+  "visibility": "public",
+  "code_copied": false,
+  "authoring_access": {
+    "known_kernel_reproduction": true,
+    "clean_start": false
+  },
+  "catalog_entries": []
+}

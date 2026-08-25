@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "moe.fused_w8a8",
+  "implementation_id": "flashinfer.alphamoe-w8a8-block-scale",
+  "source_id": "flashinfer-cake-tracker-20260826",
+  "family": "moe",
+  "variant": "Incubating Blackwell fused W8A8 block-scale MoE",
+  "scope": "megakernel_interpreter",
+  "semantic_role": "Gather routed tokens, run gate and up projections, apply SwiGLU, requantize, run the down projection, and accumulate weighted BF16 outputs in one fused MoE implementation.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32", "fp8_e4m3", "int32"],
+    "extent_class": "device_runtime",
+    "shape_constraints": ["Expert counts include 257 and 512", "Scale granularity is 128", "Top-k includes 9 and 10"]
+  },
+  "hardware_targets": ["sm_100a"],
+  "mechanisms": ["atomic_rmw", "block_scales", "gather", "grouped_contraction", "persistent_work", "quantized_arithmetic", "scatter", "top_k"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4287",
+      "revision": "08dc312ea572d120103642ee28a22ed56826562e",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://github.com/flashinfer-ai/flashinfer/blob/08dc312ea572d120103642ee28a22ed56826562e/csrc/alphamoe_sm100.cu",
+      "revision": "08dc312ea572d120103642ee28a22ed56826562e",
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "collected",
+  "claim_scope": "source_fact_only"
+}

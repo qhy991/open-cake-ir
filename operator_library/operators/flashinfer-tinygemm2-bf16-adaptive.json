@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "contraction.gemm_bias",
+  "implementation_id": "flashinfer.tinygemm2-bf16-adaptive",
+  "source_id": "flashinfer-main-857bc3a",
+  "family": "contraction",
+  "variant": "SM100 and SM103 adaptive small-batch BF16 GEMM plus bias",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Compute a batched BF16 matrix product with FP32 accumulation, add bias, and round to the required output contract across shallow and deep pipelines.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Batch includes non-power-of-two tails", "Small-M and fixed model dimensions select specialized schedules"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["dynamic_dispatch", "fused_epilogue", "matrix_multiply", "programmatic_launch", "tma"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4274",
+      "revision": "339a8f4cb2644fb85de79f3eed3624a1e91183d1",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "csrc/tinygemm2_sm100.cu",
+      "revision": "857bc3a11494aaa0b7142a65c4a956ad68066f69",
+      "git_object": "812fb088359740a02963f3d2c83a862ccbf48d29",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "merged",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

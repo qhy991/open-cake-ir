@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "state_space.mamba_ssd_combined",
+  "implementation_id": "flashinfer.mamba-ssd-combined",
+  "source_id": "flashinfer-main-857bc3a",
+  "family": "state_space",
+  "variant": "Blackwell combined Mamba SSD for batched and variable-length inputs",
+  "scope": "multi_kernel_program",
+  "semantic_role": "Run the factorized Mamba state-space recurrence, prefix processing, and state handoff for batched or packed variable-length sequences.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp32", "int32"],
+    "extent_class": "ragged",
+    "shape_constraints": ["Both batched and packed variable-length layouts are supported", "Initial and final recurrent state are explicit"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["in_place_state", "persistent_work", "ragged_work", "recurrence", "scan", "shared_memory_alias", "tensor_memory"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4576",
+      "revision": "624fce191f36ec143b32189ed01d14afb75c4594",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "csrc/cake_mamba_ssd_combined/generated/device/sm_100a/mamba_ssd_q_tmem_alias_bf16_varlen_351b79a64d.cu",
+      "revision": "857bc3a11494aaa0b7142a65c4a956ad68066f69",
+      "git_object": "ff2dc182811f0d1109e339c62216db79251c1bb7",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "merged",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

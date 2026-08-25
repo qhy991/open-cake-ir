@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "contraction.router_gemm",
+  "implementation_id": "flashinfer.router-gemm-bf16-small-m",
+  "source_id": "flashinfer-main-857bc3a",
+  "family": "contraction",
+  "variant": "Blackwell BF16 small-M router projection",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Project a small token batch into router logits using vectorized FMA and deterministic reductions instead of a tensor-core schedule.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["K is 6144 or 7168", "M is between 1 and 16", "N is 128 or 256"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["dynamic_dispatch", "programmatic_launch", "reduction", "vectorized_fma"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4594",
+      "revision": "4395327a4e42539cebd3e2f4087d083132c442f4",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "csrc/cake_router_gemm/cake_router_gemm_m1_k6144_device.cu",
+      "revision": "857bc3a11494aaa0b7142a65c4a956ad68066f69",
+      "git_object": "5f94642c46dd936458baf0421a77e4b72bdd7d0b",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "merged",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

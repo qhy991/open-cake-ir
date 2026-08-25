@@ -1,0 +1,30 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "convolution.nd",
+  "implementation_id": "mlx.metal-convolution",
+  "source_id": "mlx-main-1f8e74e",
+  "family": "convolution",
+  "variant": "MLX Metal convolution family",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Apply strided and dilated convolution windows while dispatching among direct and tiled Metal implementations.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Kernel, stride, dilation, padding, groups, and spatial rank are dispatch dimensions"]
+  },
+  "hardware_targets": ["apple_silicon_metal"],
+  "mechanisms": ["convolution_window", "dynamic_dispatch", "matrix_multiply", "simdgroup_matrix", "threadgroup_memory"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/conv.metal",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "6f3ce0cd43851d073f883c4d9a9198baaba6439f",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "repository_main",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

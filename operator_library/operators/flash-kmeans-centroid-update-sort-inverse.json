@@ -1,0 +1,30 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "clustering.kmeans_centroid_update",
+  "implementation_id": "flash-kmeans.centroid-update-sort-inverse",
+  "source_id": "flash-kmeans-a44c93f",
+  "family": "clustering",
+  "variant": "Sorted inverse mapping followed by segmented cluster sum and count",
+  "scope": "kernel_family",
+  "semantic_role": "Accumulate per-cluster feature sums and counts while preserving empty-cluster behavior and avoiding a single highly contended scatter reduction.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32", "int32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Cluster populations may be empty or highly skewed", "Feature and cluster tails remain observable"]
+  },
+  "hardware_targets": ["cuda_gpu"],
+  "mechanisms": ["segmented_reduction", "sorting"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "flash_kmeans/centroid_update_triton.py",
+      "revision": "a44c93f2e7ae45a227803e0325a53e645cef6ce4",
+      "git_object": "a8df1eb90f135041e1d3e469561d06493e02c186",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "repository_main",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "fused_graph.quantized_mlp",
+  "implementation_id": "apxinf.metal-w8-mlp-block",
+  "source_id": "apxinf-qhy-main-df5c55a",
+  "family": "fused_graph",
+  "variant": "Qwen3.5 W8 gate-up, SiLU multiply, and W8 down projection",
+  "scope": "multi_kernel_program",
+  "semantic_role": "Execute a complete quantized MLP block as three Metal dispatches in one command buffer while keeping intermediate activation tensors resident on the GPU.",
+  "input_regime": {
+    "dtypes": ["fp32", "int8"],
+    "extent_class": "static",
+    "shape_constraints": ["Decode batch is one", "Group size is 64", "Input, intermediate, and output widths are model-bound"]
+  },
+  "hardware_targets": ["apple_gpu_family9", "apple_m4"],
+  "mechanisms": ["elementwise_fusion", "matrix_multiply", "multi_kernel_program", "piecewise_activation", "quantized_arithmetic"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "crates/apxinf-metal/src/metal_w8_mlp.metal",
+      "revision": "df5c55a06140107b24964d9e4abbefd9fa2a4733",
+      "git_object": "a5420f5b4d222b05a947bbbe2b92f99136ef4450",
+      "symbol": "w8_mlp_gate_up"
+    }
+  ],
+  "upstream_state": "local_main",
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_fact_only"
+}

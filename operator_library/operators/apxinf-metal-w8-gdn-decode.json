@@ -1,0 +1,30 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "recurrent.gated_delta_net_decode",
+  "implementation_id": "apxinf.metal-w8-gdn-decode",
+  "source_id": "apxinf-qhy-main-df5c55a",
+  "family": "recurrent",
+  "variant": "Qwen3.5 quantized projection plus FP32 GDN decode recurrence",
+  "scope": "multi_kernel_program",
+  "semantic_role": "Project the decode input with W8 weights, update depthwise convolution state, normalize query and key channels, apply gated recurrent state mutation, and project the result.",
+  "input_regime": {
+    "dtypes": ["fp32", "int8"],
+    "extent_class": "static",
+    "shape_constraints": ["Decode batch is one", "Model dimensions and convolution width are fixed", "Recurrent state is explicit FP32 storage"]
+  },
+  "hardware_targets": ["apple_gpu_family9", "apple_m4"],
+  "mechanisms": ["convolution_window", "in_place_state", "matrix_multiply", "multi_kernel_program", "piecewise_activation", "quantized_arithmetic", "recurrence", "reduction"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "crates/apxinf-metal/src/metal_w8_gdn.metal",
+      "revision": "df5c55a06140107b24964d9e4abbefd9fa2a4733",
+      "git_object": "f70334c822dcc73d59551098ef8ad53eb0984210",
+      "symbol": "gdn_recurrent_update"
+    }
+  ],
+  "upstream_state": "local_main",
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_fact_only"
+}

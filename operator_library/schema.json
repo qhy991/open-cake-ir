@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-cake-ir.local/operator-library/schema-v1.json",
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "library_id",
+        "state",
+        "method_source",
+        "selection_policy",
+        "family_vocabulary",
+        "mechanism_vocabulary",
+        "sources",
+        "operators"
+      ],
+      "properties": {
+        "$schema": {"const": "schema.json#/$defs/manifest"},
+        "schema_version": {"const": 1},
+        "library_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$"},
+        "state": {"enum": ["draft", "collected"]},
+        "method_source": {"$ref": "#/$defs/safe_path"},
+        "selection_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "inclusions", "exclusions", "non_claims"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "inclusions": {"$ref": "#/$defs/nonempty_strings"},
+            "exclusions": {"$ref": "#/$defs/nonempty_strings"},
+            "non_claims": {"$ref": "#/$defs/nonempty_strings"}
+          }
+        },
+        "family_vocabulary": {"$ref": "#/$defs/nonempty_ids"},
+        "mechanism_vocabulary": {"$ref": "#/$defs/nonempty_ids"},
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/safe_path"}
+        },
+        "operators": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/safe_path"}
+        }
+      }
+    },
+    "source_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "source_id",
+        "kind",
+        "title",
+        "url",
+        "revision_kind",
+        "revision",
+        "tree",
+        "observed_at",
+        "license_spdx",
+        "visibility",
+        "code_copied",
+        "authoring_access",
+        "catalog_entries"
+      ],
+      "properties": {
+        "$schema": {"const": "../schema.json#/$defs/source_snapshot"},
+        "schema_version": {"const": 1},
+        "source_id": {"$ref": "#/$defs/id"},
+        "kind": {"enum": ["git_repository", "paper_artifact", "public_tracker"]},
+        "title": {"type": "string", "minLength": 1},
+        "url": {"type": "string", "pattern": "^https://"},
+        "revision_kind": {"enum": ["git_commit", "arxiv_version", "github_issue_updated_at"]},
+        "revision": {"type": "string", "minLength": 1},
+        "tree": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+        "observed_at": {"type": "string", "format": "date"},
+        "license_spdx": {"type": "string", "minLength": 1},
+        "visibility": {"enum": ["public", "local_restricted"]},
+        "code_copied": {"const": false},
+        "authoring_access": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["known_kernel_reproduction", "clean_start"],
+          "properties": {
+            "known_kernel_reproduction": {"const": true},
+            "clean_start": {"const": false}
+          }
+        },
+        "catalog_entries": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "operator_occurrence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "operator_id",
+        "implementation_id",
+        "source_id",
+        "family",
+        "variant",
+        "scope",
+        "semantic_role",
+        "input_regime",
+        "hardware_targets",
+        "mechanisms",
+        "locators",
+        "upstream_state",
+        "review_status",
+        "claim_scope"
+      ],
+      "properties": {
+        "$schema": {"const": "../schema.json#/$defs/operator_occurrence"},
+        "schema_version": {"const": 1},
+        "operator_id": {"$ref": "#/$defs/id"},
+        "implementation_id": {"$ref": "#/$defs/id"},
+        "source_id": {"$ref": "#/$defs/id"},
+        "family": {"$ref": "#/$defs/id"},
+        "variant": {"type": "string", "minLength": 1},
+        "scope": {"enum": ["single_kernel", "kernel_family", "multi_kernel_program", "runtime_dispatch", "megakernel_interpreter"]},
+        "semantic_role": {"type": "string", "minLength": 1},
+        "input_regime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dtypes", "extent_class", "shape_constraints"],
+          "properties": {
+            "dtypes": {"$ref": "#/$defs/ids"},
+            "extent_class": {"enum": ["static", "bounded_dynamic", "ragged", "device_runtime"]},
+            "shape_constraints": {
+              "type": "array",
+              "items": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "hardware_targets": {"$ref": "#/$defs/nonempty_ids"},
+        "mechanisms": {"$ref": "#/$defs/nonempty_ids"},
+        "locators": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/locator"}
+        },
+        "upstream_state": {"enum": ["merged", "open", "repository_main", "local_main"]},
+        "review_status": {"enum": ["collected", "source_verified", "semantics_reviewed"]},
+        "claim_scope": {"const": "source_fact_only"}
+      }
+    },
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value", "revision", "git_object", "symbol"],
+      "properties": {
+        "kind": {"enum": ["repository_path", "pull_request", "web_document"]},
+        "value": {"type": "string", "minLength": 1},
+        "revision": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+        "git_object": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+        "symbol": {"type": ["string", "null"], "minLength": 1}
+      }
+    },
+    "safe_path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$"},
+    "ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "nonempty_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "nonempty_strings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

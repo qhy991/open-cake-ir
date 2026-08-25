@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "attention.multi_latent_decode",
+  "implementation_id": "flashinfer.trtllm-mla-bf16-low-batch",
+  "source_id": "flashinfer-cake-tracker-20260826",
+  "family": "attention",
+  "variant": "Incubating low-batch paged BF16 MLA single launch",
+  "scope": "single_kernel",
+  "semantic_role": "Compute paged multi-latent attention decode for low batch sizes using a single-launch specialist.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32", "int32"],
+    "extent_class": "ragged",
+    "shape_constraints": ["Batch includes 1 and 4", "Head count is 128 in the cited lane", "Paged sequence length is runtime data"]
+  },
+  "hardware_targets": ["sm_100a"],
+  "mechanisms": ["matrix_multiply", "online_softmax", "paged_indexing", "tensor_memory", "tma"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4557",
+      "revision": "127b58a99c744434940d1eb65cae56f0099d11f2",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://github.com/flashinfer-ai/flashinfer/blob/127b58a99c744434940d1eb65cae56f0099d11f2/csrc/mla/cake_trtllm_mla_bf16_low_batch_single_launch.cu",
+      "revision": "127b58a99c744434940d1eb65cae56f0099d11f2",
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "collected",
+  "claim_scope": "source_fact_only"
+}

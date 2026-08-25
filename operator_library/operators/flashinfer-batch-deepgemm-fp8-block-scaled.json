@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "contraction.batched_block_scaled_gemm",
+  "implementation_id": "flashinfer.batch-deepgemm-fp8-block-scaled",
+  "source_id": "flashinfer-cake-tracker-20260826",
+  "family": "contraction",
+  "variant": "Incubating SM100 and SM103 ragged batch FP8 DeepGEMM",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Compute a batch of block-scaled FP8 matrix products whose actual per-item M extent is smaller than a padded capacity.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32", "fp8_e4m3", "int32"],
+    "extent_class": "device_runtime",
+    "shape_constraints": ["Actual M is device-resident within a padded capacity", "Batch is 64 in the cited lane", "Scale storage is packed and aligned"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["block_scales", "dynamic_extent", "matrix_multiply", "ragged_work", "scale_packing", "tensor_memory", "tma"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4564",
+      "revision": "1a015918238c3da41d57fe29be2791bc4d0175ef",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://github.com/flashinfer-ai/flashinfer/blob/1a015918238c3da41d57fe29be2791bc4d0175ef/csrc/cake/cake_batch_deepgemm_fp8_m32_n4096_k7168_s5e2_g8.cu",
+      "revision": "1a015918238c3da41d57fe29be2791bc4d0175ef",
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "collected",
+  "claim_scope": "source_fact_only"
+}
