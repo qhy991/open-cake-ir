@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "purpose": "successor_lowering_correctness_attempt",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "plan": {
+    "path": "inventory/V25_B200_CORRECTNESS_PLAN_20260825.json",
+    "raw_sha256": "1d4658169590aaadd1081cca6bd2af761c5bb8b1d0b146265ad641b406ebf968"
+  },
+  "execution": {
+    "broker_job_id": "gpuq-948eb76ab045",
+    "mode": "shared",
+    "gpu_count": 1,
+    "device": "NVIDIA B200",
+    "first_record_observed_at": "2026-08-25T07:18:11Z",
+    "last_record_observed_at": "2026-08-25T07:19:09Z",
+    "automatic_case_retries": 0,
+    "broker_exit_code": 1
+  },
+  "selected_case_count": 14,
+  "recorded_results": [
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/flash-kmeans-r16-accepted.json", "raw_sha256": "27c0e0620eb81636c28b50829c6aa8ac06c585d39e4bbbcf7df0c52e76feda3e"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/flash-kmeans-r25-accepted.json", "raw_sha256": "f6dc2254d227881f18c10d99f673494be5b87ff2d3d79c9aa4f2efc3e202f4f1"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/rmsnorm-accepted.json", "raw_sha256": "096ef3aacf4ebf5b3af0e8c38cb3e83f1dee98f332f96d27dbd0d24f1341feb2"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/rmsnorm-persistent.json", "raw_sha256": "4f0bf1d5a98ef6ef9b7ce1630adab6eb835181ec39d98b2f424ffd508ddf1232"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/softmax-accepted.json", "raw_sha256": "1b34785cd0f277f0ae19b8940ce0ecca107661ae92013073c6e23a270caa60b9"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/layernorm-accepted.json", "raw_sha256": "3c2c5877d7e6635b074173304edd070459dfda8beb1f872caaf822eda25a6ead"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/gemm-bias-accepted.json", "raw_sha256": "ccf0139589beafc212578c4bedd2f5071ab206415c4c41e2404f5231ef120508"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/gemm-bias-shape-drift.json", "raw_sha256": "399243e5896b1ddea825deb4f8581f69ef27a16b187a379e8338b08b860147cd"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/swiglu-accepted.json", "raw_sha256": "41e13255f484a9bcf3fe0aa22aca5624de76dce331e239b897e73dc603f789e7"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/top-k-accepted.json", "raw_sha256": "e1abb180f8659c94934e9c6984cc1d960aa61444932525d2fa7ee81cea4fb11b"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/block-scaled-gemm-accepted.json", "raw_sha256": "5d190bccbe66f0134aeec3789c1fdc563be0e33dcc7fccc8de061b04eab57ed8"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/ragged-zero-pad-accepted.json", "raw_sha256": "b634f2b400e3a679476f694918016f78592f4bb2404d33f38796e573acf459a3"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/ragged-grouped-gemm-accepted.json", "raw_sha256": "3ab076fb2165a9b30dbe0743613dd68a98fe1dc8122c29a9bfcfd0cf6536b380"},
+    {"path": "inventory/V25_B200_CORRECTNESS_20260825/indexed-gather-accepted.json", "raw_sha256": "b6e8f81cc3c9ec86c9c9c962455106378f1ef49d4e7f356e37b95eb6aa6019dc"}
+  ],
+  "unrecorded_failure_count": 0,
+  "disposition": {
+    "generated_partition_passed": false,
+    "compiled_and_launched_count": 14,
+    "recorded_pass_count": 12,
+    "recorded_fail_count": 2,
+    "checked_asset_partition": "missing",
+    "v24_crash_paths_closed": true,
+    "note": "Both v24 crash paths now produce durable records: batched flash-kmeans passes and GEMM shape drift compiles and launches. Both GEMM rows remain failed under the unchanged 1e-5 tolerance. This attempt authorizes no correctness or performance claim and is never restamped as successor evidence."
+  }
+}

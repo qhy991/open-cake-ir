@@ -1,0 +1,42 @@
+{
+ "schema_version": 2,
+ "observed_at": "2026-08-25T07:18:43Z",
+ "purpose": "lowered_kernel_correctness",
+ "scientific_claim_authorized": false,
+ "performance_measured": false,
+ "host": "warm-sun-begins-fin-03",
+ "device": "NVIDIA B200",
+ "compute_capability": [
+  10,
+  0
+ ],
+ "toolchain": {
+  "cutlass": "4.7.0",
+  "torch": "2.13.0+cu130"
+ },
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v25",
+  "revision_sha256": "d7129c4d2530bc8f62df02659f0eef828699539fbe5ca14c21bb9cec9b51633f"
+ },
+ "schedule": {
+  "path": "corpus/schedules/gemm-bias-b1-smoke-shape-drift.json",
+  "schedule_id": "gemm-bias-b1-smoke-shape-drift-v1",
+  "canonical_sha256": "5cd8b814a860f67ab7734312cb350001dd7051f32119c4009020fbf6792755ae"
+ },
+ "lowering": {
+  "generated": true,
+  "entry_point": "cake_gemm_bias_b1_smoke",
+  "source_sha256": "5c17a2da46f4b9d73b526771e894c0e508cab95d176c7ef19b102c4bef9e51ff",
+  "source_lines": 116
+ },
+ "result": {
+  "compiled": true,
+  "launched": true,
+  "total_elements": 131072,
+  "mismatch_count": 3993,
+  "max_deviation": 3.814697265625e-05,
+  "tolerance": 1e-05,
+  "passed": false
+ },
+ "note": "Compiler.lower generated this source from the Schedule; there is no checked-in template for this lowering route. Correctness only -- no timing was taken. Reproduce with tools/observe_lowered_kernel.py."
+}

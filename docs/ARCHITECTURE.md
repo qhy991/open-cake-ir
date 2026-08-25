@@ -256,7 +256,9 @@ graph TD
 `tools/release_compiler_cycle.sh` derives the id and prepares the Gate, then stops unless
 an externally written approval binds that exact Gate. Rerunning the same command consumes
 the approval through the single release validator. The cycle cannot write its own approval
-(ADR 0030). The current v24 approval predates that boundary and is not independent review.
+(ADR 0030). The v24 approval predates that boundary and remains historical same-actor
+evidence; the current v25 approval was independently written by the tmux 882 window1
+reviewer after binding the exact final Gate.
 Frozen Study Contracts are consumed through explicit successors rather than being
 re-stamped.
 
@@ -307,12 +309,12 @@ graph LR
 | Authoring Environment, both arms | implemented |
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
-| Compile → external oracle → GPU timing | correctness is implemented. Historical B200 observations cover eleven pre-v24 emitted Schedule slices, including the KDA-derived standalone SwiGLU, Top-K, block-scale contraction, valid-prefix, ragged grouped-GEMM and runtime-indexed gather slices. The route migration changed Schedule/source bytes, so those frozen observations are historical rather than current-v24 proof; successor observations are still missing |
+| Compile → external oracle → GPU timing | correctness is implemented. Historical B200 observations cover eleven pre-v24 emitted Schedule slices. The frozen v24 attempt exposed an out-of-bounds GEMM mask and two observation crashes. The preregistered v25 successor compiled and launched all 14 generated lowerings, retained 12 passes and two GEMM failures under the unchanged `1e-5` threshold, and measured no timing. The current TinyGEMM2 checked-asset observation remains missing |
 | Profiler evidence in the inner loop | partial relative to the paper — Executor v18 composes the canonical no-timing NCU assay after every correctness-qualified search survivor, retains raw/profile replay for all of them and feeds back the selected profile; a bounded live v18 two-arm successor covers selected and non-selected survivors, and scientific v3 executes it, but two missing Runs prevent the preregistered estimate |
-| Retained evidence and the outer loop gate | implemented; successor releases enforce an external approval-writer boundary, while the current v24 record remains same-actor evidence rather than independent review |
+| Retained evidence and the outer loop gate | implemented; successor releases enforce an external approval-writer boundary. v24 remains same-actor historical evidence, while v25 was independently reviewed and bound to the final Gate |
 | Deterministic lowering | one typed route selects mechanism, not Workload. `triton` and `cutlass_cute_dsl` generate operation bodies from arbitrary conforming Schedules in their supported subsets. `checked_cuda_asset` has one bounded entry, `cake_tinygemm2_stage4_split_k`; it stamps a digest into a checked-in file and reports `generated=false` rather than conflating materialization with generation |
 | Live candidate-set authoring | implemented and bounded-live exercised — both Codex 0.144.4 policies pass two-arm envelope qualification, the closed policy separately passes at the exact `xhigh` treatment, and candidate-set v2 produced three launchable Candidates and searched two in each arm on B200; qualification proves transport and the Campaign is system qualification only, so neither is an 80M scientific result |
-| The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but Compiler v24 retains no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
+| The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but Compiler v25 retains no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
 | Diagnosis routing | implemented — every rejection is routed to the candidate, the verifier, the IR vocabulary or the cost model, and each destination is inferred from a signal the loop already produces |
 | Cost-model ranking | mechanism implemented but no released coverage — the structural hypothesis remains measurable, while public ranking declines every current semantic digest |
 

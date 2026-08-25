@@ -1,8 +1,8 @@
 # Current-state inventory
 
 Snapshot: 2026-08-25 after declared-domain ranking calibration, candidate-set envelope implementation and live
-system qualification, historical Executor-v10 NCU attribution validation, Executor v27 release and Compiler v24
-lowering-route/Workload ownership separation over the KDA-derived primitive slices. The final
+system qualification, historical Executor-v10 NCU attribution validation, Executor v27 release and Compiler v25
+access-boundary successor over the v24 lowering-route/Workload ownership separation. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
@@ -29,7 +29,7 @@ causal effect, serving and paper reproduction are not.
 
 ## New repository state
 
-- Compiler Revision `open-cake-ir-sm100a-v24` binds the exact Target, public Schedule authoring contract, 48-source
+- Compiler Revision `open-cake-ir-sm100a-v25` binds the exact Target, public Schedule authoring contract, 48-source
   closure, 32-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
   remain immutable history; v7 and v8 are archived byte-for-byte because retained calibration and Study authorities
   witness them. v9 makes an otherwise-lowerable backend-emitted MMA without an instruction contract a structured,
@@ -71,10 +71,16 @@ causal effect, serving and paper reproduction are not.
   now chooses between two generated mechanisms and the bounded TinyGEMM2 checked asset; global Buffers derive the
   emitted signature, while Workload shape/oracle checks remain in Lab. A GEMM bias-extent variant is consequently
   lowerable, whereas three-part reduction and wrong-epilogue TinyGEMM2 variants are valid IR but cannot use the
-  retained asset. Frozen pre-v24 GPU observations and ranking decisions remain historical; no current v24 B200 or
-  ranking successor is inferred from them. Release-cycle automation now prepares but cannot write the approval it
-  consumes; a stale approval leaves the prior lock intact until an external reviewer binds the exact new Gate. The
-  current v24 approval predates that repair and remains same-actor evidence. The reviewed
+  retained asset. The frozen v24 attempt then selected all 14 generated lowerings before one brokered B200 run and
+  retained 11 passes, one numerical GEMM failure and two crashes. v25 makes each tiled access use the addressed
+  Buffer's own dimension, repairs the batched tie audit and models the already-declared masked-zero bias semantics
+  without adding IR vocabulary. Its preregistered successor writes all 14 records after compile and launch: 12 pass,
+  while both GEMM rows retain maximum deviation `3.814697265625e-05` above the unchanged `1e-5` boundary. Thus both
+  v24 crash paths are closed but the generated partition is still failed. The current TinyGEMM2 checked-asset
+  observation and a current ranking calibration remain missing; historical evidence is not relabelled. Release-cycle
+  automation prepared the v25 Gate but could not write its approval. The tmux 882 window1 reviewer rejected two stale
+  intermediate Gates, independently checked the final 48-source/32-case closure, and wrote only the final approval.
+  The reviewed
   KDA snapshot
   remains 0/57 for complete-version expressibility because routing/group formation, valid-tile work acquisition,
   the second contraction, scatter and the multi-kernel program DAG are still absent; no KDA performance claim is
@@ -105,7 +111,7 @@ causal effect, serving and paper reproduction are not.
   single authority for choosing the
   closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
-- Five current Study templates resolve Compiler v24 and Executor v27 into exact CampaignLocks without revision-only
+- Five current Study templates resolve Compiler v25 and Executor v27 into exact CampaignLocks without revision-only
   Study successors. The matched templates profile every correctness-qualified search
   survivor through the existing no-timing attribution purpose, and feed back only the selected survivor's checked
   projection. Frozen selected-only evidence
@@ -129,7 +135,7 @@ causal effect, serving and paper reproduction are not.
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema, fresh-process replay and one
   RunAudit authority for separate archive-integrity and filesystem-custody facts.
-- The current local contract suite passes 389 tests and 322 parameterized subtests; the earlier remote qualification passed its
+- The current local contract suite passes 393 pytest items; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain

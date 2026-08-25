@@ -34,7 +34,9 @@ Run `bash tools/release_compiler_cycle.sh` to derive the id and prepare the Corp
 new Gate. A reviewer outside that automation must inspect the exact Gate diff, then write the sole approval artifact
 with `schema_version`, `decision: "approved"`, the Gate path and canonical SHA-256, a reviewer identity and an
 approval basis. Rerun the same no-argument command to validate that artifact and install the verified lock. The
-current v24 approval predates this protocol and must not be described as independent review.
+v24 approval predates this protocol and remains historical same-actor evidence. The current
+v25 approval was written by the distinct tmux 882 window1 reviewer after it independently
+bound the final 48-source, 32-case Gate.
 
 The cycle does not re-pin a **Target definition**: `compiler/revision.json` holds each Target's `canonical_sha256`, and editing
 `compiler/targets/*.json` means updating that pin by hand first, or the cycle stops at `target definition ... bytes

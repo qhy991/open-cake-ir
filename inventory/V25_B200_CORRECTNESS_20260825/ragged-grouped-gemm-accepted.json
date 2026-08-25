@@ -1,0 +1,42 @@
+{
+ "schema_version": 2,
+ "observed_at": "2026-08-25T07:19:04Z",
+ "purpose": "lowered_kernel_correctness",
+ "scientific_claim_authorized": false,
+ "performance_measured": false,
+ "host": "warm-sun-begins-fin-03",
+ "device": "NVIDIA B200",
+ "compute_capability": [
+  10,
+  0
+ ],
+ "toolchain": {
+  "cutlass": "4.7.0",
+  "torch": "2.13.0+cu130"
+ },
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v25",
+  "revision_sha256": "d7129c4d2530bc8f62df02659f0eef828699539fbe5ca14c21bb9cec9b51633f"
+ },
+ "schedule": {
+  "path": "corpus/schedules/ragged-grouped-gemm-b1-smoke.json",
+  "schedule_id": "ragged-grouped-gemm-b1-smoke-v1",
+  "canonical_sha256": "f00886951d81c7f87e72aa75127ebf8bd6a568e3e39ae836b8ef74c426af7b5c"
+ },
+ "lowering": {
+  "generated": true,
+  "entry_point": "cake_ragged_grouped_gemm_b1_smoke",
+  "source_sha256": "ebb339711b7974b9b4cd3b42fa121fcbb139dde8f0f9e9f29be3c81985f00961",
+  "source_lines": 113
+ },
+ "result": {
+  "compiled": true,
+  "launched": true,
+  "total_elements": 1024,
+  "mismatch_count": 0,
+  "max_deviation": 1.9073486328125e-06,
+  "tolerance": 1e-05,
+  "passed": true
+ },
+ "note": "Compiler.lower generated this source from the Schedule; there is no checked-in template for this lowering route. Correctness only -- no timing was taken. Reproduce with tools/observe_lowered_kernel.py."
+}

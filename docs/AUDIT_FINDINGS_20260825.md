@@ -1,9 +1,9 @@
 # Audit findings register, 2026-08-25
 
-This is the current-branch disposition of the external audit originally performed at
+This is the current-`main` disposition of the external audit originally performed at
 `f503de4` and rechecked at `e351b67`. The original prose lived in a divergent old
-worktree; every conclusion below was reproduced or falsified again on the current
-`codegen-prototype` line before changing its disposition.
+worktree; every conclusion below was reproduced or falsified again before changing its
+disposition.
 
 ## Disposition summary
 
@@ -14,10 +14,11 @@ worktree; every conclusion below was reproduced or falsified again on the curren
 | 3 | committed Evidence can fail custody checks after clone | fixed by orthogonal archive-integrity and filesystem-custody facts |
 | 4 | historical ranking checker duplicates current order | refuted; historical/current split is intentional |
 | 5 | residency provenance was operator-supplied | fixed; host and time derive from the run |
-| 6 | Compiler release writes its own approval | successor mechanism fixed; current v24 approval is not independent |
+| 6 | Compiler release writes its own approval | fixed and independently exercised by Compiler v25 |
 | 7 | revision identities cause Study successor churn | fixed by stable templates and exact CampaignLocks |
 | 8 | lowering profile is both routing and workload constraint | fixed in Compiler v24 |
 | 9 | emitter preconditions were late failures | fixed in Compiler v23 |
+| 10 | tiled accesses used the coordinate owner's extent instead of the accessed Buffer's extent | fixed in Compiler v25; B200 successor retains two separate numerical failures |
 
 ## Re-verification and action
 
@@ -77,11 +78,13 @@ automation writes an approval bound to the exact Gate digest, rerunning the same
 consumes it through the existing release validator. An executable contract proves both
 the refusal and success transitions.
 
-The current v24 approval predates this repair and records the releasing repository
-owner, so it is not retroactively independent evidence. The successor mechanism is
-fixed; the evidence limitation closes only when a distinct reviewer actually approves a
-future release. ADR 0030 owns this boundary without adding signatures, accounts or a
-second release implementation.
+The v24 approval predates this repair and records the releasing repository owner, so it
+is not retroactively independent evidence. Compiler v25 closes the successor limitation:
+the tmux 882 window1 reviewer independently recomputed the final Gate digest, checked all
+48 source receipts and the 32-case semantic diff, refused two stale intermediate Gates,
+then wrote only the approval bound to the final Gate. The release automation consumed
+that approval without a second release implementation. ADR 0030 owns this boundary
+without adding signatures or accounts.
 
 ### 7: stable design templates, exact execution locks
 
@@ -119,8 +122,35 @@ block only lowering, not IR acceptance. The reduction drift Corpus case is there
 `accepted=true, lowering_eligible=false`. ADR 0029 records the ownership boundary.
 
 Frozen pre-v24 observations and ranking calibrations keep their old Schedule/source
-bytes. They are not re-labelled as v24 evidence: successor B200 observations and a
-successor ranking calibration instrument are currently missing. The v24 Corpus Gate is
-32/32 and the zero-GPU contract suite passes 389 tests plus 322 parameterized subtests;
-those gates validate the ownership migration but do not substitute for the missing
-on-device successors.
+bytes. They were not re-labelled as v24 evidence. The frozen v24 diagnostic attempt and
+the v25 successor now provide the historical/current split for generated lowering, while
+a successor ranking calibration remains missing. The TinyGEMM2 checked-asset partition
+also remains missing because the historical r31 launch is not current-v25 binary
+evidence. The v25 Corpus Gate is 32/32 and the zero-GPU suite passes 393 pytest items;
+those gates validate the ownership migration but do not substitute for either missing
+successor.
+
+### 10: an access is bounded by the Buffer it addresses
+
+The frozen v24 plan selected the complete 14-case generated-lowering domain before GPU
+work. Its one broker job retained 11 passes, one numerical GEMM failure and two crashes.
+The batched Flash-KMeans result audit indexed a rank-three distance tensor as though its
+output were rank one. The GEMM shape-drift oracle also assumed that bias width equalled
+output width and crashed before compilation. More importantly, emitted source masked its
+128-element bias with the 256-element matrix axis, allowing an out-of-bounds read.
+
+ADR 0032 assigns one owner to the bound: `AccessMap.indices[position]` addresses the
+accessed Buffer's `shape[position]`. Program axes and loops still own work decomposition,
+not every Buffer reusing their coordinate. No new primitive, profile, layout abstraction
+or compatibility mode was added. The observer now flattens batched tie rows with a
+shape-consistency exception, and the independent GEMM oracle implements the pre-existing
+masked-zero semantics for a shorter bias.
+
+The preregistered v25 successor (`gpuq-948eb76ab045`, shared B200, no timing, zero retries)
+wrote all 14 records after compile and launch. Flash-KMeans now passes and GEMM shape
+drift now reaches a durable result, closing both crash paths. Twelve records pass. Both
+GEMM rows remain failed under the unchanged `1e-5` maximum-absolute tolerance, with
+maximum deviation `3.814697265625e-05` and 3,997/3,993 violating elements respectively.
+That is retained numerical evidence, not a reason to widen the threshold or claim the
+generated partition passed. The current TinyGEMM2 checked-asset partition remains
+separately missing.
