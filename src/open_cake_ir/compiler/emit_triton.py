@@ -334,6 +334,31 @@ class _TritonEmitter:
             bound = self._bound(access, buffer, vector)
             if bound is not None:
                 masks.append(f"{vector}{self._broadcast(vector, vectors)} < {bound}")
+        relation = buffer.valid_extent
+        if relation is not None:
+            _require(
+                len(relation.indexed_by) == 1,
+                "the Triton valid-extent subset has one indexed axis",
+            )
+            extent_axis = relation.indexed_by[0]
+            _require(
+                extent_axis < len(expressions),
+                "the valid-extent index axis is present in the access map",
+            )
+            extent_buffer = self.schedule.buffer(relation.buffer)
+            _require(
+                extent_buffer is not None and len(extent_buffer.shape) == 1,
+                "the Triton valid-extent subset uses a rank-1 extent buffer",
+            )
+            extent_name = f"{access.operation}_{access.buffer}_valid_extent"
+            self.line(
+                f"{pad}{extent_name} = tl.load("
+                f"{relation.buffer} + {expressions[extent_axis]})"
+            )
+            coordinate = expressions[relation.dimension]
+            masks.append(
+                f"{coordinate}{self._broadcast(coordinate, vectors)} < {extent_name}"
+            )
         # `&` binds tighter than `<` in Python, so an unparenthesized conjunction of
         # comparisons silently becomes a chained comparison against a bitwise and. No
         # existing profile masked two axes at once, so the emitted text was correct
@@ -527,8 +552,8 @@ class _TritonEmitter:
     def _emit_load(self, operation, pad: str) -> None:
         access = self.schedule.access_map(operation.op_id, operation.reads[0])
         _require(access is not None, f"load {operation.op_id!r} has no access map")
-        pointer, mask = self._address(access, pad)
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        pointer, mask = self._address(access, pad)
         self.line(f"{pad}{operation.op_id}_ptrs = {pointer}")
         self.line(f"{pad}{operation.writes[0]} = tl.load(")
         self.line(f"{pad}    {operation.op_id}_ptrs,")
@@ -870,8 +895,8 @@ class _TritonEmitter:
     def _emit_store(self, operation, pad: str) -> None:
         access = self.schedule.access_map(operation.op_id, operation.writes[0])
         _require(access is not None, f"store {operation.op_id!r} has no access map")
-        pointer, mask = self._address(access, pad)
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        pointer, mask = self._address(access, pad)
         self.line(f"{pad}tl.store(")
         self.line(f"{pad}    {pointer},")
         self.line(f"{pad}    {operation.reads[0]},")

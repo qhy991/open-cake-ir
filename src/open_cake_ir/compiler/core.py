@@ -392,6 +392,28 @@ def _block_scaled_gemm_b1_smoke_conformance(buffers, operations) -> list["Findin
     ]
 
 
+def _ragged_zero_pad_b1_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """Four padded groups materialized with their runtime-invalid rows zeroed."""
+
+    coheres = (
+        _shape_of(buffers, "ragged") == (4, 8, 16)
+        and _shape_of(buffers, "lengths") == (4,)
+        and _shape_of(buffers, "dense") == (4, 8, 16)
+        and _shape_of(buffers, "tile") == (8, 16)
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.ragged.shape",
+            "the ragged smoke profile has four capacity-8 groups of 16-wide rows",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
 def _swiglu_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
     """SwiGLU is two equally shaped inputs and one equally shaped output.
 
@@ -583,6 +605,17 @@ _PROFILES: Mapping[str, _Profile] = {
             "entry_abi": "five_cuda_tensors_current_stream",
         },
         conformance=_block_scaled_gemm_b1_smoke_conformance,
+        backend=emit_triton,
+    ),
+    "ragged_zero_pad_b1_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_ragged_zero_pad_b1_smoke",
+            "target": "sm_100a",
+            "entry_abi": "three_cuda_tensors_current_stream",
+        },
+        conformance=_ragged_zero_pad_b1_smoke_conformance,
         backend=emit_triton,
     ),
     "layernorm_b8_smoke": _Profile(

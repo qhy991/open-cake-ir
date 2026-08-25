@@ -345,6 +345,18 @@ def schedule_schema() -> dict[str, Any]:
                                 },
                             }
                         ),
+                        "valid_extent": _object(
+                            {
+                                "dimension": _NONNEGATIVE,
+                                "buffer": _NAME,
+                                "indexed_by": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "uniqueItems": True,
+                                    "items": _NONNEGATIVE,
+                                },
+                            }
+                        ),
                     },
                 ),
             },

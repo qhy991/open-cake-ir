@@ -494,6 +494,39 @@ class ScaleRelation:
 
 
 @dataclass(frozen=True)
+class ValidExtentRelation:
+    """One padded data axis whose runtime-valid region is a device prefix.
+
+    ``indexed_by`` maps extent-buffer axes to data-buffer axes.  AccessMap remains the
+    coordinate authority; lowering reuses those coordinates to load the one extent.
+    """
+
+    dimension: int
+    buffer: str
+    indexed_by: tuple[int, ...]
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "ValidExtentRelation":
+        obj = _strict_object(
+            value,
+            required={"dimension", "buffer", "indexed_by"},
+            context=context,
+        )
+        axes = _object_list(obj["indexed_by"], f"{context}.indexed_by", allow_empty=False)
+        indexed_by = tuple(
+            _nonnegative_int(axis, f"{context}.indexed_by[{index}]")
+            for index, axis in enumerate(axes)
+        )
+        if len(set(indexed_by)) != len(indexed_by):
+            raise ScheduleParseError(f"{context}.indexed_by repeats a data axis")
+        return cls(
+            _nonnegative_int(obj["dimension"], f"{context}.dimension"),
+            _string(obj["buffer"], f"{context}.buffer"),
+            indexed_by,
+        )
+
+
+@dataclass(frozen=True)
 class Buffer:
     name: str
     space: MemorySpace
@@ -505,6 +538,7 @@ class Buffer:
     stages: int
     swizzle: Swizzle | None
     scale_of: ScaleRelation | None
+    valid_extent: ValidExtentRelation | None
 
     @property
     def elements(self) -> int:
@@ -528,13 +562,21 @@ class Buffer:
         obj = _strict_object(
             value,
             required={"name", "space", "dtype", "shape", "mode"},
-            optional={"allocation", "byte_offset", "stages", "swizzle", "scale_of"},
+            optional={
+                "allocation",
+                "byte_offset",
+                "stages",
+                "swizzle",
+                "scale_of",
+                "valid_extent",
+            },
             context=context,
         )
         shape = _object_list(obj["shape"], f"{context}.shape", allow_empty=False)
         allocation = obj.get("allocation")
         swizzle = obj.get("swizzle")
         scale_of = obj.get("scale_of")
+        valid_extent = obj.get("valid_extent")
         return cls(
             _string(obj["name"], f"{context}.name"),
             _enum(MemorySpace, obj["space"], f"{context}.space"),
@@ -551,6 +593,11 @@ class Buffer:
             None
             if scale_of is None
             else ScaleRelation.from_dict(scale_of, f"{context}.scale_of"),
+            None
+            if valid_extent is None
+            else ValidExtentRelation.from_dict(
+                valid_extent, f"{context}.valid_extent"
+            ),
         )
 
 

@@ -36,7 +36,7 @@ Ordered by how often the surveyed work exercised each axis.
 | 14 | Weight precision and scale granularity | ~ | v17 relates FP32 scales to FP8 E4M3 data by per-axis granularity and physical grouped-axis order; padded/packed, dynamic and generated scales remain absent |
 | 15 | GEMM orientation (transposed decode) | ~ | buffers can be declared transposed; scale-config major mode cannot |
 
-Five of fifteen fully expressible, one partial. Of the five most-exercised axes, three are now
+Five of fifteen are fully expressible and five are partial. Of the five most-exercised axes, three are now
 `YES`, one `~`, and one belongs to the portfolio stage rather than to a Schedule.
 
 Closed since this note was written, each with a hardware check that the declaration reaches
@@ -66,10 +66,13 @@ a device flag with both kernels' parameters resident, an environment-variable co
 pushed to the deployer, and a precomputed work-tile table -- rather than the host-side
 branch each of those replaces.
 
-Cake IR cannot say that a fact is device-resident, and therefore cannot reject a Schedule
-that would require reading it on the host. This is a verifiable property and squarely the
-verifier's business, and it does not appear in the paper's own list because the paper's
-corpus is standalone kernels rather than a captured serving path.
+Cake IR v19 can now say one narrow version of that fact: a global INT32 input owns the
+runtime-valid prefix of one padded Buffer axis, and lowering consumes it on-device without
+a host read. It still cannot express a general device-resident scheduler flag, problem
+list or work-tile table, so it cannot yet reject every Schedule or program composition
+that would force host synchronization. That broader property remains verifier work and
+does not appear in the paper's own list because the paper's corpus is standalone kernels
+rather than a captured serving path.
 
 ## Where the two surveys diverge
 
@@ -139,7 +142,8 @@ belongs to one Schedule at all.
    turn on this and nothing else.
 4. Separate the pipeline kinds (axis 4). One `stages` field conflates three distinct
    pipelines that the real sweeps tune independently.
-5. Device residency as a declared, verifiable property.
+5. General device residency as a declared, verifiable property. v19 closes only the
+   valid-prefix Buffer relation; scheduler flags and work tables remain separate.
 
 **Does not belong to one Schedule**
 
@@ -162,7 +166,7 @@ and sub-rate pipelines remain separate missing mechanisms.
 
 ## Corpus coverage
 
-The current Compiler Corpus has 25 cases across ten admitted profiles, against the
+The current Compiler Corpus has 27 cases across eleven admitted profiles, against the
 paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
 the surveyed work is actually about, still have no complete representation here.
 
@@ -190,3 +194,9 @@ kernel. The static smoke profile uses KDA's FP8 E4M3 data, FP32 scales, activati
 Its released v17 source compiled and matched 2,048/2,048 B200 outputs at maximum deviation
 `1.788e-7` under the preregistered `1e-5` gate. General K-block counts, grouped routing and
 scatter are still outside the lowering domain, so complete-version coverage stays 0/57.
+
+ADR 0024 closes the independent valid-row prerequisite. A padded Buffer owns one
+device-resident INT32 length relation; lowering reuses AccessMap coordinates to load the
+length and mask invalid rows. Its v19 generated source matched 512/512 B200 outputs with
+zero deviation. This does not schedule only-valid tiles, perform grouped GEMM or scatter
+results, so it does not change complete-version coverage.

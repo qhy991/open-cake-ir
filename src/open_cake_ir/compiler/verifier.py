@@ -1042,6 +1042,95 @@ def _verify_scale_relations(schedule: Schedule, buffers, out: _Collector) -> Non
             )
 
 
+def _verify_valid_extents(schedule: Schedule, buffers, out: _Collector) -> None:
+    """Type-check the one runtime authority for a padded Buffer's valid prefix."""
+
+    category = FindingCategory.DATA_CONSISTENCY
+    for index, data in enumerate(schedule.buffers):
+        relation = data.valid_extent
+        if relation is None:
+            continue
+        path = f"buffers[{index}].valid_extent"
+        if data.space is not MemorySpace.GLOBAL:
+            out.add(
+                "VALID_EXTENT_DATA_SPACE",
+                path,
+                f"runtime valid extents apply to global padded storage, but "
+                f"{data.name!r} is {data.space.value}",
+                category,
+            )
+        extent = buffers.get(relation.buffer)
+        if extent is None:
+            out.add(
+                "VALID_EXTENT_BUFFER_UNKNOWN",
+                f"{path}.buffer",
+                f"{data.name!r} names unknown extent buffer {relation.buffer!r}",
+                category,
+            )
+        elif extent is data:
+            out.add(
+                "VALID_EXTENT_SELF",
+                f"{path}.buffer",
+                f"{data.name!r} cannot supply its own runtime extent",
+                category,
+            )
+        else:
+            if extent.dtype is not DType.INT32:
+                out.add(
+                    "VALID_EXTENT_DTYPE",
+                    f"buffers[{schedule.buffers.index(extent)}].dtype",
+                    f"extent buffer {extent.name!r} must be int32, not "
+                    f"{extent.dtype.value}",
+                    category,
+                )
+            if extent.space is not MemorySpace.GLOBAL or extent.mode is not BufferMode.INPUT:
+                out.add(
+                    "VALID_EXTENT_BUFFER_CONTRACT",
+                    f"buffers[{schedule.buffers.index(extent)}]",
+                    f"extent buffer {extent.name!r} must be a global input",
+                    category,
+                )
+
+        rank = len(data.shape)
+        axes_valid = True
+        if relation.dimension >= rank:
+            axes_valid = False
+            out.add(
+                "VALID_EXTENT_DIMENSION",
+                f"{path}.dimension",
+                f"valid dimension {relation.dimension} is outside rank-{rank} "
+                f"buffer {data.name!r}",
+                category,
+            )
+        for position, axis in enumerate(relation.indexed_by):
+            if axis >= rank:
+                axes_valid = False
+                out.add(
+                    "VALID_EXTENT_INDEX_AXIS",
+                    f"{path}.indexed_by[{position}]",
+                    f"index axis {axis} is outside rank-{rank} buffer {data.name!r}",
+                    category,
+                )
+        if relation.dimension in relation.indexed_by:
+            axes_valid = False
+            out.add(
+                "VALID_EXTENT_INDEX_AXIS",
+                f"{path}.indexed_by",
+                f"valid dimension {relation.dimension} cannot also index its lengths",
+                category,
+            )
+        if extent is not None and extent is not data and axes_valid:
+            expected = tuple(data.shape[axis] for axis in relation.indexed_by)
+            if extent.shape != expected:
+                out.add(
+                    "VALID_EXTENT_SHAPE_MISMATCH",
+                    f"buffers[{schedule.buffers.index(extent)}].shape",
+                    f"extent buffer {extent.name!r} shape {list(extent.shape)} differs "
+                    f"from indexed data extents {list(expected)}",
+                    category,
+                )
+
+
 def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     category = FindingCategory.DATA_CONSISTENCY
 
@@ -1051,6 +1140,7 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     pipelines = {pipeline.name for pipeline in schedule.pipelines}
 
     _verify_scale_relations(schedule, buffers, out)
+    _verify_valid_extents(schedule, buffers, out)
 
     # ---- buffer placement -------------------------------------------------
     for index, buffer in enumerate(schedule.buffers):
@@ -1768,6 +1858,23 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         "offset vector; use source 'program'",
                         category,
                     )
+
+        relation = buffer.valid_extent
+        if relation is not None and relation.indexed_by:
+            supported = (
+                len(relation.indexed_by) == 1
+                and relation.indexed_by[0] < len(access.indices)
+                and access.indices[relation.indexed_by[0]].source
+                is AccessIndexKind.PROGRAM
+            )
+            if not supported:
+                out.add(
+                    "VALID_EXTENT_ACCESS_UNLOWERABLE",
+                    path,
+                    "the Triton valid-extent lowering requires one extent axis "
+                    "indexed by one scalar program axis",
+                    FindingCategory.HARDWARE_CONFORMANCE,
+                )
 
     # A tile axis produces a staged extent. If the axis says 128 and the buffer it
     # stages into says 256, the two disagree about the same tile and one of them is

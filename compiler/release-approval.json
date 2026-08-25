@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "61cdde9d0a78ce44bc00369f5cadad6a2dcd83c1ef5764e5926467b1253a4fc6"
+    "canonical_sha256": "3060891b5e8a31e4a19d8db4a02daf16a164451076e5bfd6fa67ac42f6e3fbda"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Close the FP8 vocabulary widening exposed by the v17 full-suite seam: reviewed 25-case expectations; reduce_argmin now has one explicit fp32-value/int32-index contract and the new dtype-drift negative is rejected with REDUCE_ARGMIN_VALUE_DTYPE"
+  "approval_basis": "Reviewed valid_extent Buffer relation and 27-case expectations; all prior 25 cases and lowering digests unchanged; schema/verifier/emitter contract tests pass; brokered B200 draft preflight compiled and matched 512/512 elements with max deviation 0 under the unchanged 1e-5 tolerance on 2026-08-25."
 }

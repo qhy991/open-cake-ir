@@ -60,9 +60,19 @@ def _block_scaled_gemm_oracle(inputs, torch):
     return a_dequant @ b_dequant.t(), None
 
 
+def _ragged_zero_pad_oracle(inputs, torch):
+    """Dense materialization from the declared prefix lengths."""
+
+    ragged, lengths, _ = inputs
+    rows = torch.arange(ragged.shape[1], device=ragged.device)
+    valid = rows[None, :] < lengths[:, None]
+    return torch.where(valid[:, :, None], ragged, torch.zeros_like(ragged)), None
+
+
 ORACLES = {
     **_RETAINED_ORACLES,
     "swiglu_b8_smoke": _swiglu_oracle,
     "top_k_b8_smoke": _top_k_oracle,
     "block_scaled_gemm_b1_smoke": _block_scaled_gemm_oracle,
+    "ragged_zero_pad_b1_smoke": _ragged_zero_pad_oracle,
 }

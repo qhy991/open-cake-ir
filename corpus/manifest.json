@@ -366,6 +366,33 @@
         "schedule_sha256": "07dd1f44f21058d6d48b242a4c524e838864456b8339a6617787053d04233270",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "ragged-zero-pad-accepted",
+      "schedule": "corpus/schedules/ragged-zero-pad-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ae6503370f5b8ecbd122237b7b46cce733fa1bbe57d0389996925365b4682492",
+        "lowering_source_sha256": "637f0cfbb95359b968c1e0a89eedfddf5f999ba8d5d718d2e87954695b2706b0"
+      }
+    },
+    {
+      "case_id": "ragged-zero-pad-relation-drift",
+      "schedule": "corpus/schedules/ragged-zero-pad-b1-smoke-relation-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "VALID_EXTENT_DIMENSION",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "5f0da4c411dafe9f62c68ed6fde7e1815667789c38e04f309abc92dfdb2c023f",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

@@ -500,6 +500,11 @@ class EmittedObservationTest(unittest.TestCase):
             "BLOCK_SCALE_OBSERVATION_20260825.json",
             "block-scaled-gemm-b1-smoke.json",
         ),
+        (
+            "valid-extent",
+            "VALID_EXTENT_OBSERVATION_20260825.json",
+            "ragged-zero-pad-b1-smoke.json",
+        ),
     )
 
     LOOPLESS = (

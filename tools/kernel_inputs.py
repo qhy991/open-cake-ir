@@ -1,8 +1,8 @@
 """Current input construction layered over the frozen calibration helper.
 
 The retained helper remains the authority for every dtype it knew.  This adapter owns
-only FP8 E4M3 and related scale inputs, which were added after those bytes became part of
-historical calibration evidence.
+only FP8 E4M3, related scale inputs, and runtime extent inputs added after those bytes
+became part of historical calibration evidence.
 """
 
 from __future__ import annotations
@@ -12,7 +12,16 @@ from kernel_cases import build_inputs as _retained_build_inputs
 
 
 def build_inputs(document: dict, torch) -> tuple:
-    if not any(buffer["dtype"] == "fp8_e4m3" for buffer in document["buffers"]):
+    extent_contracts = {
+        buffer["valid_extent"]["buffer"]: buffer["shape"][
+            buffer["valid_extent"]["dimension"]
+        ]
+        for buffer in document["buffers"]
+        if buffer.get("valid_extent") is not None
+    }
+    if not extent_contracts and not any(
+        buffer["dtype"] == "fp8_e4m3" for buffer in document["buffers"]
+    ):
         return _retained_build_inputs(document, torch)
 
     arguments = []
@@ -26,7 +35,17 @@ def build_inputs(document: dict, torch) -> tuple:
         )
         dtype = getattr(torch, dtype_name)
         shape = tuple(buffer["shape"])
-        if buffer["mode"] != "input":
+        if buffer["name"] in extent_contracts:
+            capacity = extent_contracts[buffer["name"]]
+            # Empty, partial, full and another partial group are all observable in the
+            # one admitted profile. The relation verifier proves this input has four
+            # entries, so this adapter does not invent a fallback distribution.
+            if shape != (4,) or capacity != 8:
+                raise ValueError(
+                    "no observation input is registered for this extent contract"
+                )
+            value = torch.tensor([0, 3, 8, 5], dtype=dtype, device="cuda")
+        elif buffer["mode"] != "input":
             value = torch.zeros(shape, dtype=dtype, device="cuda")
         elif buffer.get("scale_of") is not None:
             # Non-unit, positive scales make a dropped or mis-associated scale visible.

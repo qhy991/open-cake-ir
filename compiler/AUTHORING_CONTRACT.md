@@ -17,6 +17,12 @@ the FP8 data buffer's axis order; `axis_order` is the full permutation that give
 scale buffer's physical grouped-axis order. The Compiler derives the scale shape and
 requires loads to preserve the relation. The block-scaled MMA read order is data A, data
 B, scale(A), scale(B); names and convenient shapes never substitute for those relations.
+A padded global Buffer writes one runtime-valid prefix as `valid_extent`; `dimension`
+names the padded axis, `buffer` names the global INT32 input that owns the lengths, and
+`indexed_by` maps each length-buffer axis to one data axis. AccessMap remains the only
+coordinate authority, so every access derives `coordinate < length` rather than
+restating a predicate. The first Triton subset lowers one length axis indexed by one
+scalar program axis and refuses wider mappings explicitly.
 `reduce_argmin` compares FP32 values and returns INT32 source positions; admitting FP8
 storage for another operation does not widen that semantic contract.
 
