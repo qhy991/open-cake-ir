@@ -53,9 +53,11 @@ the same newly modeled Finding rather than silently escaping it.
    with no timing and no retry.
 
 The first frozen attempt reached broker allocation but stopped before compilation because
-the worker's unqualified `python3` could not import Torch. That infrastructure failure is
-retained. A separately frozen successor binds the CPU-preflighted user site-packages path;
-item 5 and this ADR's acceptance remain pending its result.
+the worker's unqualified `python3` could not import Torch. The first successor executed
+and computed correctness, but the instrument then failed on its late Cutlass metadata
+import before writing the result. Both failures are retained and neither supports a pass.
+The metadata import now happens before any compiler or GPU work, and a fully preflighted
+second successor is frozen; item 5 and this ADR's acceptance remain pending its result.
 
 Failure at any step is retained as the missing primitive or backend boundary. It is not
 repaired by adding a workload-named operation or widening a numerical tolerance.

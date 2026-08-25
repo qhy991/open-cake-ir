@@ -87,8 +87,10 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   branch: runtime-indexed `AccessMap`, `elementwise(mul)`, `reduce(sum)` and `store` compose the arithmetic body of
   KDA v1's non-fused weighted combine. The verifier now derives load, arithmetic, reduction and final-store dtype
   relations instead of leaving them to backend promotion. Its first no-timing, zero-retry broker attempt stopped
-  before compilation because the worker's unqualified `python3` lacked Torch; that infrastructure failure is retained.
-  A separately frozen successor binds the preflighted site-packages path. Until that result exists ADR 0034 remains proposed. Historical evidence is not
+  before compilation because the worker's unqualified `python3` lacked Torch. The first successor did execute and
+  compute correctness, but a late Cutlass metadata import failed before the result was written; both failures are
+  retained and neither is called a pass. The instrument now imports metadata dependencies before GPU work, and a
+  second successor binds the fully preflighted environment. Until that result exists ADR 0034 remains proposed. Historical evidence is not
   relabelled. These
   slices prove primitive expressibility and diagnostic lowering correctness only, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A

@@ -222,6 +222,8 @@ reduction produces FP32, and the final store may narrow to BF16. No `moe`, `comb
 `scatter`, `cast` or program-DAG vocabulary was added. Route/group formation, atomic
 reservation and dispatch, both grouped contractions, workspace reset, fused scatter and
 the multi-kernel DAG remain absent, so complete-version coverage stays 0/57. The first
-B200 attempt stopped before compilation because the broker worker could not import Torch;
-that failure is retained and a preflighted successor is frozen. The check remains
-correctness-only and cannot establish a performance or complete-MoE claim.
+B200 attempt stopped before compilation because the broker worker could not import Torch.
+The first successor executed but lost its result to a late Cutlass metadata import; both
+failures are retained and neither supports correctness. The metadata import now precedes
+GPU work and a fully preflighted second successor is frozen. The check remains correctness-only
+and cannot establish a performance or complete-MoE claim.

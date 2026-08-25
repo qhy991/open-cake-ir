@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "state": "frozen",
+  "planned_at": "2026-08-25T09:33:54Z",
+  "purpose": "kda_v1_weighted_combine_arithmetic_correctness_successor_2",
+  "predecessor": {
+    "plan": "inventory/V26_KDA_WEIGHTED_COMBINE_B200_CORRECTNESS_SUCCESSOR_PLAN_20260825.json",
+    "attempt": "inventory/V26_KDA_WEIGHTED_COMBINE_B200_CORRECTNESS_SUCCESSOR_ATTEMPT_20260825.json",
+    "disposition": "instrument_failure_after_measurement"
+  },
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "selection_authority": {
+    "compiler_revision": "open-cake-ir-sm100a-v26",
+    "schedule": "corpus/schedules/kda-weighted-combine-b8-smoke.json",
+    "entry_point": "cake_kda_weighted_combine_b8_smoke"
+  },
+  "instrument": {
+    "path": "tools/observe_lowered_kernel.py",
+    "prelaunch_change": "Import the Cutlass metadata dependency beside Torch before compiler or GPU work, so a missing dependency cannot orphan another executed result."
+  },
+  "environment": {
+    "interpreter": "/usr/bin/python3",
+    "pythonpath": [
+      "src",
+      "/home/qinhaiyan/.local/lib/python3.12/site-packages",
+      "/home/qinhaiyan/.local/lib/python3.12/site-packages/nvidia_cutlass_dsl/dsl_packages"
+    ],
+    "preflight": "One CPU-only process using exactly these paths imported Torch 2.13.0+cu130, Triton 3.7.1, Cutlass 4.7.0 and cutlass.cute."
+  },
+  "protocol": {
+    "broker_mode": "shared",
+    "gpu_count": 1,
+    "seed": 0,
+    "float_max_absolute_tolerance": 1e-05,
+    "timing": false,
+    "automatic_retries": 0,
+    "retain_failure": true
+  },
+  "acceptance": {
+    "required": "the released generated source compiles and launches once on B200, then all 128 BF16 outputs match the independent gather-weight-sum oracle within the fixed tolerance and the result is durably written",
+    "failure": "retain the first second-successor result or pre-record failure; do not retry, change inputs, widen tolerance or rewrite this plan",
+    "non_claim": "does not establish performance, complete KDA-version expressibility, workspace-reset semantics, end-to-end MoE correctness, ranking quality or paper reproduction"
+  }
+}

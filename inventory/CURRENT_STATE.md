@@ -85,7 +85,9 @@ causal effect, serving and paper reproduction are not.
   reduction and final-store dtype relations. A second tmux 882 window1 review removed a duplicate indexed-load
   diagnostic, rejected hard-coded Corpus counts and approved the final 49-source/33-case closure. Its first frozen,
   zero-retry shared-B200 attempt stopped before compilation because the worker's unqualified `python3` could not
-  import Torch. The failure is retained and a separate successor binds the CPU-preflighted site-packages path. The reviewed KDA snapshot
+  import Torch. The first successor executed and computed correctness but lost its result to a late Cutlass metadata
+  import. Both failures are retained; the import now precedes GPU work and a fully preflighted second successor is
+  frozen. The reviewed KDA snapshot
   remains 0/57 for complete-version expressibility because routing/group formation, valid-tile work acquisition,
   the second contraction, scatter and the multi-kernel program DAG are still absent; no KDA performance claim is
   made.

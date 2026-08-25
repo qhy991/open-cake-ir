@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "state": "failed",
+  "observed_at": "2026-08-25T09:33:54Z",
+  "plan": "inventory/V26_KDA_WEIGHTED_COMBINE_B200_CORRECTNESS_SUCCESSOR_PLAN_20260825.json",
+  "broker_job_id": "gpuq-f07fee9cc784",
+  "broker_mode": "shared",
+  "gpu_count": 1,
+  "performance_measured": false,
+  "stage_reached": "record_metadata",
+  "compiled": true,
+  "launched": true,
+  "correctness_computed_in_process": true,
+  "result_written": false,
+  "disposition": "instrument_failure_after_measurement",
+  "failure": {
+    "exception": "ModuleNotFoundError",
+    "missing_module": "cutlass",
+    "message": "The instrument imported Cutlass only after launch, synchronization and correctness computation. The bound Python path supplied Torch and Triton but omitted the CuTe DSL package root, so the process exited before it serialized the result."
+  },
+  "result": {
+    "recoverable": false,
+    "reason": "The process printed only after record construction; no correctness values survived the metadata-import failure."
+  },
+  "retry": {
+    "same_plan_retried": false,
+    "reason": "The frozen successor permits zero retries. A second successor must retain this attempt, preflight every instrument dependency and fail on metadata imports before any GPU execution."
+  },
+  "claim": "The kernel did execute, but no durable correctness result exists; this attempt supports neither a pass nor a performance claim."
+}

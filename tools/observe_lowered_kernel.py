@@ -97,6 +97,7 @@ def main() -> int:
     )
     arguments = parser.parse_args()
 
+    import cutlass
     import torch
 
     compiler = Compiler.load(ROOT, arguments.revision)
@@ -139,7 +140,6 @@ def main() -> int:
     )
 
     device = torch.cuda.get_device_properties(0)
-    import cutlass
 
     record = {
         "schema_version": 2,

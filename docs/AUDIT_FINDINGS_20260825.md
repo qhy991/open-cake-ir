@@ -131,7 +131,9 @@ the historical r31 launch is relabelled as v26 evidence. The v26 Corpus Gate is 
 the zero-GPU suite passes 407 pytest items plus 284 subtests. Its new KDA weighted-combine
 case has a separate preregistered B200 correctness check. The first attempt retained an
 infrastructure failure before compilation because the worker could not import Torch; a
-successor binds the CPU-preflighted site-packages path. These gates validate the
+successor then executed but lost its result when a late Cutlass metadata import failed.
+Both failures are retained, the import now precedes GPU work, and a fully preflighted
+second successor is frozen. These gates validate the
 ownership migration and the new type relations but do not substitute for either GPU
 evidence or the missing ranking successor.
 
