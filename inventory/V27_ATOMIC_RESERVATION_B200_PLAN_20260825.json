@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "state": "frozen",
+  "planned_at": "2026-08-25T10:10:56Z",
+  "purpose": "kda_v1_atomic_slot_reservation_correctness",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "selection_authority": {
+    "compiler_revision": "open-cake-ir-sm100a-v27",
+    "schedule": "corpus/schedules/atomic-reservation-b8-smoke.json",
+    "entry_point": "cake_atomic_reservation_b8_smoke"
+  },
+  "instrument": {
+    "path": "tools/observe_lowered_kernel.py",
+    "oracle": "pre-launch counter snapshot plus per-expert returned-old-value permutation, masked-zero and final-count invariants"
+  },
+  "environment": {
+    "interpreter": "/usr/bin/python3",
+    "pythonpath": [
+      "src",
+      "/home/qinhaiyan/.local/lib/python3.12/site-packages",
+      "/home/qinhaiyan/.local/lib/python3.12/site-packages/nvidia_cutlass_dsl/dsl_packages"
+    ],
+    "preflight": "One CPU-only process using exactly these paths must import Torch 2.13.0+cu130, Triton 3.7.1, Cutlass 4.7.0 and cutlass.cute before broker submission."
+  },
+  "protocol": {
+    "broker_mode": "shared",
+    "gpu_count": 1,
+    "seed": 0,
+    "timing": false,
+    "automatic_retries": 0,
+    "retain_failure": true
+  },
+  "acceptance": {
+    "required": "the released generated source compiles and launches once on B200; all 64 outputs give each expert exactly the pre-launch half-open counter range as an unordered permutation, every invalid route returns zero, and final counters equal initial counters plus valid reservations",
+    "failure": "retain the first result or pre-launch failure; do not retry, change inputs, invent an ordering, or rewrite this plan",
+    "non_claim": "does not establish performance, complete KDA-version expressibility, indexed-store or dispatch semantics, end-to-end MoE correctness, ranking quality or paper reproduction"
+  }
+}
