@@ -1,4 +1,4 @@
-# ADR 0006: Stage Apple Silicon Metal through a successor Compiler Revision
+# ADR 0021: Stage Apple Silicon Metal through a successor Compiler Revision
 
 Status: proposed, 2026-08-25.
 
