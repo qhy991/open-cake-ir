@@ -306,6 +306,14 @@ across seven emitted operators is: four needed vocabulary, one needed a derivati
 needed neither. What is slowing is the growth of words; what has not stopped is what a
 backend must do with them, and those are different claims.
 
+KDA v12 also showed that counting the word was too generous. Its `tanh` requests an
+approximate target instruction, while the standalone emitter had silently chosen a
+libdevice implementation. Compiler v15 therefore makes the implementation contract part
+of the operation, admits `libdevice.tanh.f32`, and keeps `tanh.approx.f32` as a real
+target-unsupported negative after it failed the frozen standalone tolerance on B200. This
+does not add a second math operation: it separates the operation's meaning from the target
+mechanism that is permitted to realize it.
+
 The gate earned its keep twice here. It refused the two-pass-in-a-loop Schedule that would
 have computed a softmax over stale maxima, and the profile rule refused a drift case with
 a mismatched output shape. Both were predicted before running and both fired exactly there.
@@ -324,6 +332,6 @@ before the fact would have shown and a corpus of six families cannot.
 
 ## Corpus coverage, restated
 
-Twenty-one cases across nine admitted profiles, against the paper's roughly four hundred
+Twenty-two cases across nine admitted profiles, against the paper's roughly four hundred
 across twenty-eight. Standalone SwiGLU arithmetic and deterministic indexed selection are
 local now; attention, complete MoE, quantized GEMM and fused graph kernels are not.

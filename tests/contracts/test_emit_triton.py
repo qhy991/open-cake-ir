@@ -427,7 +427,7 @@ class ElementwiseArityTest(unittest.TestCase):
 
         templates = _TritonEmitter._ELEMENTWISE_TEXT
         # Every operator the IR admits has a body, or the gate admits what cannot lower.
-        self.assertEqual(set(templates), set(ElementwiseOp))
+        self.assertEqual(set(templates) | {ElementwiseOp.TANH}, set(ElementwiseOp))
         for op, template in templates.items():
             with self.subTest(op=op.value):
                 self.assertIn("{a}", template)
@@ -489,7 +489,11 @@ class EmittedObservationTest(unittest.TestCase):
             "PERSISTENT_OBSERVATION_20260824.json",
             "rmsnorm-b128-persistent.json",
         ),
-        ("swiglu", "SWIGLU_OBSERVATION_20260825.json", "swiglu-b8-smoke.json"),
+        (
+            "swiglu",
+            "SWIGLU_IMPLEMENTATION_KIND_OBSERVATION_20260825.json",
+            "swiglu-b8-smoke.json",
+        ),
         ("top-k", "TOP_K_OBSERVATION_20260825.json", "top-k-b8-smoke.json"),
     )
 

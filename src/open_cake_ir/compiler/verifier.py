@@ -568,10 +568,51 @@ def _verify_instruction_commitments(
     buffers = {buffer.name: buffer for buffer in schedule.buffers}
 
     for index, operation in enumerate(schedule.operations):
-        if operation.kind is not OperationKind.MMA:
-            continue
         path = f"operations[{index}].parameters"
         instruction = getattr(operation.parameters, "instruction", None)
+        if (
+            instruction is not None
+            and instruction.contract not in target.instruction_contracts
+        ):
+            out.add(
+                "TARGET_INSTRUCTION_UNSUPPORTED",
+                f"{path}.instruction.contract",
+                f"instruction {instruction.contract!r} is not admitted by Target "
+                f"{target.target_id!r}",
+                category,
+            )
+
+        if operation.kind is OperationKind.ELEMENTWISE:
+            expected = _ELEMENTWISE_INSTRUCTION_DTYPES.get(
+                instruction.contract if instruction is not None else ""
+            )
+            if (
+                instruction is not None
+                and instruction.contract in target.instruction_contracts
+                and expected is None
+            ):
+                out.add(
+                    "ELEMENTWISE_INSTRUCTION_KIND_DIFFERS",
+                    f"{path}.instruction.contract",
+                    f"contract {instruction.contract!r} is admitted by the Target but "
+                    "does not implement an elementwise operation",
+                    category,
+                )
+            elif expected is not None:
+                for name in (*operation.reads, *operation.writes):
+                    buffer = buffers.get(name)
+                    if buffer is not None and buffer.dtype is not expected:
+                        out.add(
+                            "ELEMENTWISE_INSTRUCTION_DTYPE_DIFFERS",
+                            f"{path}.instruction.contract",
+                            f"contract {instruction.contract!r} consumes and produces "
+                            f"{expected.value}, but {name!r} is {buffer.dtype.value}",
+                            category,
+                        )
+            continue
+
+        if operation.kind is not OperationKind.MMA:
+            continue
         tile = getattr(operation.parameters, "tile_shape", None)
 
         if instruction is None:
@@ -614,14 +655,6 @@ def _verify_instruction_commitments(
                         f"{written.dtype.value}",
                         category,
                     )
-            if instruction.contract not in target.instruction_contracts:
-                out.add(
-                    "TARGET_INSTRUCTION_UNSUPPORTED",
-                    f"{path}.instruction.contract",
-                    f"instruction {instruction.contract!r} is not admitted by Target "
-                    f"{target.target_id!r}",
-                    category,
-                )
             _verify_atom_placement(operation, instruction, path, out)
             if (
                 instruction.shape is not None
@@ -853,6 +886,10 @@ _CONTRACT_DTYPES = {
     "tcgen05.mma.cta_group::1.kind::f16": ({DType.BF16, DType.FP16}, DType.FP32),
     "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32": ({DType.BF16}, DType.FP32),
     "triton.dot.bf16_fp32": ({DType.BF16}, DType.FP32),
+}
+
+_ELEMENTWISE_INSTRUCTION_DTYPES = {
+    "libdevice.tanh.f32": DType.FP32,
 }
 
 

@@ -260,8 +260,23 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "3ef0676387f56df9261a4e5873f8bcc90935638f0aa57c193fd2144ef9558199",
-        "lowering_source_sha256": "3fcfdee560ddd7361db232083b18006b648c35d3ea6e164756dc99ce221c2dac"
+        "schedule_sha256": "08862ee1e78395ad05876ce55ee88f0c8f9106be326086ad89f17c5839bc855c",
+        "lowering_source_sha256": "6d3c4b5e173380bd17ff9c6e9b19d9164c456c78ad6949c328f050bcf210a34c"
+      }
+    },
+    {
+      "case_id": "swiglu-instruction-drift",
+      "schedule": "corpus/schedules/swiglu-b8-smoke-instruction-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TARGET_INSTRUCTION_UNSUPPORTED",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "cdf370f6a93ca022eaf2e84e834f0cc241937b608ac39f429eb48a8be2933682",
+        "lowering_source_sha256": null
       }
     },
     {
@@ -276,7 +291,7 @@
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "e466daface523c4059f67fb32306fc26a91ddd71780e82e9e33229b01483150f",
+        "schedule_sha256": "9fd2e1f38ca046c34c6e1cfb381d70b7a2daba32a1479368117126ed2000d065",
         "lowering_source_sha256": null
       }
     },

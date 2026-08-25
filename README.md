@@ -37,8 +37,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v14` is content-bound to an exact `sm_100a` Target and a 21-case,
-  37-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
+- Compiler Revision `open-cake-ir-sm100a-v16` is content-bound to an exact `sm_100a` Target and a 22-case,
+  38-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
   emitted MMA omit its instruction contract while still being marked lowering-eligible. v10 turns the pinned Triton
@@ -50,7 +50,13 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   and adds one KDA-derived `tanh` primitive with a standalone SwiGLU positive/shape-drift pair. v14 adds one
   deterministic indexed `top_k` primitive after KDA v1 exposed the paper-claimed vocabulary gap; its positive and
   shape-drift pair is gated, and a brokered B200 observation matches 64 ordered indices exactly under forced ties
-  and negative infinities. The reviewed KDA baseline still has 0/57 complete-version coverage: grouping/masking,
+  and negative infinities. v15 makes `tanh` name its target implementation contract: the standalone path declares
+  `libdevice.tanh.f32` and again passes the frozen B200 FP32 gate, while KDA's real `tanh.approx.f32` spelling is a
+  target-unsupported Corpus negative. A diagnostic B200 probe exceeded the unchanged `1e-5` boundary on 2,304 of
+  524,288 outputs, so the release does not disguise the numerical mismatch by relaxing the oracle. v16 additionally
+  rejects a Target-admitted contract attached to the wrong operation kind before lowering, closing the verifier/emitter
+  boundary exposed by source review. The reviewed KDA
+  baseline still has 0/57 complete-version coverage: grouping/masking,
   quantization-scale relations, grouped/ragged work, scatter and the program DAG remain absent. These slices prove
   primitive expressibility, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
@@ -93,7 +99,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command.
-  The current local suite passes 348 tests, including its parameterized contract cases. The earlier remote qualification passed its frozen
+  The current local suite passes 350 tests, including its parameterized contract cases. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
@@ -125,7 +131,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   150k, task-informed package study also freezes the provider's distinct `max` reasoning level and complete
   implementation skeletons. The later `xhigh` capability qualification does not rewrite that frozen treatment or
   supply an 80M clean-start Study. Serving and paper reproduction remain unsupported.
-- `matched-search-clean-start-reference-v29.json` is a zero-GPU successor fixture that replaces both arm references
+- `matched-search-clean-start-reference-v31.json` is a zero-GPU successor fixture that replaces both arm references
   together: Open Cake receives only its authoring interface and direct CUDA receives a canonical ABI with an empty
   kernel body. Its contamination gate validates reference access only; its inherited 150k/`max` treatment still
   cannot support a paper comparison.

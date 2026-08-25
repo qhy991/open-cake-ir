@@ -18,7 +18,6 @@
     "corpus/schedules/rmsnorm-b8-smoke.json",
     "corpus/schedules/softmax-b8-smoke-shape-drift.json",
     "corpus/schedules/softmax-b8-smoke.json",
-    "corpus/schedules/swiglu-b8-smoke-instruction-drift.json",
     "corpus/schedules/swiglu-b8-smoke-shape-drift.json",
     "corpus/schedules/swiglu-b8-smoke.json",
     "corpus/schedules/top-k-b8-smoke-shape-drift.json",

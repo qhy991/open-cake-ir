@@ -81,7 +81,7 @@ mbarrier storage and participants, TMA descriptors, TMEM custody, the loop nest 
 operation body — verified on a B200 at 128/128 exact assignments. The one remaining
 TinyGEMM2 profile stamps a checked-in file: its Schedule does not yet carry the lane
 mapping, access maps and loop commitments needed to generate the body. `Lowering.generated`
-therefore reports `false` for that path, while all seven emitter-backed profiles report
+therefore reports `false` for that path, while all eight emitter-backed profiles report
 `true`; the profile rule pins the whole-document semantics until a real emitter replaces it.
 
 ### Findings
@@ -223,9 +223,9 @@ a gated event rather than a commit.
 ```mermaid
 graph TD
     E["edit Compiler source"] --> D["<b>revision.json</b><br/>state: draft<br/><i>no source-hash check</i>"]
-    D --> G["<b>Corpus Gate</b><br/>16 cases · exact finding codes<br/>exact lowering digests"]
+    D --> G["<b>Corpus Gate</b><br/>22 cases · exact finding codes<br/>exact lowering digests"]
     G -->|"any case differs"| STOP["release refused"]
-    G -->|"16/16 matched"| AP["<b>release-approval.json</b><br/>binds the gate digest<br/>records who authorized it"]
+    G -->|"22/22 matched"| AP["<b>release-approval.json</b><br/>binds the gate digest<br/>records who authorized it"]
     AP --> L["<b>revision.lock.json</b><br/>state: released<br/>binds every source by digest"]
     L --> AR["<b>compiler/releases/vN/</b><br/>immutable history"]
 
@@ -288,12 +288,12 @@ graph LR
 | Authoring Environment, both arms | implemented |
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
-| Compile → external oracle → GPU timing | implemented; B200 correctness observations cover six emitted operators, including the KDA-derived standalone SwiGLU slice. Its observation takes no timing and supports no performance claim |
+| Compile → external oracle → GPU timing | correctness is implemented; B200 observations cover seven emitted operators, including the KDA-derived standalone SwiGLU and Top-K slices. Their correctness observations take no timing and support no performance claim |
 | Profiler evidence in the inner loop | partial relative to the paper — Executor v18 composes the canonical no-timing NCU assay after every correctness-qualified search survivor, retains raw/profile replay for all of them and feeds back the selected profile; a bounded live v18 two-arm successor covers selected and non-selected survivors, and scientific v3 executes it, but two missing Runs prevent the preregistered estimate |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
 | Deterministic lowering | `lower` generates for 8 of the 9 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke`, `layernorm_b8_smoke`, `gemm_bias_b1_smoke`, `swiglu_b8_smoke` and `top_k_b8_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file, and the public result exposes `generated=false` rather than conflating it with emission |
 | Live candidate-set authoring | implemented and bounded-live exercised — both Codex 0.144.4 policies pass two-arm envelope qualification, the closed policy separately passes at the exact `xhigh` treatment, and candidate-set v2 produced three launchable Candidates and searched two in each arm on B200; qualification proves transport and the Campaign is system qualification only, so neither is an 80M scientific result |
-| The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but Compiler v14 retains no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
+| The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but Compiler v16 retains no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
 | Diagnosis routing | implemented — every rejection is routed to the candidate, the verifier, the IR vocabulary or the cost model, and each destination is inferred from a signal the loop already produces |
 | Cost-model ranking | mechanism implemented but no released coverage — the structural hypothesis remains measurable, while public ranking declines every current profile |
 

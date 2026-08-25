@@ -938,6 +938,24 @@ class TopKParameters:
 
 
 @dataclass(frozen=True)
+class ElementwiseInstruction:
+    """The target instruction selected for arithmetic with multiple realizations.
+
+    Most elementwise primitives have no separately admitted instruction in the current
+    vocabulary. Tanh does: the KDA corpus relies on the approximate PTX instruction, whose
+    cost and numerical behaviour differ from a libdevice call. Leaving it to the backend
+    would make those two physical schedules have one spelling.
+    """
+
+    contract: str
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "ElementwiseInstruction":
+        obj = _strict_object(value, required={"contract"}, context=context)
+        return cls(_string(obj["contract"], f"{context}.contract"))
+
+
+@dataclass(frozen=True)
 class ElementwiseParameters:
     """One arithmetic primitive over the operation's reads.
 
@@ -948,6 +966,7 @@ class ElementwiseParameters:
     op: ElementwiseOp
     scalar: float | None
     broadcast_axis: int | None
+    instruction: ElementwiseInstruction | None
     """Which axis of the result a narrower operand spans.
 
     Trailing-axis alignment is the array convention, but it only covers half the cases
@@ -1107,9 +1126,20 @@ def _operation_parameters(
         obj = _strict_object(
             value,
             required={"op"},
-            optional={"scalar", "broadcast_axis"},
+            optional={"scalar", "broadcast_axis", "instruction"},
             context=context,
         )
+        op = _enum(ElementwiseOp, obj["op"], f"{context}.op")
+        instruction = obj.get("instruction")
+        if op is ElementwiseOp.TANH and instruction is None:
+            raise ScheduleParseError(
+                f"{context}.instruction is required for tanh so the backend does not "
+                "choose its numerical and performance contract"
+            )
+        if op is not ElementwiseOp.TANH and instruction is not None:
+            raise ScheduleParseError(
+                f"{context}.instruction has no defined effect for {op.value}"
+            )
         scalar = obj.get("scalar")
         if scalar is not None and (
             not isinstance(scalar, (int, float)) or isinstance(scalar, bool)
@@ -1117,9 +1147,14 @@ def _operation_parameters(
             raise ScheduleParseError(f"{context}.scalar must be a number")
         axis = obj.get("broadcast_axis")
         return ElementwiseParameters(
-            _enum(ElementwiseOp, obj["op"], f"{context}.op"),
+            op,
             float(scalar) if scalar is not None else None,
             _nonnegative_int(axis, f"{context}.broadcast_axis") if axis is not None else None,
+            None
+            if instruction is None
+            else ElementwiseInstruction.from_dict(
+                instruction, f"{context}.instruction"
+            ),
         )
 
     if kind is OperationKind.STORE:

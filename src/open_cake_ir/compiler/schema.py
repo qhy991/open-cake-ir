@@ -137,13 +137,35 @@ _PARAMETERS = {
             "nan_policy": _enum(NaNPolicy),
         }
     ),
-    OperationKind.ELEMENTWISE: _object(
-        {"op": _enum(ElementwiseOp)},
-        {
-            "scalar": {"type": "number"},
-            "broadcast_axis": _NONNEGATIVE,
-        },
-    ),
+    OperationKind.ELEMENTWISE: {
+        "oneOf": [
+            _object(
+                {
+                    "op": {"const": ElementwiseOp.TANH.value},
+                    "instruction": _object({"contract": {"type": "string"}}),
+                },
+                {
+                    "scalar": {"type": "number"},
+                    "broadcast_axis": _NONNEGATIVE,
+                },
+            ),
+            _object(
+                {
+                    "op": {
+                        "enum": [
+                            member.value
+                            for member in ElementwiseOp
+                            if member is not ElementwiseOp.TANH
+                        ]
+                    }
+                },
+                {
+                    "scalar": {"type": "number"},
+                    "broadcast_axis": _NONNEGATIVE,
+                },
+            ),
+        ]
+    },
     OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),
 }
 

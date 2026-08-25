@@ -40,6 +40,7 @@ B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 TINYGEMM = ROOT / "corpus" / "schedules" / "tinygemm2-stage4-split-k.json"
 ASSIGNMENT_FULL = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
 TOP_K = ROOT / "corpus" / "schedules" / "top-k-b8-smoke.json"
+SWIGLU = ROOT / "corpus" / "schedules" / "swiglu-b8-smoke.json"
 
 
 def _mutated(path: Path, mutate) -> Schedule:
@@ -634,6 +635,48 @@ class HardwareCommitmentTest(unittest.TestCase):
             f for f in bad if f.code == "TARGET_INSTRUCTION_UNSUPPORTED"
         )
         self.assertTrue(unsupported.blocks_lowering)
+
+    def test_elementwise_instruction_is_target_backed_and_dtype_checked(self) -> None:
+        admitted = verify(Schedule.load(SWIGLU), TARGET)
+        self.assertNotIn("TARGET_INSTRUCTION_UNSUPPORTED", _codes(admitted))
+        self.assertNotIn("ELEMENTWISE_INSTRUCTION_DTYPE_DIFFERS", _codes(admitted))
+
+        unsupported = verify(
+            _mutated(
+                SWIGLU,
+                lambda d: _op(d, "tanh_gate")["parameters"]["instruction"].update(
+                    contract="tanh.approx.f32"
+                ),
+            ),
+            TARGET,
+        )
+        finding = next(
+            f for f in unsupported if f.code == "TARGET_INSTRUCTION_UNSUPPORTED"
+        )
+        self.assertTrue(finding.blocks_lowering)
+        self.assertIn("operations[3].parameters.instruction.contract", finding.path)
+
+        wrong_kind = verify(
+            _mutated(
+                SWIGLU,
+                lambda d: _op(d, "tanh_gate")["parameters"]["instruction"].update(
+                    contract="triton.dot.bf16_fp32"
+                ),
+            ),
+            TARGET,
+        )
+        self.assertIn("ELEMENTWISE_INSTRUCTION_KIND_DIFFERS", _codes(wrong_kind))
+
+        wrong_dtype = verify(
+            _mutated(
+                SWIGLU,
+                lambda d: next(
+                    b for b in d["buffers"] if b["name"] == "half_gate"
+                ).update(dtype="fp16"),
+            ),
+            TARGET,
+        )
+        self.assertIn("ELEMENTWISE_INSTRUCTION_DTYPE_DIFFERS", _codes(wrong_dtype))
 
     def test_mma_tile_must_match_its_accumulator(self) -> None:
         matching = verify(

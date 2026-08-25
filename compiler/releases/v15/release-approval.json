@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "f8266dd4b07c601a772270ce2fec2f5ce52945349ef948e429456ee2257d8929"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Tanh now has an explicit target implementation contract; the pre-existing FP32 SwiGLU tolerance retains libdevice.tanh.f32, while KDA tanh.approx.f32 is a separate unsupported-contract falsifier after its direct B200 probe failed the frozen 1e-5 gate"
+}

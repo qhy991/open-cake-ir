@@ -159,7 +159,7 @@ relative to the weights -- which is a family the corpus does not cover at all.
 
 ## Corpus coverage
 
-The current Compiler Corpus has 21 cases across nine admitted profiles, against the
+The current Compiler Corpus has 22 cases across nine admitted profiles, against the
 paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
 the surveyed work is actually about, still have no complete representation here.
 
@@ -172,3 +172,11 @@ history remains the evidence authority instead of being copied into this reposit
 ADR 0021 closes the standalone deterministic indexed-selection primitive and validates it
 on B200, but grouping and mask/update composition are still needed before the three-stage
 v1 routing chain can be represented as one Schedule.
+
+ADR 0022 closes a subtler KDA-derived gap: the mathematical word `tanh` did not say which
+target implementation realized it. The standalone positive now declares
+`libdevice.tanh.f32`; KDA's actual `tanh.approx.f32` spelling is structurally expressible
+but rejected by the current Target. A brokered diagnostic exceeded the unchanged standalone
+`1e-5` tolerance, so approximate math remains an explicit unsupported contract rather than
+an implicit emitter choice or a conveniently widened oracle. Complete KDA coverage remains
+0/57.

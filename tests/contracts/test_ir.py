@@ -23,6 +23,9 @@ from open_cake_ir.compiler.ir import (
     AccessIndexKind,
     BoundaryPolicy,
     DType,
+    ElementwiseInstruction,
+    ElementwiseOp,
+    ElementwiseParameters,
     EpilogueFormula,
     EpilogueParameters,
     IndexTieBreak,
@@ -52,6 +55,7 @@ B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 TINYGEMM = ROOT / "corpus" / "schedules" / "tinygemm2-stage4-split-k.json"
 ASSIGNMENT_FULL = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
 TOP_K = ROOT / "corpus" / "schedules" / "top-k-b8-smoke.json"
+SWIGLU = ROOT / "corpus" / "schedules" / "swiglu-b8-smoke.json"
 
 
 def _document(path: Path) -> dict:
@@ -76,7 +80,7 @@ def _op(document: dict, op_id: str) -> dict:
 
 class RetainedScheduleTest(unittest.TestCase):
     def test_every_corpus_schedule_parses(self) -> None:
-        self.assertEqual(len(CORPUS), 21)
+        self.assertEqual(len(CORPUS), 22)
         for path in CORPUS:
             with self.subTest(schedule=path.name):
                 schedule = Schedule.load(path)
@@ -203,6 +207,39 @@ class UnifiedVocabularyTest(unittest.TestCase):
                     TOP_K,
                     lambda d: _op(d, "select_experts")["parameters"].update(
                         largest=True
+                    ),
+                )
+            )
+
+    def test_tanh_names_one_target_instruction_contract(self) -> None:
+        operation = Schedule.load(SWIGLU).operation("tanh_gate")
+        assert operation is not None
+        self.assertEqual(
+            operation.parameters,
+            ElementwiseParameters(
+                op=ElementwiseOp.TANH,
+                scalar=None,
+                broadcast_axis=None,
+                instruction=ElementwiseInstruction("libdevice.tanh.f32"),
+            ),
+        )
+
+        with self.assertRaisesRegex(ScheduleParseError, "instruction is required for tanh"):
+            Schedule.from_dict(
+                _mutated(
+                    SWIGLU,
+                    lambda d: _op(d, "tanh_gate")["parameters"].pop(
+                        "instruction"
+                    ),
+                )
+            )
+
+        with self.assertRaisesRegex(ScheduleParseError, "no defined effect for mul"):
+            Schedule.from_dict(
+                _mutated(
+                    SWIGLU,
+                    lambda d: _op(d, "half_gate")["parameters"].update(
+                        instruction={"contract": "libdevice.tanh.f32"}
                     ),
                 )
             )
