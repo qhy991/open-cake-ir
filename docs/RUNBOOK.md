@@ -59,10 +59,24 @@ python tools/calibrate_wave_term.py --first 60 --last 400 --step 2      # exclus
 python tools/calibrate_ranking_at_scale.py --size 512 --observed-at <iso8601> \
   --out /new/path/ranking.json                                          # exclusive: benchmark
 python tools/check_ranking_calibration.py                               # no GPU; exit 1 is a retained negative decision
-python tools/observe_lowered_kernel.py --observed-at <iso8601> --out inventory/<NEW>.json
-python tools/profile_lowered_kernel.py --schedule <path> --observed-at <iso8601> --out <NEW>.json
+python tools/normalize_evidence_custody.py                              # no GPU; run after a fresh checkout, see below
+python tools/observe_lowered_kernel.py --out inventory/<NEW>.json
+python tools/profile_lowered_kernel.py --schedule <path> --out <NEW>.json
 python tools/ir_vocabulary.py                                           # no GPU
 ```
+
+`normalize_evidence_custody.py` exists because git records the executable bit and nothing
+else. `EvidenceStore` refuses a directory that is group- or other-writable, so a fresh
+checkout materialises the committed archives under the caller's umask and the store then
+refuses to read its own evidence: two contract tests fail with `evidence directory
+'objects' is group/other writable`, and the re-audit gates cannot run in-repository. Run
+the checker after cloning and `--apply` once. It never repairs what it reports unless
+asked, so its exit status is evidence rather than an outcome it produced.
+
+`observed-at` is still supplied by the operator for `calibrate_ranking_at_scale.py`. That
+tool is pinned by the frozen calibration v6 contract and `check_ranking_calibration.py`
+verifies its digest, so the field cannot be moved to the clock without a successor
+calibration. The two residency instruments below take it from the clock.
 
 The ranking calibration measures the dormant structural hypothesis even when the released
 Compiler has no profile coverage. Its output informs a later reviewed Revision; running
