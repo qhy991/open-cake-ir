@@ -1,0 +1,42 @@
+{
+ "schema_version": 2,
+ "observed_at": "2026-08-25T09:35:43Z",
+ "purpose": "lowered_kernel_correctness",
+ "scientific_claim_authorized": false,
+ "performance_measured": false,
+ "host": "warm-sun-begins-fin-03",
+ "device": "NVIDIA B200",
+ "compute_capability": [
+  10,
+  0
+ ],
+ "toolchain": {
+  "cutlass": "4.7.0",
+  "torch": "2.13.0+cu130"
+ },
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v26",
+  "revision_sha256": "c338ee40ac7b18757675d536acf2bcb32c15b29c34969e13a87ad49ce7d46fed"
+ },
+ "schedule": {
+  "path": "corpus/schedules/kda-weighted-combine-b8-smoke.json",
+  "schedule_id": "kda-weighted-combine-b8-smoke-v1",
+  "canonical_sha256": "fd485a28e304a012121a0631dc2f704ce0862050267833c239565943bb74ef44"
+ },
+ "lowering": {
+  "generated": true,
+  "entry_point": "cake_kda_weighted_combine_b8_smoke",
+  "source_sha256": "e678994ff8cabae2b6bdd65bcfa6c0903f9e0826a58026febd4b58679fa6d0b2",
+  "source_lines": 116
+ },
+ "result": {
+  "compiled": true,
+  "launched": true,
+  "total_elements": 128,
+  "mismatch_count": 0,
+  "max_deviation": 0.0,
+  "tolerance": 1e-05,
+  "passed": true
+ },
+ "note": "Compiler.lower generated this source from the Schedule; there is no checked-in template for this lowering route. Correctness only -- no timing was taken. Reproduce with tools/observe_lowered_kernel.py."
+}

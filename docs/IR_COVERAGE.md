@@ -225,5 +225,6 @@ the multi-kernel DAG remain absent, so complete-version coverage stays 0/57. The
 B200 attempt stopped before compilation because the broker worker could not import Torch.
 The first successor executed but lost its result to a late Cutlass metadata import; both
 failures are retained and neither supports correctness. The metadata import now precedes
-GPU work and a fully preflighted second successor is frozen. The check remains correctness-only
-and cannot establish a performance or complete-MoE claim.
+GPU work; the fully preflighted second successor compiled and launched once on B200 and
+matched 128/128 BF16 outputs with zero deviation. The check remains correctness-only and
+cannot establish a performance or complete-MoE claim.

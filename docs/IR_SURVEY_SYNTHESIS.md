@@ -313,6 +313,8 @@ an indexed load, `mul`, `sum` and an ordinary store are sufficient. What was mis
 the typed boundary between those primitives. Compiler v26 now verifies that loads preserve
 Buffer dtype, BF16-by-FP32 multiplication and the admitted reduction produce FP32, and the
 final store may narrow to BF16. It deliberately does not add `combine`, `cast` or `moe`.
+The released source subsequently matched all 128 BF16 outputs with zero deviation in one
+no-timing B200 observation.
 This is not complete KDA coverage: workspace reset, routing and group formation, atomic
 slot reservation, dispatch, both grouped contractions, fused scatter and the program DAG
 remain outside the slice.

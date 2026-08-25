@@ -1,6 +1,6 @@
 # ADR 0034: KDA weighted combine is primitive composition
 
-Status: proposed, 2026-08-25.
+Status: accepted, 2026-08-25.
 
 ## Outcome and non-goals
 
@@ -57,7 +57,9 @@ the worker's unqualified `python3` could not import Torch. The first successor e
 and computed correctness, but the instrument then failed on its late Cutlass metadata
 import before writing the result. Both failures are retained and neither supports a pass.
 The metadata import now happens before any compiler or GPU work, and a fully preflighted
-second successor is frozen; item 5 and this ADR's acceptance remain pending its result.
+second successor (`gpuq-edf9524fdebd`) compiled and launched once on B200. All 128 BF16
+outputs matched the independent oracle with zero deviation under the fixed `1e-5`
+tolerance, with no timing. Item 5 is therefore satisfied for this arithmetic slice.
 
 Failure at any step is retained as the missing primitive or backend boundary. It is not
 repaired by adding a workload-named operation or widening a numerical tolerance.

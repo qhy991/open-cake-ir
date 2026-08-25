@@ -87,7 +87,8 @@ causal effect, serving and paper reproduction are not.
   zero-retry shared-B200 attempt stopped before compilation because the worker's unqualified `python3` could not
   import Torch. The first successor executed and computed correctness but lost its result to a late Cutlass metadata
   import. Both failures are retained; the import now precedes GPU work and a fully preflighted second successor is
-  frozen. The reviewed KDA snapshot
+  frozen. That successor (`gpuq-edf9524fdebd`) compiled and launched once on B200 and matched 128/128 BF16 outputs
+  with zero deviation and no timing. ADR 0034 is accepted for the arithmetic slice. The reviewed KDA snapshot
   remains 0/57 for complete-version expressibility because routing/group formation, valid-tile work acquisition,
   the second contraction, scatter and the multi-kernel program DAG are still absent; no KDA performance claim is
   made.
@@ -151,7 +152,7 @@ causal effect, serving and paper reproduction are not.
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema, fresh-process replay and one
   RunAudit authority for separate archive-integrity and filesystem-custody facts.
-- The current local contract suite passes 407 pytest items plus 284 subtests; the earlier remote qualification passed its
+- The current local contract suite passes 408 pytest items plus 284 subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain

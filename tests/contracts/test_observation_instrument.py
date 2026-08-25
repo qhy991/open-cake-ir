@@ -15,6 +15,40 @@ from observe_lowered_kernel import measure_correctness  # noqa: E402
 
 
 class ObservationInstrumentTest(unittest.TestCase):
+    def test_kda_weighted_combine_b200_observation_retains_its_claim_boundary(self) -> None:
+        record = json.loads(
+            (
+                ROOT
+                / "inventory"
+                / "KDA_WEIGHTED_COMBINE_B200_OBSERVATION_20260825.json"
+            ).read_text()
+        )
+
+        self.assertEqual(
+            record["compiler_revision"]["revision_id"],
+            "open-cake-ir-sm100a-v26",
+        )
+        self.assertEqual(record["device"], "NVIDIA B200")
+        self.assertTrue(record["lowering"]["generated"])
+        self.assertEqual(
+            record["lowering"]["entry_point"],
+            "cake_kda_weighted_combine_b8_smoke",
+        )
+        self.assertEqual(
+            record["result"],
+            {
+                "compiled": True,
+                "launched": True,
+                "total_elements": 128,
+                "mismatch_count": 0,
+                "max_deviation": 0.0,
+                "tolerance": 1e-5,
+                "passed": True,
+            },
+        )
+        self.assertFalse(record["performance_measured"])
+        self.assertFalse(record["scientific_claim_authorized"])
+
     def test_tie_audit_flattens_every_batch_row_without_losing_distance_axis(self) -> None:
         distance = torch.zeros((2, 3, 4), dtype=torch.float32)
         reference = torch.zeros((2, 3), dtype=torch.int32)

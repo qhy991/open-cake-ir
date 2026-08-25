@@ -90,7 +90,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   before compilation because the worker's unqualified `python3` lacked Torch. The first successor did execute and
   compute correctness, but a late Cutlass metadata import failed before the result was written; both failures are
   retained and neither is called a pass. The instrument now imports metadata dependencies before GPU work, and a
-  second successor binds the fully preflighted environment. Until that result exists ADR 0034 remains proposed. Historical evidence is not
+  fully preflighted second successor compiled and launched once on B200 and matched all 128 BF16 outputs with zero
+  deviation. ADR 0034 is accepted for this arithmetic slice only. Historical evidence is not
   relabelled. These
   slices prove primitive expressibility and diagnostic lowering correctness only, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
@@ -144,7 +145,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   metric operands on CPU. The failed pre-kernel observation is retained. Its preregistered shared-B200 successor
   passes all 17 authority checks, all four materialized receipts, one kernel launch, zero fallback, parent-bitwise
   equality and oracle tolerance at maximum absolute error `0.000244140625`, without timing or a scientific claim.
-  The current local suite passes 407 pytest items plus 284 subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 408 pytest items plus 284 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
