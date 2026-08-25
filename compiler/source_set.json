@@ -29,6 +29,8 @@
     "corpus/schedules/rmsnorm-b8-smoke-residency-unmet.json",
     "corpus/schedules/rmsnorm-b8-smoke-shape-drift.json",
     "corpus/schedules/rmsnorm-b8-smoke.json",
+    "corpus/schedules/rope-b8-fused.json",
+    "corpus/schedules/rope-b8-smoke.json",
     "corpus/schedules/softmax-b8-smoke-shape-drift.json",
     "corpus/schedules/softmax-b8-smoke.json",
     "corpus/schedules/swiglu-b8-smoke-instruction-drift.json",

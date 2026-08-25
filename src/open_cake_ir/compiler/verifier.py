@@ -24,6 +24,8 @@ from enum import Enum
 from typing import Iterable
 
 from .ir import (
+    PLACED_CONTRACT_PREFIXES,
+    PLACEMENT_FIELDS,
     TMEM_COLUMN_BYTES,
     OperandSource,
     AccessIndexKind,
@@ -783,9 +785,10 @@ def _verify_epilogue_commitments(schedule: Schedule, out: _Collector) -> None:
 
 # A tensor-core atom places its operands explicitly; a tile-level dot leaves that to the
 # backend. Requiring both to say the same things would force one of them to invent an
-# answer, so the requirement follows the contract.
-_PLACED_CONTRACT_PREFIXES = ("tcgen05.", "mma.sync.", "wgmma.")
-_PLACEMENT_FIELDS = ("shape", "cta_group", "operand_source", "operand_major")
+# answer, so the requirement follows the contract. The lists live in `ir` because the
+# authoring Schema projects the same fact.
+_PLACED_CONTRACT_PREFIXES = PLACED_CONTRACT_PREFIXES
+_PLACEMENT_FIELDS = PLACEMENT_FIELDS
 
 
 def _verify_atom_placement(operation, instruction, path: str, out: _Collector) -> None:
@@ -2003,6 +2006,22 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         f"{len(buffer.shape)} buffer {access.buffer!r}",
                         category,
                     )
+                elif component.dimension is not None:
+                    # A sub-range that runs past the axis would read whatever follows it
+                    # in the allocation, so the bound is checked here rather than left
+                    # for the emitter to mask. An offset at or past the end selects
+                    # nothing, which is a declaration no operation can have meant.
+                    size = buffer.shape[component.dimension]
+                    if component.offset >= size or component.offset + component.span(size) > size:
+                        out.add(
+                            "ACCESS_DIMENSION_SUBRANGE",
+                            component_path,
+                            f"sub-range [{component.offset}, "
+                            f"{component.offset + component.span(size)}) leaves dimension "
+                            f"{component.dimension} of size {size} in buffer "
+                            f"{access.buffer!r}",
+                            category,
+                        )
             elif component.source is AccessIndexKind.LOOP_TILE:
                 if component.name not in loop_iterators:
                     out.add(
@@ -2450,7 +2469,13 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                 )
                 expected = loop.tile if loop is not None else None
             else:
-                expected = source.shape[component.dimension] if component.dimension is not None else None
+                # A sub-range stages what it covers, not the whole axis. Reading the
+                # axis size here would demand a tile the access never addresses.
+                expected = (
+                    component.span(source.shape[component.dimension])
+                    if component.dimension is not None
+                    else None
+                )
             if expected is not None and staged.shape[position] != expected:
                 out.add(
                     "ACCESS_TILE_MISMATCH",

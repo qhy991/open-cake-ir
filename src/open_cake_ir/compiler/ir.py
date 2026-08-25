@@ -847,12 +847,25 @@ class AccessIndex:
     source: AccessIndexKind
     name: str | None
     dimension: int | None
+    # A `dimension` component covers the whole axis unless it says otherwise. `offset`
+    # and `extent` narrow it to one contiguous sub-range, which is what lets two
+    # operations address disjoint halves of the same buffer -- a producer writing the
+    # layout its consumer wants, rather than a split materialized upstream first.
+    # `extent` of None means "to the end of the axis", so the default spelling of a
+    # whole dimension stays exactly what it was.
+    offset: int = 0
+    extent: int | None = None
 
     @property
     def is_vector(self) -> bool:
         """Whether this component contributes a tile axis rather than a scalar index."""
 
         return self.source is not AccessIndexKind.PROGRAM
+
+    def span(self, size: int) -> int:
+        """How many elements of an axis of `size` this component covers."""
+
+        return size - self.offset if self.extent is None else self.extent
 
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "AccessIndex":
@@ -861,10 +874,18 @@ class AccessIndex:
         source = _enum(AccessIndexKind, value.get("source"), f"{context}.source")
         if source is AccessIndexKind.DIMENSION:
             obj = _strict_object(
-                value, required={"source", "dimension"}, context=context
+                value,
+                required={"source", "dimension"},
+                optional={"offset", "extent"},
+                context=context,
             )
+            extent = obj.get("extent")
             return cls(
-                source, None, _nonnegative_int(obj["dimension"], f"{context}.dimension")
+                source,
+                None,
+                _nonnegative_int(obj["dimension"], f"{context}.dimension"),
+                _nonnegative_int(obj.get("offset", 0), f"{context}.offset"),
+                None if extent is None else _positive_int(extent, f"{context}.extent"),
             )
         obj = _strict_object(value, required={"source", "name"}, context=context)
         return cls(source, _string(obj["name"], f"{context}.name"), None)
@@ -910,6 +931,14 @@ class LoadParameters:
     what tile the descriptor addresses, so the backend derives a box and the choice is
     not inspectable. Meaningless for `movement: global`.
     """
+
+
+# Whether an instruction places its own operands is a fact about the contract, so the
+# contract vocabulary owns it. The Verifier reads it to decide which declarations are
+# legal; the authoring Schema projects the same fact so an agent cannot spend a Turn
+# discovering it. Two spellings of this list would be the defect it exists to prevent.
+PLACED_CONTRACT_PREFIXES = ("tcgen05.", "mma.sync.", "wgmma.")
+PLACEMENT_FIELDS = ("shape", "cta_group", "operand_source", "operand_major")
 
 
 @dataclass(frozen=True)

@@ -498,6 +498,34 @@
         "schedule_sha256": "72921b70f1ab49b5e23f242afa8c1e638b6c33df14b413ccff684244300aba23",
         "lowering_source_sha256": "30f5626804a0a22070618b9ae6ed2e1cda88ec499b76de4e2dc6c7be5125b282"
       }
+    },
+    {
+      "case_id": "rope-b8-fused-subrange",
+      "schedule": "corpus/schedules/rope-b8-fused.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "5ca5d07fca8ecc46b2eeb61ea550b6075525aed2fcaed02217185c6ddd9f65c4",
+        "lowering_source_sha256": "0fbe5ee5ae230d5e35d9867e05738c8f194240b14fa64a87f02e9da7dedaf8fd"
+      }
+    },
+    {
+      "case_id": "rope-b8-multi-output",
+      "schedule": "corpus/schedules/rope-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "f00f3164e5bc1c469eb97ba152381dc99c59b7ac26b45b0f6a4a6238af2903c0",
+        "lowering_source_sha256": "ebef90d87902a554081204f6097a865ea62863f693ecd917a7c81696257eb79c"
+      }
     }
   ]
 }

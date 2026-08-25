@@ -162,10 +162,10 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         for kind in (OperationKind.STORE, OperationKind.MMA, OperationKind.REDUCE_ARGMIN)
     }
     add(
-        counts[OperationKind.STORE] == 1,
+        counts[OperationKind.STORE] >= 1,
         "TRITON_STORE_COUNT",
         "operations",
-        "the Triton backend requires exactly one store operation",
+        "the Triton backend requires at least one store operation",
     )
     add(
         counts[OperationKind.MMA] <= 1,
@@ -238,11 +238,12 @@ class _TritonEmitter:
         self.loop = schedule.tile_loops[0] if schedule.tile_loops else None
         self.role = schedule.roles[0]
 
-        # A kernel must write something, so a store is required of every Schedule. An
-        # mma and a reduction are not: requiring them described the operator this backend
-        # was written for rather than anything Triton needs, and a Schedule that reduces
-        # without contracting was refused for missing a contraction it never claimed.
-        self.store = self._single(OperationKind.STORE, "store")
+        # A kernel must write something, so a store is required of every Schedule -- but
+        # how many is the host wrapper's business, not this constructor's, and holding one
+        # here only recorded a limit nothing read. An mma and a reduction are not required:
+        # requiring them described the operator this backend was written for rather than
+        # anything Triton needs, and a Schedule that reduces without contracting was
+        # refused for missing a contraction it never claimed.
         self.mma = self._at_most_one(OperationKind.MMA, "mma")
         self.reduce = self._at_most_one(OperationKind.REDUCE_ARGMIN, "reduce_argmin")
         if self.mma is not None:
@@ -370,10 +371,25 @@ class _TritonEmitter:
                 expressions.append(name)
                 vectors.append(name)
             else:
-                name = f"{buffer.name}_d{component.dimension}_offsets"
+                name = self._dimension_vector(buffer, component)
                 expressions.append(name)
                 vectors.append(name)
         return expressions, vectors
+
+    def _dimension_vector(self, buffer: Buffer, component) -> str:
+        """The name of the offsets vector a `dimension` component walks.
+
+        Two accesses may take different sub-ranges of the same axis, so the name carries
+        the range -- otherwise the define-once dedup below would hand the second access
+        the first one's offsets, silently. A whole-axis component keeps its original
+        name, because every existing corpus case pins the emitted bytes.
+        """
+
+        base = f"{buffer.name}_d{component.dimension}"
+        if component.offset == 0 and component.extent is None:
+            return f"{base}_offsets"
+        end = "end" if component.extent is None else component.extent
+        return f"{base}_o{component.offset}_e{end}_offsets"
 
     def _bound(self, access: AccessMap, buffer: Buffer, vector: str) -> str | None:
         """The accessed Buffer extent that bounds one tiled coordinate.
@@ -500,7 +516,7 @@ class _TritonEmitter:
                 expression = f"{component.name}_offsets"
                 domain = expression
             elif component.source is AccessIndexKind.DIMENSION:
-                expression = f"{buffer.name}_d{component.dimension}_offsets"
+                expression = self._dimension_vector(buffer, component)
                 domain = expression
             else:
                 expression = str(component.name)
@@ -694,10 +710,18 @@ class _TritonEmitter:
             buffer = self.schedule.buffer(access.buffer)
             for component in access.indices:
                 if component.source is AccessIndexKind.DIMENSION:
-                    name = f"{buffer.name}_d{component.dimension}_offsets"
+                    name = self._dimension_vector(buffer, component)
                     if f"{name} = " not in "\n".join(self.lines):
                         extent = self._extent(buffer.name, component.dimension)
-                        self.line(f"{pad}{name} = tl.arange(0, {extent})")
+                        if component.extent is None:
+                            # Whole axis, or a tail of it. The offset==0 spelling is the
+                            # one every existing case pins, so it stays literal.
+                            walk = f"tl.arange({component.offset}, {extent})"
+                        else:
+                            walk = f"tl.arange(0, {component.extent})"
+                            if component.offset:
+                                walk = f"{walk} + {component.offset}"
+                        self.line(f"{pad}{name} = {walk}")
         self.line()
 
         # Declared order is the authority. The loop is emitted where its body begins,
@@ -1157,7 +1181,8 @@ class _TritonEmitter:
         if states:
             self._emit_host_with_state(entry, kernel, globals_in_order)
             return
-        output = next(b for b in globals_in_order if b.mode.value == "output")
+        outputs = [b for b in globals_in_order if b.mode.value == "output"]
+        output = outputs[0]
         names = ", ".join(b.name for b in inputs)
         constants = self.constants()
 
@@ -1176,24 +1201,78 @@ class _TritonEmitter:
         self.line("            raise ValueError(\"every input must be contiguous on CUDA\")")
         self.line(f"    if any(t.device != {inputs[0].name}.device for t in ({names},)):")
         self.line("        raise ValueError(\"every input must share one device\")")
-        self.line("    if out is None:")
-        self.line(
-            f"        out = torch.empty({tuple(output.shape)}, "
-            f"dtype={_TORCH_DTYPE[output.dtype]}, device={inputs[0].name}.device)"
-        )
-        self.line(
-            f"    if tuple(out.shape) != {tuple(output.shape)} "
-            f"or out.dtype != {_TORCH_DTYPE[output.dtype]}:"
-        )
-        self.line("        raise ValueError(\"out differs from the frozen output contract\")")
-        self.line(f"    if out.device != {inputs[0].name}.device or not out.is_contiguous():")
-        self.line("        raise ValueError(\"out must be contiguous on the input device\")")
+        self._emit_output_binding(outputs, inputs[0].name)
         self.line(f"    {kernel}[{self.grid()}](")
-        for buffer in globals_in_order:
-            self.line(f"        {'out' if buffer is output else buffer.name},")
+        self._emit_launch_arguments(globals_in_order, outputs)
         self._emit_launch_options(constants)
         self.line("    )")
         self.line("    return out")
+
+    def _emit_output_binding(self, outputs: list[Buffer], anchor: str) -> None:
+        """Allocate and check the caller's output tensors.
+
+        One output binds the name `out` directly; several bind a sequence. The single
+        case keeps its exact emitted bytes because the corpus pins the lowered source
+        digest of every case, so drift there is a corpus-wide break for no gain.
+
+        Both host wrappers route through here. They did not before, and the consequence
+        was that the multi-output launch defect existed twice -- once per copy.
+        """
+
+        if len(outputs) == 1:
+            output = outputs[0]
+            self.line("    if out is None:")
+            self.line(
+                f"        out = torch.empty({tuple(output.shape)}, "
+                f"dtype={_TORCH_DTYPE[output.dtype]}, device={anchor}.device)"
+            )
+            self.line(
+                f"    if tuple(out.shape) != {tuple(output.shape)} "
+                f"or out.dtype != {_TORCH_DTYPE[output.dtype]}:"
+            )
+            self.line("        raise ValueError(\"out differs from the frozen output contract\")")
+            self.line(f"    if out.device != {anchor}.device or not out.is_contiguous():")
+            self.line("        raise ValueError(\"out must be contiguous on the input device\")")
+            return
+        self.line("    if out is None:")
+        self.line("        out = (")
+        for buffer in outputs:
+            self.line(
+                f"            torch.empty({tuple(buffer.shape)}, "
+                f"dtype={_TORCH_DTYPE[buffer.dtype]}, device={anchor}.device),"
+            )
+        self.line("        )")
+        self.line("    out = tuple(out)")
+        self.line(f"    if len(out) != {len(outputs)}:")
+        self.line(
+            f"        raise ValueError(\"out must provide {len(outputs)} output tensors\")"
+        )
+        self.line("    for tensor, shape, dtype in (")
+        for index, buffer in enumerate(outputs):
+            self.line(
+                f"        (out[{index}], {tuple(buffer.shape)}, "
+                f"{_TORCH_DTYPE[buffer.dtype]}),"
+            )
+        self.line("    ):")
+        self.line("        if tuple(tensor.shape) != shape or tensor.dtype != dtype:")
+        self.line(
+            "            raise ValueError(\"out differs from the frozen output contract\")"
+        )
+        self.line(f"        if tensor.device != {anchor}.device or not tensor.is_contiguous():")
+        self.line("            raise ValueError(\"out must be contiguous on the input device\")")
+
+    def _emit_launch_arguments(
+        self, globals_in_order: list[Buffer], outputs: list[Buffer]
+    ) -> None:
+        """Every global in declared order, with each output bound to its own slot."""
+
+        positions = {buffer.name: index for index, buffer in enumerate(outputs)}
+        for buffer in globals_in_order:
+            if buffer.name in positions:
+                slot = "out" if len(outputs) == 1 else f"out[{positions[buffer.name]}]"
+            else:
+                slot = buffer.name
+            self.line(f"        {slot},")
 
     def _emit_host_with_state(
         self, entry: str, kernel: str, globals_in_order: list[Buffer]
@@ -1205,9 +1284,9 @@ class _TritonEmitter:
             for buffer in globals_in_order
             if buffer.mode in {BufferMode.INPUT, BufferMode.STATE}
         ]
-        output = next(
+        outputs = [
             buffer for buffer in globals_in_order if buffer.mode is BufferMode.OUTPUT
-        )
+        ]
         names = ", ".join(buffer.name for buffer in caller_owned)
         constants = self.constants()
         anchor = caller_owned[0].name
@@ -1235,23 +1314,9 @@ class _TritonEmitter:
             f"    if any(t.device != {anchor}.device for t in ({names},)):"
         )
         self.line('        raise ValueError("every input and state must share one device")')
-        self.line("    if out is None:")
-        self.line(
-            f"        out = torch.empty({tuple(output.shape)}, "
-            f"dtype={_TORCH_DTYPE[output.dtype]}, device={anchor}.device)"
-        )
-        self.line(
-            f"    if tuple(out.shape) != {tuple(output.shape)} "
-            f"or out.dtype != {_TORCH_DTYPE[output.dtype]}:"
-        )
-        self.line('        raise ValueError("out differs from the frozen output contract")')
-        self.line(
-            f"    if out.device != {anchor}.device or not out.is_contiguous():"
-        )
-        self.line('        raise ValueError("out must be contiguous on the input device")')
+        self._emit_output_binding(outputs, anchor)
         self.line(f"    {kernel}[{self.grid()}](")
-        for buffer in globals_in_order:
-            self.line(f"        {'out' if buffer is output else buffer.name},")
+        self._emit_launch_arguments(globals_in_order, outputs)
         self._emit_launch_options(constants)
         self.line("    )")
         self.line("    return out")
