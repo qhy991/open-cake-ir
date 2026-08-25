@@ -7,12 +7,18 @@ became part of historical calibration evidence.
 
 from __future__ import annotations
 
+from math import prod
+
 from kernel_cases import _TORCH_DTYPE as _RETAINED_TORCH_DTYPE
 from kernel_cases import build_inputs as _retained_build_inputs
 
 
 def build_inputs(document: dict, torch) -> tuple:
     entry_point = document.get("lowering", {}).get("entry_point")
+    indexed_routes = {
+        "cake_indexed_gather_b8_smoke",
+        "cake_kda_weighted_combine_b8_smoke",
+    }
     extent_contracts = {
         buffer["valid_extent"]["buffer"]: buffer["shape"][
             buffer["valid_extent"]["dimension"]
@@ -20,7 +26,7 @@ def build_inputs(document: dict, torch) -> tuple:
         for buffer in document["buffers"]
         if buffer.get("valid_extent") is not None
     }
-    if entry_point != "cake_indexed_gather_b8_smoke" and not extent_contracts and not any(
+    if entry_point not in indexed_routes and not extent_contracts and not any(
         buffer["dtype"] == "fp8_e4m3" for buffer in document["buffers"]
     ):
         return _retained_build_inputs(document, torch)
@@ -36,7 +42,7 @@ def build_inputs(document: dict, torch) -> tuple:
         )
         dtype = getattr(torch, dtype_name)
         shape = tuple(buffer["shape"])
-        if entry_point == "cake_indexed_gather_b8_smoke" and buffer["name"] == "expert_ids":
+        if entry_point in indexed_routes and buffer["name"] == "expert_ids":
             # Rotate valid expert ids per token and retain KDA's -1 no-route sentinel.
             # This makes a Cartesian-product lowering, a fixed coordinate and missing
             # lower-bound mask all disagree with the oracle.
@@ -46,10 +52,36 @@ def build_inputs(document: dict, torch) -> tuple:
             value = torch.stack(
                 [torch.roll(base, shifts=token) for token in range(shape[0])]
             )
-        elif entry_point == "cake_indexed_gather_b8_smoke" and buffer["name"] == "row_ids":
+        elif entry_point in indexed_routes and buffer["name"] == "row_ids":
             slots = torch.arange(shape[1], dtype=dtype, device="cuda")
             value = torch.stack(
                 [(slots + token) % 8 for token in range(shape[0])]
+            )
+        elif (
+            entry_point == "cake_kda_weighted_combine_b8_smoke"
+            and buffer["name"] == "expert_rows"
+        ):
+            # Small integers and power-of-two route weights make the FP32 sum and final
+            # BF16 rounding exact. The observation then isolates indexing, masking,
+            # weighting and reduction instead of accepting an accumulation-order delta.
+            value = (
+                torch.arange(prod(shape), device="cuda")
+                .reshape(shape)
+                .remainder(17)
+                .sub(8)
+                .to(dtype)
+            )
+        elif (
+            entry_point == "cake_kda_weighted_combine_b8_smoke"
+            and buffer["name"] == "route_weights"
+        ):
+            base = torch.tensor(
+                [1.0, 0.5, -0.25, 2.0, -1.0, 0.125, 0.25, -0.5],
+                dtype=dtype,
+                device="cuda",
+            )
+            value = torch.stack(
+                [torch.roll(base, shifts=token) for token in range(shape[0])]
             )
         elif buffer["name"] in extent_contracts:
             capacity = extent_contracts[buffer["name"]]

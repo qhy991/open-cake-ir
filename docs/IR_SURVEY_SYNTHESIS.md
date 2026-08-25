@@ -307,6 +307,16 @@ across seven emitted operators is: four needed vocabulary, one needed a derivati
 needed neither. What is slowing is the growth of words; what has not stopped is what a
 backend must do with them, and those are different claims.
 
+KDA v1's non-fused weighted-combine arithmetic is a stronger reuse result. Once runtime
+indexed access existed, its arithmetic body needed no workload word and no emitter branch:
+an indexed load, `mul`, `sum` and an ordinary store are sufficient. What was missing was
+the typed boundary between those primitives. Compiler v26 now verifies that loads preserve
+Buffer dtype, BF16-by-FP32 multiplication and the admitted reduction produce FP32, and the
+final store may narrow to BF16. It deliberately does not add `combine`, `cast` or `moe`.
+This is not complete KDA coverage: workspace reset, routing and group formation, atomic
+slot reservation, dispatch, both grouped contractions, fused scatter and the program DAG
+remain outside the slice.
+
 KDA v12 also showed that counting the word was too generous. Its `tanh` requests an
 approximate target instruction, while the standalone emitter had silently chosen a
 libdevice implementation. Compiler v15 therefore makes the implementation contract part

@@ -37,8 +37,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v25` is content-bound to an exact `sm_100a` Target and a 32-case,
-  48-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
+- Compiler Revision `open-cake-ir-sm100a-v26` is content-bound to an exact `sm_100a` Target and a 33-case,
+  49-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
   emitted MMA omit its instruction contract while still being marked lowering-eligible. v10 turns the pinned Triton
@@ -82,8 +82,13 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   program invalid. A frozen v24 B200 attempt exposed an out-of-bounds bias mask plus two observation crashes. v25
   bounds each tiled access by the Buffer it addresses and repairs batched tie auditing without adding a primitive or
   mode. Its no-timing successor compiled and launched all 14 generated lowerings: 12 pass, while both GEMM rows remain
-  failed at maximum deviation `3.814697265625e-05` under the unchanged `1e-5` threshold. TinyGEMM2's current checked
-  asset passes separately; a current ranking calibration remains missing. Historical evidence is not relabelled. These
+  failed at maximum deviation `3.814697265625e-05` under the unchanged `1e-5` threshold. TinyGEMM2's v25 checked
+  asset passes separately; a current ranking calibration remains missing. v26 then adds no operation kind or lowering
+  branch: runtime-indexed `AccessMap`, `elementwise(mul)`, `reduce(sum)` and `store` compose the arithmetic body of
+  KDA v1's non-fused weighted combine. The verifier now derives load, arithmetic, reduction and final-store dtype
+  relations instead of leaving them to backend promotion. Its one brokered B200 correctness observation is frozen as
+  a no-timing, zero-retry follow-up; until that result exists ADR 0034 remains proposed. Historical evidence is not
+  relabelled. These
   slices prove primitive expressibility and diagnostic lowering correctness only, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300

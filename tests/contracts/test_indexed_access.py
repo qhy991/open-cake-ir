@@ -63,6 +63,16 @@ class RuntimeIndexedAccessContractTest(unittest.TestCase):
     def test_dtype_drift_is_the_corpus_falsifier(self) -> None:
         self.assertIn("ACCESS_INDEX_BUFFER_DTYPE", _codes(_document(DRIFT)))
 
+    def test_indexed_load_dtype_has_one_access_owned_finding(self) -> None:
+        document = _document()
+        _buffer(document, "gathered_tile")["dtype"] = "fp32"
+        dtype_findings = [
+            finding.code
+            for finding in verify(Schedule.from_dict(document), TARGET)
+            if "DTYPE" in finding.code
+        ]
+        self.assertEqual(dtype_findings, ["LOAD_DTYPE_MISMATCH"])
+
     def test_unknown_runtime_index_can_fail(self) -> None:
         document = _document()
         _access(document, "load_selected_rows")["indices"][1]["name"] = "ghost"

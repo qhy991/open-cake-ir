@@ -1484,6 +1484,31 @@ def _verify_block_scaled_mma(operation, path: str, buffers, out: _Collector) -> 
         )
 
 
+_ELEMENTWISE_FLOAT_DTYPES = frozenset({DType.BF16, DType.FP16, DType.FP32})
+
+
+def _elementwise_result_dtype(operation, buffers) -> DType | None:
+    """The one admitted arithmetic promotion relation.
+
+    Same-typed floating operands preserve their dtype. FP32 mixed with one 16-bit
+    floating format produces FP32; mixing BF16 with FP16 has no implicit answer. This
+    is deliberately smaller than a framework promotion table because the Schedule needs
+    one target-independent spelling, not every conversion a frontend happens to accept.
+    """
+
+    reads = [buffers.get(name) for name in operation.reads]
+    if any(buffer is None for buffer in reads):
+        return None
+    dtypes = {buffer.dtype for buffer in reads if buffer is not None}
+    if not dtypes or not dtypes <= _ELEMENTWISE_FLOAT_DTYPES:
+        return None
+    if len(dtypes) == 1:
+        return next(iter(dtypes))
+    if DType.FP32 in dtypes and len(dtypes) == 2:
+        return DType.FP32
+    return None
+
+
 def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> None:
     category = FindingCategory.DATA_CONSISTENCY
     if operation.kind is OperationKind.REDUCE_ARGMIN:
@@ -1653,6 +1678,24 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     f"store destination {name!r} is {buffer.mode.value}, not an output",
                     category,
                 )
+        if operation.reads and operation.writes:
+            source = buffers.get(operation.reads[0])
+            destination = buffers.get(operation.writes[0])
+            if source is not None and destination is not None:
+                supported = source.dtype is destination.dtype or (
+                    source.dtype is DType.FP32
+                    and destination.dtype in {DType.BF16, DType.FP16}
+                )
+                if not supported:
+                    out.add(
+                        "STORE_DTYPE_UNSUPPORTED",
+                        f"{path}.writes",
+                        f"store cannot convert {source.name!r} from "
+                        f"{source.dtype.value} to {destination.name!r} "
+                        f"{destination.dtype.value}; the admitted conversions are "
+                        "identity and fp32 to bf16/fp16",
+                        category,
+                    )
     # An ordinary contraction reads two data operands. The one admitted block-scale
     # contract reads the same pair followed by their two related scales; the contract,
     # rather than a flag, is the single owner of that arity and meaning.
@@ -1696,6 +1739,25 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
             result = buffers.get(operation.writes[0])
             reads = [buffers[name] for name in operation.reads if name in buffers]
             if result is not None and len(reads) == len(operation.reads):
+                inferred_dtype = _elementwise_result_dtype(operation, buffers)
+                if inferred_dtype is None:
+                    out.add(
+                        "ELEMENTWISE_DTYPE_UNSUPPORTED",
+                        f"{path}.reads",
+                        f"{parameters.op.value} has no admitted promotion for "
+                        f"{[read.dtype.value for read in reads]}",
+                        category,
+                    )
+                elif result.dtype is not inferred_dtype:
+                    out.add(
+                        "ELEMENTWISE_RESULT_DTYPE",
+                        f"{path}.writes",
+                        f"{parameters.op.value} over "
+                        f"{[read.dtype.value for read in reads]} produces "
+                        f"{inferred_dtype.value}, but {result.name!r} is "
+                        f"{result.dtype.value}",
+                        category,
+                    )
                 widest = max((r.shape for r in reads), key=len, default=())
                 if tuple(result.shape) != tuple(widest):
                     out.add(
@@ -1744,6 +1806,18 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
         result = buffers.get(operation.writes[0])
         axis = operation.parameters.axis
         if source is not None and result is not None:
+            if (
+                source.dtype not in _ELEMENTWISE_FLOAT_DTYPES
+                or result.dtype is not DType.FP32
+            ):
+                out.add(
+                    "REDUCE_DTYPE_MISMATCH",
+                    f"{path}.writes",
+                    f"{operation.parameters.op.value} reduces bf16/fp16/fp32 into "
+                    f"fp32, but {source.name!r} is {source.dtype.value} and "
+                    f"{result.name!r} is {result.dtype.value}",
+                    category,
+                )
             if axis >= len(source.shape):
                 out.add(
                     "REDUCE_AXIS_OUT_OF_RANGE",
@@ -1914,6 +1988,19 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
             for component in access.indices
             if component.source is AccessIndexKind.BUFFER
         ]
+        # AccessMap, not the ordering of Operation.reads, owns the global source.
+        # Keep one dtype relation and one Finding spelling for direct and runtime-
+        # indexed loads alike.
+        if operation.kind is OperationKind.LOAD and len(operation.writes) == 1:
+            staged = buffers.get(operation.writes[0])
+            if staged is not None and staged.dtype is not buffer.dtype:
+                out.add(
+                    "LOAD_DTYPE_MISMATCH",
+                    f"operations[{schedule.operations.index(operation)}].writes",
+                    f"load preserves {buffer.name!r}'s {buffer.dtype.value}, but "
+                    f"{staged.name!r} is {staged.dtype.value}",
+                    category,
+                )
         if indirect:
             index_names = tuple(dict.fromkeys(component.name for component in indirect))
             if operation.kind is not OperationKind.LOAD:
@@ -2011,15 +2098,6 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                             f"operations[{schedule.operations.index(operation)}].writes",
                             f"runtime-indexed access yields {expected_shape}, but "
                             f"{staged.name!r} has shape {list(staged.shape)}",
-                            category,
-                        )
-                    if staged.dtype is not source.dtype:
-                        out.add(
-                            "ACCESS_INDEXED_RESULT_DTYPE",
-                            f"operations[{schedule.operations.index(operation)}].writes",
-                            f"runtime-indexed load preserves {source.name!r}'s "
-                            f"{source.dtype.value}, but {staged.name!r} is "
-                            f"{staged.dtype.value}",
                             category,
                         )
 

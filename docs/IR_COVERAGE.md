@@ -166,7 +166,7 @@ and sub-rate pipelines remain separate missing mechanisms.
 
 ## Corpus coverage
 
-The current Compiler Corpus has 32 cases across thirteen program slices, against the
+The current Compiler Corpus has 33 cases across fourteen program slices, against the
 paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
 the surveyed work is actually about, still have no complete representation here.
 
@@ -211,3 +211,15 @@ the second contraction, scatter or their program DAG; complete-version coverage 
 0/57 and no performance claim is made. Review of its drift case exposed one generic
 address-safety gap: Compiler v21 now rejects a scalar program coordinate when its derived
 program range exceeds the indexed dimension of another Buffer. No lowering digest changed.
+
+ADR 0026 adds runtime INT32 Buffer coordinates to the existing `AccessMap`, not a gather
+operation. Its v22 generated source selected KDA-style `(expert, row)` tuples, masked the
+`-1` sentinel and matched 1,024/1,024 B200 outputs exactly. ADR 0034 then composes that
+load with existing `mul`, `sum` and `store` primitives to express the arithmetic body of
+KDA v1's non-fused weighted combine. Compiler v26 makes the implied numeric contract
+explicit: loads preserve dtype, BF16 multiplied by FP32 produces FP32, the admitted
+reduction produces FP32, and the final store may narrow to BF16. No `moe`, `combine`,
+`scatter`, `cast` or program-DAG vocabulary was added. Route/group formation, atomic
+reservation and dispatch, both grouped contractions, workspace reset, fused scatter and
+the multi-kernel DAG remain absent, so complete-version coverage stays 0/57. The planned
+B200 check is correctness-only and cannot establish a performance or complete-MoE claim.

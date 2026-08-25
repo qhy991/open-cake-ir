@@ -125,10 +125,13 @@ block only lowering, not IR acceptance. The reduction drift Corpus case is there
 Frozen pre-v24 observations and ranking calibrations keep their old Schedule/source
 bytes. They were not re-labelled as v24 evidence. The frozen v24 diagnostic attempt and
 the v25 successor now provide the historical/current split for generated lowering, while
-a successor ranking calibration remains missing. TinyGEMM2 separately has a current-v25
-checked-asset observation; the historical r31 launch was not relabelled. The v25 Corpus
-Gate is 32/32 and the zero-GPU suite passes 398 pytest items. Those gates validate the
-ownership migration but do not substitute for the missing ranking successor.
+a successor ranking calibration remains missing. The v25 generated partition remains
+12/14. TinyGEMM2 separately has a passing v25 checked-asset observation; neither it nor
+the historical r31 launch is relabelled as v26 evidence. The v26 Corpus Gate is 33/33 and
+the zero-GPU suite passes 407 pytest items plus 284 subtests. Its new KDA weighted-combine
+case has a separate preregistered B200 correctness check. These gates validate the
+ownership migration and the new type relations but do not substitute for either GPU
+evidence or the missing ranking successor.
 
 ### 10: an access is bounded by the Buffer it addresses
 
@@ -152,8 +155,9 @@ drift now reaches a durable result, closing both crash paths. Twelve records pas
 GEMM rows remain failed under the unchanged `1e-5` maximum-absolute tolerance, with
 maximum deviation `3.814697265625e-05` and 3,997/3,993 violating elements respectively.
 That is retained numerical evidence, not a reason to widen the threshold or claim the
-generated partition passed. The current TinyGEMM2 checked-asset partition passes
-separately and does not change those generated-lowering dispositions.
+generated partition passed. The v25 TinyGEMM2 checked-asset observation passes separately
+and does not change those generated-lowering dispositions. v26 leaves its source asset
+and Schedule unchanged, so it neither relabels nor needlessly repeats that observation.
 
 ### 11: materialized input and parent output are separate authorities
 

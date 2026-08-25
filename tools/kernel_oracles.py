@@ -104,6 +104,26 @@ def _indexed_gather_oracle(inputs, torch):
     return torch.where(valid[:, :, None], selected, torch.zeros_like(selected)), None
 
 
+def _kda_weighted_combine_oracle(inputs, torch):
+    """Gather routed rows, apply route weights, then reduce per token in FP32."""
+
+    expert_rows, expert_ids, row_ids, route_weights, _ = inputs
+    valid = (
+        (expert_ids >= 0)
+        & (expert_ids < expert_rows.shape[0])
+        & (row_ids >= 0)
+        & (row_ids < expert_rows.shape[1])
+    )
+    selected = expert_rows[
+        expert_ids.clamp(0, expert_rows.shape[0] - 1).long(),
+        row_ids.clamp(0, expert_rows.shape[1] - 1).long(),
+    ].float()
+    weighted = selected * route_weights[:, :, None]
+    return torch.where(valid[:, :, None], weighted, torch.zeros_like(weighted)).sum(
+        dim=1
+    ).to(torch.bfloat16), None
+
+
 def _masked_gemm_bias_oracle(inputs, torch):
     """Dense contraction plus the AccessMap's masked-zero bias semantics.
 
@@ -128,6 +148,7 @@ ORACLES = {
     "ragged_zero_pad_b1_smoke": _ragged_zero_pad_oracle,
     "ragged_grouped_gemm_b1_smoke": _ragged_grouped_gemm_oracle,
     "indexed_gather_b8_smoke": _indexed_gather_oracle,
+    "kda_weighted_combine_b8_smoke": _kda_weighted_combine_oracle,
 }
 
 # Observation tools select an oracle by the executable interface the Compiler returns.
@@ -144,6 +165,7 @@ _WORKLOAD_BY_ENTRY_POINT = {
     "cake_ragged_zero_pad_b1_smoke": "ragged_zero_pad_b1_smoke",
     "cake_ragged_grouped_gemm_b1_smoke": "ragged_grouped_gemm_b1_smoke",
     "cake_indexed_gather_b8_smoke": "indexed_gather_b8_smoke",
+    "cake_kda_weighted_combine_b8_smoke": "kda_weighted_combine_b8_smoke",
     "cake_swiglu_b8_smoke": "swiglu_b8_smoke",
     "cake_top_k_b8_smoke": "top_k_b8_smoke",
 }

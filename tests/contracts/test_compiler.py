@@ -332,6 +332,9 @@ class CompilerContractTests(unittest.TestCase):
                 self.assertIn(detail, finding.message)
 
     def test_passing_corpus_builds_a_content_bound_compiler_release(self) -> None:
+        case_count = len(
+            json.loads((ROOT / "corpus/manifest.json").read_text())["cases"]
+        )
         release = build_release(
             ROOT,
             ROOT / "compiler/revision.json",
@@ -341,8 +344,10 @@ class CompilerContractTests(unittest.TestCase):
         )
 
         self.assertEqual(release.document["state"], "released")
-        self.assertEqual(release.document["corpus_gate"]["case_count"], 32)
-        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 32)
+        self.assertEqual(release.document["corpus_gate"]["case_count"], case_count)
+        self.assertEqual(
+            release.document["corpus_gate"]["matched_case_count"], case_count
+        )
         self.assertEqual(
             len(release.document["sources"]),
             len(json.loads((ROOT / "compiler" / "source_set.json").read_text())["paths"]),
@@ -547,18 +552,25 @@ class CompilerContractTests(unittest.TestCase):
         compiler = Compiler.load(ROOT, REVISION_PATH)
 
         report = compiler.check_corpus()
+        cases = json.loads(
+            (ROOT / "corpus/manifest.json").read_text(encoding="utf-8")
+        )["cases"]
 
         self.assertTrue(report.passed, report.cases)
-        self.assertEqual(report.case_count, 32)
+        self.assertEqual(report.case_count, len(cases))
         # Every operator lands as a kernel plus a drift that proves a semantic rule
         # fires. The three normalization drifts are rejected rather than merely
         # unlowerable: their staged tile contradicts the extent it addresses, which the
         # access-map rule could not see until it stopped comparing a store's global
         # output against the tile axes.
-        self.assertEqual(report.accepted_case_count, 20)
-        self.assertEqual(report.rejected_case_count, 12)
-        self.assertEqual(report.lowerable_case_count, 15)
-        self.assertEqual(report.nonlowerable_case_count, 17)
+        expected_accepted = sum(case["expected"]["accepted"] for case in cases)
+        expected_lowerable = sum(
+            case["expected"]["lowering_eligible"] for case in cases
+        )
+        self.assertEqual(report.accepted_case_count, expected_accepted)
+        self.assertEqual(report.rejected_case_count, len(cases) - expected_accepted)
+        self.assertEqual(report.lowerable_case_count, expected_lowerable)
+        self.assertEqual(report.nonlowerable_case_count, len(cases) - expected_lowerable)
 
     def test_r16_program_map_schedule_uses_the_canonical_compiler(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)

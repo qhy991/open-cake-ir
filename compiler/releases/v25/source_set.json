@@ -16,7 +16,6 @@
     "corpus/schedules/gemm-bias-b1-smoke.json",
     "corpus/schedules/indexed-gather-b8-smoke-dtype-drift.json",
     "corpus/schedules/indexed-gather-b8-smoke.json",
-    "corpus/schedules/kda-weighted-combine-b8-smoke.json",
     "corpus/schedules/layernorm-b8-smoke-shape-drift.json",
     "corpus/schedules/layernorm-b8-smoke.json",
     "corpus/schedules/ragged-zero-pad-b1-smoke-relation-drift.json",

@@ -39,6 +39,7 @@
         "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
+          "ELEMENTWISE_RESULT_DTYPE",
           "REDUCE_ARGMIN_VALUE_DTYPE",
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
@@ -457,6 +458,19 @@
         ],
         "schedule_sha256": "7165f9da76a5c4a11827873094b6cfbc4d9d2daa436fde36cbec6904551b7285",
         "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "kda-weighted-combine-accepted",
+      "schedule": "corpus/schedules/kda-weighted-combine-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "fd485a28e304a012121a0631dc2f704ce0862050267833c239565943bb74ef44",
+        "lowering_source_sha256": "e678994ff8cabae2b6bdd65bcfa6c0903f9e0826a58026febd4b58679fa6d0b2"
       }
     }
   ]
