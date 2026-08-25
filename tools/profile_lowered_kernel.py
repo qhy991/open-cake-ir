@@ -23,9 +23,11 @@ import argparse
 import csv
 import io
 import json
+import socket
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -120,7 +122,6 @@ def main() -> int:
     parser.add_argument("--schedule", required=True)
     parser.add_argument("--revision", default="compiler/revision.lock.json")
     parser.add_argument("--ncu", default="/usr/local/cuda/bin/ncu")
-    parser.add_argument("--observed-at", required=True, help="ISO 8601 UTC timestamp")
     parser.add_argument("--out", required=True)
     arguments = parser.parse_args()
 
@@ -185,9 +186,9 @@ def main() -> int:
 
     record = {
         "schema_version": 1,
-        "observed_at": arguments.observed_at,
+        "observed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "purpose": "residency_attribution",
-        "host": "verda-b200x4",
+        "host": socket.gethostname(),
         "compiler_revision": {
             "revision_id": assessment.compiler_revision_id,
             "revision_sha256": assessment.compiler_revision_sha256,

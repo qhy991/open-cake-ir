@@ -204,7 +204,6 @@ print(c.lower(c.assess_file(Path('corpus/schedules/layernorm-b8-smoke.json'))).s
 ```bash
 python tools/observe_lowered_kernel.py \
   --schedule corpus/schedules/layernorm-b8-smoke.json \
-  --observed-at 2026-01-01T00:00:00Z \
   --out /new/path/LAYERNORM_OBSERVATION.json
 ```
 

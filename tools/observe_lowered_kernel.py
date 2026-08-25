@@ -22,8 +22,10 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import socket
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,7 +43,6 @@ def main() -> int:
         "--schedule", default="corpus/schedules/flash-kmeans-assignment-full.json"
     )
     parser.add_argument("--revision", default="compiler/revision.lock.json")
-    parser.add_argument("--observed-at", required=True, help="ISO 8601 UTC timestamp")
     parser.add_argument("--out", required=True)
     parser.add_argument(
         "--tolerance",
@@ -116,11 +117,11 @@ def main() -> int:
 
     record = {
         "schema_version": 2,
-        "observed_at": arguments.observed_at,
+        "observed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "purpose": "lowered_kernel_correctness",
         "scientific_claim_authorized": False,
         "performance_measured": False,
-        "host": "verda-b200x4",
+        "host": socket.gethostname(),
         "device": device.name,
         "compute_capability": list(torch.cuda.get_device_capability(0)),
         "toolchain": {
