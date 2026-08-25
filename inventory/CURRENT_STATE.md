@@ -1,6 +1,9 @@
 # Current-state inventory
 
-Snapshot: 2026-08-23 after external Campaign custody and Executor v6 qualification. The final legacy authority is clean revision
+Snapshot: 2026-08-24 after declared-domain ranking calibration, candidate-set envelope implementation and live
+system qualification, historical Executor-v10 NCU attribution validation, Executor v26 release and Compiler v13
+KDA-delta expressibility slice. The final
+legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
 `migration/bundles/cake-repro-final-2fa79092.bundle` remains an independent complete-history copy. The 146-record
@@ -26,30 +29,154 @@ causal effect, serving and paper reproduction are not.
 
 ## New repository state
 
-- Compiler Revision `open-cake-ir-sm100a-v3` binds exact Target, public Schedule authoring contract, source closure,
-  six-case Corpus Gate and approval. Its 16-source Evidence archive has an external terminal-seal anchor; v2 remains
-  immutable in release history.
-- Current Executor Revision `open-cake-ir-b200-v6` binds 32 runtime sources, including deterministic external
-  Campaign custody and the GPU teaching smoke, plus
+- Compiler Revision `open-cake-ir-sm100a-v13` binds the exact Target, public Schedule authoring contract, 35-source
+  closure, 19-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
+  remain immutable history; v7 and v8 are archived byte-for-byte because retained calibration and Study authorities
+  witness them. v9 makes an otherwise-lowerable backend-emitted MMA without an instruction contract a structured,
+  candidate-actionable Finding instead of a late emitter exception. v10 similarly makes the pinned Triton backend's
+  unsupported warp-specialized value-and-index argmin a localized lowering Finding; the exact scientific-v3 failure
+  candidate is its Corpus regression. v11 separates the device-fill performance preorder from stable
+  `schedule_id` serialization and exposes `rank_for_cut` as an abstaining boundary: an equal-key group cannot be
+  split on a non-performance name. The old total-order calibration failed at 35.95% and 8.16%; a cyclically
+  interleaved successor classified 1,450 decisive cuts and 850 tie abstentions per repeat but still failed the fixed
+  every-repeat 5% rule at 5.73% and 2.79%. The v10 34-object source archive passes immediate external audit.
+  `COMPILER_REVISION_IDENTITY_INCIDENT_20260824.json` records why v4 and v6 cannot be reused or treated as unique
+  released identities. v12 retained v11's empty `calibration_coverage`, so eligible candidates keep provider order,
+  and added one observable `Lowering.generated` fact. v13 keeps that boundary, repairs the generated authoring
+  schema so it admits all 19 Compiler-valid Corpus documents, and adds the reusable `tanh` primitive plus one
+  standalone SwiGLU positive/shape-drift pair. Seven backend-emitted profiles report true while the closed
+  TinyGEMM2 asset reports false. A B200 correctness-only observation compiled and launched the SwiGLU lowering over
+  524,288 FP32 outputs with zero tolerance violations and maximum deviation 4.76837158203125e-07. The reviewed KDA
+  snapshot remains 0/57 for complete-version expressibility because grouped/ragged work, indexed top-k,
+  quantization-scale relations and scatter are still absent; no KDA performance claim is made.
+- Current Executor Revision `open-cake-ir-b200-v26` binds 34 runtime sources, including deterministic external
+  Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
-  and no-GPU Triton-to-CUBIN
-  qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor. G8 r6 retains its exact v1
-  closure, while later source baselines retain v2–v5; `inventory/EXECUTOR_REVISIONS.json` resolves all six.
+  and no-GPU Triton-to-CUBIN qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor.
+  The Executor pins NCU 2026.1.1.0 by path, bytes and size. G8 r6 retains its exact v1 closure, later source baselines
+  retain v2–v5, and v6–v25 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all twenty-six revisions. v19
+  normalizes the observed same-path delete/add replacement lifecycle to the single canonical resumed update, while
+  rejecting different paths, orderings and kinds. v20 routes a measured order inversion to the cost model only when
+  complete released cost coverage actually ordered the candidate set; provider order with null costs no longer
+  creates a false cost-model diagnosis. v21 maps the Codex CLI's observed resumed bare `add` label onto the one
+  Lab-authoritative update only after the pre-Turn candidate-existence check. The v22 successor Analysis Plan
+  separates adhered candidate failure from external missing data, permits a two-part
+  estimate when every Run is observed and each arm has conditional latency, and explicitly estimates the declared
+  Open Cake-minus-direct-CUDA qualification-rate contrast. The frozen v1–v3 Analysis Plans retain their earlier
+  all-Runs-qualified rule and reports unchanged. v23 closes the matched event vocabulary and derives search and
+  diagnosis projections from retained authorities; v24 makes reasoning effort an explicit, qualification-bound
+  treatment factor shared by both arms. v25 retains the exact rendered authoring bundle as a replay-checked Evidence
+  object for every completed provider Turn and makes its absence a harness fault. v26 adds only the public CLI
+  projection of the Compiler-owned generation fact. The Lab makes Claim Scope the
+  single authority for choosing the
+  closed versus tool-rich live provider qualification, so
+  artifact-only live composition no longer rejects its own qualified provider.
+- Current matched Study v28 fixtures bind Compiler v13 and Executor v26, profile every correctness-qualified search
+  survivor through the existing no-timing attribution purpose, and feed back only the selected survivor's checked
+  projection. Frozen selected-only evidence
+  retains its earlier operation spelling; the current live v3 successor now passes this relation on B200 for both
+  selected and non-selected survivors in both arms. A separate v28 reference fixture pairs an operation-free Open
+  Cake interface with an empty-body CUDA ABI starter; it validates reference access only and retains the local
+  150k/`max` factors rather than claiming paper alignment.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
 - Lab owns matched Turn/budget/checkpoint control and the exact-shape Portfolio handoff; Compiler does not own
   KernelSeed or held-out policy.
 - Common Evaluation has sealed artifact custody, bounded broker-attempt semantics, shape-bound persistent Driver
-  loading, raw Portfolio cohorts and semantic replay.
+  loading, raw Portfolio cohorts, raw-checked NCU attribution and semantic replay. Candidate-set replay uses `(turn, candidate_sha256)` and
+  attempt replay uses `(turn, purpose, candidate_sha256)`; qualification precedes selection and the selected
+  candidate retains its own findings. Attribution is a separate correctness-qualified launch with no timing; its
+  summary is recomputed from the retained CSV before archival and again during audit.
+- The Lab/provider seam now carries one canonical `candidate-set.json` envelope for either arm and projects its
+  ordered members into the existing filtering, selection and replay path. Fixtures cover canonical transport,
+  authoring/search bounds, semantic deduplication, mixed and all-member rejection, fresh-process replay, and faults
+  before compilation or GPU work. Tool-rich prompts apply KDA-internal's useful ownership boundary: auxiliary agents
+  investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
+  non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The local and remote contract suite passes 123 tests plus 13 subtests. G7 r4 qualifies the real provider under a
+- The current local contract suite passes 343 tests plus 254 subtests; the earlier remote qualification passed its
+  frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
   null. The tool-rich successor injects no feature disables, observes shell activity across resume and freezes a live
   `artifact_optimization_only` Study without executing it. Private `qhy991/open-cake-ir` is the sole source owner;
   legacy remains read-only historical/rollback evidence.
+- Both closed and tool-rich Codex 0.144.4 candidate-set qualifications pass for Open Cake and direct CUDA add/resume
+  lifecycles. A separate closed `xhigh` successor also passes for both arms with the pinned executable, three-member
+  envelope, exact reference visibility and no GPU authority. It closes only the provider-capability prerequisite:
+  frozen local Studies remain `max`, and no 80M scientific authority exists. The first non-scientific live Campaign
+  is retained under
+  `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v1` as bounded failure evidence: Open Cake
+  authored three launchable members, then the broker worker could not traverse the temporary checkout; direct CUDA
+  emitted two JSON-equivalent bracketed terminals that the v13 byte-only normalizer rejected. It launched no GPU,
+  and v14 now retains missing-result process output and normalizes only JSON-equivalent bracketed terminals.
+- The accessible-worktree successor passes under Study `open-cake-ir-candidate-set-system-v2`, Campaign authority
+  `88605aa1b1557b58aec9dacb4e043290d9a03205b0847d507fa72fc68fad633b` and external Evidence root
+  `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v2`. Both arms submit three distinct
+  launchable Candidates, search two and give the selected Candidate confirmatory plus attribution Evaluation. All
+  eight receipts pass tie-aware correctness with one target launch and zero fallback; fresh-process audit reconstructs
+  integrity, semantic replay, adherence and `system_qualification_passed=true`. Estimand, estimate and uncertainty
+  remain null, so the observed latency values are not an arm comparison.
+- The Executor-v18 successor passes under Study `open-cake-ir-candidate-set-system-v3` (canonical SHA
+  `180c0d4787c4f2361e5fe7bd342fbb7e07def6ca0f0e5a7551993d8fe4364b7e`), Campaign authority
+  `56bbcfe06caa4be7db31689d658ed59af3e2fe0ae2b4a88dc682ef9c8b373d8e` and Evidence root
+  `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v3`. Each arm authors three launchable
+  Candidates, searches two correct survivors, retains both NCU profiles and freshly confirms the selected survivor.
+  All ten Receipts pass tie-aware correctness with one target launch and zero fallback; each of the four attribution
+  Receipts has eleven replay-checked metrics and no timing. Fresh audit passes integrity, exact semantic replay,
+  adherence and `system_qualification_passed=true`. Scientific inclusion remains forbidden and all estimand fields
+  remain null.
+- Scientific v1 completed with intact, replayable Evidence but only one direct-CUDA Run qualified; five Runs were
+  missing after the v8 instruction-completeness and v18 resumed-replacement defects, so its Estimand is unavailable.
+  Study `open-cake-ir-scientific-matched-live-v2` remains preflight-only and was never executed. The create-only
+  Executor-v19 successor, Study `open-cake-ir-scientific-matched-live-v3` (canonical SHA
+  `ec1c4592c2fd5cd81f4e6edfc3056c85025e97b7750a4964289ac87c1ee33570`) under Campaign authority
+  `59a5c1687c367e24e09b4858955c82147f7b1fa5a1cca1c8e814a6a1ba74157d`, completes all six prescheduled Runs. Fresh
+  audit from the frozen v19 checkout passes archive integrity and semantic replay. Open Cake qualifies in 0/3 Runs;
+  direct CUDA qualifies in 2/3 at 9.880473 and 10.084415 ms (descriptive median 9.982444 ms). `direct_cuda-2` has a
+  provider fault from the resumed bare-`add` label, and `open_cake-3` has a harness fault from Triton automatic warp
+  specialization over a value-and-index argmin. Those two Runs are excluded exactly as preregistered, leaving
+  `missing_run_count=2`, `estimand_available=false`, and estimate/uncertainty null. v21 normalizes the former after
+  the Lab's pre-Turn existence check; Compiler v10 turns the latter into structured lowering feedback. The frozen
+  v3 events remain unchanged. The local 150k endpoint, same-task Compiler history and lack of a matched FlashML
+  baseline prohibit treating these observations as an 80M-token paper reproduction.
+- The first bounded tool-rich Campaign is retained under
+  `/home/qinhaiyan/open-cake-ir-evidence/campaigns/artifact-optimization-live-v1`. Open Cake supplied three launchable
+  Candidates and promoted candidate `7141869d…` at a confirmed 1.556059 ms. Direct CUDA's raw provider stream also
+  contains three Candidates, but Executor v14 classified its temporary source-file add/delete lifecycles as competing
+  Candidate lifecycles and sealed a provider fault. Executor v15 validates scratch changes as typed auxiliary
+  activity and projects immutable report mappings at the CLI boundary. Audit still replays the frozen v1
+  classification. This is artifact evidence, not an arm comparison or a scientific result.
+- The v15 successor is retained under
+  `/home/qinhaiyan/open-cake-ir-evidence/campaigns/artifact-optimization-live-v2`. Direct CUDA authored three Candidates,
+  searched two, and promoted candidate `aa2b552e…` at a confirmed 10.765704 ms through confirmatory and attribution
+  Evaluation. Open Cake authored three Candidates but first added and then updated the fixed envelope in one Turn;
+  v15 incorrectly treated both event lifecycles as competing submissions and sealed a provider fault before GPU work.
+  Executor v16 removes that second event authority: all tool-rich file changes are typed activity and the final
+  no-follow envelope alone is the submission. Fresh audit preserves v2 integrity and semantic replay without
+  reclassifying it. No cross-arm performance claim is available.
+- Executor-v16 Study `open-cake-ir-artifact-optimization-live-v3` closes the same frozen two-arm path under Campaign
+  authority `b3d8002b9b52a0a990e11981f379329751e21ef0cc35112912c84d312955c63e` and Evidence root
+  `/home/qinhaiyan/open-cake-ir-evidence/campaigns/artifact-optimization-live-v3`. Each arm authored three Candidates,
+  searched two, adhered, and promoted one confirmatory-qualified artifact with a separate attribution Receipt: Open
+  Cake `af9e81e8…` at 1.524281 ms and direct CUDA `686b8856…` at 6.050733 ms. Fresh-process audit reconstructs archive
+  integrity, semantic replay, `artifact_optimization_complete=true`, and zero missing Runs. Both first Turns crossed
+  the 150k token budget (935,013 and 6,056,350), so no resume occurred and their checkpoint endpoints correctly remain
+  `no_qualified_candidate`; artifact promotion is a distinct per-Run confirmatory result. Estimand, estimate and
+  uncertainty remain null, so the latencies are not an arm comparison or a paper result.
 - The beginner `b32_smoke` path has a fresh B200 observation: one candidate kernel launch from the loaded CUBIN,
   16,384/16,384 exact assignments, no fallback, synchronized unload, and explicitly no performance or scientific
   claim.
+- The NCU vertical slice has a correctness-qualified B200 observation under
+  `/home/qinhaiyan/open-cake-ir-evidence/ncu-attribution-20260824-v1`: one profiled target launch, zero timing
+  samples, 16,384/16,384 exact assignments, and a replay-checked 11-metric profile. Full/PM/source reports expose
+  grid underfill, a theoretical shared-memory residency limit and long-scoreboard pressure. This validates the
+  evaluator mechanism and one frozen b32 Candidate; by itself it is not current-kernel performance, every-survivor
+  coverage or a scientific Campaign. Current every-survivor coverage is the separate v3 system qualification above.
+  Canonical attempt 12 passed under historical v10 digest `23a2c79f…` and its retained raw
+  CSV, projected profile and complete Evaluation Receipt replay. Attempt 11 was a pre-worker temporary-checkout
+  permission failure and did no GPU work. Earlier attempts 8/9 omitted the runtime's frozen
+  `GPUQ_JOB_ID` environment argument and therefore prove only fail-closed zero-work admission, not dirty cards;
+  attempts 6/7 retain no narrower failure-stage evidence.
 - New Campaign Locks and Evidence roots are create-only and must be outside the checkout; historical in-checkout
   Campaigns remain read-only replay inputs.
 
@@ -61,9 +188,27 @@ causal effect, serving and paper reproduction are not.
 | Workload inputs/oracles | Workload Contracts + Evaluation adapters | migrated |
 | r41/r42 Turn/resume/checkpoint controls | matched Lab path | implemented and live-qualified by G7/G8 |
 | r43-r45 seed/specialists/dispatcher/timing | portfolio Lab + Evaluation path | implemented; new B200 rerun pending |
-| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | implemented and live provider-qualified; Campaign not run |
+| Full-feature final authoring loop | matched Lab + artifact-only Claim Scope | implemented and live-qualified by Executor-v16 Campaign v3; both Runs adhere and promote one artifact, with no scientific comparison |
 | Beginner B200 teaching smoke | Compiler + common correctness Evaluation | implemented and live-qualified; performance deliberately absent |
 | Legacy raw/index/source bytes | final bundle + manifest + historical indexes | migrated by immutable reference |
 | rXX/vN runners and verifiers | legacy Git history | deliberately not active |
 | Provider credentials/HMAC key | external host custody | deliberately not migrated |
 | Serving | no owner yet | not implemented remotely or locally |
+
+## A note on the superseded kernel observation
+
+`EMITTED_KERNEL_OBSERVATION_20260823.json` records a correct B200 run and names compiler
+Revision `open-cake-ir-sm100a-v6`. No released descriptor for that identity exists. The
+first unambiguous successor was v7; v5 was skipped and v6 was retired because the frozen observation
+already consumed its name. The id in that old record still cannot be resolved to bytes.
+
+It is left as written. A record is what someone wrote down at the time, and correcting one
+after the fact is the failure mode the whole content-binding scheme exists to prevent. What
+the anomaly does establish is why the instrument belongs in the repository: that record was
+produced by a script outside it, and an id that no release ever issued is exactly what an
+outside script can write. `tools/observe_lowered_kernel.py` takes the Revision id from the
+Assessment, so it cannot name one that did not assess the Schedule.
+
+`EMITTED_KERNEL_OBSERVATION_20260824.json` supersedes it and is the one the contract test
+holds the lowering to. The separate revision-identity incident record also accounts for
+the six distinct historical v4 digests without changing any observation.

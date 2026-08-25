@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "calibration_id": "gemm-b200-ranking-m512-v7",
+  "decision": "not_evaluable",
+  "fault": {
+    "stage": "authority_validation",
+    "message": "The frozen plan declares schedule_id gemm-bias-b1-smoke while the schedule bytes it pins declare gemm-bias-b1-smoke-v1.",
+    "observed_effect": "The frozen checker rejected the first record before evaluating any performance row."
+  },
+  "plan": {
+    "path": "contracts/calibrations/gemm-b200-ranking-m512-v7.json",
+    "raw_sha256": "34fa74aaf4a06d12824e7d9ab337fcab40f47dfba8b619d6b47d526f1d11f5d1"
+  },
+  "measurement_records": [
+    {
+      "path": "evidence/calibration/gemm-b200-ranking-m512-v7-repeat-1.json",
+      "raw_sha256": "13592dadc614194818a157e103422bb6f3620ba1042b91ff46588e6f9b4878df"
+    },
+    {
+      "path": "evidence/calibration/gemm-b200-ranking-m512-v7-repeat-2.json",
+      "raw_sha256": "5d1ad7167e261ac80290e7a1d1d142bf3ec2f278828c96958522c27b56aa7a0d"
+    }
+  ],
+  "recovery": "Do not edit or reinterpret v7. A successor must correct only the authority spelling, retain the fixed domain, protocol and decision rule, and collect new independent measurements."
+}

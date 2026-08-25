@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "65d14b4694a85e85ac44ee7c0fb82a8e882af3cd8b273bf0275fc51bc2c73300"
+    "canonical_sha256": "75f29e87205b352ef7dabbd44ee7b7d8d6ebf352d87d2dc4aa2f6df684258106"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "explicit user authorization to complete the compiler-first migration; v3 adds public authoring contracts and closes assessment/Target invariants on 2026-08-22"
+  "approval_basis": "Repair the agent authoring schema against all 19 Corpus schedules and admit the KDA-derived tanh SwiGLU slice with an independently failing shape-drift case."
 }

@@ -14,15 +14,18 @@ from open_cake_ir.evaluation import (  # noqa: E402
     BrokerAttempt,
     CudaLaunchManifest,
     EvaluationProtocol,
+    EvaluationReceipt,
     ExactShapeDispatcher,
     LaunchableCandidate,
     LaunchObservation,
+    NCU_ATTRIBUTION_METRICS,
     PairedTimingProtocol,
     PortfolioArtifact,
     PortfolioCaseObservation,
     WorkloadContract,
     assignment_raw_sha256,
     audit_flash_kmeans_assignment,
+    build_ncu_attribution_profile,
     classify_flash_kmeans_output,
     derive_paired_timing,
     evaluate_flash_kmeans,
@@ -38,6 +41,23 @@ from open_cake_ir.evaluation import (  # noqa: E402
     tensor_raw_sha256,
     tinygemm_oracle,
 )
+
+
+def _profile_fixture(candidate_sha256: str, case_id: str, kernel_name: str) -> bytes:
+    values = (95, 2, 2, 16, 8, 61.0, 24.0, 41.0, 37.0, 18.0, 3.0)
+    lines = ['"ID","Kernel Name","Metric Name","Metric Unit","Metric Value"']
+    for index, (metric, value) in enumerate(zip(NCU_ATTRIBUTION_METRICS, values)):
+        unit = "%" if "pct" in metric else "count"
+        lines.append(f'"{index}","{kernel_name}","{metric}","{unit}","{value}"')
+    return build_ncu_attribution_profile(
+        candidate_sha256=candidate_sha256,
+        case_id=case_id,
+        kernel_name=kernel_name,
+        ncu_version="2026.1.1.0",
+        ncu_executable_sha256="e" * 64,
+        stdout=("\n".join(lines) + "\n").encode(),
+        stderr=b"==PROF== fixture\n",
+    )
 
 
 class EvaluationContractTests(unittest.TestCase):
@@ -726,3 +746,129 @@ class EvaluationContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AttributionAssayTest(unittest.TestCase):
+    """Profiler evidence is a separate assay that structurally cannot report a latency.
+
+    Nsight Compute serialises kernels and replays them, inflating every span it observes.
+    A harness that profiled the timed run and then reported its latency would be reporting
+    the profiler's overhead as the candidate's cost. Rather than documenting that, the
+    attribution purpose refuses to carry timing at all, so the mistake is unrepresentable.
+    """
+
+    def _receipt(self, **changes):
+        fields = {
+            "candidate_sha256": "a" * 64,
+            "workload_sha256": "b" * 64,
+            "evaluation_protocol_sha256": "c" * 64,
+            "purpose": "attribution",
+            "case_id": "headline_b32",
+            "correctness_passed": True,
+            "correctness": {"tie_aware_distance_match": True},
+            "kernel_calls": 1,
+            "fallback_calls": 0,
+            "launch_receipt_sha256": "d" * 64,
+            "timing": None,
+        }
+        fields.update(changes)
+        return EvaluationReceipt(**fields)
+
+    def test_an_attribution_receipt_may_not_carry_timing(self) -> None:
+        self._receipt()  # timing None is the only admissible shape
+        with self.assertRaisesRegex(ValueError, "identity or route differs"):
+            self._receipt(timing={"median_ms": 1.0})
+
+    def test_an_attribution_protocol_may_not_declare_a_timing_method(self) -> None:
+        EvaluationProtocol(
+            protocol_id="attribution-v1",
+            purpose="attribution",
+            workload_sha256="b" * 64,
+            case_id="headline_b32",
+            timing="none",
+        )
+        with self.assertRaisesRegex(ValueError, "EvaluationProtocol differs"):
+            EvaluationProtocol(
+                protocol_id="attribution-v1",
+                purpose="attribution",
+                workload_sha256="b" * 64,
+                case_id="headline_b32",
+                timing="paired_cupti",
+            )
+
+    def test_the_artifact_roles_differ_from_a_timed_assay(self) -> None:
+        # A timed assay owes timing samples; an attribution assay owes a profile. Asking
+        # for both would mean one of them was produced by a run that could not produce it.
+        launch = json.dumps({"purpose": "attribution"}, sort_keys=True).encode()
+        correctness = json.dumps(
+            {"passed": True, "metrics": {"tie_aware_distance_match": True}},
+            sort_keys=True,
+        ).encode()
+        with self.assertRaisesRegex(ValueError, "artifact custody differs"):
+            self._receipt(
+                launch_receipt_sha256=sha256(launch).hexdigest(),
+                artifact_payloads={
+                    "correctness_output": correctness,
+                    "launch_receipt": launch,
+                    "timing_samples": b"[]",
+                },
+            )
+
+    def test_profile_summary_is_recomputed_from_retained_ncu_csv(self) -> None:
+        launch = json.dumps(
+            {"candidate_sha256": "a" * 64, "purpose": "attribution"},
+            sort_keys=True,
+        ).encode()
+        correctness = json.dumps(
+            {"passed": True, "metrics": {"tie_aware_distance_match": True}},
+            sort_keys=True,
+        ).encode()
+        profile = _profile_fixture("a" * 64, "headline_b32", "kernel")
+        receipt = self._receipt(
+            launch_receipt_sha256=sha256(launch).hexdigest(),
+            artifact_payloads={
+                "correctness_output": correctness,
+                "launch_receipt": launch,
+                "profile": profile,
+            },
+        )
+        self.assertEqual(
+            receipt.attribution_feedback["occupancy"]["binding_resources"],
+            ["registers", "shared_memory"],
+        )
+        self.assertEqual(
+            receipt.attribution_feedback["signals"]["long_scoreboard_stall_pct"],
+            18.0,
+        )
+
+        tampered = json.loads(profile)
+        tampered["summary"]["occupancy"]["resident_ctas_per_sm"] = 3.0
+        with self.assertRaisesRegex(ValueError, "projection differs"):
+            self._receipt(
+                launch_receipt_sha256=sha256(launch).hexdigest(),
+                artifact_payloads={
+                    "correctness_output": correctness,
+                    "launch_receipt": launch,
+                    "profile": json.dumps(
+                        tampered, sort_keys=True, separators=(",", ":")
+                    ).encode(),
+                },
+            )
+
+    def test_profiled_launch_must_itself_pass_correctness(self) -> None:
+        launch = b'{"candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+        correctness = json.dumps(
+            {"passed": False, "metrics": {"tie_aware_distance_match": False}},
+            sort_keys=True,
+        ).encode()
+        with self.assertRaisesRegex(ValueError, "identity or route differs"):
+            self._receipt(
+                correctness_passed=False,
+                correctness={"tie_aware_distance_match": False},
+                launch_receipt_sha256=sha256(launch).hexdigest(),
+                artifact_payloads={
+                    "correctness_output": correctness,
+                    "launch_receipt": launch,
+                    "profile": _profile_fixture("a" * 64, "headline_b32", "kernel"),
+                },
+            )

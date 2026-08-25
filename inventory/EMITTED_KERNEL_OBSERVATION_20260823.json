@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "observed_at": "2026-08-23T09:05:00Z",
+  "purpose": "lowered_kernel_correctness",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "host": "verda-b200x4",
+  "device": "NVIDIA B200",
+  "compute_capability": [
+    10,
+    0
+  ],
+  "toolchain": {
+    "cutlass": "4.7.0",
+    "torch": "2.13.0+cu130"
+  },
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v6"
+  },
+  "schedule": {
+    "path": "corpus/schedules/flash-kmeans-assignment-full.json",
+    "schedule_id": "flash-kmeans-assignment-full-explicit-sm100a-v1",
+    "canonical_sha256": "9046dbf21ed3357063b15a968d45d6c6b9114bdde1ad40b4d43393f8eecc9f11"
+  },
+  "lowering": {
+    "generated": true,
+    "entry_point": "cake_flash_kmeans_assignment_full",
+    "source_sha256": "a24f980ae16a0704cf8e4d9563e2b5342880c8d24c31d9cf0dce922dd831ced6",
+    "source_lines": 337
+  },
+  "result": {
+    "compiled": true,
+    "launched": true,
+    "total_assignments": 128,
+    "mismatch_count": 0,
+    "max_chosen_distance_excess": 0.0,
+    "passed": true
+  },
+  "note": "Compiler.lower generated this source from the Schedule; there is no checked-in template for this profile. Correctness only -- no timing was taken."
+}

@@ -132,6 +132,19 @@ def build_gate_report(
         source_receipts.append(
             {"path": relative, "sha256": sha256(payload).hexdigest(), "size_bytes": len(payload)}
         )
+    # Everything the gate reads has to be something the Revision binds. The manifest is
+    # bound, so adding a case invalidates the lock -- but the Schedule a case points at is
+    # bound only if it is listed here too, and nothing connected the two lists. A gated
+    # Schedule outside the source set can be edited under a released Revision without the
+    # Revision noticing, which is the one thing content-binding exists to stop.
+    unbound = sorted(
+        {c.schedule_path for c in gate.cases if c.schedule_path not in observed_paths}
+    )
+    if unbound:
+        raise CompilerError(
+            "the Corpus Gate reads Schedules the Revision does not bind: "
+            + ", ".join(unbound)
+        )
     if not gate.passed:
         failed = ", ".join(case.case_id for case in gate.cases if not case.matched)
         raise CompilerError(f"compiler corpus gate failed: {failed}")

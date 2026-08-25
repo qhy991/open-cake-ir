@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import subprocess
@@ -14,10 +15,22 @@ ROOT = Path(__file__).resolve().parents[2]
 REVISION_PATH = ROOT / "compiler/revision.lock.json"
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler import Compiler  # noqa: E402
+from open_cake_ir.compiler import Compiler, CompilerError  # noqa: E402
 from open_cake_ir.compiler.release import build_release  # noqa: E402
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
 from open_cake_ir.lab import KernelSeed, lower_specialists  # noqa: E402
+
+
+
+def _decisive(assessment):
+    """Findings that decide acceptance or lowering.
+
+    An Assessment also carries reports -- bottleneck attribution that reaches the agent
+    without affecting either decision. Those have their own contract tests; a test about
+    a decision should not have to enumerate them.
+    """
+
+    return [f for f in assessment.findings if f.blocks_acceptance or f.blocks_lowering]
 
 
 class CompilerContractTests(unittest.TestCase):
@@ -162,7 +175,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_target_mismatch_and_missing_calibration_are_explicit(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         schedule["target"] = "sm_90"
 
@@ -175,7 +188,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_lower_rejects_a_forged_assessment_projection(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         assessment = compiler.assess_file(
-            ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json"
+            ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json"
         )
 
         with self.assertRaisesRegex(ValueError, "canonical Schedule replay"):
@@ -184,7 +197,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_profile_cannot_generate_a_kernel_from_missing_schedule_semantics(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         schedule["operations"] = []
 
@@ -195,27 +208,39 @@ class CompilerContractTests(unittest.TestCase):
         self.assertIn("SCHEDULE_OPERATIONS_EMPTY", [finding.code for finding in assessment.findings])
         self.assertIn("OUTPUT_UNWRITTEN", [finding.code for finding in assessment.findings])
 
-    def test_program_tile_drift_cannot_reuse_a_static_lowering_template(self) -> None:
+    def test_program_tile_drift_without_its_buffers_is_refused(self) -> None:
+        """There is no static template left to reuse, so the reason changed.
+
+        Retiling the program axis and leaving the accumulator behind used to be caught
+        because one file could serve one shape. It is caught now because the tile axis and the
+        buffer it stages into disagree, which is a fact about the Schedule rather than
+        about the file the Compiler happened to keep.
+        """
+
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         schedule["program_map"]["axes"][0]["tile"] = 128
 
         assessment = compiler.assess(schedule)
 
         self.assertEqual(assessment.analysis["grid"], (4, 32, 1))
-        self.assertTrue(assessment.accepted)
+        # Not merely unlowerable: a Schedule whose tile axis and staged buffer disagree
+        # is internally inconsistent, so it is not accepted either. The shape-drift
+        # Corpus cases stay accepted-but-unlowerable, because a shape is a Workload
+        # question rather than a contradiction inside the Schedule.
+        self.assertFalse(assessment.accepted)
         self.assertFalse(assessment.lowering_eligible)
-        self.assertEqual(
-            [finding.code for finding in assessment.findings],
-            ["PROFILE_SEMANTICS_MISMATCH"],
+        self.assertIn(
+            "ACCESS_TILE_MISMATCH",
+            [finding.code for finding in _decisive(assessment)],
         )
 
     def test_coherent_program_tile_revision_changes_the_lowered_program(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         schedule["schedule_id"] = "flash-kmeans-b32-smoke-block128"
         schedule["program_map"]["axes"][0]["tile"] = 128
@@ -223,6 +248,13 @@ class CompilerContractTests(unittest.TestCase):
         buffers["token_tile"]["shape"][0] = 128
         buffers["distance_tile"]["shape"][0] = 128
         buffers["best_index_tile"]["shape"][0] = 128
+        # A coherent retiling reaches every tile the composition names, not only the
+        # ones the packed form happened to declare.
+        buffers["cross"]["shape"][0] = 128
+        buffers["scaled_cross"]["shape"][0] = 128
+        for operation in schedule["operations"]:
+            if operation["kind"] == "mma":
+                operation["parameters"]["tile_shape"][0] = 128
 
         assessment = compiler.assess(schedule)
         lowering = compiler.lower(assessment)
@@ -230,45 +262,73 @@ class CompilerContractTests(unittest.TestCase):
         self.assertTrue(assessment.accepted)
         self.assertTrue(assessment.lowering_eligible)
         self.assertEqual(assessment.analysis["grid"], (4, 32, 1))
-        self.assertEqual(assessment.lowering_parameters["block_n"], 128)
-        self.assertIn("grid = (4, 32, 1)", lowering.source)
-        self.assertIn("BLOCK_N=128", lowering.source)
+        # The tile now reaches the source through emission, not a parameter table.
+        self.assertIn("BLOCK_TOKEN_BLOCK=128", compiler.lower(assessment).source)
+        self.assertIn("[(4, 32, 1)]", lowering.source)
+        self.assertIn("BLOCK_TOKEN_BLOCK=128", lowering.source)
         self.assertNotEqual(
             lowering.source_sha256,
             compiler.lower(
                 compiler.assess_file(
-                    ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json"
+                    ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json"
                 )
             ).source_sha256,
         )
 
     def test_unlowered_operation_and_access_commitments_fail_closed(self) -> None:
+        """Each violation names its own path instead of one opaque profile code.
+
+        Every one of these used to report `PROFILE_SEMANTICS_MISMATCH` at
+        `metadata.profile` -- true, but no repair target. A closed-vocabulary violation
+        is now a structural Finding at the offending path, and an access map naming an
+        axis that does not exist is a contract Finding from the verifier.
+        """
+
         compiler = Compiler.load(ROOT, REVISION_PATH)
         original = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
-        mutations = (
-            lambda schedule: schedule["operations"][2]["parameters"].update(
-                {"formula": "unsupported_formula"}
+        cases = (
+            (
+                # The arithmetic vocabulary took this position when the formula that
+                # named a whole operator's math was removed; what is pinned is that a
+                # closed vocabulary reports its path and its admitted values.
+                lambda schedule: schedule["operations"][4]["parameters"].update(
+                    {"op": "unsupported_op"}
+                ),
+                "SCHEDULE_STRUCTURE",
+                "schedule.operations[4].parameters.op",
+                "square",
             ),
-            lambda schedule: schedule["operations"][3]["parameters"].update(
-                {"tie_break": "highest_index"}
+            (
+                lambda schedule: schedule["operations"][6]["parameters"].update(
+                    {"tie_break": "highest_index"}
+                ),
+                "SCHEDULE_STRUCTURE",
+                "schedule.operations[6].parameters.tie_break",
+                "lowest_index",
             ),
-            lambda schedule: schedule["access_maps"][0]["indices"][0].update(
-                {"name": "wrong_batch"}
+            (
+                lambda schedule: schedule["access_maps"][0]["indices"][0].update(
+                    {"name": "wrong_batch"}
+                ),
+                "ACCESS_PROGRAM_AXIS_UNKNOWN",
+                "access_maps[0].indices[0]",
+                "wrong_batch",
             ),
         )
-        for mutate in mutations:
-            with self.subTest(mutate=mutate):
+        for mutate, code, path, detail in cases:
+            with self.subTest(code=code, path=path):
                 schedule = json.loads(json.dumps(original))
                 mutate(schedule)
                 assessment = compiler.assess(schedule)
-                self.assertTrue(assessment.accepted)
+                self.assertFalse(assessment.accepted)
                 self.assertFalse(assessment.lowering_eligible)
-                self.assertIn(
-                    "PROFILE_SEMANTICS_MISMATCH",
-                    [finding.code for finding in assessment.findings],
+                finding = next(
+                    item for item in assessment.findings if item.code == code
                 )
+                self.assertEqual(finding.path, path)
+                self.assertIn(detail, finding.message)
 
     def test_passing_corpus_builds_a_content_bound_compiler_release(self) -> None:
         release = build_release(
@@ -280,9 +340,12 @@ class CompilerContractTests(unittest.TestCase):
         )
 
         self.assertEqual(release.document["state"], "released")
-        self.assertEqual(release.document["corpus_gate"]["case_count"], 6)
-        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 6)
-        self.assertEqual(len(release.document["sources"]), 16)
+        self.assertEqual(release.document["corpus_gate"]["case_count"], 19)
+        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 19)
+        self.assertEqual(
+            len(release.document["sources"]),
+            len(json.loads((ROOT / "compiler" / "source_set.json").read_text())["paths"]),
+        )
         self.assertTrue(release.verify(ROOT))
 
         with tempfile.TemporaryDirectory() as directory:
@@ -291,8 +354,133 @@ class CompilerContractTests(unittest.TestCase):
             released_compiler = Compiler.load(ROOT, path)
 
         released_gate = released_compiler.check_corpus()
-        self.assertEqual(released_gate.compiler_revision_id, "open-cake-ir-sm100a-v3")
+        # The released id advances with every Compiler change; assert against the lock
+        # rather than a literal, so a Revision bump is not a test edit.
+        released = json.loads(
+            (ROOT / "compiler" / "revision.lock.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(released_gate.compiler_revision_id, released["revision_id"])
         self.assertTrue(released_gate.passed)
+
+    def test_the_architecture_map_counts_the_profiles_that_exist(self) -> None:
+        """The alignment table drifted twice in one day, the second time by one operator.
+
+        It is the document that tells a reader what this implementation is missing, so a
+        count in it that lags the registry sends someone to build what is already there.
+        Both times the fix was to read the registry; this reads it.
+        """
+
+        import re
+
+        from open_cake_ir.compiler.core import _PROFILES
+
+        text = (ROOT / "docs/ARCHITECTURE.md").read_text(encoding="utf-8")
+        match = re.search(r"generates for (\d+) of the (\d+) admitted profiles", text)
+        self.assertIsNotNone(match, "the alignment table no longer states the counts")
+        generating, total = (int(value) for value in match.groups())
+        self.assertEqual(total, len(_PROFILES))
+        self.assertEqual(
+            generating, sum(1 for profile in _PROFILES.values() if profile.backend)
+        )
+        for name, profile in _PROFILES.items():
+            with self.subTest(profile=name):
+                # And every one of them is named, so the table cannot count right while
+                # listing the wrong ones.
+                self.assertIn(f"`{name}`", text)
+
+    def test_a_schedule_outside_the_corpus_is_history_something_else_pins(self) -> None:
+        """Why an ungated Schedule is allowed to sit in the corpus directory.
+
+        Two do. They are the r16 shape the vocabulary has since moved past -- they name an
+        epilogue formula this IR no longer admits, so they do not parse -- and a frozen
+        KernelSeed and two historical Study Contracts reference them by path. Deleting
+        them would break references that are supposed to be immutable; gating them is
+        impossible, because the Compiler cannot read them.
+
+        So the rule is: an ungated Schedule has to be both. Unreadable by the current
+        Revision, and pinned by something frozen. A file that is readable and ungated is
+        a corpus case someone forgot to register; one that is unreadable and unpinned is
+        a leftover.
+        """
+
+        from open_cake_ir.compiler.ir import Schedule, ScheduleParseError
+
+        manifest = json.loads(
+            (ROOT / "corpus/manifest.json").read_text(encoding="utf-8")
+        )
+        gated = {case["schedule"] for case in manifest["cases"]}
+        pinning = list((ROOT / "contracts").rglob("*.json")) + list(
+            (ROOT / "evidence").rglob("*.json")
+        )
+        haystack = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace") for path in pinning
+        )
+
+        for path in sorted((ROOT / "corpus/schedules").glob("*.json")):
+            relative = f"corpus/schedules/{path.name}"
+            if relative in gated:
+                continue
+            with self.subTest(schedule=path.name):
+                with self.assertRaises(ScheduleParseError):
+                    Schedule.from_dict(json.loads(path.read_text(encoding="utf-8")))
+                self.assertIn(relative, haystack)
+
+    def test_the_revision_binds_every_schedule_its_gate_reads(self) -> None:
+        """The Corpus Gate's own inputs have to be sealed, or the gate proves nothing.
+
+        `corpus/manifest.json` is bound, so adding a case invalidates the lock. The
+        Schedule a case points at is bound only if the source set lists it too, and the
+        two lists were kept in step by hand -- so a gated Schedule could be edited under a
+        released Revision without the Revision noticing. It was: two Schedules admitted
+        with softmax sat outside the source set until this was checked.
+
+        The release refuses that now. This holds the checked-in pair as well, because a
+        Revision released before the check is the one nobody would re-run.
+        """
+
+        source_set = json.loads(
+            (ROOT / "compiler/source_set.json").read_text(encoding="utf-8")
+        )
+        manifest = json.loads(
+            (ROOT / "corpus/manifest.json").read_text(encoding="utf-8")
+        )
+        bound = set(source_set["paths"])
+        gated = {case["schedule"] for case in manifest["cases"]}
+        self.assertEqual(gated - bound, set())
+        # And nothing bound as a corpus Schedule that no case reads: an unread Schedule
+        # in the source set is content nobody gates.
+        stale = {p for p in bound if p.startswith("corpus/schedules/")} - gated
+        self.assertEqual(stale, set())
+
+    def test_every_admitted_profile_has_a_corpus_case_that_lowers(self) -> None:
+        """A profile is admitted by a row; a row that nothing exercises is a claim.
+
+        The registry was reshaped so that an operator is one record plus the Schedules
+        that claim it. Nothing held the second half: a profile could be added with a
+        toolchain, a conformance rule and a backend, and no Schedule anywhere proving the
+        combination lowers. This is what makes the corpus the evidence for the row.
+        """
+
+        from open_cake_ir.compiler.core import _PROFILES
+
+        manifest = json.loads(
+            (ROOT / "corpus/manifest.json").read_text(encoding="utf-8")
+        )
+        lowering: dict[str, list[str]] = {}
+        for case in manifest["cases"]:
+            document = json.loads(
+                (ROOT / case["schedule"]).read_text(encoding="utf-8")
+            )
+            profile = document.get("metadata", {}).get("profile")
+            if case["expected"]["lowering_eligible"]:
+                lowering.setdefault(profile, []).append(case["case_id"])
+
+        for name in _PROFILES:
+            with self.subTest(profile=name):
+                self.assertTrue(
+                    lowering.get(name),
+                    f"profile {name!r} is admitted but no corpus case lowers through it",
+                )
 
     def test_full_compiler_corpus_gate_passes(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
@@ -300,17 +488,22 @@ class CompilerContractTests(unittest.TestCase):
         report = compiler.check_corpus()
 
         self.assertTrue(report.passed, report.cases)
-        self.assertEqual(report.case_count, 6)
-        self.assertEqual(report.accepted_case_count, 5)
-        self.assertEqual(report.rejected_case_count, 1)
-        self.assertEqual(report.lowerable_case_count, 3)
-        self.assertEqual(report.nonlowerable_case_count, 3)
+        self.assertEqual(report.case_count, 19)
+        # Every operator lands as a kernel plus the drift that proves its profile rule
+        # fires. The three normalization drifts are rejected rather than merely
+        # unlowerable: their staged tile contradicts the extent it addresses, which the
+        # access-map rule could not see until it stopped comparing a store's global
+        # output against the tile axes.
+        self.assertEqual(report.accepted_case_count, 13)
+        self.assertEqual(report.rejected_case_count, 6)
+        self.assertEqual(report.lowerable_case_count, 9)
+        self.assertEqual(report.nonlowerable_case_count, 10)
 
     def test_r16_program_map_schedule_uses_the_canonical_compiler(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
 
         assessment = compiler.assess_file(
-            ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json"
+            ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json"
         )
 
         self.assertTrue(assessment.accepted)
@@ -318,13 +511,13 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(assessment.analysis["grid"], (2, 32, 1))
         self.assertEqual(
             assessment.analysis["operation_counts"],
-            {"load": 2, "mma": 1, "reduce_argmin": 1, "store": 1},
+            {"load": 3, "mma": 1, "elementwise": 2, "reduce_argmin": 1, "store": 1},
         )
 
     def test_r16_workload_shape_drift_blocks_lowering(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         schedule["buffers"][0]["shape"][1] = 768
 
@@ -333,35 +526,55 @@ class CompilerContractTests(unittest.TestCase):
         self.assertTrue(assessment.accepted)
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(
-            [(finding.code, finding.path) for finding in assessment.findings],
+            [(finding.code, finding.path) for finding in _decisive(assessment)],
             [("PROFILE_SHAPE_MISMATCH", "buffers.tokens.shape")],
+        )
+
+    def test_triton_warp_specialized_argmin_is_structured_feedback(self) -> None:
+        compiler = Compiler.load(ROOT, REVISION_PATH)
+
+        assessment = compiler.assess_file(
+            ROOT
+            / "corpus/schedules/flash-kmeans-b32-warp-specialized-argmin.json"
+        )
+
+        self.assertTrue(assessment.accepted)
+        self.assertFalse(assessment.lowering_eligible)
+        self.assertEqual(
+            [(finding.code, finding.path) for finding in _decisive(assessment)],
+            [
+                (
+                    "TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED",
+                    "tile_loops[0].range_options.warp_specialize",
+                )
+            ],
         )
 
     def test_r16_lowering_is_available_through_the_same_interface(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         assessment = compiler.assess_file(
-            ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json"
+            ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json"
         )
 
         lowering = compiler.lower(assessment)
 
         self.assertEqual(lowering.entry_point, "cake_flash_kmeans_assign")
-        self.assertIn("N=512", lowering.source)
-        self.assertIn("grid = (2, 32, 1)", lowering.source)
+        self.assertIn("N_TOKEN_BLOCK=512", lowering.source)
+        self.assertIn("[(2, 32, 1)]", lowering.source)
         self.assertEqual(
             set(lowering.source_map),
-            {"load_tokens", "load_centroids", "distance_mma", "argmin", "store_assignment"},
+            {"load_tokens", "load_centroids", "load_norm", "distance_mma",
+             "scale_cross", "distance", "argmin", "store_assignment"},
         )
         self.assertEqual(lowering.toolchain_requirements["target"], "sm_100a")
         self.assertEqual(
-            lowering.toolchain_requirements["compile_constants"],
-            {"B": 32, "N": 512, "K": 1024, "D": 128, "BLOCK_N": 256, "BLOCK_K": 64, "NUM_STAGES": 2},
+            lowering.toolchain_requirements["compile_constants"]["N_TOKEN_BLOCK"], 512
         )
 
     def test_frozen_seed_lowers_three_distinct_exact_shape_specialists(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1.json"
+            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v2.json"
         )
         workload = json.loads(
             (ROOT / "contracts/workloads/flash-kmeans-assign-v2.json").read_text()
@@ -389,7 +602,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_frozen_seed_rejects_a_non_exact_tail_without_retuning(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1.json"
+            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v2.json"
         )
 
         with self.assertRaisesRegex(ValueError, "exactly tiled"):
@@ -416,13 +629,17 @@ class CompilerContractTests(unittest.TestCase):
         )
 
         schedule = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke.json").read_text()
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
+        # A space outside the IR vocabulary is a structural violation, reported at the
+        # offending path. TARGET_MEMORY_SPACE_UNSUPPORTED remains reachable for a Target
+        # that admits fewer spaces than the vocabulary; sm_100a admits all four.
         schedule["buffers"][0]["space"] = "unknown_space"
         assessment = compiler.assess(schedule)
+        self.assertEqual(assessment.findings[0].path, "schedule.buffers[0].space")
         self.assertIn(
-            "TARGET_MEMORY_SPACE_UNSUPPORTED",
-            [finding.code for finding in assessment.findings],
+            "SCHEDULE_STRUCTURE",
+            [finding.code for finding in _decisive(assessment)],
         )
 
     def test_r25_schedule_is_accepted_and_lowering_eligible(self) -> None:
@@ -435,7 +652,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertTrue(assessment.accepted)
         self.assertTrue(assessment.lowering_eligible)
         self.assertEqual(assessment.target, "sm_100a")
-        self.assertEqual(assessment.findings, ())
+        self.assertEqual(tuple(_decisive(assessment)), ())
         self.assertEqual(
             assessment.analysis["operation_counts"],
             {
@@ -459,7 +676,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertTrue(assessment.accepted)
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(
-            [(finding.code, finding.path) for finding in assessment.findings],
+            [(finding.code, finding.path) for finding in _decisive(assessment)],
             [("PROFILE_SHAPE_MISMATCH", "buffers.distance_scratch.shape")],
         )
 
@@ -474,6 +691,7 @@ class CompilerContractTests(unittest.TestCase):
 
         self.assertEqual(first.source, second.source)
         self.assertEqual(first.source_sha256, second.source_sha256)
+        self.assertTrue(first.generated)
         self.assertEqual(first.entry_point, "cake_flash_kmeans_assignment_full")
         self.assertIn(f"# schedule_sha256={assessment.schedule_sha256}", first.source)
         self.assertEqual(
@@ -501,7 +719,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(assessment.analysis["total_warps"], 12)
         self.assertEqual(
             assessment.analysis["operation_counts"],
-            {"epilogue": 1, "load": 3, "mma": 1, "reduce_sum": 1},
+            {"epilogue": 1, "load": 3, "mma": 1, "reduce": 1},
         )
 
     def test_r31_reduction_semantic_drift_is_rejected(self) -> None:
@@ -509,15 +727,19 @@ class CompilerContractTests(unittest.TestCase):
         schedule = json.loads(
             (ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json").read_text()
         )
-        schedule["operations"][4]["parameters"]["parts"] = 3
+        # The part count is the extent of the collapsed axis, so drift is expressed
+        # where that fact lives; the operation can no longer disagree with the buffer.
+        for buffer in schedule["buffers"]:
+            if buffer["name"] == "partial_accumulators":
+                buffer["shape"] = [3, 16, 8]
 
         assessment = compiler.assess(schedule)
 
         self.assertFalse(assessment.accepted)
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(
-            [(finding.code, finding.path) for finding in assessment.findings],
-            [("REDUCE_SUM_SEMANTICS", "operations.reduce_partials.parameters.parts")],
+            [(finding.code, finding.path) for finding in _decisive(assessment)],
+            [("REDUCE_SUM_SEMANTICS", "operations.reduce_partials.parameters.axis")],
         )
 
     def test_r31_lowering_uses_the_same_compiler_interface(self) -> None:
@@ -528,6 +750,7 @@ class CompilerContractTests(unittest.TestCase):
 
         lowering = compiler.lower(assessment)
 
+        self.assertFalse(lowering.generated)
         self.assertEqual(lowering.entry_point, "cake_tinygemm2_stage4_split_k")
         self.assertIn(assessment.schedule_sha256, lowering.source)
         self.assertEqual(
@@ -545,3 +768,64 @@ class CompilerContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CandidateRankingTest(unittest.TestCase):
+    """The pre-GPU filter stage, and the boundary it must not cross.
+
+    The paper's loop ranks a set of candidates before spending GPU time. What matters as
+    much as the order is that ranking happens *after* the gates and never argues with them:
+    a candidate the verifier refused has no score, because a good score for a rejected
+    Schedule would put the cost model in a position to overrule a hard gate.
+    """
+
+    def _variant(self, block_n: int, schedule_id: str) -> dict:
+        document = json.loads(
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        buffers = {item["name"]: item for item in document["buffers"]}
+        document["schedule_id"] = schedule_id
+        for axis in document["program_map"]["axes"]:
+            if axis["name"] == "token_block":
+                axis["tile"] = block_n
+        buffers["token_tile"]["shape"] = [block_n, 128]
+        buffers["best_index_tile"]["shape"] = [block_n]
+        for name in ("distance_tile", "cross", "scaled_cross"):
+            buffers[name]["shape"] = [block_n, 64]
+        for operation in document["operations"]:
+            if operation["kind"] == "mma" and "tile_shape" in operation["parameters"]:
+                operation["parameters"]["tile_shape"] = [block_n, 64, 128]
+        return document
+
+    def test_uncalibrated_and_refused_candidates_are_withheld(self) -> None:
+        compiler = Compiler.load(ROOT, REVISION_PATH)
+        assessments = [
+            compiler.assess(self._variant(64, "fits-a")),
+            compiler.assess(self._variant(128, "fits-b")),
+            compiler.assess(self._variant(512, "no-cta-is-resident")),
+        ]
+        self.assertFalse(assessments[2].lowering_eligible)
+
+        scored, withheld = compiler.rank(assessments)
+
+        self.assertEqual(scored, ())
+        self.assertEqual(
+            withheld,
+            ("fits-a", "fits-b", "no-cta-is-resident"),
+        )
+
+    def test_ranking_rejects_forged_calibration_coverage(self) -> None:
+        compiler = Compiler.load(ROOT, REVISION_PATH)
+        assessment = compiler.assess(self._variant(64, "fits-a"))
+
+        with self.assertRaisesRegex(CompilerError, "canonical Schedule replay"):
+            compiler.rank([dataclasses.replace(assessment, calibration_available=True)])
+
+    def test_ranking_refuses_an_assessment_from_another_revision(self) -> None:
+        compiler = Compiler.load(ROOT, REVISION_PATH)
+        assessment = compiler.assess(self._variant(64, "fits-a"))
+        foreign = dataclasses.replace(assessment, compiler_revision_id="other-revision")
+        with self.assertRaisesRegex(CompilerError, "different Compiler Revision"):
+            compiler.rank([foreign])

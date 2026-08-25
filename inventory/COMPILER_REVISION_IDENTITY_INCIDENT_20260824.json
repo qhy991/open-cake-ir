@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "kind": "compiler_revision_identity_incident",
+  "observed_at": "2026-08-24T00:00:00Z",
+  "affected_revision_id": "open-cake-ir-sm100a-v4",
+  "status": "identity_collision_historical_records_immutable",
+  "summary": "Seven frozen observations name v4 while resolving to six historical descriptor digests; the last working v4 descriptor adds a seventh digest.",
+  "known_variants": [
+    {
+      "revision_sha256": "6b5b0bb5542ec9a97f9f4f7c90925595813f9d366115369d8de2b7d8806d9664",
+      "git_commit": "f54f265",
+      "witnesses": [
+        "inventory/EMITTED_KERNEL_OBSERVATION_20260824.json"
+      ]
+    },
+    {
+      "revision_sha256": "91728c879d41ecdb3cbd041158dd64d9f9f9100a42a8fcf7ec9faf922ec3d48e",
+      "git_commit": "a0f9139",
+      "witnesses": [
+        "inventory/FLASH_KMEANS_OBSERVATION_20260824.json",
+        "inventory/RMSNORM_OBSERVATION_20260824.json"
+      ]
+    },
+    {
+      "revision_sha256": "0c7c4e27106cc9b0f7f6a31b86aca0b16e6473a55bd27f3cdf2e05478a3be846",
+      "git_commit": "40be52d",
+      "witnesses": [
+        "inventory/SOFTMAX_OBSERVATION_20260824.json"
+      ]
+    },
+    {
+      "revision_sha256": "51be8cb4f476f367553ad6bb4c44f20af07289ce2130b4b36c0d0a79d7b1d27f",
+      "git_commit": "67b6f0c",
+      "witnesses": [
+        "inventory/LAYERNORM_OBSERVATION_20260824.json"
+      ]
+    },
+    {
+      "revision_sha256": "b98c9a26964f597f9a30506fbe7b50d7473ac27733c6fc816309a72308d65f95",
+      "git_commit": "a6e75bf",
+      "witnesses": [
+        "inventory/GEMM_OBSERVATION_20260824.json"
+      ]
+    },
+    {
+      "revision_sha256": "b7ed6eb2125b16d5653bb3dd42de98246a2ace351a758795777997a27c778ca5",
+      "git_commit": "7681c0d",
+      "witnesses": [
+        "inventory/PERSISTENT_OBSERVATION_20260824.json"
+      ]
+    },
+    {
+      "revision_sha256": "8a984aef6bbd5fad51f50bd859adc12d281f055ea2eb0c043f5d4fdb785fff5f",
+      "git_commit": "e1d1f6d",
+      "witnesses": [
+        "compiler/releases/v4/revision.lock.json"
+      ]
+    }
+  ],
+  "related_unresolvable_identity": {
+    "revision_id": "open-cake-ir-sm100a-v6",
+    "witness": "inventory/EMITTED_KERNEL_OBSERVATION_20260823.json",
+    "reason": "the frozen observation names an id for which no released descriptor exists"
+  },
+  "resolution": {
+    "historical_records_changed": false,
+    "ambiguous_ids_retired": [
+      "open-cake-ir-sm100a-v4",
+      "open-cake-ir-sm100a-v6"
+    ],
+    "successor_revision": {
+      "revision_id": "open-cake-ir-sm100a-v7",
+      "canonical_sha256": "0c8ffd47133fd49a272e7fe9c9a3ca532888eaf6a986d477c4d0e2a04c609fc7",
+      "path": "compiler/revision.lock.json"
+    },
+    "prevention": "release numbering now uses the union of frozen Study Contract, evidence, and inventory witnesses"
+  }
+}

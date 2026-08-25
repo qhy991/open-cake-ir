@@ -11,7 +11,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
-from open_cake_ir.compiler import Compiler, CompilerError
+from open_cake_ir.compiler import Assessment, Compiler, CompilerError
+from open_cake_ir.compiler.ranking import Cost
 from open_cake_ir.evaluation import (
     CudaLaunchManifest,
     LaunchableCandidate,
@@ -199,6 +200,7 @@ class NvccToolchainBuilder:
             "cuobjdump_sha256": sha256(self._cuobjdump.read_bytes()).hexdigest(),
             "target": "sm_100a",
             "nvcc_arguments": ["-std=c++17", "-O3", "-arch=sm_100a"],
+            "nvcc_cubin_arguments": ["-Xptxas=-v"],
             "cuobjdump_arguments": ["--dump-sass"],
             "timeout_seconds": self._timeout_seconds,
         }
@@ -206,7 +208,7 @@ class NvccToolchainBuilder:
             json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
 
-    def _run(self, arguments: list[str]) -> bytes:
+    def _run(self, arguments: list[str]) -> tuple[bytes, bytes]:
         try:
             completed = run_supervised(
                 arguments,
@@ -232,7 +234,7 @@ class NvccToolchainBuilder:
                     "toolchain_stderr": completed.stderr,
                 },
             )
-        return completed.stdout
+        return completed.stdout, completed.stderr
 
     def build(self, request: BuildRequest) -> LaunchableCandidate:
         if (
@@ -249,10 +251,24 @@ class NvccToolchainBuilder:
             source.write_bytes(request.source)
             common = [str(self._nvcc), "-std=c++17", "-O3", "-arch=sm_100a"]
             self._run(common + ["--ptx", str(source), "-o", str(ptx_path)])
-            self._run(common + ["--cubin", str(source), "-o", str(cubin_path)])
+            # ptxas reports registers, spills and shared memory for free on the assembly
+            # pass, and writes them to stderr. Discarding them left this arm's author
+            # blind to the resource facts its own toolchain had already measured.
+            _, assembler_output = self._run(
+                common + ["-Xptxas=-v", "--cubin", str(source), "-o", str(cubin_path)]
+            )
+            # ptxas also prints its own wall clock, which is a fact about this machine at
+            # this moment rather than about the candidate. Every other artifact role here
+            # is a function of the source alone, and this one must be too or the same
+            # candidate would seal under a different digest on every build.
+            resource_report = b"".join(
+                line + b"\n"
+                for line in assembler_output.splitlines()
+                if b"Compile time" not in line
+            )
             ptx = ptx_path.read_bytes()
             cubin = cubin_path.read_bytes()
-            sass = self._run([str(self._cuobjdump), "--dump-sass", str(cubin_path)])
+            sass, _ = self._run([str(self._cuobjdump), "--dump-sass", str(cubin_path)])
         if not cubin.startswith(b"\x7fELF"):
             raise ValueError("NVCC did not produce an ELF CUBIN")
         manifest_bytes = json.dumps(
@@ -265,6 +281,10 @@ class NvccToolchainBuilder:
             "sass": sass,
             "launch_manifest": manifest_bytes,
         }
+        # An artifact payload must carry bytes, so a silent assembler contributes no role
+        # rather than an empty one that would fail custody.
+        if resource_report:
+            payloads["toolchain_resource_report"] = resource_report
         return LaunchableCandidate(
             candidate_sha256=request.candidate_sha256,
             target=manifest.target,
@@ -277,6 +297,39 @@ class NvccToolchainBuilder:
         )
 
 
+def _ptxas_finding_rows(
+    launchable: LaunchableCandidate,
+) -> list[dict[str, object]]:
+    """Project what ptxas measured, in the shape the Open Cake arm's findings use.
+
+    The arms are matched on one static channel each: the Compiler's verifier for a
+    Schedule, the CUDA toolchain's own assembler for authored source. Both report what
+    bounds the artifact before it runs, so an advantage measured between them is the
+    representation rather than one author having been told its register count.
+
+    Reported verbatim rather than parsed into fields. ptxas owns this text, and re-deriving
+    numbers from it here would make this a second, staler authority on the same fact.
+    """
+
+    report = launchable.artifact_payloads.get("toolchain_resource_report", b"")
+    lines = [
+        line.strip()
+        for line in report.decode("utf-8", errors="replace").splitlines()
+        if "ptxas info" in line or "bytes spill" in line or "bytes stack frame" in line
+    ]
+    if not lines:
+        return []
+    return [
+        {
+            "code": "TOOLCHAIN_RESOURCE_REPORT",
+            "path": launchable.entry_point,
+            "message": " ".join(lines),
+            "blocks_acceptance": False,
+            "blocks_lowering": False,
+        }
+    ]
+
+
 @dataclass(frozen=True)
 class EnvironmentResult:
     """One treatment response; Lab, not the environment, decides the next Turn."""
@@ -286,6 +339,24 @@ class EnvironmentResult:
     launchable: LaunchableCandidate | None
     feedback: Mapping[str, object]
     artifact_payloads: Mapping[str, bytes] = field(default_factory=dict)
+    cost: Cost | None = None
+    """What the pre-GPU filter can say about this candidate's order, if anything.
+
+    Supplied by the environment because the environment owns the Compiler; the Lab only
+    sorts by it. The Lab applies costs only when every launchable member of the set has
+    one. If the environment has no cost model, or the model declines any member, the
+    whole launchable set retains the order it was written -- unknown is not slower.
+    """
+
+    semantic_sha256: str | None = None
+    """This candidate's identity as a program rather than as bytes, if known.
+
+    The paper's first stage asks for *structurally distinct* candidates. Two Schedules
+    that differ only in a name or in the order of independent declarations are one kernel
+    with two spellings, and searching both spends a second measurement to learn what the
+    first already said. Supplied by the environment for the same reason `cost` is: the
+    environment owns the Compiler, and this is the Compiler's own semantic digest.
+    """
 
     def __post_init__(self) -> None:
         if self.disposition not in {"launchable", "rejected"}:
@@ -294,6 +365,11 @@ class EnvironmentResult:
             raise ValueError("Authoring Environment launchable boundary differs")
         if self.launchable is not None and self.launchable.candidate_sha256 != self.submission_sha256:
             raise ValueError("Authoring Environment replaced the sealed submission")
+        if self.semantic_sha256 is not None and (
+            len(self.semantic_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in self.semantic_sha256)
+        ):
+            raise ValueError("Authoring Environment semantic identity differs")
 
 
 class AuthoringEnvironment(Protocol):
@@ -342,6 +418,32 @@ class OpenCakeEnvironment:
                 self.authority_document, sort_keys=True, separators=(",", ":")
             ).encode()
         ).hexdigest()
+
+    @staticmethod
+    def _finding_rows(assessment: Assessment) -> list[dict[str, object]]:
+        """Project findings for the agent.
+
+        One shape for both dispositions. A rejection carries the blocking findings that
+        caused it; an acceptance carries the reports that survived it, which is where the
+        analysis attribution reaches the agent. Dropping them on acceptance would leave a
+        working candidate with no stated reason for the performance it got.
+
+        What a finding blocks is two facts, not one. A Schedule can be accepted and still
+        not lowerable -- its kinds are well-formed and this backend has no body for one --
+        and compressing that into a single `blocking` flag told an author the finding that
+        stopped their candidate was not blocking anything.
+        """
+
+        return [
+            {
+                "code": item.code,
+                "path": item.path,
+                "message": item.message,
+                "blocks_acceptance": item.blocks_acceptance,
+                "blocks_lowering": item.blocks_lowering,
+            }
+            for item in assessment.findings
+        ]
 
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:
         if submission.media_type != self.media_type:
@@ -398,10 +500,7 @@ class OpenCakeEnvironment:
                 MappingProxyType(
                     {
                         "stage": "assessment",
-                        "findings": [
-                            {"code": item.code, "path": item.path, "message": item.message}
-                            for item in assessment.findings
-                        ],
+                        "findings": self._finding_rows(assessment),
                         "calibration_available": assessment.calibration_available,
                     }
                 ),
@@ -433,7 +532,15 @@ class OpenCakeEnvironment:
             "launchable",
             submission.sha256,
             launchable,
-            MappingProxyType({"stage": "built", "findings": []}),
+            MappingProxyType(
+                {"stage": "built", "findings": self._finding_rows(assessment)}
+            ),
+            cost=next(iter(self._compiler.rank([assessment])[0]), None),
+            semantic_sha256=(
+                digest
+                if isinstance(digest := assessment.analysis.get("semantic_sha256"), str)
+                else None
+            ),
         )
 
 
@@ -498,5 +605,7 @@ class DirectCudaEnvironment:
             "launchable",
             submission.sha256,
             launchable,
-            MappingProxyType({"stage": "built"}),
+            MappingProxyType(
+                {"stage": "built", "findings": _ptxas_finding_rows(launchable)}
+            ),
         )

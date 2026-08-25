@@ -9,14 +9,14 @@ supports a broader scientific claim.
 | --- | --- | --- |
 | G0 | passed | final HEAD/tree, 146-record manifest and verified complete-history bundle |
 | G1 | passed | ADR 0001 plus the real second-use Portfolio extension in ADR 0002 |
-| G2 | passed | deterministic public assess/lower, localized negative, exact Target and dependency isolation |
-| G3 | passed | v3 six-case Corpus Gate, released Revision lock, complete source archive and external terminal-seal anchor |
-| G4 | passed for migrated evidence | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles and raw r45 replay pass |
-| G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay and matched/Portfolio semantic replay pass |
-| G6 | passed | 123 contract tests + 13 subtests; external Campaign custody, Lab authority, GPU tutorial custody, raw replay and all three matched Claim Scopes pass |
-| G7 | passed | r4 proves two-Turn add/update, thread/usage/sandbox/cwd/reference continuity and the closed feature denylist |
-| G7F | passed | tool-rich v1 injects no feature disables and replays shell activity on initial and resumed Turns |
-| G8 | passed | r6 has two adhered Runs, four replayed Evaluation Receipts and an independent offline system-qualification pass |
+| G2 | passed | deterministic public assess/lower, observable generated-versus-asset provenance, localized negative, exact Target and dependency isolation |
+| G3 | passed | v13 19-case Corpus Gate, released content-bound Revision lock, reviewed approval and 35-source closure; authoring-schema parity and the SwiGLU shape drift are failure-capable regression gates, while the scientific-v3 Triton warp-specialized argmin failure remains lowering-ineligible |
+| G4 | passed for migrated evidence and the bounded attribution slice | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles, raw r45 replay, and raw-checked no-timing NCU attribution including all correct search survivors in the v18 qualification |
+| G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay, closed successor matched-event semantics and matched/Portfolio semantic replay pass |
+| G6 | passed | 343 tests + 254 subtests cover authoring-schema/Corpus parity, KDA-derived tanh emission, candidate-set transport/selection/replay, unknown/start/diagnosis event tampering, paired implementation-free reference replacement, exact per-Turn reference-bundle retention and missing-bundle failure, exact reasoning-effort qualification/freezing, observable lowering generation, preorder tie abstention, serial and interleaved negative ranking-calibration replay, all-or-nothing calibrated ordering, every correctness-qualified search survivor's attribution and missing-profile rejection, two-part Estimand availability/missingness, tool-rich scratch lifecycles, artifact-only feedback-budget freezing, immutable CLI reports, Claim-Scope provider routing, external Campaign custody, Lab authority, GPU tutorial custody and all three matched Claim Scopes |
+| G7 | passed | r4 proves singleton continuity; Codex 0.144.4 closed and tool-rich successors prove the two-arm candidate-set add/update lifecycle |
+| G7F | passed | tool-rich v1 injects no feature disables and replays shell activity; its candidate-set successor preserves the single-writer envelope boundary, and artifact v4 replays one measured feedback transition per arm without claiming auxiliary-agent use |
+| G8 | passed | r6 passes the singleton pilot; candidate-set v2 covers selected-only attribution, and v3 adds two adhered v18 Runs with ten replayed Receipts and complete correct-search-survivor profiles |
 | G9 | passed | private `qhy991/open-cake-ir` main is the source authority; legacy is read-only with pinned rollback |
 | G10 | historical projection only | r42 estimand unavailable and r45 bounded timing instability are preserved, not rerun |
 
@@ -74,6 +74,9 @@ Require:
 - authored, lowered, compiler-expanded source, PTX, CUBIN and SASS remain distinct artifact kinds;
 - correctness always precedes timing and fallback/route counts are explicit;
 - one Candidate can receive separate search and confirmatory Evaluation Receipts;
+- a Study may add one post-confirmation attribution Receipt whose observed launch passes
+  the same external oracle, has no timing, retains the exact profiler output and rejects a
+  summary that cannot be recomputed from it;
 - measurement quality failure is distinct from candidate disposition.
 
 Failure blocks Lab implementation and deletion of legacy evaluators.
@@ -84,7 +87,9 @@ Failure blocks Lab implementation and deletion of legacy evaluators.
 
 Require create-only no-follow writes, CAS rehash, append-only event order, one Terminal Archive schema for success
 and failure, deterministic fresh-process replay, secret exclusion, and regeneration of Run Audits after deleting
-all reports. Re-auditing the same Campaign must produce the same canonical Run Audits. Failure blocks live Lab work.
+all reports. A current matched Study must name one closed event vocabulary; replay rejects unknown kinds and derives
+selection and diagnoses from retained authorities rather than trusting their projections. Re-auditing the same
+Campaign must produce the same canonical Run Audits. Failure blocks live Lab work.
 
 ## G6 — Zero-GPU Lab contract tests pass
 
@@ -95,11 +100,19 @@ Tests through `preflight -> execute -> audit` must prove:
 - Campaign Lock references exact Workload/Study/Authoring Environment/provider/compiler/toolchain digests;
 - allocation order and globally unique labels are fixed before outcomes;
 - initial and resumed turns preserve cwd, sandbox, scaffold, provider and environment;
+- provider reasoning effort is explicit, identical across arms and covered by the exact qualification digest;
+- clean-start reference replacement is paired across arms, with an incomplete operation-free Schedule starter and
+  an empty-body CUDA ABI starter so implementation contamination makes the gate fail;
+- v25 retains the exact rendered reference bundle as an Evidence object for every completed Turn; absence records a
+  harness fault and missing endpoint, while earlier Executors retain their historical replay boundary;
 - success, candidate rejection, protocol fault and contamination all yield Terminal Archives;
 - Archive Integrity, Protocol Adherence, Endpoint Observation and Analysis Inclusion remain orthogonal;
 - compile/correctness/no-qualified outcomes are observed rather than complete-case deleted;
 - provider/harness/custody/broker faults follow preregistered missingness and replacement rules;
+- adhered candidate failure contributes an observed qualification endpoint, while an external fault or absent Run
+  archive is missing data and cannot enter its denominator;
 - Checkpoints distinguish `unreached`, `reached_no_qualified_candidate` and `reached_with_best`;
+- successor matched Runs reject unknown events, changed Run starts and diagnoses not derivable from retained facts;
 - threshold-crossing Turns cannot backfill earlier Checkpoints;
 - a scientific Study Report estimates only the preregistered Estimand and reports availability/uncertainty, while a
   system-qualification report keeps those fields null;
@@ -122,6 +135,18 @@ r2 exposed an invalid response schema. r3 passed after the schema repair; r4 is 
 binds the closed Apps/MCP/browser/shell/subagent feature denylist. See
 `inventory/G7_PROVIDER_AUTH_OBSERVATION_20260822.json`.
 
+The closed and tool-rich Codex 0.144.4 successors also pass the same two-Turn, one-file add/update lifecycle for both
+Open Cake and direct CUDA candidate-set envelopes. Their qualification records are
+`contracts/providers/codex-cli-0.144.4-candidate-set-live-v1.json` and
+`contracts/providers/codex-cli-0.144.4-candidate-set-tool-rich-v1.json`. This qualifies provider transport only;
+GPU Evaluation remains owned by G8.
+
+The separate `contracts/providers/codex-cli-0.144.4-candidate-set-xhigh-v1.json` receipt binds the same executable,
+closed feature policy and three-member envelope to the exact `xhigh` treatment. Its external Run replays with two
+events, no findings, `protocol_adherence=adhered` and `endpoint_observation=qualified`; both arms observed add,
+resume, usage and reference visibility. This closes the provider-capability prerequisite in ADR 0015. It neither
+changes any frozen `max` Study nor qualifies an 80M scientific Campaign.
+
 ## G7F — Live tool-rich provider qualification passes
 
 **Settles:** whether the final engineering optimization loop can expose provider-default features without breaking
@@ -132,6 +157,20 @@ The pinned Codex 0.144.3 successor injects no `--disable` flags, binds output sc
 Turns. Raw activity and the terminal archive replay with integrity. This attests only observed capabilities under the
 effective account/admin policy; it does not authorize external mutation, direct GPU measurement or scientific use.
 See `inventory/FULL_FEATURE_PROVIDER_QUALIFICATION_20260823.json`.
+
+The Codex 0.144.4 candidate-set successor additionally freezes the KDA-inspired ownership boundary: auxiliary agents
+may investigate read-only, the primary provider thread is the sole envelope writer, and the external Lab alone may
+evaluate Candidates. Qualification attests this transport boundary, not the quality of auxiliary-agent reasoning.
+
+Three bounded artifact-optimization Campaigns exercised that boundary beyond the transport probe. v1 promoted one
+Open Cake artifact and exposed v14's rejection of Direct CUDA scratch-file lifecycles. v2 promoted one Direct CUDA
+artifact and exposed v15's remaining rejection when Open Cake added and updated its fixed envelope in the same Turn.
+Executor v16 follows the already-declared authority boundary directly: every tool-rich file-change lifecycle is strict
+typed auxiliary activity, while the final no-follow envelope alone submits Candidates. Both earlier faults remain
+immutable. Their independent v3 successor has two adhered Runs, each with three authored Candidates, two searches,
+one confirmatory promotion and one attribution Receipt. Fresh audit reports integrity, semantic replay,
+`artifact_optimization_complete=true` and zero missing Runs under authority `b3d8002b…`; all scientific fields remain
+null, so this qualifies the engineering loop without estimating a treatment effect.
 
 ## G8 — Bounded end-to-end pilot passes
 
@@ -148,6 +187,30 @@ Remote r6 passes this gate. Both Runs are adhered, independently replay to searc
 retain actual GPUQ job identities. Their provider-token totals were below the sole 80k checkpoint, so Run endpoints
 remain `missing`; that is intentionally irrelevant to system qualification and cannot create a scientific estimate.
 See `inventory/G8_SYSTEM_QUALIFICATION_20260822.json`.
+
+Candidate-set v2 passes the same gate through Executor v14 and the frozen Study
+`contracts/studies/matched-search-candidate-set-system-v2.json`. Each arm submits three non-deduplicated launchable
+Candidates, searches two, and evaluates its selected Candidate once confirmatorily and once for attribution. The
+eight receipts all pass the frozen tie-aware oracle with one target launch and zero fallback. Independent audit of
+`/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v2` reconstructs integrity, semantic
+replay, adherence and `system_qualification_passed=true` under Campaign authority
+`88605aa1b1557b58aec9dacb4e043290d9a03205b0847d507fa72fc68fad633b`. Open Cake ends below the 80k checkpoint and
+direct CUDA crosses it on the non-backfillable Turn, so their endpoint observations differ; both remain excluded
+from scientific analysis and all estimand fields remain null.
+
+Candidate-set v3 passes the current Executor-v18 protocol through frozen Study
+`contracts/studies/matched-search-candidate-set-system-v3.json` (canonical SHA
+`180c0d4787c4f2361e5fe7bd342fbb7e07def6ca0f0e5a7551993d8fe4364b7e`). Under Campaign
+authority `56bbcfe06caa4be7db31689d658ed59af3e2fe0ae2b4a88dc682ef9c8b373d8e`, each arm
+authors three launchable Candidates, searches two correct survivors, profiles both and
+freshly confirms the selected survivor. The ten Receipts—two search, two attribution and
+one confirmatory per arm—each observe one target launch and zero fallback; the four
+attribution Receipts retain eleven checked NCU metrics and structurally no timing. Fresh
+audit of `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v3`
+passes integrity, exact semantic replay and adherence with
+`system_qualification_passed=true`. Open Cake remains below the turn-discrete checkpoint
+and direct CUDA crosses it before confirmation can backfill the endpoint; scientific
+inclusion remains forbidden and every estimand field remains null.
 
 ## G9 — Cutover is safe
 
@@ -168,3 +231,17 @@ custody, status parity and the pinned rollback procedure remain part of every la
 Require every prescheduled Run Audit, preregistered inclusion/missingness handling, both parts of the Run endpoint,
 estimate and uncertainty, contamination audit, explicit unavailable classifications and a scope-limited Claim View.
 Portfolio and Serving require later independent gates; fixed-shape success cannot satisfy them.
+
+Scientific v3 is the first completed local application of this gate. Fresh audit passes archive integrity and exact
+semantic replay, but one provider fault and one harness fault leave two Runs missing. Direct CUDA qualifies in 2/3
+Runs, Open Cake in 0/3, and the preregistered Estimand remains unavailable; the gate therefore reports no estimate or
+uncertainty. Executor v21 and Compiler v10 repair the observed mechanisms only for successor Studies. Executor v22
+also replaces the internally contradictory all-Runs-qualified availability rule for future Studies: a candidate
+failure remains an observed qualification outcome, the complete two-part Estimand needs zero missing Runs and at
+least one conditional latency per arm, and the estimate includes its declared qualification-rate difference. The
+legacy v3 plan, Runs and report remain unchanged. Executor v23 preserves that Estimand and closes the semantic event
+vocabulary only for successor matched Studies; it does not manufacture additional historical endpoint evidence.
+Executor v24 makes reasoning effort a Study-owned, live-qualified factor so a future successor can use the paper's
+`xhigh` without treating the distinct frozen `max` level as an alias.
+Executor v25 retains the exact reference bytes supplied to each provider Turn. This makes future post-run reference
+audit possible; it does not backfill the input bytes absent from earlier Campaigns or certify their contents by hash.

@@ -16,6 +16,7 @@ from .flash_kmeans import (
     flash_kmeans_oracle,
     generate_flash_kmeans_case,
 )
+from .profiler import load_ncu_attribution_profile, ncu_attribution_feedback
 from .workload import WorkloadContract
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -29,6 +30,7 @@ _ARTIFACT_ROLES = {
     "ptx",
     "cubin",
     "sass",
+    "toolchain_resource_report",
     "launch_manifest",
 }
 
@@ -148,10 +150,15 @@ class EvaluationProtocol:
     def __post_init__(self) -> None:
         if (
             not self.protocol_id
-            or self.purpose not in {"search", "confirmatory"}
+            or self.purpose not in {"search", "confirmatory", "attribution"}
             or _DIGEST.fullmatch(self.workload_sha256) is None
             or not self.case_id
             or self.timing not in {"none", "paired_cupti"}
+            # A profiler serialises kernels and inflates every span it observes, so an
+            # attribution assay cannot also be a timing source. Making that structural
+            # rather than a note means a profiled run has no latency to be mistaken for
+            # a measurement.
+            or (self.purpose == "attribution" and self.timing != "none")
         ):
             raise ValueError("EvaluationProtocol differs")
 
@@ -224,16 +231,25 @@ class EvaluationReceipt:
             or _DIGEST.fullmatch(self.workload_sha256) is None
             or _DIGEST.fullmatch(self.evaluation_protocol_sha256) is None
             or _DIGEST.fullmatch(self.launch_receipt_sha256) is None
-            or self.purpose not in {"search", "confirmatory"}
+            or self.purpose not in {"search", "confirmatory", "attribution"}
             or not self.case_id
             or self.kernel_calls != 1
             or self.fallback_calls != 0
+            or (self.purpose == "attribution" and self.timing is not None)
+            # The profile describes this launch, not the earlier confirmatory one. An
+            # incorrect observed launch therefore cannot be attribution evidence even
+            # when the same sealed Candidate happened to pass before profiling.
+            or (self.purpose == "attribution" and not self.correctness_passed)
         ):
             raise ValueError("EvaluationReceipt identity or route differs")
         if self.artifact_payloads:
+            expected_roles = (
+                {"correctness_output", "launch_receipt", "profile"}
+                if self.purpose == "attribution"
+                else {"correctness_output", "launch_receipt", "timing_samples"}
+            )
             if (
-                set(self.artifact_payloads)
-                != {"correctness_output", "launch_receipt", "timing_samples"}
+                set(self.artifact_payloads) != expected_roles
                 or any(not isinstance(payload, bytes) or not payload for payload in self.artifact_payloads.values())
                 or sha256(self.artifact_payloads["launch_receipt"]).hexdigest()
                 != self.launch_receipt_sha256
@@ -241,10 +257,20 @@ class EvaluationReceipt:
                 raise ValueError("EvaluationReceipt artifact custody differs")
             try:
                 correctness_raw = json.loads(self.artifact_payloads["correctness_output"])
-                timing_raw = json.loads(self.artifact_payloads["timing_samples"])
+                timing_raw = (
+                    None
+                    if self.purpose == "attribution"
+                    else json.loads(self.artifact_payloads["timing_samples"])
+                )
                 launch_raw = json.loads(self.artifact_payloads["launch_receipt"])
             except (UnicodeError, json.JSONDecodeError) as error:
                 raise ValueError("EvaluationReceipt raw artifacts are not JSON") from error
+            if self.purpose == "attribution":
+                load_ncu_attribution_profile(
+                    self.artifact_payloads["profile"],
+                    expected_candidate_sha256=self.candidate_sha256,
+                    expected_case_id=self.case_id,
+                )
             if not isinstance(correctness_raw, Mapping) or not isinstance(
                 launch_raw, Mapping
             ):
@@ -342,6 +368,19 @@ class EvaluationReceipt:
         if self.timing is None:
             return "not_measured"
         return "stable" if self.timing.get("measurement_quality_passed") is True else "unstable"
+
+    @property
+    def attribution_feedback(self) -> Mapping[str, object] | None:
+        """Return the raw-checked profiler projection for the next authoring Turn."""
+
+        if self.purpose != "attribution" or not self.artifact_payloads:
+            return None
+        profile = load_ncu_attribution_profile(
+            self.artifact_payloads["profile"],
+            expected_candidate_sha256=self.candidate_sha256,
+            expected_case_id=self.case_id,
+        )
+        return ncu_attribution_feedback(profile)
 
     @property
     def canonical_sha256(self) -> str:

@@ -5,7 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict
+from collections.abc import Mapping
+from dataclasses import asdict, fields, is_dataclass
 from pathlib import Path
 from typing import Sequence
 
@@ -19,8 +20,29 @@ from open_cake_ir.lab import (
 from open_cake_ir.lab.custody import admit_new_campaign_path
 
 
+def _json_projection(value: object) -> object:
+    """Project immutable public records without copying their implementation types."""
+
+    if is_dataclass(value) and not isinstance(value, type):
+        return {
+            field.name: _json_projection(getattr(value, field.name))
+            for field in fields(value)
+        }
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise TypeError("CLI JSON object keys must be strings")
+        return {str(key): _json_projection(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_projection(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    raise TypeError(f"CLI value {type(value).__name__!r} is not JSON-compatible")
+
+
 def _emit(value: object) -> None:
-    sys.stdout.write(json.dumps(value, sort_keys=True, ensure_ascii=False) + "\n")
+    sys.stdout.write(
+        json.dumps(_json_projection(value), sort_keys=True, ensure_ascii=False) + "\n"
+    )
 
 
 def _compiler(args: argparse.Namespace) -> int:
@@ -64,6 +86,7 @@ def _compiler(args: argparse.Namespace) -> int:
         {
             "schedule_sha256": lowering.schedule_sha256,
             "source_sha256": lowering.source_sha256,
+            "generated": lowering.generated,
             "entry_point": lowering.entry_point,
             "output": str(output),
         }
@@ -135,7 +158,7 @@ def _lab(args: argparse.Namespace) -> int:
             if lock.study_kind == "portfolio"
             else lab.audit(campaign)
         )
-        _emit(asdict(report))
+        _emit(report)
         return 0 if report.archive_integrity_passed else 2
     campaign = lab.reference_campaign(lock, args.evidence_root)
     report = (
@@ -143,7 +166,7 @@ def _lab(args: argparse.Namespace) -> int:
         if lock.study_kind == "portfolio"
         else lab.audit(campaign)
     )
-    _emit(asdict(report))
+    _emit(report)
     return 0 if report.archive_integrity_passed else 2
 
 

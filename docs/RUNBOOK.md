@@ -29,22 +29,117 @@ Every new Campaign custody root must be outside the checkout. `lab preflight --o
 --evidence-root` reject in-checkout paths before writing files or invoking execution inputs. Historical in-checkout
 Locks and Evidence remain valid only for read-only `lab audit`.
 
+`tools/release_compiler_cycle.sh "<basis>"` drives that pipeline end to end and derives the id, but it does not
+re-pin a **Target definition**: `compiler/revision.json` holds each Target's `canonical_sha256`, and editing
+`compiler/targets/*.json` means updating that pin by hand first, or the cycle stops at `target definition ... bytes
+differ`. That is deliberate — a source edit is routine and a hardware description changing is not — but it is a step
+the script will not take for you.
+
+Expectations are never regenerated inside a release. `tools/refresh_corpus_expectations.py` prints the diff and exits
+non-zero; `--write` adopts it. Read the diff first: adopting before reading is how a gate becomes a tautology.
+
+`attribution_evaluation=correctness_then_profile_each_search_survivor` opts a matched
+Study into a separate assay for every search survivor whose common launch passes
+correctness. `tools/evaluate_flash_candidate.py` admits the exact NCU binary pinned by the
+Executor, launches each sealed CUBIN once under NCU, checks that launch against the
+external oracle, and retains the raw CSV plus its recomputed summary. Only the selected
+survivor's projection enters next-Turn feedback. The receipt structurally has
+`timing=null` and zero timing samples: profiler duration is never candidate latency. A
+missing target-kernel row, missing metric, incorrect output, changed tool byte or
+projection/raw mismatch fails the attempt. The older `correctness_then_profile` spelling
+is frozen selected-only replay compatibility, not the current authoring operation.
+
+## Instruments
+
+These produce evidence rather than artifacts. Each one is checked in so a claim it supports can be repeated instead
+of trusted; `docs/ANALYSIS_CALIBRATION.md` reads their output and `evidence/calibration/` holds it.
+
+```bash
+python tools/calibrate_wave_term.py --first 60 --last 400 --step 2      # exclusive: benchmark
+python tools/calibrate_ranking_at_scale.py --size 512 --observed-at <iso8601> \
+  --out /new/path/ranking.json                                          # exclusive: benchmark
+python tools/check_ranking_calibration.py                               # no GPU; exit 1 is a retained negative decision
+python tools/normalize_evidence_custody.py                              # no GPU; run after a fresh checkout, see below
+python tools/observe_lowered_kernel.py --out inventory/<NEW>.json
+python tools/profile_lowered_kernel.py --schedule <path> --out <NEW>.json
+python tools/ir_vocabulary.py                                           # no GPU
+```
+
+`normalize_evidence_custody.py` exists because git records the executable bit and nothing
+else. `EvidenceStore` refuses a directory that is group- or other-writable, so a fresh
+checkout materialises the committed archives under the caller's umask and the store then
+refuses to read its own evidence: two contract tests fail with `evidence directory
+'objects' is group/other writable`, and the re-audit gates cannot run in-repository. Run
+the checker after cloning and `--apply` once. It never repairs what it reports unless
+asked, so its exit status is evidence rather than an outcome it produced.
+
+`observed-at` is still supplied by the operator for `calibrate_ranking_at_scale.py`. That
+tool is pinned by the frozen calibration v6 contract and `check_ranking_calibration.py`
+verifies its digest, so the field cannot be moved to the clock without a successor
+calibration. The two residency instruments below take it from the clock.
+
+The ranking calibration measures the dormant structural hypothesis even when the released
+Compiler has no profile coverage. Its output informs a later reviewed Revision; running
+the instrument never changes `calibration_coverage`. A decision plan must be committed
+before measurement. The checker applies that frozen rule and exits nonzero when the
+evidence fails; do not change its threshold or regenerate the raw records to make it pass.
+
+Both `observe_lowered_kernel.py` and `profile_lowered_kernel.py` build their inputs from
+`tools/kernel_cases.py`, so a kernel one of them profiles is a kernel the other checked.
+Shapes, dtypes and argument order are derived from the Schedule's global buffers, because
+that is where they are already declared and where the emitted host function validates
+them. Current correctness answers come from `tools/kernel_oracles.py`; it projects the
+retained base registry because `kernel_cases.py` bytes are part of frozen ranking
+calibration authority and cannot be rewritten to add a new operator.
+
+`observe_lowered_kernel.py` refuses to overwrite. A record is what happened once, so renewing one means a new file
+and a new date; the earlier record stays as history for the Revision it was taken under.
+
 ## 2. Resolve a Study
 
 ```bash
-open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v3.json \
+open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v28.json \
   --output /new/path/campaign.lock.json
 ```
 
-The current checked-in scientific matched contract, `matched-search-infrastructure-v3.json`, uses a zero-GPU fixture
-provider and intentionally cannot start a live provider. The current non-scientific G8 template is
-`matched-search-system-qualification-v3.json`; earlier versions remain frozen historical records. Freeze
+Which Study Contract is current is not a fact this document owns. Release scripts never rewrite a frozen contract;
+`tools/create_study_successor.py` binds a new explicit fixture successor to the current Compiler and Executor and
+validates it through Lab preflight. It deliberately refuses a live Study because changing a worker also changes the
+broker command digest; `freeze_live_matched_study.py` is the sole path that refreshes that complete authority. The
+names below were current when written.
+
+The current checked-in scientific matched contract, `matched-search-infrastructure-v28.json`, uses a zero-GPU fixture
+provider and intentionally cannot start a live provider. Its Analysis Plan is the ADR 0013 successor: the terminal
+budget comes only from `budget.limit`, candidate failure is observed, external failure is missing, and a complete
+estimate requires conditional latency in both arms. Its Evidence policy is the ADR 0014 successor: every event kind
+is closed, Run boundaries are checked, and search/diagnosis projections are derived during replay. The current
+non-scientific G8 template is `matched-search-system-qualification-v28.json`; earlier versions remain frozen
+historical records. Freeze
 a live successor only after a real two-Turn qualification emits a receipt with
 the matching closed or tool-rich scope and binds the exact executable, model, reasoning effort, service tier, output
 schema, prompt/scaffold bytes, removed environment, reference visibility, feature overrides and event contract.
-`artifact-optimization-v3.json` is the current zero-GPU contract fixture;
-`artifact-optimization-verda-v4.json` binds the current live tool-rich provider and Executor but authorizes no
-Campaign by itself. Earlier revisions remain historical.
+`artifact-optimization-v28.json` is the current zero-GPU contract fixture. The frozen
+`artifact-optimization-verda-v7.json` remains a historical live authority for Executor v8; it is not executable
+from the current source closure. Re-freeze a successor with the exact accessible checkout and broker command before
+launching a live Campaign. Earlier revisions remain historical.
+
+`matched-search-clean-start-reference-v28.json` is the reference-access fixture. It inherits the scientific
+template's local 150k/`max` factors, so preflight validates only that both arms receive implementation-free starters;
+it is not a runnable paper result. Create later reference successors through the paired operation below so one arm
+cannot silently retain a task implementation:
+
+```bash
+python tools/create_study_successor.py \
+  --source contracts/studies/matched-search-infrastructure-v28.json \
+  --output contracts/studies/<new-clean-reference-study>.json \
+  --study-id <new-clean-reference-study-id> \
+  --open-cake-schedule-skeleton contracts/scaffolds/open-cake-clean-start-v1.json \
+  --direct-cuda-candidate-skeleton contracts/scaffolds/direct-cuda-clean-start-v1.cu
+```
+
+The Open Cake starter must remain structurally incomplete and the direct CUDA function body empty. A future live,
+paper-aligned successor separately needs an `xhigh` qualification, the declared 80M endpoint and the complete
+isolation/provenance audit.
 
 ## 3. Qualify the live provider without GPU
 
@@ -61,6 +156,8 @@ python tools/qualify_codex_provider.py \
   --anchor-output evidence/qualifications/<new-live-anchor>.json \
   --evidence-root evidence/qualifications/<new-live-run> \
   --run-id <new-live-run> \
+  --reasoning-effort xhigh \
+  --maximum-candidates-per-turn 3 \
   --feature-policy closed_research
 ```
 
@@ -80,6 +177,8 @@ python tools/qualify_codex_provider.py \
   --anchor-output evidence/qualifications/<new-tool-rich-anchor>.json \
   --evidence-root evidence/qualifications/<new-tool-rich-run> \
   --run-id <new-tool-rich-run> \
+  --reasoning-effort max \
+  --maximum-candidates-per-turn 3 \
   --feature-policy provider_defaults_optimization
 ```
 
@@ -88,16 +187,28 @@ Then freeze either non-scientific Study from its matching receipt, seal anchor a
 ```bash
 python tools/freeze_live_matched_study.py \
   --project-root . \
-  --template contracts/studies/matched-search-system-qualification-v3.json \
+  --template contracts/studies/matched-search-system-qualification-v28.json \
   --qualification contracts/providers/<new-live-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-live-anchor>.json \
-  --executor runtime/executors/open-cake-ir-b200-v6.json \
+  --executor runtime/executors/open-cake-ir-b200-v26.json \
   --runtime-config /new/path/runtime.json \
+  --reasoning-effort xhigh \
   --study-id <new-g8-study-id> \
-  --output contracts/studies/<new-g8-study>.json
+  --output contracts/studies/<new-g8-study>.json \
+  --enable-attribution
 open-cake-ir lab preflight contracts/studies/<new-g8-study>.json \
   --output /new/path/g8-campaign.lock.json
 ```
+
+For an artifact-only successor that is intended to observe real Evaluation feedback, the freeze command may also
+declare `--provider-token-limit <N> --maximum-turns <M>`. They are one operation: both are required, the limit becomes
+the sole terminal checkpoint, and other Claim Scopes reject the override. Choose `N` from retained prior provider
+usage and keep `M` as the independent hard call bound; neither value creates a scientific budget claim.
+
+Reasoning effort has no implicit operator default. Qualification and freezing both name the exact value, and the
+qualification digest must match it. Use `xhigh` for a future paper-aligned scientific treatment; `max` remains a
+distinct engineering choice for the existing task-informed artifact lane. Changing the value requires a new
+qualification and successor Study, not a field edit.
 
 ## 4. Execute matched search, system qualification or artifact optimization
 
@@ -120,12 +231,38 @@ For `system_qualification_only`, exactly one Run per Authoring Environment execu
 `system_qualification_passed`; `estimand`, `estimate`, and `uncertainty` remain null and comparative statistics are
 forbidden.
 
+The accepted candidate-set qualifications establish one host precondition: every path needed by the
+broker service user must be traversable, including all checkout parents. The immutable v1 attempt failed before a
+GPU launch because a temporary checkout had private parent permissions; v2 succeeded from a durable accessible
+worktree. Keep the runtime config, Campaign Lock and Evidence root outside the checkout, and test service-user path
+admission before execution. The retained v2 Evidence root is
+`/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v2`. The current Executor-v18 successor
+at `/home/qinhaiyan/open-cake-ir-evidence/campaigns/candidate-set-campaign-live-v3` additionally retains one profile
+for every correct searched survivor. Both are system qualification only.
+
 For `artifact_optimization_only`, one multi-Turn Run per Authoring Environment uses the same command. Auxiliary
 Apps/MCP/shell/browser/plugin/subagent activity is retained in raw Evidence, so the operator must approve its source
-data for archival before launch. The provider may create workspace scratch files, but only the fixed Candidate path
-is sealed. Audit promotes the lowest-latency confirmatory-qualified Candidate per Run, with earliest Turn as
+data for archival before launch. In candidate-set successors, auxiliary agents are read-only and the primary thread
+is the sole writer; only `candidate-set.json` may remain at the Turn boundary. Audit promotes the
+lowest-latency confirmatory-qualified Candidate per Run, with earliest Turn as
 tie-break; it never reports qualification rates, arm medians, ratios, uncertainty or scientific inclusion. External
 mutation and direct GPU measurement remain unauthorized even when those tools are visible.
+
+The current retained Executor-v16 feedback Campaign is
+`/home/qinhaiyan/open-cake-ir-evidence/campaigns/artifact-optimization-live-v4`. It declares one 8M terminal
+provider-token checkpoint and a hard two-Turn bound. Both Runs adhere, resume the same thread once, and fresh audit
+reports archive integrity, semantic replay and `artifact_optimization_complete=true`. Open Cake uses 2,921,505 total
+provider tokens and promotes its Turn-2 artifact at 1.417239 ms after a 1.851297 ms Turn-1 confirmation. Direct CUDA
+uses 16,934,227 total provider tokens and retains its 4.156109 ms Turn-1 artifact after the Turn-2 selection confirms
+at 8.814379 ms. The Open Cake checkpoint is `unreached`; Direct CUDA's crossing Turn cannot backfill the checkpoint,
+so its Turn-1 artifact remains the endpoint at 8M. Artifact promotion remains a separate per-Run view over every
+confirmatory receipt.
+
+All four raw provider Turns contain command/file activity and no auxiliary-agent lifecycle. Feature exposure is not
+evidence that an agent was used. v4 validates a KDA-style authority boundary—one resumed writer and an external
+judge—not a multi-agent result. The retained per-Run latencies and provider usage are artifact-ranking observations
+only and must not be compared as an arm effect or with the paper's 80M-token Study. v3 remains the immutable earlier
+Campaign that exposed the ineffective 150k feedback horizon.
 
 ## 5. Execute the exact-shape Portfolio
 

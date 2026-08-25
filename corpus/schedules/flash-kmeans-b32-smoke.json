@@ -2,32 +2,217 @@
   "schema_version": 1,
   "schedule_id": "flash-kmeans-b32-smoke-schedule-v2",
   "target": "sm_100a",
-  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
   "allocations": [],
   "buffers": [
-    {"name": "tokens", "space": "global", "dtype": "bf16", "shape": [32, 512, 128], "mode": "input"},
-    {"name": "centroids", "space": "global", "dtype": "bf16", "shape": [32, 1024, 128], "mode": "input"},
-    {"name": "centroid_sq", "space": "global", "dtype": "fp32", "shape": [32, 1024], "mode": "input"},
-    {"name": "assignments", "space": "global", "dtype": "int32", "shape": [32, 512], "mode": "output"},
-    {"name": "token_tile", "space": "register", "dtype": "bf16", "shape": [256, 128], "mode": "scratch"},
-    {"name": "centroid_tile", "space": "register", "dtype": "bf16", "shape": [64, 128], "mode": "scratch"},
-    {"name": "distance_tile", "space": "register", "dtype": "fp32", "shape": [256, 64], "mode": "scratch"},
-    {"name": "best_index_tile", "space": "register", "dtype": "int32", "shape": [256], "mode": "scratch"}
+    {
+      "name": "tokens",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        32,
+        512,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "centroids",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        32,
+        1024,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "centroid_sq",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        32,
+        1024
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "assignments",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        32,
+        512
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "token_tile",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        256,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "centroid_tile",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        64,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "distance_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        256,
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "best_index_tile",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        256
+      ],
+      "mode": "scratch"
+    }
   ],
   "pipelines": [],
   "barriers": [],
   "operations": [
-    {"id": "load_tokens", "kind": "load", "role": "compute", "reads": ["tokens"], "writes": ["token_tile"], "parameters": {"movement": "global"}},
-    {"id": "load_centroids", "kind": "load", "role": "compute", "reads": ["centroids"], "writes": ["centroid_tile"], "parameters": {"movement": "global"}},
-    {"id": "distance_mma", "kind": "mma", "role": "compute", "reads": ["token_tile", "centroid_tile", "centroid_sq"], "writes": ["distance_tile"], "depends_on": ["load_tokens", "load_centroids"], "parameters": {"accumulator": "fp32", "formula": "squared_euclidean_xsq_elided"}},
-    {"id": "argmin", "kind": "reduce_argmin", "role": "compute", "reads": ["distance_tile"], "writes": ["best_index_tile"], "depends_on": ["distance_mma"], "parameters": {"tie_break": "lowest_index", "nan_policy": "reject_input", "across_loop": true}},
-    {"id": "store_assignment", "kind": "store", "role": "compute", "reads": ["best_index_tile"], "writes": ["assignments"], "depends_on": ["argmin"], "parameters": {"coalesced": true}}
+    {
+      "id": "load_tokens",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "tokens"
+      ],
+      "writes": [
+        "token_tile"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "load_centroids",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "centroids"
+      ],
+      "writes": [
+        "centroid_tile"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "distance_mma",
+      "kind": "mma",
+      "role": "compute",
+      "reads": [
+        "token_tile",
+        "centroid_tile",
+        "centroid_sq"
+      ],
+      "writes": [
+        "distance_tile"
+      ],
+      "depends_on": [
+        "load_tokens",
+        "load_centroids"
+      ],
+      "parameters": {
+        "accumulator": "fp32",
+        "formula": "squared_euclidean_xsq_elided",
+        "instruction": {
+          "contract": "triton.dot.bf16_fp32"
+        },
+        "tile_shape": [
+          256,
+          64,
+          128
+        ]
+      }
+    },
+    {
+      "id": "argmin",
+      "kind": "reduce_argmin",
+      "role": "compute",
+      "reads": [
+        "distance_tile"
+      ],
+      "writes": [
+        "best_index_tile"
+      ],
+      "depends_on": [
+        "distance_mma"
+      ],
+      "parameters": {
+        "tie_break": "lowest_index",
+        "nan_policy": "reject_input",
+        "across_loop": true
+      }
+    },
+    {
+      "id": "store_assignment",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "best_index_tile"
+      ],
+      "writes": [
+        "assignments"
+      ],
+      "depends_on": [
+        "argmin"
+      ],
+      "parameters": {
+        "coalesced": true
+      }
+    }
   ],
-  "outputs": ["assignments"],
+  "outputs": [
+    "assignments"
+  ],
   "program_map": {
     "axes": [
-      {"name": "token_block", "axis": 0, "buffer": "tokens", "dimension": 1, "tile": 256},
-      {"name": "batch", "axis": 1, "buffer": "tokens", "dimension": 0, "tile": 1}
+      {
+        "name": "token_block",
+        "axis": 0,
+        "buffer": "tokens",
+        "dimension": 1,
+        "tile": 256
+      },
+      {
+        "name": "batch",
+        "axis": 1,
+        "buffer": "tokens",
+        "dimension": 0,
+        "tile": 1
+      }
     ]
   },
   "tile_loops": [
@@ -37,15 +222,90 @@
       "buffer": "centroids",
       "dimension": 1,
       "tile": 64,
-      "body": ["load_centroids", "distance_mma", "argmin"],
-      "range_options": {"num_stages": 2, "loop_unroll_factor": 1, "flatten": false, "warp_specialize": false, "disallow_acc_multi_buffer": true, "disable_licm": false}
+      "body": [
+        "load_centroids",
+        "distance_mma",
+        "argmin"
+      ],
+      "range_options": {
+        "num_stages": 2,
+        "loop_unroll_factor": 1,
+        "flatten": false,
+        "warp_specialize": false,
+        "disallow_acc_multi_buffer": true,
+        "disable_licm": false
+      }
     }
   ],
   "access_maps": [
-    {"operation": "load_tokens", "buffer": "tokens", "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "token_block"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
-    {"operation": "load_centroids", "buffer": "centroids", "indices": [{"source": "program", "name": "batch"}, {"source": "loop_tile", "name": "centroid_start"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
-    {"operation": "distance_mma", "buffer": "centroid_sq", "indices": [{"source": "program", "name": "batch"}, {"source": "loop_tile", "name": "centroid_start"}], "boundary": "mask_tiled_axes"},
-    {"operation": "store_assignment", "buffer": "assignments", "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "token_block"}], "boundary": "mask_tiled_axes"}
+    {
+      "operation": "load_tokens",
+      "buffer": "tokens",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "program_tile",
+          "name": "token_block"
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_centroids",
+      "buffer": "centroids",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "loop_tile",
+          "name": "centroid_start"
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "distance_mma",
+      "buffer": "centroid_sq",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "loop_tile",
+          "name": "centroid_start"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_assignment",
+      "buffer": "assignments",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "program_tile",
+          "name": "token_block"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
   ],
   "metadata": {
     "profile": "flash_kmeans_b32_smoke",

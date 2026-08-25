@@ -39,6 +39,8 @@ _Avoid_: Claim owner, README status
 ## Relationships
 
 - An **Event Ledger** references one or more **Evidence Objects**.
+- A v25+ completed provider Turn references the exact rendered authoring bundle as an **Evidence Object**; absence
+  is a harness failure, not evidence that reference access passed.
 - Every Run produces one **Terminal Archive**, including a failed or invalid Run.
 - A **Run Audit** never changes Evidence Objects or the Event Ledger.
 - A **Study Report** applies the Study Contract's analysis plan to one or more Run Audits.
@@ -54,4 +56,3 @@ _Avoid_: Claim owner, README status
 
 - “valid” previously mixed Integrity, Protocol Adherence and study inclusion; these are now separate facts.
 - “audit” previously defined the estimand after execution; the **Study Report** may estimate only a preregistered Estimand.
-

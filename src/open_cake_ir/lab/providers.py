@@ -6,7 +6,7 @@ import json
 import os
 import re
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Mapping, Protocol, cast
@@ -21,6 +21,8 @@ from .process import (
 
 _THREAD_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _MAX_CANDIDATE_BYTES = 64 * 1024 * 1024
+SINGLE_CANDIDATE_V1 = "single_candidate_v1"
+CANDIDATE_SET_ENVELOPE_V1 = "candidate_set_envelope_v1"
 CODEX_DISABLED_FEATURES = (
     "apps",
     "auth_elicitation",
@@ -44,6 +46,16 @@ CODEX_DISABLED_FEATURES = (
     "tool_suggest",
     "workspace_dependencies",
 )
+
+
+def required_live_provider_qualification_scope(claim_scope: str) -> str:
+    """Return the one live provider capability authorized by a matched Claim Scope."""
+
+    if claim_scope == "artifact_optimization_only":
+        return "live_two_turn_tool_rich_provider"
+    if claim_scope in {"scientific_matched_search", "system_qualification_only"}:
+        return "live_two_turn_current_provider"
+    raise ValueError("matched Claim Scope has no live provider qualification")
 
 
 def _read_candidate_nofollow(path: Path) -> bytes:
@@ -125,6 +137,72 @@ def _plain_json(value: object) -> object:
     raise ValueError("provider feedback contains a non-JSON value")
 
 
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _project_candidate_submission(
+    payload: bytes,
+    *,
+    submission_contract: str,
+    arm: str | None,
+    maximum_candidates_per_turn: int,
+) -> tuple[bytes, ...]:
+    """Project one sealed provider file into the ordered semantic Candidate set."""
+
+    if (
+        not isinstance(maximum_candidates_per_turn, int)
+        or isinstance(maximum_candidates_per_turn, bool)
+        or maximum_candidates_per_turn <= 0
+    ):
+        raise ValueError("provider maximum candidates per Turn differs")
+    if submission_contract == SINGLE_CANDIDATE_V1:
+        if maximum_candidates_per_turn != 1 or arm is not None:
+            raise ValueError("legacy provider submission contract differs")
+        return (payload,)
+    if submission_contract != CANDIDATE_SET_ENVELOPE_V1 or arm not in {
+        "open_cake",
+        "direct_cuda",
+    }:
+        raise ValueError("provider submission contract differs")
+    try:
+        document = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("provider candidate-set envelope is not JSON") from error
+    if (
+        not isinstance(document, Mapping)
+        or set(document) != {"schema_version", "arm", "candidates"}
+        or document.get("schema_version") != 1
+        or document.get("arm") != arm
+        or payload != _canonical_json_bytes(document) + b"\n"
+    ):
+        raise ValueError("provider candidate-set envelope fields or canonical bytes differ")
+    candidates = document.get("candidates")
+    if (
+        not isinstance(candidates, list)
+        or not candidates
+        or len(candidates) > maximum_candidates_per_turn
+    ):
+        raise ValueError("provider candidate-set envelope count differs")
+    if arm == "open_cake":
+        if any(not isinstance(candidate, Mapping) for candidate in candidates):
+            raise ValueError("Open Cake candidate-set member is not a Schedule object")
+        projected = tuple(_canonical_json_bytes(candidate) for candidate in candidates)
+    else:
+        if any(not isinstance(candidate, str) or not candidate for candidate in candidates):
+            raise ValueError("direct CUDA candidate-set member is not non-empty source")
+        projected = tuple(candidate.encode("utf-8") for candidate in candidates)
+    if len({sha256(candidate).hexdigest() for candidate in projected}) != len(projected):
+        raise ValueError("provider candidate-set contains duplicate Candidate bytes")
+    return projected
+
+
 @dataclass(frozen=True)
 class ProviderInvocation:
     """Complete immutable provider process request."""
@@ -143,14 +221,24 @@ class ProviderTurn:
 
     thread_id: str
     provider_tokens: int
-    candidate: bytes
-    candidate_sha256: str
+    candidates: tuple[bytes, ...]
+    """Every candidate this Turn wrote, in the order the provider wrote them.
+
+    A tuple rather than one, because the paper's loop generates structurally distinct
+    candidates and ranks them before spending GPU time. One candidate leaves the ranking
+    stage with nothing to rank. How many a Turn may write is declared by the Study
+    Contract and granted identically to both arms (`docs/adr/0006`).
+    """
+
+    candidate_sha256s: tuple[str, ...]
     raw_events: bytes
     raw_events_sha256: str
     terminal_message: str
     terminal_message_count: int
     normalization: str
     tool_activity: tuple["ProviderAuxiliaryActivity", ...] = ()
+    reference_bundle: bytes | None = None
+    """Exact rendered reference bytes embedded in this Turn, when one exists."""
 
 
 @dataclass(frozen=True)
@@ -281,6 +369,7 @@ def parse_codex_turn_events(
     *,
     expected_terminal_message: str,
     event_contract: str = "closed_file_change_v1",
+    legacy_candidate_name: str | None = None,
 ) -> ParsedCodexTurnEvents:
     """Parse the complete closed Codex JSONL Turn without reading its candidate."""
 
@@ -306,7 +395,10 @@ def parse_codex_turn_events(
         "turn.completed",
     }
     if (
-        (event_contract == "closed_file_change_v1" and len(typed_events) not in {6, 7})
+        (
+            event_contract == "closed_file_change_v1"
+            and len(typed_events) not in {6, 7, 8, 9}
+        )
         or (event_contract == "closed_file_change_v1" and "item.updated" in types)
         or len(typed_events) < 6
         or any(event_type not in admitted_types for event_type in types)
@@ -333,9 +425,11 @@ def parse_codex_turn_events(
     auxiliary_events: dict[
         str, list[tuple[str, Mapping[str, object]]]
     ] = {}
+    activity_indices: list[int] = []
     auxiliary_types = {
         "reasoning",
         "command_execution",
+        "file_change",
         "mcp_tool_call",
         "collab_tool_call",
         "web_search",
@@ -350,8 +444,22 @@ def parse_codex_turn_events(
         if not isinstance(item, Mapping):
             raise ValueError("provider item payload differs")
         item_type = item.get("type")
-        if item_type == "file_change":
+        changes = item.get("changes")
+        candidate_file_change = item_type == "file_change" and (
+            event_contract == "closed_file_change_v1"
+            or (
+                legacy_candidate_name is not None
+                and isinstance(changes, list)
+                and len(changes) == 1
+                and isinstance(changes[0], Mapping)
+                and isinstance(changes[0].get("path"), str)
+                and Path(cast(str, changes[0]["path"])).name
+                == legacy_candidate_name
+            )
+        )
+        if candidate_file_change:
             file_events.append((index, event, cast(Mapping[str, object], item)))
+            activity_indices.append(index)
         elif item_type == "agent_message" and event_type == "item.completed":
             if set(item) != {"id", "type", "text"}:
                 raise ValueError("provider terminal message fields differ")
@@ -367,6 +475,7 @@ def parse_codex_turn_events(
             auxiliary_events.setdefault(item_id, []).append(
                 (cast(str, event_type), cast(Mapping[str, object], item))
             )
+            activity_indices.append(index)
         else:
             raise ValueError("provider emitted an unadmitted item type")
 
@@ -392,6 +501,30 @@ def parse_codex_turn_events(
             raise ValueError("provider auxiliary item lifecycle differs")
         first = lifecycle[0][1]
         final = lifecycle[-1][1]
+        if next(iter(item_types)) == "file_change":
+            if (
+                event_types != ["item.started", "item.completed"]
+                or set(first) != {"id", "type", "changes", "status"}
+                or set(final) != {"id", "type", "changes", "status"}
+                or first.get("status") != "in_progress"
+                or final.get("status") != "completed"
+                or first.get("changes") != final.get("changes")
+            ):
+                raise ValueError("provider auxiliary file-change lifecycle differs")
+            changes = first.get("changes")
+            if (
+                not isinstance(changes, list)
+                or not changes
+                or any(
+                    not isinstance(change, Mapping)
+                    or set(change) != {"path", "kind"}
+                    or not isinstance(change.get("path"), str)
+                    or not Path(cast(str, change["path"])).is_absolute()
+                    or change.get("kind") not in {"add", "update", "delete"}
+                    for change in changes
+                )
+            ):
+                raise ValueError("provider auxiliary file-change payload differs")
         if any(
             item.get("server") != first.get("server")
             or item.get("tool") != first.get("tool")
@@ -419,44 +552,69 @@ def parse_codex_turn_events(
 
     candidate_path: str | None = None
     change_kind: str | None = None
-    start_index = 2
-    stop_index = 1
+    start_index = min(activity_indices, default=2)
+    stop_index = max(activity_indices, default=1)
     if file_events:
-        if len(file_events) != 2:
-            raise ValueError("provider must emit at most one complete file-change lifecycle")
-        (start_index, start_event, start_item), (
-            stop_index,
-            stop_event,
-            stop_item,
-        ) = file_events
-        if (
-            set(start_item) != {"id", "type", "changes", "status"}
-            or set(stop_item) != {"id", "type", "changes", "status"}
-            or start_event.get("type") != "item.started"
-            or stop_event.get("type") != "item.completed"
-            or not isinstance(start_item.get("id"), str)
-            or not start_item.get("id")
-            or start_item.get("id") != stop_item.get("id")
-            or start_item.get("status") != "in_progress"
-            or stop_item.get("status") != "completed"
-            or start_item.get("changes") != stop_item.get("changes")
-        ):
-            raise ValueError("provider file-change lifecycle differs")
-        changes = start_item.get("changes")
-        if not isinstance(changes, list) or len(changes) != 1:
-            raise ValueError("provider candidate file-change differs")
-        change = changes[0]
-        if not isinstance(change, Mapping) or set(change) != {"path", "kind"}:
-            raise ValueError("provider candidate file-change differs")
-        candidate_path = cast(str | None, change.get("path"))
-        change_kind = cast(str | None, change.get("kind"))
-        if (
-            not isinstance(candidate_path, str)
-            or not candidate_path
-            or not Path(candidate_path).is_absolute()
-            or change_kind not in {"add", "update"}
-        ):
-            raise ValueError("provider candidate path or change kind differs")
+        def complete_file_change(
+            start: tuple[int, Mapping[str, object], Mapping[str, object]],
+            stop: tuple[int, Mapping[str, object], Mapping[str, object]],
+        ) -> tuple[str, str, int, int]:
+            start_event_index, start_event, start_item = start
+            stop_event_index, stop_event, stop_item = stop
+            if (
+                set(start_item) != {"id", "type", "changes", "status"}
+                or set(stop_item) != {"id", "type", "changes", "status"}
+                or start_event.get("type") != "item.started"
+                or stop_event.get("type") != "item.completed"
+                or not isinstance(start_item.get("id"), str)
+                or not start_item.get("id")
+                or start_item.get("id") != stop_item.get("id")
+                or start_item.get("status") != "in_progress"
+                or stop_item.get("status") != "completed"
+                or start_item.get("changes") != stop_item.get("changes")
+            ):
+                raise ValueError("provider file-change lifecycle differs")
+            changes = start_item.get("changes")
+            if not isinstance(changes, list) or len(changes) != 1:
+                raise ValueError("provider candidate file-change differs")
+            change = changes[0]
+            if not isinstance(change, Mapping) or set(change) != {"path", "kind"}:
+                raise ValueError("provider candidate file-change differs")
+            path = change.get("path")
+            kind = change.get("kind")
+            if (
+                not isinstance(path, str)
+                or not path
+                or not Path(path).is_absolute()
+                or kind not in {"add", "update", "delete"}
+            ):
+                raise ValueError("provider candidate path or change kind differs")
+            return path, cast(str, kind), start_event_index, stop_event_index
+
+        if len(file_events) == 2:
+            candidate_path, change_kind, _, _ = complete_file_change(
+                file_events[0], file_events[1]
+            )
+            if change_kind not in {"add", "update"}:
+                raise ValueError("provider candidate path or change kind differs")
+        elif len(file_events) == 4:
+            removed_path, removed_kind, _, removed_stop = complete_file_change(
+                file_events[0], file_events[1]
+            )
+            added_path, added_kind, added_start, _ = complete_file_change(
+                file_events[2], file_events[3]
+            )
+            if (
+                removed_path != added_path
+                or removed_kind != "delete"
+                or added_kind != "add"
+                or removed_stop >= added_start
+            ):
+                raise ValueError("provider replacement lifecycle differs")
+            candidate_path = added_path
+            change_kind = "update"
+        else:
+            raise ValueError("provider must emit one candidate update")
     elif event_contract == "closed_file_change_v1":
         raise ValueError("provider must emit one complete file-change lifecycle")
 
@@ -464,11 +622,27 @@ def parse_codex_turn_events(
     if message_texts == [expected_terminal_message] and messages[0][0] > stop_index:
         normalization = "single_exact"
     elif (
-        message_texts == [expected_terminal_message, expected_terminal_message]
+        len(message_texts) >= 2
+        and all(text == expected_terminal_message for text in message_texts)
         and messages[0][0] < start_index
-        and messages[1][0] > stop_index
+        and messages[-1][0] > stop_index
     ):
         normalization = "duplicate_exact_bracketed"
+    elif (
+        len(message_texts) >= 2
+        and messages[0][0] < start_index
+        and messages[-1][0] > stop_index
+    ):
+        try:
+            semantic_messages = [
+                _canonical_json_bytes(json.loads(text)).decode("utf-8")
+                for text in message_texts
+            ]
+        except (UnicodeError, ValueError, json.JSONDecodeError):
+            semantic_messages = []
+        if semantic_messages != [expected_terminal_message] * len(message_texts):
+            raise ValueError("provider terminal-event normalization differs")
+        normalization = "duplicate_semantic_bracketed"
     else:
         raise ValueError("provider terminal-event normalization differs")
 
@@ -510,6 +684,9 @@ def normalize_codex_turn(
     expected_change: str,
     expected_terminal_message: str,
     event_contract: str = "closed_file_change_v1",
+    submission_contract: str = SINGLE_CANDIDATE_V1,
+    arm: str | None = None,
+    maximum_candidates_per_turn: int = 1,
 ) -> ProviderTurn:
     """Accept only the two terminal forms observed by the frozen r42 boundary."""
 
@@ -520,20 +697,31 @@ def normalize_codex_turn(
         expected_terminal_message=expected_terminal_message,
         event_contract=event_contract,
     )
+    observed_change = parsed.change_kind
+    if expected_change == "update" and observed_change == "add":
+        # The Lab checked that the candidate existed before this resumed Turn.
+        # Codex may nevertheless label its in-place replacement as an add.
+        observed_change = "update"
     if (
         parsed.candidate_path is not None
         and (
             parsed.candidate_path != str(candidate_path.absolute())
-            or parsed.change_kind != expected_change
+            or observed_change != expected_change
         )
     ):
         raise ValueError("provider candidate path or change kind differs")
-    candidate = _read_candidate_nofollow(candidate_path)
+    submission = _read_candidate_nofollow(candidate_path)
+    candidates = _project_candidate_submission(
+        submission,
+        submission_contract=submission_contract,
+        arm=arm,
+        maximum_candidates_per_turn=maximum_candidates_per_turn,
+    )
     return ProviderTurn(
         thread_id=parsed.thread_id,
         provider_tokens=parsed.provider_tokens,
-        candidate=candidate,
-        candidate_sha256=sha256(candidate).hexdigest(),
+        candidates=candidates,
+        candidate_sha256s=tuple(sha256(candidate).hexdigest() for candidate in candidates),
         raw_events=raw_events,
         raw_events_sha256=sha256(raw_events).hexdigest(),
         terminal_message=expected_terminal_message,
@@ -559,6 +747,9 @@ class CodexProviderAdapter:
         expected_change: str,
         expected_terminal_message: str,
         event_contract: str = "closed_file_change_v1",
+        submission_contract: str = SINGLE_CANDIDATE_V1,
+        arm: str | None = None,
+        maximum_candidates_per_turn: int = 1,
     ) -> ProviderTurn:
         """Run without shell expansion and remove every contract-declared environment name."""
 
@@ -595,6 +786,9 @@ class CodexProviderAdapter:
                 expected_change=expected_change,
                 expected_terminal_message=expected_terminal_message,
                 event_contract=event_contract,
+                submission_contract=submission_contract,
+                arm=arm,
+                maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
         except (OSError, ValueError) as error:
             raise RunProtocolFault(
@@ -616,12 +810,16 @@ class TurnRequestLike(Protocol):
     cumulative_provider_tokens: int
     thread_id: str | None
     feedback: Mapping[str, object]
+    maximum_candidates_per_turn: int
 
 
 class CodexRunProvider:
     """Canonical Campaign-Lock-compatible provider from Turn to normalized evidence."""
 
-    _CANDIDATE_NAMES = {"open_cake": "candidate.json", "direct_cuda": "candidate.cu"}
+    _SINGLE_CANDIDATE_NAMES = {
+        "open_cake": "candidate.json",
+        "direct_cuda": "candidate.cu",
+    }
 
     def __init__(
         self,
@@ -641,7 +839,7 @@ class CodexRunProvider:
             }
             or not builders
             or set(reference_roots) != set(builders)
-            or set(prompt_templates) != set(self._CANDIDATE_NAMES)
+            or set(prompt_templates) != set(self._SINGLE_CANDIDATE_NAMES)
         ):
             raise ValueError("live Codex Run Provider authority differs")
         revisions = {builder.provider_revision for builder in builders.values()}
@@ -680,6 +878,14 @@ class CodexRunProvider:
         self._event_contract = str(
             self.configuration.get("event_contract", "closed_file_change_v1")
         )
+        self._submission_contract = str(
+            self.configuration.get("submission_contract", SINGLE_CANDIDATE_V1)
+        )
+        if self._submission_contract not in {
+            SINGLE_CANDIDATE_V1,
+            CANDIDATE_SET_ENVELOPE_V1,
+        }:
+            raise ValueError("Codex submission contract differs")
         self._references = {
             run_id: (path.resolve(strict=True), *read_frozen_reference_bundle(path))
             for run_id, path in reference_roots.items()
@@ -710,6 +916,10 @@ class CodexRunProvider:
             "{{FEEDBACK_JSON}}": feedback,
             "{{REFERENCE_BUNDLE}}": self._references[request.run_id][2],
         }
+        if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1:
+            replacements["{{MAXIMUM_CANDIDATES_PER_TURN}}"] = str(
+                request.maximum_candidates_per_turn
+            )
         prompt = self._templates[request.arm]
         if set(re.findall(r"\{\{[A-Z0-9_]+\}\}", prompt)) != set(replacements):
             raise ValueError("Codex prompt template marker set differs")
@@ -723,7 +933,18 @@ class CodexRunProvider:
         """Execute initial/add or same-thread resume/update under one environment."""
 
         builder = self._builders.get(request.run_id)
-        if builder is None or request.arm not in self._CANDIDATE_NAMES or request.turn <= 0:
+        if (
+            builder is None
+            or request.arm not in self._SINGLE_CANDIDATE_NAMES
+            or request.turn <= 0
+            or not isinstance(request.maximum_candidates_per_turn, int)
+            or isinstance(request.maximum_candidates_per_turn, bool)
+            or request.maximum_candidates_per_turn <= 0
+            or (
+                self._submission_contract == SINGLE_CANDIDATE_V1
+                and request.maximum_candidates_per_turn != 1
+            )
+        ):
             raise ValueError("Codex Run or arm is outside the Campaign Lock")
         workspace = builder.workspace.absolute()
         reference_root, reference_sha256, _ = self._references[request.run_id]
@@ -736,7 +957,11 @@ class CodexRunProvider:
                 raise ValueError("initial Codex Turn requires one empty workspace")
         elif request.thread_id is None:
             raise ValueError("resumed Codex Turn requires the existing thread")
-        candidate_path = workspace / self._CANDIDATE_NAMES[request.arm]
+        candidate_path = workspace / (
+            "candidate-set.json"
+            if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1
+            else self._SINGLE_CANDIDATE_NAMES[request.arm]
+        )
         expected_change = "add" if request.turn == 1 else "update"
         if (expected_change == "add" and candidate_path.exists()) or (
             expected_change == "update" and not candidate_path.is_file()
@@ -763,10 +988,31 @@ class CodexRunProvider:
             expected_change=expected_change,
             expected_terminal_message=terminal,
             event_contract=self._event_contract,
+            submission_contract=self._submission_contract,
+            arm=(
+                request.arm
+                if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1
+                else None
+            ),
+            maximum_candidates_per_turn=request.maximum_candidates_per_turn,
         )
+        if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1:
+            entries = list(workspace.iterdir())
+            if (
+                entries != [candidate_path]
+                or candidate_path.is_symlink()
+                or not candidate_path.is_file()
+            ):
+                raise RunProtocolFault(
+                    "provider_fault",
+                    "Codex candidate-set workspace custody differs",
+                )
         if read_frozen_reference_bundle(reference_root)[0] != reference_sha256:
             raise RunProtocolFault("contamination", "provider references changed during Turn")
-        return result
+        return replace(
+            result,
+            reference_bundle=self._references[request.run_id][2].encode("utf-8"),
+        )
 
 
 class CodexInvocationBuilder:
@@ -785,6 +1031,7 @@ class CodexInvocationBuilder:
         removed_environment: tuple[str, ...],
         disabled_features: tuple[str, ...] = CODEX_DISABLED_FEATURES,
         event_contract: str = "closed_file_change_v1",
+        submission_contract: str = SINGLE_CANDIDATE_V1,
     ) -> None:
         values = (provider_revision, model, reasoning_effort, service_tier)
         if any(not value for value in values) or not removed_environment:
@@ -801,6 +1048,11 @@ class CodexInvocationBuilder:
             ((), "tool_rich_candidate_v1"),
         }:
             raise ValueError("Codex feature and event contracts differ")
+        if submission_contract not in {
+            SINGLE_CANDIDATE_V1,
+            CANDIDATE_SET_ENVELOPE_V1,
+        }:
+            raise ValueError("Codex submission contract differs")
         self._executable = executable
         self._provider_revision = provider_revision
         self._model = model
@@ -811,6 +1063,7 @@ class CodexInvocationBuilder:
         self._removed_environment = removed_environment
         self._disabled_features = disabled_features
         self._event_contract = event_contract
+        self._submission_contract = submission_contract
 
     @property
     def workspace(self) -> Path:
@@ -839,6 +1092,8 @@ class CodexInvocationBuilder:
         }
         if self._event_contract != "closed_file_change_v1":
             configuration["event_contract"] = self._event_contract
+        if self._submission_contract != SINGLE_CANDIDATE_V1:
+            configuration["submission_contract"] = self._submission_contract
         return configuration
 
     @property

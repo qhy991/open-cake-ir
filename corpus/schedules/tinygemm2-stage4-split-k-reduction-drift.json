@@ -114,7 +114,7 @@
       "space": "shared",
       "dtype": "fp32",
       "shape": [
-        4,
+        3,
         16,
         8
       ],
@@ -264,7 +264,7 @@
     },
     {
       "id": "reduce_partials",
-      "kind": "reduce_sum",
+      "kind": "reduce",
       "role": "compute",
       "reads": [
         "partial_accumulators"
@@ -279,7 +279,8 @@
         "split_k_mma"
       ],
       "parameters": {
-        "parts": 3,
+        "op": "sum",
+        "axis": 0,
         "scope": "cta"
       }
     },

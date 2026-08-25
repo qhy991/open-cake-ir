@@ -20,6 +20,22 @@ from open_cake_ir.lab import (  # noqa: E402
 )
 
 
+def _resolve_executor(executor_id: str) -> dict:
+    """Find a Revision descriptor by id: current, superseded, or archived."""
+
+    inventory = json.loads(
+        (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
+    )
+    for candidate in [
+        inventory["current"],
+        *inventory.get("superseded", []),
+        *inventory["archives"],
+    ]:
+        if candidate["executor_id"] == executor_id:
+            return candidate
+    raise AssertionError(f"executor {executor_id!r} is not resolvable")
+
+
 class GpuQuickstartContractTests(unittest.TestCase):
     def test_existing_output_blocks_before_any_gpu_work(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -68,29 +84,61 @@ class GpuQuickstartContractTests(unittest.TestCase):
 
             self.assertNotEqual(completed.returncode, 0, option)
 
-    def test_live_quickstart_inventory_binds_the_current_runner_and_executor(self) -> None:
+    def test_live_quickstart_inventory_binds_its_runner_and_executor(self) -> None:
+        """The observation names the Executor Revision it actually ran under.
+
+        Once a runtime source changes, that Revision is superseded and its closure no
+        longer verifies against this tree -- verifying it belongs to its archive. The
+        binding is still checked, by descriptor identity rather than by loading, because
+        restamping the observation to the current Revision would claim a run that never
+        happened.
+        """
+
         inventory = json.loads(
             (
                 ROOT / "inventory/GPU_QUICKSTART_QUALIFICATION_V3_20260823.json"
             ).read_text(encoding="utf-8")
         )
         runner = ROOT / inventory["runner"]["path"]
-        schedule = ROOT / inventory["schedule"]["path"]
-        executor_inventory = json.loads(
-            (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
-        )["current"]
-        executor = ExecutorRevision.load(ROOT, ROOT / executor_inventory["path"])
+        executor_inventory = _resolve_executor(
+            inventory["executor_revision"]["executor_id"]
+        )
+        descriptor = json.loads(
+            (ROOT / executor_inventory["path"]).read_text(encoding="utf-8")
+        )
 
         self.assertEqual(inventory["status"], "passed")
         self.assertFalse(inventory["scientific_claim_authorized"])
         self.assertFalse(inventory["performance_measured"])
-        self.assertEqual(sha256(runner.read_bytes()).hexdigest(), inventory["runner"]["raw_sha256"])
-        self.assertEqual(
-            sha256(schedule.read_bytes()).hexdigest(),
-            inventory["schedule"]["raw_sha256"],
+        # The runner moved with the Schedule when the packed mma form was retired. A
+        # superseded record keeps the bytes its run actually used, so what is checkable
+        # is that the record says so -- not that the tree still holds those bytes.
+        self.assertNotEqual(
+            sha256(runner.read_bytes()).hexdigest(), inventory["runner"]["raw_sha256"]
         )
         self.assertEqual(
-            executor.canonical_sha256,
+            inventory["superseded"]["observed_runner_raw_sha256"],
+            inventory["runner"]["raw_sha256"],
+        )
+        self.assertEqual(
+            inventory["superseded"]["current_runner_raw_sha256"],
+            sha256(runner.read_bytes()).hexdigest(),
+        )
+        # The Schedule this run observed has since gained its hardware commitments, and
+        # the broker on this host does not export GPUQ_JOB_ID, so the run cannot be
+        # re-observed. The record says so rather than being restamped to bytes it never
+        # saw; what stays checkable is checked.
+        superseded = inventory["superseded"]
+        self.assertEqual(
+            superseded["observed_schedule_raw_sha256"], inventory["schedule"]["raw_sha256"]
+        )
+        self.assertEqual(
+            sha256((ROOT / inventory["schedule"]["path"]).read_bytes()).hexdigest(),
+            superseded["current_schedule_raw_sha256"],
+        )
+        self.assertIn("GPUQ_JOB_ID", superseded["requalification_blocked_by"])
+        self.assertEqual(
+            executor_inventory["canonical_sha256"],
             inventory["executor_revision"]["canonical_sha256"],
         )
         self.assertEqual(
@@ -98,7 +146,7 @@ class GpuQuickstartContractTests(unittest.TestCase):
             inventory["executor_revision"]["descriptor_raw_sha256"],
         )
         executor_sources = {
-            record["path"]: record for record in executor.document["sources"]
+            record["path"]: record for record in descriptor["sources"]
         }
         self.assertEqual(
             executor_sources[inventory["runner"]["path"]]["sha256"],
@@ -151,7 +199,10 @@ class GpuQuickstartContractTests(unittest.TestCase):
                 for key in ("executor_id", "canonical_sha256")
             },
         )
-        self.assertEqual(result["executor_revision"]["executor_id"], executor.executor_id)
+        self.assertEqual(
+            result["executor_revision"]["executor_id"],
+            executor_inventory["executor_id"],
+        )
         self.assertEqual(
             {
                 "cubin_sha256": result["build"]["cubin_sha256"],
@@ -248,7 +299,7 @@ class GpuQuickstartContractTests(unittest.TestCase):
             workload=workload,
             case_id="b32_smoke",
         )
-        schedule = (ROOT / "examples/gpu/flash-kmeans-b32-smoke.json").read_bytes()
+        schedule = (ROOT / "examples/gpu/flash-kmeans-b32-smoke-v2.json").read_bytes()
 
         result = environment.build(
             CandidateSubmission.seal(
@@ -288,7 +339,14 @@ class GpuQuickstartContractTests(unittest.TestCase):
         self.assertEqual(summary["status"], "prepared")
         self.assertTrue(summary["assessment"]["accepted"])
         self.assertTrue(summary["assessment"]["lowering_eligible"])
-        self.assertEqual(summary["assessment"]["findings"], [])
+        # The teaching path shows what the compiler reports, and for this Schedule that
+        # includes why residency is bounded. Nothing here blocks acceptance.
+        self.assertEqual(
+            sorted(f["code"] for f in summary["assessment"]["findings"]),
+            ["REGISTER_PRESSURE", "RESIDENCY_BOUND"],
+        )
+        self.assertTrue(summary["assessment"]["accepted"])
+        self.assertTrue(summary["assessment"]["lowering_eligible"])
         self.assertEqual(summary["evaluation"], {"gpu_submitted": False})
 
 

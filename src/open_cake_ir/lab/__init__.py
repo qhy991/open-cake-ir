@@ -19,6 +19,8 @@ from .core import (
     StudyContract,
     StudyReport,
     TurnRequest,
+    matched_evidence_policy_v1,
+    scientific_matched_analysis_plan_v2,
 )
 from .environments import (
     AuthoringEnvironment,
@@ -35,6 +37,7 @@ from .executor import ExecutorRevision
 from .faults import CandidateCompileRejected, RunProtocolFault
 from .portfolio import ExactShape, KernelSeed, SpecialistLowering, lower_specialists
 from .providers import (
+    CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
     CodexInvocationBuilder,
     CodexProviderAdapter,
@@ -44,6 +47,7 @@ from .providers import (
     ProviderQualificationReceipt,
     ProviderTurn,
     normalize_codex_turn,
+    required_live_provider_qualification_scope,
 )
 from .runtime import BoundedBrokerEvaluator, BrokerSubmitter, CommandBrokerSubmitter
 
@@ -63,6 +67,8 @@ __all__ = [
     "TurnRequest",
     "TurnObservation",
     "project_checkpoints",
+    "matched_evidence_policy_v1",
+    "scientific_matched_analysis_plan_v2",
     "AuthoringEnvironment",
     "BuildRequest",
     "CandidateSubmission",
@@ -74,6 +80,7 @@ __all__ = [
     "TritonToolchainBuilder",
     "ToolchainBuilder",
     "CodexInvocationBuilder",
+    "CANDIDATE_SET_ENVELOPE_V1",
     "CODEX_DISABLED_FEATURES",
     "CodexProviderAdapter",
     "CodexRunProvider",
@@ -82,6 +89,7 @@ __all__ = [
     "ProviderQualificationReceipt",
     "ProviderTurn",
     "normalize_codex_turn",
+    "required_live_provider_qualification_scope",
     "ExactShape",
     "KernelSeed",
     "SpecialistLowering",

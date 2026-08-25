@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "776653877fb5efb378cb28750ce6267e1d84113302437fb7b7dcc31a53076cc9"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "the residency report states its own domain"
+}

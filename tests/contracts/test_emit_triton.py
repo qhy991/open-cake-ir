@@ -1,0 +1,570 @@
+"""Contract tests for Triton emission.
+
+The second backend. What matters here is the difference from the first: Triton owns
+placement, so a Schedule targeting it commits to tiling and semantics and stops. The
+digest pin that used to cap this profile at seventy-two admissible points is gone,
+because the source now follows the Schedule instead of being selected by it.
+"""
+
+from __future__ import annotations
+
+import ast
+import copy
+import itertools
+import json
+import re
+import unittest
+from pathlib import Path
+
+from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler.emit_cutedsl import EmitError
+from open_cake_ir.compiler.emit_triton import emit
+from open_cake_ir.compiler.ir import Schedule
+from open_cake_ir.compiler.target import Target
+
+ROOT = Path(__file__).resolve().parents[2]
+TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
+SCHEDULE = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
+DRAFT = ROOT / "compiler" / "revision.json"
+
+
+def _variant(**changes) -> dict:
+    document = copy.deepcopy(json.loads(SCHEDULE.read_text(encoding="utf-8")))
+    buffers = {b["name"]: b for b in document["buffers"]}
+    block_n = changes.get("block_n", 256)
+    block_k = changes.get("block_k", 64)
+    for axis in document["program_map"]["axes"]:
+        if axis["name"] == "token_block":
+            axis["tile"] = block_n
+    loop = document["tile_loops"][0]
+    loop["tile"] = block_k
+    loop["range_options"].update(
+        {k: v for k, v in changes.items() if k in loop["range_options"]}
+    )
+    document["roles"][0]["warps"] = list(range(changes.get("warps", 4)))
+    buffers["token_tile"]["shape"] = [block_n, 128]
+    buffers["centroid_tile"]["shape"] = [block_k, 128]
+    buffers["distance_tile"]["shape"] = [block_n, block_k]
+    buffers["best_index_tile"]["shape"] = [block_n]
+    # the composed distance names its intermediates, and a seed retiles all of them
+    for name in ("cross", "scaled_cross"):
+        if name in buffers:
+            buffers[name]["shape"] = [block_n, block_k]
+    if "norm_tile" in buffers:
+        buffers["norm_tile"]["shape"] = [block_k]
+    for operation in document["operations"]:
+        if operation["kind"] == "mma":
+            operation["parameters"]["tile_shape"] = [block_n, block_k, 128]
+    return document
+
+
+class EmissionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.schedule = Schedule.load(SCHEDULE)
+        self.emission = emit(self.schedule, TARGET)
+
+    def test_the_emitted_source_is_valid_python(self) -> None:
+        ast.parse(self.emission.source)
+
+    def test_pointer_arithmetic_comes_from_the_access_maps(self) -> None:
+        self.assertIn(
+            "tokens + batch * N_TOKEN_BLOCK * D_TOKENS_2 "
+            "+ token_block_offsets[:, None] * D_TOKENS_2 + tokens_d2_offsets[None, :]",
+            self.emission.source,
+        )
+        self.assertIn(
+            "mask=token_block_offsets[:, None] < N_TOKEN_BLOCK", self.emission.source
+        )
+
+    def test_the_loop_carries_its_declared_knobs(self) -> None:
+        options = self.schedule.tile_loops[0].range_options
+        self.assertIn(f"num_stages={options.num_stages}", self.emission.source)
+        self.assertIn("disallow_acc_multi_buffer=True", self.emission.source)
+
+    def test_the_reduction_carries_its_declared_tie_break(self) -> None:
+        self.assertIn("tie_break_left=True", self.emission.source)
+        self.assertIn("candidate_index < best_index_tile", self.emission.source)
+
+    def test_every_operation_is_marked(self) -> None:
+        for operation in self.schedule.operations:
+            with self.subTest(operation=operation.op_id):
+                self.assertIn(f"# CAKE_OP:{operation.op_id}", self.emission.source)
+
+    def test_the_compile_contract_is_derived_not_restated(self) -> None:
+        toolchain = self.emission.toolchain
+        assert toolchain is not None
+        self.assertEqual(
+            toolchain["signature"],
+            {
+                "tokens": "*bf16",
+                "centroids": "*bf16",
+                "centroid_sq": "*fp32",
+                "assignments": "*i32",
+            },
+        )
+        self.assertEqual(toolchain["grid"], [2, 32, 1])
+        self.assertEqual(toolchain["compile_options"], {"num_warps": 4, "num_stages": 2})
+
+
+class PlacementTest(unittest.TestCase):
+    """A tile-level dot must not claim placement the backend would ignore."""
+
+    def test_a_triton_contract_rejects_tensor_core_placement(self) -> None:
+        from open_cake_ir.compiler.verifier import verify
+
+        document = _variant()
+        for operation in document["operations"]:
+            if operation["kind"] == "mma":
+                operation["parameters"]["instruction"]["cta_group"] = 1
+        codes = {f.code for f in verify(Schedule.from_dict(document), TARGET)}
+        self.assertIn("MMA_PLACEMENT_UNSUPPORTED", codes)
+
+    def test_a_tensor_core_contract_wants_it(self) -> None:
+        from open_cake_ir.compiler.verifier import verify
+
+        full = Schedule.load(
+            ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
+        )
+        codes = {f.code for f in verify(full, TARGET)}
+        self.assertNotIn("MMA_PLACEMENT_UNDECLARED", codes)
+
+
+class OpenSpaceTest(unittest.TestCase):
+    """The digest pin admitted exactly one shape of Schedule. Emission admits a space."""
+
+    def setUp(self) -> None:
+        self.compiler = Compiler.load(ROOT, DRAFT)
+
+    def test_the_original_grid_still_lowers(self) -> None:
+        admitted = 0
+        for block_n, block_k, stages, warps in itertools.product(
+            (64, 128, 256), (32, 64, 128), (1, 2, 3, 4), (4, 8)
+        ):
+            assessment = self.compiler.assess(
+                _variant(block_n=block_n, block_k=block_k, num_stages=stages, warps=warps)
+            )
+            admitted += assessment.lowering_eligible
+        self.assertEqual(admitted, 72)
+
+    def test_points_the_pin_refused_now_lower(self) -> None:
+        """`disable_licm` and `loop_unroll_factor` were pinned shut, not unsupported."""
+
+        for label, changes in (
+            ("unroll", {"loop_unroll_factor": 2}),
+            ("licm", {"disable_licm": True}),
+            ("stages", {"num_stages": 6}),
+        ):
+            with self.subTest(knob=label):
+                assessment = self.compiler.assess(_variant(**changes))
+                self.assertTrue(assessment.lowering_eligible)
+                self.assertTrue(self.compiler.lower(assessment).source)
+
+    def test_the_knob_reaches_the_source(self) -> None:
+        assessment = self.compiler.assess(_variant(disable_licm=True))
+        self.assertIn("disable_licm=True", self.compiler.lower(assessment).source)
+
+    def test_a_schedule_no_multiprocessor_can_hold_is_refused(self) -> None:
+        """An open space needs a real gate, and this is one it can derive."""
+
+        assessment = self.compiler.assess(_variant(block_n=512))
+        self.assertFalse(assessment.lowering_eligible)
+        finding = next(
+            f for f in assessment.findings if f.code == "RESIDENCY_IMPOSSIBLE"
+        )
+        self.assertIn("no CTA is resident", finding.message)
+
+
+class UnderSpecificationTest(unittest.TestCase):
+    def test_an_unnamed_instruction_is_refused(self) -> None:
+        document = _variant()
+        for operation in document["operations"]:
+            if operation["kind"] == "mma":
+                operation["parameters"].pop("instruction")
+        with self.assertRaisesRegex(EmitError, "instruction contract"):
+            emit(Schedule.from_dict(document), TARGET)
+
+    def test_an_instruction_the_target_forbids_is_refused(self) -> None:
+        document = _variant()
+        for operation in document["operations"]:
+            if operation["kind"] == "mma":
+                operation["parameters"]["instruction"]["contract"] = "triton.dot.fp8"
+        with self.assertRaisesRegex(EmitError, "not admitted"):
+            emit(Schedule.from_dict(document), TARGET)
+
+
+ROW_SUM_SCHEDULE = {
+    "schema_version": 1,
+    "schedule_id": "row-sum-contract-v1",
+    "target": "sm_100a",
+    "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+    "allocations": [],
+    "pipelines": [],
+    "barriers": [],
+    "buffers": [
+        {"name": "x", "space": "global", "dtype": "bf16", "shape": [32, 512, 128], "mode": "input"},
+        {"name": "y", "space": "global", "dtype": "fp32", "shape": [32, 512], "mode": "output"},
+        {"name": "x_tile", "space": "register", "dtype": "fp32", "shape": [256, 64], "mode": "scratch"},
+        {"name": "acc", "space": "register", "dtype": "fp32", "shape": [256], "mode": "scratch"},
+    ],
+    "operations": [
+        {"id": "load_x", "kind": "load", "role": "compute", "reads": ["x"],
+         "writes": ["x_tile"], "parameters": {"movement": "global"}},
+        {"id": "row_sum", "kind": "reduce", "role": "compute", "reads": ["x_tile"],
+         "writes": ["acc"], "depends_on": ["load_x"],
+         "parameters": {"op": "sum", "axis": 1, "scope": "cta"}},
+        {"id": "store_y", "kind": "store", "role": "compute", "reads": ["acc"],
+         "writes": ["y"], "depends_on": ["row_sum"], "parameters": {"coalesced": True}},
+    ],
+    "outputs": ["y"],
+    "program_map": {"axes": [
+        {"name": "row_block", "axis": 0, "buffer": "x", "dimension": 1, "tile": 256},
+        {"name": "batch", "axis": 1, "buffer": "x", "dimension": 0, "tile": 1},
+    ]},
+    "tile_loops": [{"name": "feature_loop", "iterator": "feat_start", "buffer": "x",
+                    "dimension": 2, "tile": 64, "body": ["load_x", "row_sum"],
+                    "range_options": {"num_stages": 2, "loop_unroll_factor": 1,
+                                      "flatten": False, "warp_specialize": False,
+                                      "disallow_acc_multi_buffer": True,
+                                      "disable_licm": False}}],
+    "access_maps": [
+        {"operation": "load_x", "buffer": "x", "indices": [
+            {"source": "program", "name": "batch"},
+            {"source": "program_tile", "name": "row_block"},
+            {"source": "loop_tile", "name": "feat_start"}], "boundary": "mask_tiled_axes"},
+        {"operation": "store_y", "buffer": "y", "indices": [
+            {"source": "program", "name": "batch"},
+            {"source": "program_tile", "name": "row_block"}], "boundary": "mask_tiled_axes"},
+    ],
+    "metadata": {"profile": "row_sum_contract", "workload_contract_sha256": "0" * 64},
+}
+
+
+class OperatorShapeIndependenceTest(unittest.TestCase):
+    """The emitter must follow the Schedule, not the operator it was written against.
+
+    Both admitted profiles contract and then reduce, so the emitter could require an mma
+    and an argmin and still emit both correctly. A sum over an axis, with no contraction
+    at all, is the smallest Schedule that tells those two apart.
+    """
+
+    def setUp(self) -> None:
+        self.source = emit(Schedule.from_dict(ROW_SUM_SCHEDULE), TARGET).source
+
+    def test_a_schedule_that_never_contracts_still_lowers(self) -> None:
+        ast.parse(self.source)
+        self.assertIn("# CAKE_OP:row_sum", self.source)
+        self.assertNotIn("tl.dot", self.source)
+
+    def test_the_sum_collapses_the_declared_axis(self) -> None:
+        self.assertIn("acc += tl.sum(x_tile.to(tl.float32), axis=1)", self.source)
+        # The identity has to exist before the loop that accumulates into it.
+        self.assertLess(
+            self.source.index("acc = tl.zeros"), self.source.index("acc += tl.sum")
+        )
+
+    def test_an_operation_outside_the_loop_is_not_dropped(self) -> None:
+        # The skeleton used to emit prologue loads, the loop, then the store, so any
+        # other operation declared outside the loop produced no code and no complaint.
+        schedule = copy.deepcopy(ROW_SUM_SCHEDULE)
+        schedule["buffers"].append(
+            {"name": "scaled", "space": "register", "dtype": "fp32",
+             "shape": [256], "mode": "scratch"}
+        )
+        schedule["operations"].insert(2, {
+            "id": "halve", "kind": "elementwise", "role": "compute",
+            "reads": ["acc"], "writes": ["scaled"], "depends_on": ["row_sum"],
+            "parameters": {"op": "mul", "scalar": 0.5},
+        })
+        schedule["operations"][-1]["reads"] = ["scaled"]
+        schedule["operations"][-1]["depends_on"] = ["halve"]
+        source = emit(Schedule.from_dict(schedule), TARGET).source
+        self.assertIn("# CAKE_OP:halve", source)
+        self.assertIn("scaled = acc * 0.5", source)
+
+    def test_a_two_axis_mask_is_parenthesized(self) -> None:
+        # `&` binds tighter than `<`, so a bare conjunction of comparisons becomes a
+        # chained comparison against a bitwise and, and the load silently reads out of
+        # bounds. Neither admitted profile masks two axes, so nothing caught this.
+        mask = next(line for line in self.source.splitlines() if "mask=" in line and "&" in line)
+        self.assertIn("(row_block_offsets[:, None] < N_ROW_BLOCK) &", mask)
+        parsed = ast.parse(mask.strip().removeprefix("mask=").rstrip(","), mode="eval")
+        self.assertIsInstance(parsed.body, ast.BinOp)
+        self.assertIsInstance(parsed.body.op, ast.BitAnd)
+
+
+class ComposedArithmeticTest(unittest.TestCase):
+    """A Schedule composes arithmetic rather than naming a whole operator's formula.
+
+    `MmaFormula` and `EpilogueFormula` each name one operator's math in a single token,
+    so a backend hardcodes that math and a new operator needs a new member and a new
+    emitted body per backend. RMSNorm needs none of that: square, a scalar chain, a
+    reciprocal square root and two broadcasts, all from the same five primitives.
+    """
+
+    def _rmsnorm(self, *, load_in_loop: bool) -> dict:
+        rows, features = 64, 128
+        body = ["load_x", "square", "sum_sq"] if load_in_loop else ["square", "sum_sq"]
+        feature_index = (
+            {"source": "loop_tile", "name": "feat"}
+            if load_in_loop
+            else {"source": "dimension", "dimension": 2}
+        )
+        register = lambda name, shape: {  # noqa: E731
+            "name": name, "space": "register", "dtype": "fp32",
+            "shape": shape, "mode": "scratch",
+        }
+        return {
+            "schema_version": 1, "schedule_id": "rmsnorm-contract-v1", "target": "sm_100a",
+            "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+            "allocations": [], "pipelines": [], "barriers": [],
+            "buffers": [
+                {"name": "x", "space": "global", "dtype": "fp32",
+                 "shape": [8, 512, features], "mode": "input"},
+                {"name": "gamma", "space": "global", "dtype": "fp32",
+                 "shape": [features], "mode": "input"},
+                {"name": "y", "space": "global", "dtype": "fp32",
+                 "shape": [8, 512, features], "mode": "output"},
+                register("x_tile", [rows, features]), register("sq", [rows, features]),
+                register("sumsq", [rows]), register("meansq", [rows]),
+                register("shifted", [rows]), register("inv_rms", [rows]),
+                register("gamma_tile", [features]),
+                register("normed", [rows, features]), register("y_tile", [rows, features]),
+            ],
+            "operations": [
+                {"id": "load_x", "kind": "load", "role": "compute", "reads": ["x"],
+                 "writes": ["x_tile"], "parameters": {"movement": "global"}},
+                {"id": "square", "kind": "elementwise", "role": "compute",
+                 "reads": ["x_tile"], "writes": ["sq"], "depends_on": ["load_x"],
+                 "parameters": {"op": "square"}},
+                {"id": "sum_sq", "kind": "reduce", "role": "compute", "reads": ["sq"],
+                 "writes": ["sumsq"], "depends_on": ["square"],
+                 "parameters": {"op": "sum", "axis": 1, "scope": "cta"}},
+                {"id": "mean", "kind": "elementwise", "role": "compute",
+                 "reads": ["sumsq"], "writes": ["meansq"], "depends_on": ["sum_sq"],
+                 "parameters": {"op": "mul", "scalar": 1.0 / features}},
+                {"id": "shift", "kind": "elementwise", "role": "compute",
+                 "reads": ["meansq"], "writes": ["shifted"], "depends_on": ["mean"],
+                 "parameters": {"op": "add", "scalar": 1e-6}},
+                {"id": "rsqrt", "kind": "elementwise", "role": "compute",
+                 "reads": ["shifted"], "writes": ["inv_rms"], "depends_on": ["shift"],
+                 "parameters": {"op": "rsqrt"}},
+                {"id": "load_gamma", "kind": "load", "role": "compute", "reads": ["gamma"],
+                 "writes": ["gamma_tile"], "parameters": {"movement": "global"}},
+                {"id": "scale", "kind": "elementwise", "role": "compute",
+                 "reads": ["x_tile", "inv_rms"], "writes": ["normed"],
+                 "depends_on": ["rsqrt"],
+                 "parameters": {"op": "mul", "broadcast_axis": 0}},
+                {"id": "weight", "kind": "elementwise", "role": "compute",
+                 "reads": ["normed", "gamma_tile"], "writes": ["y_tile"],
+                 "depends_on": ["scale", "load_gamma"],
+                 "parameters": {"op": "mul", "broadcast_axis": 1}},
+                {"id": "store_y", "kind": "store", "role": "compute", "reads": ["y_tile"],
+                 "writes": ["y"], "depends_on": ["weight"],
+                 "parameters": {"coalesced": True}},
+            ],
+            "outputs": ["y"],
+            "program_map": {"axes": [
+                {"name": "row_block", "axis": 0, "buffer": "x", "dimension": 1, "tile": rows},
+                {"name": "batch", "axis": 1, "buffer": "x", "dimension": 0, "tile": 1},
+            ]},
+            "tile_loops": [{"name": "feature_loop", "iterator": "feat", "buffer": "x",
+                            "dimension": 2, "tile": features, "body": body,
+                            "range_options": {"num_stages": 1, "loop_unroll_factor": 1,
+                                              "flatten": False, "warp_specialize": False,
+                                              "disallow_acc_multi_buffer": True,
+                                              "disable_licm": False}}],
+            "access_maps": [
+                {"operation": "load_x", "buffer": "x", "indices": [
+                    {"source": "program", "name": "batch"},
+                    {"source": "program_tile", "name": "row_block"},
+                    feature_index], "boundary": "mask_tiled_axes"},
+                {"operation": "load_gamma", "buffer": "gamma", "indices": [
+                    {"source": "dimension", "dimension": 0}], "boundary": "mask_tiled_axes"},
+                {"operation": "store_y", "buffer": "y", "indices": [
+                    {"source": "program", "name": "batch"},
+                    {"source": "program_tile", "name": "row_block"},
+                    {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+            ],
+            "metadata": {"profile": "rmsnorm", "workload_contract_sha256": "0" * 64},
+        }
+
+    def test_rmsnorm_lowers_without_a_formula_of_its_own(self) -> None:
+        source = emit(Schedule.from_dict(self._rmsnorm(load_in_loop=False)), TARGET).source
+        ast.parse(source)
+        self.assertIn("sq = x_tile * x_tile", source)
+        self.assertIn("inv_rms = tl.rsqrt(shifted)", source)
+        # Both broadcast directions, chosen by the declared axis rather than guessed
+        # from the shapes: a per-row scale spans axis 0, a per-column weight spans axis 1.
+        self.assertIn("normed = x_tile * inv_rms[:, None]", source)
+        self.assertIn("y_tile = normed * gamma_tile[None, :]", source)
+
+    def test_a_register_tile_may_not_outlive_the_loop_that_writes_it(self) -> None:
+        # Emitting this produced `NameError: x_tile is not defined` at Triton compile
+        # time, because a register value the loop writes does not survive the loop. It
+        # is a property of the declared Schedule, so the verifier answers it first.
+        from open_cake_ir.compiler.verifier import verify
+
+        findings = verify(Schedule.from_dict(self._rmsnorm(load_in_loop=True)), TARGET)
+        escapes = [f for f in findings if f.code == "BUFFER_ESCAPES_LOOP"]
+        self.assertTrue(escapes)
+        self.assertTrue(all(f.blocks_lowering for f in escapes))
+        self.assertIn("x_tile", escapes[0].message)
+
+
+class ElementwiseArityTest(unittest.TestCase):
+    """The backend's templates and the IR's arity must agree about every operator.
+
+    `ElementwiseOp.arity` is what the verifier gates on; whether a template mentions a
+    second operand is what the backend actually emits. Nothing connects them, so a unary
+    op added to the enum and given a two-operand template would pass every gate and raise
+    while formatting -- and a binary op with a one-operand template would silently drop
+    an operand the Schedule declared, which is worse.
+    """
+
+    def test_every_template_uses_exactly_the_operands_its_arity_declares(self) -> None:
+        from open_cake_ir.compiler.emit_triton import _TritonEmitter
+        from open_cake_ir.compiler.ir import ElementwiseOp
+
+        templates = _TritonEmitter._ELEMENTWISE_TEXT
+        # Every operator the IR admits has a body, or the gate admits what cannot lower.
+        self.assertEqual(set(templates), set(ElementwiseOp))
+        for op, template in templates.items():
+            with self.subTest(op=op.value):
+                self.assertIn("{a}", template)
+                self.assertEqual("{b}" in template, op.arity == 2)
+
+    def test_tanh_is_emitted_only_when_the_schedule_declares_it(self) -> None:
+        swiglu = emit(
+            Schedule.load(ROOT / "corpus" / "schedules" / "swiglu-b8-smoke.json"),
+            TARGET,
+        ).source
+        self.assertIn("from triton.language.extra import libdevice", swiglu)
+        self.assertIn("tanh_gate = libdevice.tanh(half_gate)", swiglu)
+        self.assertIn("silu_gate = gate_tile * sigmoid_gate", swiglu)
+
+        existing = emit(Schedule.load(SCHEDULE), TARGET).source
+        self.assertNotIn("triton.language.extra", existing)
+
+
+class EmittedObservationTest(unittest.TestCase):
+    """The retained B200 observations for the operators this backend emits.
+
+    Each record names the artifact that ran, so a change to a lowering detaches the
+    evidence from the code and this says so. The answer is a new observation, taken with
+    `tools/observe_lowered_kernel.py`, never an edit to a record.
+
+    Softmax is the case that tested whether an operator is one profile row plus the
+    Schedules that claim it. RMSNorm is here because admitting softmax changed it: a loop
+    that runs once is the same program as no loop, and once the IR had both spellings one
+    of them had to be the form. Correctness only; no timing was taken.
+    """
+
+    OBSERVED = (
+        ("softmax", "SOFTMAX_OBSERVATION_20260824.json", "softmax-b8-smoke.json"),
+        ("rmsnorm", "RMSNORM_OBSERVATION_20260824.json", "rmsnorm-b8-smoke.json"),
+        (
+            "layernorm",
+            "LAYERNORM_OBSERVATION_20260824.json",
+            "layernorm-b8-smoke.json",
+        ),
+        ("gemm-bias", "GEMM_OBSERVATION_20260824.json", "gemm-bias-b1-smoke.json"),
+        (
+            "rmsnorm-persistent",
+            "PERSISTENT_OBSERVATION_20260824.json",
+            "rmsnorm-b128-persistent.json",
+        ),
+        ("swiglu", "SWIGLU_OBSERVATION_20260825.json", "swiglu-b8-smoke.json"),
+    )
+
+    LOOPLESS = (
+        "softmax-b8-smoke.json",
+        "rmsnorm-b8-smoke.json",
+        "layernorm-b8-smoke.json",
+    )
+
+    def test_each_observation_matches_what_the_compiler_lowers_now(self) -> None:
+        from open_cake_ir.compiler import Compiler
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        for name, record_name, schedule_name in self.OBSERVED:
+            with self.subTest(operator=name):
+                record = json.loads(
+                    (ROOT / "inventory" / record_name).read_text(encoding="utf-8")
+                )
+                lowering = compiler.lower(
+                    compiler.assess_file(ROOT / "corpus" / "schedules" / schedule_name)
+                )
+                self.assertEqual(lowering.generated, record["lowering"]["generated"])
+                self.assertEqual(
+                    lowering.source_sha256, record["lowering"]["source_sha256"]
+                )
+                self.assertEqual(record["result"]["mismatch_count"], 0)
+                self.assertLessEqual(
+                    record["result"]["max_deviation"], record["result"]["tolerance"]
+                )
+                self.assertTrue(record["result"]["passed"])
+                self.assertFalse(record["performance_measured"])
+
+    def test_a_row_wise_kernel_carries_no_loop(self) -> None:
+        from open_cake_ir.compiler import Compiler
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        for schedule_name in self.LOOPLESS:
+            with self.subTest(schedule=schedule_name):
+                source = compiler.lower(
+                    compiler.assess_file(ROOT / "corpus" / "schedules" / schedule_name)
+                ).source
+                # Both hold their reduced axis whole, so a loop here would be a trip
+                # count of one with an iterator nothing reads. The verifier refuses to
+                # let a Schedule spell it that way.
+                self.assertNotIn("tl.range(", source)
+                self.assertIn("tl.sum(", source)
+
+    def test_a_contraction_over_the_loop_accumulates(self) -> None:
+        """The shape the accumulation derivation exists for, and the only one that has it.
+
+        Flash-KMeans tiles the centroid axis, which is the output's N, so each iteration
+        computes a fresh block and the dot assigns. This GEMM tiles K, so the iterations
+        are a sum and the dot has to add. Which one a loop is doing is derived from the
+        operands' access maps, not declared, so both shapes reach the same emitter.
+        """
+
+        from open_cake_ir.compiler import Compiler
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        schedules = ROOT / "corpus" / "schedules"
+        gemm = compiler.lower(
+            compiler.assess_file(schedules / "gemm-bias-b1-smoke.json")
+        ).source
+        self.assertIn("acc = tl.zeros((64, 64), tl.float32)", gemm)
+        self.assertIn("acc += tl.dot(", gemm)
+
+        kmeans = compiler.lower(
+            compiler.assess_file(schedules / "flash-kmeans-b32-smoke-v2.json")
+        ).source
+        # The same emitter, the other shape: no accumulator before the loop and no add.
+        self.assertIn("cross = tl.dot(", kmeans)
+        self.assertNotIn("cross +=", kmeans)
+
+    def test_the_persistent_walk_actually_strides(self) -> None:
+        """The one loop left, and the reason its Schedule was reshaped.
+
+        A persistent grid is sized from the residency the Schedule commits to and capped
+        at the tile count, so at the old shape it launched one CTA per tile and the
+        stride never strode. The emitted grid-stride and its second iteration had never
+        run. They do now: 592 CTAs over 1024 tiles, so most CTAs decode two.
+        """
+
+        from open_cake_ir.compiler import Compiler
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        source = compiler.lower(
+            compiler.assess_file(
+                ROOT / "corpus" / "schedules" / "rmsnorm-b128-persistent.json"
+            )
+        ).source
+        self.assertIn("for _work in tl.range(tl.program_id(0), TOTAL_TILES, NUM_CTAS)", source)
+        constants = dict(
+            re.findall(r"^\s+(TOTAL_TILES|NUM_CTAS)=(\d+),$", source, re.MULTILINE)
+        )
+        self.assertGreater(int(constants["TOTAL_TILES"]), int(constants["NUM_CTAS"]))

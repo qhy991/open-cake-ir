@@ -35,12 +35,20 @@
     "workload_id": "flash-kmeans-assign-independent-v2",
     "canonical_sha256": "37e0f57020d9807a6c77c5ef6e56c8c771274c11c745b58022ae85091d567c3a",
     "case_id": "b32_smoke",
-    "shape": {"B": 32, "N": 512, "K": 1024, "D": 128}
+    "shape": {
+      "B": 32,
+      "N": 512,
+      "K": 1024,
+      "D": 128
+    }
   },
   "gpu": {
     "job_id": "gpuq-5209de9fd52b",
     "name": "NVIDIA B200",
-    "compute_capability": [10, 0],
+    "compute_capability": [
+      10,
+      0
+    ],
     "mode": "exclusive",
     "exclusive_b200_preflight_passed": true
   },
@@ -92,5 +100,13 @@
       "path": "evidence/qualifications/gpu-quickstart-v3/stderr.log",
       "raw_sha256": "8a1538fd0c0dec036e1ac679527cc7f179979be38525e721daa26c16552b487d"
     }
+  },
+  "superseded": {
+    "reason": "the observed Schedule has since gained the hardware commitments emission requires, and the runner was repointed when the packed mma form was retired, so neither matches this record; the record keeps the bytes the run actually used",
+    "observed_schedule_raw_sha256": "e01fc26572c8ec6270ce2a9ccd4b296fa3ac6d8a0b88603b8567b99726e632a5",
+    "current_schedule_raw_sha256": "225ac138b66855d6edc536d6b8a2e36aaee0d71dee33d719d6f789b3cf3824d3",
+    "requalification_blocked_by": "the GPU broker does not export GPUQ_JOB_ID, which evaluation.admission.observe_exclusive_b200 requires, so this cannot be re-observed on this host without changing the admission contract",
+    "observed_runner_raw_sha256": "2fc5851aa52ef4fe408859c867ba1310221e83296455d0c7d33e7a2fdf3a4660",
+    "current_runner_raw_sha256": "0e8cad6691488062943f0c47174ae597d27d039a915df549002c3a62bc7508f4"
   }
 }

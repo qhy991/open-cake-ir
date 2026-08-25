@@ -9,7 +9,21 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Mapping, Sequence, cast
+from typing import Any, Callable, Mapping, Sequence, cast
+
+from . import emit_cutedsl, emit_triton
+from .emit_cutedsl import EmitError
+from .ir import (
+    _SCHEDULE_OPTIONAL,
+    _SCHEDULE_REQUIRED,
+    DType,
+    OperationKind,
+    Schedule,
+    ScheduleParseError,
+)
+from .target import Target, TargetParseError
+from .ranking import Cost, rank as rank_candidates
+from .verifier import FindingSeverity, verify as verify_contracts
 
 
 class CompilerError(ValueError):
@@ -48,7 +62,12 @@ class Assessment:
 
 @dataclass(frozen=True)
 class Lowering:
-    """Inspectable target source derived from one eligible Assessment."""
+    """Inspectable target source materialized from one eligible Assessment.
+
+    `generated` distinguishes operation-emitting backends from the closed asset path.
+    Both are deterministic, but only the former generates the program from Schedule
+    operations; collapsing them would make that paper-relevant boundary unobservable.
+    """
 
     compiler_revision_id: str
     compiler_revision_sha256: str
@@ -56,6 +75,7 @@ class Lowering:
     schedule_sha256: str
     target: str
     profile: str
+    generated: bool
     entry_point: str
     source: str
     source_sha256: str
@@ -81,6 +101,9 @@ class TargetDefinition:
     instruction_contracts: frozenset[str]
     synchronization_contracts: frozenset[str]
     citations: tuple[Mapping[str, object], ...]
+    document: Mapping[str, object]
+    """The Revision-bound source document, retained so the contract verifier can build
+    its own typed Target from the same bytes this definition was parsed from."""
 
 
 @dataclass(frozen=True)
@@ -133,77 +156,400 @@ class CorpusGateReport:
         return self.case_count - self.lowerable_case_count
 
 
-_REQUIRED_TOP_LEVEL_FIELDS = {
-    "schema_version",
-    "schedule_id",
-    "target",
-    "roles",
-    "allocations",
-    "buffers",
-    "pipelines",
-    "barriers",
-    "operations",
-    "outputs",
-    "metadata",
-}
-_OPTIONAL_TOP_LEVEL_FIELDS = {"grid", "program_map", "tile_loops", "access_maps"}
-_DTYPE_BYTES = {"bf16": 2, "fp16": 2, "fp32": 4, "int32": 4, "int64": 8}
-_SUPPORTED_OPERATION_KINDS = {
-    "load",
-    "mma",
-    "epilogue",
-    "reduce_argmin",
-    "reduce_sum",
-    "store",
-    "fence_proxy",
-}
-_LOWERING_PROFILES = {
-    "flash_kmeans_b32_smoke",
-    "flash_kmeans_assignment_full",
-    "tinygemm2_stage4_split_k",
-}
-_LOWERING_ASSETS = {
-    "flash_kmeans_b32_smoke": (
-        "src/open_cake_ir/compiler/assets/flash_kmeans_b32_smoke.py.tmpl",
-        "__SCHEDULE_SHA256__",
-        "cake_flash_kmeans_assign",
+# The IR owns the Schedule's field set. Restating it here meant a new top-level field
+# parsed cleanly and was then rejected as an unknown root field by this check.
+_REQUIRED_TOP_LEVEL_FIELDS = set(_SCHEDULE_REQUIRED)
+_OPTIONAL_TOP_LEVEL_FIELDS = set(_SCHEDULE_OPTIONAL)
+# Derived, not restated. The byte width of a dtype is the IR's fact; a second table here
+# is how a new dtype gets a size in one place and not the other.
+_DTYPE_BYTES = {member.value: member.itemsize for member in DType}
+# The IR's enum is what the compiler knows how to parse, so restating the list here
+# made a second authority that a new kind had to be added to as well -- and forgetting
+# it rejected the Schedule as unsupported rather than saying anything about the gap.
+# What a Target admits is a separate question, and stays with the Target.
+_SUPPORTED_OPERATION_KINDS = {member.value for member in OperationKind}
+
+
+def _flash_kmeans_b32_smoke_conformance(buffers, operations) -> list["Finding"]:
+    tokens = _shape_of(buffers, "tokens")
+    centroids = _shape_of(buffers, "centroids")
+    coheres = (
+        tokens is not None
+        and len(tokens) == 3
+        and centroids is not None
+        and len(centroids) == 3
+        and tokens[0] == centroids[0]
+        and tokens[2] == centroids[2] == 128
+        and _shape_of(buffers, "centroid_sq") == (tokens[0], centroids[1])
+        and _shape_of(buffers, "assignments") == (tokens[0], tokens[1])
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.tokens.shape",
+            "Flash-KMeans external tensor shapes are inconsistent",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
+def _flash_kmeans_assignment_full_conformance(buffers, operations) -> list["Finding"]:
+    distance = buffers.get("distance_scratch")
+    shape = distance.get("shape") if distance is not None else None
+    if shape == [128, 1024]:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.distance_scratch.shape",
+            "full Flash-KMeans assignment requires distance_scratch shape [128, 1024]",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
+def _tinygemm2_stage4_split_k_conformance(buffers, operations) -> list["Finding"]:
+    reduction = next(
+        (operation for operation in operations if operation.get("id") == "reduce_partials"),
+        None,
+    )
+    parameters = (
+        _object(reduction.get("parameters"), "operations.reduce_partials.parameters")
+        if reduction is not None
+        else {}
+    )
+    # The part count is the extent of the axis the sum collapses, which the read buffer
+    # already declares. Reading it there keeps this profile rule and the Schedule from
+    # disagreeing about how many partials stage4 combines.
+    source = buffers.get(str(reduction.get("reads", [""])[0])) if reduction else None
+    shape = source.get("shape") if isinstance(source, Mapping) else None
+    axis = parameters.get("axis")
+    parts = (
+        shape[axis]
+        if isinstance(shape, list) and isinstance(axis, int) and 0 <= axis < len(shape)
+        else None
+    )
+    if (
+        reduction is not None
+        and reduction.get("kind") == "reduce"
+        # The operator is now the operation's to declare, so this profile has to say it
+        # wants a sum. A max over four partials is a different kernel with the same shape.
+        and parameters.get("op") == "sum"
+        and parts == 4
+        and parameters.get("scope") == "cta"
+    ):
+        return []
+    return [
+        Finding(
+            "REDUCE_SUM_SEMANTICS",
+            "operations.reduce_partials.parameters.axis",
+            "TinyGEMM2 stage4 requires a four-part CTA reduction",
+        )
+    ]
+
+
+def _rmsnorm_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
+    x = _shape_of(buffers, "x")
+    coheres = (
+        x is not None
+        and len(x) == 3
+        and _shape_of(buffers, "y") == x
+        and _shape_of(buffers, "gamma") == (x[2],)
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.x.shape",
+            "RMSNorm normalizes the last axis, so y matches x and gamma spans it",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
+def _softmax_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """Softmax normalizes the last axis, so y matches x and nothing else is read.
+
+    The shape rule is the same one RMSNorm states; what differs is that softmax has no
+    learned parameter, so a Schedule that reads a third buffer is not this operator.
+    """
+
+    x = _shape_of(buffers, "x")
+    coheres = x is not None and len(x) == 3 and _shape_of(buffers, "y") == x
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.x.shape",
+            "softmax normalizes the last axis, so y matches x",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
+def _layernorm_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """LayerNorm normalizes the last axis and both parameters span it.
+
+    Two parameters rather than RMSNorm's one, which is the whole difference at this level:
+    a Schedule that declares only a scale is that operator and not this one.
+    """
+
+    x = _shape_of(buffers, "x")
+    coheres = (
+        x is not None
+        and len(x) == 3
+        and _shape_of(buffers, "y") == x
+        and _shape_of(buffers, "gamma") == (x[2],)
+        and _shape_of(buffers, "beta") == (x[2],)
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.x.shape",
+            "LayerNorm normalizes the last axis, so y matches x and gamma and beta span it",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
+def _gemm_bias_b1_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """A contraction with a per-column bias: `c[M, N] = a[M, K] @ b[N, K]^T + bias[N]`.
+
+    Both operands carry K last, because that is the axis a `tl.dot` and a tcgen05 MMA
+    both contract. The bias spans the output's N, which is what makes it a bias rather
+    than a second operand.
+    """
+
+    a = _shape_of(buffers, "a")
+    b = _shape_of(buffers, "b")
+    coheres = (
+        a is not None
+        and b is not None
+        and len(a) == 2
+        and len(b) == 2
+        and a[1] == b[1]
+        and _shape_of(buffers, "c") == (a[0], b[0])
+        and _shape_of(buffers, "bias") == (b[0],)
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.a.shape",
+            "a GEMM contracts the last axis of both operands and biases the output column",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
+def _swiglu_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """SwiGLU is two equally shaped inputs and one equally shaped output.
+
+    This is deliberately only the arithmetic slice exercised by the KDA v12 delta. The
+    grouped-GEMM producer, quantization scales and routed scatter are separate missing
+    mechanisms, so accepting this profile does not call the complete MoE kernel
+    expressible.
+    """
+
+    up = _shape_of(buffers, "up")
+    gate = _shape_of(buffers, "gate")
+    coheres = (
+        up is not None
+        and len(up) == 3
+        and gate == up
+        and _shape_of(buffers, "y") == up
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.up.shape",
+            "SwiGLU requires up, gate and y to have the same rank-3 shape",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
+@dataclass(frozen=True)
+class _Profile:
+    """One admitted lowering profile and every fact that follows from admitting it.
+
+    These facts used to live in five dictionaries and an `elif` chain keyed by the same
+    profile string, so adding an operator meant finding all six and keeping them in step.
+    One record owns them, and a profile that omits one is a construction error rather than
+    a lookup that silently returns nothing.
+
+    `backend` is the module that generates the source from the Schedule; `asset` is the
+    older path that fills a digest into a checked-in template, and only that path needs
+    `closed_semantics` -- the file matches one Schedule, so a pin is what keeps a second
+    one from reaching it.
+
+    The backend is held as a module rather than as its `emit` function so that the kinds
+    it can lower travel with it. Naming them separately would let a profile pair one
+    backend's emitter with another's coverage, which is the class of mistake this record
+    exists to make impossible.
+    """
+
+    toolchain: Mapping[str, object]
+    conformance: "Callable[[Mapping[str, object], Sequence[Mapping[str, object]]], list[Finding]]"
+    backend: Any | None = None
+    asset: tuple[str, str, str] | None = None
+    closed_semantics: str | None = None
+
+    @property
+    def emitter(self) -> object | None:
+        return None if self.backend is None else self.backend.emit
+
+    @property
+    def emittable_kinds(self) -> frozenset:
+        """The operation kinds this profile's backend has a body for.
+
+        Derived from the backend's own dispatch table, so it states what the code does
+        rather than what someone remembered it did.
+        """
+
+        if self.backend is None:
+            return frozenset()
+        return self.backend.SUPPORTED_OPERATION_KINDS
+
+    @property
+    def emittable_dtypes(self) -> frozenset:
+        """The dtypes this profile's backend can name wherever it has to name them."""
+
+        if self.backend is None:
+            return frozenset()
+        return self.backend.SUPPORTED_DTYPES
+
+    def __post_init__(self) -> None:
+        if (self.backend is None) == (self.asset is None):
+            raise CompilerError("a profile lowers through exactly one of backend or asset")
+        if self.asset is None and self.closed_semantics is not None:
+            raise CompilerError("an emitted profile pins no closed semantics digest")
+
+
+_PROFILES: Mapping[str, _Profile] = {
+    "flash_kmeans_b32_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_flash_kmeans_assign",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_flash_kmeans_b32_smoke_conformance,
+        backend=emit_triton,
     ),
-    "flash_kmeans_assignment_full": (
-        "src/open_cake_ir/compiler/assets/flash_kmeans_assignment_full.py.tmpl",
-        "__SCHEDULE_SHA256__",
-        "cake_flash_kmeans_assignment_full",
+    "flash_kmeans_assignment_full": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "cutlass_cute_dsl",
+            "entry_point": "cake_flash_kmeans_assignment_full",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_flash_kmeans_assignment_full_conformance,
+        backend=emit_cutedsl,
     ),
-    "tinygemm2_stage4_split_k": (
-        "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
-        "@@SCHEDULE_SHA256@@",
-        "cake_tinygemm2_stage4_split_k",
+    # The first operator admitted after the registry became one record. It needed no
+    # emitter change, no formula of its own and no entry anywhere else: an operator is
+    # now one row plus the Schedules that claim it.
+    # The second operator admitted through the same row. It needed two vocabulary
+    # additions -- a max fold and `exp`/`div` -- and no emitter structure at all, which
+    # is the claim the registry was reshaped to make testable.
+    "softmax_b8_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_softmax_b8_smoke",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_softmax_b8_smoke_conformance,
+        backend=emit_triton,
+    ),
+    # The third operator admitted through the same row, and the first that needed no
+    # vocabulary at all: two folds, seven arithmetic primitives and two broadcasts that
+    # were already there for the two before it.
+    # The first admitted operator whose loop walks the contraction rather than an output
+    # axis, which is what a GEMM is and what the accumulation derivation exists for.
+    "gemm_bias_b1_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_gemm_bias_b1_smoke",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_gemm_bias_b1_smoke_conformance,
+        backend=emit_triton,
+    ),
+    "layernorm_b8_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_layernorm_b8_smoke",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_layernorm_b8_smoke_conformance,
+        backend=emit_triton,
+    ),
+    "rmsnorm_b8_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_rmsnorm_b8_smoke",
+            "target": "sm_100a",
+            "entry_abi": "three_cuda_tensors_current_stream",
+        },
+        conformance=_rmsnorm_b8_smoke_conformance,
+        backend=emit_triton,
+    ),
+    "swiglu_b8_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_swiglu_b8_smoke",
+            "target": "sm_100a",
+            "entry_abi": "three_cuda_tensors_current_stream",
+        },
+        conformance=_swiglu_b8_smoke_conformance,
+        backend=emit_triton,
+    ),
+    "tinygemm2_stage4_split_k": _Profile(
+        toolchain={
+            "source_language": "cuda_cpp",
+            "compiler": "nvcc",
+            "target": "sm_100a",
+            "entry_abi": "tinygemm2_tensor_map_v1",
+        },
+        conformance=_tinygemm2_stage4_split_k_conformance,
+        asset=(
+            "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
+            "@@SCHEDULE_SHA256@@",
+            "cake_tinygemm2_stage4_split_k",
+        ),
+        # Re-pinned when reduce_sum became reduce with op: sum. The pin says which
+        # Schedule may reach this checked-in template, and the kernel it describes
+        # did not change -- only how the Schedule writes it down.
+        closed_semantics="7aa2fdb287d7d8af141ef83b84cf17409a2a4de8c4f90c6eaac3a4490865e799",
     ),
 }
-_TOOLCHAIN_REQUIREMENTS = {
-    "flash_kmeans_b32_smoke": {
-        "source_language": "python",
-        "compiler": "triton",
-        "target": "sm_100a",
-        "entry_abi": "four_cuda_tensors_current_stream",
-    },
-    "flash_kmeans_assignment_full": {
-        "source_language": "python",
-        "compiler": "cutlass_cute_dsl",
-        "target": "sm_100a",
-        "entry_abi": "four_cuda_tensors_current_stream",
-    },
-    "tinygemm2_stage4_split_k": {
-        "source_language": "cuda_cpp",
-        "compiler": "nvcc",
-        "target": "sm_100a",
-        "entry_abi": "tinygemm2_tensor_map_v1",
-    },
-}
-_CLOSED_PROFILE_SEMANTICS = {
-    "flash_kmeans_assignment_full": "0ba667c2f306a0b0c8f52f3a48d8d4a1eb62603ac46b3eab56e877d4adc14925",
-    "tinygemm2_stage4_split_k": "e6e1bcf2ab027e9e6fa8591843c605aa5601115c9104a4e512950b5cb330260c",
-}
-_R16_STATIC_SEMANTICS_SHA256 = "2cf2de9ffa78b319fe93a0002826b427c9c92b981b9d297dcec522bf25b8b41a"
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -296,7 +642,11 @@ def _load_target_definition(
         "synchronization_contracts",
         "citations",
     }
-    if set(document) != expected_fields or document.get("schema_version") != 1:
+    optional_fields = {"occupancy"}
+    if (
+        not expected_fields <= set(document) <= expected_fields | optional_fields
+        or document.get("schema_version") != 1
+    ):
         raise CompilerError(f"target definition {target_id!r} fields differ")
     if document.get("target_id") != target_id:
         raise CompilerError(f"target definition {target_id!r} identity differs")
@@ -370,6 +720,7 @@ def _load_target_definition(
             )
         ),
         citations=tuple(MappingProxyType(dict(item)) for item in citations),
+        document=MappingProxyType(dict(document)),
     )
 
 
@@ -434,38 +785,6 @@ def _semantic_schedule_sha256(schedule: Mapping[str, object]) -> str:
     return sha256(_canonical_json_bytes(semantic)).hexdigest()
 
 
-def _r16_static_semantics_sha256(schedule: Mapping[str, object]) -> str:
-    semantic = cast(dict[str, object], json.loads(_canonical_json_bytes(schedule)))
-    semantic.pop("schedule_id", None)
-    metadata = cast(dict[str, object], semantic["metadata"])
-    metadata.pop("legacy_source", None)
-    metadata.pop("workload_contract_sha256", None)
-    axes = cast(dict[str, object], semantic["program_map"])["axes"]
-    for axis in cast(list[dict[str, object]], axes):
-        if axis.get("name") == "token_block":
-            axis["tile"] = "__BLOCK_N__"
-    loop = cast(list[dict[str, object]], semantic["tile_loops"])[0]
-    loop["tile"] = "__BLOCK_K__"
-    cast(dict[str, object], loop["range_options"])["num_stages"] = "__NUM_STAGES__"
-    cast(list[dict[str, object]], semantic["roles"])[0]["warps"] = ["__WARPS__"]
-    buffers = {
-        cast(str, buffer["name"]): buffer
-        for buffer in cast(list[dict[str, object]], semantic["buffers"])
-    }
-    cast(list[object], buffers["tokens"]["shape"])[:] = ["__B__", "__N__", "__D__"]
-    cast(list[object], buffers["centroids"]["shape"])[:] = ["__B__", "__K__", "__D__"]
-    cast(list[object], buffers["centroid_sq"]["shape"])[:] = ["__B__", "__K__"]
-    cast(list[object], buffers["assignments"]["shape"])[:] = ["__B__", "__N__"]
-    cast(list[object], buffers["token_tile"]["shape"])[0] = "__BLOCK_N__"
-    cast(list[object], buffers["token_tile"]["shape"])[1] = "__D__"
-    cast(list[object], buffers["distance_tile"]["shape"])[0] = "__BLOCK_N__"
-    cast(list[object], buffers["best_index_tile"]["shape"])[0] = "__BLOCK_N__"
-    cast(list[object], buffers["centroid_tile"]["shape"])[0] = "__BLOCK_K__"
-    cast(list[object], buffers["centroid_tile"]["shape"])[1] = "__D__"
-    cast(list[object], buffers["distance_tile"]["shape"])[1] = "__BLOCK_K__"
-    return sha256(_canonical_json_bytes(semantic)).hexdigest()
-
-
 def _shape_of(
     buffers: Mapping[str, Mapping[str, object]],
     name: str,
@@ -477,100 +796,6 @@ def _shape_of(
     ):
         return None
     return tuple(cast(list[int], shape))
-
-
-def _r16_lowering_parameters(
-    schedule: Mapping[str, object],
-    roles: Sequence[Mapping[str, object]],
-    buffers: Mapping[str, Mapping[str, object]],
-    parsed_grid: tuple[int, int, int],
-) -> dict[str, int] | None:
-    program_map = _object(schedule.get("program_map"), "program_map")
-    axes = _objects(program_map.get("axes"), "program_map.axes")
-    tile_loops = _objects(schedule.get("tile_loops"), "tile_loops")
-    if len(axes) != 2 or len(tile_loops) != 1 or len(roles) != 1:
-        return None
-    axis_by_name = {axis.get("name"): axis for axis in axes}
-    token_axis = axis_by_name.get("token_block")
-    batch_axis = axis_by_name.get("batch")
-    loop = tile_loops[0]
-    options = _object(loop.get("range_options"), "tile_loops[0].range_options")
-    role_warps = roles[0].get("warps")
-    if (
-        token_axis is None
-        or batch_axis is None
-        or token_axis.get("axis") != 0
-        or token_axis.get("buffer") != "tokens"
-        or token_axis.get("dimension") != 1
-        or batch_axis.get("axis") != 1
-        or batch_axis.get("buffer") != "tokens"
-        or batch_axis.get("dimension") != 0
-        or batch_axis.get("tile") != 1
-        or loop.get("name") != "centroid_loop"
-        or loop.get("buffer") != "centroids"
-        or loop.get("dimension") != 1
-        or loop.get("body") != ["load_centroids", "distance_mma", "argmin"]
-        or not isinstance(role_warps, list)
-        or len(role_warps) not in {4, 8}
-        or role_warps != list(range(len(role_warps)))
-        or options.get("loop_unroll_factor") != 1
-        or options.get("flatten") is not False
-        or options.get("warp_specialize") is not False
-        or options.get("disallow_acc_multi_buffer") is not True
-        or options.get("disable_licm") is not False
-    ):
-        return None
-    block_n = token_axis.get("tile")
-    block_k = loop.get("tile")
-    num_stages = options.get("num_stages")
-    if (
-        not isinstance(block_n, int)
-        or isinstance(block_n, bool)
-        or block_n not in {64, 128, 256}
-        or not isinstance(block_k, int)
-        or isinstance(block_k, bool)
-        or block_k not in {32, 64, 128}
-        or not isinstance(num_stages, int)
-        or isinstance(num_stages, bool)
-        or not 1 <= num_stages <= 4
-    ):
-        return None
-    tokens_shape = _shape_of(buffers, "tokens")
-    if tokens_shape is None or len(tokens_shape) != 3:
-        return None
-    batch, token_count, feature_count = tokens_shape
-    centroids_shape = _shape_of(buffers, "centroids")
-    if centroids_shape is None or len(centroids_shape) != 3:
-        return None
-    centroid_batch, centroid_count, centroid_features = centroids_shape
-    if (
-        feature_count != 128
-        or centroid_batch != batch
-        or centroid_features != feature_count
-        or centroid_count % block_k != 0
-        or _shape_of(buffers, "centroid_sq") != (batch, centroid_count)
-        or _shape_of(buffers, "assignments") != (batch, token_count)
-        or _shape_of(buffers, "token_tile") != (block_n, feature_count)
-        or _shape_of(buffers, "centroid_tile") != (block_k, feature_count)
-        or _shape_of(buffers, "distance_tile") != (block_n, block_k)
-        or _shape_of(buffers, "best_index_tile") != (block_n,)
-        or parsed_grid != ((token_count + block_n - 1) // block_n, batch, 1)
-        or _r16_static_semantics_sha256(schedule) != _R16_STATIC_SEMANTICS_SHA256
-    ):
-        return None
-    return {
-        "block_n": block_n,
-        "block_k": block_k,
-        "num_stages": num_stages,
-        "num_warps": len(role_warps),
-        "batch": batch,
-        "token_count": token_count,
-        "centroid_count": centroid_count,
-        "feature_count": feature_count,
-        "grid_x": parsed_grid[0],
-        "grid_y": parsed_grid[1],
-        "grid_z": parsed_grid[2],
-    }
 
 
 class Compiler:
@@ -850,6 +1075,18 @@ class Compiler:
             raise CompilerError("schedule root fields or schema_version differ")
         if ("grid" in schedule) == ("program_map" in schedule):
             raise CompilerError("schedule must define exactly one of grid or program_map")
+
+        # Structural admissibility has one owner: the typed IR. It is stricter than the
+        # checks below -- closed vocabularies are enums and unknown fields are refused --
+        # so a document that reaches the rest of this method is known to be well formed.
+        #
+        # A structural violation is a Finding, not an exception. The agent needs a repair
+        # target, and an exception crossing the Authoring Environment becomes a harness
+        # fault rather than candidate feedback.
+        try:
+            typed_schedule = Schedule.from_dict(schedule)
+        except ScheduleParseError as error:
+            return self._structural_rejection(schedule, error)
         schedule_id = _name(schedule.get("schedule_id"), "schedule.schedule_id")
         target = _name(schedule.get("target"), "schedule.target")
         findings: list[Finding] = []
@@ -879,37 +1116,11 @@ class Compiler:
             _objects(schedule.get("tile_loops", []), "tile_loops")
             _objects(schedule.get("access_maps", []), "access_maps")
 
-        used_warps: set[int] = set()
-        for index, role in enumerate(roles):
-            warps = role.get("warps")
-            if not isinstance(warps, list) or not warps:
-                raise CompilerError(f"roles[{index}].warps must be a non-empty list")
-            for warp in warps:
-                if not isinstance(warp, int) or isinstance(warp, bool) or warp < 0:
-                    raise CompilerError(f"roles[{index}].warps contains an invalid warp")
-                if warp in used_warps:
-                    findings.append(
-                        Finding("ROLE_WARP_OVERLAP", f"roles[{index}].warps", f"warp {warp} has multiple roles")
-                    )
-                used_warps.add(warp)
+        used_warps = {
+            warp for role in typed_schedule.roles for warp in role.warps
+        }
 
         if target_definition is not None:
-            if len(used_warps) > target_definition.maximum_warps_per_cta:
-                findings.append(
-                    Finding(
-                        "TARGET_WARP_LIMIT",
-                        "roles",
-                        "Schedule exceeds the Target warp limit",
-                    )
-                )
-            if len(used_warps) * 32 > target_definition.maximum_threads_per_cta:
-                findings.append(
-                    Finding(
-                        "TARGET_THREAD_LIMIT",
-                        "roles",
-                        "Schedule exceeds the Target thread limit",
-                    )
-                )
             for axis, (observed, maximum) in enumerate(zip(parsed_grid, target_definition.maximum_grid)):
                 if observed > maximum:
                     findings.append(
@@ -1112,94 +1323,90 @@ class Compiler:
             )
         profile = _name(metadata.get("profile"), "metadata.profile")
         lowering_parameters: dict[str, int] = {}
-        if profile not in _LOWERING_PROFILES:
+        definition = _PROFILES.get(profile)
+        if definition is None:
             findings.append(
                 Finding("LOWERING_PROFILE_UNSUPPORTED", "metadata.profile", f"profile {profile!r} is unsupported")
             )
-        elif profile == "flash_kmeans_b32_smoke":
-            tokens_shape = _shape_of(buffer_by_name, "tokens")
-            centroids_shape = _shape_of(buffer_by_name, "centroids")
-            external_shapes_cohere = (
-                tokens_shape is not None
-                and len(tokens_shape) == 3
-                and centroids_shape is not None
-                and len(centroids_shape) == 3
-                and tokens_shape[0] == centroids_shape[0]
-                and tokens_shape[2] == centroids_shape[2] == 128
-                and _shape_of(buffer_by_name, "centroid_sq")
-                == (tokens_shape[0], centroids_shape[1])
-                and _shape_of(buffer_by_name, "assignments")
-                == (tokens_shape[0], tokens_shape[1])
-            )
-            if not external_shapes_cohere:
-                findings.append(
-                    Finding(
-                        "PROFILE_SHAPE_MISMATCH",
-                        "buffers.tokens.shape",
-                        "Flash-KMeans external tensor shapes are inconsistent",
-                        blocks_acceptance=False,
-                        blocks_lowering=True,
-                    )
-                )
-            else:
-                parameters = _r16_lowering_parameters(
-                    schedule, roles, buffer_by_name, parsed_grid
-                )
-                if parameters is None:
+        else:
+            findings.extend(definition.conformance(buffer_by_name, operations))
+            # A kind this profile's backend has no body for cannot be lowered wherever it
+            # is placed, and that is knowable here rather than when emission raises. The
+            # Schedule is not ill-formed -- the IR expresses the kind and the Target
+            # supports it -- so this blocks lowering and not acceptance, and it names the
+            # backend rather than the author.
+            #
+            # Only for a profile that emits. The asset path fills a digest into a
+            # checked-in template and has no operation bodies at all, so it has no
+            # coverage to be outside of.
+            for index, buffer in enumerate(buffers if definition.backend else ()):
+                dtype = buffer.get("dtype") if isinstance(buffer, Mapping) else None
+                if dtype not in _DTYPE_BYTES:
+                    continue
+                if DType(dtype) not in definition.emittable_dtypes:
                     findings.append(
                         Finding(
-                            "PROFILE_SEMANTICS_MISMATCH",
-                            "metadata.profile",
-                            "Flash-KMeans b32 Schedule commitments cannot be lowered coherently",
+                            "PROFILE_DTYPE_UNEMITTABLE",
+                            f"buffers[{index}].dtype",
+                            f"profile {profile!r} lowers through a backend that cannot "
+                            f"name dtype {dtype!r}",
                             blocks_acceptance=False,
                             blocks_lowering=True,
                         )
                     )
-                else:
-                    lowering_parameters = parameters
-        elif profile == "flash_kmeans_assignment_full":
-            distance = buffer_by_name.get("distance_scratch")
-            distance_shape = distance.get("shape") if distance is not None else None
-            if distance_shape != [128, 1024]:
-                findings.append(
-                    Finding(
-                        "PROFILE_SHAPE_MISMATCH",
-                        "buffers.distance_scratch.shape",
-                        "full Flash-KMeans assignment requires distance_scratch shape [128, 1024]",
-                        blocks_acceptance=False,
-                        blocks_lowering=True,
+            for index, operation in enumerate(operations if definition.backend else ()):
+                kind = operation.get("kind")
+                if kind not in _SUPPORTED_OPERATION_KINDS:
+                    continue
+                if OperationKind(kind) not in definition.emittable_kinds:
+                    findings.append(
+                        Finding(
+                            "PROFILE_OPERATION_UNEMITTABLE",
+                            f"operations[{index}].kind",
+                            f"profile {profile!r} lowers through a backend with no body "
+                            f"for operation kind {kind!r}",
+                            blocks_acceptance=False,
+                            blocks_lowering=True,
+                        )
                     )
-                )
-        elif profile == "tinygemm2_stage4_split_k":
-            reduction = next(
-                (operation for operation in operations if operation.get("id") == "reduce_partials"),
-                None,
-            )
-            parameters = (
-                _object(reduction.get("parameters"), "operations.reduce_partials.parameters")
-                if reduction is not None
-                else {}
-            )
-            if (
-                reduction is None
-                or reduction.get("kind") != "reduce_sum"
-                or parameters.get("parts") != 4
-                or parameters.get("scope") != "cta"
-            ):
-                findings.append(
-                    Finding(
-                        "REDUCE_SUM_SEMANTICS",
-                        "operations.reduce_partials.parameters.parts",
-                        "TinyGEMM2 stage4 requires a four-part CTA reduction",
+            # The pinned Triton automatic-warp-specialization pass requires every
+            # reduction in the specialized loop to have one result. `reduce_argmin`
+            # returns both value and index, so this exact combination is a known
+            # backend legality failure rather than an in-process toolchain crash.
+            if definition.backend is emit_triton:
+                operations_by_id = {
+                    operation.get("id"): operation for operation in operations
+                }
+                for index, loop in enumerate(
+                    _objects(schedule.get("tile_loops", []), "tile_loops")
+                ):
+                    options = _object(
+                        loop.get("range_options"),
+                        f"tile_loops[{index}].range_options",
                     )
-                )
-        if profile in _CLOSED_PROFILE_SEMANTICS:
+                    body = _strings(loop.get("body"), f"tile_loops[{index}].body")
+                    if options.get("warp_specialize") and any(
+                        operations_by_id.get(operation_id, {}).get("kind")
+                        == OperationKind.REDUCE_ARGMIN.value
+                        for operation_id in body
+                    ):
+                        findings.append(
+                            Finding(
+                                "TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED",
+                                f"tile_loops[{index}].range_options.warp_specialize",
+                                "the pinned Triton backend cannot warp-specialize a "
+                                "loop containing the value-and-index argmin reduction",
+                                blocks_acceptance=False,
+                                blocks_lowering=True,
+                            )
+                        )
+        if definition is not None and definition.closed_semantics is not None:
             semantic_sha = _semantic_schedule_sha256(schedule)
             known_delta = any(
                 finding.code in {"PROFILE_SHAPE_MISMATCH", "REDUCE_SUM_SEMANTICS"}
                 for finding in findings
             )
-            if semantic_sha != _CLOSED_PROFILE_SEMANTICS[profile] and not known_delta:
+            if semantic_sha != definition.closed_semantics and not known_delta:
                 findings.append(
                     Finding(
                         "PROFILE_SEMANTICS_MISMATCH",
@@ -1209,6 +1416,32 @@ class Compiler:
                         blocks_lowering=True,
                     )
                 )
+
+        findings.extend(self._contract_findings(typed_schedule, target))
+
+        # The IR permits instruction-free MMA assets, but an otherwise-lowerable
+        # backend profile must choose the Target contract that determines its lowering.
+        # This is an eligibility-completeness check, not a redundant linter: a Schedule
+        # already blocked for another exact reason retains that stable Finding set.
+        if (
+            definition is not None
+            and definition.backend
+            and not any(finding.blocks_lowering for finding in findings)
+        ):
+            for index, operation in enumerate(operations):
+                if operation.get("kind") == OperationKind.MMA.value and not _object(
+                    operation.get("parameters"), f"operations[{index}].parameters"
+                ).get("instruction"):
+                    findings.append(
+                        Finding(
+                            "PROFILE_MMA_INSTRUCTION_REQUIRED",
+                            f"operations[{index}].parameters.instruction",
+                            f"profile {profile!r} lowers through a backend whose mma "
+                            "must name an instruction contract",
+                            blocks_acceptance=False,
+                            blocks_lowering=True,
+                        )
+                    )
 
         accepted = not any(finding.blocks_acceptance for finding in findings)
         lowering_eligible = accepted and not any(
@@ -1239,6 +1472,166 @@ class Compiler:
             schedule_bytes=_canonical_json_bytes(schedule),
         )
 
+    def _structural_rejection(
+        self, schedule: Mapping[str, object], error: ScheduleParseError
+    ) -> Assessment:
+        """One Assessment carrying the localized reason a Schedule is not well formed."""
+
+        message = str(error)
+        path, _, detail = message.partition(" ")
+        metadata = schedule.get("metadata")
+        profile = ""
+        if isinstance(metadata, Mapping) and isinstance(metadata.get("profile"), str):
+            profile = cast(str, metadata["profile"])
+        schedule_id = schedule.get("schedule_id")
+        target = schedule.get("target")
+        return Assessment(
+            compiler_revision_id=self._revision_id,
+            compiler_revision_sha256=self._revision_sha256,
+            schedule_id=schedule_id if isinstance(schedule_id, str) else "",
+            schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
+            target=target if isinstance(target, str) else "",
+            profile=profile,
+            accepted=False,
+            lowering_eligible=False,
+            findings=(
+                Finding("SCHEDULE_STRUCTURE", path, detail.strip() or message),
+            ),
+            analysis=MappingProxyType({}),
+            lowering_parameters=MappingProxyType({}),
+            calibration_available=False,
+            schedule_bytes=_canonical_json_bytes(schedule),
+        )
+
+    def _emit(self, assessment: Assessment, emitter) -> Lowering:
+        """Generate the target source from the Schedule."""
+
+        definition = self._target_definitions.get(assessment.target)
+        if definition is None:
+            raise CompilerError(f"Target {assessment.target!r} is not bound by this Revision")
+        schedule = Schedule.from_dict(
+            _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
+        )
+        try:
+            emission = emitter(
+                schedule,
+                Target.from_dict(dict(definition.document)),
+                entry_point=_PROFILES[assessment.profile].toolchain["entry_point"],
+            )
+        except EmitError as error:
+            raise CompilerError(f"Schedule does not determine its source: {error}") from error
+        source = emission.source.replace("__SCHEDULE_SHA256__", assessment.schedule_sha256)
+        return Lowering(
+            compiler_revision_id=self._revision_id,
+            compiler_revision_sha256=self._revision_sha256,
+            schedule_id=assessment.schedule_id,
+            schedule_sha256=assessment.schedule_sha256,
+            target=assessment.target,
+            profile=assessment.profile,
+            generated=True,
+            entry_point=emission.entry_point,
+            source=source,
+            source_sha256=sha256(source.encode("utf-8")).hexdigest(),
+            source_map=MappingProxyType(_source_map(source)),
+            toolchain_requirements=MappingProxyType(
+                {
+                    **_PROFILES[assessment.profile].toolchain,
+                    **(emission.toolchain or {}),
+                }
+            ),
+        )
+
+    def _contract_findings(
+        self, schedule: Schedule, target: str
+    ) -> list[Finding]:
+        """Target-derived contract violations, as localized Findings.
+
+        Blocking violations and reports both join the Assessment; a report carries
+        bottleneck attribution and reaches the agent through the Study's feedback
+        projection without affecting acceptance. Hints -- a commitment the Schedule
+        declined to make, such as an undeclared swizzle -- describe its position rather
+        than its behaviour, and stay out.
+        """
+
+        definition = self._target_definitions.get(target)
+        if definition is None:
+            return []
+        try:
+            typed_target = Target.from_dict(dict(definition.document))
+        except TargetParseError:
+            return []
+        findings: list[Finding] = []
+        for item in verify_contracts(schedule, typed_target):
+            if item.blocks_lowering:
+                findings.append(Finding(item.code, item.path, item.message))
+            elif item.severity is FindingSeverity.REPORT:
+                findings.append(
+                    Finding(
+                        item.code,
+                        item.path,
+                        item.message,
+                        blocks_acceptance=False,
+                        blocks_lowering=False,
+                    )
+                )
+        return findings
+
+    def rank(
+        self, assessments: Sequence[Assessment]
+    ) -> tuple[tuple["Cost", ...], tuple[str, ...]]:
+        """Order calibrated eligible candidates before any of them reaches a GPU.
+
+        This is the paper's pre-GPU filter stage, and the boundary it keeps is the point:
+        an Assessment that the gates refused is not ranked at all. Ranking a rejected
+        candidate would let a good score argue against a hard gate, and the gates are what
+        the harness is for. Rejected and unscorable candidates come back named rather than
+        dropped, so a caller cannot mistake the order for a complete view of its set.
+
+        The released Revision owns calibration coverage. An eligible candidate from an
+        uncovered profile is returned as withheld rather than being assigned precision
+        that the Revision does not claim. The order carries no predicted time;
+        `compiler/ranking.py` defines the dormant structural primitive and
+        `docs/ANALYSIS_CALIBRATION.md` records the measurements required to activate it.
+        """
+
+        eligible: list[Schedule] = []
+        withheld: list[str] = []
+        for assessment in assessments:
+            if (
+                assessment.compiler_revision_id != self._revision_id
+                or assessment.compiler_revision_sha256 != self._revision_sha256
+            ):
+                raise CompilerError("assessment belongs to a different Compiler Revision")
+            replayed = self.assess(
+                _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
+            )
+            if assessment != replayed:
+                raise CompilerError(
+                    "assessment fields differ from canonical Schedule replay"
+                )
+            if not assessment.lowering_eligible:
+                withheld.append(assessment.schedule_id)
+                continue
+            if not assessment.calibration_available:
+                withheld.append(assessment.schedule_id)
+                continue
+            definition = self._target_definitions.get(assessment.target)
+            if definition is None:
+                withheld.append(assessment.schedule_id)
+                continue
+            eligible.append(
+                Schedule.from_dict(
+                    _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
+                )
+            )
+        if not eligible:
+            return (), tuple(withheld)
+        target = Target.from_dict(
+            dict(self._target_definitions[assessments[0].target].document)
+        )
+        scored, unscored = rank_candidates(eligible, target)
+        return scored, tuple(withheld) + unscored
+
     def lower(self, assessment: Assessment) -> Lowering:
         """Lower an eligible Assessment to deterministic inspectable target source."""
 
@@ -1255,7 +1648,11 @@ class Compiler:
         if not assessment.lowering_eligible:
             codes = ", ".join(finding.code for finding in assessment.findings)
             raise CompilerError(f"assessment is not lowering eligible: {codes}")
-        asset = _LOWERING_ASSETS.get(assessment.profile)
+        definition = _PROFILES[assessment.profile]
+        emitter = definition.emitter
+        if emitter is not None:
+            return self._emit(assessment, emitter)
+        asset = definition.asset
         if asset is None:
             raise CompilerError(f"lowering profile {assessment.profile!r} is not implemented")
         relative_path, placeholder, entry_point = asset
@@ -1264,58 +1661,8 @@ class Compiler:
         if template.count(placeholder) != 1:
             raise CompilerError(f"lowering template for {assessment.profile!r} has an invalid placeholder")
         source = template.replace(placeholder, assessment.schedule_sha256)
-        if assessment.profile == "flash_kmeans_b32_smoke":
-            replacements = {
-                "__GRID_X__": assessment.lowering_parameters.get("grid_x"),
-                "__GRID_Y__": assessment.lowering_parameters.get("grid_y"),
-                "__GRID_Z__": assessment.lowering_parameters.get("grid_z"),
-                "__BLOCK_N__": assessment.lowering_parameters.get("block_n"),
-                "__BLOCK_K__": assessment.lowering_parameters.get("block_k"),
-                "__NUM_STAGES__": assessment.lowering_parameters.get("num_stages"),
-                "__NUM_WARPS__": assessment.lowering_parameters.get("num_warps"),
-                "__BATCH__": assessment.lowering_parameters.get("batch"),
-                "__TOKEN_COUNT__": assessment.lowering_parameters.get("token_count"),
-                "__CENTROID_COUNT__": assessment.lowering_parameters.get("centroid_count"),
-                "__FEATURE_COUNT__": assessment.lowering_parameters.get("feature_count"),
-            }
-            for token, replacement in replacements.items():
-                if not isinstance(replacement, int) or source.count(token) == 0:
-                    raise CompilerError(f"lowering parameter {token} is missing or unused")
-                source = source.replace(token, str(replacement))
-            if re.search(r"__[A-Z][A-Z0-9_]+__", source):
-                raise CompilerError("lowered r16 source retains an unresolved placeholder")
         source_map = _source_map(source)
-        requirements = dict(_TOOLCHAIN_REQUIREMENTS[assessment.profile])
-        if assessment.profile == "flash_kmeans_b32_smoke":
-            requirements.update(
-                {
-                    "kernel_entry_point": "_cake_flash_kmeans_assign_kernel",
-                    "signature": {
-                        "tokens": "*bf16",
-                        "centroids": "*bf16",
-                        "centroid_sq": "*fp32",
-                        "assignments": "*i32",
-                    },
-                    "compile_constants": {
-                        "B": assessment.lowering_parameters["batch"],
-                        "N": assessment.lowering_parameters["token_count"],
-                        "K": assessment.lowering_parameters["centroid_count"],
-                        "D": assessment.lowering_parameters["feature_count"],
-                        "BLOCK_N": assessment.lowering_parameters["block_n"],
-                        "BLOCK_K": assessment.lowering_parameters["block_k"],
-                        "NUM_STAGES": assessment.lowering_parameters["num_stages"],
-                    },
-                    "compile_options": {
-                        "num_warps": assessment.lowering_parameters["num_warps"],
-                        "num_stages": assessment.lowering_parameters["num_stages"],
-                    },
-                    "grid": [
-                        assessment.lowering_parameters["grid_x"],
-                        assessment.lowering_parameters["grid_y"],
-                        assessment.lowering_parameters["grid_z"],
-                    ],
-                }
-            )
+        requirements = dict(definition.toolchain)
         return Lowering(
             compiler_revision_id=self._revision_id,
             compiler_revision_sha256=self._revision_sha256,
@@ -1323,6 +1670,7 @@ class Compiler:
             schedule_sha256=assessment.schedule_sha256,
             target=assessment.target,
             profile=assessment.profile,
+            generated=False,
             entry_point=entry_point,
             source=source,
             source_sha256=sha256(source.encode("utf-8")).hexdigest(),

@@ -146,7 +146,15 @@
       ],
       "parameters": {
         "accumulator": "fp32",
-        "formula": "squared_euclidean_xsq_elided"
+        "formula": "squared_euclidean_xsq_elided",
+        "instruction": {
+          "contract": "triton.dot.bf16_fp32"
+        },
+        "tile_shape": [
+          256,
+          64,
+          128
+        ]
       }
     },
     {

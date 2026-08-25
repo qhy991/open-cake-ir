@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Freeze one live non-scientific matched Study from qualified authorities."""
+"""Freeze one live matched Study from qualified authorities."""
 
 from __future__ import annotations
 
@@ -22,6 +22,9 @@ from open_cake_ir.lab import (  # noqa: E402
     NvccToolchainBuilder,
     ProviderQualificationReceipt,
     broker_execution_sha256,
+    matched_evidence_policy_v1,
+    required_live_provider_qualification_scope,
+    scientific_matched_analysis_plan_v2,
 )
 
 
@@ -57,6 +60,37 @@ def _refresh_raw_reference(root: Path, value: object, context: str) -> None:
     reference["sha256"] = sha256(path.resolve(strict=True).read_bytes()).hexdigest()
 
 
+def _replace_artifact_feedback_budget(
+    study: dict[str, object],
+    *,
+    provider_token_limit: int | None,
+    maximum_turns: int | None,
+) -> None:
+    """Replace the live artifact budget with one bounded feedback horizon."""
+
+    if (provider_token_limit is None) != (maximum_turns is None):
+        raise ValueError(
+            "provider-token-limit and maximum-turns must be declared together"
+        )
+    if provider_token_limit is None:
+        return
+    if study.get("claim_scope") != "artifact_optimization_only":
+        raise ValueError("feedback budget replacement is artifact-optimization only")
+    if (
+        not isinstance(provider_token_limit, int)
+        or isinstance(provider_token_limit, bool)
+        or provider_token_limit <= 0
+        or not isinstance(maximum_turns, int)
+        or isinstance(maximum_turns, bool)
+        or maximum_turns <= 0
+    ):
+        raise ValueError("feedback budget values must be positive integers")
+    budget = _object(study.get("budget"), "study.budget")
+    budget["limit"] = provider_token_limit
+    budget["checkpoints"] = [provider_token_limit]
+    budget["maximum_turns"] = maximum_turns
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=ROOT)
@@ -65,8 +99,37 @@ def main() -> int:
     parser.add_argument("--qualification-anchor", type=Path, required=True)
     parser.add_argument("--executor", type=Path, required=True)
     parser.add_argument("--runtime-config", type=Path, required=True)
+    parser.add_argument(
+        "--reasoning-effort",
+        required=True,
+        help="exact qualified provider reasoning effort to freeze for both arms",
+    )
     parser.add_argument("--study-id", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--enable-attribution",
+        action="store_true",
+        help=(
+            "profile every correctness-qualified search survivor and expose the "
+            "selected survivor's checked summary"
+        ),
+    )
+    parser.add_argument(
+        "--provider-token-limit",
+        type=int,
+        help=(
+            "replace an artifact-only live budget and use this value as its sole "
+            "terminal checkpoint; requires --maximum-turns"
+        ),
+    )
+    parser.add_argument(
+        "--maximum-turns",
+        type=int,
+        help=(
+            "hard Turn bound for an artifact-only live budget; requires "
+            "--provider-token-limit"
+        ),
+    )
     arguments = parser.parse_args()
 
     root = arguments.project_root.resolve(strict=True)
@@ -79,11 +142,17 @@ def main() -> int:
     )
     if (
         study.get("kind") != "matched_search"
-        or study.get("claim_scope")
-        not in {"system_qualification_only", "artifact_optimization_only"}
         or study.get("state") != "frozen"
     ):
         raise ValueError("live matched Study template policy differs")
+    if study.get("claim_scope") == "scientific_matched_search":
+        study["analysis_plan"] = dict(scientific_matched_analysis_plan_v2())
+    study["evidence"] = dict(matched_evidence_policy_v1())
+    _replace_artifact_feedback_budget(
+        study,
+        provider_token_limit=arguments.provider_token_limit,
+        maximum_turns=arguments.maximum_turns,
+    )
     qualification_path = arguments.qualification.resolve(strict=True)
     qualification_relative = _project_relative(
         root, qualification_path, "provider qualification"
@@ -91,11 +160,12 @@ def main() -> int:
     anchor_path = arguments.qualification_anchor.resolve(strict=True)
     anchor_relative = _project_relative(root, anchor_path, "provider qualification anchor")
     qualification = ProviderQualificationReceipt.load(qualification_path)
-    if not qualification.qualified or qualification.scope not in {
-        "live_two_turn_current_provider",
-        "live_two_turn_tool_rich_provider",
-    }:
-        raise ValueError("live Study requires a live provider qualification")
+    if (
+        not qualification.qualified
+        or qualification.scope
+        != required_live_provider_qualification_scope(str(study["claim_scope"]))
+    ):
+        raise ValueError("live Study requires the Claim Scope's provider qualification")
     anchor = _object(json.loads(anchor_path.read_text(encoding="utf-8")), "anchor")
     if anchor.get("qualification_receipt_sha256") != qualification.canonical_sha256:
         raise ValueError("provider qualification anchor differs")
@@ -134,6 +204,7 @@ def main() -> int:
         arm = _object(arms[arm_name], f"study.arms.{arm_name}")
         provider = _object(arm["provider"], f"study.arms.{arm_name}.provider")
         provider["revision"] = qualification.provider_revision
+        provider["reasoning_effort"] = arguments.reasoning_effort
         provider["executable_sha256"] = executable_sha256
         provider["qualification"] = {
             "path": qualification_relative,
@@ -177,6 +248,30 @@ def main() -> int:
         service_user=str(broker_config["service_user"]),
         service_group=str(broker_config["service_group"]),
     )
+    if arguments.enable_attribution:
+        evaluation = _object(
+            study.get("evaluation_protocol"), "study.evaluation_protocol"
+        )
+        if evaluation.get("attribution_evaluation") not in {
+            None,
+            "correctness_then_profile",
+            "correctness_then_profile_each_search_survivor",
+        }:
+            raise ValueError("Study attribution Evaluation is already declared")
+        evaluation["attribution_evaluation"] = (
+            "correctness_then_profile_each_search_survivor"
+        )
+        for arm in arms.values():
+            environment = _object(arm, "study.arm")
+            feedback = environment.get("feedback")
+            if (
+                not isinstance(feedback, list)
+                or feedback.count("profile") > 1
+                or ("profile" in feedback and feedback[-1] != "profile")
+            ):
+                raise ValueError("Study attribution feedback authority differs")
+            if "profile" not in feedback:
+                feedback.append("profile")
     study["study_id"] = arguments.study_id
 
     output.parent.resolve(strict=True)
@@ -187,10 +282,11 @@ def main() -> int:
         stream.write(_canonical_json_bytes(study) + b"\n")
     try:
         lock = Lab(root).preflight(temporary)
-        if lock.claim_scope not in {
-            "system_qualification_only",
-            "artifact_optimization_only",
-        } or lock.estimand is not None:
+        analysis = _object(study.get("analysis_plan"), "study.analysis_plan")
+        if (
+            lock.claim_scope != study.get("claim_scope")
+            or lock.estimand != analysis.get("estimand")
+        ):
             raise ValueError("frozen live Study data policy differs")
         temporary.replace(output)
         output.chmod(0o644)

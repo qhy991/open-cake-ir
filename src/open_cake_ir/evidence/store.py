@@ -231,6 +231,20 @@ class RunAudit:
     findings: tuple[EvidenceFinding, ...]
 
 
+def _require_sealed_sequence(events: "tuple[Mapping[str, object], ...]") -> None:
+    """What makes an event sequence a sealed Run's, rather than a prefix of one.
+
+    Owned here because both the auditor and the reader need it and neither should hold
+    its own copy: a reader that admitted a truncated sequence would let a claim be taken
+    off a history whose end had been removed, and it would look complete.
+    """
+
+    if not events or events[-1].get("kind") != "run_terminal":
+        raise ValueError("Run does not end in run_terminal")
+    if sum(event.get("kind") == "run_terminal" for event in events) != 1:
+        raise ValueError("Run must contain exactly one run_terminal event")
+
+
 class EvidenceStore:
     """Read-only or writer-capable Evidence v2 root."""
 
@@ -538,10 +552,7 @@ class EvidenceStore:
             ):
                 raise ValueError("terminal seal identity or hash differs")
             terminal_seal = cast(str, terminal_seal_value)
-            if not events or events[-1].get("kind") != "run_terminal":
-                raise ValueError("Run does not end in run_terminal")
-            if sum(event.get("kind") == "run_terminal" for event in events) != 1:
-                raise ValueError("Run must contain exactly one run_terminal event")
+            _require_sealed_sequence(events)
             terminal_payload = _object(events[-1].get("payload"), "run_terminal.payload")
             if set(terminal_payload) != {
                 "protocol_adherence",
@@ -585,7 +596,17 @@ class EvidenceStore:
         )
 
     def replay_events(self, run_id: str) -> tuple[Mapping[str, object], ...]:
-        """Read canonical ordered event records without mutating the store."""
+        """Read a sealed Run's canonical ordered event records without mutating the store.
+
+        This is not a substitute for `audit_run`. The chain hashes, the terminal seal and
+        the object references are that method's to verify, and a caller that needs to
+        trust what it reads has to run it.
+
+        What this does refuse is a sequence that is not a Run's: one that does not end in
+        exactly one `run_terminal`. Without that check an archive missing its terminal
+        event replayed as a complete, shorter Run -- the reader saw a plausible history
+        with no sign that the end of it had been removed.
+        """
 
         if _RUN_ID.fullmatch(run_id) is None:
             raise ValueError("Run ID is invalid")
@@ -600,12 +621,14 @@ class EvidenceStore:
                         names = sorted(os.listdir(events_fd))
                         if names != [f"{index:012d}.json" for index in range(len(names))]:
                             raise ValueError("event files are not contiguous")
-                        return tuple(
+                        events = tuple(
                             _parse_canonical_json(
                                 _read_regular_at(events_fd, name), f"events/{name}"
                             )
                             for name in names
                         )
+                        _require_sealed_sequence(events)
+                        return events
                     finally:
                         os.close(events_fd)
                 finally:

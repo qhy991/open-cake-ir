@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "schedule_id": "open-cake-clean-start-v1",
+  "target": "sm_100a",
+  "roles": [],
+  "allocations": [],
+  "buffers": [
+    {
+      "name": "tokens",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [32, 65536, 128],
+      "mode": "input"
+    },
+    {
+      "name": "centroids",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [32, 1024, 128],
+      "mode": "input"
+    },
+    {
+      "name": "centroid_sq",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [32, 1024],
+      "mode": "input"
+    },
+    {
+      "name": "assignments",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [32, 65536],
+      "mode": "output"
+    }
+  ],
+  "pipelines": [],
+  "barriers": [],
+  "operations": [],
+  "outputs": ["assignments"],
+  "metadata": {
+    "profile": "flash_kmeans_b32_smoke",
+    "starter_scope": "authoring_contract_only",
+    "workload_contract_sha256": "37e0f57020d9807a6c77c5ef6e56c8c771274c11c745b58022ae85091d567c3a"
+  }
+}

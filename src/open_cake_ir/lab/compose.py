@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 from typing import Mapping, cast
 
 from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import (
     CudaLaunchManifest,
     CuptiPortfolioAssay,
@@ -33,10 +34,13 @@ from .executor import ExecutorRevision
 from .faults import RunProtocolFault
 from .portfolio import KernelSeed, lower_specialists
 from .providers import (
+    CANDIDATE_SET_ENVELOPE_V1,
+    SINGLE_CANDIDATE_V1,
     CodexInvocationBuilder,
     CodexProviderAdapter,
     CodexRunProvider,
     ProviderQualificationReceipt,
+    required_live_provider_qualification_scope,
 )
 from .runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter
 
@@ -198,9 +202,11 @@ def _materialize_run_references(
         cast(dict[str, object], skeleton["metadata"])[
             "workload_contract_sha256"
         ] = workload_contract.canonical_sha256
+        # Generated from the typed IR at bundle time. Checking a projection in would
+        # make it a second copy of facts the Compiler already owns, and every Turn
+        # prompt embeds these bytes.
         _write_reference(
-            references / "schedule.schema.json",
-            (root / "compiler/schedule.schema.json").read_bytes(),
+            references / "schedule.schema.json", schedule_schema_bytes()
         )
         _write_reference(
             references / "schedule-authoring.md",
@@ -415,15 +421,17 @@ def execute_matched_from_config(
     open_arm = _object(arms["open_cake"], "arm_environments.open_cake")
     direct_arm = _object(arms["direct_cuda"], "arm_environments.direct_cuda")
     provider_authority = _object(open_arm["provider"], "arm_environments.provider")
+    budget = _object(resolved["budget"], "campaign_lock.resolved_inputs.budget")
     qualification_ref = _object(
         provider_authority["qualification"], "arm_environments.provider.qualification"
     )
     qualification = ProviderQualificationReceipt.load(root / str(qualification_ref["path"]))
     if (
-        qualification.scope != "live_two_turn_current_provider"
+        qualification.scope
+        != required_live_provider_qualification_scope(lock.claim_scope)
         or qualification.canonical_sha256 != qualification_ref["canonical_sha256"]
     ):
-        raise ValueError("runtime execution requires a current live provider qualification")
+        raise ValueError("runtime execution requires the Claim Scope's live provider qualification")
     output_schema = _object(
         provider_authority["output_schema"], "arm_environments.provider.output_schema"
     )
@@ -559,6 +567,11 @@ def execute_matched_from_config(
             ),
             event_contract=str(
                 provider_authority.get("event_contract", "closed_file_change_v1")
+            ),
+            submission_contract=(
+                CANDIDATE_SET_ENVELOPE_V1
+                if "maximum_candidates_per_turn" in budget
+                else SINGLE_CANDIDATE_V1
             ),
         )
     references_root.chmod(0o555)

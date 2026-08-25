@@ -186,6 +186,27 @@ class KernelSeed:
         buffers["centroid_tile"]["shape"] = [self.block_k, shape.features]
         buffers["distance_tile"]["shape"] = [self.block_n, self.block_k]
         buffers["best_index_tile"]["shape"] = [self.block_n]
+        # The distance is composed now, so the intermediates the composition names are
+        # tiled by the same seed. Listing them here is the same hand-kept coupling the
+        # accumulator note below describes; the verifier catches a member left behind.
+        for name in ("cross", "scaled_cross"):
+            if name in buffers:
+                buffers[name]["shape"] = [self.block_n, self.block_k]
+        if "norm_tile" in buffers:
+            buffers["norm_tile"]["shape"] = [self.block_k]
+        # The MMA tile is the accumulator's shape, so a seed that retiles the buffers has
+        # to retile it too. Keeping the two in step by hand across this boundary is the
+        # coupling that made a specialist silently disagree with its own accumulator.
+        for operation in cast(list[dict[str, object]], schedule["operations"]):
+            if operation.get("kind") != "mma":
+                continue
+            parameters = cast(dict[str, object], operation["parameters"])
+            if "tile_shape" in parameters:
+                parameters["tile_shape"] = [
+                    self.block_n,
+                    self.block_k,
+                    shape.features,
+                ]
         return schedule
 
 

@@ -148,7 +148,8 @@ layout, no-follow writes, manifests, ledger chaining, terminal sealing and rehas
 
 Every Run produces one Terminal Archive, whether successful, externally failed or protocol-invalid. There is no
 separate success archive and failure archive. Evidence never defines an Estimand; it supplies Run Audits to the
-Lab's preregistered Study Analysis.
+Lab's preregistered Study Analysis. A matched Study also owns its semantic event vocabulary: current successors use
+the closed `matched_run_v1` policy, while the replay adapter for earlier frozen Studies remains read-only and bounded.
 
 ## 5. Canonical owners
 
@@ -157,10 +158,11 @@ Lab's preregistered Study Analysis.
 | Schedule vocabulary and semantics | Compiler Revision | examples, docs, generated source |
 | Exact target capabilities | Target inside Compiler Revision | GPU name, backend flag |
 | Findings and analysis coverage | Compiler Revision + Assessment | stderr, prompt feedback |
-| Lowering lineage | Lowering record | generated filename |
+| Lowering lineage and whether operation bodies were generated | Lowering record | filename, profile inference |
 | Compiler release eligibility | Corpus manifest + Corpus Gate report + human merge | test count, Git message |
 | Operator semantics, input domain and oracle | Workload Contract | task prompt, benchmark script |
 | Unit, treatment, endpoints and Estimand | Study Contract | Campaign name, report narrative |
+| Matched semantic event vocabulary | Study Contract Evidence policy | event writer, replay implementation |
 | Provider/scaffold/compiler/toolchain treatment | Authoring Environment revision referenced by Study Contract | command line |
 | One execution authorization | Campaign Lock | mutable environment variables |
 | Candidate bytes and lineage | Evidence Objects + Event Ledger | workspace copy, registry cache |
@@ -210,9 +212,11 @@ For the initial scientific matched-search reconstruction, the primary endpoint i
 2. best confirmed speedup by `B`, conditional on qualification.
 
 The scientific Study Report presents both rather than deleting Runs without a qualified candidate or assigning an
-arbitrary performance value. It requires at least three Runs per arm; three Runs per arm support only a descriptive
-contrast for the pinned setup, not a broad population claim. These endpoint and replicate rules do not apply to the
-non-scientific G8 system qualification.
+arbitrary performance value. The current successor plan requires every prescheduled endpoint to be observed and at
+least one qualified Run per arm: an adhered failure changes the qualification rate but does not erase the Estimand,
+while an external fault remains missing and cannot enter the rate denominator. It requires at least three Runs per
+arm; three Runs per arm support only a descriptive contrast for the pinned setup, not a broad population claim.
+These endpoint and replicate rules do not apply to the non-scientific G8 system qualification.
 
 `tool_surface` in each arm names the Candidate submission Interface (`submit_schedule` or `submit_cuda`), not the
 provider's auxiliary Apps/MCP/shell/browser/subagent catalog. The content-bound Provider Feature Policy owns that
@@ -268,6 +272,28 @@ fixed CompilerRevision + fixed Study/Workload Contracts
   -> next Turn or terminal
 ```
 
+For a Study that declares `attribution_evaluation`, the smallest complete profiler slice
+stays inside that same Evaluation path:
+
+- every correctness-qualified search survivor is separately observed by Nsight Compute
+  and retained; the selected survivor's checked projection is routed into the next Turn,
+  while profiler latency is a non-goal;
+- the Study owns whether the assay runs, the Executor owns the exact NCU executable, and
+  the `profile` artifact owns the raw NCU CSV. Its metric summary is a checked projection
+  recomputed from those bytes, never a second handwritten observation;
+- `purpose=attribution` selects the assay in the existing evaluator. NCU launches an
+  internal child of that evaluator for the same sealed CUBIN, Workload case, oracle and
+  launch manifest; this is not another runtime, Candidate route or acceptance path;
+- timing is structurally absent. Missing target-kernel rows, missing declared metrics,
+  malformed values, incorrect output, profiler failure or mismatched tool bytes fail the
+  attribution attempt instead of reading as coverage;
+- released Study and Executor bytes remain history. Successor Studies can opt into the
+  assay; legacy descriptors remain loadable only as bounded read compatibility and cannot
+  execute an attribution request without a pinned profiler;
+- acceptance evidence is a contract test that rejects a summary/raw mismatch, semantic
+  replay of the retained artifact, and one brokered exclusive-B200 run that produces the
+  declared metric set without contributing a timing value.
+
 ### Outer loop: compiler evolution
 
 ```text
@@ -287,6 +313,12 @@ Clean-start provenance covers Compiler Revision, Corpus, scaffold, memory, diagn
 embedded in every Turn prompt—not
 only the agent workspace. A compiler evolved from the same task history is an explicit treatment prior. Such a
 study may estimate package effectiveness but cannot claim task-naive discovery without a stronger firewall.
+The clean-start reference fixture keeps this boundary concrete without another runtime mode: its Open Cake document
+cannot parse as a complete Schedule and its direct CUDA function body is empty; both references change together in
+one frozen Study successor.
+For v25+ Runs the rendered bundle itself is also a retained Evidence object on every completed Turn. The Study owns
+what content is permitted; retention proves which bytes crossed the authoring boundary and missing bytes make the
+endpoint unavailable.
 
 ## 9. Claim-stage handoffs
 
@@ -336,8 +368,9 @@ evidence/                  # immutable historical observations
 reports/current/           # deletable generated projections
 ```
 
-See [ADR 0005](adr/0005-forward-compatible-lifecycle-layout.md). Executor v6 is the final transitional descriptor
-under `runtime/executors/`; its successor starts the new release layout.
+See [ADR 0005](adr/0005-forward-compatible-lifecycle-layout.md) and its scoped supersession in
+[ADR 0007](adr/0007-candidate-evidence-and-revision-witnesses.md). Current descriptor paths remain canonical until
+a complete successor migration can move every writer and consumer together.
 
 The public command families mirror the two products:
 

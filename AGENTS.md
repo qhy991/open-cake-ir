@@ -1,5 +1,130 @@
 # open-cake-ir local constraints
 
+## Cake IR design principles (arXiv:2608.12629v1, Appendix B.1)
+
+The paper states eight. They bind IR changes here; the global doctrine covers the rest.
+
+- **P1 Ergonomic** — keep the editing model familiar to NumPy/PyTorch users, and avoid
+  unnecessary destination-passing or grid bookkeeping.
+- **P2 Performance-transparent** — keep performance-relevant hardware decisions visible
+  and lowering behaviour inspectable.
+- **P3 Canonical** — prefer one canonical form for each operation over equivalent
+  alternative spellings.
+- **P4 Statically type-checked** — use typing rules to constrain lowering and reject
+  ill-typed programs during construction, not at emission.
+- **P5 Analysis-friendly** — expose the information the supported static analyses need.
+- **P6 Test-gated** — evaluate IR changes against the kernel-matrix tests.
+- **P7 Analysis-consistent** — accompany changes to the IR data model with the
+  corresponding analysis updates, in the same change.
+- **P8 Hardware-grounded** — document the intended hardware behaviour of each operation.
+
+## What the paper says not to do
+
+- Layout is deliberately **not** a first-class abstraction. Do not introduce a layout
+  algebra for an agent to manipulate. A Schedule records concrete storage and access
+  commitments -- an SMEM view offset, an operand byte offset, a TMEM column range -- and
+  the compiler verifies they stay mutually consistent. New primitives extend verification
+  coverage without an agent learning a second language.
+- Static analysis is a pre-compile gate **only within its modeled domain**. It does not
+  prove global GPU correctness or capture all microarchitectural behaviour, and both
+  false positives and false negatives occur. On-device measurement is the ground truth;
+  a cost estimate never replaces it.
+- Feedback to an author is localized correctness and performance diagnostics. A pass/fail
+  bit, or one latency number, is the failure mode this harness exists to avoid.
+- Timing-model coverage is evidence-gated per target. A target without its own calibration
+  reports a coverage limitation; it never inherits another target's estimates.
+- Human judgement gates compiler evolution. An automatic estimate does not authorize a
+  Revision.
+
+## What the harness must do (S3)
+
+- A blocking check names the affected program region and the class of contract violated.
+  The four classes are schedule semantics, hardware conformance, data consistency and
+  program safety; analysis may block only within them.
+- Correctness is decided against an external reference across different shapes and input
+  distributions. Final acceptance requires end-to-end evaluation in the target framework.
+- The cost model ranks and filters candidates *before* they reach GPU time. It never
+  decides acceptance.
+- The compiler requires an exact target match. It reports missing device or toolchain
+  support; it never steps a schedule down to another architecture.
+
+## Learned here, not from the paper
+
+Both of these were found by probing this repository and cost a wrong answer or a wrong
+record before they were understood. They are corollaries of rules above, written as
+things to do because the rules above did not stop either one.
+
+- **A report states the domain it examined.** Omitting a resource the Schedule declares
+  nothing for reads as "does not constrain" and means "was not looked at", and the reader
+  will assume the generous one. Measured: `gemm-bias-b1-smoke` declares no shared memory,
+  Triton allocates it for the `tl.dot` operands, and it bounds residency exactly as
+  tightly as the registers the analysis does model.
+- **A block from an unrelated rule is on loan.** When a probe shows a hazard is refused,
+  ask which rule refused it. Twice here the answer was a rule about something else --
+  tensor-memory ownership by a synchronisation rule, a register-held contraction
+  accumulator by a lifetime rule -- and either can be scoped later by someone who checked
+  every consequence they knew of. Close it properly or record that the block is borrowed.
+
+## Compiler evolution (S3, outer loop)
+
+- A proposal is checked against P1-P8 before it is implemented. A new primitive must be
+  performance-transparent and verification-friendly.
+- A primitive and its analyses evolve together. Syntax without effects and legality rules
+  makes the IR less analyzable, which is a reason to refuse it, not to defer them.
+- Changes are test-gated across the kernel corpus, and merged by human judgement.
+- Recurring failures are what become new verifier rules, IR primitives, cost-model
+  calibrations and reusable tactics. A one-off failure is not evidence for a rule.
+
+## The agent loop (S4)
+
+Four stages, in order. A campaign that collapses them is not running this loop.
+
+1. Generate **structurally distinct** candidates -- not variations of one shape.
+2. Filter before GPU time: IR construction checks, then verifier hard gates, then
+   cost-model ranking.
+3. Evaluate survivors against the external oracle, with benchmarking **and profiler**
+   evidence.
+4. Route each diagnosis to whichever of candidate, verifier, cost model or IR vocabulary
+   it belongs to.
+
+The Workload Contract is the stable authority throughout, fixing shapes, oracle,
+tolerances, hardware and permitted references. Retained results are what make decisions
+auditable and recurring findings reusable.
+
+## Reference access, per arm (S5)
+
+Each arm's authoring environment declares what its author may see. Getting this wrong
+invalidates the comparison, not just the run.
+
+- **Clean start / frontier synthesis** -- may inspect the mathematical specification,
+  evaluation contract, correctness oracle and high-level code. May **not** inspect a
+  low-level target implementation (CUDA, PTX, SASS, or equivalent generated source). An
+  external implementation may be run through the harness as a black-box baseline; its
+  internals stay unavailable.
+- **Known-kernel reproduction** -- may inspect the reference.
+- **Direct CUDA/PTX** -- may write low-level code, may not inspect an existing target
+  implementation.
+
+## Measurement and replication (S5)
+
+- On-GPU correctness checks and CUPTI timing on B200, with L2 flushed before every timed
+  sample. Every reported candidate is compiled, correctness-checked and benchmarked at
+  the listed shape.
+- A replicated clean start fixes the agent and scaffold, model and reasoning effort, task
+  statement, oracle, benchmark harness and the single target shape. Report median
+  [min, max] across the matched runs, and retain the stopping and timing accounting.
+- Model and scaffold are held fixed so a difference is attributable to the environment
+  rather than to model capability.
+
+## Portfolio generalization (S6)
+
+- Generalization begins only after strong per-shape seeds exist. Scoring the inner loop
+  on broad coverage weakens the signal it exists to produce.
+- An incorrect or slow seed returns to the inner loop. It is never hidden behind a
+  dispatcher predicate.
+- Portfolio validation covers representative and held-out inputs, boundary and tail
+  cases, overlapping or missing guards, and the fallback path.
+
 - The Compiler is the product core. It must not import Lab, provider, workload, campaign, evidence-store or claim code.
 - The Lab may depend on a frozen Compiler Revision; a campaign may never mutate that revision.
 - Workload Contract owns operator semantics and oracle. Study Contract owns treatment, estimand and analysis.
@@ -11,6 +136,12 @@
 - KernelSeed and Workload-case specialization are owned by Lab; Compiler accepts complete Schedules and must remain
   unaware of held-out roles or Study policy.
 - Compiler changes require a full Corpus Gate and human merge before producing a new Compiler Revision.
+- A Revision id is derived by its cycle script, never chosen by hand. An id some frozen artifact names is history and
+  its bytes are immutable; an id nothing names is a working artifact and is re-released in place. Editing a
+  Revision-bound source is therefore free of version churn until a sealed run witnesses the id.
+- Never regenerate Corpus Gate expectations to make the gate pass — that reports a match it just manufactured. Adopt
+  new expectations as a separate, reviewed act (`tools/refresh_corpus_expectations.py --write`) and name the reason in
+  the release approval basis.
 - Cake versus CUDA is an Authoring Environment assignment, not a syntax-only representation switch.
 - Common Evaluation begins only after an arm produces a sealed launchable artifact.
 - Every candidate, evaluation and terminal outcome is append-only; reports and status docs are derived views.

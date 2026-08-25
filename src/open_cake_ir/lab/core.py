@@ -27,15 +27,18 @@ from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from .checkpoints import TurnObservation, project_checkpoints
 from .custody import admit_new_campaign_path
-from .environments import AuthoringEnvironment, CandidateSubmission
+from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
 from .executor import ExecutorRevision
 from .faults import RunProtocolFault
+from .routing import CANDIDATE, COST_MODEL, route_rejection
 from .portfolio import KernelSeed
 from .providers import (
+    CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
     ProviderQualificationReceipt,
     ProviderTurn,
     parse_codex_turn_events,
+    required_live_provider_qualification_scope,
 )
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -105,6 +108,62 @@ _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN = {
     "pooling": "forbidden",
     "scientific_inclusion": "forbidden",
 }
+_MATCHED_EVENT_VOCABULARY_V1 = "matched_run_v1"
+_MATCHED_EVENT_KINDS_V1 = frozenset(
+    {
+        "run_started",
+        "provider_turn_completed",
+        "candidate_set_filtered",
+        "candidate_rejected",
+        "launchable_candidate_sealed",
+        "evaluation_attempt_completed",
+        "candidate_evaluated",
+        "diagnosis_routed",
+        "candidate_selected",
+        "run_fault",
+        "checkpoints_projected",
+        "run_terminal",
+    }
+)
+_MATCHED_EVIDENCE_POLICY_V1 = {
+    "schema_version": 2,
+    "terminal_archive_required_for_every_run": True,
+    "event_vocabulary": _MATCHED_EVENT_VOCABULARY_V1,
+}
+_LEGACY_MATCHED_EVIDENCE_POLICY = {
+    "schema_version": 2,
+    "terminal_archive_required_for_every_run": True,
+}
+_SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2 = {
+    "experimental_unit": "run",
+    "target_population": "prescheduled_runs_under_exact_campaign_lock",
+    "primary_endpoint": [
+        "qualified_by_budget",
+        "best_confirmed_latency_ms_if_qualified",
+    ],
+    "contrast": "two_part_open_cake_vs_direct_cuda",
+    "estimand": (
+        "terminal-budget qualification-rate difference and conditional confirmed "
+        "performance"
+    ),
+    "missingness": {
+        "candidate_failure": "observed_outcome",
+        "external_fault": "missing",
+        "replacement": "forbidden",
+    },
+    "pooling": "forbidden_without_successor_analysis_plan",
+    "availability": (
+        "all_prescheduled_runs_observed_and_each_arm_has_qualified_run"
+    ),
+    "summary_statistics": {
+        "qualification": "arm_rate",
+        "qualification_contrast": "open_cake_rate_minus_direct_cuda_rate",
+        "conditional_latency": "arm_median_ms",
+        "contrast": "direct_cuda_median_divided_by_open_cake_median",
+        "uncertainty": "per_arm_observed_range_ms",
+    },
+    "direction": "lower_latency_is_better",
+}
 _MATCHED_CLAIM_SCOPES = {
     "system_qualification_only",
     "artifact_optimization_only",
@@ -114,6 +173,8 @@ _ONE_RUN_PER_ARM_SCOPES = {
     "system_qualification_only",
     "artifact_optimization_only",
 }
+_LEGACY_ATTRIBUTION_EVALUATION = "correctness_then_profile"
+_ATTRIBUTION_EVALUATION = "correctness_then_profile_each_search_survivor"
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -138,10 +199,117 @@ def _name(value: object, context: str) -> str:
     return value
 
 
+def _artifact_outcomes_are_closed(payload: Mapping[str, object]) -> bool:
+    """Validate the optional retained/rejected artifact-role partition."""
+
+    objects = payload.get("objects")
+    rejected = payload.get("artifact_rejections")
+    retained_roles: list[object] = []
+    if objects is not None:
+        if not isinstance(objects, list) or not objects:
+            return False
+        retained_roles = [
+            item.get("role") if isinstance(item, Mapping) else None
+            for item in objects
+        ]
+    if rejected is not None and (not isinstance(rejected, list) or not rejected):
+        return False
+    rejected_roles = rejected if isinstance(rejected, list) else []
+    roles = [*retained_roles, *rejected_roles]
+    if not all(
+        isinstance(role, str)
+        and re.fullmatch(r"[a-z][a-z0-9_]*", role) is not None
+        for role in roles
+    ):
+        return False
+    return len(roles) == len(set(roles))
+
+
 def _digest(value: object, context: str) -> str:
     if not isinstance(value, str) or _DIGEST.fullmatch(value) is None:
         raise ValueError(f"{context} must be a lowercase SHA256 digest")
     return value
+
+
+def scientific_matched_analysis_plan_v2() -> Mapping[str, object]:
+    """Return the sole current two-part scientific Analysis Plan projection."""
+
+    return cast(
+        Mapping[str, object],
+        json.loads(_canonical_json_bytes(_SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2)),
+    )
+
+
+def matched_evidence_policy_v1() -> Mapping[str, object]:
+    """Return the sole current matched semantic Evidence policy projection."""
+
+    return cast(
+        Mapping[str, object],
+        json.loads(_canonical_json_bytes(_MATCHED_EVIDENCE_POLICY_V1)),
+    )
+
+
+def _matched_evidence_policy_version(
+    policy: Mapping[str, object], context: str
+) -> str:
+    """Admit the closed vocabulary plus bounded frozen-policy compatibility."""
+
+    if policy == _MATCHED_EVIDENCE_POLICY_V1:
+        return _MATCHED_EVENT_VOCABULARY_V1
+    if policy == _LEGACY_MATCHED_EVIDENCE_POLICY:
+        return "legacy_open"
+    raise ValueError(f"{context} is unsupported")
+
+
+def _scientific_analysis_plan_version(
+    analysis: Mapping[str, object], context: str
+) -> str:
+    """Admit the current plan plus bounded read compatibility for frozen v1 plans."""
+
+    if analysis == _SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2:
+        return "two_part_v2"
+    if set(analysis) != {
+        "experimental_unit",
+        "target_population",
+        "primary_endpoint",
+        "contrast",
+        "estimand",
+        "missingness",
+        "pooling",
+        "availability",
+        "summary_statistics",
+        "direction",
+    }:
+        raise ValueError(f"{context} fields differ")
+    if (
+        analysis.get("experimental_unit") != "run"
+        or analysis.get("primary_endpoint")
+        != ["qualified_by_budget", "best_confirmed_latency_ms_if_qualified"]
+        or analysis.get("contrast")
+        != "open_cake_minus_direct_cuda_descriptive"
+        or analysis.get("missingness")
+        != {
+            "candidate_failure": "observed_outcome",
+            "external_fault": "missing",
+            "replacement": "forbidden",
+        }
+        or analysis.get("pooling")
+        != "forbidden_without_successor_analysis_plan"
+        or analysis.get("availability")
+        != "all_prescheduled_runs_qualified_at_final_checkpoint"
+        or analysis.get("summary_statistics")
+        != {
+            "qualification": "arm_rate",
+            "conditional_latency": "arm_median_ms",
+            "contrast": "direct_cuda_median_divided_by_open_cake_median",
+            "uncertainty": "per_arm_observed_range_ms",
+        }
+        or analysis.get("direction") != "lower_latency_is_better"
+    ):
+        raise ValueError(f"{context} is unsupported")
+    _name(analysis.get("target_population"), f"{context}.target_population")
+    _name(analysis.get("estimand"), f"{context}.estimand")
+    return "legacy_v1"
 
 
 def _project_path(root: Path, value: object, context: str) -> tuple[str, Path]:
@@ -209,7 +377,11 @@ def _archive_evaluation_receipt(
     evidence: EvidenceStore,
     receipt: EvaluationReceipt,
 ) -> list[dict[str, object]]:
-    required = {"correctness_output", "launch_receipt", "timing_samples"}
+    required = (
+        {"correctness_output", "launch_receipt", "profile"}
+        if receipt.purpose == "attribution"
+        else {"correctness_output", "launch_receipt", "timing_samples"}
+    )
     if set(receipt.artifact_payloads) != required:
         raise ValueError("EvaluationReceipt artifact custody is incomplete")
     references: list[dict[str, object]] = []
@@ -459,12 +631,16 @@ def _replay_broker_attempt_ledger(
                 raise ValueError("broker attempt receipt seal differs")
             receipt = _object(raw_receipt, "broker_record.receipt")
             artifacts = _object(receipt.get("artifacts"), "broker_record.receipt.artifacts")
+            expected_receipt_artifacts = (
+                {"correctness_output", "launch_receipt", "profile"}
+                if final_receipt.purpose == "attribution"
+                else {"correctness_output", "launch_receipt", "timing_samples"}
+            )
             if (
                 set(receipt) != receipt_fields
-                or set(artifacts)
-                != {"correctness_output", "launch_receipt", "timing_samples"}
+                or set(artifacts) != expected_receipt_artifacts
                 or any(not isinstance(path, str) or not path for path in artifacts.values())
-                or len(set(artifacts.values())) != 3
+                or len(set(artifacts.values())) != len(expected_receipt_artifacts)
                 or result.get("admitted") is not True
                 or result.get("error") is not None
                 or receipt.get("correctness_passed") is not final_receipt.correctness_passed
@@ -535,7 +711,10 @@ def _replay_launchable_candidate(
     matching = []
     for event in launchable_events:
         payload = _object(event.get("payload"), "launchable.payload")
-        if payload.get("turn") == turn:
+        if (
+            payload.get("turn") == turn
+            and payload.get("candidate_sha256") == candidate_sha256
+        ):
             matching.append(payload)
     if len(matching) != 1:
         raise ValueError("launchable candidate event coverage differs")
@@ -713,6 +892,159 @@ def _receipt_latency_ms(receipt: EvaluationReceipt | None) -> float | None:
     ):
         return None
     return float(value)
+
+
+def _matched_search_plan(
+    order: list[Mapping[str, object]], searches_per_turn: int
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Derive the unique programs to measure from the retained filter order."""
+
+    first_by_semantic: dict[str, str] = {}
+    searched: list[str] = []
+    collapsed: list[dict[str, str]] = []
+    for row in order:
+        if len(searched) >= searches_per_turn or row["disposition"] != "launchable":
+            break
+        candidate = cast(str, row["candidate_sha256"])
+        semantic = cast(str | None, row.get("semantic_sha256"))
+        if semantic is not None and semantic in first_by_semantic:
+            collapsed.append(
+                {
+                    "candidate_sha256": candidate,
+                    "same_program_as": first_by_semantic[semantic],
+                    "semantic_sha256": semantic,
+                }
+            )
+        else:
+            searched.append(candidate)
+            if semantic is not None:
+                first_by_semantic[semantic] = candidate
+    return searched, collapsed
+
+
+def _collapse_diagnosis(
+    turn: int, collapsed: list[dict[str, str]]
+) -> dict[str, object] | None:
+    if not collapsed:
+        return None
+    return {
+        "turn": turn,
+        "routed_to": CANDIDATE,
+        "routing_reason": (
+            f"{len(collapsed)} of the ranked candidates this Turn are the same "
+            "program as an earlier one under a different name"
+        ),
+        "collapsed": collapsed,
+    }
+
+
+def _matched_search_decision(
+    turn: int,
+    searched: list[tuple[str, EvaluationReceipt]],
+    *,
+    cost_order_applied: bool,
+    materiality_ratio: float,
+) -> tuple[list[int], int, dict[str, object] | None]:
+    """Choose the measured winner and derive the sole cost-order diagnosis."""
+
+    qualified = [
+        index for index, (_, receipt) in enumerate(searched) if _receipt_qualifies(receipt)
+    ]
+    measured = sorted(
+        qualified,
+        key=lambda index: _receipt_latency_ms(searched[index][1]) or float("inf"),
+    )
+    best = measured[0] if measured else 0
+    if not cost_order_applied or len(qualified) < 2 or best == qualified[0]:
+        return qualified, best, None
+    ranked_index = qualified[0]
+    ranked = _receipt_latency_ms(searched[ranked_index][1])
+    fastest = _receipt_latency_ms(searched[best][1])
+    ratio = ranked / fastest if ranked is not None and fastest else None
+    if ratio is None or ratio < materiality_ratio:
+        return qualified, best, None
+    ranked_sha = searched[ranked_index][0]
+    fastest_sha = searched[best][0]
+    return qualified, best, {
+        "turn": turn,
+        "routed_to": COST_MODEL,
+        "routing_reason": (
+            f"the filter ranked {ranked_sha} first and measurement put "
+            f"{fastest_sha} {ratio:.3f}x ahead of it, which the Study counts as "
+            f"material at {materiality_ratio}x"
+        ),
+        "ranked_first": ranked_sha,
+        "measured_first": fastest_sha,
+        "observed_ratio": round(ratio, 6),
+        "materiality_ratio": materiality_ratio,
+    }
+
+
+def _expected_matched_diagnoses_v1(
+    *,
+    filters: Mapping[int, Mapping[str, object]],
+    receipts: Mapping[tuple[int, str, str], EvaluationReceipt],
+    receipt_order: list[tuple[int, str, str]],
+    searches_per_turn: int,
+    materiality_ratio: float,
+) -> tuple[dict[int, list[dict[str, object]]], dict[int, list[str]]]:
+    """Replay the same search-plan and diagnosis primitives over retained facts."""
+
+    diagnoses: dict[int, list[dict[str, object]]] = {}
+    expected_searches: dict[int, list[str]] = {}
+    for turn, payload in sorted(filters.items()):
+        rows = cast(list[Mapping[str, object]], payload["order"])
+        planned, collapsed = _matched_search_plan(rows, searches_per_turn)
+        expected_searches[turn] = planned
+        projected = [item for item in (_collapse_diagnosis(turn, collapsed),) if item]
+        search_keys = [
+            key for key in receipt_order if key[0] == turn and key[1] == "search"
+        ]
+        if [key[2] for key in search_keys] == planned:
+            _, _, cost_diagnosis = _matched_search_decision(
+                turn,
+                [(key[2], receipts[key]) for key in search_keys],
+                cost_order_applied=all(
+                    row["cost"] is not None
+                    for row in rows
+                    if row["disposition"] == "launchable"
+                ),
+                materiality_ratio=materiality_ratio,
+            )
+            if cost_diagnosis is not None:
+                projected.append(cost_diagnosis)
+        diagnoses[turn] = projected
+    return diagnoses, expected_searches
+
+
+def _validate_matched_diagnoses_v1(
+    events: tuple[Mapping[str, object], ...],
+    *,
+    expected: Mapping[int, list[dict[str, object]]],
+    fault_turn: int | None,
+) -> None:
+    """Require every retained diagnosis to be the unique derived projection."""
+
+    observed: dict[int, list[Mapping[str, object]]] = {}
+    for event in events:
+        if event.get("kind") != "diagnosis_routed":
+            continue
+        payload = _object(event.get("payload"), "diagnosis_routed.payload")
+        turn = payload.get("turn")
+        if not isinstance(turn, int) or isinstance(turn, bool) or turn <= 0:
+            raise ValueError("diagnosis_routed Turn differs")
+        observed.setdefault(turn, []).append(payload)
+    if set(observed) - set(expected):
+        raise ValueError("diagnosis_routed Turn is outside the filtered set")
+    for turn, expected_payloads in expected.items():
+        actual = observed.get(turn, [])
+        admitted = (
+            expected_payloads[: len(actual)]
+            if turn == fault_turn
+            else expected_payloads
+        )
+        if [dict(payload) for payload in actual] != admitted:
+            raise ValueError("diagnosis_routed is not derived from retained evidence")
 
 
 def _promoted_artifact(
@@ -950,8 +1282,12 @@ class CampaignLock:
                 resolved.get("budget"), "campaign_lock.resolved_inputs.budget"
             )
             _object(resolved.get("run_protocol"), "campaign_lock.resolved_inputs.run_protocol")
-            _object(
+            evidence_policy = _object(
                 resolved.get("evidence_policy"),
+                "campaign_lock.resolved_inputs.evidence_policy",
+            )
+            _matched_evidence_policy_version(
+                evidence_policy,
                 "campaign_lock.resolved_inputs.evidence_policy",
             )
             expected_arms = (
@@ -1014,6 +1350,11 @@ class CampaignLock:
             if analysis != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
                 raise ValueError("artifact optimization Campaign Lock Analysis Plan differs")
             estimand = None
+        elif study_kind == "matched_search":
+            _scientific_analysis_plan_version(
+                analysis, "campaign_lock.analysis_plan"
+            )
+            estimand = _name(raw_estimand, "campaign_lock.analysis_plan.estimand")
         else:
             estimand = _name(raw_estimand, "campaign_lock.analysis_plan.estimand")
         detached = cast(Mapping[str, object], json.loads(_canonical_json_bytes(document)))
@@ -1092,6 +1433,7 @@ class TurnRequest:
     cumulative_provider_tokens: int
     thread_id: str | None
     feedback: Mapping[str, object]
+    maximum_candidates_per_turn: int
 
 
 class RunProvider(Protocol):
@@ -1160,6 +1502,17 @@ class PortfolioStudyReport:
     endpoint: Mapping[str, object] | None
     claim_view: ClaimView
     run_audit: RunAudit | None
+
+
+@dataclass(frozen=True)
+class _SearchedCandidate:
+    """One candidate kept intact from authored bytes through its search receipt."""
+
+    submission: CandidateSubmission
+    environment_result: EnvironmentResult
+    launchable: LaunchableCandidate
+    receipt: EvaluationReceipt
+    attribution: EvaluationReceipt | None
 
 
 
@@ -1249,6 +1602,9 @@ class Lab:
         ) or open_cake.get("scaffold") != direct_cuda.get("scaffold"):
             raise ValueError("matched Authoring Environments differ in provider or scaffold")
         _digest(direct_cuda.get("toolchain_sha256"), "study.arms.direct_cuda.toolchain_sha256")
+        candidate_set_submission = "maximum_candidates_per_turn" in _object(
+            study.document.get("budget"), "study.budget"
+        )
         provider = _object(open_cake.get("provider"), "study.arms.provider")
         provider_fields = {
             "revision",
@@ -1282,9 +1638,12 @@ class Lab:
             if claim_scope == "artifact_optimization_only"
             else "closed_file_change_v1"
         )
+        _name(
+            provider.get("reasoning_effort"),
+            "study.arms.provider.reasoning_effort",
+        )
         if (
             provider.get("model") != "gpt-5.6-sol"
-            or provider.get("reasoning_effort") != "max"
             or provider.get("service_tier") != "default"
             or provider.get("sandbox") != "workspace-write"
             or provider.get("cwd_policy") != "independent_empty_workspace"
@@ -1334,6 +1693,13 @@ class Lab:
                             if "event_contract" in provider
                             else {}
                         ),
+                        **(
+                            {
+                                "submission_contract": CANDIDATE_SET_ENVELOPE_V1
+                            }
+                            if candidate_set_submission
+                            else {}
+                        ),
                     }
                 )
             ).hexdigest()
@@ -1341,6 +1707,11 @@ class Lab:
             or not qualification.file_lifecycle_observed
             or not qualification.usage_observed
             or not qualification.qualified
+            or qualification.scope
+            not in {
+                "zero_gpu_contract_fixture_only",
+                required_live_provider_qualification_scope(claim_scope),
+            }
             or qualification_ref.get("canonical_sha256") != qualification.canonical_sha256
         ):
             raise ValueError("provider qualification bytes or capability differs")
@@ -1471,24 +1842,58 @@ class Lab:
                 prompt.get("sha256"), f"study.arms.{arm_name}.prompt_template.sha256"
             ) != sha256(prompt_path.read_bytes()).hexdigest():
                 raise ValueError("Study Contract prompt bytes differ")
+            expected_prompt_markers = {
+                "{{RUN_ID}}",
+                "{{ARM}}",
+                "{{TURN}}",
+                "{{CANDIDATE_PATH}}",
+                "{{CUMULATIVE_PROVIDER_TOKENS}}",
+                "{{FEEDBACK_JSON}}",
+                "{{REFERENCE_BUNDLE}}",
+            }
+            if candidate_set_submission:
+                expected_prompt_markers.add("{{MAXIMUM_CANDIDATES_PER_TURN}}")
+            prompt_text = prompt_path.read_text(encoding="utf-8")
+            if (
+                set(re.findall(r"\{\{[A-Z0-9_]+\}\}", prompt_text))
+                != expected_prompt_markers
+                or any(prompt_text.count(marker) != 1 for marker in expected_prompt_markers)
+            ):
+                raise ValueError("Study Contract prompt marker set differs")
         if open_cake.get("tool_surface") != ["submit_schedule"] or direct_cuda.get(
             "tool_surface"
         ) != ["submit_cuda"]:
             raise ValueError("Study Contract Authoring Environment tool surfaces differ")
+        attribution_evaluation = _object(
+            study.document.get("evaluation_protocol"),
+            "study.evaluation_protocol",
+        ).get("attribution_evaluation")
+        if attribution_evaluation not in {
+            None,
+            _LEGACY_ATTRIBUTION_EVALUATION,
+            _ATTRIBUTION_EVALUATION,
+        }:
+            raise ValueError("Study Contract attribution Evaluation differs")
+        profile_feedback = ["profile"] if attribution_evaluation is not None else []
         if open_cake.get("feedback") != [
             "findings",
             "correctness",
             "qualified_timing",
+            *profile_feedback,
         ] or direct_cuda.get("feedback") != [
             "compile",
             "correctness",
             "qualified_timing",
+            *profile_feedback,
         ]:
             raise ValueError("Study Contract Authoring Environment feedback differs")
         compiler_ref = _object(
             open_cake.get("compiler_revision"), "study.arms.open_cake.compiler_revision"
         )
-        if set(compiler_ref) != {"path", "canonical_sha256"}:
+        if set(compiler_ref) not in (
+            {"path", "canonical_sha256"},
+            {"path", "canonical_sha256", "revision_id"},
+        ):
             raise ValueError("Compiler Revision reference fields differ")
         compiler_relative, compiler_path = _project_path(
             self._root,
@@ -1503,7 +1908,14 @@ class Lab:
             compiler_ref.get("canonical_sha256"),
             "study.arms.open_cake.compiler_revision.canonical_sha256",
         )
-        if not gate.passed or gate.compiler_revision_sha256 != compiler_sha:
+        if (
+            not gate.passed
+            or gate.compiler_revision_sha256 != compiler_sha
+            or (
+                "revision_id" in compiler_ref
+                and compiler_ref["revision_id"] != gate.compiler_revision_id
+            )
+        ):
             raise ValueError("Study Contract Compiler Revision differs or fails its Corpus Gate")
 
         allocation = _object(study.document.get("allocation"), "study.allocation")
@@ -1528,8 +1940,12 @@ class Lab:
         checkpoints = budget.get("checkpoints")
         limit = budget.get("limit")
         maximum_turns = budget.get("maximum_turns")
+        maximum_candidates_per_turn = budget.get("maximum_candidates_per_turn", 1)
+        budget_fields = {"unit", "limit", "checkpoints", "maximum_turns"}
+        if candidate_set_submission:
+            budget_fields.add("maximum_candidates_per_turn")
         if (
-            set(budget) != {"unit", "limit", "checkpoints", "maximum_turns"}
+            set(budget) != budget_fields
             or
             budget.get("unit") != "provider_tokens"
             or not isinstance(limit, int)
@@ -1543,6 +1959,9 @@ class Lab:
             or not isinstance(maximum_turns, int)
             or isinstance(maximum_turns, bool)
             or maximum_turns <= 0
+            or not isinstance(maximum_candidates_per_turn, int)
+            or isinstance(maximum_candidates_per_turn, bool)
+            or maximum_candidates_per_turn <= 0
         ):
             raise ValueError("Study Contract budget grid differs")
         if claim_scope == "system_qualification_only" and (
@@ -1562,6 +1981,35 @@ class Lab:
             study.document.get("evaluation_protocol"), "study.evaluation_protocol"
         )
         workload.case(_name(evaluation.get("case_id"), "study.evaluation_protocol.case_id"))
+        # How many candidates a Turn search-evaluates. Checked here because a Study that
+        # asks for none, or for a word, would otherwise fault partway through a run --
+        # and a run that faults has already spent the GPU time this Lab exists to gate.
+        searches = evaluation.get("searches_per_turn", 1)
+        if not isinstance(searches, int) or isinstance(searches, bool) or searches < 1:
+            raise ValueError("Study Contract searches_per_turn differs")
+        if searches > maximum_candidates_per_turn:
+            raise ValueError(
+                "Study Contract searches_per_turn exceeds maximum_candidates_per_turn"
+            )
+        # How much faster the measurement has to be before the order counts as wrong.
+        # A Study that searches more than one candidate has to say, because without it
+        # every inversion inside the noise would be routed to the cost model as a defect
+        # -- and the loss surface is a plateau, so most inversions are inside the noise
+        # (`docs/ANALYSIS_CALIBRATION.md`).
+        materiality = evaluation.get("search_materiality_ratio")
+        if searches > 1:
+            if (
+                not isinstance(materiality, float)
+                or not 1.0 < materiality < 100.0
+            ):
+                raise ValueError(
+                    "a Study searching more than one candidate declares "
+                    "search_materiality_ratio"
+                )
+        elif materiality is not None:
+            # No second candidate to compare against, so a ratio here would state a
+            # threshold nothing can cross.
+            raise ValueError("search_materiality_ratio without searches_per_turn above one")
         execution = _object(study.document.get("execution"), "study.execution")
         if set(execution) != {
             "target",
@@ -1594,53 +2042,10 @@ class Lab:
                 raise ValueError("artifact optimization Analysis Plan differs")
             estimand = None
         else:
-            if set(analysis) != {
-                "experimental_unit",
-                "target_population",
-                "primary_endpoint",
-                "contrast",
-                "estimand",
-                "missingness",
-                "pooling",
-                "availability",
-                "summary_statistics",
-                "direction",
-            }:
-                raise ValueError("Study Contract Analysis Plan fields differ")
-            if (
-                analysis.get("experimental_unit") != "run"
-                or analysis.get("primary_endpoint")
-                != ["qualified_by_budget", "best_confirmed_latency_ms_if_qualified"]
-                or analysis.get("contrast")
-                != "open_cake_minus_direct_cuda_descriptive"
-                or analysis.get("missingness")
-                != {
-                    "candidate_failure": "observed_outcome",
-                    "external_fault": "missing",
-                    "replacement": "forbidden",
-                }
-                or analysis.get("pooling")
-                != "forbidden_without_successor_analysis_plan"
-                or analysis.get("availability")
-                != "all_prescheduled_runs_qualified_at_final_checkpoint"
-                or analysis.get("summary_statistics")
-                != {
-                    "qualification": "arm_rate",
-                    "conditional_latency": "arm_median_ms",
-                    "contrast": "direct_cuda_median_divided_by_open_cake_median",
-                    "uncertainty": "per_arm_observed_range_ms",
-                }
-                or analysis.get("direction") != "lower_latency_is_better"
-            ):
-                raise ValueError("Study Contract Analysis Plan is unsupported")
-            _name(analysis.get("target_population"), "study.analysis_plan.target_population")
+            _scientific_analysis_plan_version(analysis, "study.analysis_plan")
             estimand = _name(analysis.get("estimand"), "study.analysis_plan.estimand")
         evidence_policy = _object(study.document.get("evidence"), "study.evidence")
-        if evidence_policy != {
-            "schema_version": 2,
-            "terminal_archive_required_for_every_run": True,
-        }:
-            raise ValueError("Study Contract Evidence policy differs")
+        _matched_evidence_policy_version(evidence_policy, "study.evidence")
 
         arm_digests = {
             name: sha256(_canonical_json_bytes(value)).hexdigest()
@@ -1704,7 +2109,10 @@ class Lab:
             raise ValueError("portfolio Workload bytes differ")
 
         compiler_ref = _object(study.document["compiler_revision"], "study.compiler_revision")
-        if set(compiler_ref) != {"path", "canonical_sha256"}:
+        if set(compiler_ref) not in (
+            {"path", "canonical_sha256"},
+            {"path", "canonical_sha256", "revision_id"},
+        ):
             raise ValueError("portfolio Compiler Revision reference differs")
         compiler_relative, compiler_path = _project_path(
             self._root, compiler_ref["path"], "study.compiler_revision.path"
@@ -1714,7 +2122,15 @@ class Lab:
         compiler_sha = _digest(
             compiler_ref["canonical_sha256"], "study.compiler_revision.canonical_sha256"
         )
-        if compiler.state != "released" or not gate.passed or gate.compiler_revision_sha256 != compiler_sha:
+        if (
+            compiler.state != "released"
+            or not gate.passed
+            or gate.compiler_revision_sha256 != compiler_sha
+            or (
+                "revision_id" in compiler_ref
+                and compiler_ref["revision_id"] != gate.compiler_revision_id
+            )
+        ):
             raise ValueError("portfolio requires the exact released Compiler Revision")
 
         seed_ref = _object(study.document["kernel_seed"], "study.kernel_seed")
@@ -1906,11 +2322,25 @@ class Lab:
         resolved_inputs = _object(
             lock.document["resolved_inputs"], "campaign_lock.resolved_inputs"
         )
+        matched_event_vocabulary = _matched_evidence_policy_version(
+            _object(
+                resolved_inputs["evidence_policy"],
+                "campaign_lock.resolved_inputs.evidence_policy",
+            ),
+            "campaign_lock.resolved_inputs.evidence_policy",
+        )
         budget = _object(resolved_inputs["budget"], "campaign_lock.resolved_inputs.budget")
         checkpoints = cast(list[int], budget["checkpoints"])
         maximum_turns = cast(int, budget["maximum_turns"])
+        maximum_candidates_per_turn = cast(
+            int, budget.get("maximum_candidates_per_turn", 1)
+        )
         evaluation_protocol = _object(
             lock.document["evaluation_protocol"], "campaign_lock.evaluation_protocol"
+        )
+        attribution_evaluation = evaluation_protocol.get("attribution_evaluation")
+        profile_each_search_survivor = (
+            attribution_evaluation == _ATTRIBUTION_EVALUATION
         )
         expected_protocol_sha256 = sha256(
             _canonical_json_bytes(evaluation_protocol)
@@ -1986,6 +2416,10 @@ class Lab:
             expected_provider_configuration["event_contract"] = provider_document[
                 "event_contract"
             ]
+        if "maximum_candidates_per_turn" in budget:
+            expected_provider_configuration[
+                "submission_contract"
+            ] = CANDIDATE_SET_ENVELOPE_V1
         if (
             getattr(provider, "configuration", None) != expected_provider_configuration
             or qualification.canonical_sha256
@@ -2009,6 +2443,18 @@ class Lab:
             ),
             "campaign_lock.workload.canonical_sha256",
         )
+        executor_id = str(
+            _object(
+                _object(lock.document["execution"], "campaign_lock.execution")[
+                    "executor_revision"
+                ],
+                "campaign_lock.execution.executor_revision",
+            )["executor_id"]
+        )
+        executor_match = re.fullmatch(r"open-cake-ir-b200-v(\d+)", executor_id)
+        if executor_match is None:
+            raise ValueError("Campaign Lock Executor identity differs")
+        reference_bundle_required = int(executor_match.group(1)) >= 25
         evidence = EvidenceStore.create(root)
         for sequence, run_id in enumerate(lock.run_order, start=1):
             arm = run_id.rsplit("-", 1)[0]
@@ -2044,31 +2490,89 @@ class Lab:
                             cumulative_tokens,
                             thread_id,
                             feedback,
+                            maximum_candidates_per_turn,
                         )
                     )
                     if thread_id is not None and provider_turn.thread_id != thread_id:
                         raise ValueError("provider resume thread identity differs")
                     thread_id = provider_turn.thread_id
                     cumulative_tokens += provider_turn.provider_tokens
+                    reference_bundle = provider_turn.reference_bundle
+                    if reference_bundle is None:
+                        if reference_bundle_required:
+                            raise RunProtocolFault(
+                                "harness_fault",
+                                "provider reference bundle observation is missing",
+                            )
+                        reference_object = None
+                    else:
+                        if (
+                            not isinstance(reference_bundle, bytes)
+                            or not reference_bundle
+                        ):
+                            raise RunProtocolFault(
+                                "harness_fault",
+                                "provider reference bundle observation differs",
+                            )
+                        try:
+                            reference_bundle.decode("utf-8")
+                        except UnicodeError as error:
+                            raise RunProtocolFault(
+                                "harness_fault",
+                                "provider reference bundle is not UTF-8",
+                            ) from error
+                        reference_object = evidence.put(
+                            reference_bundle,
+                            media_type="text/plain",
+                        )
                     events_object = evidence.put(
                         provider_turn.raw_events,
                         media_type="application/x-ndjson",
                     )
-                    candidate_object = evidence.put(
-                        provider_turn.candidate,
-                        media_type=environment.media_type,
-                    )
-                    if candidate_object.sha256 != provider_turn.candidate_sha256:
-                        raise ValueError("provider candidate seal differs")
+                    if (
+                        events_object.sha256 != provider_turn.raw_events_sha256
+                        or not provider_turn.candidates
+                        or len(provider_turn.candidates) > maximum_candidates_per_turn
+                        or len(provider_turn.candidates)
+                        != len(provider_turn.candidate_sha256s)
+                        or len(set(provider_turn.candidate_sha256s))
+                        != len(provider_turn.candidate_sha256s)
+                    ):
+                        raise ValueError("provider candidate set identity differs")
+                    # Every candidate is sealed, not only the one that reaches a GPU.
+                    # The set a Turn produced is what the pre-GPU filter acted on, so an
+                    # evidence root that kept only the survivor could not show what was
+                    # filtered or why the order was what it was.
+                    candidate_objects = []
+                    for payload, expected in zip(
+                        provider_turn.candidates, provider_turn.candidate_sha256s
+                    ):
+                        sealed = evidence.put(payload, media_type=environment.media_type)
+                        if sealed.sha256 != expected:
+                            raise ValueError("provider candidate seal differs")
+                        candidate_objects.append(sealed)
                     provider_payload: dict[str, object] = {
                         "turn": turn_number,
                         "thread_id": thread_id,
                         "turn_provider_tokens": provider_turn.provider_tokens,
                         "cumulative_provider_tokens": cumulative_tokens,
                         "normalization": provider_turn.normalization,
+                        "candidate_count": len(candidate_objects),
                         "objects": [
+                            *(
+                                [
+                                    reference_object.reference(
+                                        "provider_reference_bundle"
+                                    )
+                                ]
+                                if reference_object is not None
+                                else []
+                            ),
                             events_object.reference("provider_events"),
-                            candidate_object.reference("candidate_submission"),
+                            *(
+                                item.reference(f"candidate_submission_{index:04d}")
+                                for index, item in enumerate(candidate_objects)
+                            ),
                         ],
                     }
                     if "event_contract" in provider_document:
@@ -2077,32 +2581,105 @@ class Lab:
                             for activity in provider_turn.tool_activity
                         ]
                     ledger.append("provider_turn_completed", provider_payload)
-                    submission = CandidateSubmission.seal(
-                        environment.media_type, provider_turn.candidate
-                    )
+                    # The pre-GPU filter runs on the whole set: every candidate is built,
+                    # which is the verifier and the toolchain but no device. Only then is
+                    # an order taken, and only the survivor reaches an Evaluation. This is
+                    # the stage the paper spends compile time on to avoid spending GPU
+                    # time, so building all of them is the point rather than a cost.
                     live_stage = "environment"
-                    environment_result = environment.build(submission)
-                    if environment_result.disposition == "rejected":
-                        observations.append(
-                            TurnObservation(
-                                turn_number,
-                                cumulative_tokens,
-                                submission.sha256,
-                                False,
-                                None,
-                            )
-                        )
-                        feedback = environment_result.feedback
+                    built = []
+                    for payload in provider_turn.candidates:
+                        entry = CandidateSubmission.seal(environment.media_type, payload)
+                        built.append((entry, environment.build(entry)))
+                    launchable_first = [
+                        index
+                        for index, (_, result) in enumerate(built)
+                        if result.disposition == "launchable"
+                    ]
+                    # A partial order is not an order over the candidate set. If the
+                    # model declines any launchable member, moving that unknown behind
+                    # scored members would let `searches_per_turn` silently reject it as
+                    # slower. Apply the cost order only when it covers the whole
+                    # launchable set; otherwise every member keeps provider order.
+                    cost_order_applied = bool(launchable_first) and all(
+                        built[index][1].cost is not None
+                        for index in launchable_first
+                    )
+                    if cost_order_applied:
+                        def complete_cost_order(index: int) -> tuple[tuple, int]:
+                            cost = built[index][1].cost
+                            assert cost is not None
+                            return cost.order, index
+
+                        launchable_first.sort(key=complete_cost_order)
+                    launchable_first.extend(
+                        index
+                        for index, (_, result) in enumerate(built)
+                        if result.disposition != "launchable"
+                    )
+                    filter_rows = [
+                        {
+                            "candidate_sha256": built[index][0].sha256,
+                            "disposition": built[index][1].disposition,
+                            "cost": (
+                                {
+                                    "device_fill": round(
+                                        built[index][1].cost.device_fill, 6
+                                    ),
+                                    "binding_resource": built[
+                                        index
+                                    ][1].cost.binding_resource,
+                                }
+                                if built[index][1].cost is not None
+                                else None
+                            ),
+                            "semantic_sha256": built[index][1].semantic_sha256,
+                        }
+                        for index in launchable_first
+                    ]
+                    ledger.append(
+                        "candidate_set_filtered",
+                        {
+                            "turn": turn_number,
+                            "submitted": len(built),
+                            "launchable": sum(
+                                result.disposition == "launchable"
+                                for _, result in built
+                            ),
+                            "order": (
+                                filter_rows
+                                if matched_event_vocabulary
+                                == _MATCHED_EVENT_VOCABULARY_V1
+                                else [
+                                    {
+                                        key: value
+                                        for key, value in row.items()
+                                        if key != "semantic_sha256"
+                                    }
+                                    for row in filter_rows
+                                ]
+                            ),
+                        },
+                    )
+                    # A rejected member remains evidence even when another member is
+                    # launchable. Otherwise the archive would retain only a disposition
+                    # bit and lose the concrete feedback needed to improve the next set.
+                    for rejected_submission, rejected_result in built:
+                        if rejected_result.disposition != "rejected":
+                            continue
+                        decision = route_rejection(rejected_result.feedback)
                         rejection_payload: dict[str, object] = {
                             "turn": turn_number,
-                            "candidate_sha256": submission.sha256,
-                            "feedback": dict(feedback),
+                            "candidate_sha256": rejected_submission.sha256,
+                            "feedback": dict(rejected_result.feedback),
+                            "routed_to": decision.destination,
+                            "routing_reason": decision.reason,
                         }
-                        if environment_result.artifact_payloads:
+                        if rejected_result.artifact_payloads:
                             references = []
                             rejected_roles = []
                             for role, payload in sorted(
-                                environment_result.artifact_payloads.items()
+                                rejected_result.artifact_payloads.items()
                             ):
                                 try:
                                     references.append(
@@ -2120,6 +2697,27 @@ class Lab:
                             if rejected_roles:
                                 rejection_payload["artifact_rejections"] = rejected_roles
                         ledger.append("candidate_rejected", rejection_payload)
+                    submission, environment_result = built[launchable_first[0]]
+                    if environment_result.disposition == "rejected":
+                        ledger.append(
+                            "candidate_selected",
+                            {
+                                "turn": turn_number,
+                                "candidate_sha256": submission.sha256,
+                                "qualified_search_candidates": [],
+                                "reason": "all_candidates_rejected",
+                            },
+                        )
+                        observations.append(
+                            TurnObservation(
+                                turn_number,
+                                cumulative_tokens,
+                                submission.sha256,
+                                False,
+                                None,
+                            )
+                        )
+                        feedback = environment_result.feedback
                     else:
                         launchable = environment_result.launchable
                         assert launchable is not None
@@ -2132,63 +2730,199 @@ class Lab:
                             != launchable.launch_spec_sha256
                         ):
                             raise ValueError("LaunchableCandidate artifact custody is incomplete")
-                        artifact_references = []
-                        for role, payload in sorted(launchable.artifact_payloads.items()):
-                            artifact = evidence.put(
-                                payload,
-                                media_type=_candidate_artifact_media_type(role),
+
+                        def evaluate_attribution(
+                            candidate: LaunchableCandidate,
+                        ) -> EvaluationReceipt:
+                            attempt = evaluator.evaluate(
+                                candidate,
+                                case_id=case_id,
+                                purpose="attribution",
                             )
-                            artifact_references.append(artifact.reference(role))
+                            ledger.append(
+                                "evaluation_attempt_completed",
+                                {
+                                    "turn": turn_number,
+                                    "purpose": "attribution",
+                                    "candidate_sha256": candidate.candidate_sha256,
+                                    "objects": _archive_logical_attempt(
+                                        evidence, attempt
+                                    ),
+                                },
+                            )
+                            receipt = attempt.final_receipt
+                            if receipt is None:
+                                raise RuntimeError(
+                                    "attribution Evaluation has no final receipt"
+                                )
+                            _validate_receipt_authority(
+                                receipt,
+                                candidate=candidate,
+                                workload_sha256=workload_sha256,
+                                protocol_sha256=expected_protocol_sha256,
+                                case_id=case_id,
+                                purpose="attribution",
+                            )
+                            ledger.append(
+                                "candidate_evaluated",
+                                {
+                                    "turn": turn_number,
+                                    "purpose": "attribution",
+                                    "candidate_sha256": candidate.candidate_sha256,
+                                    "objects": _archive_evaluation_receipt(
+                                        evidence, receipt
+                                    ),
+                                },
+                            )
+                            return receipt
+
+                        # Search-evaluate the candidates the filter kept, in its order.
+                        # Search is the assay that exists to choose; confirmatory stays
+                        # single because that one is the measurement a claim rests on.
+                        budget_k = int(
+                            evaluation_protocol.get("searches_per_turn", 1)
+                        )
+                        searched: list[_SearchedCandidate] = []
+                        planned_searches, collapsed = _matched_search_plan(
+                            filter_rows, budget_k
+                        )
+                        position_by_candidate = {
+                            submission.sha256: index
+                            for index, (submission, _) in enumerate(built)
+                        }
+                        for candidate_sha256 in planned_searches:
+                            position = position_by_candidate[candidate_sha256]
+                            entry_submission, entry_result = built[position]
+                            entry_launchable = entry_result.launchable
+                            assert entry_launchable is not None
+                            artifact_references = []
+                            for role, payload in sorted(
+                                entry_launchable.artifact_payloads.items()
+                            ):
+                                artifact = evidence.put(
+                                    payload,
+                                    media_type=_candidate_artifact_media_type(role),
+                                )
+                                artifact_references.append(artifact.reference(role))
+                            ledger.append(
+                                "launchable_candidate_sealed",
+                                {
+                                    "turn": turn_number,
+                                    "candidate_sha256": entry_launchable.candidate_sha256,
+                                    "candidate_record_sha256": entry_launchable.canonical_sha256,
+                                    "objects": artifact_references,
+                                },
+                            )
+                            live_stage = "evaluation"
+                            entry_attempt = evaluator.evaluate(
+                                entry_launchable,
+                                case_id=case_id,
+                                purpose="search",
+                            )
+                            entry_search = entry_attempt.final_receipt
+                            ledger.append(
+                                "evaluation_attempt_completed",
+                                {
+                                    "turn": turn_number,
+                                    "purpose": "search",
+                                    "candidate_sha256": entry_launchable.candidate_sha256,
+                                    "objects": _archive_logical_attempt(
+                                        evidence, entry_attempt
+                                    ),
+                                },
+                            )
+                            if entry_search is None:
+                                raise RuntimeError("search Evaluation has no final receipt")
+                            _validate_receipt_authority(
+                                entry_search,
+                                candidate=entry_launchable,
+                                workload_sha256=workload_sha256,
+                                protocol_sha256=expected_protocol_sha256,
+                                case_id=case_id,
+                                purpose="search",
+                            )
+                            ledger.append(
+                                "candidate_evaluated",
+                                {
+                                    "turn": turn_number,
+                                    "purpose": "search",
+                                    "candidate_sha256": entry_launchable.candidate_sha256,
+                                    "objects": _archive_evaluation_receipt(
+                                        evidence, entry_search
+                                    ),
+                                },
+                            )
+                            entry_attribution = (
+                                evaluate_attribution(entry_launchable)
+                                if profile_each_search_survivor
+                                and entry_search.correctness_passed
+                                else None
+                            )
+                            searched.append(
+                                _SearchedCandidate(
+                                    entry_submission,
+                                    entry_result,
+                                    entry_launchable,
+                                    entry_search,
+                                    entry_attribution,
+                                )
+                            )
+
+                        collapse_diagnosis = _collapse_diagnosis(
+                            turn_number, collapsed
+                        )
+                        if collapse_diagnosis is not None:
+                            # Not a measurement's finding, so it does not wait for
+                            # materiality: two spellings of one program is a fact about
+                            # the set, visible before any of it ran.
+                            ledger.append(
+                                "diagnosis_routed", collapse_diagnosis
+                            )
+
+                        # Qualification and order diagnosis share this pure decision in
+                        # execution and replay, so the gate cannot manufacture a second
+                        # interpretation of the retained measurements.
+                        qualified_search, best, cost_diagnosis = (
+                            _matched_search_decision(
+                                turn_number,
+                                [
+                                    (item.launchable.candidate_sha256, item.receipt)
+                                    for item in searched
+                                ],
+                                cost_order_applied=cost_order_applied,
+                                materiality_ratio=float(
+                                    evaluation_protocol.get(
+                                        "search_materiality_ratio", math.inf
+                                    )
+                                ),
+                            )
+                        )
+                        if cost_diagnosis is not None:
+                            ledger.append("diagnosis_routed", cost_diagnosis)
+                        selected = searched[best]
+                        submission = selected.submission
+                        environment_result = selected.environment_result
+                        launchable = selected.launchable
+                        search = selected.receipt
                         ledger.append(
-                            "launchable_candidate_sealed",
+                            "candidate_selected",
                             {
                                 "turn": turn_number,
                                 "candidate_sha256": launchable.candidate_sha256,
-                                "candidate_record_sha256": launchable.canonical_sha256,
-                                "objects": artifact_references,
+                                "qualified_search_candidates": [
+                                    searched[index].launchable.candidate_sha256
+                                    for index in qualified_search
+                                ],
+                                "reason": (
+                                    "lowest_qualified_search_latency"
+                                    if qualified_search
+                                    else "no_qualified_search_candidate"
+                                ),
                             },
                         )
-                        live_stage = "evaluation"
-                        search_attempt = evaluator.evaluate(
-                            launchable,
-                            case_id=case_id,
-                            purpose="search",
-                        )
-                        search = search_attempt.final_receipt
-                        search_attempt_references = _archive_logical_attempt(
-                            evidence, search_attempt
-                        )
-                        ledger.append(
-                            "evaluation_attempt_completed",
-                            {
-                                "turn": turn_number,
-                                "purpose": "search",
-                                "candidate_sha256": launchable.candidate_sha256,
-                                "objects": search_attempt_references,
-                            },
-                        )
-                        if search is None:
-                            raise RuntimeError("search Evaluation has no final receipt")
-                        _validate_receipt_authority(
-                            search,
-                            candidate=launchable,
-                            workload_sha256=workload_sha256,
-                            protocol_sha256=expected_protocol_sha256,
-                            case_id=case_id,
-                            purpose="search",
-                        )
-                        search_references = _archive_evaluation_receipt(evidence, search)
-                        ledger.append(
-                            "candidate_evaluated",
-                            {
-                                "turn": turn_number,
-                                "purpose": "search",
-                                "candidate_sha256": launchable.candidate_sha256,
-                                "objects": search_references,
-                            },
-                        )
+
                         confirmed: EvaluationReceipt | None = None
-                        if _receipt_qualifies(search):
+                        if qualified_search:
                             confirmed_attempt = evaluator.evaluate(
                                 launchable,
                                 case_id=case_id,
@@ -2231,6 +2965,19 @@ class Lab:
                             )
                         qualified = confirmed is not None and _receipt_qualifies(confirmed)
                         latency = _receipt_latency_ms(confirmed) if qualified else None
+                        # The current assay already profiled every correctness-passing
+                        # search survivor. The selected profile is feedback, not an
+                        # acceptance input. Frozen Studies retain the earlier
+                        # selected-after-confirmation operation at this compatibility
+                        # edge.
+                        attribution = selected.attribution
+                        if (
+                            not profile_each_search_survivor
+                            and qualified
+                            and attribution_evaluation
+                            == _LEGACY_ATTRIBUTION_EVALUATION
+                        ):
+                            attribution = evaluate_attribution(launchable)
                         observations.append(
                             TurnObservation(
                                 turn_number,
@@ -2240,16 +2987,30 @@ class Lab:
                                 latency,
                             )
                         )
-                        feedback = MappingProxyType(
-                            {
-                                "kind": "evaluation",
-                                "candidate_disposition": search.candidate_disposition,
-                                "measurement_quality": search.measurement_quality,
-                                "confirmed": qualified,
-                                "search_latency_ms": _receipt_latency_ms(search),
-                                "confirmed_latency_ms": latency,
-                            }
-                        )
+                        # A measurement says what this candidate cost; the Environment's
+                        # surviving findings say which declared resource is what bounds
+                        # it. Only the pair is actionable, so the next Turn gets both.
+                        feedback_document: dict[str, object] = {
+                            "kind": "evaluation",
+                            "candidate_disposition": search.candidate_disposition,
+                            "measurement_quality": search.measurement_quality,
+                            "confirmed": qualified,
+                            "search_latency_ms": _receipt_latency_ms(search),
+                            "confirmed_latency_ms": latency,
+                            "findings": environment_result.feedback.get("findings", []),
+                        }
+                        if "attribution_evaluation" in evaluation_protocol:
+                            attribution_feedback = (
+                                attribution.attribution_feedback
+                                if attribution is not None
+                                else None
+                            )
+                            feedback_document["profile"] = (
+                                dict(attribution_feedback)
+                                if attribution_feedback is not None
+                                else None
+                            )
+                        feedback = MappingProxyType(feedback_document)
                     if cumulative_tokens >= cast(int, budget["limit"]):
                         break
             except Exception as error:
@@ -2265,6 +3026,9 @@ class Lab:
                 fault_payload: dict[str, object] = {
                     "fault": fault,
                     "exception_type": type(error).__name__,
+                    "turn": turn_number,
+                    "stage": live_stage,
+                    "terminal_provider_tokens": cumulative_tokens,
                 }
                 if isinstance(error, RunProtocolFault) and error.artifact_payloads:
                     references = []
@@ -2596,6 +3360,69 @@ class Lab:
         lock: CampaignLock,
     ) -> bool:
         events = evidence.replay_events(audit.run_id)
+        resolved_inputs = _object(
+            lock.document["resolved_inputs"], "resolved_inputs"
+        )
+        event_vocabulary = _matched_evidence_policy_version(
+            _object(
+                resolved_inputs["evidence_policy"],
+                "resolved_inputs.evidence_policy",
+            ),
+            "resolved_inputs.evidence_policy",
+        )
+        strict_events = event_vocabulary == _MATCHED_EVENT_VOCABULARY_V1
+        arm = audit.run_id.rsplit("-", 1)[0]
+        if strict_events:
+            kinds = [event.get("kind") for event in events]
+            if (
+                any(kind not in _MATCHED_EVENT_KINDS_V1 for kind in kinds)
+                or kinds.count("run_started") != 1
+                or kinds.count("checkpoints_projected") != 1
+                or kinds.count("run_terminal") != 1
+                or kinds[0] != "run_started"
+                or kinds[-2:] != ["checkpoints_projected", "run_terminal"]
+                or audit.run_id not in lock.run_order
+            ):
+                return False
+            start_payload = _object(
+                events[0].get("payload"), "run_started.payload"
+            )
+            if start_payload != {
+                "sequence": lock.run_order.index(audit.run_id) + 1,
+                "assigned_arm": arm,
+                "automatic_retries": 0,
+                "replacement_run": False,
+            }:
+                return False
+            terminal_payload = _object(
+                events[-1].get("payload"), "run_terminal.payload"
+            )
+            if terminal_payload != {
+                "protocol_adherence": audit.protocol_adherence,
+                "endpoint_observation": audit.endpoint_observation,
+                "endpoint": dict(audit.endpoint) if audit.endpoint is not None else None,
+            }:
+                return False
+            turn_events = [
+                _object(event.get("payload"), f"event.{event.get('kind')}.payload")[
+                    "turn"
+                ]
+                for event in events[1:-2]
+                if "turn"
+                in _object(
+                    event.get("payload"), f"event.{event.get('kind')}.payload"
+                )
+            ]
+            if (
+                any(
+                    not isinstance(turn, int)
+                    or isinstance(turn, bool)
+                    or turn <= 0
+                    for turn in turn_events
+                )
+                or turn_events != sorted(turn_events)
+            ):
+                return False
         provider_events = [event for event in events if event.get("kind") == "provider_turn_completed"]
         checkpoint_events = [event for event in events if event.get("kind") == "checkpoints_projected"]
         if len(checkpoint_events) != 1:
@@ -2609,23 +3436,99 @@ class Lab:
                 checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
             )
             checkpoints = checkpoint_payload.get("checkpoints")
+            if strict_events:
+                required_fault_fields = {
+                    "fault",
+                    "exception_type",
+                    "turn",
+                    "stage",
+                    "terminal_provider_tokens",
+                }
+                if (
+                    [event.get("kind") for event in events]
+                    != [
+                        "run_started",
+                        "run_fault",
+                        "checkpoints_projected",
+                        "run_terminal",
+                    ]
+                    or not required_fault_fields <= set(fault_payload)
+                    or set(fault_payload)
+                    - required_fault_fields
+                    - {"objects", "artifact_rejections"}
+                    or not isinstance(fault_payload.get("exception_type"), str)
+                    or not fault_payload.get("exception_type")
+                    or not _artifact_outcomes_are_closed(fault_payload)
+                    or set(checkpoint_payload) != {"checkpoints"}
+                ):
+                    return False
+            fault_fields_present = any(
+                field in fault_payload
+                for field in ("turn", "stage", "terminal_provider_tokens")
+            )
+            if fault_fields_present:
+                terminal_tokens = fault_payload.get("terminal_provider_tokens")
+                if (
+                    set(("turn", "stage", "terminal_provider_tokens"))
+                    - set(fault_payload)
+                    or fault_payload.get("turn") != 1
+                    or fault_payload.get("stage") != "provider"
+                    or not isinstance(terminal_tokens, int)
+                    or isinstance(terminal_tokens, bool)
+                    or terminal_tokens < 0
+                ):
+                    return False
+                replay_budget = _object(
+                    _object(lock.document["resolved_inputs"], "resolved_inputs")[
+                        "budget"
+                    ],
+                    "resolved_inputs.budget",
+                )
+                expected_checkpoints = [
+                    {
+                        "provider_tokens": item.provider_tokens,
+                        "state": item.state,
+                        "best_candidate_sha256": item.best_candidate_sha256,
+                        "best_confirmed_latency_ms": item.best_confirmed_latency_ms,
+                    }
+                    for item in project_checkpoints(
+                        turns=(),
+                        checkpoints=cast(list[int], replay_budget["checkpoints"]),
+                        terminal_provider_tokens=terminal_tokens,
+                    )
+                ]
+            else:
+                # Frozen evidence predating explicit fault location could only prove
+                # that no checkpoint had been reached.
+                expected_checkpoints = (
+                    checkpoints
+                    if isinstance(checkpoints, list)
+                    and bool(checkpoints)
+                    and all(
+                        isinstance(item, Mapping)
+                        and item.get("state") == "unreached"
+                        for item in checkpoints
+                    )
+                    else None
+                )
             return (
                 fault_payload.get("fault") == audit.protocol_adherence
                 and audit.endpoint_observation == "missing"
                 and audit.endpoint is None
                 and isinstance(checkpoints, list)
                 and bool(checkpoints)
-                and all(
-                    isinstance(item, Mapping) and item.get("state") == "unreached"
-                    for item in checkpoints
-                )
+                and checkpoints == expected_checkpoints
             )
         threads: set[str] = set()
         cumulative_by_turn: dict[int, int] = {}
-        provider_candidate_by_turn: dict[int, str] = {}
+        provider_candidates_by_turn: dict[int, tuple[str, ...]] = {}
+        candidate_set_turns: set[int] = set()
         prior_cumulative = 0
-        arm = audit.run_id.rsplit("-", 1)[0]
-        resolved_inputs = _object(lock.document["resolved_inputs"], "resolved_inputs")
+        replay_budget = _object(resolved_inputs["budget"], "resolved_inputs.budget")
+        maximum_candidates_per_turn = int(
+            replay_budget.get("maximum_candidates_per_turn", 1)
+        )
+        candidate_set_submission = "maximum_candidates_per_turn" in replay_budget
         arm_environments = _object(
             resolved_inputs["arm_environments"], "resolved_inputs.arm_environments"
         )
@@ -2636,8 +3539,40 @@ class Lab:
         event_contract = str(
             provider_authority.get("event_contract", "closed_file_change_v1")
         )
+        executor_revision = _object(
+            _object(lock.document["execution"], "execution")["executor_revision"],
+            "execution.executor_revision",
+        )
+        executor_match = re.fullmatch(
+            r"open-cake-ir-b200-v(\d+)", str(executor_revision.get("executor_id"))
+        )
+        reference_bundle_required = (
+            executor_match is not None and int(executor_match.group(1)) >= 25
+        )
+        # Tool-rich Executors before v16 projected the fixed Candidate lifecycle
+        # separately from auxiliary activity. Preserve that frozen replay boundary;
+        # current Turns use the final no-follow file as their sole submission authority.
+        legacy_candidate_projection = (
+            event_contract == "tool_rich_candidate_v1"
+            and executor_match is not None
+            and int(executor_match.group(1)) < 16
+        )
         for expected_turn, event in enumerate(provider_events, start=1):
             payload = _object(event.get("payload"), "provider_turn.payload")
+            if strict_events:
+                expected_provider_fields = {
+                    "turn",
+                    "thread_id",
+                    "turn_provider_tokens",
+                    "cumulative_provider_tokens",
+                    "normalization",
+                    "candidate_count",
+                    "objects",
+                }
+                if "event_contract" in provider_authority:
+                    expected_provider_fields.add("auxiliary_activity")
+                if set(payload) != expected_provider_fields:
+                    return False
             if payload.get("turn") != expected_turn:
                 return False
             thread_id = payload.get("thread_id")
@@ -2652,26 +3587,96 @@ class Lab:
             objects = payload.get("objects")
             if not isinstance(objects, list):
                 return False
-            by_role = {
-                str(item.get("role")): cast(Mapping[str, object], item)
+            event_references = [
+                cast(Mapping[str, object], item)
                 for item in objects
-                if isinstance(item, Mapping) and isinstance(item.get("role"), str)
-            }
+                if isinstance(item, Mapping) and item.get("role") == "provider_events"
+            ]
+            reference_bundle_references = [
+                cast(Mapping[str, object], item)
+                for item in objects
+                if isinstance(item, Mapping)
+                and item.get("role") == "provider_reference_bundle"
+            ]
+            candidate_count = payload.get("candidate_count")
+            legacy_single_candidate = "candidate_count" not in payload
+            if legacy_single_candidate:
+                candidate_count = 1
+                candidate_references = [
+                    cast(Mapping[str, object], item)
+                    for item in objects
+                    if isinstance(item, Mapping)
+                    and item.get("role") == "candidate_submission"
+                ]
+            else:
+                candidate_set_turns.add(expected_turn)
+                indexed_references: dict[int, Mapping[str, object]] = {}
+                for item in objects:
+                    if not isinstance(item, Mapping):
+                        continue
+                    role = item.get("role")
+                    match = (
+                        re.fullmatch(r"candidate_submission_(\d{4})", role)
+                        if isinstance(role, str)
+                        else None
+                    )
+                    if match is not None:
+                        index = int(match.group(1))
+                        if index in indexed_references:
+                            return False
+                        indexed_references[index] = item
+                candidate_references = [
+                    indexed_references[index]
+                    for index in range(len(indexed_references))
+                ]
             if (
-                len(objects) != 2
-                or len(by_role) != 2
-                or set(by_role) != {"provider_events", "candidate_submission"}
+                len(event_references) != 1
+                or len(reference_bundle_references) > 1
+                or (
+                    reference_bundle_required
+                    and len(reference_bundle_references) != 1
+                )
+                or not isinstance(candidate_count, int)
+                or isinstance(candidate_count, bool)
+                or candidate_count <= 0
+                or candidate_count > maximum_candidates_per_turn
+                or len(candidate_references) != candidate_count
+                or len(objects)
+                != candidate_count + 1 + len(reference_bundle_references)
             ):
                 return False
-            raw_events = evidence.read_object(by_role["provider_events"])
-            candidate = evidence.read_object(by_role["candidate_submission"])
+            raw_events = evidence.read_object(event_references[0])
+            reference_bundle = (
+                evidence.read_object(reference_bundle_references[0])
+                if reference_bundle_references
+                else None
+            )
+            candidates = tuple(
+                evidence.read_object(reference) for reference in candidate_references
+            )
+            candidate_digests = tuple(sha256(candidate).hexdigest() for candidate in candidates)
             if (
-                sha256(raw_events).hexdigest()
-                != by_role["provider_events"].get("sha256")
-                or sha256(candidate).hexdigest()
-                != by_role["candidate_submission"].get("sha256")
+                sha256(raw_events).hexdigest() != event_references[0].get("sha256")
+                or (
+                    reference_bundle is not None
+                    and (
+                        not reference_bundle
+                        or sha256(reference_bundle).hexdigest()
+                        != reference_bundle_references[0].get("sha256")
+                    )
+                )
+                or any(
+                    digest != reference.get("sha256")
+                    for digest, reference in zip(candidate_digests, candidate_references)
+                )
+                or len(set(candidate_digests)) != len(candidate_digests)
             ):
                 return False
+            if reference_bundle is not None:
+                try:
+                    reference_bundle.decode("utf-8")
+                except UnicodeError:
+                    return False
             terminal_document: dict[str, object] = {
                 "arm": arm,
                 "candidate_written": True,
@@ -2685,10 +3690,23 @@ class Lab:
                 sort_keys=True,
                 separators=(",", ":"),
             )
+            expected_change = "add" if expected_turn == 1 else "update"
+            expected_name = (
+                "candidate-set.json"
+                if candidate_set_submission
+                else (
+                    "candidate.json"
+                    if audit.run_id.startswith("open_cake-")
+                    else "candidate.cu"
+                )
+            )
             parsed = parse_codex_turn_events(
                 raw_events,
                 expected_terminal_message=expected_terminal,
                 event_contract=event_contract,
+                legacy_candidate_name=(
+                    expected_name if legacy_candidate_projection else None
+                ),
             )
             turn_tokens = payload.get("turn_provider_tokens")
             if (
@@ -2697,8 +3715,6 @@ class Lab:
                 or cumulative != prior_cumulative + turn_tokens
             ):
                 return False
-            expected_change = "add" if expected_turn == 1 else "update"
-            expected_name = "candidate.json" if audit.run_id.startswith("open_cake-") else "candidate.cu"
             if parsed.candidate_path is not None and (
                 parsed.change_kind != expected_change
                 or Path(parsed.candidate_path).name != expected_name
@@ -2714,7 +3730,7 @@ class Lab:
                 return False
             threads.add(thread_id)
             cumulative_by_turn[expected_turn] = cumulative
-            provider_candidate_by_turn[expected_turn] = sha256(candidate).hexdigest()
+            provider_candidates_by_turn[expected_turn] = candidate_digests
             prior_cumulative = cumulative
         if len(threads) != 1 or list(cumulative_by_turn.values()) != sorted(
             cumulative_by_turn.values()
@@ -2725,12 +3741,68 @@ class Lab:
             _canonical_json_bytes(lock.document["evaluation_protocol"])
         ).hexdigest()
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
-        candidate_by_turn: dict[int, str] = {}
-        qualified_by_turn: dict[int, float] = {}
+        faults = [event for event in events if event.get("kind") == "run_fault"]
+        if len(faults) > 1:
+            return False
+        fault_turn: int | None = None
+        fault_terminal_tokens: int | None = None
+        if faults:
+            fault_payload = _object(faults[0].get("payload"), "run_fault.payload")
+            if strict_events:
+                required_fault_fields = {
+                    "fault",
+                    "exception_type",
+                    "turn",
+                    "stage",
+                    "terminal_provider_tokens",
+                }
+                if (
+                    not required_fault_fields <= set(fault_payload)
+                    or set(fault_payload)
+                    - required_fault_fields
+                    - {"objects", "artifact_rejections"}
+                    or not isinstance(fault_payload.get("exception_type"), str)
+                    or not fault_payload.get("exception_type")
+                    or not _artifact_outcomes_are_closed(fault_payload)
+                ):
+                    return False
+            if fault_payload.get("fault") != audit.protocol_adherence:
+                return False
+            if "terminal_provider_tokens" in fault_payload:
+                fault_turn_value = fault_payload.get("turn")
+                fault_stage = fault_payload.get("stage")
+                fault_terminal_value = fault_payload.get("terminal_provider_tokens")
+                if (
+                    not isinstance(fault_turn_value, int)
+                    or isinstance(fault_turn_value, bool)
+                    or fault_turn_value <= 0
+                    or fault_stage not in {"provider", "environment", "evaluation"}
+                    or not isinstance(fault_terminal_value, int)
+                    or isinstance(fault_terminal_value, bool)
+                    or fault_terminal_value < prior_cumulative
+                    or (
+                        fault_stage == "provider"
+                        and fault_turn_value != len(provider_events) + 1
+                    )
+                    or (
+                        fault_stage in {"environment", "evaluation"}
+                        and (
+                            fault_turn_value != len(provider_events)
+                            or fault_terminal_value != prior_cumulative
+                        )
+                    )
+                ):
+                    return False
+                fault_turn = fault_turn_value
+                fault_terminal_tokens = fault_terminal_value
+            else:
+                fault_turn = max(provider_candidates_by_turn)
+                fault_terminal_tokens = prior_cumulative
+
         attempt_events = [
             event for event in events if event.get("kind") == "evaluation_attempt_completed"
         ]
-        attempt_payloads: dict[tuple[int, str], Mapping[str, object]] = {}
+        attempt_payloads: dict[tuple[int, str, str], Mapping[str, object]] = {}
         for event in attempt_events:
             payload = _object(
                 event.get("payload"), "evaluation_attempt_completed.payload"
@@ -2743,21 +3815,21 @@ class Lab:
                 or not isinstance(turn, int)
                 or isinstance(turn, bool)
                 or turn <= 0
-                or purpose not in {"search", "confirmatory"}
+                or purpose not in {"search", "confirmatory", "attribution"}
                 or not isinstance(candidate_sha256, str)
                 or _DIGEST.fullmatch(candidate_sha256) is None
                 or not isinstance(payload.get("objects"), list)
             ):
                 return False
-            key = (turn, cast(str, purpose))
+            key = (turn, cast(str, purpose), candidate_sha256)
             if key in attempt_payloads:
                 return False
             attempt_payloads[key] = payload
-        replayed_attempts: set[tuple[int, str]] = set()
+        replayed_attempts: set[tuple[int, str, str]] = set()
         launchable_events = [
             event for event in events if event.get("kind") == "launchable_candidate_sealed"
         ]
-        launchables_by_turn: dict[int, LaunchableCandidate] = {}
+        launchables: dict[tuple[int, str], LaunchableCandidate] = {}
         for event in launchable_events:
             payload = _object(event.get("payload"), "launchable.payload")
             turn = payload.get("turn")
@@ -2766,28 +3838,82 @@ class Lab:
                 not isinstance(turn, int)
                 or isinstance(turn, bool)
                 or turn <= 0
-                or turn in launchables_by_turn
                 or not isinstance(candidate_sha256, str)
                 or _DIGEST.fullmatch(candidate_sha256) is None
             ):
                 return False
-            launchables_by_turn[turn] = _replay_launchable_candidate(
+            key = (turn, candidate_sha256)
+            if key in launchables:
+                return False
+            launchables[key] = _replay_launchable_candidate(
                 evidence,
                 launchable_events,
                 turn=turn,
                 candidate_sha256=candidate_sha256,
                 arm=arm,
             )
+
+        receipts: dict[tuple[int, str, str], EvaluationReceipt] = {}
+        receipt_order: list[tuple[int, str, str]] = []
+        rejected: dict[tuple[int, str], Mapping[str, object]] = {}
         for event in events:
             kind = event.get("kind")
             payload = _object(event.get("payload"), f"event.{kind}.payload")
             if kind == "candidate_rejected":
-                turn = int(payload["turn"])
-                candidate_by_turn[turn] = str(payload["candidate_sha256"])
+                turn = payload.get("turn")
+                candidate_sha256 = payload.get("candidate_sha256")
+                feedback = payload.get("feedback")
+                if strict_events:
+                    required_rejection_fields = {
+                        "turn",
+                        "candidate_sha256",
+                        "feedback",
+                        "routed_to",
+                        "routing_reason",
+                    }
+                    if (
+                        not required_rejection_fields <= set(payload)
+                        or set(payload)
+                        - required_rejection_fields
+                        - {"objects", "artifact_rejections"}
+                        or not isinstance(feedback, Mapping)
+                        or not _artifact_outcomes_are_closed(payload)
+                    ):
+                        return False
+                    decision = route_rejection(feedback)
+                    if (
+                        payload.get("routed_to") != decision.destination
+                        or payload.get("routing_reason") != decision.reason
+                    ):
+                        return False
+                if (
+                    not isinstance(turn, int)
+                    or isinstance(turn, bool)
+                    or not isinstance(candidate_sha256, str)
+                    or _DIGEST.fullmatch(candidate_sha256) is None
+                    or (turn, candidate_sha256) in rejected
+                ):
+                    return False
+                rejected[(turn, candidate_sha256)] = payload
             elif kind == "candidate_evaluated":
-                turn = int(payload["turn"])
-                candidate_sha256 = str(payload["candidate_sha256"])
-                candidate_by_turn[turn] = candidate_sha256
+                turn = payload.get("turn")
+                purpose = payload.get("purpose")
+                candidate_sha256 = payload.get("candidate_sha256")
+                if (
+                    (strict_events and set(payload) != {
+                        "turn",
+                        "purpose",
+                        "candidate_sha256",
+                        "objects",
+                    })
+                    or
+                    not isinstance(turn, int)
+                    or isinstance(turn, bool)
+                    or purpose not in {"search", "confirmatory", "attribution"}
+                    or not isinstance(candidate_sha256, str)
+                    or _DIGEST.fullmatch(candidate_sha256) is None
+                ):
+                    return False
                 objects = payload.get("objects")
                 if not isinstance(objects, list):
                     return False
@@ -2796,15 +3922,7 @@ class Lab:
                     for item in objects
                     if isinstance(item, Mapping) and item.get("role") == "evaluation_receipt"
                 ]
-                required_roles = {
-                    "correctness_output",
-                    "launch_receipt",
-                    "timing_samples",
-                    "evaluation_receipt",
-                }
-                if len(receipt_refs) != 1 or not required_roles <= {
-                    str(item.get("role")) for item in objects if isinstance(item, Mapping)
-                }:
+                if len(receipt_refs) != 1:
                     return False
                 receipt = _object(
                     json.loads(evidence.read_object(cast(Mapping[str, object], receipt_refs[0]))),
@@ -2818,14 +3936,22 @@ class Lab:
                     or receipt.get("purpose") != payload.get("purpose")
                 ):
                     return False
-                launchable = launchables_by_turn.get(turn)
-                if (
-                    launchable is None
-                    or launchable.candidate_sha256 != candidate_sha256
+                launchable = launchables.get((turn, candidate_sha256))
+                if launchable is None:
+                    return False
+                expected_raw = receipt.get("artifact_payload_sha256")
+                if not isinstance(expected_raw, Mapping) or (
+                    purpose in {"search", "confirmatory"}
+                    and set(expected_raw)
+                    != {"correctness_output", "launch_receipt", "timing_samples"}
+                ) or (
+                    purpose == "attribution"
+                    and set(expected_raw)
+                    != {"correctness_output", "launch_receipt", "profile"}
                 ):
                     return False
                 raw_payloads: dict[str, bytes] = {}
-                for role in ("correctness_output", "launch_receipt", "timing_samples"):
+                for role in sorted(expected_raw):
                     matching = [
                         item
                         for item in objects
@@ -2836,11 +3962,16 @@ class Lab:
                     raw_payloads[role] = evidence.read_object(
                         cast(Mapping[str, object], matching[0])
                     )
-                expected_raw = receipt.get("artifact_payload_sha256")
-                if not isinstance(expected_raw, Mapping) or expected_raw != {
+                if expected_raw != {
                     role: sha256(raw).hexdigest()
                     for role, raw in sorted(raw_payloads.items())
                 }:
+                    return False
+                if strict_events and {
+                    item.get("role")
+                    for item in objects
+                    if isinstance(item, Mapping)
+                } != {"evaluation_receipt", *expected_raw}:
                     return False
                 validated_receipt = EvaluationReceipt(
                     candidate_sha256=candidate_sha256,
@@ -2864,14 +3995,15 @@ class Lab:
                     _canonical_json_bytes(receipt)
                 ).hexdigest():
                     return False
-                attempt_key = (turn, str(payload.get("purpose")))
-                attempt_payload = attempt_payloads.get(attempt_key)
-                if (
-                    attempt_payload is None
-                    or attempt_payload.get("candidate_sha256") != candidate_sha256
-                ):
+                receipt_key = (turn, cast(str, purpose), candidate_sha256)
+                if receipt_key in receipts:
                     return False
-                replayed_attempts.add(attempt_key)
+                receipts[receipt_key] = validated_receipt
+                receipt_order.append(receipt_key)
+                attempt_payload = attempt_payloads.get(receipt_key)
+                if attempt_payload is None:
+                    return False
+                replayed_attempts.add(receipt_key)
                 _replay_evaluation_attempt_event(
                     evidence,
                     attempt_payload,
@@ -2879,37 +4011,16 @@ class Lab:
                     protocol_sha256=protocol_sha256,
                     final_receipt=validated_receipt,
                 )
-                if payload.get("purpose") == "confirmatory":
-                    timing = validated_receipt.timing
-                    if (
-                        validated_receipt.correctness_passed
-                        and validated_receipt.kernel_calls == 1
-                        and validated_receipt.fallback_calls == 0
-                        and isinstance(timing, Mapping)
-                        and timing.get("measurement_quality_passed") is True
-                    ):
-                        latency = timing.get("pooled_median_ms")
-                        if not isinstance(latency, (int, float)) or float(latency) <= 0:
-                            return False
-                        qualified_by_turn[turn] = float(latency)
         unreplayed_attempts = set(attempt_payloads) - replayed_attempts
         if unreplayed_attempts:
-            faults = [event for event in events if event.get("kind") == "run_fault"]
             if len(unreplayed_attempts) != 1 or len(faults) != 1:
                 return False
-            turn, purpose = next(iter(unreplayed_attempts))
-            if (
-                turn != max(provider_candidate_by_turn)
-                or (purpose == "confirmatory" and (turn, "search") not in replayed_attempts)
-            ):
+            turn, purpose, candidate_sha256 = next(iter(unreplayed_attempts))
+            if turn != fault_turn:
                 return False
-            attempt_payload = attempt_payloads[(turn, purpose)]
-            launchable = launchables_by_turn.get(turn)
-            if (
-                launchable is None
-                or launchable.candidate_sha256
-                != attempt_payload["candidate_sha256"]
-            ):
+            attempt_payload = attempt_payloads[(turn, purpose, candidate_sha256)]
+            launchable = launchables.get((turn, candidate_sha256))
+            if launchable is None:
                 return False
             _replay_evaluation_attempt_event(
                 evidence,
@@ -2918,37 +4029,367 @@ class Lab:
                 protocol_sha256=protocol_sha256,
                 final_receipt=None,
             )
-        observations = []
-        unmatched_provider_turns = set(provider_candidate_by_turn) - set(candidate_by_turn)
-        if (
-            any(
-                provider_candidate_by_turn.get(turn) != launchable.candidate_sha256
-                for turn, launchable in launchables_by_turn.items()
-            )
-            or any(
-                provider_candidate_by_turn.get(turn) != candidate_sha256
-                for turn, candidate_sha256 in candidate_by_turn.items()
-            )
-            or unmatched_provider_turns
-            and (
-                unmatched_provider_turns != {max(provider_candidate_by_turn)}
-                or len([event for event in events if event.get("kind") == "run_fault"])
-                != 1
-            )
+
+        if any(
+            turn not in provider_candidates_by_turn
+            or candidate_sha256 not in provider_candidates_by_turn[turn]
+            for turn, candidate_sha256 in [
+                *launchables,
+                *rejected,
+                *((key[0], key[2]) for key in receipts),
+                *((key[0], key[2]) for key in attempt_payloads),
+            ]
         ):
             return False
-        for turn, candidate_sha256 in sorted(candidate_by_turn.items()):
-            if turn not in cumulative_by_turn:
+
+        filter_events = [
+            event for event in events if event.get("kind") == "candidate_set_filtered"
+        ]
+        filters: dict[int, Mapping[str, object]] = {}
+        filter_order: dict[int, tuple[str, ...]] = {}
+        filter_disposition: dict[int, dict[str, str]] = {}
+        for event in filter_events:
+            payload = _object(event.get("payload"), "candidate_set_filtered.payload")
+            turn = payload.get("turn")
+            order = payload.get("order")
+            if (
+                set(payload) != {"turn", "submitted", "launchable", "order"}
+                or not isinstance(turn, int)
+                or isinstance(turn, bool)
+                or turn in filters
+                or turn not in candidate_set_turns
+                or not isinstance(order, list)
+            ):
                 return False
-            observations.append(
-                TurnObservation(
-                    turn,
-                    cumulative_by_turn[turn],
-                    candidate_sha256,
-                    turn in qualified_by_turn,
-                    qualified_by_turn.get(turn),
+            candidates: list[str] = []
+            dispositions: dict[str, str] = {}
+            for row in order:
+                expected_row_fields = {
+                    "candidate_sha256",
+                    "disposition",
+                    "cost",
+                }
+                if strict_events:
+                    expected_row_fields.add("semantic_sha256")
+                if not isinstance(row, Mapping) or set(row) != expected_row_fields:
+                    return False
+                candidate_sha256 = row.get("candidate_sha256")
+                disposition = row.get("disposition")
+                cost = row.get("cost")
+                semantic_sha256 = row.get("semantic_sha256")
+                if (
+                    not isinstance(candidate_sha256, str)
+                    or _DIGEST.fullmatch(candidate_sha256) is None
+                    or candidate_sha256 in dispositions
+                    or disposition not in {"launchable", "rejected"}
+                    or (
+                        cost is not None
+                        and (
+                            not isinstance(cost, Mapping)
+                            or set(cost) != {"device_fill", "binding_resource"}
+                            or not isinstance(cost.get("device_fill"), (int, float))
+                            or isinstance(cost.get("device_fill"), bool)
+                            or not math.isfinite(float(cost["device_fill"]))
+                            or not 0 < float(cost["device_fill"]) <= 1
+                            or not isinstance(cost.get("binding_resource"), str)
+                            or not cost.get("binding_resource")
+                        )
+                    )
+                    or (
+                        strict_events
+                        and semantic_sha256 is not None
+                        and (
+                            not isinstance(semantic_sha256, str)
+                            or _DIGEST.fullmatch(semantic_sha256) is None
+                        )
+                    )
+                ):
+                    return False
+                candidates.append(candidate_sha256)
+                dispositions[candidate_sha256] = cast(str, disposition)
+            provider_candidates = provider_candidates_by_turn.get(turn)
+            if (
+                provider_candidates is None
+                or len(candidates) != len(provider_candidates)
+                or set(candidates) != set(provider_candidates)
+                or payload.get("submitted") != len(provider_candidates)
+                or payload.get("launchable")
+                != sum(value == "launchable" for value in dispositions.values())
+            ):
+                return False
+            filters[turn] = payload
+            filter_order[turn] = tuple(candidates)
+            filter_disposition[turn] = dispositions
+
+        if candidate_set_submission:
+            expected_rejections = {
+                (turn, candidate_sha256)
+                for turn, dispositions in filter_disposition.items()
+                for candidate_sha256, disposition in dispositions.items()
+                if disposition == "rejected"
+            }
+            if set(rejected) != expected_rejections:
+                return False
+
+        selection_events = [
+            event for event in events if event.get("kind") == "candidate_selected"
+        ]
+        selections: dict[int, Mapping[str, object]] = {}
+        for event in selection_events:
+            payload = _object(event.get("payload"), "candidate_selected.payload")
+            turn = payload.get("turn")
+            candidate_sha256 = payload.get("candidate_sha256")
+            qualified = payload.get("qualified_search_candidates")
+            if (
+                set(payload)
+                != {
+                    "turn",
+                    "candidate_sha256",
+                    "qualified_search_candidates",
+                    "reason",
+                }
+                or not isinstance(turn, int)
+                or isinstance(turn, bool)
+                or turn in selections
+                or turn not in candidate_set_turns
+                or not isinstance(candidate_sha256, str)
+                or _DIGEST.fullmatch(candidate_sha256) is None
+                or not isinstance(qualified, list)
+                or any(
+                    not isinstance(value, str) or _DIGEST.fullmatch(value) is None
+                    for value in qualified
                 )
+            ):
+                return False
+            selections[turn] = payload
+
+        observations: list[TurnObservation] = []
+        evaluation_protocol = _object(
+            lock.document["evaluation_protocol"], "evaluation_protocol"
+        )
+        searches_per_turn = int(
+            evaluation_protocol.get("searches_per_turn", 1)
+        )
+        attribution_evaluation = evaluation_protocol.get("attribution_evaluation")
+        expected_searches: dict[int, list[str]] = {}
+        if strict_events:
+            expected_diagnoses, expected_searches = _expected_matched_diagnoses_v1(
+                filters=filters,
+                receipts=receipts,
+                receipt_order=receipt_order,
+                searches_per_turn=searches_per_turn,
+                materiality_ratio=float(
+                    evaluation_protocol.get("search_materiality_ratio", math.inf)
+                ),
             )
+            _validate_matched_diagnoses_v1(
+                events,
+                expected=expected_diagnoses,
+                fault_turn=fault_turn,
+            )
+        for turn, provider_candidates in sorted(provider_candidates_by_turn.items()):
+            if turn in candidate_set_turns:
+                if turn not in filters:
+                    if turn != fault_turn:
+                        return False
+                    continue
+                selection = selections.get(turn)
+                if selection is None:
+                    if turn != fault_turn:
+                        return False
+                    continue
+                selected = cast(str, selection["candidate_sha256"])
+                order = filter_order[turn]
+                dispositions = filter_disposition[turn]
+                if selected not in provider_candidates:
+                    return False
+                search_keys = [
+                    key
+                    for key in receipt_order
+                    if key[0] == turn and key[1] == "search"
+                ]
+                if selection.get("reason") == "all_candidates_rejected":
+                    if (
+                        selected != order[0]
+                        or any(value == "launchable" for value in dispositions.values())
+                        or search_keys
+                        or selection.get("qualified_search_candidates") != []
+                        or (turn, selected) not in rejected
+                    ):
+                        return False
+                    if turn != fault_turn:
+                        observations.append(
+                            TurnObservation(
+                                turn,
+                                cumulative_by_turn[turn],
+                                selected,
+                                False,
+                                None,
+                            )
+                        )
+                    continue
+                if not search_keys or len(search_keys) > searches_per_turn:
+                    return False
+                searched_candidates = [key[2] for key in search_keys]
+                if (
+                    len(set(searched_candidates)) != len(searched_candidates)
+                    or any(dispositions.get(value) != "launchable" for value in searched_candidates)
+                    or [order.index(value) for value in searched_candidates]
+                    != sorted(order.index(value) for value in searched_candidates)
+                    or (
+                        strict_events
+                        and searched_candidates
+                        != (
+                            expected_searches[turn][
+                                : len(searched_candidates)
+                            ]
+                            if turn == fault_turn
+                            else expected_searches[turn]
+                        )
+                    )
+                ):
+                    return False
+                qualified_search = [
+                    key[2] for key in search_keys if _receipt_qualifies(receipts[key])
+                ]
+                expected_selected = (
+                    min(
+                        qualified_search,
+                        key=lambda value: _receipt_latency_ms(
+                            receipts[(turn, "search", value)]
+                        )
+                        or float("inf"),
+                    )
+                    if qualified_search
+                    else searched_candidates[0]
+                )
+                expected_reason = (
+                    "lowest_qualified_search_latency"
+                    if qualified_search
+                    else "no_qualified_search_candidate"
+                )
+                if (
+                    selection.get("qualified_search_candidates") != qualified_search
+                    or selected != expected_selected
+                    or selection.get("reason") != expected_reason
+                ):
+                    return False
+                confirms = [
+                    receipt
+                    for (candidate_turn, purpose, candidate), receipt in receipts.items()
+                    if candidate_turn == turn
+                    and purpose == "confirmatory"
+                    and candidate == selected
+                ]
+                foreign_confirms = [
+                    key
+                    for key in receipts
+                    if key[0] == turn
+                    and key[1] == "confirmatory"
+                    and key[2] != selected
+                ]
+                if foreign_confirms or (not qualified_search and confirms):
+                    return False
+                if turn == fault_turn:
+                    continue
+                if len(confirms) != (1 if qualified_search else 0):
+                    return False
+                confirmed = confirms[0] if confirms else None
+                qualified = confirmed is not None and _receipt_qualifies(confirmed)
+                attributions = [
+                    key
+                    for key in receipts
+                    if key[0] == turn and key[1] == "attribution"
+                ]
+                expected_attributions = (
+                    [
+                        candidate
+                        for candidate in searched_candidates
+                        if receipts[(turn, "search", candidate)].correctness_passed
+                    ]
+                    if attribution_evaluation == _ATTRIBUTION_EVALUATION
+                    else (
+                        [selected]
+                        if qualified
+                        and attribution_evaluation
+                        == _LEGACY_ATTRIBUTION_EVALUATION
+                        else []
+                    )
+                )
+                if (
+                    len(attributions) != len(expected_attributions)
+                    or {key[2] for key in attributions}
+                    != set(expected_attributions)
+                ):
+                    return False
+                observations.append(
+                    TurnObservation(
+                        turn,
+                        cumulative_by_turn[turn],
+                        selected,
+                        qualified,
+                        _receipt_latency_ms(confirmed) if qualified else None,
+                    )
+                )
+            else:
+                # Historical evidence wrote exactly one candidate per Turn and had no
+                # explicit filter/selection events. Keep that bounded spelling readable;
+                # new evidence must use the candidate-set contract above.
+                if len(provider_candidates) != 1:
+                    return False
+                selected = provider_candidates[0]
+                if turn == fault_turn:
+                    continue
+                has_rejection = (turn, selected) in rejected
+                has_evaluation = any(
+                    key[0] == turn and key[2] == selected for key in receipts
+                )
+                if has_rejection == has_evaluation:
+                    return False
+                confirmed = receipts.get((turn, "confirmatory", selected))
+                qualified = confirmed is not None and _receipt_qualifies(confirmed)
+                observations.append(
+                    TurnObservation(
+                        turn,
+                        cumulative_by_turn[turn],
+                        selected,
+                        qualified,
+                        _receipt_latency_ms(confirmed) if qualified else None,
+                    )
+                )
+
+        if set(filters) != candidate_set_turns - ({fault_turn} if fault_turn else set()):
+            # A fault may happen after its filter was written, so the final Turn is the
+            # sole allowed extra member on either side of this equality.
+            if not (
+                fault_turn in candidate_set_turns
+                and set(filters) | {fault_turn} == candidate_set_turns
+            ):
+                return False
+        if any(turn not in filters for turn in selections):
+            return False
+        for turn, candidate_sha256 in rejected:
+            if turn in candidate_set_turns:
+                # Rejection is a property of each set member, not of the Turn's
+                # eventual selection.  A mixed set legitimately records rejected
+                # members while selecting a different launchable member.  The exact
+                # rejected-member set was checked against the filter dispositions
+                # above; the all-rejected selection rule is checked in the selection
+                # replay branch.
+                if (
+                    filter_disposition.get(turn, {}).get(candidate_sha256)
+                    != "rejected"
+                ):
+                    return False
+
+        for turn, candidate_sha256 in launchables:
+            if turn in candidate_set_turns and filter_disposition.get(turn, {}).get(
+                candidate_sha256
+            ) != "launchable":
+                return False
+
+        if not observations and not faults:
+            return False
         if [item.turn for item in observations] != list(range(1, len(observations) + 1)):
             return False
         resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
@@ -2956,7 +4397,11 @@ class Lab:
         projected = project_checkpoints(
             turns=observations,
             checkpoints=cast(list[int], budget["checkpoints"]),
-            terminal_provider_tokens=max(cumulative_by_turn.values()),
+            terminal_provider_tokens=(
+                fault_terminal_tokens
+                if fault_terminal_tokens is not None
+                else max(cumulative_by_turn.values())
+            ),
         )
         expected_projection = [
             {
@@ -2970,7 +4415,10 @@ class Lab:
         checkpoint_payload = _object(
             checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
         )
-        if checkpoint_payload.get("checkpoints") != expected_projection:
+        if (
+            (strict_events and set(checkpoint_payload) != {"checkpoints"})
+            or checkpoint_payload.get("checkpoints") != expected_projection
+        ):
             return False
         expected_observation, expected_endpoint = _matched_endpoint_from_checkpoint(
             projected[-1], audit.protocol_adherence
@@ -3012,8 +4460,11 @@ class Lab:
                 except (OSError, TypeError, ValueError, json.JSONDecodeError):
                     semantic_replay_passed = False
                     break
-        missing_run_count = sum(
-            audit.endpoint_observation == "missing" or audit.protocol_adherence != "adhered"
+        missing_run_count = len(campaign.lock.run_order) - len(audits) + sum(
+            not audit.integrity
+            or audit.authority_sha256 != campaign.lock.canonical_sha256
+            or audit.endpoint_observation == "missing"
+            or audit.protocol_adherence != "adhered"
             for audit in audits
         )
         if campaign.lock.claim_scope == "artifact_optimization_only":
@@ -3129,6 +4580,10 @@ class Lab:
                 inclusions.append(
                     AnalysisInclusion(audit.run_id, False, False, "archive_integrity")
                 )
+            elif audit.authority_sha256 != campaign.lock.canonical_sha256:
+                inclusions.append(
+                    AnalysisInclusion(audit.run_id, False, False, "campaign_authority")
+                )
             elif audit.protocol_adherence != "adhered":
                 inclusions.append(
                     AnalysisInclusion(audit.run_id, False, False, "protocol_deviation")
@@ -3148,21 +4603,42 @@ class Lab:
                 )
             else:
                 inclusions.append(AnalysisInclusion(audit.run_id, True, True, "included"))
-        estimand_available = (
-            archive_integrity_passed
-            and semantic_replay_passed
-            and missing_run_count == 0
-            and campaign.lock.analysis_plan.get("availability")
-            == "all_prescheduled_runs_qualified_at_final_checkpoint"
-            and all(audit.endpoint_observation == "qualified" for audit in audits)
+        analysis_version = _scientific_analysis_plan_version(
+            campaign.lock.analysis_plan, "campaign_lock.analysis_plan"
         )
-        qualification_rate: dict[str, float] = {}
+        inclusion_by_run = {item.run_id: item for item in inclusions}
+        qualification_rate: dict[str, float | None] = {}
+        endpoint_counts: dict[str, dict[str, int]] = {}
         medians: dict[str, float | None] = {}
         ranges: dict[str, list[float] | None] = {}
         latencies: dict[str, dict[str, float]] = {}
         for arm, arm_audits in arm_runs.items():
-            qualified = [audit for audit in arm_audits if audit.endpoint_observation == "qualified"]
-            qualification_rate[arm] = len(qualified) / len(arm_audits) if arm_audits else 0.0
+            prescheduled = sum(
+                run_id.rsplit("-", 1)[0] == arm
+                for run_id in campaign.lock.run_order
+            )
+            observed = [
+                audit
+                for audit in arm_audits
+                if inclusion_by_run[audit.run_id].qualification_endpoint_included
+            ]
+            qualified = [
+                audit
+                for audit in observed
+                if audit.endpoint_observation == "qualified"
+            ]
+            denominator = len(arm_audits) if analysis_version == "legacy_v1" else len(observed)
+            qualification_rate[arm] = (
+                len(qualified) / denominator
+                if denominator
+                else (0.0 if analysis_version == "legacy_v1" else None)
+            )
+            endpoint_counts[arm] = {
+                "prescheduled": prescheduled,
+                "observed": len(observed),
+                "qualified": len(qualified),
+                "missing": prescheduled - len(observed),
+            }
             values: list[float] = []
             latencies[arm] = {}
             for audit in qualified:
@@ -3181,6 +4657,16 @@ class Lab:
                 latencies[arm][audit.run_id.rsplit("-", 1)[1]] = float(latency)
             medians[arm] = statistics.median(values) if values else None
             ranges[arm] = [min(values), max(values)] if values else None
+        estimand_available = (
+            archive_integrity_passed
+            and semantic_replay_passed
+            and missing_run_count == 0
+            and (
+                all(audit.endpoint_observation == "qualified" for audit in audits)
+                if analysis_version == "legacy_v1"
+                else all(medians[arm] is not None for arm in arm_runs)
+            )
+        )
         paired: list[dict[str, object]] = []
         for repetition in sorted(set(latencies["open_cake"]) | set(latencies["direct_cuda"])):
             open_latency = latencies["open_cake"].get(repetition)
@@ -3197,11 +4683,25 @@ class Lab:
                     ),
                 }
             )
-        descriptive: Mapping[str, object] = {
-            "qualification_rate": qualification_rate,
-            "median_confirmed_latency_ms": medians,
-            "paired_runs": paired,
-        }
+        if analysis_version == "legacy_v1":
+            descriptive: Mapping[str, object] = {
+                "qualification_rate": qualification_rate,
+                "median_confirmed_latency_ms": medians,
+                "paired_runs": paired,
+            }
+        else:
+            descriptive = {
+                "endpoint_counts": endpoint_counts,
+                "qualification_rate_among_observed": qualification_rate,
+                "qualification_rate_difference_among_observed": (
+                    cast(float, qualification_rate["open_cake"])
+                    - cast(float, qualification_rate["direct_cuda"])
+                    if all(value is not None for value in qualification_rate.values())
+                    else None
+                ),
+                "median_confirmed_latency_ms": medians,
+                "paired_runs": paired,
+            }
         estimate: Mapping[str, object] | None = None
         uncertainty: Mapping[str, object] | None = None
         if estimand_available:
@@ -3211,6 +4711,14 @@ class Lab:
                 "ratio_of_arm_medians": cast(float, medians["direct_cuda"])
                 / cast(float, medians["open_cake"]),
             }
+            if analysis_version == "two_part_v2":
+                estimate = {
+                    **estimate,
+                    "qualification_rate_difference": (
+                        cast(float, qualification_rate["open_cake"])
+                        - cast(float, qualification_rate["direct_cuda"])
+                    ),
+                }
             uncertainty = {"latency_range_ms": ranges}
         return StudyReport(
             study_id=campaign.lock.study_id,

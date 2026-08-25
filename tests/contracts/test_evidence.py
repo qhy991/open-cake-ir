@@ -268,3 +268,166 @@ class EvidenceContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CalibrationIndexTest(unittest.TestCase):
+    """The calibration index names every measurement, and only measurements that exist.
+
+    A file added without a row is a measurement nobody reading the index knows about; a
+    row without a file is an index that lies. Both have happened elsewhere in this
+    repository today -- the runbook named superseded contracts, and the compiler source
+    set omitted Schedules its own gate read -- which is what a hand-kept list does.
+    """
+
+    def test_the_calibration_prose_agrees_with_the_measurements(self) -> None:
+        """The doc's summary claims are about the records, so they are checkable.
+
+        `docs/ANALYSIS_CALIBRATION.md` says both bounds held in the direction claimed on
+        four kernels, and that on Flash-KMeans the binding resource was a tie while the
+        Triton kernels singled one out. Each of those is a field in a stored record. A doc
+        that misquotes its own evidence is the worst drift there is -- everything else in
+        this repository is checkable, and that would be the one claim taken on trust.
+        """
+
+        directory = ROOT / "evidence" / "calibration"
+        records = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted(directory.glob("residency-b200-*.json"))
+        ]
+        prose = (ROOT / "docs" / "ANALYSIS_CALIBRATION.md").read_text(encoding="utf-8")
+
+        # The prose is written in words and the records count in integers, so the two
+        # are compared through one small normalisation rather than by making the doc
+        # read like a table.
+        spelled = {3: "three", 4: "four", 5: "five", 6: "six", 7: "seven"}
+        self.assertIn(f"on {spelled[len(records)]} kernels", prose)
+        for record in records:
+            with self.subTest(schedule=record["schedule"]["schedule_id"]):
+                verdict = record["verdict"]
+                self.assertTrue(verdict["residency_bound_sound"])
+                self.assertTrue(verdict["register_floor_sound"])
+                self.assertTrue(verdict["binding_resource_correct"])
+        # Ties are what the doc downgrades the attribution for, and it says how many.
+        # They are not a property of one backend: one is CuTe-DSL and one is Triton, so
+        # this counts them rather than predicting which kernel they land on.
+        unique = sum(
+            record["verdict"]["binding_resource_measured_uniquely"]
+            for record in records
+        )
+        self.assertIn(
+            f"On {spelled[unique]} of the {spelled[len(records)]} kernels", prose
+        )
+
+    def test_every_calibration_file_has_a_row_and_every_row_a_file(self) -> None:
+        import re
+
+        directory = ROOT / "evidence" / "calibration"
+        present = {path.name for path in directory.glob("*.json")}
+        named = set(
+            re.findall(
+                r"`([a-z0-9.-]+\.json)`",
+                (directory / "README.md").read_text(encoding="utf-8"),
+            )
+        )
+        self.assertEqual(present - named, set(), "measurements with no row")
+        self.assertEqual(named - present, set(), "rows with no measurement")
+
+
+class ArchiveShapeTamperTest(unittest.TestCase):
+    """The event sequence's shape is authority too, not only its bytes.
+
+    A tampering test already covers the bytes of an event, the authority and the
+    terminal. What it does not cover is the sequence: an archive with a gap, with an
+    extra file, or one that does not end where a Run has to end. Fifty-one refusals guard
+    this store and seven of them had ever fired in a test -- the rest were arguments.
+    """
+
+    def _sealed_run(self, root: Path, run_id: str) -> Path:
+        evidence = EvidenceStore.create(root / "evidence")
+        authority = {"kind": "fixture", "id": run_id}
+        run = evidence.start_run(
+            run_id,
+            authority_sha256=sha256(
+                json.dumps(authority, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest(),
+            authority=authority,
+        )
+        for index in range(3):
+            run.append("observation", {"value": index})
+        run.seal(
+            protocol_adherence="adhered",
+            endpoint_observation="observed",
+            endpoint={"value": 2},
+        )
+        return evidence.root
+
+    def test_a_gap_or_an_extra_file_breaks_the_archive(self) -> None:
+        def remove_middle(events: Path) -> None:
+            sorted(events.iterdir())[1].unlink()
+
+        def remove_last(events: Path) -> None:
+            sorted(events.iterdir())[-1].unlink()
+
+        def leave_a_gap(events: Path) -> None:
+            first = sorted(events.iterdir())[0]
+            copy = events / "000000000009.json"
+            copy.write_bytes(first.read_bytes())
+
+        for label, tamper in (
+            ("a middle event removed", remove_middle),
+            ("the terminal removed", remove_last),
+            ("an event beyond the end", leave_a_gap),
+        ):
+            with self.subTest(archive=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                run_id = "shape"
+                evidence_root = self._sealed_run(root, run_id)
+                events = evidence_root / "runs" / run_id / "events"
+                events.chmod(0o750)
+                for path in events.iterdir():
+                    path.chmod(0o640)
+                tamper(events)
+
+                store = EvidenceStore.open(evidence_root)
+                audit = store.audit_run(run_id)
+                self.assertFalse(audit.integrity)
+                # And a reader cannot get a sequence out of it either. An archive that
+                # audits as broken but still replays would let a claim be read off it.
+                with self.assertRaises(ValueError):
+                    store.replay_events(run_id)
+
+    def test_a_sealed_run_refuses_a_later_event(self) -> None:
+        """History stops when the claim is made, or it is not history.
+
+        `read_object` rehashes what it returns and `audit_run` verifies the chain, so a
+        forged archive is caught on the way out. This is the guard on the way in: once a
+        Run is sealed, the writer that holds it must not be able to add to it.
+        """
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            evidence = EvidenceStore.create(root / "evidence")
+            authority = {"kind": "fixture", "id": "sealed"}
+            run = evidence.start_run(
+                "sealed",
+                authority_sha256=sha256(
+                    json.dumps(authority, sort_keys=True, separators=(",", ":")).encode()
+                ).hexdigest(),
+                authority=authority,
+            )
+            run.append("observation", {"value": 0})
+            run.seal(
+                protocol_adherence="adhered",
+                endpoint_observation="observed",
+                endpoint={"value": 0},
+            )
+
+            with self.assertRaisesRegex(ValueError, "already sealed"):
+                run.append("observation", {"value": 1})
+            # And a second terminal is refused as a terminal too, not only as an append.
+            with self.assertRaises(ValueError):
+                run.append("run_terminal", {"value": 1})
+
+            audit = EvidenceStore.open(evidence.root).audit_run("sealed")
+            self.assertTrue(audit.integrity)
+
