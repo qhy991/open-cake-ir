@@ -31,11 +31,17 @@ from .ir import (
     AccessIndexKind,
     BarrierMechanism,
     BufferMode,
+    ElementwiseOp,
     LoadMovement,
     MemorySpace,
     Operation,
     DType,
     OperationKind,
+    OverflowPolicy,
+    PackedBlockFormat,
+    ReductionAlgorithm,
+    ReductionScope,
+    RoundingMode,
     Schedule,
 )
 from .analysis import (
@@ -1308,6 +1314,12 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     # ---- operation wiring --------------------------------------------------
     writers: dict[str, list[str]] = {}
     readers: dict[str, list[str]] = {}
+    loop_operations = {
+        entry
+        for loop in schedule.tile_loops
+        for entry in loop.body
+        if schedule.operation(entry) is not None
+    }
     for index, operation in enumerate(schedule.operations):
         path = f"operations[{index}]"
         if operation.role not in roles:
@@ -1364,7 +1376,14 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
                 f"operation {operation.op_id!r} both reads and writes {name!r}",
                 category,
             )
-        _verify_operation_shape(operation, path, buffers, out)
+        _verify_operation_shape(
+            schedule,
+            operation,
+            path,
+            buffers,
+            out,
+            inside_tile_loop=operation.op_id in loop_operations,
+        )
 
     # ---- loop-carried lifetime --------------------------------------------
     # A register value produced inside a tile loop does not survive it: registers hold
@@ -1634,8 +1653,300 @@ def _elementwise_result_dtype(operation, buffers) -> DType | None:
     return None
 
 
-def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> None:
+def _verify_reshape(operation, path: str, buffers, out: _Collector) -> None:
+    """Verify the one admitted spelling of a shape-only register view."""
+
     category = FindingCategory.DATA_CONSISTENCY
+    if len(operation.reads) != 1 or len(operation.writes) != 1:
+        out.add(
+            "RESHAPE_EDGE_COUNT",
+            path,
+            "reshape reads exactly one register view and writes exactly one register "
+            f"view, got {len(operation.reads)} read(s) and "
+            f"{len(operation.writes)} write(s)",
+            category,
+        )
+        return
+
+    source = buffers.get(operation.reads[0])
+    result = buffers.get(operation.writes[0])
+    if source is None or result is None:
+        return
+    if source.space is not MemorySpace.REGISTER or result.space is not MemorySpace.REGISTER:
+        out.add(
+            "RESHAPE_REGISTER_ONLY",
+            path,
+            f"reshape is a register view, but {source.name!r} is "
+            f"{source.space.value} and {result.name!r} is {result.space.value}",
+            category,
+        )
+    if source.dtype is not result.dtype:
+        out.add(
+            "RESHAPE_DTYPE_MISMATCH",
+            f"{path}.writes",
+            f"reshape preserves dtype, but {source.name!r} is {source.dtype.value} "
+            f"and {result.name!r} is {result.dtype.value}",
+            category,
+        )
+    if source.elements != result.elements:
+        out.add(
+            "RESHAPE_ELEMENT_COUNT",
+            f"{path}.writes",
+            f"reshape preserves element count, but {source.name!r} has "
+            f"{source.elements} and {result.name!r} has {result.elements}",
+            category,
+        )
+    if source.packed_block is not None or result.packed_block is not None:
+        out.add(
+            "RESHAPE_PACKED_BLOCK_UNSUPPORTED",
+            path,
+            "reshape has no packed-record interpretation; load raw record bytes into "
+            "an ordinary register buffer before forming typed fields",
+            category,
+        )
+
+
+def _verify_cast(operation, path: str, buffers, out: _Collector) -> None:
+    """Gate the two explicit conversions needed by the first Q8_1 producer."""
+
+    category = FindingCategory.DATA_CONSISTENCY
+    parameters = operation.parameters
+    if (
+        len(operation.reads) != 1
+        or len(operation.writes) != 1
+        or parameters.scalar is not None
+    ):
+        out.add(
+            "CAST_EDGE_COUNT",
+            path,
+            "cast reads exactly one buffer, no scalar, and writes exactly one buffer; "
+            f"got {len(operation.reads)} read(s), "
+            f"{'a' if parameters.scalar is not None else 'no'} scalar, and "
+            f"{len(operation.writes)} write(s)",
+            category,
+        )
+        return
+
+    source = buffers.get(operation.reads[0])
+    result = buffers.get(operation.writes[0])
+    if source is None or result is None:
+        return
+    if source.shape != result.shape:
+        out.add(
+            "CAST_SHAPE_MISMATCH",
+            f"{path}.writes",
+            f"cast preserves shape, but {source.name!r} is {list(source.shape)} and "
+            f"{result.name!r} is {list(result.shape)}",
+            category,
+        )
+    if result.space is not MemorySpace.REGISTER:
+        out.add(
+            "CAST_RESULT_SPACE",
+            f"{path}.writes",
+            f"cast produces a register value before an explicit store, but "
+            f"{result.name!r} is in {result.space.value}",
+            FindingCategory.HARDWARE_CONFORMANCE,
+        )
+
+    policy = {
+        DType.INT8: (RoundingMode.TOWARD_ZERO, OverflowPolicy.FORBID),
+        DType.FP16: (RoundingMode.NEAREST_EVEN, OverflowPolicy.IEEE),
+    }
+    expected = policy.get(result.dtype) if source.dtype is DType.FP32 else None
+    if expected is None:
+        out.add(
+            "CAST_DTYPE_UNSUPPORTED",
+            f"{path}.writes",
+            f"the first cast slice admits fp32 to int8 and fp32 to fp16, not "
+            f"{source.dtype.value} to {result.dtype.value}",
+            category,
+        )
+        return
+    rounding, overflow = expected
+    if parameters.rounding is not rounding:
+        out.add(
+            "CAST_ROUNDING_UNSUPPORTED",
+            f"{path}.parameters.rounding",
+            f"fp32 to {result.dtype.value} requires {rounding.value}, not "
+            f"{parameters.rounding.value}",
+            category,
+        )
+    if parameters.overflow is not overflow:
+        out.add(
+            "CAST_OVERFLOW_UNSUPPORTED",
+            f"{path}.parameters.overflow",
+            f"fp32 to {result.dtype.value} requires {overflow.value}, not "
+            f"{parameters.overflow.value}",
+            category,
+        )
+
+
+def _verify_packed_store(
+    schedule: Schedule,
+    operation,
+    path: str,
+    destination,
+    buffers,
+    out: _Collector,
+) -> None:
+    """Distinguish byte copies from the one typed packed-record encoding contract."""
+
+    category = FindingCategory.DATA_CONSISTENCY
+    relation = destination.packed_block
+    assert relation is not None
+
+    if len(operation.writes) != 1:
+        out.add(
+            "PACKED_STORE_ARITY",
+            path,
+            "a packed-record store writes exactly one packed destination",
+            category,
+        )
+        return
+
+    if len(operation.reads) == 1:
+        source = buffers.get(operation.reads[0])
+        if source is not None and source.dtype is not DType.UINT8:
+            out.add(
+                "PACKED_STORE_RAW_DTYPE",
+                f"{path}.reads[0]",
+                f"one-input packed store is an identity copy of uint8 bytes, but "
+                f"{source.name!r} is {source.dtype.value}",
+                category,
+            )
+        return
+
+    if relation.format is PackedBlockFormat.GGML_Q4_0_V1:
+        if len(operation.reads) == len(relation.contract.fields):
+            out.add(
+                "PACKED_STORE_Q4_TYPED_UNSUPPORTED",
+                f"{path}.reads",
+                "typed Q4_0 encoding is not in the first packed-store slice; only raw "
+                "uint8 identity copies are admitted for ggml_q4_0_v1",
+                category,
+            )
+        else:
+            out.add(
+                "PACKED_STORE_ARITY",
+                f"{path}.reads",
+                "ggml_q4_0_v1 store reads one raw uint8 byte tile; its two-field "
+                f"typed encoder is explicitly unsupported, got {len(operation.reads)} "
+                "inputs",
+                category,
+            )
+        return
+
+    if len(operation.reads) != 3:
+        out.add(
+            "PACKED_STORE_ARITY",
+            f"{path}.reads",
+            "ggml_q8_1_v1 store reads either one raw uint8 byte tile or exactly "
+            f"three typed fields in registry order, got {len(operation.reads)}",
+            category,
+        )
+        return
+
+    if len(destination.shape) != 2 or relation.record_axis != 1:
+        out.add(
+            "PACKED_STORE_LAYOUT_UNSUPPORTED",
+            f"{path}.writes[0]",
+            "the first typed ggml_q8_1_v1 encoder writes rank-two "
+            "[record, 36] storage with record_axis 1",
+            FindingCategory.HARDWARE_CONFORMANCE,
+        )
+        return
+
+    accesses = [
+        access
+        for access in schedule.access_maps
+        if access.operation == operation.op_id and access.buffer == destination.name
+    ]
+    access_ok = (
+        len(accesses) == 1
+        and len(accesses[0].indices) == 1
+        and accesses[0].indices[0].source is AccessIndexKind.DIMENSION
+        and accesses[0].indices[0].dimension == 0
+    )
+    if not access_ok:
+        out.add(
+            "PACKED_STORE_ACCESS_MAP",
+            f"{path}.writes[0]",
+            "typed ggml_q8_1_v1 store requires one destination AccessMap with the "
+            "single record-prefix index dimension 0",
+            category,
+        )
+
+    prefix = destination.shape[:1]
+    record_count_mismatches: list[str] = []
+    field_shape_mismatches: list[str] = []
+    for position, (name, field) in enumerate(
+        zip(operation.reads, relation.contract.fields)
+    ):
+        source = buffers.get(name)
+        if source is None:
+            continue
+        if source.space is not MemorySpace.REGISTER:
+            out.add(
+                "PACKED_STORE_FIELD_SPACE",
+                f"{path}.reads[{position}]",
+                f"typed registry field {field.name!r} must be register-resident, but "
+                f"{source.name!r} is in {source.space.value}",
+                FindingCategory.HARDWARE_CONFORMANCE,
+            )
+        if source.dtype is not field.dtype:
+            out.add(
+                "PACKED_STORE_FIELD_DTYPE",
+                f"{path}.reads[{position}]",
+                f"registry field {field.name!r} is {field.dtype.value}, but "
+                f"{source.name!r} is {source.dtype.value}",
+                category,
+            )
+        expected_shape = prefix + (() if field.elements == 1 else (field.elements,))
+        if source.shape != expected_shape:
+            suffix = () if field.elements == 1 else (field.elements,)
+            has_field_layout = (
+                len(source.shape) == 1 + len(suffix)
+                and source.shape[1:] == suffix
+            )
+            mismatch = (
+                f"{field.name} requires {list(expected_shape)}, "
+                f"{source.name} is {list(source.shape)}"
+            )
+            if has_field_layout:
+                record_count_mismatches.append(mismatch)
+            else:
+                field_shape_mismatches.append(mismatch)
+    if record_count_mismatches and not field_shape_mismatches:
+        out.add(
+            "PACKED_BLOCK_STORE_RECORD_COUNT",
+            f"{path}.reads",
+            "typed fields and destination must own the same record prefix: "
+            + "; ".join(record_count_mismatches),
+            category,
+        )
+    elif record_count_mismatches or field_shape_mismatches:
+        out.add(
+            "PACKED_STORE_FIELD_SHAPE",
+            f"{path}.reads",
+            "typed fields must share the destination record prefix and use registry "
+            "payload extents: "
+            + "; ".join(record_count_mismatches + field_shape_mismatches),
+            category,
+        )
+
+
+def _verify_operation_shape(
+    schedule: Schedule,
+    operation,
+    path: str,
+    buffers,
+    out: _Collector,
+    *,
+    inside_tile_loop: bool = False,
+) -> None:
+    category = FindingCategory.DATA_CONSISTENCY
+    if operation.kind is OperationKind.RESHAPE:
+        _verify_reshape(operation, path, buffers, out)
     if operation.kind is OperationKind.REDUCE_ARGMIN:
         # `reduce_argmin` is not a generic numeric reduction with an incidental
         # output type.  The admitted operation compares fp32 distances and returns
@@ -1767,8 +2078,18 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     f"but k is {k}",
                     FindingCategory.HARDWARE_CONFORMANCE,
                 )
+    packed_destinations = (
+        [
+            buffer
+            for name in operation.writes
+            if (buffer := buffers.get(name)) is not None
+            and buffer.packed_block is not None
+        ]
+        if operation.kind is OperationKind.STORE
+        else []
+    )
     expected = _ARITY.get(operation.kind)
-    if expected is not None:
+    if expected is not None and not packed_destinations:
         reads, writes, label = expected
         if len(operation.reads) < reads or len(operation.writes) < writes:
             out.add(
@@ -1862,7 +2183,16 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     f"store destination {name!r} is {buffer.mode.value}, not an output",
                     category,
                 )
-        if operation.reads and operation.writes:
+        if packed_destinations:
+            _verify_packed_store(
+                schedule,
+                operation,
+                path,
+                packed_destinations[0],
+                buffers,
+                out,
+            )
+        elif operation.reads and operation.writes:
             source = buffers.get(operation.reads[0])
             destination = buffers.get(operation.writes[0])
             if source is not None and destination is not None:
@@ -1909,77 +2239,84 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
     # for arithmetic whose operands are not all named.
     if operation.kind is OperationKind.ELEMENTWISE:
         parameters = operation.parameters
-        supplied = len(operation.reads) + (parameters.scalar is not None)
-        if supplied != parameters.arity_needed:
-            out.add(
-                "ELEMENTWISE_ARITY",
-                f"{path}.reads",
-                f"{parameters.op.value} takes {parameters.arity_needed} operand(s); "
-                f"{len(operation.reads)} read(s) and "
-                f"{'a' if parameters.scalar is not None else 'no'} scalar were given",
-                category,
-            )
-        elif len(operation.writes) == 1:
-            result = buffers.get(operation.writes[0])
-            reads = [buffers[name] for name in operation.reads if name in buffers]
-            if result is not None and len(reads) == len(operation.reads):
-                inferred_dtype = _elementwise_result_dtype(operation, buffers)
-                if inferred_dtype is None:
-                    out.add(
-                        "ELEMENTWISE_DTYPE_UNSUPPORTED",
-                        f"{path}.reads",
-                        f"{parameters.op.value} has no admitted promotion for "
-                        f"{[read.dtype.value for read in reads]}",
-                        category,
-                    )
-                elif result.dtype is not inferred_dtype:
-                    out.add(
-                        "ELEMENTWISE_RESULT_DTYPE",
-                        f"{path}.writes",
-                        f"{parameters.op.value} over "
-                        f"{[read.dtype.value for read in reads]} produces "
-                        f"{inferred_dtype.value}, but {result.name!r} is "
-                        f"{result.dtype.value}",
-                        category,
-                    )
-                widest = max((r.shape for r in reads), key=len, default=())
-                if tuple(result.shape) != tuple(widest):
-                    out.add(
-                        "ELEMENTWISE_SHAPE_MISMATCH",
-                        f"{path}.writes",
-                        f"{parameters.op.value} over "
-                        f"{[list(r.shape) for r in reads]} yields {list(widest)}, but "
-                        f"{result.name!r} is {list(result.shape)}",
-                        category,
-                    )
-                for read in reads:
-                    if len(read.shape) == len(widest):
-                        if tuple(read.shape) != tuple(widest):
+        if parameters.op is ElementwiseOp.CAST:
+            _verify_cast(operation, path, buffers, out)
+        else:
+            supplied = len(operation.reads) + (parameters.scalar is not None)
+            if supplied != parameters.arity_needed:
+                out.add(
+                    "ELEMENTWISE_ARITY",
+                    f"{path}.reads",
+                    f"{parameters.op.value} takes {parameters.arity_needed} operand(s); "
+                    f"{len(operation.reads)} read(s) and "
+                    f"{'a' if parameters.scalar is not None else 'no'} scalar were given",
+                    category,
+                )
+            elif len(operation.writes) == 1:
+                result = buffers.get(operation.writes[0])
+                reads = [buffers[name] for name in operation.reads if name in buffers]
+                if result is not None and len(reads) == len(operation.reads):
+                    inferred_dtype = _elementwise_result_dtype(operation, buffers)
+                    if inferred_dtype is None:
+                        out.add(
+                            "ELEMENTWISE_DTYPE_UNSUPPORTED",
+                            f"{path}.reads",
+                            f"{parameters.op.value} has no admitted promotion for "
+                            f"{[read.dtype.value for read in reads]}",
+                            category,
+                        )
+                    elif result.dtype is not inferred_dtype:
+                        out.add(
+                            "ELEMENTWISE_RESULT_DTYPE",
+                            f"{path}.writes",
+                            f"{parameters.op.value} over "
+                            f"{[read.dtype.value for read in reads]} produces "
+                            f"{inferred_dtype.value}, but {result.name!r} is "
+                            f"{result.dtype.value}",
+                            category,
+                        )
+                    widest = max((r.shape for r in reads), key=len, default=())
+                    if tuple(result.shape) != tuple(widest):
+                        out.add(
+                            "ELEMENTWISE_SHAPE_MISMATCH",
+                            f"{path}.writes",
+                            f"{parameters.op.value} over "
+                            f"{[list(r.shape) for r in reads]} yields {list(widest)}, but "
+                            f"{result.name!r} is {list(result.shape)}",
+                            category,
+                        )
+                    for read in reads:
+                        if len(read.shape) == len(widest):
+                            if tuple(read.shape) != tuple(widest):
+                                out.add(
+                                    "ELEMENTWISE_SHAPE_MISMATCH",
+                                    f"{path}.reads",
+                                    f"operand {read.name!r} {list(read.shape)} differs from "
+                                    f"{list(widest)} and is not narrower",
+                                    category,
+                                )
+                            continue
+                        axis = parameters.broadcast_axis
+                        if axis is None:
                             out.add(
-                                "ELEMENTWISE_SHAPE_MISMATCH",
-                                f"{path}.reads",
-                                f"operand {read.name!r} {list(read.shape)} differs from "
-                                f"{list(widest)} and is not narrower",
+                                "ELEMENTWISE_BROADCAST_UNDECLARED",
+                                f"{path}.parameters.broadcast_axis",
+                                f"operand {read.name!r} {list(read.shape)} is narrower than "
+                                f"{list(widest)}; the axis it spans must be declared",
                                 category,
                             )
-                        continue
-                    axis = parameters.broadcast_axis
-                    if axis is None:
-                        out.add(
-                            "ELEMENTWISE_BROADCAST_UNDECLARED",
-                            f"{path}.parameters.broadcast_axis",
-                            f"operand {read.name!r} {list(read.shape)} is narrower than "
-                            f"{list(widest)}; the axis it spans must be declared",
-                            category,
-                        )
-                    elif len(read.shape) != 1 or axis >= len(widest) or read.shape[0] != widest[axis]:
-                        out.add(
-                            "ELEMENTWISE_BROADCAST",
-                            f"{path}.parameters.broadcast_axis",
-                            f"operand {read.name!r} {list(read.shape)} does not span "
-                            f"axis {axis} of {list(widest)}",
-                            category,
-                        )
+                        elif (
+                            len(read.shape) != 1
+                            or axis >= len(widest)
+                            or read.shape[0] != widest[axis]
+                        ):
+                            out.add(
+                                "ELEMENTWISE_BROADCAST",
+                                f"{path}.parameters.broadcast_axis",
+                                f"operand {read.name!r} {list(read.shape)} does not span "
+                                f"axis {axis} of {list(widest)}",
+                                category,
+                            )
 
     # A sum collapses one axis, so its result is its input with that axis dropped. The
     # extent used to be restated in the operation, which put the same fact in two places
@@ -1988,18 +2325,46 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
     if operation.kind is OperationKind.REDUCE and operation.reads and operation.writes:
         source = buffers.get(operation.reads[0])
         result = buffers.get(operation.writes[0])
-        axis = operation.parameters.axis
+        parameters = operation.parameters
+        axis = parameters.axis
         if source is not None and result is not None:
-            if (
+            if parameters.algorithm is ReductionAlgorithm.XOR_TREE_32:
+                if source.dtype is not DType.FP32 or result.dtype is not DType.FP32:
+                    out.add(
+                        "REDUCE_XOR_DTYPE",
+                        f"{path}.writes",
+                        "xor_tree_32 preserves the source-ordered fp32 additions and "
+                        f"therefore requires fp32 input and output, but {source.name!r} "
+                        f"is {source.dtype.value} and {result.name!r} is "
+                        f"{result.dtype.value}",
+                        category,
+                    )
+                if parameters.scope is not ReductionScope.CTA:
+                    out.add(
+                        "REDUCE_XOR_SCOPE",
+                        f"{path}.parameters.scope",
+                        "xor_tree_32 is the declared 32-lane CTA reduction contract",
+                        category,
+                    )
+                if inside_tile_loop:
+                    out.add(
+                        "REDUCE_XOR_ACROSS_LOOP",
+                        path,
+                        "xor_tree_32 reduces one resident 32-value axis and cannot be "
+                        "carried or repeated across a tile loop",
+                        category,
+                    )
+            elif (
                 source.dtype not in _ELEMENTWISE_FLOAT_DTYPES
                 or result.dtype is not DType.FP32
             ):
+                # Keep the historical backend-selected reduction contract unchanged.
                 out.add(
                     "REDUCE_DTYPE_MISMATCH",
                     f"{path}.writes",
-                    f"{operation.parameters.op.value} reduces bf16/fp16/fp32 into "
-                    f"fp32, but {source.name!r} is {source.dtype.value} and "
-                    f"{result.name!r} is {result.dtype.value}",
+                    f"{parameters.op.value} reduces bf16/fp16/fp32 into fp32, but "
+                    f"{source.name!r} is {source.dtype.value} and {result.name!r} is "
+                    f"{result.dtype.value}",
                     category,
                 )
             if axis >= len(source.shape):
@@ -2011,6 +2376,24 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     category,
                 )
             else:
+                if parameters.algorithm is ReductionAlgorithm.XOR_TREE_32:
+                    if axis != len(source.shape) - 1:
+                        out.add(
+                            "REDUCE_XOR_AXIS",
+                            f"{path}.parameters.axis",
+                            f"xor_tree_32 reduces the contiguous last axis, but axis "
+                            f"{axis} was declared for rank-{len(source.shape)} "
+                            f"{source.name!r}",
+                            category,
+                        )
+                    if source.shape[axis] != 32:
+                        out.add(
+                            "REDUCE_XOR_EXTENT",
+                            f"{path}.parameters.axis",
+                            f"xor_tree_32 requires extent 32, but axis {axis} of "
+                            f"{source.name!r} has extent {source.shape[axis]}",
+                            category,
+                        )
                 collapsed = source.shape[:axis] + source.shape[axis + 1 :]
                 if tuple(result.shape) != tuple(collapsed):
                     out.add(
@@ -2069,12 +2452,24 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                 "global memory",
                 category,
             )
-        if len(access.indices) != len(buffer.shape):
+        typed_packed_store = (
+            operation.kind is OperationKind.STORE
+            and len(operation.reads) == 3
+            and access.buffer in operation.writes
+            and buffer.packed_block is not None
+            and buffer.packed_block.format is PackedBlockFormat.GGML_Q8_1_V1
+        )
+        expected_access_rank = 1 if typed_packed_store else len(buffer.shape)
+        if len(access.indices) != expected_access_rank:
             out.add(
                 "ACCESS_RANK",
                 f"{path}.indices",
-                f"{len(access.indices)} index components for rank-{len(buffer.shape)} "
-                f"buffer {access.buffer!r}",
+                f"{len(access.indices)} index components for "
+                + (
+                    "the one-axis typed packed-record prefix"
+                    if typed_packed_store
+                    else f"rank-{len(buffer.shape)} buffer {access.buffer!r}"
+                ),
                 category,
             )
         for position, component in enumerate(access.indices):
@@ -2512,6 +2907,22 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
     for index, access in enumerate(schedule.access_maps):
         operation = op_by_id.get(access.operation)
         if operation is None or not operation.writes:
+            continue
+        if (
+            operation.kind is OperationKind.STORE
+            and len(operation.reads) == 3
+            and any(
+                (destination := buffers.get(name)) is not None
+                and destination.packed_block is not None
+                and destination.packed_block.format
+                is PackedBlockFormat.GGML_Q8_1_V1
+                for name in operation.writes
+            )
+        ):
+            # The registry-field verifier above owns all three staged shapes and their
+            # shared record prefix. Selecting the first field here would restate that
+            # relation as an ordinary one-read Store and duplicate one record-count
+            # drift as ACCESS_TILE_MISMATCH.
             continue
         # The staged side, not the written side. A load writes its tile and a store reads
         # it, so taking `writes[0]` compared a store's *global* output against the tile

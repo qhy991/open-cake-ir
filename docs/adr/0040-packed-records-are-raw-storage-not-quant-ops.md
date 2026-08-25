@@ -1,7 +1,7 @@
 # ADR 0040: packed records are raw storage, not quantized operations
 
-Status: proposed for Compiler Revision `open-cake-ir-v29`; external Compiler approval
-and every GPU observation remain pending.
+Status: implemented in the Compiler v29 candidate; external Compiler approval and every
+GPU observation remain pending. ADR 0041 builds typed Q8_1 production on this raw ABI.
 
 ## Context
 
@@ -63,8 +63,7 @@ therefore use a 32/64-element program tile and an explicit tail mask; a direct
 
 ## Consequences
 
-The next Compiler slice can reference exact record fields without restating their ABI,
-but it still needs explicit packed decode/encode, round/cast/select, INT32 reduction and
-integer dot4 primitives. Wave search remains forbidden until two generated K=32 kernels
-produce the full 576-byte Q8 workspace and tolerant FP32 output on the exact gfx1151
-Executor.
+ADR 0041 uses this registry to encode typed Q8_1 fields without weakening the raw-copy
+contract; typed Q4, packed decode and integer dot4 remain absent. Wave search remains
+forbidden until two generated K=32 kernels produce the full 576-byte Q8 workspace and
+tolerant FP32 output on the exact gfx1151 Executor.

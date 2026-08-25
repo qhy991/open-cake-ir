@@ -580,6 +580,33 @@
         "schedule_sha256": "99cc36d2b9f9179576201a46f00d4599010f8b2d13a67aaa31fc428b02853fff",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "packed-q8_1-producer-gfx1151-accepted",
+      "schedule": "corpus/schedules/packed-q8_1-producer-gfx1151.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_TARGET_UNMODELED"
+        ],
+        "schedule_sha256": "fbddd9037a46c67d6b311879b155859e292e3300f024fe07b7da5bdf2718dee0",
+        "lowering_source_sha256": "53f136d6364ee64efa8dbae1d3f74dc7eab1dfe6b0c9e6af3f189b40eabe4b53"
+      }
+    },
+    {
+      "case_id": "packed-q8_1-producer-gfx1151-record-count-drift",
+      "schedule": "corpus/schedules/packed-q8_1-producer-gfx1151-record-count-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "PACKED_BLOCK_STORE_RECORD_COUNT",
+          "RESIDENCY_TARGET_UNMODELED"
+        ],
+        "schedule_sha256": "bb016aaef89232612753d4c04738e62aa0e18295ca292067c8e88002d6a4c447",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

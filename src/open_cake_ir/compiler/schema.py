@@ -34,9 +34,12 @@ from .ir import (
     OperandMajorMode,
     OperandSource,
     OperationKind,
+    OverflowPolicy,
     PackedBlockFormat,
     ReduceOp,
+    ReductionAlgorithm,
     ReductionScope,
+    RoundingMode,
     Swizzle,
 )
 
@@ -188,7 +191,8 @@ _PARAMETERS = {
             "op": _enum(ReduceOp),
             "axis": _NONNEGATIVE,
             "scope": _enum(ReductionScope),
-        }
+        },
+        {"algorithm": _enum(ReductionAlgorithm)},
     ),
     OperationKind.TOP_K: _object(
         {
@@ -205,6 +209,7 @@ _PARAMETERS = {
             "scope": _enum(AtomicMemoryScope),
         }
     ),
+    OperationKind.RESHAPE: _object({}),
     OperationKind.ELEMENTWISE: {
         "oneOf": [
             _object(
@@ -219,11 +224,31 @@ _PARAMETERS = {
             ),
             _object(
                 {
+                    "op": {"const": ElementwiseOp.ROUND.value},
+                    "rounding": {
+                        "const": RoundingMode.NEAREST_AWAY_FROM_ZERO.value
+                    },
+                }
+            ),
+            _object(
+                {
+                    "op": {"const": ElementwiseOp.CAST.value},
+                    "rounding": _enum(RoundingMode),
+                    "overflow": _enum(OverflowPolicy),
+                }
+            ),
+            _object(
+                {
                     "op": {
                         "enum": [
                             member.value
                             for member in ElementwiseOp
-                            if member is not ElementwiseOp.TANH
+                            if member
+                            not in {
+                                ElementwiseOp.TANH,
+                                ElementwiseOp.ROUND,
+                                ElementwiseOp.CAST,
+                            }
                         ]
                     }
                 },

@@ -48,7 +48,9 @@ class LlamaQ4MmvqWorkloadTests(unittest.TestCase):
         self.assertEqual(document["tensors"]["activation"]["dtype"], "fp32")
         self.assertEqual(document["tensors"]["weight_q4_0"]["layout"], "ggml_q4_0_v1")
         self.assertFalse(document["tensors"]["q8_1_workspace"]["public_input"])
-        self.assertEqual(document["tensors"]["q8_1_workspace"]["shape"], [576])
+        self.assertEqual(
+            document["tensors"]["q8_1_workspace"]["shape"], [16, 36]
+        )
         self.assertEqual(document["semantics"]["block_size"], 32)
         self.assertFalse(document["validation"]["performance_measured"])
 

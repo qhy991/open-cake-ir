@@ -169,11 +169,11 @@ class PackedRawCopyLoweringTests(unittest.TestCase):
         report = self.compiler.check_corpus()
 
         self.assertTrue(report.passed, report.cases)
-        self.assertEqual(report.case_count, 43)
-        self.assertEqual(report.accepted_case_count, 30)
-        self.assertEqual(report.lowerable_case_count, 24)
+        self.assertEqual(report.case_count, 45)
+        self.assertEqual(report.accepted_case_count, 31)
+        self.assertEqual(report.lowerable_case_count, 25)
         self.assertEqual(
-            tuple(case.case_id for case in report.cases[-4:]),
+            tuple(case.case_id for case in report.cases[-6:-2]),
             NEW_CASE_IDS,
         )
         self.assertTrue(

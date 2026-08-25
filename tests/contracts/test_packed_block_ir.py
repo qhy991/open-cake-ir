@@ -13,6 +13,7 @@ from pathlib import Path
 
 from open_cake_ir.compiler.ir import (
     PACKED_BLOCK_FORMATS,
+    ByteOrder,
     DType,
     PackedBlockField,
     PackedBlockFormat,
@@ -89,6 +90,7 @@ class PackedBlockRegistryTests(unittest.TestCase):
             (q4.logical_extent, q4.record_bytes, q4.record_alignment_bytes),
             (32, 18, 2),
         )
+        self.assertIs(q4.byte_order, ByteOrder.LITTLE)
         self.assertEqual(
             q4.fields,
             (
@@ -104,6 +106,7 @@ class PackedBlockRegistryTests(unittest.TestCase):
             (q8.logical_extent, q8.record_bytes, q8.record_alignment_bytes),
             (32, 36, 4),
         )
+        self.assertIs(q8.byte_order, ByteOrder.LITTLE)
         self.assertEqual(
             q8.fields,
             (

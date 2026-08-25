@@ -5,7 +5,7 @@
   "target_definitions": {
     "gfx1151": {
       "path": "compiler/targets/gfx1151.json",
-      "canonical_sha256": "e924a27f4b667bc474b515402e9ce2ddfa6ea22649a6e1a0b6b0d99652ea65fe"
+      "canonical_sha256": "c335059cde97e62e4a6ecbb6d43a2e9a3e56c1de077491c20f131969cc37b132"
     },
     "sm_100a": {
       "path": "compiler/targets/sm_100a.json",

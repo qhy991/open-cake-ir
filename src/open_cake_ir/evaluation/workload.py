@@ -375,7 +375,7 @@ def _validate_llama_q4_mmvq_contract(document: Mapping[str, object]) -> None:
             "public_input": True,
         },
         "q8_1_workspace": {
-            "shape": [576],
+            "shape": [16, 36],
             "dtype": "uint8",
             "layout": "ggml_q8_1_v1",
             "public_input": False,

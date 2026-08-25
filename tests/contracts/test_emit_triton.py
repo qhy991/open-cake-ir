@@ -443,8 +443,14 @@ class ElementwiseArityTest(unittest.TestCase):
         from open_cake_ir.compiler.ir import ElementwiseOp
 
         templates = _TritonEmitter._ELEMENTWISE_TEXT
+        policy_bodies = {
+            ElementwiseOp.TANH,
+            ElementwiseOp.DIVIDE_NO_NAN,
+            ElementwiseOp.ROUND,
+            ElementwiseOp.CAST,
+        }
         # Every operator the IR admits has a body, or the gate admits what cannot lower.
-        self.assertEqual(set(templates) | {ElementwiseOp.TANH}, set(ElementwiseOp))
+        self.assertEqual(set(templates) | policy_bodies, set(ElementwiseOp))
         for op, template in templates.items():
             with self.subTest(op=op.value):
                 self.assertIn("{a}", template)

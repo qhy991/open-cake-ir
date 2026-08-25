@@ -16,13 +16,23 @@ Assessment projects them into lowering-blocking Findings before `lower`; a backe
 not silently reinterpret an unsupported epilogue formula or wait for emission to reject
 its role, loop, pipeline, operation-count, load-movement or descriptor requirements.
 Register findings are static bounds over declared logical storage, never a claim about ptxas's physical allocation.
+`reshape` is an order-preserving register view with one read and one write of equal dtype
+and element count. `round` names nearest-away-from-zero explicitly; `cast` names both
+rounding and overflow while its write Buffer remains the sole target-dtype owner. The
+first cast subset is FP32 to FP16 nearest-even/IEEE and FP32 to INT8 toward-zero/forbid.
+`xor_tree_32` is an FP32, last-axis extent-32 CTA reduction with the visible
+16/8/4/2/1 evaluation order; it cannot be carried by a tile loop.
 A `packed_block` relation binds the contiguous last axis of a raw UINT8 Buffer to one
 closed mechanical record ABI. `ggml_q4_0_v1` is 18 bytes with 2-byte alignment;
 `ggml_q8_1_v1` is 36 bytes with 4-byte alignment because its d/s union contains a
-`half2`. The registry owns field offsets, scalar field types, logical extent 32 and Q4
-physical nibble-to-logical order. This relation proves raw-byte custody only: it does not
-decode nibbles, quantize Q8, select an integer-dot instruction or authorize MMVQ. INT8
-and UINT8 remain ordinary one-byte scalar storage types; Q4_0 is not a scalar DType.
+`half2`. The registry owns little-endian byte order, field offsets, scalar field types,
+logical extent 32 and Q4 physical nibble-to-logical order. A one-read Store remains a
+raw UINT8 identity copy. The first typed encoder is only Q8_1: it reads register-resident
+FP16 `d[P]`, FP16 `s[P]` and INT8 `qs[P,32]` in registry order and writes rank-two
+UINT8 `[P,36]` storage through one record-prefix AccessMap. Typed Q4 encoding remains
+explicitly unsupported. This does not decode nibbles, select an integer-dot instruction
+or authorize MMVQ. INT8 and UINT8 remain ordinary one-byte scalar storage types; Q4_0
+is not a scalar DType.
 A block scale is an FP32 Buffer with one `scale_of` relation. `granularity` is written in
 the FP8 data buffer's axis order; `axis_order` is the full permutation that gives the
 scale buffer's physical grouped-axis order. The Compiler derives the scale shape and

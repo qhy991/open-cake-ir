@@ -13,9 +13,9 @@ Compiler 管线、Schedule 的硬件承诺、一次 Study Run 的状态机、Com
 Schedule、Assessment、Lowering、CUBIN 和正确性检查，并提供可直接复制的命令。
 
 **AMD `gfx1151` 独立优化分支请看
-[`docs/GETTING_STARTED_AMD.md`](docs/GETTING_STARTED_AMD.md)。** 当前提议的 v29 具有 39-case
-multi-Target Gate 已准备完成，但依照 ADR 0030 仍等待 Agent 之外的精确审批；在此之前没有新的正式 GPU
-性能结论。
+[`docs/GETTING_STARTED_AMD.md`](docs/GETTING_STARTED_AMD.md)。** 当前提议的 v29 具有 45-case
+multi-Target Gate，并已能确定性 lower `llama.cpp` live-Q8_1 producer；但依照 ADR 0030 仍等待 Agent
+之外的精确审批，且 gfx1151 实机 576-byte 验证尚未完成，因此没有新的正式 GPU 性能结论。
 
 In plain language: you describe *how* a GPU should divide and order work in a typed JSON Schedule; the Compiler
 checks that plan and lowers it to inspectable target source. The optional Research Lab then lets agents improve

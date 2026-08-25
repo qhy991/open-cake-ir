@@ -88,6 +88,12 @@ class PackedBlockFormat(str, Enum):
     GGML_Q8_1_V1 = "ggml_q8_1_v1"
 
 
+class ByteOrder(str, Enum):
+    """Byte order of multi-byte fields in a physical packed record."""
+
+    LITTLE = "little"
+
+
 # `tl.dot(a, trans(b))` and tcgen05 alike contract the last axis of both staged operands,
 # so a rank-2 operand carries K at axis 1. Named because two modules reason about it.
 _CONTRACTION_AXIS = 1
@@ -115,6 +121,7 @@ class OperationKind(str, Enum):
     REDUCE = "reduce"
     TOP_K = "top_k"
     ATOMIC_RMW = "atomic_rmw"
+    RESHAPE = "reshape"
     ELEMENTWISE = "elementwise"
     STORE = "store"
 
@@ -137,6 +144,13 @@ class ReduceOp(str, Enum):
 
     SUM = "sum"
     MAX = "max"
+
+
+class ReductionAlgorithm(str, Enum):
+    """The observable evaluation order of one reduction."""
+
+    BACKEND = "backend"
+    XOR_TREE_32 = "xor_tree_32"
 
 
 class LoadMovement(str, Enum):
@@ -200,13 +214,17 @@ class ElementwiseOp(str, Enum):
     """
 
     SQUARE = "square"
+    ABS = "abs"
     RSQRT = "rsqrt"
     EXP = "exp"
     TANH = "tanh"
+    ROUND = "round"
+    CAST = "cast"
     ADD = "add"
     SUB = "sub"
     MUL = "mul"
     DIV = "div"
+    DIVIDE_NO_NAN = "divide_no_nan"
 
     @property
     def arity(self) -> int:
@@ -215,12 +233,26 @@ class ElementwiseOp(str, Enum):
             if self
             in (
                 ElementwiseOp.SQUARE,
+                ElementwiseOp.ABS,
                 ElementwiseOp.RSQRT,
                 ElementwiseOp.EXP,
                 ElementwiseOp.TANH,
+                ElementwiseOp.ROUND,
+                ElementwiseOp.CAST,
             )
             else 2
         )
+
+
+class RoundingMode(str, Enum):
+    NEAREST_AWAY_FROM_ZERO = "nearest_away_from_zero"
+    NEAREST_EVEN = "nearest_even"
+    TOWARD_ZERO = "toward_zero"
+
+
+class OverflowPolicy(str, Enum):
+    IEEE = "ieee"
+    FORBID = "forbid"
 
 
 class ReductionScope(str, Enum):
@@ -513,6 +545,7 @@ class PackedBlockContract:
     logical_extent: int
     record_bytes: int
     record_alignment_bytes: int
+    byte_order: ByteOrder
     fields: tuple[PackedBlockField, ...]
     nibble_logical_order: tuple[int, ...] = ()
 
@@ -526,6 +559,7 @@ PACKED_BLOCK_FORMATS: Mapping[PackedBlockFormat, PackedBlockContract] = MappingP
             logical_extent=32,
             record_bytes=18,
             record_alignment_bytes=2,
+            byte_order=ByteOrder.LITTLE,
             fields=(
                 PackedBlockField("d", 0, DType.FP16, 1),
                 PackedBlockField("qs", 2, DType.UINT8, 16),
@@ -538,6 +572,7 @@ PACKED_BLOCK_FORMATS: Mapping[PackedBlockFormat, PackedBlockContract] = MappingP
             logical_extent=32,
             record_bytes=36,
             record_alignment_bytes=4,
+            byte_order=ByteOrder.LITTLE,
             fields=(
                 PackedBlockField("d", 0, DType.FP16, 1),
                 PackedBlockField("s", 2, DType.FP16, 1),
@@ -1184,6 +1219,7 @@ class ReduceParameters:
     op: ReduceOp
     axis: int
     scope: ReductionScope
+    algorithm: ReductionAlgorithm = ReductionAlgorithm.BACKEND
 
 
 @dataclass(frozen=True)
@@ -1211,6 +1247,13 @@ class AtomicRmwParameters:
     value: int
     order: AtomicMemoryOrder
     scope: AtomicMemoryScope
+
+
+@dataclass(frozen=True)
+class ReshapeParameters:
+    """A register-only shape view; input and output Buffers own both shapes."""
+
+    pass
 
 
 @dataclass(frozen=True)
@@ -1243,6 +1286,8 @@ class ElementwiseParameters:
     scalar: float | None
     broadcast_axis: int | None
     instruction: ElementwiseInstruction | None
+    rounding: RoundingMode | None = None
+    overflow: OverflowPolicy | None = None
     """Which axis of the result a narrower operand spans.
 
     Trailing-axis alignment is the array convention, but it only covers half the cases
@@ -1274,6 +1319,7 @@ OperationParameters = Union[
     ReduceParameters,
     TopKParameters,
     AtomicRmwParameters,
+    ReshapeParameters,
     ElementwiseParameters,
     StoreParameters,
     FenceProxyParameters,
@@ -1380,11 +1426,21 @@ def _operation_parameters(
         )
 
     if kind is OperationKind.REDUCE:
-        obj = _strict_object(value, required={"op", "axis", "scope"}, context=context)
+        obj = _strict_object(
+            value,
+            required={"op", "axis", "scope"},
+            optional={"algorithm"},
+            context=context,
+        )
         return ReduceParameters(
             _enum(ReduceOp, obj["op"], f"{context}.op"),
             _nonnegative_int(obj["axis"], f"{context}.axis"),
             _enum(ReductionScope, obj["scope"], f"{context}.scope"),
+            _enum(
+                ReductionAlgorithm,
+                obj.get("algorithm", ReductionAlgorithm.BACKEND.value),
+                f"{context}.algorithm",
+            ),
         )
 
     if kind is OperationKind.TOP_K:
@@ -1415,11 +1471,21 @@ def _operation_parameters(
             _enum(AtomicMemoryScope, obj["scope"], f"{context}.scope"),
         )
 
+    if kind is OperationKind.RESHAPE:
+        _strict_object(value, required=set(), context=context)
+        return ReshapeParameters()
+
     if kind is OperationKind.ELEMENTWISE:
         obj = _strict_object(
             value,
             required={"op"},
-            optional={"scalar", "broadcast_axis", "instruction"},
+            optional={
+                "scalar",
+                "broadcast_axis",
+                "instruction",
+                "rounding",
+                "overflow",
+            },
             context=context,
         )
         op = _enum(ElementwiseOp, obj["op"], f"{context}.op")
@@ -1433,6 +1499,41 @@ def _operation_parameters(
             raise ScheduleParseError(
                 f"{context}.instruction has no defined effect for {op.value}"
             )
+        rounding = (
+            None
+            if "rounding" not in obj
+            else _enum(RoundingMode, obj["rounding"], f"{context}.rounding")
+        )
+        overflow = (
+            None
+            if "overflow" not in obj
+            else _enum(OverflowPolicy, obj["overflow"], f"{context}.overflow")
+        )
+        if op is ElementwiseOp.ROUND:
+            if rounding is not RoundingMode.NEAREST_AWAY_FROM_ZERO:
+                raise ScheduleParseError(
+                    f"{context}.rounding must be nearest_away_from_zero for round"
+                )
+            if overflow is not None:
+                raise ScheduleParseError(
+                    f"{context}.overflow has no defined effect for round"
+                )
+        elif op is ElementwiseOp.CAST:
+            if rounding is None or overflow is None:
+                raise ScheduleParseError(
+                    f"{context} cast requires explicit rounding and overflow"
+                )
+        elif rounding is not None or overflow is not None:
+            field = "rounding" if rounding is not None else "overflow"
+            raise ScheduleParseError(
+                f"{context}.{field} has no defined effect for {op.value}"
+            )
+        if op in {ElementwiseOp.ROUND, ElementwiseOp.CAST}:
+            for field in ("scalar", "broadcast_axis"):
+                if field in obj:
+                    raise ScheduleParseError(
+                        f"{context}.{field} has no defined effect for {op.value}"
+                    )
         scalar = obj.get("scalar")
         if scalar is not None and (
             not isinstance(scalar, (int, float)) or isinstance(scalar, bool)
@@ -1448,6 +1549,8 @@ def _operation_parameters(
             else ElementwiseInstruction.from_dict(
                 instruction, f"{context}.instruction"
             ),
+            rounding,
+            overflow,
         )
 
     if kind is OperationKind.STORE:

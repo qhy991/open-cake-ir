@@ -1,7 +1,8 @@
 # ADR 0039: Q4 MMVQ starts with live-Q8 block conformance
 
-Status: proposed; the dependency-free Workload/oracle is implemented, while Compiler
-primitives, two generated kernels and gfx1151 execution are pending.
+Status: partially implemented; the dependency-free Workload/oracle and generated Q8_1
+producer are implemented, while external Compiler approval, the Q4×Q8 consumer and
+gfx1151 execution are pending.
 
 ## Context
 
@@ -65,10 +66,13 @@ source-report transcription rather than raw AMD evidence.
 6. Q4_0 is not added as a scalar DType, existing FP8 `ScaleRelation` is not repurposed,
    existing floating MMA is not called dot4, and no opaque `q4_q8_block_dot` operation is
    introduced.
-7. The minimum future Compiler vocabulary is limited to regular UINT8/INT8 scalar
-   storage, closed Q4_0/Q8_1 packed-record relations, abs, explicit rounding/cast/select,
-   nibble extraction/byte packing, INT32 reduction and a four-byte integer-dot primitive
-   with a required Target instruction contract. Correction remains visible composition.
+7. The producer uses regular UINT8/INT8 scalar storage, closed Q4_0/Q8_1 packed-record
+   relations, a register-only reshape, abs, divide-no-NaN, explicit rounding/cast and an
+   FP32 wave32 XOR-tree reduction. The zero case is expressed by divide-no-NaN rather
+   than adding compare/select vocabulary. The future consumer may add only the nibble
+   extraction/packing, integer reduction and four-byte integer-dot primitives its first
+   executable slice proves necessary, with a required Target instruction contract.
+   Correction remains visible composition.
 8. The gfx1151 Target may admit only the exact no-clamp dot4 instruction. The Target does
    not own llama.cpp's RDNA2 scheduling table; waves, row ownership, K-loop and partial
    placement remain Schedule facts.
@@ -82,11 +86,17 @@ source-report transcription rather than raw AMD evidence.
 - Tests distinguish low nibble positions `0..15` from high nibble positions `16..31`,
   distinguish stored `half(sum(x))` from `half(half(d)*sum(q))`, require zero blocks to be
   all-zero bytes, and reject a one-byte Q8 mutation.
-- Existing Compiler v29 Gate and candidate v3 remain unchanged; this Workload-only branch
-  does not expand the already pending Compiler approval.
-- No GPU experiment is authorized until Compiler primitives pass a separately reviewed
-  Corpus Gate, B200/gfx1151 Executors are released, and the two-kernel K=32 path produces
-  exact Q8 bytes plus correct output on infplane.
+- The producer Schedule passes parser, Verifier and Triton preflight with only the
+  non-blocking gfx1151 occupancy report. Its generated source spells the five XOR stages,
+  exact FP32 division, half-away rounding, FP16 nearest-even storage and five
+  relation-derived little-endian stores; no `tl.arange(0,36)` is emitted.
+- Compiler v29's proposed 45-case Gate adds one producer positive and one isolated
+  record-count negative with zero expectation drift in the previous 43 cases. It remains
+  a draft until an independent reviewer binds the exact Gate; this agent does not write
+  that approval.
+- No GPU experiment is claimed until the gfx1151 Executor is released and the producer
+  produces all 576 reference bytes for every frozen case on infplane. No wave or consumer
+  optimization begins until the complete two-kernel K=32 path is correct.
 
 ## Stop conditions
 

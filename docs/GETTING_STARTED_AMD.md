@@ -2,9 +2,10 @@
 
 This branch is based directly on GitHub `main@f02320b17ee1f6ed12d1d858e3439bc16b9da4ed`.
 It adds exact gfx1151 Target support, standalone FP32 SwiGLU, llama.cpp FP32
-RMSNorm+Mul, and a true-one-row optimization hypothesis. The proposed Compiler v29 has a
-passing 39-case Gate but is not released until an external reviewer writes the exact
-approval required by ADR 0030. Commands below that use the draft submit no GPU work.
+RMSNorm+Mul, a true-one-row optimization hypothesis and a generated live-Q8_1 producer.
+The proposed Compiler v29 has a passing 45-case Gate but is not released until an
+external reviewer writes the exact approval required by ADR 0030. Commands below that
+use the draft submit no GPU work.
 
 ## Environment
 
@@ -97,14 +98,17 @@ raw samples, a 0.05 CV gate and the unchanged 1.05x materiality rule.
 
 This is a generated leaf-kernel path. It is not a completed llama.cpp build, model layer,
 token trajectory or serving result. No candidate is promoted without the frozen
-correctness/noise/materiality gates and profiler evidence. The next planned AMD direction
-after this bounded result is the complete Q4_0/Q8_1 MMVQ path, including activation
+correctness/noise/materiality gates and profiler evidence. The active AMD direction is
+the complete Q4_0/Q8_1 MMVQ path, including activation
 quantization and packed scale/sum semantics—not an opaque block-dot primitive.
 
 ADR 0039 now freezes the first dependency-free Q4 conformance boundary: one raw 18-byte
 Q4_0 block plus one FP32 activation block, a byte-exact live-produced 576-byte padded
 Q8_1 workspace (one consumed record plus 15 zero records), and the source-ordered
-two-part stored-s correction oracle. This is
-Workload/oracle evidence only. ADR 0040 adds raw UINT8/INT8 storage and exact Q4/Q8
-record custody, but the Compiler still lacks decode/encode, round/cast/select and dot4
-primitives, so no Q4 compute Schedule, HSACO, timing or promotion claim exists yet.
+two-part stored-s correction oracle. ADR 0040 adds raw UINT8/INT8 storage and exact Q4/Q8
+record custody. ADR 0041 adds the first composed Q8 producer: masked 512-value padding,
+explicit wave32 XOR reductions, precise FP32 division, half-away rounding, typed casts
+and relation-derived little-endian Q8_1 stores. It passes deterministic source lowering,
+but the v29 approval, exact gfx1151 Executor and on-device 576-byte comparison are still
+pending. The Q4 consumer, dot4 contract, HSACO evidence, timing and promotion claims do
+not yet exist.

@@ -1,0 +1,302 @@
+{
+  "schema_version": 1,
+  "schedule_id": "packed-q8_1-producer-gfx1151-record-count-drift-v1",
+  "target": "gfx1151",
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [0, 1, 2, 3, 4, 5, 6, 7]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "activation",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [32],
+      "mode": "input"
+    },
+    {
+      "name": "q8_workspace",
+      "space": "global",
+      "dtype": "uint8",
+      "shape": [8, 36],
+      "mode": "output",
+      "packed_block": {
+        "format": "ggml_q8_1_v1",
+        "record_axis": 1
+      }
+    },
+    {
+      "name": "x_flat",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [512],
+      "mode": "scratch"
+    },
+    {
+      "name": "x_blocks",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [16, 32],
+      "mode": "scratch"
+    },
+    {
+      "name": "abs_x",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [16, 32],
+      "mode": "scratch"
+    },
+    {
+      "name": "amax",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [16],
+      "mode": "scratch"
+    },
+    {
+      "name": "sum_x",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [16],
+      "mode": "scratch"
+    },
+    {
+      "name": "d_fp32",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [16],
+      "mode": "scratch"
+    },
+    {
+      "name": "d_fp16",
+      "space": "register",
+      "dtype": "fp16",
+      "shape": [16],
+      "mode": "scratch"
+    },
+    {
+      "name": "s_fp16",
+      "space": "register",
+      "dtype": "fp16",
+      "shape": [16],
+      "mode": "scratch"
+    },
+    {
+      "name": "scaled",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [16, 32],
+      "mode": "scratch"
+    },
+    {
+      "name": "rounded",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [16, 32],
+      "mode": "scratch"
+    },
+    {
+      "name": "q_i8",
+      "space": "register",
+      "dtype": "int8",
+      "shape": [16, 32],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_activation",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["activation"],
+      "writes": ["x_flat"],
+      "parameters": {
+        "movement": "global",
+        "reuse": "reused"
+      }
+    },
+    {
+      "id": "reshape_blocks",
+      "kind": "reshape",
+      "role": "compute",
+      "reads": ["x_flat"],
+      "writes": ["x_blocks"],
+      "depends_on": ["load_activation"],
+      "parameters": {}
+    },
+    {
+      "id": "abs_activation",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": ["x_blocks"],
+      "writes": ["abs_x"],
+      "depends_on": ["reshape_blocks"],
+      "parameters": {
+        "op": "abs"
+      }
+    },
+    {
+      "id": "reduce_amax",
+      "kind": "reduce",
+      "role": "compute",
+      "reads": ["abs_x"],
+      "writes": ["amax"],
+      "depends_on": ["abs_activation"],
+      "parameters": {
+        "op": "max",
+        "axis": 1,
+        "scope": "cta",
+        "algorithm": "xor_tree_32"
+      }
+    },
+    {
+      "id": "reduce_sum",
+      "kind": "reduce",
+      "role": "compute",
+      "reads": ["x_blocks"],
+      "writes": ["sum_x"],
+      "depends_on": ["reshape_blocks"],
+      "parameters": {
+        "op": "sum",
+        "axis": 1,
+        "scope": "cta",
+        "algorithm": "xor_tree_32"
+      }
+    },
+    {
+      "id": "make_d_fp32",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": ["amax"],
+      "writes": ["d_fp32"],
+      "depends_on": ["reduce_amax"],
+      "parameters": {
+        "op": "divide_no_nan",
+        "scalar": 127.0
+      }
+    },
+    {
+      "id": "cast_d_fp16",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": ["d_fp32"],
+      "writes": ["d_fp16"],
+      "depends_on": ["make_d_fp32"],
+      "parameters": {
+        "op": "cast",
+        "rounding": "nearest_even",
+        "overflow": "ieee"
+      }
+    },
+    {
+      "id": "cast_s_fp16",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": ["sum_x"],
+      "writes": ["s_fp16"],
+      "depends_on": ["reduce_sum"],
+      "parameters": {
+        "op": "cast",
+        "rounding": "nearest_even",
+        "overflow": "ieee"
+      }
+    },
+    {
+      "id": "scale_activation",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": ["x_blocks", "d_fp32"],
+      "writes": ["scaled"],
+      "depends_on": ["reshape_blocks", "make_d_fp32"],
+      "parameters": {
+        "op": "divide_no_nan",
+        "broadcast_axis": 0
+      }
+    },
+    {
+      "id": "round_q",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": ["scaled"],
+      "writes": ["rounded"],
+      "depends_on": ["scale_activation"],
+      "parameters": {
+        "op": "round",
+        "rounding": "nearest_away_from_zero"
+      }
+    },
+    {
+      "id": "cast_q_int8",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": ["rounded"],
+      "writes": ["q_i8"],
+      "depends_on": ["round_q"],
+      "parameters": {
+        "op": "cast",
+        "rounding": "toward_zero",
+        "overflow": "forbid"
+      }
+    },
+    {
+      "id": "store_q8_workspace",
+      "kind": "store",
+      "role": "compute",
+      "reads": ["d_fp16", "s_fp16", "q_i8"],
+      "writes": ["q8_workspace"],
+      "depends_on": ["cast_d_fp16", "cast_s_fp16", "cast_q_int8"],
+      "parameters": {
+        "coalesced": true
+      }
+    }
+  ],
+  "outputs": ["q8_workspace"],
+  "program_map": {
+    "axes": [
+      {
+        "name": "activation_tile",
+        "axis": 0,
+        "buffer": "activation",
+        "dimension": 0,
+        "tile": 512
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_activation",
+      "buffer": "activation",
+      "indices": [
+        {
+          "source": "program_tile",
+          "name": "activation_tile"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_q8_workspace",
+      "buffer": "q8_workspace",
+      "indices": [
+        {
+          "source": "dimension",
+          "dimension": 0
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {
+    "workload_contract_sha256": "34b6abd138fe909bc94b5098a0ab977e0673652ee16fff719cc657017f89652b"
+  },
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_packed_q8_1_producer_gfx1151_record_count_drift"
+  }
+}

@@ -53,15 +53,17 @@ per workgroup and 256 threads, which is exactly one row and eight wave32 executi
 
 ## Consequences
 
-- The proposed Compiler v29 has a 39-case, 56-source multi-Target Gate. The four new observations are
-  gfx1151 SwiGLU positive/instruction-negative and RMSNorm baseline/one-row positives;
-  all previous 35 finding and lowering digests are unchanged. Because the Target owns no
+- The initial Compiler v29 target slice had a 39-case, 56-source multi-Target Gate. ADRs
+  0040 and 0041 extend the same unwitnessed working Revision to 45 cases and 62 sources;
+  the previous 43 expectations remain unchanged. The original four observations are
+  gfx1151 SwiGLU positive/instruction-negative and RMSNorm baseline/one-row positives.
+  Because the Target owns no
   per-compute-unit occupancy facts, every gfx1151 observation reports the non-blocking
   `RESIDENCY_TARGET_UNMODELED` limit instead of silently implying a residency model.
 - Per-role register budgets on a Target without a register-budget issue scope fail with
   `ROLE_REGISTERS_TARGET_UNSUPPORTED` rather than borrowing NVIDIA warpgroup semantics.
 - A true-one-row leaf timing WIN still does not prove a llama.cpp build, token path or
   serving gain. Missing rocprof/Omniperf evidence blocks automatic promotion.
-- The next high-value AMD direction after this bounded result is an honest Q4_0/Q8_1
-  MMVQ representation including activation quantization, blocked packing, scale/sum
-  correction and the gfx1151 `sudot4` instruction contract—not an opaque block-dot op.
+- The active next AMD direction is an honest Q4_0/Q8_1 MMVQ representation. ADR 0041
+  implements activation quantization and Q8 packing; scale/sum-corrected consumption and
+  the gfx1151 `sudot4` instruction contract remain pending—not an opaque block-dot op.
