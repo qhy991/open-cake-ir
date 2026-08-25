@@ -2875,7 +2875,18 @@ def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> No
     if schedule.target != target.target_id:
         return  # nothing to analyse against a Target this Schedule does not name
     upper_bound = residency_upper_bound(schedule, target)
-    if upper_bound is None or upper_bound.binding is None:
+    if upper_bound is None:
+        out.add(
+            "RESIDENCY_TARGET_UNMODELED",
+            "target.occupancy",
+            f"Target {target.target_id!r} declares no per-multiprocessor occupancy facts; "
+            "the Compiler cannot attribute a residency bound and GPU measurement remains "
+            "the authority",
+            category,
+            FindingSeverity.REPORT,
+        )
+        return
+    if upper_bound.binding is None:
         return
     _verify_residency_commitment(schedule, target, upper_bound, out)
     binding = upper_bound.binding

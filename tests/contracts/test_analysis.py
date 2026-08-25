@@ -110,9 +110,13 @@ class ResidencyTest(unittest.TestCase):
 
 class ReportTest(unittest.TestCase):
     def _reports(self, path: Path) -> dict[str, str]:
+        schedule = Schedule.load(path)
+        target = Target.load(
+            ROOT / "compiler" / "targets" / f"{schedule.target}.json"
+        )
         return {
             finding.code: finding.message
-            for finding in verify(Schedule.load(path), TARGET)
+            for finding in verify(schedule, target)
             if finding.severity is FindingSeverity.REPORT
         }
 
@@ -124,7 +128,16 @@ class ReportTest(unittest.TestCase):
             )["cases"]
         ):
             with self.subTest(schedule=path.name):
-                self.assertIn("RESIDENCY_BOUND", self._reports(path))
+                schedule = Schedule.load(path)
+                target = Target.load(
+                    ROOT / "compiler" / "targets" / f"{schedule.target}.json"
+                )
+                expected = (
+                    "RESIDENCY_BOUND"
+                    if target.occupancy is not None
+                    else "RESIDENCY_TARGET_UNMODELED"
+                )
+                self.assertIn(expected, self._reports(path))
 
     def test_a_report_does_not_block(self) -> None:
         findings = verify(Schedule.load(B32), TARGET)

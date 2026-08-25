@@ -28,7 +28,10 @@ PYTHONPATH=src python3 examples/gpu/rmsnorm_amd_quickstart.py \
 
 Preparation runs Schedule parsing, exact Target verification, backend preflight and
 deterministic lowering. It must report `target=gfx1151`, `backend=triton`, HIP target
-metadata and HSACO/AMDGCN roles without submitting GPU work.
+metadata and HSACO/AMDGCN roles without submitting GPU work. The current gfx1151 Target
+does not declare per-compute-unit occupancy limits, so accepted AMD Schedules also carry
+the non-blocking `RESIDENCY_TARGET_UNMODELED` report. That report is a deliberate limit:
+the Compiler does not infer residency, and the GPU measurement remains authoritative.
 
 After an external approval releases v29, use the qualified ROCm Python and new evidence
 directories outside the checkout:

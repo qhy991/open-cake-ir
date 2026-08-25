@@ -55,7 +55,9 @@ per workgroup and 256 threads, which is exactly one row and eight wave32 executi
 
 - The proposed Compiler v29 has a 39-case, 56-source multi-Target Gate. The four new observations are
   gfx1151 SwiGLU positive/instruction-negative and RMSNorm baseline/one-row positives;
-  all previous 32 finding and lowering digests are unchanged.
+  all previous 35 finding and lowering digests are unchanged. Because the Target owns no
+  per-compute-unit occupancy facts, every gfx1151 observation reports the non-blocking
+  `RESIDENCY_TARGET_UNMODELED` limit instead of silently implying a residency model.
 - Per-role register budgets on a Target without a register-budget issue scope fail with
   `ROLE_REGISTERS_TARGET_UNSUPPORTED` rather than borrowing NVIDIA warpgroup semantics.
 - A true-one-row leaf timing WIN still does not prove a llama.cpp build, token path or
