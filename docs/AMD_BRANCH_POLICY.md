@@ -16,11 +16,13 @@ collector failure as evidence of no update.
 A candidate alignment may fast-forward the AMD branch with `force=false` only after:
 
 1. downloading a clean archive for the candidate SHA;
-2. passing the complete contract suite except the explicitly B200-only Nsight Compute
+2. releasing and admitting the exact gfx1151 Executor on the target host; a B200
+   Executor or source-only load is not an AMD execution qualification;
+3. passing the complete contract suite except the explicitly B200-only Nsight Compute
    custody check;
-3. passing both gfx1151 SwiGLU and llama RMSNorm correctness quickstarts with new external
+4. passing both gfx1151 SwiGLU and llama RMSNorm correctness quickstarts with new external
    evidence directories;
-4. re-reading main and AMD refs and proving neither moved during validation.
+5. re-reading main and AMD refs and proving neither moved during validation.
 
 Raw GPU artifacts remain outside the checkout. A candidate commit status owns the
 pass/fail result, and the AMD sync ledger Issue owns append-only conflict and attempt

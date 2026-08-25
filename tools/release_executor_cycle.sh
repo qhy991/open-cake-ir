@@ -17,56 +17,40 @@ cd "$(dirname "$0")/.."
 export PYTHONPATH=src
 EXECUTOR_RELEASE_TMP=$(mktemp -d)
 export EXECUTOR_RELEASE_TMP
-trap 'rm -r -- "$EXECUTOR_RELEASE_TMP"' EXIT
+EXECUTOR_RELEASE_CANDIDATE=""
+cleanup_executor_release() {
+  if [ -n "$EXECUTOR_RELEASE_CANDIDATE" ]; then
+    rm -f -- "$EXECUTOR_RELEASE_CANDIDATE"
+  fi
+  rm -r -- "$EXECUTOR_RELEASE_TMP"
+}
+trap cleanup_executor_release EXIT
 
 python3 - <<'PY'
 import hashlib, json, os, pathlib, re, subprocess
 
+from tools.executor_revision_witnesses import plan_executor_revision_cycle
+
 runtime = pathlib.Path("runtime/executors")
 temporary = pathlib.Path(os.environ["EXECUTOR_RELEASE_TMP"])
 
+inventory = json.loads(pathlib.Path("inventory/EXECUTOR_REVISIONS.json").read_text())
+current = inventory.get("current")
+if not isinstance(current, dict):
+    raise SystemExit("Executor inventory has no current B200 authority")
+current_id = current.get("executor_id")
+current_path = pathlib.Path(str(current.get("path")))
+if not current_path.is_file():
+    raise SystemExit("current Executor descriptor is unavailable")
+plan = plan_executor_revision_cycle(pathlib.Path("."), current_id)
+if plan.family != "b200":
+    raise SystemExit("B200 release cycle received another Executor family")
+keep = plan.next_revision_id
+print(f"--- releasing the B200 working Executor as {keep} ---")
+for relative in plan.reclaimable_descriptors:
+    print(f"    reclaimable after verified replacement: {pathlib.Path(relative).name}")
 
-def ordinal(value: str) -> int:
-    match = re.search(r"-v(\d+)$", value)
-    return int(match.group(1)) if match else 0
-
-
-# An id is history if any frozen artifact names it: a sealed evidence run or any frozen
-# Study Contract. Repository history is not the authority for whether a frozen file may
-# be rewritten.
-witnessed = {path.parent.parent.name.rsplit("-", 1)[0]
-             for path in pathlib.Path("evidence/executors").glob("*/runtime/executor.json")}
-for path in pathlib.Path("evidence").rglob("authority.json"):
-    witnessed.update(re.findall(r"open-cake-ir-b200-v\d+", path.read_text()))
-for path in pathlib.Path("contracts/studies").glob("*.json"):
-    witnessed.update(re.findall(r"open-cake-ir-b200-v\d+", path.read_text()))
-# An inventory observation plan that binds a descriptor's raw bytes witnesses that
-# Executor even before it becomes a sealed Study or Evidence run. Without this boundary,
-# a later release could reclaim the id while retaining a plan that names the old bytes.
-for path in pathlib.Path("inventory").glob("*.json"):
-    text = path.read_text()
-    if "executor_descriptor_raw_sha256" in text:
-        witnessed.update(re.findall(r"open-cake-ir-b200-v\d+", text))
-
-history = max((ordinal(value) for value in witnessed), default=0)
-keep = f"open-cake-ir-b200-v{history + 1}"
-
-available = sorted(
-    runtime.glob("*.json"),
-    key=lambda path: ordinal(json.loads(path.read_text())["executor_id"]),
-)
-stale = [
-    path
-    for path in available
-    if ordinal(json.loads(path.read_text())["executor_id"]) > history
-]
-if not available:
-    raise SystemExit("no Executor descriptor provides the host environment")
-print(f"--- history ends at v{history}; releasing the working Executor as {keep} ---")
-for path in stale:
-    print(f"    reclaiming unwitnessed {path.name}")
-
-document = json.loads((stale[-1] if stale else available[-1]).read_text())
+document = json.loads(current_path.read_text())
 host = document["host_environment"]
 # Resolve the profiler only during an explicit release. The released descriptor, not
 # this discovery rule, is the authority used by every attribution assay.
@@ -102,15 +86,75 @@ temporary.joinpath("proposal.json").write_text(json.dumps({
     "sources": [],
     "host_environment": host,
 }))
-for path in stale:
-    path.unlink()
 temporary.joinpath("keep").write_text(keep)
+final = runtime / f"{keep}.json"
+temporary.joinpath("initial-final-sha256").write_text(
+    hashlib.sha256(final.read_bytes()).hexdigest() if final.exists() else "ABSENT"
+)
+temporary.joinpath("reclaimable").write_text(
+    "".join(f"{value}\n" for value in plan.reclaimable_descriptors)
+)
 PY
 
 KEEP=$(cat "$EXECUTOR_RELEASE_TMP/keep")
+FINAL_EXECUTOR="runtime/executors/${KEEP}.json"
+EXECUTOR_RELEASE_CANDIDATE="runtime/executors/.${KEEP}.candidate.$$.json"
+REPLACE_ARGUMENTS=()
+if [ -e "$FINAL_EXECUTOR" ]; then
+  REPLACE_ARGUMENTS=(--replace-unwitnessed "$FINAL_EXECUTOR")
+fi
 python3 tools/release_executor.py --project-root . \
   --proposal "$EXECUTOR_RELEASE_TMP/proposal.json" \
-  --output "runtime/executors/${KEEP}.json" >/dev/null
+  --output "$EXECUTOR_RELEASE_CANDIDATE" \
+  "${REPLACE_ARGUMENTS[@]}" >/dev/null
+python3 - "$EXECUTOR_RELEASE_CANDIDATE" "$KEEP" <<'PY'
+import os, pathlib, sys
+
+from open_cake_ir.lab import ExecutorRevision
+
+candidate = pathlib.Path(sys.argv[1])
+expected_id = sys.argv[2]
+released = ExecutorRevision.load(pathlib.Path("."), candidate)
+if released.executor_id != expected_id:
+    raise SystemExit("replacement Executor identity differs")
+released.admit_host()
+released.admit_profiler()
+pathlib.Path(os.environ["EXECUTOR_RELEASE_TMP"]).joinpath(
+    "candidate-canonical-sha256"
+).write_text(released.canonical_sha256)
+PY
+python3 - "$EXECUTOR_RELEASE_CANDIDATE" "$KEEP" "$FINAL_EXECUTOR" <<'PY'
+import os, pathlib, sys
+
+from open_cake_ir.lab import ExecutorRevision
+from tools.executor_revision_witnesses import verify_executor_revision_commit
+
+candidate = pathlib.Path(sys.argv[1])
+executor_id = sys.argv[2]
+final = pathlib.Path(sys.argv[3])
+temporary = pathlib.Path(os.environ["EXECUTOR_RELEASE_TMP"])
+initial = temporary.joinpath("initial-final-sha256").read_text()
+verify_executor_revision_commit(
+    pathlib.Path("."),
+    executor_id,
+    final,
+    None if initial == "ABSENT" else initial,
+)
+committed = ExecutorRevision.load(pathlib.Path("."), candidate)
+if (
+    committed.executor_id != executor_id
+    or committed.canonical_sha256
+    != temporary.joinpath("candidate-canonical-sha256").read_text()
+):
+    raise SystemExit("B200 Executor candidate changed during release")
+PY
+mv -f -- "$EXECUTOR_RELEASE_CANDIDATE" "$FINAL_EXECUTOR"
+EXECUTOR_RELEASE_CANDIDATE=""
+while IFS= read -r RECLAIMABLE; do
+  if [ -n "$RECLAIMABLE" ] && [ "$RECLAIMABLE" != "$FINAL_EXECUTOR" ]; then
+    rm -f -- "$RECLAIMABLE"
+  fi
+done < "$EXECUTOR_RELEASE_TMP/reclaimable"
 
 echo "--- update Executor inventory ---"
 python3 - "$KEEP" <<'PY'

@@ -8,7 +8,6 @@ import importlib.metadata
 import json
 import math
 import platform
-import shutil
 import subprocess
 import sys
 import traceback
@@ -48,7 +47,7 @@ from open_cake_ir.evaluation.triton_hip import (  # noqa: E402
     resolve_new_external_directory,
     write_new_json,
 )
-from open_cake_ir.lab import ExecutorRevision  # noqa: E402
+from open_cake_ir.lab import ExecutorRevision, HipHostAdmission  # noqa: E402
 
 
 DEFAULT_CONTRACT = (
@@ -180,10 +179,7 @@ def _canonical_document(path: Path) -> tuple[dict[str, object], str]:
     return value, sha256(canonical_json_bytes(value)).hexdigest()
 
 
-def _amd_smi(arguments: list[str]) -> dict[str, object]:
-    executable = shutil.which("amd-smi")
-    if executable is None:
-        return {"available": False, "arguments": arguments}
+def _amd_smi(executable: str, arguments: list[str]) -> dict[str, object]:
     completed = subprocess.run(
         [executable, *arguments, "--json"],
         stdin=subprocess.DEVNULL,
@@ -193,6 +189,7 @@ def _amd_smi(arguments: list[str]) -> dict[str, object]:
     )
     result: dict[str, object] = {
         "available": True,
+        "executable": executable,
         "arguments": arguments,
         "returncode": completed.returncode,
         "stdout_sha256": sha256(completed.stdout).hexdigest(),
@@ -206,6 +203,8 @@ def _amd_smi(arguments: list[str]) -> dict[str, object]:
 
 
 def _no_foreign_processes(snapshot: Mapping[str, object]) -> bool:
+    if snapshot.get("available") is not True or snapshot.get("returncode") != 0:
+        return False
     document = snapshot.get("document")
     if not isinstance(document, list) or len(document) != 1:
         return False
@@ -219,6 +218,17 @@ def _no_foreign_processes(snapshot: Mapping[str, object]) -> bool:
         and isinstance(processes[0], Mapping)
         and processes[0].get("process_info") == "No running processes detected"
     )
+
+
+def _admit_search_host(
+    executor: ExecutorRevision,
+) -> tuple[HipHostAdmission, dict[str, object]]:
+    admission = executor.admit_hip_host()
+    monitor_path = str(admission.device_monitor["path"])
+    process_initial = _amd_smi(monitor_path, ["process"])
+    if not _no_foreign_processes(process_initial):
+        raise RuntimeError("gfx1151 has another or unobservable compute process")
+    return admission, process_initial
 
 
 def _runtime_document(torch: object, triton: object, properties: object) -> dict[str, object]:
@@ -593,6 +603,16 @@ def _observation_document(decision: object) -> dict[str, object]:
     }
 
 
+def _failure_class(stage: str) -> str:
+    if stage == "source_custody":
+        return "CUSTODY_BLOCKED"
+    if stage in {"host_and_process_admission", "runtime_admission"}:
+        return "ENVIRONMENT_BLOCKED"
+    if stage.endswith("correctness_rejected"):
+        return "CORRECTNESS_REJECTED"
+    return "HARNESS_FAULT"
+
+
 def _prepare(
     root: Path, contract: AmdRmsNormSearchContract
 ) -> tuple[Compiler, ExecutorRevision, tuple[AmdRmsNormCandidate, ...], dict[str, object]]:
@@ -609,6 +629,8 @@ def _prepare(
     if (
         executor.executor_id != contract.executor_id
         or executor.canonical_sha256 != contract.executor_sha256
+        or executor.document["schema_version"] != 2
+        or executor.document["host_environment"].get("runtime_kind") != "hip"
     ):
         raise ValueError("search Executor authority differs")
     candidates = materialize_candidates(contract)
@@ -642,23 +664,48 @@ def _run(
     root: Path,
     contract: AmdRmsNormSearchContract,
     compiler: Compiler,
+    executor: ExecutorRevision,
     candidate_specs: tuple[AmdRmsNormCandidate, ...],
     artifact_dir: Path,
 ) -> tuple[int, dict[str, object]]:
     source = git_state(root)
-    process_initial = _amd_smi(["process"])
-    if not bool(source["tree_clean"]):
-        raise RuntimeError("a clean Git tree is required for retained timing")
-    if not _no_foreign_processes(process_initial):
-        raise RuntimeError("gfx1151 has another or unobservable compute process")
     evidence = _Evidence(artifact_dir)
+    runtimes: list[_RuntimeCandidate] = []
+    authority = {
+        "schema_version": 1,
+        "search_id": contract.search_id,
+        "target": "gfx1151",
+        "search_contract": {
+            "path": contract.path.relative_to(root).as_posix(),
+            "canonical_sha256": contract.canonical_sha256,
+        },
+        "compiler": {
+            "path": contract.compiler_path.relative_to(root).as_posix(),
+            "revision_id": contract.compiler_revision_id,
+            "canonical_sha256": contract.compiler_sha256,
+        },
+        "executor": {
+            "path": contract.executor_path.relative_to(root).as_posix(),
+            "executor_id": contract.executor_id,
+            "canonical_sha256": contract.executor_sha256,
+        },
+        "workload": {
+            "path": contract.workload_path.relative_to(root).as_posix(),
+            "canonical_sha256": contract.workload_sha256,
+        },
+    }
+    evidence.json("attempt-authority.json", authority)
     evidence.json("protocol.json", json.loads(contract.path.read_text(encoding="utf-8")))
     evidence.json("source-custody.json", source)
-    evidence.json("amd-smi-process-initial.json", process_initial)
-    evidence.event("run_started", {"search_id": contract.search_id})
-
-    runtimes: list[_RuntimeCandidate] = []
+    stage = "source_custody"
     try:
+        if not bool(source["tree_clean"]):
+            raise RuntimeError("a clean Git tree is required for retained timing")
+        stage = "host_and_process_admission"
+        host_admission, process_initial = _admit_search_host(executor)
+        monitor_path = str(host_admission.device_monitor["path"])
+        evidence.json("amd-smi-process-initial.json", process_initial)
+        stage = "runtime_admission"
         baseline_document, _ = _canonical_document(root / BASELINE_SCHEDULE)
         baseline_assessment = compiler.assess(baseline_document)
         baseline_lowering = compiler.lower(baseline_assessment)
@@ -666,13 +713,39 @@ def _run(
             baseline_lowering.toolchain_requirements, "baseline.toolchain"
         )
         torch, triton, properties = admit_exact_hip(baseline_requirements)
-        evidence.json("runtime.json", _runtime_document(torch, triton, properties))
+        runtime = _runtime_document(torch, triton, properties)
+        evidence.json("runtime.json", runtime)
+        evidence.json(
+            "runtime-admission.json",
+            {
+                "schema_version": 1,
+                "admitted": True,
+                "executor": dict(executor.reference),
+                "lowering_target": dict(
+                    require_object(
+                        baseline_requirements["triton_target"], "triton_target"
+                    )
+                ),
+                "host": {
+                    "torch_hip_version": host_admission.torch_hip_version,
+                    "visible_device_count": host_admission.visible_device_count,
+                    "device_monitor": dict(host_admission.device_monitor),
+                    "profilers": [
+                        dict(value) for value in host_admission.profilers
+                    ],
+                },
+                "observed_runtime": runtime,
+            },
+        )
+        evidence.event("run_started", {"search_id": contract.search_id})
+        stage = "workload_materialization"
         workload = WorkloadContract.load(contract.workload_path)
         cases = _case_materials(workload, torch)
         l2_elements = contract.screening.l2_flush_bytes // 4
         flush = torch.zeros(l2_elements, dtype=torch.float32, device="cuda")
         torch.cuda.synchronize()
 
+        stage = "baseline_correctness"
         baseline = _compile_candidate(
             compiler=compiler,
             candidate_id="baseline-r64-w4",
@@ -690,42 +763,38 @@ def _run(
             "candidates/baseline-r64-w4/correctness.json", baseline_correctness
         )
         if not baseline_correctness["passed"]:
+            stage = "baseline_correctness_rejected"
             raise RuntimeError("baseline correctness failed")
 
         survivors: dict[str, _RuntimeCandidate] = {}
         dispositions: dict[str, object] = {}
+        stage = "candidate_correctness"
         for spec in candidate_specs:
-            try:
-                runtime = _compile_candidate(
-                    compiler=compiler,
-                    candidate_id=spec.candidate_id,
-                    row_tile=spec.row_tile,
-                    num_warps=spec.num_warps,
-                    schedule=spec.document,
-                    cases=cases,
-                    torch=torch,
-                    evidence=evidence,
-                    relative_root="candidates",
-                )
-                runtimes.append(runtime)
-                correctness = _correctness(runtime, workload, cases, torch)
-                evidence.json(
-                    f"candidates/{spec.candidate_id}/correctness.json", correctness
-                )
-                if correctness["passed"]:
-                    survivors[spec.candidate_id] = runtime
-                    disposition = "correctness_qualified"
-                else:
-                    disposition = "CORRECTNESS_REJECTED"
-                dispositions[spec.candidate_id] = {
-                    "status": disposition,
-                    "correctness": correctness,
-                }
-            except Exception as error:
-                dispositions[spec.candidate_id] = {
-                    "status": "COMPILE_REJECTED",
-                    "error": f"{type(error).__name__}: {error}",
-                }
+            runtime = _compile_candidate(
+                compiler=compiler,
+                candidate_id=spec.candidate_id,
+                row_tile=spec.row_tile,
+                num_warps=spec.num_warps,
+                schedule=spec.document,
+                cases=cases,
+                torch=torch,
+                evidence=evidence,
+                relative_root="candidates",
+            )
+            runtimes.append(runtime)
+            correctness = _correctness(runtime, workload, cases, torch)
+            evidence.json(
+                f"candidates/{spec.candidate_id}/correctness.json", correctness
+            )
+            if correctness["passed"]:
+                survivors[spec.candidate_id] = runtime
+                disposition = "correctness_qualified"
+            else:
+                disposition = "CORRECTNESS_REJECTED"
+            dispositions[spec.candidate_id] = {
+                "status": disposition,
+                "correctness": correctness,
+            }
             evidence.event(
                 "candidate_disposition",
                 {
@@ -735,6 +804,7 @@ def _run(
             )
         evidence.json("candidate-dispositions.json", dispositions)
 
+        stage = "screening"
         selected_id, screening = _screen(
             contract=contract,
             candidates=survivors,
@@ -743,9 +813,11 @@ def _run(
             flush=flush,
             evidence=evidence,
         )
-        profiler = next(
-            (value for value in ("rocprofv3", "rocprof", "omniperf") if shutil.which(value)),
-            None,
+        profiler_record = (
+            dict(host_admission.profilers[0]) if host_admission.profilers else None
+        )
+        profiler = (
+            str(profiler_record["path"]) if profiler_record is not None else None
         )
         if selected_id is None:
             result = {
@@ -770,6 +842,7 @@ def _run(
         selected_spec = next(
             item for item in candidate_specs if item.candidate_id == selected_id
         )
+        stage = "confirmatory_compilation"
         confirm_candidate = _compile_candidate(
             compiler=compiler,
             candidate_id="candidate",
@@ -793,13 +866,16 @@ def _run(
             relative_root="confirmatory",
         )
         runtimes.extend((confirm_candidate, confirm_baseline))
+        stage = "confirmatory_preflight_correctness"
         preflight = {
             "candidate": _correctness(confirm_candidate, workload, cases, torch),
             "baseline": _correctness(confirm_baseline, workload, cases, torch),
         }
         evidence.json("confirmatory/preflight-correctness.json", preflight)
         if not all(bool(value["passed"]) for value in preflight.values()):
+            stage = "confirmatory_preflight_correctness_rejected"
             raise RuntimeError("confirmatory preflight correctness failed")
+        stage = "confirmatory_timing"
         decision, measurements = _confirm(
             contract=contract,
             candidate=confirm_candidate,
@@ -809,14 +885,17 @@ def _run(
             flush=flush,
             evidence=evidence,
         )
+        stage = "confirmatory_postflight_correctness"
         postflight = {
             "candidate": _correctness(confirm_candidate, workload, cases, torch),
             "baseline": _correctness(confirm_baseline, workload, cases, torch),
         }
         evidence.json("confirmatory/postflight-correctness.json", postflight)
         if not all(bool(value["passed"]) for value in postflight.values()):
+            stage = "confirmatory_postflight_correctness_rejected"
             raise RuntimeError("confirmatory postflight correctness failed")
 
+        stage = "terminal_evidence"
         observation = _observation_document(decision)
         profiler_available = profiler is not None
         result = {
@@ -875,13 +954,16 @@ def _run(
             "fallback_calls": 0,
             "profiler_tooling_available": profiler_available,
             "profiler_executable": profiler,
+            "profiler_authority": profiler_record,
             "profiler_evidence_collected": False,
             "leaf_timing_claim": decision.status == LEAF_TIMING_WIN,
             "promotion_authorized": False,
             "llama_cpp_build_claim": False,
             "llama_cpp_e2e_claim": False,
         }
-        evidence.json("amd-smi-metric-final.json", _amd_smi(["metric"]))
+        evidence.json(
+            "amd-smi-metric-final.json", _amd_smi(monitor_path, ["metric"])
+        )
         evidence.json("result.json", result)
         evidence.event(
             "run_completed",
@@ -895,10 +977,14 @@ def _run(
         exit_code = 0 if decision.status == LEAF_TIMING_WIN else 2
         return exit_code, result
     except BaseException as error:
+        failure_class = _failure_class(stage)
         failure = {
             "schema_version": 1,
             "kind": "open_cake_gfx1151_llama_rmsnorm_search_failure_v2",
-            "status": "BLOCKED_ENVIRONMENT",
+            "status": failure_class,
+            "failure_class": failure_class,
+            "failed_stage": stage,
+            "authority": authority,
             "error": f"{type(error).__name__}: {error}",
             "traceback": traceback.format_exc(),
             "performance_conclusion_authorized": False,
@@ -926,7 +1012,7 @@ def main() -> int:
     root = arguments.project_root.resolve(strict=True)
     contract_path = arguments.contract or root / DEFAULT_CONTRACT
     contract = AmdRmsNormSearchContract.load(root, contract_path)
-    compiler, _, candidates, prepared = _prepare(root, contract)
+    compiler, executor, candidates, prepared = _prepare(root, contract)
     artifact_dir: Path | None = None
     if arguments.artifact_dir is not None:
         try:
@@ -943,6 +1029,7 @@ def main() -> int:
             root=root,
             contract=contract,
             compiler=compiler,
+            executor=executor,
             candidate_specs=candidates,
             artifact_dir=artifact_dir,
         )

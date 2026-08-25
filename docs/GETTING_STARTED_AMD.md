@@ -12,7 +12,23 @@ The previously qualified runtime combination is one visible gfx1151 wave32 devic
 ROCm 7.2.1, Python 3.12, ROCm PyTorch 2.9.1 and Triton 3.5.1. PyTorch intentionally uses
 the `torch.cuda` namespace for ROCm. Runtime admission checks `torch.version.hip`, the
 active Triton target, `gcnArchName=gfx1151` and wave width; another device or a CUDA
-build fails before compilation.
+build fails before compilation. These observed versions are not yet a released Executor
+authority. The B200 v30 descriptor pins CUDA/CUPTI/NCU and cannot authorize this path;
+ADR 0038 requires a separately released exact gfx1151 Executor before formal GPU work.
+
+On the admitted infplane host, with exactly one gfx1151 device visible, release that
+authority from the final clean candidate checkout:
+
+```bash
+PYTHONPATH=src /path/to/rocm/python \
+  tools/release_gfx1151_executor_cycle.py
+```
+
+The release command derives the independent `open-cake-ir-gfx1151-vN` identity, captures
+the exact Linux/Python/Torch/Triton/HIP and `amd-smi` facts, includes only actually
+available AMD profilers, builds and live-admits a temporary descriptor, and only then
+installs it. A failed capture or validation leaves the previous descriptor untouched.
+It does not compile a kernel, freeze a search contract or authorize a performance claim.
 
 ## Prepare the two correctness paths
 
@@ -33,22 +49,27 @@ does not declare per-compute-unit occupancy limits, so accepted AMD Schedules al
 the non-blocking `RESIDENCY_TARGET_UNMODELED` report. That report is a deliberate limit:
 the Compiler does not infer residency, and the GPU measurement remains authoritative.
 
-After an external approval releases v29, use the qualified ROCm Python and new evidence
-directories outside the checkout:
+After an external approval releases v29 and the exact gfx1151 Executor is released, use
+the qualified ROCm Python and new evidence directories outside the checkout:
 
 ```bash
 PYTHONPATH=src /path/to/rocm/python \
   examples/gpu/swiglu_amd_quickstart.py \
+  --executor runtime/executors/open-cake-ir-gfx1151-vN.json \
   --artifact-dir /new/external/path/gfx1151-swiglu-v2
 
 PYTHONPATH=src /path/to/rocm/python \
   examples/gpu/rmsnorm_amd_quickstart.py \
+  --executor runtime/executors/open-cake-ir-gfx1151-vN.json \
   --artifact-dir /new/external/path/gfx1151-rmsnorm-v2
 ```
 
 Each quickstart checks two frozen Workload distributions against a CPU-FP64 oracle and
 retains generated source, TTIR, TTGIR, LLVM IR, AMDGCN, HSACO, exact hashes, mismatch and
-non-finite counts, launch counts and zero-fallback custody.
+non-finite counts, launch counts and zero-fallback custody. A draft Compiler remains
+available only to `--prepare-only`; GPU execution requires the externally released
+Compiler and its passing Gate. Each requested live attempt creates an authority receipt
+first and retains either `result.json` or a stage-typed `failure.json`, plus a manifest.
 
 ## True-one-row hypothesis
 

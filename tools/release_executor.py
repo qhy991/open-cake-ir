@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import sys
 from hashlib import sha256
 from pathlib import Path
 
@@ -23,6 +25,25 @@ _SOURCE_FILES = (
     "src/open_cake_ir/cli.py",
     "tools/evaluate_flash_candidate.py",
 )
+
+
+def _validate_output_boundary(
+    root: Path,
+    output: Path,
+    *,
+    schema_version: int,
+    executor_id: str,
+) -> None:
+    if schema_version != 2:
+        return
+    runtime = (root / "runtime/executors").resolve(strict=True)
+    candidate_name = re.compile(
+        rf"\.{re.escape(executor_id)}\.candidate\.[1-9][0-9]*\.json"
+    )
+    if output.parent != runtime or candidate_name.fullmatch(output.name) is None:
+        raise ValueError(
+            "schema v2 writer may only assemble a hidden candidate for live admission"
+        )
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -56,6 +77,11 @@ def main() -> int:
     parser.add_argument("--project-root", type=Path, required=True)
     parser.add_argument("--proposal", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--replace-unwitnessed",
+        type=Path,
+        help="existing same-id working descriptor proven reclaimable by witness policy",
+    )
     arguments = parser.parse_args()
     root = arguments.project_root.resolve(strict=True)
     if arguments.proposal.is_symlink():
@@ -76,13 +102,59 @@ def main() -> int:
             "sources",
             "host_environment",
         }
-        or document.get("schema_version") != 1
+        or document.get("schema_version") not in {1, 2}
         or document.get("state") != "draft"
         or not isinstance(document.get("executor_id"), str)
         or not document["executor_id"]
     ):
         raise ValueError("Executor proposal fields, schema, or state differ")
+    _validate_output_boundary(
+        root,
+        output,
+        schema_version=int(document["schema_version"]),
+        executor_id=str(document["executor_id"]),
+    )
+    sys.path.insert(0, str(root / "src"))
+    from open_cake_ir.lab.executor import ExecutorRevision
+
+    ExecutorRevision._validate_host_document(
+        int(document["schema_version"]), document["host_environment"]
+    )
+    sys.path.insert(0, str(root))
+    from tools.executor_revision_witnesses import (
+        parse_executor_revision_id,
+        plan_executor_revision_cycle,
+    )
+
+    identity = parse_executor_revision_id(document["executor_id"])
+    if document["schema_version"] == 2 and (
+        identity is None or identity.family != "gfx1151"
+    ):
+        raise ValueError("Executor schema v2 gfx1151 identity differs")
+
+    replacement: Path | None = None
+    if arguments.replace_unwitnessed is not None:
+        unresolved = arguments.replace_unwitnessed
+        if unresolved.is_symlink():
+            raise ValueError("replacement Executor custody differs")
+        replacement = unresolved.resolve(strict=True)
+        runtime_root = (root / "runtime/executors").resolve(strict=True)
+        if replacement.parent != runtime_root:
+            raise ValueError("replacement Executor path differs")
+        plan = plan_executor_revision_cycle(root, document["executor_id"])
+        relative = replacement.relative_to(root).as_posix()
+        if relative not in plan.reclaimable_descriptors:
+            raise ValueError("replacement Executor is not an unwitnessed working revision")
+        replacement_document = json.loads(replacement.read_text(encoding="utf-8"))
+        if (
+            not isinstance(replacement_document, dict)
+            or replacement_document.get("executor_id") != document["executor_id"]
+            or replacement.name != f"{document['executor_id']}.json"
+        ):
+            raise ValueError("replacement Executor identity differs")
     for released_path in _released_executor_paths(root):
+        if replacement is not None and released_path.resolve() == replacement:
+            continue
         released = json.loads(released_path.read_text(encoding="utf-8"))
         if (
             isinstance(released, dict)

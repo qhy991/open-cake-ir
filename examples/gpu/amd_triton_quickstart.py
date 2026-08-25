@@ -8,6 +8,7 @@ import importlib.metadata
 import json
 import platform
 import sys
+import traceback
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -34,6 +35,7 @@ from open_cake_ir.evaluation.triton_hip import (  # noqa: E402
     load_generated_module,
     require_object,
 )
+from open_cake_ir.lab import ExecutorRevision  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -42,7 +44,6 @@ class QuickstartSpec:
     result_kind: str
     schedule: str
     workload: str
-    entry_point: str
     generate: Callable[..., tuple[object, ...]]
     oracle: Callable[..., object]
     metrics: Callable[..., dict[str, object]]
@@ -54,7 +55,6 @@ _SPECS = {
         result_kind="open_cake_gfx1151_swiglu_quickstart_v2",
         schedule="corpus/schedules/swiglu-b8-smoke-gfx1151.json",
         workload="contracts/workloads/swiglu-fp32-v1.json",
-        entry_point="cake_swiglu_b8_smoke_gfx1151",
         generate=generate_swiglu_case,
         oracle=swiglu_oracle,
         metrics=swiglu_metrics,
@@ -64,7 +64,6 @@ _SPECS = {
         result_kind="open_cake_gfx1151_llama_rmsnorm_mul_quickstart_v2",
         schedule="corpus/schedules/llama-rmsnorm-mul-b8-gfx1151-r64-w4.json",
         workload="contracts/workloads/llama-rmsnorm-mul-fp32-v2.json",
-        entry_point="cake_llama_rmsnorm_mul_gfx1151_r64_w4",
         generate=generate_rmsnorm_case,
         oracle=rmsnorm_oracle,
         metrics=rmsnorm_metrics,
@@ -84,6 +83,40 @@ def _git_state(project_root: Path) -> dict[str, object]:
     return git_state(project_root)
 
 
+def _write_new_json(path: Path, value: object) -> None:
+    with path.open("xb") as stream:
+        stream.write(
+            json.dumps(value, sort_keys=True, ensure_ascii=False).encode() + b"\n"
+        )
+
+
+def _write_manifest(root: Path) -> None:
+    files = []
+    for path in sorted(root.iterdir()):
+        if not path.is_file() or path.name == "manifest.json":
+            continue
+        payload = path.read_bytes()
+        files.append(
+            {
+                "path": path.name,
+                "sha256": sha256(payload).hexdigest(),
+                "size_bytes": len(payload),
+            }
+        )
+    _write_new_json(
+        root / "manifest.json",
+        {"schema_version": 1, "kind": "open_cake_amd_quickstart_manifest_v1", "files": files},
+    )
+
+
+def _failure_class(stage: str) -> str:
+    if stage in {"compiler_admission", "source_custody"}:
+        return "AUTHORITY_BLOCKED"
+    if stage in {"executor_host_admission", "runtime_admission"}:
+        return "ENVIRONMENT_BLOCKED"
+    return "HARNESS_FAULT"
+
+
 def _prepare(
     project_root: Path,
     revision_path: Path,
@@ -92,6 +125,9 @@ def _prepare(
     spec: QuickstartSpec,
 ) -> tuple[Compiler, object, object, WorkloadContract, dict[str, object]]:
     workload = WorkloadContract.load(workload_path)
+    default_workload = WorkloadContract.load(project_root / spec.workload)
+    if workload.document.get("operator") != default_workload.document.get("operator"):
+        raise ValueError("AMD quickstart Workload operator differs")
     schedule = _object(
         json.loads(schedule_path.read_text(encoding="utf-8")), "schedule"
     )
@@ -148,7 +184,6 @@ def _prepare(
         assessment.target != "gfx1151"
         or assessment.route is None
         or assessment.route.backend.value != "triton"
-        or assessment.route.entry_point != spec.entry_point
         or assessment.calibration_available
     ):
         raise ValueError("AMD quickstart requires the exact uncalibrated gfx1151 route")
@@ -175,21 +210,51 @@ def _admit_runtime(requirements: Mapping[str, object]) -> tuple[object, object, 
     return admit_exact_hip(requirements)
 
 
+def _admit_released_compiler(compiler: Compiler) -> object:
+    if compiler.state != "released":
+        raise ValueError("AMD GPU execution requires a released Compiler")
+    gate = compiler.check_corpus()
+    if not gate.passed:
+        raise ValueError("AMD GPU execution requires a passing released Corpus Gate")
+    return gate
+
+
 def _load_generated(lowering: object) -> tuple[object, object]:
     return load_generated_module(lowering)
 
 
-def _run_gpu(
+def _run_gpu_impl(
     project_root: Path,
+    compiler: Compiler,
+    executor: ExecutorRevision,
     lowering: object,
     workload: WorkloadContract,
     spec: QuickstartSpec,
     summary: dict[str, object],
+    attempt: dict[str, str],
     *,
-    artifact_dir: Path | None,
+    artifact_dir: Path,
 ) -> int:
     requirements = _object(lowering.toolchain_requirements, "lowering.toolchain")
+    attempt["stage"] = "compiler_admission"
+    _admit_released_compiler(compiler)
+    attempt["stage"] = "source_custody"
+    source = _git_state(project_root)
+    if not bool(source["tree_clean"]):
+        raise RuntimeError("a clean Git tree is required for retained AMD correctness")
+    summary["source_custody"] = source
+    attempt["stage"] = "executor_host_admission"
+    host_admission = executor.admit_hip_host()
+    attempt["stage"] = "runtime_admission"
     torch, triton, properties = _admit_runtime(requirements)
+    summary["executor"] = {
+        **dict(executor.reference),
+        "host_admitted": True,
+        "torch_hip_version": host_admission.torch_hip_version,
+        "device_monitor": dict(host_admission.device_monitor),
+        "profilers": [dict(value) for value in host_admission.profilers],
+    }
+    attempt["stage"] = "compilation_and_correctness"
     module, generated_directory = _load_generated(lowering)
     try:
         kernel_name = str(requirements["kernel_entry_point"])
@@ -257,7 +322,6 @@ def _run_gpu(
         for role, payload in sorted(artifact_payloads.items())
     }
     summary["status"] = "passed" if passed else "correctness_rejected"
-    summary["source_custody"] = _git_state(project_root)
     summary["runtime"] = {
         "python": platform.python_version(),
         "torch": importlib.metadata.version("torch"),
@@ -313,16 +377,71 @@ def _run_gpu(
         "scientific_or_speedup_claim": False,
     }
 
-    if artifact_dir is not None:
-        artifact_dir.mkdir(mode=0o700)
-        (artifact_dir / "generated.py").write_text(lowering.source, encoding="utf-8")
-        for role, payload in artifact_payloads.items():
-            suffix = "bin" if role == "hsaco" else "txt"
-            (artifact_dir / f"kernel.{role}.{suffix}").write_bytes(payload)
-        summary["artifact_directory"] = str(artifact_dir)
-        result = json.dumps(summary, sort_keys=True, ensure_ascii=False) + "\n"
-        (artifact_dir / "result.json").write_text(result, encoding="utf-8")
+    attempt["stage"] = "artifact_retention"
+    (artifact_dir / "generated.py").write_text(lowering.source, encoding="utf-8")
+    for role, payload in artifact_payloads.items():
+        suffix = "bin" if role == "hsaco" else "txt"
+        (artifact_dir / f"kernel.{role}.{suffix}").write_bytes(payload)
+    summary["artifact_directory"] = str(artifact_dir)
+    _write_new_json(artifact_dir / "result.json", summary)
     return 0 if passed else 2
+
+
+def _run_gpu(
+    project_root: Path,
+    compiler: Compiler,
+    executor: ExecutorRevision,
+    lowering: object,
+    workload: WorkloadContract,
+    spec: QuickstartSpec,
+    summary: dict[str, object],
+    *,
+    artifact_dir: Path,
+) -> int:
+    artifact_dir.mkdir(mode=0o700)
+    authority = {
+        "schema_version": 1,
+        "kind": summary["kind"],
+        "compiler_revision": summary["compiler_revision"],
+        "executor": dict(executor.reference),
+        "assessment": summary["assessment"],
+        "workload": summary["workload"],
+    }
+    _write_new_json(artifact_dir / "attempt-authority.json", authority)
+    attempt = {"stage": "compiler_admission"}
+    try:
+        result = _run_gpu_impl(
+            project_root,
+            compiler,
+            executor,
+            lowering,
+            workload,
+            spec,
+            summary,
+            attempt,
+            artifact_dir=artifact_dir,
+        )
+        _write_manifest(artifact_dir)
+        return result
+    except BaseException as error:
+        failure_class = _failure_class(attempt["stage"])
+        failure = {
+            "schema_version": 1,
+            "kind": "open_cake_amd_quickstart_failure_v1",
+            "status": failure_class,
+            "failure_class": failure_class,
+            "failed_stage": attempt["stage"],
+            "authority": authority,
+            "error": f"{type(error).__name__}: {error}",
+            "traceback": traceback.format_exc(),
+            "gpu_result_authorized": False,
+            "performance_conclusion_authorized": False,
+        }
+        if not (artifact_dir / "failure.json").exists():
+            _write_new_json(artifact_dir / "failure.json", failure)
+        if not (artifact_dir / "manifest.json").exists():
+            _write_manifest(artifact_dir)
+        raise
 
 
 def main(*, default_operator: str | None = None) -> int:
@@ -335,6 +454,7 @@ def main(*, default_operator: str | None = None) -> int:
     )
     parser.add_argument("--project-root", type=Path, default=ROOT)
     parser.add_argument("--revision", type=Path)
+    parser.add_argument("--executor", type=Path)
     parser.add_argument("--schedule", type=Path)
     parser.add_argument("--workload", type=Path)
     parser.add_argument("--prepare-only", action="store_true")
@@ -359,6 +479,21 @@ def main(*, default_operator: str | None = None) -> int:
         if arguments.workload is not None
         else project_root / spec.workload
     )
+    executor: ExecutorRevision | None = None
+    if arguments.executor is not None:
+        try:
+            executor = ExecutorRevision.load(
+                project_root, arguments.executor.resolve(strict=True)
+            )
+            if (
+                executor.document["schema_version"] != 2
+                or executor.document["host_environment"].get("runtime_kind") != "hip"
+            ):
+                raise ValueError("Executor is not an exact HIP authority")
+        except ValueError as error:
+            parser.error(str(error))
+    elif not arguments.prepare_only:
+        parser.error("--executor is required for GPU execution")
     artifact_dir: Path | None = None
     if arguments.artifact_dir is not None:
         candidate = arguments.artifact_dir.absolute()
@@ -367,6 +502,8 @@ def main(*, default_operator: str | None = None) -> int:
             parser.error("--artifact-dir must be a new path")
         if artifact_dir == project_root or project_root in artifact_dir.parents:
             parser.error("--artifact-dir must be outside the checkout")
+    elif not arguments.prepare_only:
+        parser.error("--artifact-dir is required for GPU execution")
     output: Path | None = None
     if arguments.output is not None:
         candidate = arguments.output.absolute()
@@ -374,16 +511,25 @@ def main(*, default_operator: str | None = None) -> int:
         if output.exists() or output.is_symlink():
             parser.error("--output must be a new path")
 
-    _, assessment, lowering, workload, summary = _prepare(
+    compiler, assessment, lowering, workload, summary = _prepare(
         project_root, revision_path, schedule_path, workload_path, spec
     )
+    if executor is not None:
+        summary["executor"] = {
+            **dict(executor.reference),
+            "host_admitted": False,
+        }
     if arguments.prepare_only:
         exit_code = 0 if summary["status"] == "prepared" else 2
     elif lowering is None:
         exit_code = 2
     else:
+        assert executor is not None
+        assert artifact_dir is not None
         exit_code = _run_gpu(
             project_root,
+            compiler,
+            executor,
             lowering,
             workload,
             spec,

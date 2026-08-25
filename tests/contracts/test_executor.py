@@ -186,5 +186,78 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             self.assertNotEqual(collision.returncode, 0)
             self.assertFalse(collision_output.exists())
 
+    def test_release_can_build_beside_but_not_overwrite_an_unwitnessed_working_id(self) -> None:
+        working = ROOT / "runtime/executors/open-cake-ir-b200-v30.json"
+        before = working.read_bytes()
+        document = json.loads(working.read_text(encoding="utf-8"))
+        document["state"] = "draft"
+        document["sources"] = []
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            proposal = temporary / "proposal.json"
+            output = temporary / "replacement.json"
+            proposal.write_text(json.dumps(document), encoding="utf-8")
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "tools/release_executor.py"),
+                    "--project-root",
+                    str(ROOT),
+                    "--proposal",
+                    str(proposal),
+                    "--output",
+                    str(output),
+                    "--replace-unwitnessed",
+                    str(working),
+                ],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertTrue(output.is_file())
+            self.assertEqual(
+                json.loads(output.read_text(encoding="utf-8"))["executor_id"],
+                "open-cake-ir-b200-v30",
+            )
+            self.assertEqual(working.read_bytes(), before)
+
+    def test_release_refuses_to_replace_a_witnessed_executor(self) -> None:
+        witnessed = ROOT / "runtime/executors/open-cake-ir-b200-v29.json"
+        before = witnessed.read_bytes()
+        document = json.loads(witnessed.read_text(encoding="utf-8"))
+        document["state"] = "draft"
+        document["sources"] = []
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            proposal = temporary / "proposal.json"
+            output = temporary / "replacement.json"
+            proposal.write_text(json.dumps(document), encoding="utf-8")
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "tools/release_executor.py"),
+                    "--project-root",
+                    str(ROOT),
+                    "--proposal",
+                    str(proposal),
+                    "--output",
+                    str(output),
+                    "--replace-unwitnessed",
+                    str(witnessed),
+                ],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(b"not an unwitnessed working revision", completed.stderr)
+            self.assertFalse(output.exists())
+            self.assertEqual(witnessed.read_bytes(), before)
+
 if __name__ == "__main__":
     unittest.main()
