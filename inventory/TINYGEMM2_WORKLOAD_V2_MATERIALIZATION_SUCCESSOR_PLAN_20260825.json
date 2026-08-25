@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "purpose": "tinygemm2_workload_v2_materialization_regeneration",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "source_revision": "7890af36e024d01f349a7f0ae4197168e4164e75",
+  "supersedes": {
+    "plan_path": "inventory/TINYGEMM2_WORKLOAD_V2_MATERIALIZATION_PLAN_20260825.json",
+    "plan_raw_sha256": "333b57e7fccc9a1a1a9981ffcb753b1f533a0dd33b318ba0223940bda161697a",
+    "failed_attempt_path": "inventory/TINYGEMM2_WORKLOAD_V2_MATERIALIZATION_ATTEMPT_1_20260825.json",
+    "failed_attempt_raw_sha256": "8a2ee7c798717221f884a97526a11e348b54ce6fce831b242a7d0537b66673a6",
+    "only_change": "stage digest-identical read-only inputs under a broker-readable directory"
+  },
+  "staged_authorities": {
+    "directory": "/home/qinhaiyan/tinygemm-materialization-observe-7890af3",
+    "plan": {"path": "plan.json", "raw_sha256": "333b57e7fccc9a1a1a9981ffcb753b1f533a0dd33b318ba0223940bda161697a"},
+    "prior_workload": {"path": "tinygemm2-stage4-v1.json", "raw_sha256": "adcbf402bcf7804f2c167b7f8406159d404e0852ca029cd10489ab4b7f3bd8b2"},
+    "executor_descriptor": {"path": "executor-v27.json", "raw_sha256": "0d20b08784ce27effa28e04082ed661de7d8ab490323ed05d4539c3cc9f19fcf"}
+  },
+  "generation_authority": {
+    "path": "/home/qinhaiyan/cake-repro/src/cakerepro/tinygemm2_case.py",
+    "raw_sha256": "9cea3117f9202051a5ff9c63221aa81d212aed7fe38b597c7aa540e96c5cb060",
+    "function": "materialize_tinygemm2_case",
+    "seed": 0
+  },
+  "retained_expected_observation": {
+    "path": "/home/qinhaiyan/cake-repro-runs/r31-tinygemm2-correctness-v2-juWOEW/result.json",
+    "raw_sha256": "7c6331c2f62750873acaa1b32ddc5d524a8a21d4ae32e0e5dd2537887388dca4",
+    "facts": {
+      "input": {"sha256": "535c3a56f5f805329316bcb0445dff3ce71673e5c7b2ec0f5441e6af9b0c84d5", "size_bytes": 16384},
+      "weight": {"sha256": "a2edd5848ee7631ff8d4daed47fbccf8bbd570e19dd0098dc4cb68fa7ad5ecaa", "size_bytes": 2097152},
+      "bias": {"sha256": "5016f991298a8c84667331a17da8b0272cc58b42ef856ce5e0ee3b65439b3770", "size_bytes": 2048},
+      "fp32_linear_bf16_oracle": {"sha256": "55ed28390a00e242bc2a767fea4a1e4489eef1981d869f1a6f6c9489b2fb898d", "size_bytes": 16384}
+    }
+  },
+  "execution": {
+    "broker": "/home/qinhaiyan/agent-gpu-broker/bin/gpu-run",
+    "label": "ocir-tiny-v2-materialize-s1",
+    "mode": "shared",
+    "gpu_count": 1,
+    "automatic_retries": 0,
+    "kernel_launches": 0,
+    "timing": "none",
+    "python": "/home/qinhaiyan/megakernel-exp/.venv-flashinfer/bin/python"
+  },
+  "acceptance": {
+    "selected_case_count": 1,
+    "required_exact_fact_matches": 4,
+    "on_match": "authorize_creation_of_successor_workload_v2",
+    "on_difference": "retain_failed_observation_and_do_not_create_successor_workload"
+  }
+}

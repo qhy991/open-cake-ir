@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "purpose": "tinygemm2_workload_v2_materialization_regeneration",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "plan": {
+    "path": "inventory/TINYGEMM2_WORKLOAD_V2_MATERIALIZATION_PLAN_20260825.json",
+    "raw_sha256": "333b57e7fccc9a1a1a9981ffcb753b1f533a0dd33b318ba0223940bda161697a"
+  },
+  "execution": {
+    "broker_job_id": "gpuq-14790ff55c8b",
+    "mode": "shared",
+    "gpu_count": 1,
+    "automatic_retries": 0,
+    "broker_exit_code": 1
+  },
+  "result": {
+    "status": "failed_before_materialization",
+    "selected_case_count": 1,
+    "materialized_case_count": 0,
+    "observed_fact_count": 0,
+    "kernel_launches": 0,
+    "failure_code": "broker_worker_cannot_read_plan",
+    "failure_boundary": "input_custody",
+    "message": "The gpuq worker could not traverse the private temporary worktree to read the frozen plan. No generator or CUDA RNG call executed."
+  },
+  "disposition": {
+    "passed": false,
+    "workload_v2_authorized": false,
+    "successor_required": true,
+    "note": "A successor may stage exact read-only copies of the already digest-bound plan, prior Workload and Executor descriptor under a broker-readable directory. This failed attempt remains immutable."
+  }
+}
