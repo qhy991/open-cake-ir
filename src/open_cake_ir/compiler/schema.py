@@ -252,7 +252,10 @@ def schedule_schema() -> dict[str, Any]:
                     "dimension": _NONNEGATIVE,
                     # Omitting both covers the whole axis, which is why they are optional
                     # rather than defaulted here: one spelling of "all of it", not two.
-                    "offset": _NONNEGATIVE,
+                    # `offset` starts at 1 for the same reason -- writing 0 would be a
+                    # second spelling of omitting it. The Verifier owns the matching
+                    # rule for `extent`, which needs the axis size to state.
+                    "offset": _POSITIVE,
                     "extent": _POSITIVE,
                 },
                 "required": ["source", "dimension"],

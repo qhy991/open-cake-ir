@@ -423,7 +423,6 @@
         {
           "source": "dimension",
           "dimension": 2,
-          "offset": 0,
           "extent": 64
         }
       ]
@@ -444,8 +443,7 @@
         {
           "source": "dimension",
           "dimension": 2,
-          "offset": 64,
-          "extent": 64
+          "offset": 64
         }
       ]
     },

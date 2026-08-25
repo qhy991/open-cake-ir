@@ -880,11 +880,14 @@ class AccessIndex:
                 context=context,
             )
             extent = obj.get("extent")
+            offset = obj.get("offset")
             return cls(
                 source,
                 None,
                 _nonnegative_int(obj["dimension"], f"{context}.dimension"),
-                _nonnegative_int(obj.get("offset", 0), f"{context}.offset"),
+                # An absent offset is 0; a written 0 would be a second spelling of the
+                # same thing, so only a real displacement may be written.
+                0 if offset is None else _positive_int(offset, f"{context}.offset"),
                 None if extent is None else _positive_int(extent, f"{context}.extent"),
             )
         obj = _strict_object(value, required={"source", "name"}, context=context)

@@ -1401,6 +1401,16 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
             )
 
     for position, name in enumerate(schedule.outputs):
+        if name in schedule.outputs[:position]:
+            # `outputs` is the order the caller receives its tensors in, so a name
+            # appearing twice asks for one buffer in two slots. The host wrapper can
+            # only allocate it once, and the count it reports would not match.
+            out.add(
+                "OUTPUT_DUPLICATE",
+                f"outputs[{position}]",
+                f"buffer {name!r} is exported more than once",
+                category,
+            )
         if name not in buffers:
             out.add(
                 "OUTPUT_UNKNOWN", f"outputs[{position}]", f"unknown buffer {name!r}", category
@@ -2020,6 +2030,18 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                             f"{component.offset + component.span(size)}) leaves dimension "
                             f"{component.dimension} of size {size} in buffer "
                             f"{access.buffer!r}",
+                            category,
+                        )
+                    elif component.extent == size - component.offset:
+                        # A range reaching the end of the axis is written by omitting
+                        # `extent`. Spelling it out names the same elements a second way,
+                        # and the two spellings lower to different source -- so the same
+                        # access would pin two different digests.
+                        out.add(
+                            "ACCESS_SUBRANGE_NONCANONICAL",
+                            component_path,
+                            f"extent {component.extent} reaches the end of dimension "
+                            f"{component.dimension}; omit it to name the same range",
                             category,
                         )
             elif component.source is AccessIndexKind.LOOP_TILE:

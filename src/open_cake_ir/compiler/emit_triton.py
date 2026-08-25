@@ -1181,7 +1181,7 @@ class _TritonEmitter:
         if states:
             self._emit_host_with_state(entry, kernel, globals_in_order)
             return
-        outputs = [b for b in globals_in_order if b.mode.value == "output"]
+        outputs = self._exported_outputs()
         output = outputs[0]
         names = ", ".join(b.name for b in inputs)
         constants = self.constants()
@@ -1207,6 +1207,21 @@ class _TritonEmitter:
         self._emit_launch_options(constants)
         self.line("    )")
         self.line("    return out")
+
+    def _exported_outputs(self) -> list[Buffer]:
+        """The output Buffers in the order `Schedule.outputs` declares them.
+
+        That field is what the caller reads its results back in, so it owns the order.
+        Taking it from buffer declaration order instead gave the same Schedule two
+        authorities for one fact, and they disagreed silently: a Schedule exporting
+        `[y_hi, y_lo]` still handed back `y_lo` first.
+        """
+
+        return [
+            buffer
+            for buffer in (self.schedule.buffer(name) for name in self.schedule.outputs)
+            if buffer is not None
+        ]
 
     def _emit_output_binding(self, outputs: list[Buffer], anchor: str) -> None:
         """Allocate and check the caller's output tensors.
@@ -1284,9 +1299,7 @@ class _TritonEmitter:
             for buffer in globals_in_order
             if buffer.mode in {BufferMode.INPUT, BufferMode.STATE}
         ]
-        outputs = [
-            buffer for buffer in globals_in_order if buffer.mode is BufferMode.OUTPUT
-        ]
+        outputs = self._exported_outputs()
         names = ", ".join(buffer.name for buffer in caller_owned)
         constants = self.constants()
         anchor = caller_owned[0].name

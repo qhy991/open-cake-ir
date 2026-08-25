@@ -21,7 +21,7 @@ from pathlib import Path
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.emit_cutedsl import EmitError
 from open_cake_ir.compiler.emit_triton import emit
-from open_cake_ir.compiler.ir import Schedule
+from open_cake_ir.compiler.ir import Schedule, ScheduleParseError
 from open_cake_ir.compiler.target import Target
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -496,11 +496,11 @@ class DimensionSubRangeTest(unittest.TestCase):
         source = emit(schedule, TARGET).source
 
         self.assertIn("x_d2_o0_e64_offsets = tl.arange(0, 64)", source)
-        self.assertIn("x_d2_o64_e64_offsets = tl.arange(0, 64) + 64", source)
+        self.assertIn("x_d2_o64_eend_offsets = tl.arange(64, D_X_2)", source)
         # Both halves stride by the full row, or they would not be halves of one buffer.
         self.assertIn(
             "load_x_hi_ptrs = x + batch * N_ROW_BLOCK * D_X_2 "
-            "+ row_block_offsets[:, None] * D_X_2 + x_d2_o64_e64_offsets[None, :]",
+            "+ row_block_offsets[:, None] * D_X_2 + x_d2_o64_eend_offsets[None, :]",
             source,
         )
 
@@ -511,16 +511,42 @@ class DimensionSubRangeTest(unittest.TestCase):
 
         self.assertIn("tokens_d2_offsets = tl.arange(0, D_TOKENS_2)", emit(schedule, TARGET).source)
 
-    def test_a_sub_range_past_the_axis_is_refused(self) -> None:
-        from open_cake_ir.compiler.verifier import verify
-
+    def _with_hi_component(self, component: dict) -> dict:
         document = json.loads(self.FUSED.read_text(encoding="utf-8"))
         for access in document["access_maps"]:
             if access["operation"] == "load_x_hi":
-                access["indices"][2]["offset"] = 96
+                access["indices"][2] = component
+        return document
+
+    def test_a_sub_range_past_the_axis_is_refused(self) -> None:
+        from open_cake_ir.compiler.verifier import verify
+
+        document = self._with_hi_component(
+            {"source": "dimension", "dimension": 2, "offset": 96, "extent": 64}
+        )
         codes = {f.code for f in verify(Schedule.from_dict(document), TARGET)}
 
         self.assertIn("ACCESS_DIMENSION_SUBRANGE", codes)
+
+    def test_one_range_has_one_spelling(self) -> None:
+        """Two spellings of one range would lower to two sources, so two digests."""
+
+        from open_cake_ir.compiler.verifier import verify
+
+        # `[64, 128)` reaches the end of the axis, so `extent` must be omitted.
+        redundant = self._with_hi_component(
+            {"source": "dimension", "dimension": 2, "offset": 64, "extent": 64}
+        )
+        codes = {f.code for f in verify(Schedule.from_dict(redundant), TARGET)}
+        self.assertIn("ACCESS_SUBRANGE_NONCANONICAL", codes)
+
+        # A written zero offset is a second spelling of omitting it, refused at parse.
+        with self.assertRaises(ScheduleParseError):
+            Schedule.from_dict(
+                self._with_hi_component(
+                    {"source": "dimension", "dimension": 2, "offset": 0, "extent": 64}
+                )
+            )
 
 
 class MultiOutputHostTest(unittest.TestCase):
@@ -649,6 +675,38 @@ class MultiOutputHostTest(unittest.TestCase):
         passed = [ast.unparse(argument) for argument in launch.args]
         # the state buffer stays caller-owned by name; only the outputs take slots
         self.assertEqual(passed, ["expert_ids", "payloads", "counts", "out[0]", "out[1]"])
+
+    def test_the_export_list_owns_the_slot_order(self) -> None:
+        """`Schedule.outputs` is the order the caller reads results back in.
+
+        Deriving it from buffer declaration order instead gave one fact two authorities,
+        and they disagreed without saying so: a Schedule exporting `[y_hi, y_lo]` still
+        handed back `y_lo` first, so every caller got its halves swapped.
+        """
+
+        document = json.loads(self.SCHEDULE.read_text(encoding="utf-8"))
+        document["outputs"] = ["y_hi", "y_lo"]
+
+        host, _ = self._host(emit(Schedule.from_dict(document), TARGET).source)
+        launch = next(
+            node
+            for node in ast.walk(host)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+        )
+        passed = [ast.unparse(argument) for argument in launch.args]
+
+        # y_lo is declared first among the buffers but exported second, so it is out[1].
+        self.assertEqual(passed[-2:], ["out[1]", "out[0]"])
+
+    def test_one_buffer_cannot_take_two_slots(self) -> None:
+        from open_cake_ir.compiler.verifier import verify
+
+        document = json.loads(self.SCHEDULE.read_text(encoding="utf-8"))
+        document["outputs"] = ["y_lo", "y_hi", "y_lo"]
+
+        codes = {f.code for f in verify(Schedule.from_dict(document), TARGET)}
+
+        self.assertIn("OUTPUT_DUPLICATE", codes)
 
     def test_one_output_still_binds_the_bare_name(self) -> None:
         """The single-output spelling is pinned by every other corpus case's digest."""
