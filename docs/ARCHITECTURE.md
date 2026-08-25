@@ -29,7 +29,7 @@ graph TD
 
     subgraph shared["Shared supporting contexts"]
         EV["<b>Evaluation</b><br/>Workload-owned oracle<br/>measurement protocol"]
-        ED["<b>Evidence</b><br/>no-follow CAS · hash-chained ledger<br/>terminal seal · read-only replay"]
+        ED["<b>Evidence</b><br/>no-follow CAS · hash-chained ledger<br/>archive integrity ≠ filesystem custody"]
     end
 
     L -->|"freezes one immutable Revision"| C

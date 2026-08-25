@@ -1134,7 +1134,11 @@ def _promoted_artifact(
 ) -> Mapping[str, object] | None:
     """Select one per-Run confirmed artifact without constructing a treatment contrast."""
 
-    if not audit.integrity or audit.protocol_adherence != "adhered":
+    if (
+        not audit.archive_integrity
+        or not audit.filesystem_custody_verified
+        or audit.protocol_adherence != "adhered"
+    ):
         return None
     eligible: list[tuple[float, int, str, str]] = []
     for event in evidence.replay_events(audit.run_id):
@@ -1490,6 +1494,7 @@ class StudyReport:
     estimand: str | None
     campaign_complete: bool
     archive_integrity_passed: bool
+    filesystem_custody_verified: bool
     semantic_replay_passed: bool
     estimand_available: bool
     missing_run_count: int
@@ -1583,6 +1588,7 @@ class PortfolioStudyReport:
     study_id: str
     campaign_complete: bool
     archive_integrity_passed: bool
+    filesystem_custody_verified: bool
     semantic_replay_passed: bool
     semantic_replay_error: str | None
     protocol_adherence: str
@@ -3308,11 +3314,16 @@ class Lab:
         except (OSError, ValueError, json.JSONDecodeError):
             audit = None
         complete = audit is not None and audit.authority_sha256 == campaign.lock.canonical_sha256
-        integrity = bool(complete and audit is not None and audit.integrity)
+        archive_integrity = bool(
+            complete and audit is not None and audit.archive_integrity
+        )
+        filesystem_custody_verified = bool(
+            complete and audit is not None and audit.filesystem_custody_verified
+        )
         semantic_replay = False
         semantic_replay_error: str | None = None
         endpoint: Mapping[str, object] | None = None
-        if integrity and audit is not None:
+        if archive_integrity and audit is not None:
             try:
                 events = store.replay_events("portfolio-1")
 
@@ -3404,7 +3415,12 @@ class Lab:
             dispatcher_quality.get(case_id) == "stable" for case_id in held_out
         )
         adhered = audit is not None and audit.protocol_adherence == "adhered"
-        supported = integrity and adhered and semantic_replay
+        supported = (
+            archive_integrity
+            and filesystem_custody_verified
+            and adhered
+            and semantic_replay
+        )
         claim_view = ClaimView(
             heldout_correctness_supported=supported and all_correct,
             dispatcher_correctness_supported=supported and all_correct,
@@ -3419,7 +3435,8 @@ class Lab:
         return PortfolioStudyReport(
             study_id=campaign.lock.study_id,
             campaign_complete=complete,
-            archive_integrity_passed=integrity,
+            archive_integrity_passed=archive_integrity,
+            filesystem_custody_verified=filesystem_custody_verified,
             semantic_replay_passed=semantic_replay,
             semantic_replay_error=semantic_replay_error,
             protocol_adherence=audit.protocol_adherence if audit is not None else "missing",
@@ -4519,7 +4536,12 @@ class Lab:
                 campaign_complete = False
             audits.append(audit)
         campaign_complete = campaign_complete and len(audits) == len(campaign.lock.run_order)
-        archive_integrity_passed = campaign_complete and all(audit.integrity for audit in audits)
+        archive_integrity_passed = campaign_complete and all(
+            audit.archive_integrity for audit in audits
+        )
+        filesystem_custody_verified = campaign_complete and all(
+            audit.filesystem_custody_verified for audit in audits
+        )
         semantic_replay_passed = archive_integrity_passed
         evaluation_receipt_counts: dict[str, int] = {}
         if semantic_replay_passed:
@@ -4536,7 +4558,8 @@ class Lab:
                     semantic_replay_passed = False
                     break
         missing_run_count = len(campaign.lock.run_order) - len(audits) + sum(
-            not audit.integrity
+            not audit.archive_integrity
+            or not audit.filesystem_custody_verified
             or audit.authority_sha256 != campaign.lock.canonical_sha256
             or audit.endpoint_observation == "missing"
             or audit.protocol_adherence != "adhered"
@@ -4554,6 +4577,7 @@ class Lab:
             artifact_optimization_complete = (
                 campaign_complete
                 and archive_integrity_passed
+                and filesystem_custody_verified
                 and semantic_replay_passed
                 and all(audit.protocol_adherence == "adhered" for audit in audits)
                 and all(
@@ -4577,10 +4601,13 @@ class Lab:
                 estimand=None,
                 campaign_complete=campaign_complete,
                 archive_integrity_passed=archive_integrity_passed,
+                filesystem_custody_verified=filesystem_custody_verified,
                 semantic_replay_passed=semantic_replay_passed,
                 estimand_available=False,
                 missing_run_count=sum(
-                    not audit.integrity or audit.protocol_adherence != "adhered"
+                    not audit.archive_integrity
+                    or not audit.filesystem_custody_verified
+                    or audit.protocol_adherence != "adhered"
                     for audit in audits
                 ),
                 estimate=None,
@@ -4605,6 +4632,7 @@ class Lab:
             system_qualification_passed = (
                 campaign_complete
                 and archive_integrity_passed
+                and filesystem_custody_verified
                 and semantic_replay_passed
                 and all(audit.protocol_adherence == "adhered" for audit in audits)
                 and all(
@@ -4618,7 +4646,10 @@ class Lab:
                 "runs": [
                     {
                         "run_id": audit.run_id,
-                        "archive_integrity": audit.integrity,
+                        "archive_integrity": audit.archive_integrity,
+                        "filesystem_custody_verified": (
+                            audit.filesystem_custody_verified
+                        ),
                         "protocol_adherence": audit.protocol_adherence,
                         "endpoint_observation": audit.endpoint_observation,
                         "evaluation_receipt_count": evaluation_receipt_counts.get(
@@ -4635,6 +4666,7 @@ class Lab:
                 estimand=None,
                 campaign_complete=campaign_complete,
                 archive_integrity_passed=archive_integrity_passed,
+                filesystem_custody_verified=filesystem_custody_verified,
                 semantic_replay_passed=semantic_replay_passed,
                 estimand_available=False,
                 missing_run_count=missing_run_count,
@@ -4651,13 +4683,22 @@ class Lab:
             if arm not in arm_runs:
                 raise ValueError(f"Run {audit.run_id!r} has an unknown assigned arm")
             arm_runs[arm].append(audit)
-            if not audit.integrity:
+            if not audit.archive_integrity:
                 inclusions.append(
                     AnalysisInclusion(audit.run_id, False, False, "archive_integrity")
                 )
             elif audit.authority_sha256 != campaign.lock.canonical_sha256:
                 inclusions.append(
                     AnalysisInclusion(audit.run_id, False, False, "campaign_authority")
+                )
+            elif not audit.filesystem_custody_verified:
+                inclusions.append(
+                    AnalysisInclusion(
+                        audit.run_id,
+                        False,
+                        False,
+                        "filesystem_custody_not_verified",
+                    )
                 )
             elif audit.protocol_adherence != "adhered":
                 inclusions.append(
@@ -4734,6 +4775,7 @@ class Lab:
             ranges[arm] = [min(values), max(values)] if values else None
         estimand_available = (
             archive_integrity_passed
+            and filesystem_custody_verified
             and semantic_replay_passed
             and missing_run_count == 0
             and (
@@ -4802,6 +4844,7 @@ class Lab:
             estimand=campaign.lock.estimand,
             campaign_complete=campaign_complete,
             archive_integrity_passed=archive_integrity_passed,
+            filesystem_custody_verified=filesystem_custody_verified,
             semantic_replay_passed=semantic_replay_passed,
             estimand_available=estimand_available,
             missing_run_count=missing_run_count,

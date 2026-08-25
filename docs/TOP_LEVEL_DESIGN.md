@@ -52,7 +52,7 @@ WorkloadContract + StudyContract
              -> immutable Evidence
              -> bounded same-Run feedback or terminal
         -> Lab.audit
-             -> RunAudit(integrity, adherence, endpoint observations)
+             -> RunAudit(archive integrity, filesystem custody, adherence, endpoint)
              -> StudyReport(inclusion, estimate, uncertainty, availability)
              -> derived ClaimView
 ```
@@ -167,7 +167,7 @@ the closed `matched_run_v1` policy, while the replay adapter for earlier frozen 
 | One execution authorization | Campaign Lock | mutable environment variables |
 | Candidate bytes and lineage | Evidence Objects + Event Ledger | workspace copy, registry cache |
 | Evaluation observation | Evaluation Receipt | feedback summary, median only |
-| Archive Integrity and Protocol Adherence | Run Audit | process exit code alone |
+| Archive Integrity, Filesystem Custody and Protocol Adherence | Run Audit | process exit code alone |
 | Estimate, uncertainty and availability | Study Report under the Study Contract's Analysis Plan | README status |
 | Current supported claims | derived Claim View | Roadmap, changelog prose |
 | Secret bytes | external host custody | key ID and non-secret custody receipt |
@@ -245,18 +245,20 @@ Each Checkpoint has exactly one of three states:
 A provider Turn completing beyond a checkpoint cannot backfill that smaller checkpoint. Plateau is an offline
 diagnostic only until the paper's prespecified criterion becomes public.
 
-Four orthogonal audit facts prevent status explosion:
+Five orthogonal audit facts prevent status explosion:
 
 | Fact | Examples |
 | --- | --- |
 | Archive Integrity | complete, missing object, digest mismatch, broken event order |
+| Filesystem Custody | verified for the audited paths, not verified |
 | Protocol Adherence | adhered, provider fault, harness fault, custody violation, contamination |
 | Endpoint Observation | qualified, no qualified candidate, missing, measurement quality failure |
 | Analysis Inclusion | included, excluded by preregistered rule, estimand unavailable |
 
 Compile rejection, correctness rejection and reaching a budget without a qualified candidate are observed
-treatment outcomes. Provider, broker, harness or custody faults are protocol deviations/missingness. Structural
-audit success never implies inclusion in the Estimand.
+treatment outcomes. Provider, broker, harness or live custody faults are protocol deviations/missingness. Archive
+replay under unverified filesystem custody remains inspectable but cannot support promotion, qualification or
+Estimand inclusion. Structural audit success never implies inclusion in the Estimand.
 
 ## 8. Two evolution loops
 

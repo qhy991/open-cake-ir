@@ -291,7 +291,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
             evidence = EvidenceStore.open(evidence_root)
             audit = evidence.audit_run("codex-provider-two-turn-contract")
             anchor = json.loads(anchor_path.read_text(encoding="utf-8"))
-            self.assertTrue(audit.integrity)
+            self.assertTrue(audit.archive_integrity)
             self.assertEqual(audit.protocol_adherence, "adhered")
             self.assertEqual(audit.endpoint_observation, "qualified")
             self.assertEqual(
@@ -348,7 +348,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 if event["kind"] == "provider_qualification_observed"
             )["payload"]
 
-            self.assertTrue(audit.integrity)
+            self.assertTrue(audit.archive_integrity)
             self.assertEqual(
                 audit.endpoint["submission_contract"],
                 "candidate_set_envelope_v1",
@@ -396,7 +396,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
             self.assertFalse(receipt_path.exists())
             audit = EvidenceStore.open(evidence_root).audit_run("codex-provider-broken-thread")
             anchor = json.loads(anchor_path.read_text(encoding="utf-8"))
-            self.assertTrue(audit.integrity)
+            self.assertTrue(audit.archive_integrity)
             self.assertEqual(audit.protocol_adherence, "provider_fault")
             self.assertEqual(audit.endpoint_observation, "missing")
             self.assertIsNone(anchor["qualification_receipt_sha256"])
@@ -418,7 +418,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
             self.assertFalse(receipt_path.exists())
             audit = EvidenceStore.open(evidence_root).audit_run("codex-provider-zero-usage")
             anchor = json.loads(anchor_path.read_text(encoding="utf-8"))
-            self.assertTrue(audit.integrity)
+            self.assertTrue(audit.archive_integrity)
             self.assertEqual(audit.protocol_adherence, "provider_fault")
             self.assertIsNone(anchor["qualification_receipt_sha256"])
             self.assertEqual(anchor["terminal_seal_sha256"], audit.terminal_seal_sha256)
@@ -440,7 +440,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
             evidence = EvidenceStore.open(evidence_root)
             audit = evidence.audit_run("codex-provider-process-failure")
             anchor = json.loads(anchor_path.read_text(encoding="utf-8"))
-            self.assertTrue(audit.integrity)
+            self.assertTrue(audit.archive_integrity)
             self.assertIsNone(anchor["qualification_receipt_sha256"])
             self.assertEqual(anchor["terminal_seal_sha256"], audit.terminal_seal_sha256)
             failure = next(

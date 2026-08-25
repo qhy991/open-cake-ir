@@ -55,7 +55,8 @@ class EvidenceContractTests(unittest.TestCase):
 
                 audit = EvidenceStore.open(evidence.root).audit_run(f"tamper-{target}")
 
-            self.assertFalse(audit.integrity)
+            self.assertFalse(audit.archive_integrity)
+            self.assertTrue(audit.filesystem_custody_verified)
             self.assertEqual([finding.code for finding in audit.findings], ["RUN_ARCHIVE_INVALID"])
 
     def test_parent_symlink_cannot_redirect_cas_writes(self) -> None:
@@ -101,7 +102,7 @@ class EvidenceContractTests(unittest.TestCase):
             audit = EvidenceStore.open(evidence.root).audit_run("concurrent")
 
         self.assertEqual(len(set(hashes)), 2)
-        self.assertTrue(audit.integrity, audit.findings)
+        self.assertTrue(audit.archive_integrity, audit.findings)
         self.assertEqual(audit.event_count, 3)
 
     def test_read_only_open_does_not_create_missing_state(self) -> None:
@@ -110,6 +111,53 @@ class EvidenceContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 EvidenceStore.open(path)
             self.assertFalse(path.exists())
+
+    def test_read_only_clone_separates_integrity_from_filesystem_custody(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "evidence"
+            evidence = EvidenceStore.create(root)
+            payload = evidence.put(b"retained bytes", media_type="text/plain")
+            authority = {"kind": "fixture", "id": "clone-modes"}
+            authority_sha = sha256(
+                json.dumps(authority, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            run = evidence.start_run(
+                "clone-modes",
+                authority_sha256=authority_sha,
+                authority=authority,
+            )
+            run.append("observation", {"objects": [payload.reference("retained")]})
+            run.seal(
+                protocol_adherence="adhered",
+                endpoint_observation="observed",
+                endpoint={"value": 1},
+            )
+
+            for current, directories, files in os.walk(root):
+                os.chmod(current, 0o755)
+                for name in directories:
+                    os.chmod(Path(current) / name, 0o755)
+                for name in files:
+                    os.chmod(Path(current) / name, 0o644)
+            git_like = EvidenceStore.open(root).audit_run("clone-modes")
+            self.assertTrue(git_like.archive_integrity, git_like.findings)
+            self.assertTrue(git_like.filesystem_custody_verified)
+
+            for current, directories, files in os.walk(root):
+                os.chmod(current, 0o770)
+                for name in directories:
+                    os.chmod(Path(current) / name, 0o770)
+                for name in files:
+                    os.chmod(Path(current) / name, 0o660)
+
+            archive = EvidenceStore.open(root)
+            audit = archive.audit_run("clone-modes")
+
+            self.assertTrue(audit.archive_integrity, audit.findings)
+            self.assertFalse(audit.filesystem_custody_verified)
+            self.assertEqual(len(archive.replay_events("clone-modes")), 2)
+            with self.assertRaisesRegex(ValueError, "custody"):
+                EvidenceStore.writer(root)
 
     def test_authority_and_secret_admission_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -158,7 +206,7 @@ class EvidenceContractTests(unittest.TestCase):
 
             audit = evidence.audit_run("tamper-case")
 
-        self.assertFalse(audit.integrity)
+        self.assertFalse(audit.archive_integrity)
         self.assertEqual([finding.code for finding in audit.findings], ["OBJECT_INVALID"])
 
     def test_protocol_failure_is_an_intact_auditable_terminal_archive(self) -> None:
@@ -182,7 +230,8 @@ class EvidenceContractTests(unittest.TestCase):
 
             audit = evidence.audit_run("cake-1")
 
-        self.assertTrue(audit.integrity)
+        self.assertTrue(audit.archive_integrity)
+        self.assertTrue(audit.filesystem_custody_verified)
         self.assertEqual(audit.event_count, 2)
         self.assertEqual(audit.protocol_adherence, "provider_fault")
         self.assertEqual(audit.endpoint_observation, "missing")
@@ -211,7 +260,7 @@ class EvidenceContractTests(unittest.TestCase):
                 "import json,sys; "
                 "from open_cake_ir.evidence import EvidenceStore; "
                 "a=EvidenceStore.open(sys.argv[1]).audit_run('fresh-process'); "
-                "print(json.dumps({'integrity':a.integrity,'events':a.event_count,"
+                "print(json.dumps({'integrity':a.archive_integrity,'events':a.event_count,"
                 "'seal':a.terminal_seal_sha256},sort_keys=True))"
             )
             first = subprocess.run(
@@ -262,7 +311,7 @@ class EvidenceContractTests(unittest.TestCase):
             )
             audit = evidence.audit_run("seal-recovery")
 
-        self.assertTrue(audit.integrity, audit.findings)
+        self.assertTrue(audit.archive_integrity, audit.findings)
         self.assertEqual(audit.event_count, 1)
 
 
@@ -390,7 +439,7 @@ class ArchiveShapeTamperTest(unittest.TestCase):
 
                 store = EvidenceStore.open(evidence_root)
                 audit = store.audit_run(run_id)
-                self.assertFalse(audit.integrity)
+                self.assertFalse(audit.archive_integrity)
                 # And a reader cannot get a sequence out of it either. An archive that
                 # audits as broken but still replays would let a claim be read off it.
                 with self.assertRaises(ValueError):
@@ -429,5 +478,4 @@ class ArchiveShapeTamperTest(unittest.TestCase):
                 run.append("run_terminal", {"value": 1})
 
             audit = EvidenceStore.open(evidence.root).audit_run("sealed")
-            self.assertTrue(audit.integrity)
-
+            self.assertTrue(audit.archive_integrity)

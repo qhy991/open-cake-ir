@@ -12,8 +12,8 @@ supports a broader scientific claim.
 | G2 | passed | deterministic public assess/lower, observable generated-versus-asset provenance, localized negative, exact Target and dependency isolation |
 | G3 | passed | v24 32-case Corpus Gate, released content-bound Revision lock, repository-owner approval record (not independent) and 48-source closure; successor preparation can no longer write its own approval, while schema rejects the old profile spelling, GEMM shape drift proves Workload rules are not Compiler rules, TinyGEMM2 reduction/epilogue drift blocks only its checked asset, and the earlier KDA-derived operation, dtype, relation, safety and backend negatives remain failure-capable |
 | G4 | passed for migrated evidence and the bounded attribution slice | common Flash-KMeans/TinyGEMM receipts, r37/r39 parity, full artifact roles, raw r45 replay, and raw-checked no-timing NCU attribution including all correct search survivors in the v18 qualification |
-| G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay, closed successor matched-event semantics and matched/Portfolio semantic replay pass |
-| G6 | passed | 387 tests plus 322 parameterized subtests cover authoring-schema/Corpus parity, strict route/metadata/prompt boundaries, KDA-derived primitives and negatives, backend preflight and TinyGEMM2 asset semantics, external-approval refusal/success transitions, closed template/frozen revision bindings, candidate-set transport/selection/replay, event tampering, reference-bundle retention, reasoning-effort qualification, observable lowering generation, preorder tie abstention, retained pre-v24 ranking decisions with an explicit historical/current split, every correct search survivor's attribution, two-part Estimand missingness, tool-rich lifecycles, Claim-Scope routing, external Campaign custody, Lab authority, GPU tutorial custody and all three matched Claim Scopes |
+| G5 | passed for Evidence v2 | no-follow CAS, tamper/secret/concurrency tests, fresh-process replay, orthogonal archive-integrity/filesystem-custody results, strict writer admission, closed successor matched-event semantics and matched/Portfolio semantic replay pass |
+| G6 | passed | 389 tests plus 322 parameterized subtests cover authoring-schema/Corpus parity, strict route/metadata/prompt boundaries, KDA-derived primitives and negatives, backend preflight and TinyGEMM2 asset semantics, external-approval refusal/success transitions, clone-time custody versus replay, closed template/frozen revision bindings, candidate-set transport/selection/replay, event tampering, reference-bundle retention, reasoning-effort qualification, observable lowering generation, preorder tie abstention, retained pre-v24 ranking decisions with an explicit historical/current split, every correct search survivor's attribution, two-part Estimand missingness, tool-rich lifecycles, Claim-Scope routing, external Campaign custody, Lab authority, GPU tutorial custody and all three matched Claim Scopes |
 | G7 | passed | r4 proves singleton continuity; Codex 0.144.4 closed and tool-rich successors prove the two-arm candidate-set add/update lifecycle |
 | G7F | passed | tool-rich v1 injects no feature disables and replays shell activity; its candidate-set successor preserves the single-writer envelope boundary, and artifact v4 replays one measured feedback transition per arm without claiming auxiliary-agent use |
 | G8 | passed | r6 passes the singleton pilot; candidate-set v2 covers selected-only attribution, and v3 adds two adhered v18 Runs with ten replayed Receipts and complete correct-search-survivor profiles |
@@ -89,7 +89,9 @@ Require create-only no-follow writes, CAS rehash, append-only event order, one T
 and failure, deterministic fresh-process replay, secret exclusion, and regeneration of Run Audits after deleting
 all reports. A current matched Study must name one closed event vocabulary; replay rejects unknown kinds and derives
 selection and diagnoses from retained authorities rather than trusting their projections. Re-auditing the same
-Campaign must produce the same canonical Run Audits. Failure blocks live Lab work.
+Campaign must produce the same canonical Run Audits. Read-only audit must preserve archive integrity under weak
+clone-time modes while reporting filesystem custody false; every writer and claim-bearing projection must still
+fail closed. Failure blocks live Lab work.
 
 ## G6 — Zero-GPU Lab contract tests pass
 
@@ -106,7 +108,7 @@ Tests through `preflight -> execute -> audit` must prove:
 - v25 retains the exact rendered reference bundle as an Evidence object for every completed Turn; absence records a
   harness fault and missing endpoint, while earlier Executors retain their historical replay boundary;
 - success, candidate rejection, protocol fault and contamination all yield Terminal Archives;
-- Archive Integrity, Protocol Adherence, Endpoint Observation and Analysis Inclusion remain orthogonal;
+- Archive Integrity, Filesystem Custody, Protocol Adherence, Endpoint Observation and Analysis Inclusion remain orthogonal;
 - compile/correctness/no-qualified outcomes are observed rather than complete-case deleted;
 - provider/harness/custody/broker faults follow preregistered missingness and replacement rules;
 - adhered candidate failure contributes an observed qualification endpoint, while an external fault or absent Run

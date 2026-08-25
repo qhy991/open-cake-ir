@@ -81,7 +81,30 @@ def _write_all(descriptor: int, payload: bytes) -> None:
         view = view[written:]
 
 
-def _open_dir(parent_fd: int, name: str, *, create: bool = False) -> int:
+def _directory_has_custody(metadata: os.stat_result) -> bool:
+    return (
+        stat.S_ISDIR(metadata.st_mode)
+        and metadata.st_uid == os.geteuid()
+        and not metadata.st_mode & 0o022
+    )
+
+
+def _regular_has_custody(metadata: os.stat_result) -> bool:
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and metadata.st_uid == os.geteuid()
+        and metadata.st_nlink == 1
+        and not metadata.st_mode & 0o022
+    )
+
+
+def _open_dir(
+    parent_fd: int,
+    name: str,
+    *,
+    create: bool = False,
+    require_custody: bool = True,
+) -> int:
     if "/" in name or name in {"", ".", ".."}:
         raise ValueError("evidence directory name is unsafe")
     if create:
@@ -96,12 +119,12 @@ def _open_dir(parent_fd: int, name: str, *, create: bool = False) -> int:
         dir_fd=parent_fd,
     )
     metadata = os.fstat(descriptor)
-    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid():
+    if not stat.S_ISDIR(metadata.st_mode):
         os.close(descriptor)
-        raise ValueError(f"evidence directory {name!r} owner or type differs")
-    if metadata.st_mode & 0o022:
+        raise ValueError(f"evidence directory {name!r} type differs")
+    if require_custody and not _directory_has_custody(metadata):
         os.close(descriptor)
-        raise ValueError(f"evidence directory {name!r} is group/other writable")
+        raise ValueError(f"evidence directory {name!r} custody differs")
     return descriptor
 
 
@@ -110,6 +133,7 @@ def _read_regular_at(
     name: str,
     *,
     maximum_bytes: int = 64 * 1024 * 1024,
+    custody: list[bool] | None = None,
 ) -> bytes:
     descriptor = os.open(
         name,
@@ -118,6 +142,8 @@ def _read_regular_at(
     )
     try:
         metadata = os.fstat(descriptor)
+        if custody is not None:
+            custody[0] = custody[0] and _regular_has_custody(metadata)
         if (
             not stat.S_ISREG(metadata.st_mode)
             or metadata.st_nlink != 1
@@ -222,7 +248,8 @@ class RunAudit:
 
     run_id: str
     authority_sha256: str | None
-    integrity: bool
+    archive_integrity: bool
+    filesystem_custody_verified: bool
     event_count: int
     protocol_adherence: str | None
     endpoint_observation: str | None
@@ -248,9 +275,16 @@ def _require_sealed_sequence(events: "tuple[Mapping[str, object], ...]") -> None
 class EvidenceStore:
     """Read-only or writer-capable Evidence v2 root."""
 
-    def __init__(self, root: Path, *, writable: bool) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        writable: bool,
+        filesystem_custody_verified: bool,
+    ) -> None:
         self.root = root
         self._writable = writable
+        self._filesystem_custody_verified = filesystem_custody_verified
 
     @classmethod
     def create(cls, root: str | Path) -> "EvidenceStore":
@@ -286,11 +320,26 @@ class EvidenceStore:
             os.close(runs_fd)
         finally:
             os.close(root_fd)
-        return cls(path.resolve(strict=True), writable=True)
+        return cls(
+            path.resolve(strict=True),
+            writable=True,
+            filesystem_custody_verified=True,
+        )
 
     @classmethod
     def open(cls, root: str | Path) -> "EvidenceStore":
-        """Open an existing Evidence v2 root without creating or mutating it."""
+        """Open an existing Evidence v2 root for read-only archive inspection."""
+
+        return cls._open_existing(root, writable=False)
+
+    @classmethod
+    def _open_existing(
+        cls,
+        root: str | Path,
+        *,
+        writable: bool,
+    ) -> "EvidenceStore":
+        """Open existing bytes, requiring live custody only for a writer."""
 
         path = Path(root)
         if path.is_symlink() or not path.is_dir():
@@ -300,25 +349,42 @@ class EvidenceStore:
             resolved,
             os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0),
         )
+        root_metadata = os.fstat(root_fd)
+        custody = [_directory_has_custody(root_metadata)]
+        if writable and not custody[0]:
+            os.close(root_fd)
+            raise ValueError("Evidence root custody differs")
         try:
-            objects_fd = _open_dir(root_fd, "objects")
+            objects_fd = _open_dir(
+                root_fd, "objects", require_custody=writable
+            )
             try:
-                sha_fd = _open_dir(objects_fd, "sha256")
+                custody[0] = custody[0] and _directory_has_custody(
+                    os.fstat(objects_fd)
+                )
+                sha_fd = _open_dir(
+                    objects_fd, "sha256", require_custody=writable
+                )
+                custody[0] = custody[0] and _directory_has_custody(os.fstat(sha_fd))
                 os.close(sha_fd)
             finally:
                 os.close(objects_fd)
-            runs_fd = _open_dir(root_fd, "runs")
+            runs_fd = _open_dir(root_fd, "runs", require_custody=writable)
+            custody[0] = custody[0] and _directory_has_custody(os.fstat(runs_fd))
             os.close(runs_fd)
         finally:
             os.close(root_fd)
-        return cls(resolved, writable=False)
+        return cls(
+            resolved,
+            writable=writable,
+            filesystem_custody_verified=custody[0],
+        )
 
     @classmethod
     def writer(cls, root: str | Path) -> "EvidenceStore":
         """Open an existing trusted root for adding new immutable Runs/objects."""
 
-        opened = cls.open(root)
-        return cls(opened.root, writable=True)
+        return cls._open_existing(root, writable=True)
 
     def _root_fd(self) -> int:
         descriptor = os.open(
@@ -326,13 +392,29 @@ class EvidenceStore:
             os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0),
         )
         metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISDIR(metadata.st_mode)
-            or metadata.st_uid != os.geteuid()
-            or metadata.st_mode & 0o022
+        if not stat.S_ISDIR(metadata.st_mode) or (
+            self._writable and not _directory_has_custody(metadata)
         ):
             os.close(descriptor)
             raise ValueError("Evidence root owner, type, or mode differs")
+        return descriptor
+
+    def _dir(self, parent_fd: int, name: str, *, create: bool = False) -> int:
+        return _open_dir(
+            parent_fd,
+            name,
+            create=create,
+            require_custody=self._writable,
+        )
+
+    @staticmethod
+    def _audit_dir(parent_fd: int, name: str, custody: list[bool]) -> int:
+        try:
+            descriptor = _open_dir(parent_fd, name, require_custody=False)
+        except (OSError, ValueError):
+            custody[0] = False
+            raise
+        custody[0] = custody[0] and _directory_has_custody(os.fstat(descriptor))
         return descriptor
 
     def put(self, payload: bytes, *, media_type: str) -> EvidenceObject:
@@ -352,11 +434,11 @@ class EvidenceStore:
         relative = f"objects/sha256/{digest[:2]}/{digest}"
         root_fd = self._root_fd()
         try:
-            objects_fd = _open_dir(root_fd, "objects")
+            objects_fd = self._dir(root_fd, "objects")
             try:
-                sha_fd = _open_dir(objects_fd, "sha256")
+                sha_fd = self._dir(objects_fd, "sha256")
                 try:
-                    prefix_fd = _open_dir(sha_fd, digest[:2], create=True)
+                    prefix_fd = self._dir(sha_fd, digest[:2], create=True)
                     try:
                         try:
                             _publish_new_at(prefix_fd, digest, payload)
@@ -401,13 +483,13 @@ class EvidenceStore:
         authority_document["record_hash"] = authority_record_hash
         root_fd = self._root_fd()
         try:
-            runs_fd = _open_dir(root_fd, "runs")
+            runs_fd = self._dir(root_fd, "runs")
             try:
                 os.mkdir(run_id, 0o750, dir_fd=runs_fd)
                 os.fsync(runs_fd)
-                run_fd = _open_dir(runs_fd, run_id)
+                run_fd = self._dir(runs_fd, run_id)
                 try:
-                    events_fd = _open_dir(run_fd, "events", create=True)
+                    events_fd = self._dir(run_fd, "events", create=True)
                     os.close(events_fd)
                     _publish_new_at(
                         run_fd, "authority.json", _canonical_line(authority_document)
@@ -440,6 +522,7 @@ class EvidenceStore:
                 run_id,
                 None,
                 False,
+                False,
                 0,
                 None,
                 None,
@@ -453,16 +536,18 @@ class EvidenceStore:
         endpoint_state: str | None = None
         endpoint: Mapping[str, object] | None = None
         events: list[Mapping[str, object]] = []
+        custody = [self._filesystem_custody_verified]
         root_fd: int | None = None
         runs_fd: int | None = None
         run_fd: int | None = None
         events_fd: int | None = None
         try:
             root_fd = self._root_fd()
-            runs_fd = _open_dir(root_fd, "runs")
-            run_fd = _open_dir(runs_fd, run_id)
+            runs_fd = self._audit_dir(root_fd, "runs", custody)
+            run_fd = self._audit_dir(runs_fd, run_id, custody)
             authority = _parse_canonical_json(
-                _read_regular_at(run_fd, "authority.json"), "authority.json"
+                _read_regular_at(run_fd, "authority.json", custody=custody),
+                "authority.json",
             )
             if set(authority) != {
                 "schema_version",
@@ -491,14 +576,15 @@ class EvidenceStore:
             authority_sha = authority_sha_value
             previous_hash = cast(str, authority_record_hash)
 
-            events_fd = _open_dir(run_fd, "events")
+            events_fd = self._audit_dir(run_fd, "events", custody)
             names = sorted(os.listdir(events_fd))
             for sequence, name in enumerate(names):
                 match = _EVENT_FILE.fullmatch(name)
                 if match is None or int(match.group(1)) != sequence:
                     raise ValueError("event filenames are not contiguous")
                 event = _parse_canonical_json(
-                    _read_regular_at(events_fd, name), f"events/{name}"
+                    _read_regular_at(events_fd, name, custody=custody),
+                    f"events/{name}",
                 )
                 preimage = dict(event)
                 record_hash = preimage.pop("record_hash", None)
@@ -523,12 +609,13 @@ class EvidenceStore:
                 ):
                     raise ValueError(f"event {sequence} chain or identity differs")
                 payload = _object(event.get("payload"), f"events/{name}.payload")
-                self._audit_object_references(payload, name, findings)
+                self._audit_object_references(payload, name, findings, custody)
                 events.append(event)
                 previous_hash = cast(str, record_hash)
 
             terminal = _parse_canonical_json(
-                _read_regular_at(run_fd, "terminal.json"), "terminal.json"
+                _read_regular_at(run_fd, "terminal.json", custody=custody),
+                "terminal.json",
             )
             terminal_preimage = dict(terminal)
             terminal_seal_value = terminal_preimage.pop("seal_sha256", None)
@@ -586,7 +673,8 @@ class EvidenceStore:
         return RunAudit(
             run_id=run_id,
             authority_sha256=authority_sha,
-            integrity=not findings,
+            archive_integrity=not findings,
+            filesystem_custody_verified=custody[0],
             event_count=len(events),
             protocol_adherence=protocol,
             endpoint_observation=endpoint_state,
@@ -612,11 +700,11 @@ class EvidenceStore:
             raise ValueError("Run ID is invalid")
         root_fd = self._root_fd()
         try:
-            runs_fd = _open_dir(root_fd, "runs")
+            runs_fd = self._dir(root_fd, "runs")
             try:
-                run_fd = _open_dir(runs_fd, run_id)
+                run_fd = self._dir(runs_fd, run_id)
                 try:
-                    events_fd = _open_dir(run_fd, "events")
+                    events_fd = self._dir(run_fd, "events")
                     try:
                         names = sorted(os.listdir(events_fd))
                         if names != [f"{index:012d}.json" for index in range(len(names))]:
@@ -664,11 +752,11 @@ class EvidenceStore:
             raise ValueError("Evidence object reference identity differs")
         root_fd = self._root_fd()
         try:
-            objects_fd = _open_dir(root_fd, "objects")
+            objects_fd = self._dir(root_fd, "objects")
             try:
-                sha_fd = _open_dir(objects_fd, "sha256")
+                sha_fd = self._dir(objects_fd, "sha256")
                 try:
-                    prefix_fd = _open_dir(sha_fd, digest[:2])
+                    prefix_fd = self._dir(sha_fd, digest[:2])
                     try:
                         payload = _read_regular_at(
                             prefix_fd, digest, maximum_bytes=_MAX_OBJECT_BYTES
@@ -690,6 +778,7 @@ class EvidenceStore:
         payload: Mapping[str, object],
         event_name: str,
         findings: list[EvidenceFinding],
+        custody: list[bool],
     ) -> None:
         objects = payload.get("objects")
         if objects is None:
@@ -739,14 +828,17 @@ class EvidenceStore:
                     raise ValueError("object path is not derived from digest")
                 root_fd = self._root_fd()
                 try:
-                    objects_fd = _open_dir(root_fd, "objects")
+                    objects_fd = self._audit_dir(root_fd, "objects", custody)
                     try:
-                        sha_fd = _open_dir(objects_fd, "sha256")
+                        sha_fd = self._audit_dir(objects_fd, "sha256", custody)
                         try:
-                            prefix_fd = _open_dir(sha_fd, digest[:2])
+                            prefix_fd = self._audit_dir(sha_fd, digest[:2], custody)
                             try:
                                 data = _read_regular_at(
-                                    prefix_fd, digest, maximum_bytes=_MAX_OBJECT_BYTES
+                                    prefix_fd,
+                                    digest,
+                                    maximum_bytes=_MAX_OBJECT_BYTES,
+                                    custody=custody,
                                 )
                             finally:
                                 os.close(prefix_fd)
@@ -779,8 +871,8 @@ class RunLedger:
 
     def _run_fds(self) -> tuple[int, int, int]:
         root_fd = self._store._root_fd()
-        runs_fd = _open_dir(root_fd, "runs")
-        run_fd = _open_dir(runs_fd, self.run_id)
+        runs_fd = self._store._dir(root_fd, "runs")
+        run_fd = self._store._dir(runs_fd, self.run_id)
         os.close(runs_fd)
         return root_fd, run_fd, os.open(
             "writer.lock",
@@ -811,7 +903,7 @@ class RunLedger:
                 pass
             else:
                 raise ValueError("Run is already sealed")
-            events_fd = _open_dir(run_fd, "events")
+            events_fd = self._store._dir(run_fd, "events")
             try:
                 names = sorted(os.listdir(events_fd))
                 sequence = len(names)

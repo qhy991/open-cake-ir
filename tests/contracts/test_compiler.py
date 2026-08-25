@@ -85,7 +85,7 @@ class CompilerContractTests(unittest.TestCase):
             )
             index = json.loads(index_path.read_text(encoding="utf-8"))
             self.assertEqual(index_path.stat().st_mode & 0o444, 0o444)
-            self.assertTrue(audit.integrity)
+            self.assertTrue(audit.archive_integrity)
             self.assertEqual(index["terminal_seal_sha256"], audit.terminal_seal_sha256)
             self.assertEqual(index["authority_sha256"], audit.authority_sha256)
             self.assertEqual(index["source_count"], 1)
@@ -148,7 +148,7 @@ class CompilerContractTests(unittest.TestCase):
             "compiler-release-v2"
         )
 
-        self.assertTrue(audit.integrity)
+        self.assertTrue(audit.archive_integrity)
         self.assertEqual(
             audit.authority_sha256,
             "dafc18995831c29f198abd25f7386a815f38bb1d3ad040f806e8b298be635843",

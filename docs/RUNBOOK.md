@@ -65,17 +65,15 @@ python tools/calibrate_wave_term.py --first 60 --last 400 --step 2      # exclus
 python tools/calibrate_ranking_at_scale.py --size 512 --observed-at <iso8601> \
   --out /new/path/ranking.json                  # historical pre-v24 closure only
 python tools/check_ranking_calibration.py                               # no GPU; exit 1 is a retained negative decision
-python tools/normalize_evidence_custody.py                              # no GPU; check clone-time mode custody
 python tools/observe_lowered_kernel.py --out inventory/<NEW>.json
 python tools/profile_lowered_kernel.py --schedule <path> --out <NEW>.json
 python tools/ir_vocabulary.py                                           # no GPU
 ```
 
-Git does not preserve group/other write bits. After a fresh checkout, run
-`python tools/normalize_evidence_custody.py`; if it reports paths, use `--apply` once
-before replaying committed Evidence. The default is check-only and exits nonzero, so it
-does not report a state it silently repaired. This is an operational prerequisite, not
-proof that an archived Run retained live filesystem custody; see the audit register.
+Read-only Evidence audit does not normalize clone-time modes. It reports archive content
+integrity and `filesystem_custody_verified` separately; weak modes leave intact bytes
+replayable but block claim-bearing projections. Writer admission remains strict. Changing
+modes immediately before audit is not evidence of continuous historical custody.
 
 The retained ranking drivers and v6-v8 plans bind pre-v24 Schedule syntax and exact source
 bytes. They are historical evidence, not current instruments: in the current checkout the
@@ -285,7 +283,9 @@ open-cake-ir lab audit --lock /new/path/campaign.lock.json --evidence-root /new/
 
 Audit opens Evidence read-only. Portfolio audit rebuilds CV, medians, route counts and Claim View from raw retained
 cohorts; matched audit rebuilds turn-discrete checkpoints and endpoints from event/receipt objects. A structurally
-intact archive can still be semantically unavailable.
+intact archive can still be semantically unavailable. `archive_integrity_passed=true` with
+`filesystem_custody_verified=false` means the bytes replayed at inspection time but cannot support promotion,
+system qualification or a scientific estimate without a separate custody/anchor fact.
 
 ## 7. Sole-owner cutover and rollback
 

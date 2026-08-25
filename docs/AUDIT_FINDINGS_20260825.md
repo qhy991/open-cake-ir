@@ -11,7 +11,7 @@ worktree; every conclusion below was reproduced or falsified again on the curren
 | --- | --- | --- |
 | 1 | `EpilogueFormula` was parsed but ignored | fixed in Compiler v23 |
 | 2 | tutorial linked an obsolete, unparsable Schedule | fixed at the documentation authority |
-| 3 | committed Evidence can fail custody checks after clone | operational repair added; archive design open |
+| 3 | committed Evidence can fail custody checks after clone | fixed by orthogonal archive-integrity and filesystem-custody facts |
 | 4 | historical ranking checker duplicates current order | refuted; historical/current split is intentional |
 | 5 | residency provenance was operator-supplied | fixed; host and time derive from the run |
 | 6 | Compiler release writes its own approval | successor mechanism fixed; current v24 approval is not independent |
@@ -48,15 +48,18 @@ Schedule” would be an invalid gate.
 
 ### 3: custody and archive integrity are different claims
 
-`EvidenceStore` correctly requires non-writable directories for a live Run. Git cannot
-preserve those mode bits, so the same check can reject committed archives after a clone.
-`tools/normalize_evidence_custody.py` makes the operational precondition checkable and
-repairs it only under `--apply`; it does not silently manufacture a pass.
+Executor v27 now gives `EvidenceStore.audit_run` two orthogonal results. A read-only audit
+can verify the authority, event chain, terminal seal and referenced object bytes under
+weak clone-time modes, while `filesystem_custody_verified` separately observes the owner
+and modes of those exact paths. `EvidenceStore.writer` retains strict live-custody
+admission.
 
-The design remains open. A later archive-format migration should expose replay as
-“hash-chain verified, filesystem custody not verified” rather than either claiming live
-custody or refusing intact committed evidence. That status must be observable before
-the operational tool can be retired.
+A byte-identical copied G8 Campaign now replays with archive integrity and semantic replay
+true, filesystem custody false and system qualification false. Content tampering still
+fails archive integrity. The old normalization helper was removed: changing modes just
+before audit cannot prove continuous historical custody and is no longer necessary for
+read-only inspection. ADR 0031 owns the boundary without adding an archive format,
+signature service or second auditor.
 
 ### 4 and 5: one refuted, one fixed
 
@@ -118,6 +121,6 @@ block only lowering, not IR acceptance. The reduction drift Corpus case is there
 Frozen pre-v24 observations and ranking calibrations keep their old Schedule/source
 bytes. They are not re-labelled as v24 evidence: successor B200 observations and a
 successor ranking calibration instrument are currently missing. The v24 Corpus Gate is
-32/32 and the zero-GPU contract suite passes 387 tests plus 322 parameterized subtests;
+32/32 and the zero-GPU contract suite passes 389 tests plus 322 parameterized subtests;
 those gates validate the ownership migration but do not substitute for the missing
 on-device successors.

@@ -38,8 +38,9 @@ rule and output spelling.
 
 A current report states, per arm, prescheduled, observed, qualified and missing endpoint
 counts. Its descriptive qualification rate divides by observed endpoints and is named as
-such. The scientific estimate is emitted only when archive integrity, semantic replay,
-zero missing endpoints and conditional-latency availability all hold.
+such. The scientific estimate is emitted only when archive integrity, filesystem custody,
+semantic replay, zero missing endpoints and conditional-latency availability all hold
+(the custody distinction is owned by the later ADR 0031).
 
 Acceptance requires three contract cases: all Runs qualified; one adhered Run with no
 qualified Candidate while both arms retain conditional latency; and one external fault.

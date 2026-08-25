@@ -115,7 +115,11 @@ def main() -> int:
         endpoint={"release_source_complete": True, "source_count": len(observed_paths)},
     )
     audit = evidence.audit_run(args.run_id)
-    if not audit.integrity or audit.terminal_seal_sha256 is None:
+    if (
+        not audit.archive_integrity
+        or not audit.filesystem_custody_verified
+        or audit.terminal_seal_sha256 is None
+    ):
         raise ValueError("Compiler release archive failed immediate audit")
     index = {
         "schema_version": 2,
@@ -126,7 +130,7 @@ def main() -> int:
         "authority_sha256": authority,
         "source_count": len(observed_paths),
         "object_count": len(objects),
-        "immediate_audit_integrity": audit.integrity,
+        "immediate_audit_integrity": audit.archive_integrity,
         "terminal_seal_sha256": audit.terminal_seal_sha256,
     }
     with index_output.open("xb") as stream:

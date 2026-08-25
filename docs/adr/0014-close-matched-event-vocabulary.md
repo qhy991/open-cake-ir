@@ -36,7 +36,8 @@ writable truth.
 
 For `matched_run_v1`, an unknown kind, duplicate boundary, changed start, extra payload
 field, unaccounted object role, impossible collapse or unsupported cost-model diagnosis
-fails semantic replay. Archive integrity remains a separate hash/custody property.
+fails semantic replay. Archive content integrity and filesystem custody remain separate
+facts under the later ADR 0031.
 
 Earlier matched Studies did not declare a semantic vocabulary. Their frozen bytes remain
 readable through one bounded legacy adapter with the earlier replay behavior. Every new

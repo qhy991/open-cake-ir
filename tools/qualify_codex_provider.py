@@ -214,7 +214,11 @@ def _write_anchor(
     qualification_receipt_sha256: str | None,
 ) -> dict[str, object]:
     terminal_seal = getattr(audit, "terminal_seal_sha256", None)
-    if getattr(audit, "integrity", False) is not True or terminal_seal is None:
+    if (
+        getattr(audit, "archive_integrity", False) is not True
+        or getattr(audit, "filesystem_custody_verified", False) is not True
+        or terminal_seal is None
+    ):
         raise ValueError("Codex provider qualification Evidence audit failed")
     anchor = {
         "schema_version": 1,
@@ -768,7 +772,8 @@ def main() -> int:
 
     audit = evidence.audit_run(args.run_id)
     if (
-        not audit.integrity
+        not audit.archive_integrity
+        or not audit.filesystem_custody_verified
         or audit.protocol_adherence != "adhered"
         or audit.terminal_seal_sha256 is None
     ):
@@ -793,7 +798,7 @@ def main() -> int:
                 "anchor_output": str(anchor_output),
                 "terminal_seal_sha256": audit.terminal_seal_sha256,
                 "evidence_root": str(evidence.root),
-                "integrity": audit.integrity,
+                "integrity": audit.archive_integrity,
             },
             sort_keys=True,
         )

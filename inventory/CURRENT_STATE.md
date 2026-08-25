@@ -99,7 +99,9 @@ causal effect, serving and paper reproduction are not.
   object for every completed provider Turn and makes its absence a harness fault. v26 adds only the public CLI
   projection of the Compiler-owned generation fact. v27 separates stable Study templates from exact execution:
   preflight resolves current Compiler/Executor references into the CampaignLock, while frozen Studies never follow
-  inventory state. The Lab makes Claim Scope the
+  inventory state. Its current unwitnessed working release also makes archive integrity and filesystem custody
+  orthogonal: weak clone modes preserve content and semantic replay but block writer admission and every
+  claim-bearing projection. The Lab makes Claim Scope the
   single authority for choosing the
   closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
@@ -125,8 +127,9 @@ causal effect, serving and paper reproduction are not.
   before compilation or GPU work. Tool-rich prompts apply KDA-internal's useful ownership boundary: auxiliary agents
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
-- Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 387 tests and 322 parameterized subtests; the earlier remote qualification passed its
+- Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema, fresh-process replay and one
+  RunAudit authority for separate archive-integrity and filesystem-custody facts.
+- The current local contract suite passes 389 tests and 322 parameterized subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain

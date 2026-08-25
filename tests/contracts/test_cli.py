@@ -172,6 +172,7 @@ class CliContractTests(unittest.TestCase):
                 estimand=None,
                 campaign_complete=True,
                 archive_integrity_passed=True,
+                filesystem_custody_verified=True,
                 semantic_replay_passed=True,
                 estimand_available=False,
                 missing_run_count=0,
@@ -217,6 +218,8 @@ class CliContractTests(unittest.TestCase):
 
         emitted = json.loads(output.getvalue())
         self.assertEqual(code, 0)
+        self.assertTrue(emitted["archive_integrity_passed"])
+        self.assertTrue(emitted["filesystem_custody_verified"])
         self.assertEqual(
             emitted["descriptive"]["promoted_artifacts"]["open_cake-1"]["turn"],
             1,

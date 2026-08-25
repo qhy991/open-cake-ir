@@ -6,6 +6,7 @@ import grp
 import json
 import os
 import pwd
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -603,6 +604,47 @@ class LabContractTests(unittest.TestCase):
         self.assertIsNone(report.estimand)
         self.assertIsNone(report.estimate)
         self.assertIsNone(report.uncertainty)
+
+    def test_clone_modes_preserve_replay_but_cannot_support_a_claim(self) -> None:
+        lab = Lab(ROOT)
+        lock = CampaignLock.load(ROOT / "runtime/g8-system-r6.campaign.lock.json")
+        with tempfile.TemporaryDirectory() as directory:
+            clone = Path(directory) / "g8-system-r6"
+            shutil.copytree(ROOT / "evidence/campaigns/g8-system-r6", clone)
+            for current, directories, files in os.walk(clone):
+                os.chmod(current, 0o755)
+                for name in directories:
+                    os.chmod(Path(current) / name, 0o755)
+                for name in files:
+                    os.chmod(Path(current) / name, 0o644)
+            git_like = lab.audit(lab.reference_campaign(lock, clone))
+            self.assertTrue(git_like.filesystem_custody_verified)
+            self.assertTrue(git_like.system_qualification_passed)
+
+            for current, directories, files in os.walk(clone):
+                os.chmod(current, 0o770)
+                for name in directories:
+                    os.chmod(Path(current) / name, 0o770)
+                for name in files:
+                    os.chmod(Path(current) / name, 0o660)
+
+            report = lab.audit(lab.reference_campaign(lock, clone))
+
+        self.assertTrue(report.campaign_complete)
+        self.assertTrue(report.archive_integrity_passed)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertFalse(report.filesystem_custody_verified)
+        self.assertFalse(report.system_qualification_passed)
+        self.assertEqual(report.missing_run_count, len(lock.run_order))
+        self.assertTrue(
+            all(audit.archive_integrity for audit in report.run_audits)
+        )
+        self.assertTrue(
+            all(
+                not audit.filesystem_custody_verified
+                for audit in report.run_audits
+            )
+        )
 
     def test_system_qualification_preflight_binds_non_scientific_one_run_per_arm(self) -> None:
         lock = Lab(ROOT).preflight(

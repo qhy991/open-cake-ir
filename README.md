@@ -25,7 +25,7 @@ The repository has one product core and one dependent research application, supp
 2. **Research Lab** — freezes an Open Cake Compiler revision and evaluates complete authoring environments against
    common external correctness and performance protocols.
 - **Evaluation and Evidence** — shared Modules that apply Workload-owned correctness/measurement rules, retain typed
-  receipts, store immutable observations, and replay Run integrity.
+  receipts, store immutable observations, and audit archive integrity separately from current filesystem custody.
 
 The dependency direction is permanent:
 
@@ -99,7 +99,9 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   eight selected-only search/confirmatory/attribution receipts. ADR 0012's Executor-v18 successor replays ten
   Receipts and profiles both correct search survivors in each arm, including the non-selected one. These are system
   qualifications, not arm comparisons.
-- Evidence v2 uses a no-follow CAS, create-only event files, authority genesis, one terminal schema and read-only replay.
+- Evidence v2 uses a no-follow CAS, create-only event files, authority genesis and one terminal schema. Read-only
+  audit separates replayed archive integrity from current filesystem custody; weak clone modes never gain claim
+  authority, while writer admission remains strict.
 - Current Executor Revision `open-cake-ir-b200-v27` binds the 34-source runtime closure, including deterministic
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
   exact B200 host packages; v1–v5 are archived and v6–v25 are superseded descriptors. v19 canonically treats one
@@ -118,12 +120,13 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   endpoint rather than an unverifiable clean-start pass. v26 projects the Compiler-owned lowering-generation fact
   through the public CLI without changing execution semantics. v27 lets stable Study templates defer only Compiler
   and Executor identity to preflight; the resulting CampaignLock remains exact, while frozen Studies never follow
-  current state. The current matched Study fixtures
+  current state. Its current unwitnessed working release also separates archive integrity from filesystem custody;
+  weak clone modes preserve content replay but block promotion, qualification and estimates. The current matched Study fixtures
   retain a correctness-qualified, no-timing profile for every searched
   survivor; only the
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command.
-  The current local suite passes 383 tests and 322 parameterized subtests. The earlier remote qualification passed its frozen
+  The current local suite passes 389 tests and 322 parameterized subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no

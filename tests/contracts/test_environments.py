@@ -113,7 +113,7 @@ class EnvironmentContractTests(unittest.TestCase):
                 for event in EvidenceStore.open(evidence_root).replay_events(audit.run_id)
                 if event["kind"] == "toolchain_compiled"
             )
-            self.assertTrue(audit.integrity)
+            self.assertTrue(audit.archive_integrity)
             self.assertEqual(anchor["authority_sha256"], audit.authority_sha256)
             self.assertEqual(anchor["terminal_seal_sha256"], audit.terminal_seal_sha256)
             self.assertEqual(

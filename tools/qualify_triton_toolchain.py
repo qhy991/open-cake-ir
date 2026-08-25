@@ -132,7 +132,8 @@ def main() -> int:
         raise
     audit = evidence.audit_run(args.run_id)
     if (
-        not audit.integrity
+        not audit.archive_integrity
+        or not audit.filesystem_custody_verified
         or audit.protocol_adherence != "adhered"
         or audit.terminal_seal_sha256 is None
     ):
@@ -144,7 +145,7 @@ def main() -> int:
         "evidence_root": str(evidence.root),
         "authority_sha256": authority_sha256,
         "qualification_artifact_sha256": candidate.canonical_sha256,
-        "immediate_audit_integrity": audit.integrity,
+        "immediate_audit_integrity": audit.archive_integrity,
         "terminal_seal_sha256": audit.terminal_seal_sha256,
     }
     with anchor_output.open("xb") as stream:
@@ -158,7 +159,7 @@ def main() -> int:
                 "qualification_artifact_sha256": candidate.canonical_sha256,
                 "anchor_output": str(anchor_output),
                 "terminal_seal_sha256": audit.terminal_seal_sha256,
-                "integrity": audit.integrity,
+                "integrity": audit.archive_integrity,
                 "endpoint": audit.endpoint,
             },
             sort_keys=True,
