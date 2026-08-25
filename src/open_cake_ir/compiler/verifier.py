@@ -2097,12 +2097,16 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                 )
         if indirect:
             index_names = tuple(dict.fromkeys(component.name for component in indirect))
-            if operation.kind not in {OperationKind.LOAD, OperationKind.ATOMIC_RMW}:
+            if operation.kind not in {
+                OperationKind.LOAD,
+                OperationKind.ATOMIC_RMW,
+                OperationKind.STORE,
+            }:
                 out.add(
                     "ACCESS_INDEXED_OPERATION_UNLOWERABLE",
                     path,
                     "the admitted runtime-indexed subset applies to global loads and "
-                    "atomic_rmw only",
+                    "reservation-owned stores and atomic_rmw only",
                     FindingCategory.HARDWARE_CONFORMANCE,
                 )
             elif operation.kind is OperationKind.LOAD:
@@ -2124,7 +2128,7 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         f"{list(operation.reads)}",
                         category,
                     )
-            else:
+            elif operation.kind is OperationKind.ATOMIC_RMW:
                 if len(access.indices) != 1 or len(indirect) != 1:
                     out.add(
                         "ATOMIC_INDEX_FORM",
@@ -2142,6 +2146,156 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         f"buffers {list(expected_reads)}, got {list(operation.reads)}",
                         category,
                     )
+            else:
+                expected_reads = operation.reads[:1] + index_names
+                if operation.reads != expected_reads:
+                    out.add(
+                        "STORE_INDEX_BUFFER_READS",
+                        f"operations[{schedule.operations.index(operation)}].reads",
+                        "runtime-indexed store reads its value then its first-use "
+                        f"ordered index buffers {list(expected_reads)}, got "
+                        f"{list(operation.reads)}",
+                        category,
+                    )
+
+                canonical_form = (
+                    len(indirect) == 2
+                    and len(access.indices) >= 2
+                    and all(
+                        component.source is AccessIndexKind.BUFFER
+                        for component in access.indices[:2]
+                    )
+                    and all(
+                        component.source is not AccessIndexKind.BUFFER
+                        for component in access.indices[2:]
+                    )
+                )
+                if not canonical_form:
+                    out.add(
+                        "STORE_INDEX_RESERVATION_FORM",
+                        f"{path}.indices",
+                        "the admitted indexed store begins with exactly two runtime "
+                        "coordinates: atomic target index then returned old value",
+                        FindingCategory.PROGRAM_SAFETY,
+                    )
+                else:
+                    state_index = access.indices[0].name
+                    position = access.indices[1].name
+                    producers = [
+                        candidate
+                        for candidate in schedule.operations
+                        if candidate.kind is OperationKind.ATOMIC_RMW
+                        and len(candidate.writes) == 2
+                        and candidate.writes[1] == position
+                    ]
+                    if len(producers) != 1:
+                        out.add(
+                            "STORE_INDEX_RESERVATION_UNPROVEN",
+                            f"{path}.indices[1]",
+                            f"runtime position {position!r} is not the unique returned "
+                            "old value of one atomic_rmw",
+                            FindingCategory.PROGRAM_SAFETY,
+                        )
+                    else:
+                        reservation = producers[0]
+                        if reservation.role != operation.role:
+                            out.add(
+                                "STORE_INDEX_RESERVATION_ROLE",
+                                f"operations[{schedule.operations.index(operation)}].role",
+                                "the atomic result is register-resident, so reservation "
+                                "and indexed store must execute in the same role",
+                                FindingCategory.PROGRAM_SAFETY,
+                            )
+                        target_access = (
+                            schedule.access_map(
+                                reservation.op_id, reservation.reads[0]
+                            )
+                            if reservation.reads
+                            else None
+                        )
+                        coordinates_match = (
+                            target_access is not None
+                            and len(target_access.indices) == 1
+                            and target_access.indices[0].source
+                            is AccessIndexKind.BUFFER
+                            and target_access.indices[0].name == state_index
+                        )
+                        if not coordinates_match:
+                            out.add(
+                                "STORE_INDEX_RESERVATION_COORDINATES",
+                                f"{path}.indices",
+                                "the indexed store must pair the atomic target's exact "
+                                "runtime index with that atomic's returned old value",
+                                FindingCategory.PROGRAM_SAFETY,
+                            )
+                        target = (
+                            buffers.get(reservation.reads[0])
+                            if reservation.reads
+                            else None
+                        )
+                        if (
+                            target is not None
+                            and target.shape
+                            and buffer.shape
+                            and target.shape[0] != buffer.shape[0]
+                        ):
+                            out.add(
+                                "STORE_INDEX_RESERVATION_DOMAIN",
+                                f"{path}.indices[0]",
+                                "the store's reservation coordinate must have the same "
+                                "extent as the atomic state target so their masks agree",
+                                FindingCategory.PROGRAM_SAFETY,
+                            )
+                        if reservation.parameters.value != 1:
+                            out.add(
+                                "STORE_INDEX_RESERVATION_INCREMENT",
+                                f"operations[{schedule.operations.index(reservation)}]."
+                                "parameters.value",
+                                "only atomic increment by one proves distinct returned "
+                                "positions for an ordinary indexed store",
+                                FindingCategory.PROGRAM_SAFETY,
+                            )
+                        reservation_index = schedule.operations.index(reservation)
+                        loop_bodies = {
+                            op_id for loop in schedule.tile_loops for op_id in loop.body
+                        }
+                        if (
+                            reservation.op_id in loop_bodies
+                            or operation.op_id in loop_bodies
+                        ):
+                            out.add(
+                                "STORE_INDEX_RESERVATION_LOOP",
+                                f"operations[{reservation_index}]",
+                                "the first reservation-owned store subset executes its "
+                                "atomic and store exactly once per program, outside tile "
+                                "loops",
+                                FindingCategory.PROGRAM_SAFETY,
+                            )
+                        program_instances = 1
+                        program_domain_known = schedule.program_map is not None
+                        if schedule.program_map is not None:
+                            for axis in schedule.program_map.axes:
+                                owner = buffers.get(axis.buffer)
+                                if owner is None or axis.dimension >= len(owner.shape):
+                                    program_domain_known = False
+                                    break
+                                program_instances *= axis.tile_count(
+                                    owner.shape[axis.dimension]
+                                )
+                        result = buffers.get(position)
+                        if result is None:
+                            program_domain_known = False
+                        else:
+                            for extent in result.shape:
+                                program_instances *= extent
+                        if program_domain_known and program_instances > 1 << 32:
+                            out.add(
+                                "STORE_INDEX_RESERVATION_WRAP",
+                                f"operations[{reservation_index}]",
+                                "the launch may execute more than 2^32 reservations, "
+                                "so an int32 returned position can repeat after wrap",
+                                FindingCategory.PROGRAM_SAFETY,
+                            )
 
             index_buffers = [buffers.get(name) for name in index_names]
             known = [item for item in index_buffers if item is not None]
@@ -2163,14 +2317,17 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         category,
                     )
 
-            # This first slice is a load whose one local result has the zipped index
-            # domain once, plus every independent tile/full-dimension domain in access
-            # order. That is the exact shape the Triton address branch emits.
+            # The local value has the zipped index domain once, plus every independent
+            # tile/full-dimension domain in access order. That is the exact shape the
+            # Triton address branch emits for a load result, atomic result or store
+            # value.
             result_name = None
             if operation.kind is OperationKind.LOAD and len(operation.writes) == 1:
                 result_name = operation.writes[0]
             elif operation.kind is OperationKind.ATOMIC_RMW and len(operation.writes) == 2:
                 result_name = operation.writes[1]
+            elif operation.kind is OperationKind.STORE and operation.reads:
+                result_name = operation.reads[0]
             if result_name is not None:
                 staged = buffers.get(result_name)
                 source = buffer
@@ -2211,15 +2368,15 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         expected_shape.append(source.shape[component.dimension])
                 if staged is not None and shape_known:
                     if staged.shape != tuple(expected_shape):
-                        code = (
-                            "ACCESS_INDEXED_RESULT_SHAPE"
-                            if operation.kind is OperationKind.LOAD
-                            else "ATOMIC_RESULT_SHAPE"
-                        )
                         out.add(
-                            code,
-                            f"operations[{schedule.operations.index(operation)}].writes",
-                            f"runtime-indexed access yields {expected_shape}, but "
+                            "ACCESS_INDEXED_VALUE_SHAPE",
+                            f"operations[{schedule.operations.index(operation)}]."
+                            + (
+                                "writes"
+                                if operation.kind is not OperationKind.STORE
+                                else "reads"
+                            ),
+                            f"runtime-indexed access has value domain {expected_shape}, but "
                             f"{staged.name!r} has shape {list(staged.shape)}",
                             category,
                         )
@@ -2508,14 +2665,12 @@ def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
                 continue
             if producer.role == operation.role:
                 # Same role: program order is real ordering. It must still run forwards.
-                if producer.op_id in operation.depends_on and order.get(
-                    producer.op_id, -1
-                ) > index:
+                if order.get(producer.op_id, -1) > index:
                     out.add(
-                        "BARRIER_WAIT_UNORDERED",
-                        f"operations[{index}].depends_on",
-                        f"operation {operation.op_id!r} depends on {producer.op_id!r}, "
-                        "which is declared later",
+                        "OP_READ_BEFORE_WRITE",
+                        f"operations[{index}].reads",
+                        f"operation {operation.op_id!r} reads {name!r} before its "
+                        f"producer {producer.op_id!r} executes",
                         category,
                     )
                 continue

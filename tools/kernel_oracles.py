@@ -167,6 +167,55 @@ def _measure_atomic_reservation(
     return mismatch, measured, mismatch == 0
 
 
+def _reservation_owned_store_oracle(inputs, torch):
+    """Snapshot the route identities and counters before the stateful launch."""
+
+    expert_ids, payloads, counts, output = inputs
+    for expert in range(counts.numel()):
+        start = int(counts[expert].item())
+        count = int((expert_ids == expert).sum().item())
+        if start < 0 or start + count > output.shape[1]:
+            raise ValueError(
+                "reservation-owned-store observation requires every reserved "
+                "interval to fit the output capacity"
+            )
+    return (expert_ids.clone(), payloads.clone()), counts.clone()
+
+
+def _measure_reservation_owned_store(
+    observed, route_snapshot, initial_counts, inputs, torch, tolerance
+):
+    """Judge each reserved interval as a set and require untouched capacity to stay zero."""
+
+    del tolerance
+    expert_ids, payloads = route_snapshot
+    current_counts = inputs[2]
+    expected_counts = initial_counts.clone()
+    touched = torch.zeros_like(observed, dtype=torch.bool)
+    payload_mismatch = 0
+
+    for expert in range(initial_counts.numel()):
+        selected = expert_ids == expert
+        expected = torch.sort(payloads[selected]).values
+        count = expected.numel()
+        start = int(initial_counts[expert].item())
+        stop = start + count
+        expected_counts[expert] += count
+        actual = torch.sort(observed[expert, start:stop]).values
+        payload_mismatch += int((actual != expected).sum().item())
+        touched[expert, start:stop] = True
+
+    untouched_mismatch = int((observed[~touched] != 0).sum().item())
+    count_mismatch = int((current_counts != expected_counts).sum().item())
+    mismatch = payload_mismatch + untouched_mismatch + count_mismatch
+    measured = {
+        "reserved_payloads_match": payload_mismatch == 0,
+        "untouched_slots_zero": untouched_mismatch == 0,
+        "final_counts_match": count_mismatch == 0,
+    }
+    return mismatch, measured, mismatch == 0
+
+
 def _masked_gemm_bias_oracle(inputs, torch):
     """Dense contraction plus the AccessMap's masked-zero bias semantics.
 
@@ -193,6 +242,7 @@ ORACLES = {
     "indexed_gather_b8_smoke": _indexed_gather_oracle,
     "kda_weighted_combine_b8_smoke": _kda_weighted_combine_oracle,
     "atomic_reservation_b8_smoke": _atomic_reservation_oracle,
+    "reservation_owned_store_b8_smoke": _reservation_owned_store_oracle,
 }
 
 # Observation tools select an oracle by the executable interface the Compiler returns.
@@ -211,6 +261,7 @@ _WORKLOAD_BY_ENTRY_POINT = {
     "cake_indexed_gather_b8_smoke": "indexed_gather_b8_smoke",
     "cake_kda_weighted_combine_b8_smoke": "kda_weighted_combine_b8_smoke",
     "cake_atomic_reservation_b8_smoke": "atomic_reservation_b8_smoke",
+    "cake_reservation_owned_store_b8_smoke": "reservation_owned_store_b8_smoke",
     "cake_swiglu_b8_smoke": "swiglu_b8_smoke",
     "cake_top_k_b8_smoke": "top_k_b8_smoke",
 }
@@ -221,4 +272,5 @@ ORACLE_BY_ENTRY_POINT = {
 
 MEASURE_BY_ENTRY_POINT = {
     "cake_atomic_reservation_b8_smoke": _measure_atomic_reservation,
+    "cake_reservation_owned_store_b8_smoke": _measure_reservation_owned_store,
 }

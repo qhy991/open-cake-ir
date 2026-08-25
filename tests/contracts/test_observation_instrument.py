@@ -15,6 +15,32 @@ from observe_lowered_kernel import measure_correctness  # noqa: E402
 
 
 class ObservationInstrumentTest(unittest.TestCase):
+    def test_reservation_owned_store_attempt_retains_the_pre_gpu_failure(self) -> None:
+        plan = json.loads(
+            (
+                ROOT
+                / "inventory"
+                / "V28_RESERVATION_OWNED_STORE_B200_PLAN_20260825.json"
+            ).read_text()
+        )
+        attempt = json.loads(
+            (
+                ROOT
+                / "inventory"
+                / "V28_RESERVATION_OWNED_STORE_B200_ATTEMPT_20260825.json"
+            ).read_text()
+        )
+
+        self.assertEqual(plan["state"], "frozen")
+        self.assertEqual(plan["protocol"]["automatic_retries"], 0)
+        self.assertEqual(attempt["state"], "failed")
+        self.assertEqual(attempt["stage_reached"], "broker_worker_cwd_admission")
+        self.assertFalse(attempt["compiled"])
+        self.assertFalse(attempt["launched"])
+        self.assertFalse(attempt["result_written"])
+        self.assertFalse(attempt["retry"]["same_plan_retried"])
+        self.assertFalse(attempt["performance_measured"])
+
     def test_atomic_reservation_observation_retains_its_contention_claim(self) -> None:
         plan = json.loads(
             (

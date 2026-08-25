@@ -19,6 +19,7 @@ def build_inputs(document: dict, torch) -> tuple:
         "cake_indexed_gather_b8_smoke",
         "cake_kda_weighted_combine_b8_smoke",
         "cake_atomic_reservation_b8_smoke",
+        "cake_reservation_owned_store_b8_smoke",
     }
     extent_contracts = {
         buffer["valid_extent"]["buffer"]: buffer["shape"][
@@ -85,12 +86,26 @@ def build_inputs(document: dict, torch) -> tuple:
                 [torch.roll(base, shifts=token) for token in range(shape[0])]
             )
         elif (
-            entry_point == "cake_atomic_reservation_b8_smoke"
+            entry_point
+            in {
+                "cake_atomic_reservation_b8_smoke",
+                "cake_reservation_owned_store_b8_smoke",
+            }
             and buffer["name"] == "counts"
         ):
             # Non-zero caller state proves the atomic returns the preceding value rather
             # than an index synthesized from a zero-based lane or program coordinate.
             value = torch.tensor([3, 5, 7, 11], dtype=dtype, device="cuda")
+        elif (
+            entry_point == "cake_reservation_owned_store_b8_smoke"
+            and buffer["name"] == "payloads"
+        ):
+            # Every route has a non-zero identity, so a lost store, collision or write
+            # into untouched capacity cannot hide behind output initialization.
+            value = (
+                torch.arange(prod(shape), dtype=dtype, device="cuda").reshape(shape)
+                + 101
+            )
         elif buffer["name"] in extent_contracts:
             capacity = extent_contracts[buffer["name"]]
             # Empty, partial, full and another partial group are all observable. The

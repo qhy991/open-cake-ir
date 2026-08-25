@@ -110,7 +110,7 @@ class AtomicReservationContractTest(unittest.TestCase):
 
         document = _document()
         _buffer(document, "position_tile")["shape"] = [4]
-        self.assertIn("ATOMIC_RESULT_SHAPE", _codes(document))
+        self.assertIn("ACCESS_INDEXED_VALUE_SHAPE", _codes(document))
 
         document = _document()
         _operation(document)["writes"][0] = "positions"

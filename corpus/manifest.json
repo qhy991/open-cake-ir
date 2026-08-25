@@ -485,6 +485,19 @@
         "schedule_sha256": "c9acec5cf95ed1146dcfda7184f0494585039c40b20237e06c35f677d3d610a9",
         "lowering_source_sha256": "3000b7c57936c46a226792033c8b7f79b75eb89c7c686406f38fdb6715094763"
       }
+    },
+    {
+      "case_id": "reservation-owned-store-accepted",
+      "schedule": "corpus/schedules/reservation-owned-store-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "72921b70f1ab49b5e23f242afa8c1e638b6c33df14b413ccff684244300aba23",
+        "lowering_source_sha256": "30f5626804a0a22070618b9ae6ed2e1cda88ec499b76de4e2dc6c7be5125b282"
+      }
     }
   ]
 }

@@ -24,7 +24,6 @@
     "corpus/schedules/ragged-zero-pad-b1-smoke.json",
     "corpus/schedules/ragged-grouped-gemm-b1-smoke-group-drift.json",
     "corpus/schedules/ragged-grouped-gemm-b1-smoke.json",
-    "corpus/schedules/reservation-owned-store-b8-smoke.json",
     "corpus/schedules/rmsnorm-b128-persistent.json",
     "corpus/schedules/rmsnorm-b8-smoke-residency-unmet.json",
     "corpus/schedules/rmsnorm-b8-smoke-shape-drift.json",

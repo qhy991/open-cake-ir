@@ -229,3 +229,29 @@ reservation only. Runtime-indexed store conflict semantics, routing/group format
 dispatch and the program DAG remain missing, so complete KDA coverage stays 0/57 and no
 performance claim is authorized. TinyGEMM2 is unchanged; its earlier passing checked-asset
 observation remains historical evidence rather than being relabelled under v27.
+
+### 13: reservation ownership admits one ordinary indexed store, not scatter
+
+KDA v-01 uses the returned old counter as the unique destination row, whereas v43 uses
+atomic addition for a real many-writer reduction and v49 replaces that atomic only under a
+degree-one runtime relation. Treating all three as `scatter` would erase the fact that makes
+each write legal.
+
+ADR 0036 therefore adds no vocabulary. `AccessMap` remains the address authority and an
+ordinary store is admitted only for the exact pair `(atomic target index, returned old
+value)` from a unit increment, with equal reservation axes, same-role register ownership,
+one execution per program and a launch domain too small for the INT32 result to repeat.
+The tmux 882 window1 reviewer independently showed why the same-role rule is not a synonym:
+a complete named-barrier handshake suppresses the generic cross-role race finding, but
+cannot move the atomic result between roles. All nine ownership findings have focused
+falsifiers, the earlier 34 Corpus cases have zero expectation drift, and TinyGEMM2 retains
+both of its prior Gate dispositions. Compiler v28 is released from the reviewed
+51-source/35-case Gate; the IR vocabulary is unchanged.
+
+The first frozen zero-retry B200 attempt (`gpuq-e988eaf8bb5c`) failed at broker worker cwd
+admission because a temporary parent directory was unreadable. It reached neither the
+observer nor compilation or GPU execution and was not resubmitted. The failure is retained,
+ADR 0036 remains proposed, and no runtime or performance claim is made. The observation
+instrument was also corrected before that attempt to count the actual output tensor rather
+than assuming every custom oracle returns one reference tensor. TinyGEMM2 source, Schedule
+and historical evidence remain unchanged and are not relabelled under v28.

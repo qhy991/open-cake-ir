@@ -184,7 +184,10 @@ def main() -> int:
         "result": {
             "compiled": True,
             "launched": True,
-            "total_elements": int(reference.numel()),
+            # The output is the authority for how many elements were observed. A
+            # custom oracle may keep a structured pre-launch snapshot instead of one
+            # reference Tensor, as the reservation-owned store oracle does.
+            "total_elements": int(observed.numel()),
             "mismatch_count": mismatch,
             **measured,
             "passed": passed,

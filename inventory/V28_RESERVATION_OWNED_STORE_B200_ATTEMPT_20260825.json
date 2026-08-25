@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "state": "failed",
+  "observed_at": "2026-08-25T11:04:39Z",
+  "plan": "inventory/V28_RESERVATION_OWNED_STORE_B200_PLAN_20260825.json",
+  "broker_job_id": "gpuq-e988eaf8bb5c",
+  "broker_mode": "shared",
+  "gpu_count": 1,
+  "performance_measured": false,
+  "stage_reached": "broker_worker_cwd_admission",
+  "compiled": false,
+  "launched": false,
+  "result_written": false,
+  "disposition": "infrastructure_failure",
+  "failure": {
+    "exception": "PermissionError",
+    "errno": 13,
+    "message": "The broker worker could not enter the task checkout beneath a mode-0700 temporary parent directory. It stopped before the Python observer, compilation or any GPU work."
+  },
+  "retry": {
+    "same_plan_retried": false,
+    "reason": "The frozen plan permits zero retries. This checkout was not normalized and the task was not resubmitted after the environmental failure."
+  },
+  "claim": "No kernel-correctness or performance claim is supported by this attempt; ADR 0036 remains proposed until a separately frozen future successor produces the missing B200 observation."
+}

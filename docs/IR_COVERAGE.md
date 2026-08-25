@@ -166,7 +166,7 @@ and sub-rate pipelines remain separate missing mechanisms.
 
 ## Corpus coverage
 
-The current Compiler Corpus has 34 cases across fifteen program slices, against the
+The current Compiler Corpus has 35 cases across sixteen program slices, against the
 paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
 the surveyed work is actually about, still have no complete representation here.
 
@@ -233,3 +233,15 @@ outputs formed the exact per-expert old-counter permutations, invalid routes wer
 final counters were exact. Route/group formation, runtime-indexed store and dispatch, both
 grouped contractions, workspace reset, fused scatter and the multi-kernel DAG remain absent,
 so complete-version coverage stays 0/57.
+
+ADR 0036 closes one narrower part of that store gap without adding a scatter, route,
+uniqueness assertion or conflict flag. Compiler v28 admits an ordinary runtime-indexed
+store only when its leading coordinates are exactly the INT32 atomic target index and the
+returned old value from that target's unit increment. Equal reservation domains, same-role
+register ownership, one execution per program and a bounded launch make the uniqueness
+argument mechanical; nine focused diagnostics own the near misses. The reviewed 51-source,
+35-case Gate passes. The first frozen B200 attempt failed before the observer because the
+broker worker could not enter the temporary checkout, so no runtime correctness evidence
+exists yet and ADR 0036 remains proposed. Route/group formation, row dispatch, KDA v43's
+atomic reduction scatter, v49's degree-one conditional direct store and the multi-kernel
+DAG remain outside the slice; complete-version coverage remains 0/57.

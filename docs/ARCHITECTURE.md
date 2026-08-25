@@ -238,9 +238,9 @@ a gated event rather than a commit.
 ```mermaid
 graph TD
     E["edit Compiler source"] --> D["<b>revision.json</b><br/>state: draft<br/><i>no source-hash check</i>"]
-    D --> G["<b>Corpus Gate</b><br/>32 cases · exact finding codes<br/>exact lowering digests"]
+    D --> G["<b>Corpus Gate</b><br/>35 cases · exact finding codes<br/>exact lowering digests"]
     G -->|"any case differs"| STOP["release refused"]
-    G -->|"32/32 matched"| R["external reviewer<br/>inspects the exact Gate"]
+    G -->|"35/35 matched"| R["external reviewer<br/>inspects the exact Gate"]
     R --> AP["<b>release-approval.json</b><br/>binds the gate digest<br/>records reviewer and basis"]
     AP --> L["<b>revision.lock.json</b><br/>state: released<br/>binds every source by digest"]
     L --> AR["<b>compiler/releases/vN/</b><br/>immutable history"]

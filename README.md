@@ -37,8 +37,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v27` is content-bound to an exact `sm_100a` Target and a 34-case,
-  50-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
+- Compiler Revision `open-cake-ir-sm100a-v28` is content-bound to an exact `sm_100a` Target and a 35-case,
+  51-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
   emitted MMA omit its instruction contract while still being marked lowering-eligible. v10 turns the pinned Triton
@@ -95,8 +95,14 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   `state` and returned-old-value `atomic_rmw`. The first closed lowering is a masked INT32 add with relaxed
   device scope; one zero-retry B200 run compiled and launched it once, returned each expert's old counter range as
   an unordered permutation, kept invalid routes zero and produced the exact final counters across all 64 outputs.
-  Indexed store/dispatch, group formation and the program DAG remain absent. ADRs 0034 and 0035 are accepted only
-  for these arithmetic and reservation slices. Historical evidence is not relabelled. These slices prove primitive
+  v28 adds no operation, route or conflict vocabulary: an ordinary runtime-indexed `store` is admitted only when its
+  first two coordinates are the atomic target index and that atomic increment's returned old value, in the same role
+  and mask domain. The external Gate review independently reproduced the named-barrier case that defeats the generic
+  cross-role race check but cannot move a register-held position. The first frozen B200 attempt then stopped at
+  broker worker cwd admission because a temporary parent directory was unreadable; it performed no compilation or
+  GPU work and was not retried. ADRs 0034 and 0035 are accepted for arithmetic and reservation; ADR 0036 remains
+  proposed pending its B200 item. Route/group formation, vector-row dispatch, reduction scatter and the program DAG
+  remain absent. Historical evidence is not relabelled. These slices prove primitive
   expressibility and diagnostic lowering correctness only, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
@@ -149,9 +155,10 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   metric operands on CPU. The failed pre-kernel observation is retained. Its preregistered shared-B200 successor
   passes all 17 authority checks, all four materialized receipts, one kernel launch, zero fallback, parent-bitwise
   equality and oracle tolerance at maximum absolute error `0.000244140625`, without timing or a scientific claim.
-  The v27 Corpus Gate and focused compiler/observation suites pass. A final all-tests collection omitted the required
-  `PYTHONPATH=src` and stopped at imports, so it is not reported as full-suite evidence. The earlier remote qualification passed its frozen
-  contract suite, host admission and compile-only Triton check without launching a kernel.
+  The v28 Corpus Gate and post-release full suite pass: 436 pytest items plus 320 subtests. Its indexed-store B200
+  attempt is retained separately as a pre-observer infrastructure failure, not a correctness result. The earlier
+  remote qualification passed its frozen contract suite, host admission and compile-only Triton check without
+  launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no
   scientific claim.

@@ -95,14 +95,19 @@ class RuntimeIndexedAccessContractTest(unittest.TestCase):
         _buffer(document, "row_id_tile")["shape"] = [4]
         self.assertIn("ACCESS_INDEX_DOMAIN_MISMATCH", _codes(document))
 
-    def test_indexed_store_is_not_silently_given_conflict_semantics(self) -> None:
+    def test_indexed_value_shape_has_one_cross_operation_spelling(self) -> None:
+        document = _document()
+        _buffer(document, "gathered_tile")["shape"] = [4, 16]
+        self.assertIn("ACCESS_INDEXED_VALUE_SHAPE", _codes(document))
+
+    def test_arbitrary_indexed_store_has_no_claimed_ownership(self) -> None:
         document = _document()
         access = _access(document, "store_gathered_rows")
         access["indices"][:2] = [
             {"source": "buffer", "name": "expert_id_tile"},
             {"source": "buffer", "name": "row_id_tile"},
         ]
-        self.assertIn("ACCESS_INDEXED_OPERATION_UNLOWERABLE", _codes(document))
+        self.assertIn("STORE_INDEX_RESERVATION_UNPROVEN", _codes(document))
 
     def test_tma_does_not_inherit_direct_load_semantics(self) -> None:
         document = _document()

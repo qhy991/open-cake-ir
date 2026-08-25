@@ -324,6 +324,16 @@ counters for all 64 outputs. This is still not complete KDA coverage: workspace 
 routing and group formation, runtime-indexed store/dispatch, both grouped contractions,
 fused scatter and the program DAG remain outside the slice.
 
+Compiler v28 takes the next composition step without a route or scatter word. An ordinary
+runtime-indexed store inherits exclusive destination ownership only from the exact target
+index and returned old value of a unit atomic increment. `AccessMap` still owns addresses,
+the general dataflow rules still own ordering, and a store-specific same-role rule exists
+only because a named barrier cannot transfer a register-held result. This models KDA v1's
+scalar reservation/write relation, not v43's atomic reduction scatter or v49's degree-one
+conditional vector store. Its Compiler Gate passes, but the first frozen B200 attempt
+stopped before the observer at broker cwd admission; therefore the runtime item and ADR
+acceptance remain pending.
+
 KDA v12 also showed that counting the word was too generous. Its `tanh` requests an
 approximate target instruction, while the standalone emitter had silently chosen a
 libdevice implementation. Compiler v15 therefore makes the implementation contract part
@@ -351,8 +361,9 @@ before the fact would have shown and a corpus of six families cannot.
 
 ## Corpus coverage, restated
 
-Thirty-two cases across thirteen standalone program slices, against the paper's roughly
+Thirty-five cases across sixteen standalone program slices, against the paper's roughly
 four hundred across twenty-eight. Standalone SwiGLU arithmetic, deterministic indexed
 selection, one static two-block FP8/FP32-scale contraction and one device-resident
-valid-prefix relation are local now; attention, complete MoE, general quantized GEMM and
-fused graph kernels are not.
+valid-prefix relation are local now; so are atomic reservation and its narrowly proven
+ordinary indexed store. Attention, complete MoE, general quantized GEMM and fused graph
+kernels are not.

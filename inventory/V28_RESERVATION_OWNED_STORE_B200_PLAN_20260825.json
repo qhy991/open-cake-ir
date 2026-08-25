@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "state": "frozen",
+  "planned_at": "2026-08-25T10:58:57Z",
+  "purpose": "kda_v1_reservation_owned_indexed_store_correctness",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "selection_authority": {
+    "compiler_revision": "open-cake-ir-sm100a-v28",
+    "schedule": "corpus/schedules/reservation-owned-store-b8-smoke.json",
+    "entry_point": "cake_reservation_owned_store_b8_smoke"
+  },
+  "instrument": {
+    "path": "tools/observe_lowered_kernel.py",
+    "oracle": "pre-launch route, payload and counter snapshot; exact payload sets per expert reservation interval, untouched-zero and final-count invariants"
+  },
+  "input_domain": {
+    "required": "every pre-launch half-open reservation interval fits within the destination capacity",
+    "enforcement": "the independent oracle checks this condition before launch and refuses an out-of-domain input"
+  },
+  "environment": {
+    "interpreter": "/usr/bin/python3",
+    "pythonpath": [
+      "src",
+      "/home/qinhaiyan/.local/lib/python3.12/site-packages",
+      "/home/qinhaiyan/.local/lib/python3.12/site-packages/nvidia_cutlass_dsl/dsl_packages"
+    ],
+    "preflight": "One CPU-only process using exactly these paths must import Torch 2.13.0+cu130, Triton 3.7.1, Cutlass 4.7.0 and cutlass.cute, load the released Compiler, and confirm the selected Schedule lowers to the selected entry point before broker submission."
+  },
+  "protocol": {
+    "broker_mode": "shared",
+    "gpu_count": 1,
+    "seed": 0,
+    "timing": false,
+    "automatic_retries": 0,
+    "retain_failure": true
+  },
+  "acceptance": {
+    "required": "the released generated source compiles and launches once on B200; each expert's reserved interval contains exactly its routed non-zero payload identities as an unordered set, every untouched destination slot stays zero, and final counters equal initial counters plus valid reservations",
+    "failure": "retain the first result or pre-launch failure; do not retry, change inputs, weaken the exact-set oracle, or rewrite this plan",
+    "non_claim": "does not establish performance, complete KDA-version expressibility, route or group formation, vector-row dispatch, reduction scatter, degree-one direct-store selection, a runtime capacity relation, end-to-end MoE correctness, ranking quality or paper reproduction"
+  }
+}
