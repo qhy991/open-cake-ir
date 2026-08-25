@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from hashlib import sha256
 from pathlib import Path
@@ -9,7 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.compiler_revision_witnesses import compiler_revision_witnesses  # noqa: E402
+from tools.compiler_revision_witnesses import (  # noqa: E402
+    compiler_revision_witnesses,
+    plan_compiler_revision_cycle,
+)
 
 
 def _canonical_sha256(value: object) -> str:
@@ -87,6 +91,45 @@ class CompilerRevisionWitnessTests(unittest.TestCase):
         current_ordinal = int(current["revision_id"].rsplit("-v", 1)[1])
         successor_ordinal = int(successor["revision_id"].rsplit("-v", 1)[1])
         self.assertGreater(current_ordinal, successor_ordinal)
+
+    def test_string_compiler_revision_reference_witnesses_v28(self) -> None:
+        witnesses = compiler_revision_witnesses(ROOT)
+
+        self.assertTrue(
+            any(
+                item.revision_id == "open-cake-ir-sm100a-v28"
+                and item.path
+                == "inventory/V28_RESERVATION_OWNED_STORE_B200_PLAN_20260825.json"
+                for item in witnesses
+            )
+        )
+
+    def test_historical_and_generic_lineages_share_one_ordinal(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "inventory").mkdir()
+            (root / "compiler/releases").mkdir(parents=True)
+            (root / "inventory/historical.json").write_text(
+                json.dumps({"compiler_revision": "open-cake-ir-sm100a-v28"}),
+                encoding="utf-8",
+            )
+            (root / "inventory/generic.json").write_text(
+                json.dumps({"compiler_revision": "open-cake-ir-v29"}),
+                encoding="utf-8",
+            )
+
+            plan = plan_compiler_revision_cycle(root, "open-cake-ir-v29")
+
+        self.assertEqual(plan.next_label, "v30")
+        self.assertEqual(plan.archive_label, "v29")
+        self.assertEqual(plan.stale_labels, ())
+
+    def test_current_witnessed_v28_plans_v29(self) -> None:
+        plan = plan_compiler_revision_cycle(ROOT, "open-cake-ir-sm100a-v28")
+
+        self.assertEqual(plan.next_label, "v29")
+        self.assertEqual(plan.archive_label, "v28")
+        self.assertEqual(plan.stale_labels, ())
 
 
 if __name__ == "__main__":

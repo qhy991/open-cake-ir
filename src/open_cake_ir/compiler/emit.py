@@ -8,6 +8,7 @@ build one for two instances.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 
@@ -36,6 +37,18 @@ class Emission:
     """What the backend needs to compile this source, when the source alone does not
     imply it. Triton compiles a kernel function against an explicit signature and
     constexpr set; CuTe-DSL compiles the module."""
+
+
+def source_comment_text(value: str) -> str:
+    """Encode untrusted Schedule text onto one physical source-comment line.
+
+    Schedule identifiers are descriptive rather than executable, but emitters retain
+    them in generated-source comments. JSON string escaping is deterministic, ASCII-only,
+    and preserves ordinary identifiers byte-for-byte while making CR, LF, Unicode line
+    separators, backslashes, and other control characters inert comment text.
+    """
+
+    return json.dumps(value, ensure_ascii=True)[1:-1]
 
 
 def require(condition: object, message: str) -> None:

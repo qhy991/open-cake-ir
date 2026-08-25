@@ -69,7 +69,7 @@ graph LR
     VER --> A["<b>Assessment</b><br/>accepted · lowering_eligible<br/>localized Findings"]
     PROF --> A
     A --> LOW["<b>Compiler.lower</b>"]
-    LOW --> ART["target source<br/><i>Triton · CuTe-DSL · CUDA</i>"]
+    LOW --> ART["target source<br/><i>Triton · CuTe-DSL · Metal · CUDA</i>"]
 
     IR -. "structural violation<br/>becomes a Finding,<br/>not an exception" .-> A
 
@@ -84,11 +84,18 @@ operation body — historically verified on a B200 at 128/128 exact assignments.
 `checked_cuda_asset` route for `cake_tinygemm2_stage4_split_k` stamps a checked-in file:
 its Schedule does not yet carry the lane
 mapping, access maps and loop commitments needed to generate the body. `Lowering.generated`
-therefore reports `false` for that path, while the `triton` and `cutlass_cute_dsl`
-backends report `true`; the asset route pins whole-document semantics until a real
-emitter replaces it.
+therefore reports `false` for that path, while the `triton`, `cutlass_cute_dsl`, and
+`metal` backends report `true`; the asset route pins whole-document semantics until a
+real emitter replaces it.
 Its four-part CTA sum and bias-add/BF16-round epilogue are checked explicitly, but full
 Schedule-to-source generation remains open work.
+
+`metal` is a third generated Adapter behind the same Interface. Its first finite subset
+recognizes the operation graphs for runtime-indexed BF16 gather and KDA weighted combine,
+then derives MSL buffer bindings, threadgroups and SIMDgroup width from the Schedule and
+the exact `apple_gpu_family9` Target. Backend `preflight` owns unsupported graph and role
+commitments, so `Compiler.assess` reports them before Lowering. The Module emits source;
+`xcrun metal`, metallib custody and dispatch remain outside the Compiler boundary.
 
 ### Findings
 
@@ -312,7 +319,7 @@ graph LR
 | Compile → external oracle → GPU timing | correctness is implemented. Historical B200 observations cover eleven pre-v24 emitted Schedule slices. The frozen v24 attempt exposed an out-of-bounds GEMM mask and two observation crashes. The preregistered v25 successor compiled and launched all 14 generated lowerings, retained 12 passes and two GEMM failures under the unchanged `1e-5` threshold, and measured no timing. TinyGEMM2 v2 pins reproduced inputs, independent CPU oracle and retained parent output; its v29 shared-B200 successor passes the current checked asset with one launch, zero fallback and no timing |
 | Profiler evidence in the inner loop | partial relative to the paper — Executor v18 composes the canonical no-timing NCU assay after every correctness-qualified search survivor, retains raw/profile replay for all of them and feeds back the selected profile; a bounded live v18 two-arm successor covers selected and non-selected survivors, and scientific v3 executes it, but two missing Runs prevent the preregistered estimate |
 | Retained evidence and the outer loop gate | implemented; successor releases enforce an external approval-writer boundary. v24 remains same-actor historical evidence, while v25 was independently reviewed and bound to the final Gate |
-| Deterministic lowering | one typed route selects mechanism, not Workload. `triton` and `cutlass_cute_dsl` generate operation bodies from arbitrary conforming Schedules in their supported subsets. `checked_cuda_asset` has one bounded entry, `cake_tinygemm2_stage4_split_k`; it stamps a digest into a checked-in file and reports `generated=false` rather than conflating materialization with generation |
+| Deterministic lowering | one typed route selects mechanism, not Workload. `triton`, `cutlass_cute_dsl`, and `metal` generate operation bodies from conforming Schedules in their supported subsets. `checked_cuda_asset` has one bounded entry, `cake_tinygemm2_stage4_split_k`; it stamps a digest into a checked-in file and reports `generated=false` rather than conflating materialization with generation |
 | Live candidate-set authoring | implemented and bounded-live exercised — both Codex 0.144.4 policies pass two-arm envelope qualification, the closed policy separately passes at the exact `xhigh` treatment, and candidate-set v2 produced three launchable Candidates and searched two in each arm on B200; qualification proves transport and the Campaign is system qualification only, so neither is an 80M scientific result |
 | The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but Compiler v25 retains no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
 | Diagnosis routing | implemented — every rejection is routed to the candidate, the verifier, the IR vocabulary or the cost model, and each destination is inferred from a signal the loop already produces |

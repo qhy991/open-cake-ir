@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "schedule_id": "kda-weighted-combine-b8-metal-family9-role-drift-v1",
+  "target": "apple_gpu_family9",
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [
+        0,
+        1
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "expert_rows",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        4,
+        8,
+        16
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "expert_ids",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        8,
+        8
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "row_ids",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        8,
+        8
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "route_weights",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        8,
+        8
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "output",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        8,
+        16
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "expert_id_tile",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "row_id_tile",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "route_weight_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "selected_rows",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        8,
+        16
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "weighted_rows",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        8,
+        16
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "combined_row",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        16
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_expert_ids",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "expert_ids"
+      ],
+      "writes": [
+        "expert_id_tile"
+      ],
+      "parameters": {
+        "movement": "global",
+        "reuse": "streamed"
+      }
+    },
+    {
+      "id": "load_row_ids",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "row_ids"
+      ],
+      "writes": [
+        "row_id_tile"
+      ],
+      "parameters": {
+        "movement": "global",
+        "reuse": "streamed"
+      }
+    },
+    {
+      "id": "load_route_weights",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "route_weights"
+      ],
+      "writes": [
+        "route_weight_tile"
+      ],
+      "parameters": {
+        "movement": "global",
+        "reuse": "streamed"
+      }
+    },
+    {
+      "id": "load_selected_rows",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "expert_rows",
+        "expert_id_tile",
+        "row_id_tile"
+      ],
+      "writes": [
+        "selected_rows"
+      ],
+      "depends_on": [
+        "load_expert_ids",
+        "load_row_ids"
+      ],
+      "parameters": {
+        "movement": "global",
+        "reuse": "streamed"
+      }
+    },
+    {
+      "id": "apply_route_weights",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "selected_rows",
+        "route_weight_tile"
+      ],
+      "writes": [
+        "weighted_rows"
+      ],
+      "depends_on": [
+        "load_selected_rows",
+        "load_route_weights"
+      ],
+      "parameters": {
+        "op": "mul",
+        "broadcast_axis": 0
+      }
+    },
+    {
+      "id": "combine_routes",
+      "kind": "reduce",
+      "role": "compute",
+      "reads": [
+        "weighted_rows"
+      ],
+      "writes": [
+        "combined_row"
+      ],
+      "depends_on": [
+        "apply_route_weights"
+      ],
+      "parameters": {
+        "op": "sum",
+        "axis": 0,
+        "scope": "cta"
+      }
+    },
+    {
+      "id": "store_output",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "combined_row"
+      ],
+      "writes": [
+        "output"
+      ],
+      "depends_on": [
+        "combine_routes"
+      ],
+      "parameters": {
+        "coalesced": true
+      }
+    }
+  ],
+  "outputs": [
+    "output"
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "token",
+        "axis": 0,
+        "buffer": "expert_ids",
+        "dimension": 0,
+        "tile": 1
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_expert_ids",
+      "buffer": "expert_ids",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_row_ids",
+      "buffer": "row_ids",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_route_weights",
+      "buffer": "route_weights",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_selected_rows",
+      "buffer": "expert_rows",
+      "indices": [
+        {
+          "source": "buffer",
+          "name": "expert_id_tile"
+        },
+        {
+          "source": "buffer",
+          "name": "row_id_tile"
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_output",
+      "buffer": "output",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {
+    "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "lowering": {
+    "backend": "metal",
+    "entry_point": "cake_kda_weighted_combine_b8_metal"
+  }
+}

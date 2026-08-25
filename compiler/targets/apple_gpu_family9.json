@@ -1,0 +1,35 @@
+{
+  "schema_version": 2,
+  "target_id": "apple_gpu_family9",
+  "architecture": "apple_gpu_family9",
+  "execution_group_width": 32,
+  "memory_spaces": [
+    "global",
+    "shared",
+    "register"
+  ],
+  "operation_kinds": [
+    "load",
+    "reduce",
+    "elementwise",
+    "store"
+  ],
+  "resource_limits": {
+    "maximum_threads_per_workgroup": 1024,
+    "maximum_threadgroup_memory_bytes": 32768
+  },
+  "instruction_contracts": [],
+  "synchronization_contracts": [],
+  "citations": [
+    {
+      "kind": "vendor_documentation",
+      "source": "Apple Metal feature set tables",
+      "locator": "Apple GPU family 9 implementation limits"
+    },
+    {
+      "kind": "toolchain_observation",
+      "source": "tools/probe_metal_operators.py",
+      "locator": "Apple M4; 32-wide SIMDgroup and Metal 3.2 compile/link/dispatch; observed 2026-08-25"
+    }
+  ]
+}

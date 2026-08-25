@@ -26,43 +26,8 @@ COMPILER_RELEASE_TMP=$(mktemp -d compiler/.release-cycle.XXXXXX)
 export COMPILER_RELEASE_TMP
 trap 'rm -r -- "$COMPILER_RELEASE_TMP"' EXIT
 
-eval "$(python3 - <<'PY'
-import json, pathlib, re
-
-from tools.compiler_revision_witnesses import compiler_revision_witnesses
-
-# A legacy or interrupted cycle may leave only the draft. Use it as the current-id
-# fallback when no released lock exists.
-locked = pathlib.Path("compiler/revision.lock.json")
-source = locked if locked.exists() else pathlib.Path("compiler/revision.json")
-current = json.loads(source.read_text())["revision_id"].removesuffix("-draft").rsplit("-", 1)[-1]
-
-# Study Contracts, evidence, and inventory observations are all frozen witnesses. The
-# helper is the sole owner of that discovery rule, so release and verification cannot
-# silently disagree about what makes an id historical.
-witnessed = {
-    item.revision_id.rsplit("-", 1)[-1]
-    for item in compiler_revision_witnesses(pathlib.Path("."))
-}
-
-ordinal = lambda value: int(m.group(1)) if (m := re.fullmatch(r"v(\d+)", value)) else 0
-history = max((ordinal(value) for value in witnessed), default=0)
-
-print("STALE=")
-if current in witnessed:
-    print(f"NEXT=v{history + 1}")
-    print(f"ARCHIVE={current}")
-else:
-    # The working Revision's number carries no fact, so it sits directly above witnessed
-    # history rather than climbing once per edit. Numbers stranded there by earlier
-    # unwitnessed releases are reclaimed, so repeated edits keep releasing the same id.
-    stale = sorted(p.name for p in pathlib.Path("compiler/releases").glob("v*")
-                   if ordinal(p.name) > history)
-    print(f"NEXT=v{history + 1}")
-    print("ARCHIVE=")
-    print(f"STALE='{' '.join(stale)}'")
-PY
-)"
+eval "$(python3 tools/compiler_revision_witnesses.py \
+  --project-root . --plan-cycle-shell)"
 
 if [ -n "$ARCHIVE" ]; then
   echo "--- ${ARCHIVE} is witnessed by sealed evidence; archiving and bumping to ${NEXT} ---"
@@ -120,7 +85,7 @@ fi
 python3 - "$NEXT" <<'PY'
 import json, pathlib, sys
 p = pathlib.Path("compiler/revision.json"); d = json.loads(p.read_text())
-d["revision_id"] = f"open-cake-ir-sm100a-{sys.argv[1]}-draft"
+d["revision_id"] = f"open-cake-ir-{sys.argv[1]}-draft"
 p.write_text(json.dumps(d, indent=2) + "\n")
 print(f"--- draft -> {d['revision_id']} ---")
 PY

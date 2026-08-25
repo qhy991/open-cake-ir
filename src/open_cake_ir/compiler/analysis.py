@@ -205,9 +205,10 @@ def residency_upper_bound(
     tensor = _allocation_bytes(schedule, MemorySpace.TENSOR)
     if tensor:
         capacity = target.resource_limits.maximum_tensor_memory_bytes
-        bounds.append(
-            ResidencyBound("tensor_memory", tensor, capacity, capacity // tensor)
-        )
+        if capacity is not None:
+            bounds.append(
+                ResidencyBound("tensor_memory", tensor, capacity, capacity // tensor)
+            )
 
     return ResidencyUpperBound(tuple(bounds))
 

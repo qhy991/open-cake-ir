@@ -480,7 +480,7 @@ def _verify_hardware_conformance(
                 category,
             )
 
-    if schedule.grid is not None:
+    if schedule.grid is not None and limits.maximum_grid is not None:
         for axis, (extent_value, maximum) in enumerate(
             zip(schedule.grid, limits.maximum_grid)
         ):
@@ -504,6 +504,8 @@ def _verify_hardware_conformance(
             "barrier synchronization contract",
             category,
         )
+
+    _verify_role_register_split(schedule, target, out)
 
 
 def _verify_tensor_columns(allocation, index: int, limits, out: _Collector) -> None:
@@ -550,6 +552,14 @@ def _verify_tensor_columns(allocation, index: int, limits, out: _Collector) -> N
             category,
         )
 
+    if limits.maximum_tensor_memory_bytes is None:
+        out.add(
+            "TARGET_TENSOR_MEMORY_BUDGET_UNDECLARED",
+            f"{path}.tensor_columns",
+            "the Target admits tensor memory without declaring its byte budget",
+            category,
+        )
+        return
     capacity = limits.maximum_tensor_memory_bytes // TMEM_COLUMN_BYTES
     if allocation.tensor_columns > capacity:
         out.add(
@@ -2711,6 +2721,14 @@ def _verify_role_register_split(schedule: Schedule, target: Target, out: _Collec
         return
 
     warps_per_group = target.warps_per_warpgroup
+    if warps_per_group is None:
+        out.add(
+            "ROLE_REGISTER_BUDGET_UNSUPPORTED",
+            "roles",
+            f"Target {target.target_id!r} declares no register-budget issue group",
+            category,
+        )
+        return
     for index, role in enumerate(schedule.roles):
         if role.registers_per_thread is None:
             continue
@@ -2775,7 +2793,6 @@ def _verify_residency_commitment(
     author its occupancy and telling it which declaration to change.
     """
 
-    _verify_role_register_split(schedule, target, out)
     commitment = schedule.residency
     if commitment is None:
         return

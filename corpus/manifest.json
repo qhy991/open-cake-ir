@@ -498,6 +498,54 @@
         "schedule_sha256": "72921b70f1ab49b5e23f242afa8c1e638b6c33df14b413ccff684244300aba23",
         "lowering_source_sha256": "30f5626804a0a22070618b9ae6ed2e1cda88ec499b76de4e2dc6c7be5125b282"
       }
+    },
+    {
+      "case_id": "indexed-gather-metal-accepted",
+      "schedule": "corpus/schedules/indexed-gather-b8-metal-family9.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "03818682fe4cd1b9a457fede8b78c17aa688cb359b78fc036e074c2865fd6024",
+        "lowering_source_sha256": "100825f72adf5cdc2318cc7db183724d3596290433fd4d3a1f720de6a8fd15e5"
+      }
+    },
+    {
+      "case_id": "indexed-gather-metal-load-drift",
+      "schedule": "corpus/schedules/indexed-gather-b8-metal-family9-load-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "METAL_OPERATION_CONTRACT_UNSUPPORTED"
+        ],
+        "schedule_sha256": "30807afb5d873b135aa75728decf2d2101968c1340f741a6b85e2bf685d20280",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "kda-weighted-combine-metal-accepted",
+      "schedule": "corpus/schedules/kda-weighted-combine-b8-metal-family9.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "891dce88603474b21ca06cd403ffd4f28c20c6b7b64929e6939d5a31d207dda8",
+        "lowering_source_sha256": "1546c8344ef1f2e6e6420f21b83d4c3c0cd719144052090a45bc0aefa4d719b1"
+      }
+    },
+    {
+      "case_id": "kda-weighted-combine-metal-role-drift",
+      "schedule": "corpus/schedules/kda-weighted-combine-b8-metal-family9-role-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "METAL_EXECUTION_GROUPS_UNSUPPORTED"
+        ],
+        "schedule_sha256": "da3a13933370228f67f1035b723c947a954328aaf8493417ad67f4124dc26943",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

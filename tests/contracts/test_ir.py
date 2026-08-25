@@ -85,7 +85,10 @@ class RetainedScheduleTest(unittest.TestCase):
             with self.subTest(schedule=path.name):
                 schedule = Schedule.load(path)
                 self.assertEqual(schedule.schema_version, 1)
-                self.assertEqual(schedule.target, "sm_100a")
+                self.assertTrue(
+                    (ROOT / "compiler" / "targets" / f"{schedule.target}.json").is_file(),
+                    f"retained Schedule names an unbound Target: {schedule.target}",
+                )
                 self.assertTrue(schedule.operations)
                 self.assertTrue(schedule.outputs)
 
