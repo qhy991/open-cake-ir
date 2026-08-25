@@ -43,8 +43,26 @@ def _top_k_oracle(inputs, torch):
     ), None
 
 
+def _block_scaled_gemm_oracle(inputs, torch):
+    """Dequantize both operands, then contract them in float32.
+
+    This is deliberately not the lowering's partial-dot decomposition. The profile
+    relation says A scales each row/128-wide K block and B has one 128-row group with
+    the same K granularity; expanding that relation produces ordinary dense tensors
+    whose matmul is an independent answer.
+    """
+
+    a, b, scale_a, scale_b, _ = inputs
+    a_dequant = a.to(torch.float32) * scale_a.t().repeat_interleave(128, dim=1)
+    b_dequant = b.to(torch.float32) * (
+        scale_b.expand(b.shape[0], -1).repeat_interleave(128, dim=1)
+    )
+    return a_dequant @ b_dequant.t(), None
+
+
 ORACLES = {
     **_RETAINED_ORACLES,
     "swiglu_b8_smoke": _swiglu_oracle,
     "top_k_b8_smoke": _top_k_oracle,
+    "block_scaled_gemm_b1_smoke": _block_scaled_gemm_oracle,
 }

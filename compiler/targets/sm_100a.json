@@ -40,6 +40,7 @@
     "tcgen05.mma.cta_group::1.kind::f16",
     "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
     "triton.dot.bf16_fp32",
+    "triton.dot.fp8e4m3_block_scale_fp32",
     "libdevice.tanh.f32"
   ],
   "synchronization_contracts": [

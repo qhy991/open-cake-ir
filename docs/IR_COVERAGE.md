@@ -33,7 +33,7 @@ Ordered by how often the surveyed work exercised each axis.
 | 11 | ILP, independent accumulator count | NO | `RangeOptions` carries Triton loop knobs, not an accumulator count |
 | 12 | Split-K reduction decomposition | YES | `reduce_sum(axis, scope)` plus roles |
 | 13 | Two kernel configs in one dispatch | NO | one Schedule is one kernel |
-| 14 | Weight precision and scale granularity | NO | `fp8_e4m3` exists; scale tensors and group size do not |
+| 14 | Weight precision and scale granularity | ~ | v17 relates FP32 scales to FP8 E4M3 data by per-axis granularity and physical grouped-axis order; padded/packed, dynamic and generated scales remain absent |
 | 15 | GEMM orientation (transposed decode) | ~ | buffers can be declared transposed; scale-config major mode cannot |
 
 Five of fifteen fully expressible, one partial. Of the five most-exercised axes, three are now
@@ -154,12 +154,15 @@ integration uses destination-passing deliberately, to write into a symmetric col
 buffer and delete a copy per rank. "Unnecessary" is doing real work in that principle and
 the boundary should be drawn explicitly rather than assumed.
 
-Axis 14 needs a quantization model -- scale tensors, group granularity, where scales live
-relative to the weights -- which is a family the corpus does not cover at all.
+Axis 14 now has one deliberately narrow model: `Buffer.scale_of` owns the FP8 data buffer,
+per-data-axis granularity and physical grouped-axis order. The verifier derives the scale
+shape, preserves the relation across loads and proves the four MMA reads are associated.
+It is not a general quantization model: padding, packing, dynamic extents, generated scales
+and sub-rate pipelines remain separate missing mechanisms.
 
 ## Corpus coverage
 
-The current Compiler Corpus has 22 cases across nine admitted profiles, against the
+The current Compiler Corpus has 25 cases across ten admitted profiles, against the
 paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
 the surveyed work is actually about, still have no complete representation here.
 
@@ -180,3 +183,10 @@ but rejected by the current Target. A brokered diagnostic exceeded the unchanged
 `1e-5` tolerance, so approximate math remains an explicit unsupported contract rather than
 an implicit emitter choice or a conveniently widened oracle. Complete KDA coverage remains
 0/57.
+
+ADR 0023 closes the first KDA v1 quantization relation without claiming the complete
+kernel. The static smoke profile uses KDA's FP8 E4M3 data, FP32 scales, activation storage
+`[K/128, M]`, weight storage `[N/128, K/128]` and two independently scaled K contractions.
+Its released v17 source compiled and matched 2,048/2,048 B200 outputs at maximum deviation
+`1.788e-7` under the preregistered `1e-5` gate. General K-block counts, grouped routing and
+scatter are still outside the lowering domain, so complete-version coverage stays 0/57.

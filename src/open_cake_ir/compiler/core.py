@@ -355,6 +355,43 @@ def _gemm_bias_b1_smoke_conformance(buffers, operations) -> list["Finding"]:
     ]
 
 
+def _block_scaled_gemm_b1_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """The smallest KDA-style FP8/FP32-scale contraction with two K blocks."""
+
+    dot = next(
+        (operation for operation in operations if operation.get("id") == "scaled_dot"),
+        None,
+    )
+    instruction = (
+        dot.get("parameters", {}).get("instruction")
+        if isinstance(dot, Mapping) and isinstance(dot.get("parameters"), Mapping)
+        else None
+    )
+    coheres = (
+        _shape_of(buffers, "a") == (16, 256)
+        and _shape_of(buffers, "b") == (128, 256)
+        and _shape_of(buffers, "sfa") == (2, 16)
+        and _shape_of(buffers, "sfb") == (1, 2)
+        and _shape_of(buffers, "c") == (16, 128)
+        and isinstance(dot, Mapping)
+        and dot.get("kind") == "mma"
+        and isinstance(instruction, Mapping)
+        and instruction.get("contract") == "triton.dot.fp8e4m3_block_scale_fp32"
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.a.shape",
+            "the block-scale smoke profile is a 16x128x256 FP8 contraction with "
+            "two K-scale blocks and explicitly related FP32 scales",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
 def _swiglu_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
     """SwiGLU is two equally shaped inputs and one equally shaped output.
 
@@ -535,6 +572,17 @@ _PROFILES: Mapping[str, _Profile] = {
             "entry_abi": "four_cuda_tensors_current_stream",
         },
         conformance=_gemm_bias_b1_smoke_conformance,
+        backend=emit_triton,
+    ),
+    "block_scaled_gemm_b1_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_block_scaled_gemm_b1_smoke",
+            "target": "sm_100a",
+            "entry_abi": "five_cuda_tensors_current_stream",
+        },
+        conformance=_block_scaled_gemm_b1_smoke_conformance,
         backend=emit_triton,
     ),
     "layernorm_b8_smoke": _Profile(

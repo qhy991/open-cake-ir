@@ -82,9 +82,11 @@ class CompilerRevisionWitnessTests(unittest.TestCase):
         )
         successor = incident["resolution"]["successor_revision"]
 
-        self.assertEqual(current["revision_id"], "open-cake-ir-sm100a-v16")
         self.assertEqual(successor["revision_id"], archived["revision_id"])
         self.assertEqual(successor["canonical_sha256"], _canonical_sha256(archived))
+        current_ordinal = int(current["revision_id"].rsplit("-v", 1)[1])
+        successor_ordinal = int(successor["revision_id"].rsplit("-v", 1)[1])
+        self.assertGreater(current_ordinal, successor_ordinal)
 
 
 if __name__ == "__main__":

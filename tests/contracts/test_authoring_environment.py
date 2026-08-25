@@ -65,7 +65,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
     def test_clean_start_starters_expose_contract_without_implementation(self) -> None:
         study_path = (
             ROOT
-            / "contracts/studies/matched-search-clean-start-reference-v31.json"
+            / "contracts/studies/matched-search-clean-start-reference-v32.json"
         )
         lock = Lab(ROOT).preflight(study_path)
         study = json.loads(study_path.read_text(encoding="utf-8"))
@@ -182,7 +182,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v31.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v32.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -227,7 +227,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v31.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v32.json"
             ).read_text(encoding="utf-8")
         )
         environment = OpenCakeEnvironment(
@@ -268,7 +268,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v31.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v32.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -310,7 +310,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v31.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v32.json"
             ).read_text(encoding="utf-8")
         )
         toolchain = RecordingToolchain()
@@ -348,8 +348,8 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
     seam. If `_finding_rows` and the router disagree about what a finding row carries,
     both suites pass and every vocabulary gap gets blamed on the candidate.
 
-    The Schedule here is well formed -- the IR admits the dtype and so does the Target --
-    and this backend cannot name it. That is the compiler's gap, not the author's.
+    A backend vocabulary gap and an operation-contract violation are both well-formed
+    JSON, but they have different owners.  This seam must preserve that distinction.
     """
 
     def _rejection(self, mutate):
@@ -359,7 +359,7 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
         )
         study = json.loads(
             (
-                ROOT / "contracts/studies/matched-search-infrastructure-v31.json"
+                ROOT / "contracts/studies/matched-search-infrastructure-v32.json"
             ).read_text(encoding="utf-8")
         )
         document = _headline_schedule(workload)
@@ -383,7 +383,7 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
     def _retype(document):
         for buffer in document["buffers"]:
             if buffer["name"] == "distance_tile":
-                # fp8 is a dtype the IR admits and this profile's backend cannot name.
+                # The backend can name fp8, but reduce_argmin only compares fp32 values.
                 buffer["dtype"] = "fp8_e4m3"
 
     @staticmethod
@@ -407,22 +407,28 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
     def test_a_gap_the_backend_has_reaches_the_router_as_the_vocabularys(self) -> None:
         from open_cake_ir.lab.routing import IR_VOCABULARY, route_rejection
 
-        for name, mutate, code in (
-            ("dtype", self._retype, "PROFILE_DTYPE_UNEMITTABLE"),
-            ("operation kind", self._rekind, "PROFILE_OPERATION_UNEMITTABLE"),
-        ):
-            with self.subTest(gap=name):
-                result = self._rejection(mutate)
-                self.assertEqual(result.disposition, "rejected")
-                codes = {
-                    row["code"]
-                    for row in result.feedback["findings"]
-                    if row["blocks_lowering"]
-                }
-                self.assertIn(code, codes)
-                self.assertEqual(
-                    route_rejection(result.feedback).destination, IR_VOCABULARY
-                )
+        result = self._rejection(self._rekind)
+        self.assertEqual(result.disposition, "rejected")
+        codes = {
+            row["code"]
+            for row in result.feedback["findings"]
+            if row["blocks_lowering"]
+        }
+        self.assertIn("PROFILE_OPERATION_UNEMITTABLE", codes)
+        self.assertEqual(route_rejection(result.feedback).destination, IR_VOCABULARY)
+
+    def test_an_argmin_dtype_violation_is_candidate_feedback(self) -> None:
+        from open_cake_ir.lab.routing import CANDIDATE, route_rejection
+
+        result = self._rejection(self._retype)
+        self.assertEqual(result.disposition, "rejected")
+        codes = {
+            row["code"]
+            for row in result.feedback["findings"]
+            if row["blocks_acceptance"]
+        }
+        self.assertIn("REDUCE_ARGMIN_VALUE_DTYPE", codes)
+        self.assertEqual(route_rejection(result.feedback).destination, CANDIDATE)
 
     def test_an_emitted_mma_without_an_instruction_is_candidate_feedback(self) -> None:
         from open_cake_ir.lab.routing import CANDIDATE, route_rejection

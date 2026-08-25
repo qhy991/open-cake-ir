@@ -332,6 +332,7 @@ before the fact would have shown and a corpus of six families cannot.
 
 ## Corpus coverage, restated
 
-Twenty-two cases across nine admitted profiles, against the paper's roughly four hundred
-across twenty-eight. Standalone SwiGLU arithmetic and deterministic indexed selection are
-local now; attention, complete MoE, quantized GEMM and fused graph kernels are not.
+Twenty-four cases across ten admitted profiles, against the paper's roughly four hundred
+across twenty-eight. Standalone SwiGLU arithmetic, deterministic indexed selection and one
+static two-block FP8/FP32-scale contraction are local now; attention, complete MoE,
+general quantized GEMM and fused graph kernels are not.

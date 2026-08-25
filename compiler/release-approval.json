@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "065682dd0dae7528fef8ccf2a0ef9d9b9c3e05c4fb416a3bc8697c84e4038e12"
+    "canonical_sha256": "61cdde9d0a78ce44bc00369f5cadad6a2dcd83c1ef5764e5926467b1253a4fc6"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Tanh has one explicit target implementation contract; libdevice.tanh.f32 retains the frozen FP32 SwiGLU oracle, KDA tanh.approx.f32 remains a target-unsupported falsifier, and a Target-admitted contract for another operation kind is rejected before lowering"
+  "approval_basis": "Close the FP8 vocabulary widening exposed by the v17 full-suite seam: reviewed 25-case expectations; reduce_argmin now has one explicit fp32-value/int32-index contract and the new dtype-drift negative is rejected with REDUCE_ARGMIN_VALUE_DTYPE"
 }

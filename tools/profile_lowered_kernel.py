@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from kernel_cases import build_inputs  # noqa: E402
+from kernel_inputs import build_inputs  # noqa: E402
 from kernel_oracles import ORACLES  # noqa: E402
 from open_cake_ir.compiler.analysis import residency_upper_bound  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
@@ -55,7 +55,7 @@ import importlib.util, json, sys
 from pathlib import Path
 sys.path.insert(0, {tools!r})
 sys.path.insert(0, {src!r})
-from kernel_cases import build_inputs
+from kernel_inputs import build_inputs
 import torch
 
 document = json.loads(Path({schedule!r}).read_text())

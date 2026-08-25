@@ -634,7 +634,8 @@ def _verify_instruction_commitments(
             admitted = _CONTRACT_DTYPES.get(instruction.contract)
             if admitted is not None:
                 operands, accumulate = admitted
-                for name in operation.reads:
+                data_reads = operation.reads[:2]
+                for name in data_reads:
                     buffer = buffers.get(name)
                     if buffer is not None and buffer.dtype not in operands:
                         out.add(
@@ -645,6 +646,17 @@ def _verify_instruction_commitments(
                             f"{name!r} is {buffer.dtype.value}",
                             category,
                         )
+                if instruction.contract == _BLOCK_SCALE_MMA_CONTRACT:
+                    for name in operation.reads[2:]:
+                        buffer = buffers.get(name)
+                        if buffer is not None and buffer.dtype is not DType.FP32:
+                            out.add(
+                                "MMA_SCALE_DTYPE_DIFFERS",
+                                f"{path}.instruction.contract",
+                                f"contract {instruction.contract!r} reads fp32 scales "
+                                f"but {name!r} is {buffer.dtype.value}",
+                                category,
+                            )
                 written = buffers.get(operation.writes[0]) if operation.writes else None
                 if written is not None and written.dtype is not accumulate:
                     out.add(
@@ -680,7 +692,7 @@ def _verify_instruction_commitments(
                     category,
                 )
             if instruction.operand_source is OperandSource.SHARED:
-                for name in operation.reads:
+                for name in operation.reads[:2]:
                     operand = buffers.get(name)
                     if operand is not None and operand.space is not MemorySpace.SHARED:
                         out.add(
@@ -859,7 +871,7 @@ def _verify_swizzle_commitments(schedule: Schedule, out: _Collector) -> None:
         name
         for operation in schedule.operations
         if operation.kind is OperationKind.MMA
-        for name in operation.reads
+        for name in operation.reads[:2]
     }
     for index, buffer in enumerate(schedule.buffers):
         if (
@@ -886,7 +898,10 @@ _CONTRACT_DTYPES = {
     "tcgen05.mma.cta_group::1.kind::f16": ({DType.BF16, DType.FP16}, DType.FP32),
     "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32": ({DType.BF16}, DType.FP32),
     "triton.dot.bf16_fp32": ({DType.BF16}, DType.FP32),
+    "triton.dot.fp8e4m3_block_scale_fp32": ({DType.FP8_E4M3}, DType.FP32),
 }
+
+_BLOCK_SCALE_MMA_CONTRACT = "triton.dot.fp8e4m3_block_scale_fp32"
 
 _ELEMENTWISE_INSTRUCTION_DTYPES = {
     "libdevice.tanh.f32": DType.FP32,
@@ -903,6 +918,130 @@ _ARITY = {
 }
 
 
+def _verify_scale_relations(schedule: Schedule, buffers, out: _Collector) -> None:
+    """Hold scale storage to the FP8 tensor relation that gives it meaning."""
+
+    category = FindingCategory.DATA_CONSISTENCY
+    for index, scale in enumerate(schedule.buffers):
+        relation = scale.scale_of
+        if relation is None:
+            continue
+        path = f"buffers[{index}].scale_of"
+        data = buffers.get(relation.buffer)
+        if data is None:
+            out.add(
+                "SCALE_TARGET_UNKNOWN",
+                f"{path}.buffer",
+                f"scale buffer {scale.name!r} names unknown data buffer "
+                f"{relation.buffer!r}",
+                category,
+            )
+            continue
+        if data is scale:
+            out.add(
+                "SCALE_TARGET_SELF",
+                f"{path}.buffer",
+                f"scale buffer {scale.name!r} cannot scale itself",
+                category,
+            )
+            continue
+        if data.dtype is not DType.FP8_E4M3:
+            out.add(
+                "SCALE_DATA_DTYPE",
+                f"{path}.buffer",
+                f"block scales describe fp8_e4m3 data, but {data.name!r} is "
+                f"{data.dtype.value}",
+                category,
+            )
+        if scale.dtype is not DType.FP32:
+            out.add(
+                "SCALE_DTYPE",
+                f"buffers[{index}].dtype",
+                f"block scale {scale.name!r} must be fp32, not {scale.dtype.value}",
+                category,
+            )
+        rank = len(data.shape)
+        if len(relation.granularity) != rank:
+            out.add(
+                "SCALE_GRANULARITY_RANK",
+                f"{path}.granularity",
+                f"scale granularity has rank {len(relation.granularity)} but "
+                f"{data.name!r} has rank {rank}",
+                category,
+            )
+        if tuple(sorted(relation.axis_order)) != tuple(range(rank)):
+            out.add(
+                "SCALE_AXIS_ORDER",
+                f"{path}.axis_order",
+                f"scale axis order {list(relation.axis_order)} is not a permutation "
+                f"of all {rank} axes of {data.name!r}",
+                category,
+            )
+        if len(relation.granularity) == rank and tuple(
+            sorted(relation.axis_order)
+        ) == tuple(range(rank)):
+            grouped = tuple(
+                (extent + granularity - 1) // granularity
+                for extent, granularity in zip(data.shape, relation.granularity)
+            )
+            expected = tuple(grouped[axis] for axis in relation.axis_order)
+            if scale.shape != expected:
+                out.add(
+                    "SCALE_SHAPE_MISMATCH",
+                    f"buffers[{index}].shape",
+                    f"{scale.name!r} shape {list(scale.shape)} differs from the "
+                    f"derived grouped shape {list(expected)} for {data.name!r}",
+                    category,
+                )
+
+    # A load changes storage, not meaning. The scale load and the data load together
+    # establish which staged tile the staged scale describes.
+    loads = [
+        operation
+        for operation in schedule.operations
+        if operation.kind is OperationKind.LOAD
+    ]
+    load_edges = {
+        (operation.reads[0], operation.writes[0])
+        for operation in loads
+        if len(operation.reads) == 1 and len(operation.writes) == 1
+    }
+    for operation_index, operation in enumerate(schedule.operations):
+        if operation.kind is not OperationKind.LOAD:
+            continue
+        if len(operation.reads) != 1 or len(operation.writes) != 1:
+            continue
+        source = buffers.get(operation.reads[0])
+        destination = buffers.get(operation.writes[0])
+        if source is None or destination is None:
+            continue
+        before = source.scale_of
+        after = destination.scale_of
+        if (before is None) != (after is None):
+            out.add(
+                "SCALE_RELATION_DROPPED",
+                f"operations[{operation_index}]",
+                f"load {operation.op_id!r} changes whether {source.name!r}/"
+                f"{destination.name!r} is a scale buffer",
+                category,
+            )
+            continue
+        if before is None or after is None:
+            continue
+        if (
+            before.granularity != after.granularity
+            or before.axis_order != after.axis_order
+            or (before.buffer, after.buffer) not in load_edges
+        ):
+            out.add(
+                "SCALE_RELATION_DRIFT",
+                f"operations[{operation_index}]",
+                f"load {operation.op_id!r} does not preserve the scale relation and "
+                "the corresponding data-load edge",
+                category,
+            )
+
+
 def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     category = FindingCategory.DATA_CONSISTENCY
 
@@ -910,6 +1049,8 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     allocations = {item.name: item for item in schedule.allocations}
     roles = {role.name for role in schedule.roles}
     pipelines = {pipeline.name for pipeline in schedule.pipelines}
+
+    _verify_scale_relations(schedule, buffers, out)
 
     # ---- buffer placement -------------------------------------------------
     for index, buffer in enumerate(schedule.buffers):
@@ -1197,8 +1338,89 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     _verify_access_maps(schedule, buffers, out)
 
 
+def _verify_block_scaled_mma(operation, path: str, buffers, out: _Collector) -> None:
+    """Prove scale association, then gate the first backend's exact static subset."""
+
+    if len(operation.reads) != 4:
+        return
+    a, b, scale_a, scale_b = (buffers.get(name) for name in operation.reads)
+    if any(buffer is None for buffer in (a, b, scale_a, scale_b)):
+        return
+    association_ok = True
+    for position, (scale, data) in enumerate(((scale_a, a), (scale_b, b)), start=2):
+        relation = scale.scale_of
+        if relation is None or relation.buffer != data.name:
+            association_ok = False
+            out.add(
+                "MMA_SCALE_ASSOCIATION",
+                f"{path}.reads[{position}]",
+                f"scale operand {scale.name!r} does not declare that it scales "
+                f"data operand {data.name!r}",
+                FindingCategory.DATA_CONSISTENCY,
+            )
+    if not association_ok:
+        return
+
+    relation_a = scale_a.scale_of
+    relation_b = scale_b.scale_of
+    assert relation_a is not None and relation_b is not None
+    tile = operation.parameters.tile_shape
+    supported = (
+        len(a.shape) == len(b.shape) == 2
+        and a.space is not MemorySpace.GLOBAL
+        and b.space is not MemorySpace.GLOBAL
+        and scale_a.space is not MemorySpace.GLOBAL
+        and scale_b.space is not MemorySpace.GLOBAL
+        and a.shape[1] == b.shape[1]
+        and len(relation_a.granularity) == len(relation_b.granularity) == 2
+        and relation_a.granularity[0] == 1
+        and relation_a.axis_order == (1, 0)
+        and relation_b.axis_order == (0, 1)
+        and relation_b.granularity[0] == b.shape[0]
+        and relation_a.granularity[1] == relation_b.granularity[1]
+        and a.shape[1] % relation_a.granularity[1] == 0
+        and a.shape[1] // relation_a.granularity[1] == 2
+        and tile == (a.shape[0], b.shape[0], a.shape[1])
+    )
+    if not supported:
+        out.add(
+            "MMA_BLOCK_SCALE_UNLOWERABLE",
+            f"{path}.parameters",
+            "the Triton block-scale lowering requires rank-2 staged A/B, A "
+            "granularity [1, block_k] stored [K-block, M], B granularity "
+            "[N, block_k] stored [N-block, K-block], equal divisible K blocks, "
+            "exactly two K blocks, and a tile equal to the staged contraction",
+            FindingCategory.HARDWARE_CONFORMANCE,
+        )
+
+
 def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> None:
     category = FindingCategory.DATA_CONSISTENCY
+    if operation.kind is OperationKind.REDUCE_ARGMIN:
+        # `reduce_argmin` is not a generic numeric reduction with an incidental
+        # output type.  The admitted operation compares fp32 distances and returns
+        # int32 source positions; making that contract explicit prevents a backend
+        # gaining a new storage dtype from silently widening every argmin use.
+        if operation.reads:
+            source = buffers.get(operation.reads[0])
+            if source is not None and source.dtype is not DType.FP32:
+                out.add(
+                    "REDUCE_ARGMIN_VALUE_DTYPE",
+                    f"{path}.reads",
+                    f"reduce_argmin compares fp32 values, but {source.name!r} is "
+                    f"{source.dtype.value}",
+                    category,
+                )
+        if operation.writes:
+            indices = buffers.get(operation.writes[0])
+            if indices is not None and indices.dtype is not DType.INT32:
+                out.add(
+                    "REDUCE_ARGMIN_INDEX_DTYPE",
+                    f"{path}.writes",
+                    f"reduce_argmin returns int32 source positions, but "
+                    f"{indices.name!r} is {indices.dtype.value}",
+                    category,
+                )
     if operation.kind is OperationKind.TOP_K:
         if len(operation.reads) != 1 or len(operation.writes) != 2:
             out.add(
@@ -1337,27 +1559,29 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     f"store destination {name!r} is {buffer.mode.value}, not an output",
                     category,
                 )
-    # A contraction reads its two operands and nothing else. It used to be able to name
-    # a third, which a formula then folded in, so the arithmetic after the dot lived
-    # inside the same operation. With that arithmetic declared separately a third read
-    # has no meaning, and an emitter that simply contracts the first two would drop it
-    # and produce a kernel that computes something else without saying so.
+    # An ordinary contraction reads two data operands. The one admitted block-scale
+    # contract reads the same pair followed by their two related scales; the contract,
+    # rather than a flag, is the single owner of that arity and meaning.
     if operation.kind is OperationKind.MMA:
+        instruction = operation.parameters.instruction
+        contract = instruction.contract if instruction is not None else None
+        expected_reads = 4 if contract == _BLOCK_SCALE_MMA_CONTRACT else 2
         staged = [
             name
             for name in operation.reads
             if (buffer := buffers.get(name)) is not None
             and buffer.space is not MemorySpace.GLOBAL
         ]
-        if len(operation.reads) != 2 or len(staged) != 2:
+        if len(operation.reads) != expected_reads or len(staged) != expected_reads:
             out.add(
                 "MMA_OPERAND_COUNT",
                 f"{path}.reads",
-                f"a contraction reads exactly two staged operands, got "
-                f"{list(operation.reads)}; arithmetic over its result is a separate "
-                "operation",
+                f"contract {contract!r} reads exactly {expected_reads} staged "
+                f"operands, got {list(operation.reads)}",
                 category,
             )
+        elif contract == _BLOCK_SCALE_MMA_CONTRACT:
+            _verify_block_scaled_mma(operation, path, buffers, out)
 
     # An arithmetic primitive takes what its op says it takes. A binary op reads two
     # buffers, or one buffer and a declared scalar; anything else is a Schedule asking

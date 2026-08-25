@@ -37,8 +37,8 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v16` is content-bound to an exact `sm_100a` Target and a 22-case,
-  38-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
+- Compiler Revision `open-cake-ir-sm100a-v18` is content-bound to an exact `sm_100a` Target and a 25-case,
+  41-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
   emitted MMA omit its instruction contract while still being marked lowering-eligible. v10 turns the pinned Triton
@@ -55,9 +55,14 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   target-unsupported Corpus negative. A diagnostic B200 probe exceeded the unchanged `1e-5` boundary on 2,304 of
   524,288 outputs, so the release does not disguise the numerical mismatch by relaxing the oracle. v16 additionally
   rejects a Target-admitted contract attached to the wrong operation kind before lowering, closing the verifier/emitter
-  boundary exposed by source review. The reviewed KDA
+  boundary exposed by source review. v17 adds one canonical `scale_of` axis relation and
+  a two-K-block FP8 E4M3/FP32-scale contraction. Its negative sibling proves scale/data
+  association can fail before lowering; the released generated source compiled and matched all 2,048 outputs on a
+  brokered B200 at maximum deviation `1.788e-7` under the unchanged `1e-5` gate. v18 closes the
+  resulting dtype-boundary leak: `reduce_argmin` keeps its FP32-value/INT32-index contract even though
+  the backend can now name FP8, and a dedicated drift case proves that widening is rejected. The reviewed KDA
   baseline still has 0/57 complete-version coverage: grouping/masking,
-  quantization-scale relations, grouped/ragged work, scatter and the program DAG remain absent. These slices prove
+  padded/packed or dynamic quantization, grouped/ragged work, scatter and the program DAG remain absent. These slices prove
   primitive expressibility, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
@@ -131,7 +136,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   150k, task-informed package study also freezes the provider's distinct `max` reasoning level and complete
   implementation skeletons. The later `xhigh` capability qualification does not rewrite that frozen treatment or
   supply an 80M clean-start Study. Serving and paper reproduction remain unsupported.
-- `matched-search-clean-start-reference-v31.json` is a zero-GPU successor fixture that replaces both arm references
+- `matched-search-clean-start-reference-v32.json` is a zero-GPU successor fixture that replaces both arm references
   together: Open Cake receives only its authoring interface and direct CUDA receives a canonical ABI with an empty
   kernel body. Its contamination gate validates reference access only; its inherited 150k/`max` treatment still
   cannot support a paper comparison.

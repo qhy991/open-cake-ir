@@ -12,6 +12,13 @@ An otherwise-lowerable `mma` in a backend-emitted profile names the Target instr
 lowering; omitting it is a lowering-blocking candidate Finding rather than a late emitter failure. Instruction-free
 asset profiles remain valid because they do not emit operation bodies.
 Register findings are static bounds over declared logical storage, never a claim about ptxas's physical allocation.
+A block scale is an FP32 Buffer with one `scale_of` relation. `granularity` is written in
+the FP8 data buffer's axis order; `axis_order` is the full permutation that gives the
+scale buffer's physical grouped-axis order. The Compiler derives the scale shape and
+requires loads to preserve the relation. The block-scaled MMA read order is data A, data
+B, scale(A), scale(B); names and convenient shapes never substitute for those relations.
+`reduce_argmin` compares FP32 values and returns INT32 source positions; admitting FP8
+storage for another operation does not widen that semantic contract.
 
 For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics, tie handling and oracle. A Study
 narrows the public Compiler to one admitted profile and supplies a complete `schedule-skeleton.json`; start from that

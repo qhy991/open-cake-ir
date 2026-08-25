@@ -329,6 +329,22 @@ def schedule_schema() -> dict[str, Any]:
                         "byte_offset": _NONNEGATIVE,
                         "stages": _POSITIVE,
                         "swizzle": _enum(Swizzle),
+                        "scale_of": _object(
+                            {
+                                "buffer": _NAME,
+                                "granularity": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": _POSITIVE,
+                                },
+                                "axis_order": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "uniqueItems": True,
+                                    "items": _NONNEGATIVE,
+                                },
+                            }
+                        ),
                     },
                 ),
             },

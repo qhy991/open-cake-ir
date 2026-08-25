@@ -71,12 +71,13 @@ before measurement. The checker applies that frozen rule and exits nonzero when 
 evidence fails; do not change its threshold or regenerate the raw records to make it pass.
 
 Both `observe_lowered_kernel.py` and `profile_lowered_kernel.py` build their inputs from
-`tools/kernel_cases.py`, so a kernel one of them profiles is a kernel the other checked.
+`tools/kernel_inputs.py`, so a kernel one of them profiles is a kernel the other checked.
 Shapes, dtypes and argument order are derived from the Schedule's global buffers, because
 that is where they are already declared and where the emitted host function validates
-them. Current correctness answers come from `tools/kernel_oracles.py`; it projects the
-retained base registry because `kernel_cases.py` bytes are part of frozen ranking
-calibration authority and cannot be rewritten to add a new operator.
+them. The adapter projects the retained builder and owns only post-freeze dtypes such as
+FP8 E4M3. Current correctness answers come from `tools/kernel_oracles.py`; it likewise
+projects the retained base registry because `kernel_cases.py` bytes are part of frozen
+ranking calibration authority and cannot be rewritten to add a new operator.
 
 `observe_lowered_kernel.py` refuses to overwrite. A record is what happened once, so renewing one means a new file
 and a new date; the earlier record stays as history for the Revision it was taken under.
@@ -84,7 +85,7 @@ and a new date; the earlier record stays as history for the Revision it was take
 ## 2. Resolve a Study
 
 ```bash
-open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v31.json \
+open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v32.json \
   --output /new/path/campaign.lock.json
 ```
 
@@ -94,29 +95,29 @@ validates it through Lab preflight. It deliberately refuses a live Study because
 broker command digest; `freeze_live_matched_study.py` is the sole path that refreshes that complete authority. The
 names below were current when written.
 
-The current checked-in scientific matched contract, `matched-search-infrastructure-v31.json`, uses a zero-GPU fixture
+The current checked-in scientific matched contract, `matched-search-infrastructure-v32.json`, uses a zero-GPU fixture
 provider and intentionally cannot start a live provider. Its Analysis Plan is the ADR 0013 successor: the terminal
 budget comes only from `budget.limit`, candidate failure is observed, external failure is missing, and a complete
 estimate requires conditional latency in both arms. Its Evidence policy is the ADR 0014 successor: every event kind
 is closed, Run boundaries are checked, and search/diagnosis projections are derived during replay. The current
-non-scientific G8 template is `matched-search-system-qualification-v31.json`; earlier versions remain frozen
+non-scientific G8 template is `matched-search-system-qualification-v32.json`; earlier versions remain frozen
 historical records. Freeze
 a live successor only after a real two-Turn qualification emits a receipt with
 the matching closed or tool-rich scope and binds the exact executable, model, reasoning effort, service tier, output
 schema, prompt/scaffold bytes, removed environment, reference visibility, feature overrides and event contract.
-`artifact-optimization-v31.json` is the current zero-GPU contract fixture. The frozen
+`artifact-optimization-v32.json` is the current zero-GPU contract fixture. The frozen
 `artifact-optimization-verda-v7.json` remains a historical live authority for Executor v8; it is not executable
 from the current source closure. Re-freeze a successor with the exact accessible checkout and broker command before
 launching a live Campaign. Earlier revisions remain historical.
 
-`matched-search-clean-start-reference-v31.json` is the reference-access fixture. It inherits the scientific
+`matched-search-clean-start-reference-v32.json` is the reference-access fixture. It inherits the scientific
 template's local 150k/`max` factors, so preflight validates only that both arms receive implementation-free starters;
 it is not a runnable paper result. Create later reference successors through the paired operation below so one arm
 cannot silently retain a task implementation:
 
 ```bash
 python tools/create_study_successor.py \
-  --source contracts/studies/matched-search-infrastructure-v31.json \
+  --source contracts/studies/matched-search-infrastructure-v32.json \
   --output contracts/studies/<new-clean-reference-study>.json \
   --study-id <new-clean-reference-study-id> \
   --open-cake-schedule-skeleton contracts/scaffolds/open-cake-clean-start-v1.json \
@@ -173,7 +174,7 @@ Then freeze either non-scientific Study from its matching receipt, seal anchor a
 ```bash
 python tools/freeze_live_matched_study.py \
   --project-root . \
-  --template contracts/studies/matched-search-system-qualification-v31.json \
+  --template contracts/studies/matched-search-system-qualification-v32.json \
   --qualification contracts/providers/<new-live-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-live-anchor>.json \
   --executor runtime/executors/open-cake-ir-b200-v26.json \

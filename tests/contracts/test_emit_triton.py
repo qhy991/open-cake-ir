@@ -495,6 +495,11 @@ class EmittedObservationTest(unittest.TestCase):
             "swiglu-b8-smoke.json",
         ),
         ("top-k", "TOP_K_OBSERVATION_20260825.json", "top-k-b8-smoke.json"),
+        (
+            "block-scale",
+            "BLOCK_SCALE_OBSERVATION_20260825.json",
+            "block-scaled-gemm-b1-smoke.json",
+        ),
     )
 
     LOOPLESS = (

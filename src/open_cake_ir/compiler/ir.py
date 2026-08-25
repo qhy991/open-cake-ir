@@ -452,6 +452,48 @@ class Allocation:
 
 
 @dataclass(frozen=True)
+class ScaleRelation:
+    """How one scale buffer partitions and names its FP8 data buffer.
+
+    ``granularity`` is written in data-axis order. ``axis_order`` is the permutation
+    that turns those grouped axes into the scale buffer's physical shape.  The target
+    buffer supplies the rank and extents, so the verifier owns the dependent checks.
+    """
+
+    buffer: str
+    granularity: tuple[int, ...]
+    axis_order: tuple[int, ...]
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "ScaleRelation":
+        obj = _strict_object(
+            value,
+            required={"buffer", "granularity", "axis_order"},
+            context=context,
+        )
+        granularity = _object_list(
+            obj["granularity"], f"{context}.granularity", allow_empty=False
+        )
+        axis_order = _object_list(
+            obj["axis_order"], f"{context}.axis_order", allow_empty=False
+        )
+        parsed_order = tuple(
+            _nonnegative_int(axis, f"{context}.axis_order[{index}]")
+            for index, axis in enumerate(axis_order)
+        )
+        if len(set(parsed_order)) != len(parsed_order):
+            raise ScheduleParseError(f"{context}.axis_order repeats a data axis")
+        return cls(
+            _string(obj["buffer"], f"{context}.buffer"),
+            tuple(
+                _positive_int(extent, f"{context}.granularity[{index}]")
+                for index, extent in enumerate(granularity)
+            ),
+            parsed_order,
+        )
+
+
+@dataclass(frozen=True)
 class Buffer:
     name: str
     space: MemorySpace
@@ -462,6 +504,7 @@ class Buffer:
     byte_offset: int
     stages: int
     swizzle: Swizzle | None
+    scale_of: ScaleRelation | None
 
     @property
     def elements(self) -> int:
@@ -485,12 +528,13 @@ class Buffer:
         obj = _strict_object(
             value,
             required={"name", "space", "dtype", "shape", "mode"},
-            optional={"allocation", "byte_offset", "stages", "swizzle"},
+            optional={"allocation", "byte_offset", "stages", "swizzle", "scale_of"},
             context=context,
         )
         shape = _object_list(obj["shape"], f"{context}.shape", allow_empty=False)
         allocation = obj.get("allocation")
         swizzle = obj.get("swizzle")
+        scale_of = obj.get("scale_of")
         return cls(
             _string(obj["name"], f"{context}.name"),
             _enum(MemorySpace, obj["space"], f"{context}.space"),
@@ -504,6 +548,9 @@ class Buffer:
             _nonnegative_int(obj.get("byte_offset", 0), f"{context}.byte_offset"),
             _positive_int(obj.get("stages", 1), f"{context}.stages"),
             None if swizzle is None else _enum(Swizzle, swizzle, f"{context}.swizzle"),
+            None
+            if scale_of is None
+            else ScaleRelation.from_dict(scale_of, f"{context}.scale_of"),
         )
 
 

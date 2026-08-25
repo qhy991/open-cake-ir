@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "065682dd0dae7528fef8ccf2a0ef9d9b9c3e05c4fb416a3bc8697c84e4038e12"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Tanh has one explicit target implementation contract; libdevice.tanh.f32 retains the frozen FP32 SwiGLU oracle, KDA tanh.approx.f32 remains a target-unsupported falsifier, and a Target-admitted contract for another operation kind is rejected before lowering"
+}

@@ -33,6 +33,21 @@
       }
     },
     {
+      "case_id": "flash-kmeans-r16-dtype-drift",
+      "schedule": "corpus/schedules/flash-kmeans-b32-smoke-dtype-drift-v2.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "REDUCE_ARGMIN_VALUE_DTYPE",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "6ee8a97e089f2abf69a996d6eb1133a15c8267c1745803820917bdaff318bef2",
+        "lowering_source_sha256": null
+      }
+    },
+    {
       "case_id": "flash-kmeans-warp-specialized-argmin",
       "schedule": "corpus/schedules/flash-kmeans-b32-warp-specialized-argmin.json",
       "expected": {
@@ -320,6 +335,35 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "498146c778e0676405ec7553ed925923b0ec1ed90acf9412c17165a48a66c09f",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "block-scaled-gemm-accepted",
+      "schedule": "corpus/schedules/block-scaled-gemm-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "f23758bc33b424b35b0c224a66ea798e493dadc7d8a3643699a9295882534d2f",
+        "lowering_source_sha256": "295e81d5703b54330e31801ea4aa2fd8106782799988812994cce8a044b34a12"
+      }
+    },
+    {
+      "case_id": "block-scaled-gemm-scale-drift",
+      "schedule": "corpus/schedules/block-scaled-gemm-b1-smoke-scale-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_SCALE_ASSOCIATION",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "07dd1f44f21058d6d48b242a4c524e838864456b8339a6617787053d04233270",
         "lowering_source_sha256": null
       }
     }

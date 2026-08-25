@@ -39,6 +39,7 @@ _TL_DTYPE = {
     DType.BF16: "tl.bfloat16",
     DType.FP16: "tl.float16",
     DType.FP32: "tl.float32",
+    DType.FP8_E4M3: "tl.float8e4nv",
     DType.INT32: "tl.int32",
 }
 
@@ -46,6 +47,7 @@ _TORCH_DTYPE = {
     DType.BF16: "torch.bfloat16",
     DType.FP16: "torch.float16",
     DType.FP32: "torch.float32",
+    DType.FP8_E4M3: "torch.float8_e4m3fn",
     DType.INT32: "torch.int32",
 }
 
@@ -88,6 +90,7 @@ REDUCTIONS: dict[ReduceOp, _Reduction] = {
 # the position-dependence a stated fact rather than the shape of two elif chains.
 OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.LOAD: "_emit_load",
+    OperationKind.MMA: "_emit_mma",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
     OperationKind.REDUCE: "_emit_reduce",
     OperationKind.TOP_K: "_emit_top_k",
@@ -370,6 +373,7 @@ class _TritonEmitter:
         DType.BF16: "*bf16",
         DType.FP16: "*fp16",
         DType.FP32: "*fp32",
+        DType.FP8_E4M3: "*fp8e4nv",
         DType.INT32: "*i32",
     }
 
@@ -726,11 +730,62 @@ class _TritonEmitter:
             if (buffer := self.schedule.buffer(name)) is not None
             and buffer.space is not MemorySpace.GLOBAL
         ]
+        instruction = operation.parameters.instruction
+        contract = instruction.contract if instruction is not None else None
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        if contract == "triton.dot.fp8e4m3_block_scale_fp32":
+            _require(
+                len(operation.reads) == 4 and len(tiles) == 4,
+                "the block-scaled dot takes staged A, B, scale(A), scale(B)",
+            )
+            a = self.schedule.buffer(tiles[0])
+            b = self.schedule.buffer(tiles[1])
+            scale_a = self.schedule.buffer(tiles[2])
+            _require(a is not None and b is not None and scale_a is not None, "missing tile")
+            relation = scale_a.scale_of
+            _require(relation is not None, "scale(A) has no relation")
+            block_k = relation.granularity[1]
+            groups = a.shape[1] // block_k
+            _require(groups == 2, "the initial block-scale lowering takes two K blocks")
+            output = operation.writes[0]
+            self.line(
+                f"{pad}{tiles[0]}_pairs = tl.permute(tl.reshape({tiles[0]}, "
+                f"({a.shape[0]}, {groups}, {block_k})), (0, 2, 1))"
+            )
+            self.line(
+                f"{pad}{tiles[1]}_pairs = tl.permute(tl.reshape({tiles[1]}, "
+                f"({b.shape[0]}, {groups}, {block_k})), (0, 2, 1))"
+            )
+            self.line(
+                f"{pad}{tiles[0]}_block_0, {tiles[0]}_block_1 = "
+                f"tl.split({tiles[0]}_pairs)"
+            )
+            self.line(
+                f"{pad}{tiles[1]}_block_0, {tiles[1]}_block_1 = "
+                f"tl.split({tiles[1]}_pairs)"
+            )
+            self.line(
+                f"{pad}{tiles[2]}_block_0, {tiles[2]}_block_1 = "
+                f"tl.split(tl.trans({tiles[2]}))"
+            )
+            self.line(
+                f"{pad}{tiles[3]}_block_0, {tiles[3]}_block_1 = tl.split({tiles[3]})"
+            )
+            if not self._accumulating(operation):
+                self.line(
+                    f"{pad}{output} = tl.zeros(({a.shape[0]}, {b.shape[0]}), tl.float32)"
+                )
+            for block in range(groups):
+                self.line(
+                    f"{pad}{output} += tl.dot({tiles[0]}_block_{block}, "
+                    f"tl.trans({tiles[1]}_block_{block}), out_dtype=tl.float32) * "
+                    f"{tiles[2]}_block_{block}[:, None] * {tiles[3]}_block_{block}"
+                )
+            return
         _require(
             len(operation.reads) == 2 and len(tiles) == 2,
             "the dot takes exactly two staged operands and reads nothing else",
         )
-        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         assign = "+=" if self._accumulating(operation) else "="
         self.line(
             f"{pad}{operation.writes[0]} {assign} tl.dot({tiles[0]}, tl.trans({tiles[1]}))"

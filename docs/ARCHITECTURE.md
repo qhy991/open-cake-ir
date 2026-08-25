@@ -203,6 +203,15 @@ survivor receives a separate no-timing NCU launch before search timing selects o
 Candidate for a fresh confirmatory assay. All profiles remain Evidence; only the selected
 Candidate's checked summary becomes next-Turn feedback.
 
+The local KDA-internal control loop is a useful implementation comparison, but not a new
+Compiler dependency. Open Cake keeps the four invariants that transfer: one primary
+author owns the submitted bytes; specialist/auxiliary agents are read-only investigations;
+local probes are advisory while the external Lab Evaluation is authoritative; and each
+sealed Candidate plus Receipt is immutable and append-only. KDA's personas, continuous
+goal prompt, submission throttle and kernel-specific score vocabulary remain experiment
+policy. Adding them to Schedule IR or introducing parallel writable candidate authorities
+would duplicate owners the Lab already has.
+
 That diagram is now also the bounded live candidate-set path. Successor
 `CodexRunProvider` prompts, file lifecycle and normalizer seal one canonical envelope and
 project its ordered members into the same build/filter/search path; frozen Studies retain
@@ -223,9 +232,9 @@ a gated event rather than a commit.
 ```mermaid
 graph TD
     E["edit Compiler source"] --> D["<b>revision.json</b><br/>state: draft<br/><i>no source-hash check</i>"]
-    D --> G["<b>Corpus Gate</b><br/>22 cases · exact finding codes<br/>exact lowering digests"]
+    D --> G["<b>Corpus Gate</b><br/>25 cases · exact finding codes<br/>exact lowering digests"]
     G -->|"any case differs"| STOP["release refused"]
-    G -->|"22/22 matched"| AP["<b>release-approval.json</b><br/>binds the gate digest<br/>records who authorized it"]
+    G -->|"25/25 matched"| AP["<b>release-approval.json</b><br/>binds the gate digest<br/>records who authorized it"]
     AP --> L["<b>revision.lock.json</b><br/>state: released<br/>binds every source by digest"]
     L --> AR["<b>compiler/releases/vN/</b><br/>immutable history"]
 
@@ -288,12 +297,12 @@ graph LR
 | Authoring Environment, both arms | implemented |
 | Typed IR and construction checks | implemented, on the product path since Revision v4 |
 | Verifier hard gates, four categories | implemented, on the product path since Revision v4 |
-| Compile → external oracle → GPU timing | correctness is implemented; B200 observations cover seven emitted operators, including the KDA-derived standalone SwiGLU and Top-K slices. Their correctness observations take no timing and support no performance claim |
+| Compile → external oracle → GPU timing | correctness is implemented; B200 observations cover eight emitted operators, including the KDA-derived standalone SwiGLU, Top-K and block-scale contraction slices. Their correctness observations take no timing and support no performance claim |
 | Profiler evidence in the inner loop | partial relative to the paper — Executor v18 composes the canonical no-timing NCU assay after every correctness-qualified search survivor, retains raw/profile replay for all of them and feeds back the selected profile; a bounded live v18 two-arm successor covers selected and non-selected survivors, and scientific v3 executes it, but two missing Runs prevent the preregistered estimate |
 | Retained evidence and the outer loop gate | implemented; stronger than the paper describes |
-| Deterministic lowering | `lower` generates for 8 of the 9 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke`, `layernorm_b8_smoke`, `gemm_bias_b1_smoke`, `swiglu_b8_smoke` and `top_k_b8_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file, and the public result exposes `generated=false` rather than conflating it with emission |
+| Deterministic lowering | `lower` generates for 9 of the 10 admitted profiles: Triton for `flash_kmeans_b32_smoke`, `rmsnorm_b8_smoke`, `softmax_b8_smoke`, `layernorm_b8_smoke`, `gemm_bias_b1_smoke`, `block_scaled_gemm_b1_smoke`, `swiglu_b8_smoke` and `top_k_b8_smoke`, warp-specialized CuTe-DSL for `flash_kmeans_assignment_full`. `tinygemm2_stage4_split_k` still stamps a digest into a checked-in file, and the public result exposes `generated=false` rather than conflating it with emission |
 | Live candidate-set authoring | implemented and bounded-live exercised — both Codex 0.144.4 policies pass two-arm envelope qualification, the closed policy separately passes at the exact `xhigh` treatment, and candidate-set v2 produced three launchable Candidates and searched two in each arm on B200; qualification proves transport and the Campaign is system qualification only, so neither is an 80M scientific result |
-| The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but Compiler v16 retains no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
+| The filter stage | partial — construction, verifier filtering and semantic deduplication are implemented and live exercised, but Compiler v17 retains no calibrated cost order; eligible candidates retain provider order before `searches_per_turn` selects GPU work |
 | Diagnosis routing | implemented — every rejection is routed to the candidate, the verifier, the IR vocabulary or the cost model, and each destination is inferred from a signal the loop already produces |
 | Cost-model ranking | mechanism implemented but no released coverage — the structural hypothesis remains measurable, while public ranking declines every current profile |
 
