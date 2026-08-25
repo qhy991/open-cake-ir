@@ -221,5 +221,7 @@ explicit: loads preserve dtype, BF16 multiplied by FP32 produces FP32, the admit
 reduction produces FP32, and the final store may narrow to BF16. No `moe`, `combine`,
 `scatter`, `cast` or program-DAG vocabulary was added. Route/group formation, atomic
 reservation and dispatch, both grouped contractions, workspace reset, fused scatter and
-the multi-kernel DAG remain absent, so complete-version coverage stays 0/57. The planned
-B200 check is correctness-only and cannot establish a performance or complete-MoE claim.
+the multi-kernel DAG remain absent, so complete-version coverage stays 0/57. The first
+B200 attempt stopped before compilation because the broker worker could not import Torch;
+that failure is retained and a preflighted successor is frozen. The check remains
+correctness-only and cannot establish a performance or complete-MoE claim.

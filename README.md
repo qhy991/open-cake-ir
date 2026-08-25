@@ -86,8 +86,9 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   asset passes separately; a current ranking calibration remains missing. v26 then adds no operation kind or lowering
   branch: runtime-indexed `AccessMap`, `elementwise(mul)`, `reduce(sum)` and `store` compose the arithmetic body of
   KDA v1's non-fused weighted combine. The verifier now derives load, arithmetic, reduction and final-store dtype
-  relations instead of leaving them to backend promotion. Its one brokered B200 correctness observation is frozen as
-  a no-timing, zero-retry follow-up; until that result exists ADR 0034 remains proposed. Historical evidence is not
+  relations instead of leaving them to backend promotion. Its first no-timing, zero-retry broker attempt stopped
+  before compilation because the worker's unqualified `python3` lacked Torch; that infrastructure failure is retained.
+  A separately frozen successor binds the preflighted site-packages path. Until that result exists ADR 0034 remains proposed. Historical evidence is not
   relabelled. These
   slices prove primitive expressibility and diagnostic lowering correctness only, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
@@ -141,7 +142,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   metric operands on CPU. The failed pre-kernel observation is retained. Its preregistered shared-B200 successor
   passes all 17 authority checks, all four materialized receipts, one kernel launch, zero fallback, parent-bitwise
   equality and oracle tolerance at maximum absolute error `0.000244140625`, without timing or a scientific claim.
-  The current local suite passes 398 pytest items. The earlier remote qualification passed its frozen
+  The current local suite passes 407 pytest items plus 284 subtests. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no

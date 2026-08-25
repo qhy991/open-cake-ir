@@ -52,6 +52,11 @@ the same newly modeled Finding rather than silently escaping it.
 5. one brokered B200 correctness run matches an independent gather-weight-sum oracle,
    with no timing and no retry.
 
+The first frozen attempt reached broker allocation but stopped before compilation because
+the worker's unqualified `python3` could not import Torch. That infrastructure failure is
+retained. A separately frozen successor binds the CPU-preflighted user site-packages path;
+item 5 and this ADR's acceptance remain pending its result.
+
 Failure at any step is retained as the missing primitive or backend boundary. It is not
 repaired by adding a workload-named operation or widening a numerical tolerance.
 

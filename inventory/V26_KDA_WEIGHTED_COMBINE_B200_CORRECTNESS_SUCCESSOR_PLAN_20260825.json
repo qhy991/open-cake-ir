@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "state": "frozen",
+  "planned_at": "2026-08-25T09:28:51Z",
+  "purpose": "kda_v1_weighted_combine_arithmetic_correctness_successor",
+  "predecessor": {
+    "plan": "inventory/V26_KDA_WEIGHTED_COMBINE_B200_PLAN_20260825.json",
+    "attempt": "inventory/V26_KDA_WEIGHTED_COMBINE_B200_CORRECTNESS_ATTEMPT_20260825.json",
+    "disposition": "infrastructure_failure_before_compile"
+  },
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "selection_authority": {
+    "compiler_revision": "open-cake-ir-sm100a-v26",
+    "schedule": "corpus/schedules/kda-weighted-combine-b8-smoke.json",
+    "entry_point": "cake_kda_weighted_combine_b8_smoke"
+  },
+  "environment": {
+    "interpreter": "/usr/bin/python3",
+    "pythonpath": [
+      "src",
+      "/home/qinhaiyan/.local/lib/python3.12/site-packages"
+    ],
+    "preflight": "A CPU-only import established that the named site-packages directory supplies both Torch 2.13.0+cu130 and Triton."
+  },
+  "protocol": {
+    "broker_mode": "shared",
+    "gpu_count": 1,
+    "seed": 0,
+    "float_max_absolute_tolerance": 1e-05,
+    "timing": false,
+    "automatic_retries": 0,
+    "retain_failure": true
+  },
+  "acceptance": {
+    "required": "the released generated source compiles and launches once on B200, then all 128 BF16 outputs match the independent gather-weight-sum oracle within the fixed tolerance",
+    "failure": "retain the first successor result or pre-record failure; do not retry, change inputs, widen tolerance or rewrite this plan",
+    "non_claim": "does not establish performance, complete KDA-version expressibility, workspace-reset semantics, end-to-end MoE correctness, ranking quality or paper reproduction"
+  }
+}

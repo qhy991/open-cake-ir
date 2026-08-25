@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "state": "failed",
+  "observed_at": "2026-08-25T09:28:51Z",
+  "plan": "inventory/V26_KDA_WEIGHTED_COMBINE_B200_PLAN_20260825.json",
+  "broker_job_id": "gpuq-918ecbf15c8c",
+  "broker_mode": "shared",
+  "gpu_count": 1,
+  "performance_measured": false,
+  "stage_reached": "python_dependency_import",
+  "compiled": false,
+  "launched": false,
+  "result_written": false,
+  "disposition": "infrastructure_failure",
+  "failure": {
+    "exception": "ModuleNotFoundError",
+    "missing_module": "torch",
+    "message": "The broker worker resolved the unqualified python3 command without the user site-packages that contain Torch. The process stopped before compilation or launch."
+  },
+  "retry": {
+    "same_plan_retried": false,
+    "reason": "The frozen plan permits zero retries. A separately frozen successor must bind the admitted interpreter environment and retain this failure."
+  },
+  "claim": "No kernel-correctness or performance claim is supported by this attempt."
+}
