@@ -519,3 +519,57 @@ class EmittedKernelObservationTest(unittest.TestCase):
         self.assertTrue(record["result"]["passed"])
         self.assertFalse(record["scientific_claim_authorized"])
         self.assertFalse(record["performance_measured"])
+
+
+class SubRangeIsRefusedNotIgnoredTest(unittest.TestCase):
+    """A sub-range is `AccessIndex` vocabulary, so this backend must answer for it.
+
+    This emitter builds addresses without reading `offset` or `extent`. Before it said
+    so, a Schedule naming half an axis lowered to source covering all of it -- the same
+    bytes as the whole-axis Schedule, silently answering a different question. Honouring
+    the range or refusing it are both fine; ignoring it is not.
+
+    The two documents differ in exactly one component, so the code this asserts can only
+    come from the sub-range itself and not from some unrelated CuTe precondition.
+    """
+
+    def _mapped(self) -> dict:
+        document = json.loads(SCHEDULE.read_text(encoding="utf-8"))
+        whole = lambda dim: {"source": "dimension", "dimension": dim}
+        loop = lambda name: {"source": "loop_tile", "name": name}
+        edge = lambda op, buf, idx: {
+            "operation": op, "buffer": buf, "boundary": "mask_tiled_axes", "indices": idx
+        }
+        document["access_maps"] = [
+            edge("load_tokens", "tokens", [whole(0), loop("k_tile")]),
+            edge("load_centroids", "centroids", [loop("centroid_tile"), loop("k_tile")]),
+            edge("distance_epilogue", "centroid_sq", [loop("centroid_tile")]),
+            edge("distance_epilogue", "distance_scratch", [whole(0), loop("centroid_tile")]),
+            edge("argmin", "distance_scratch", [whole(0), whole(1)]),
+            edge("store_assignment", "assignments", [whole(0)]),
+        ]
+        return document
+
+    def test_the_backend_blocks_the_range_it_cannot_address(self) -> None:
+        from open_cake_ir.compiler import Compiler
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.json")
+        whole = self._mapped()
+        sub = json.loads(json.dumps(whole))
+        sub["access_maps"][4]["indices"][0] = {
+            "source": "dimension", "dimension": 0, "extent": 64
+        }
+
+        whole_assessment = compiler.assess(whole)
+        sub_assessment = compiler.assess(sub)
+
+        self.assertTrue(whole_assessment.lowering_eligible)
+        # The Schedule is well formed; only this backend cannot carry it.
+        self.assertTrue(sub_assessment.accepted)
+        self.assertFalse(sub_assessment.lowering_eligible)
+
+        blocking = lambda a: {f.code for f in a.findings if f.blocks_lowering}
+        self.assertEqual(
+            blocking(sub_assessment) - blocking(whole_assessment),
+            {"CUTE_ACCESS_SUBRANGE_UNSUPPORTED"},
+        )
