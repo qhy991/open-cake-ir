@@ -179,7 +179,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         if operation.kind is OperationKind.MMA:
             add(
                 operation.parameters.instruction is not None,
-                "PROFILE_MMA_INSTRUCTION_REQUIRED",
+                "BACKEND_MMA_INSTRUCTION_REQUIRED",
                 f"operations[{index}].parameters.instruction",
                 "the Triton backend requires every mma to name an instruction contract",
             )
@@ -216,9 +216,9 @@ class _TritonEmitter:
         self.schedule = schedule
         self.target = target
         self.lines: list[str] = []
-        # The entry point is the artifact's contract with whatever launches it, so the
-        # Revision names it rather than the emitter inventing one from the profile.
-        self.entry_point = entry_point or f"cake_{schedule.profile}"
+        # The route owns the external symbol; the emitter derives its signature from
+        # global Buffers rather than consulting an operator-named profile.
+        self.entry_point = entry_point or schedule.lowering.entry_point
 
         failures = preflight(schedule, target)
         if failures:
@@ -934,7 +934,7 @@ class _TritonEmitter:
         """The contraction, and nothing else.
 
         This used to emit the dot and the distance formula together, because MmaFormula
-        named the pair as one thing. Two of the three admitted profiles already declared
+        named the pair as one thing. Two of the three retained program slices declared
         a bare contraction with the arithmetic in a following operation; this is now the
         only shape, so the same kernel is written down one way.
         """

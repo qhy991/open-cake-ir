@@ -259,7 +259,10 @@
       ],
       "pipeline": "main",
       "parameters": {
-        "accumulator": "fp32"
+        "accumulator": "fp32",
+        "instruction": {
+          "contract": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32"
+        }
       }
     },
     {
@@ -309,24 +312,14 @@
     "output"
   ],
   "metadata": {
-    "profile": "tinygemm2_stage4_split_k",
     "legacy_source": {
       "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
       "path": "examples/schedules/tinygemm2-stage4-split-k-explicit-v1.json",
       "canonical_json_sha256": "024afdf636bed9a122493c2b91aea985db3e4691964bb47673cc7bfa20ec680b"
-    },
-    "shape": {
-      "output_features": 1024,
-      "batch": 8,
-      "input_features": 1024
-    },
-    "threads_per_cta": 384,
-    "pipeline_stages": 4,
-    "mma_instruction": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
-    "dtypes": {
-      "input": "bf16",
-      "accumulator": "fp32",
-      "output": "bf16"
     }
+  },
+  "lowering": {
+    "backend": "checked_cuda_asset",
+    "entry_point": "cake_tinygemm2_stage4_split_k"
   }
 }

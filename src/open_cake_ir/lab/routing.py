@@ -41,14 +41,14 @@ COST_MODEL = "cost_model"
 
 DESTINATIONS = (CANDIDATE, VERIFIER, IR_VOCABULARY, COST_MODEL)
 
-# The Compiler says this when a profile emits and the Schedule leaves a decision open.
+# The Compiler says this when a backend emits and the Schedule leaves a decision open.
 # It is the one rejection that is about the vocabulary rather than about the Schedule.
 _UNDER_DETERMINED = "does not determine its source"
 
 # Findings that say the same thing early enough to carry a code. Matching a code beats
 # matching a message: a message is prose the Compiler is free to reword.
 _VOCABULARY_CODES = frozenset(
-    {"PROFILE_OPERATION_UNEMITTABLE", "PROFILE_DTYPE_UNEMITTABLE"}
+    {"BACKEND_OPERATION_UNEMITTABLE", "BACKEND_DTYPE_UNEMITTABLE"}
 )
 
 

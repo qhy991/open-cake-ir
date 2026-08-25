@@ -15,13 +15,14 @@ The legacy split forced two workarounds that do not survive here:
 
 Parsing is strict: unknown fields are rejected, every closed vocabulary is an `Enum`,
 and every parameter set is bound to its operation kind. Structural admissibility only
--- semantic gates (resource limits, synchronization, profile rules) belong to the
+-- semantic gates (resource limits, synchronization, backend preflight) belong to the
 verifier, not to this module.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -97,6 +98,14 @@ class OperationKind(str, Enum):
     TOP_K = "top_k"
     ELEMENTWISE = "elementwise"
     STORE = "store"
+
+
+class LoweringBackend(str, Enum):
+    """Mechanism that materializes source, independent of operator or Workload."""
+
+    TRITON = "triton"
+    CUTLASS_CUTE_DSL = "cutlass_cute_dsl"
+    CHECKED_CUDA_ASSET = "checked_cuda_asset"
 
 
 class ReduceOp(str, Enum):
@@ -1323,6 +1332,7 @@ _SCHEDULE_REQUIRED = {
     "schema_version",
     "schedule_id",
     "target",
+    "lowering",
     "roles",
     "allocations",
     "buffers",
@@ -1379,10 +1389,77 @@ class Residency:
 
 
 @dataclass(frozen=True)
+class LoweringRoute:
+    """The only lowering choice a Schedule writes explicitly.
+
+    The emitter derives the argument signature from global Buffers. Keeping an ABI label
+    here would restate that signature and had already produced a false four-tensor label
+    for a two-tensor Softmax Schedule.
+    """
+
+    backend: LoweringBackend
+    entry_point: str
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str = "schedule.lowering") -> "LoweringRoute":
+        obj = _strict_object(
+            value,
+            required={"backend", "entry_point"},
+            context=context,
+        )
+        entry_point = _string(obj["entry_point"], f"{context}.entry_point")
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", entry_point) is None:
+            raise ScheduleParseError(f"{context}.entry_point must be an identifier")
+        return cls(
+            backend=_enum(LoweringBackend, obj["backend"], f"{context}.backend"),
+            entry_point=entry_point,
+        )
+
+
+def _metadata(value: Any) -> Mapping[str, Any]:
+    obj = _strict_object(
+        value,
+        required=set(),
+        optional={"workload_contract_sha256", "legacy_source"},
+        context="schedule.metadata",
+    )
+    workload = obj.get("workload_contract_sha256")
+    if workload is not None and (
+        not isinstance(workload, str)
+        or len(workload) != 64
+        or any(character not in "0123456789abcdef" for character in workload)
+    ):
+        raise ScheduleParseError(
+            "schedule.metadata.workload_contract_sha256 must be a lowercase SHA256 digest"
+        )
+    legacy = obj.get("legacy_source")
+    if legacy is not None:
+        source = _strict_object(
+            legacy,
+            required={"revision", "path", "canonical_json_sha256"},
+            context="schedule.metadata.legacy_source",
+        )
+        _string(source["revision"], "schedule.metadata.legacy_source.revision")
+        _string(source["path"], "schedule.metadata.legacy_source.path")
+        digest = source["canonical_json_sha256"]
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ScheduleParseError(
+                "schedule.metadata.legacy_source.canonical_json_sha256 must be a "
+                "lowercase SHA256 digest"
+            )
+    return dict(obj)
+
+
+@dataclass(frozen=True)
 class Schedule:
     schema_version: int
     schedule_id: str
     target: str
+    lowering: LoweringRoute
     grid: tuple[int, int, int] | None
     program_map: ProgramMap | None
     residency: Residency | None
@@ -1509,11 +1586,6 @@ class Schedule:
         )
 
     @property
-    def profile(self) -> str | None:
-        value = self.metadata.get("profile")
-        return value if isinstance(value, str) else None
-
-    @property
     def total_warp_extent(self) -> int:
         """One past the highest warp index used by any role."""
 
@@ -1556,10 +1628,6 @@ class Schedule:
                 _positive_int(raw_grid[2], "schedule.grid[2]"),
             )
 
-        metadata = obj["metadata"]
-        if not isinstance(metadata, Mapping):
-            raise ScheduleParseError("schedule.metadata must be an object")
-
         def parse_list(field: str, factory: Any) -> tuple[Any, ...]:
             items = _object_list(obj.get(field, []), f"schedule.{field}")
             return tuple(
@@ -1571,6 +1639,7 @@ class Schedule:
             schema_version=1,
             schedule_id=_string(obj["schedule_id"], "schedule.schedule_id"),
             target=_string(obj["target"], "schedule.target"),
+            lowering=LoweringRoute.from_dict(obj["lowering"]),
             grid=grid,
             program_map=(
                 ProgramMap.from_dict(obj["program_map"], "schedule.program_map")
@@ -1591,5 +1660,5 @@ class Schedule:
             access_maps=parse_list("access_maps", AccessMap.from_dict),
             operations=parse_list("operations", Operation.from_dict),
             outputs=_string_tuple(obj["outputs"], "schedule.outputs"),
-            metadata=dict(metadata),
+            metadata=_metadata(obj["metadata"]),
         )

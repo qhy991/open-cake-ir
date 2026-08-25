@@ -9,9 +9,9 @@ Provider-default features are available, including auxiliary shell, Apps/MCP, br
 pinned provider actually offers them. Use auxiliary agents only for read-only, distinct investigations; this primary
 thread alone owns the envelope write. Leave no other workspace file at the Turn boundary. Feature availability does
 not authorize external mutation or direct GPU measurement. Treat auxiliary sources as authoring priors, never as
-correctness or performance evidence. Only the Lab's subsequent common Evaluation Receipt is canonical. Start every member from the embedded
-`schedule-skeleton.json`, preserve the Workload binding and external tensor shapes, and never put credentials or
-private tool output in the envelope.
+correctness or performance evidence. Only the Lab's subsequent common Evaluation Receipt is canonical. Start every
+member from the embedded `schedule-skeleton.json`, preserve its lowering route, Workload binding and external tensor
+shapes, and never put credentials or private tool output in the envelope.
 
 Cumulative provider tokens before this Turn: {{CUMULATIVE_PROVIDER_TOKENS}}.
 The bounded canonical feedback from the preceding Turn is: {{FEEDBACK_JSON}}

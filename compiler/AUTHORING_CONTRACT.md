@@ -8,9 +8,9 @@ Findings carry a stable code and path. A blocking Finding is a reason an Assessm
 lowering-eligible and no candidate reaches the toolchain; a non-blocking Finding accompanies an Assessment that is,
 and reports what the declared Schedule implies — such as which declared resource bounds its residency. Unsupported
 shapes, operations, instructions, memory spaces or uncalibrated analyses are explicit.
-An otherwise-lowerable `mma` in a backend-emitted profile names the Target instruction contract that determines its
+An otherwise-lowerable `mma` in a generated backend names the Target instruction contract that determines its
 lowering; omitting it is a lowering-blocking candidate Finding rather than a late emitter failure. Instruction-free
-asset profiles remain valid because they do not emit operation bodies.
+checked assets remain valid only when their asset-specific preflight proves the declared semantics match the asset.
 Emitter-only program-shape requirements have one owner in that backend's `preflight`.
 Assessment projects them into lowering-blocking Findings before `lower`; a backend must
 not silently reinterpret an unsupported epilogue formula or wait for emission to reject
@@ -35,7 +35,13 @@ subset is a direct global load: TMA and indexed stores remain explicitly unlower
 `reduce_argmin` compares FP32 values and returns INT32 source positions; admitting FP8
 storage for another operation does not widen that semantic contract.
 
+`lowering` owns only the materialization mechanism and executable symbol. Its `backend` is
+one of `triton`, `cutlass_cute_dsl`, or `checked_cuda_asset`; `entry_point` is an identifier.
+The executable argument signature is derived from global Buffers and is never restated as
+an ABI label. Metadata may bind a Workload digest, but the Compiler does not infer a
+Workload from a route or hard-code its tensor shapes.
+
 For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics, tie handling and oracle. A Study
-narrows the public Compiler to one admitted profile and supplies a complete `schedule-skeleton.json`; start from that
-skeleton. A Schedule may change admitted block sizes, warps and stages, but must preserve its profile, external tensor
-shapes, `metadata.workload_contract_sha256`, operator semantics, and frozen Compiler Revision during a Run.
+narrows the public Compiler to one exact lowering route and supplies a complete `schedule-skeleton.json`; start from
+that skeleton. A Schedule may change admitted block sizes, warps and stages, but must preserve its route, external
+tensor shapes, `metadata.workload_contract_sha256`, operator semantics, and frozen Compiler Revision during a Run.

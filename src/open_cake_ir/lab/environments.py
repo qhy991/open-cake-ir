@@ -407,9 +407,13 @@ class OpenCakeEnvironment:
             raise ValueError("Open Cake Workload case shape differs")
         self._workload_sha256 = workload.canonical_sha256
         self._shape = {name: int(shape[name]) for name in ("B", "N", "K", "D")}
-        self._profile = str(authority_document.get("schedule_profile"))
-        if self._profile != "flash_kmeans_b32_smoke":
-            raise ValueError("Open Cake Authoring Environment profile differs")
+        route = authority_document.get("lowering_route")
+        if route != {
+            "backend": "triton",
+            "entry_point": "cake_flash_kmeans_assign",
+        }:
+            raise ValueError("Open Cake Authoring Environment lowering route differs")
+        self._route = route
         self.authority_document = json.loads(
             json.dumps(authority_document, sort_keys=True, separators=(",", ":"))
         )
@@ -454,10 +458,14 @@ class OpenCakeEnvironment:
                 raise CompilerError("Schedule root must be an object")
             metadata = parsed.get("metadata")
             buffers = parsed.get("buffers")
-            if not isinstance(metadata, Mapping) or metadata.get("profile") != self._profile:
-                raise ValueError("Schedule profile is outside the admitted Authoring Environment")
+            route = parsed.get("lowering")
+            if route != self._route:
+                raise ValueError(
+                    "Schedule lowering route is outside the admitted Authoring Environment"
+                )
             if (
-                metadata.get("workload_contract_sha256") != self._workload_sha256
+                not isinstance(metadata, Mapping)
+                or metadata.get("workload_contract_sha256") != self._workload_sha256
                 or not isinstance(buffers, list)
             ):
                 raise ValueError("Schedule Workload binding differs")
@@ -514,7 +522,7 @@ class OpenCakeEnvironment:
                     source_role="lowered_source",
                     source_sha256=lowering.source_sha256,
                     target=lowering.target,
-                    entry_point=lowering.entry_point,
+                    entry_point=lowering.route.entry_point,
                     toolchain_requirements=lowering.toolchain_requirements,
                 )
             )

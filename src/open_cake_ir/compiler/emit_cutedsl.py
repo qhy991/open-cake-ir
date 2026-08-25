@@ -139,7 +139,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
     for index, mma in kinds[OperationKind.MMA]:
         add(
             mma.parameters.instruction is not None,
-            "PROFILE_MMA_INSTRUCTION_REQUIRED",
+            "BACKEND_MMA_INSTRUCTION_REQUIRED",
             f"operations[{index}].parameters.instruction",
             "the CuTe-DSL backend requires the mma to name an instruction atom",
         )
@@ -180,9 +180,9 @@ class _Emitter:
         self.schedule = schedule
         self.target = target
         self.lines: list[str] = []
-        # The entry point is the artifact's contract with whatever launches it, so the
-        # Revision names it rather than the emitter inventing one from the profile.
-        self.entry_point = entry_point or f"cake_{schedule.profile}"
+        # The route owns the external symbol; the emitter derives its signature from
+        # global Buffers rather than consulting an operator-named profile.
+        self.entry_point = entry_point or schedule.lowering.entry_point
 
         failures = preflight(schedule, target)
         if failures:
@@ -350,7 +350,7 @@ class _Emitter:
         return barrier.mechanism is BarrierMechanism.MBARRIER
 
     def _kernel_name(self) -> str:
-        return f"_cake_{self.schedule.profile}_kernel"
+        return f"_{self.entry_point}_kernel"
 
     def _emit_kernel(self) -> None:
         self.line("@cute.kernel")

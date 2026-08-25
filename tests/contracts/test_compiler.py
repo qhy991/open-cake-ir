@@ -194,7 +194,7 @@ class CompilerContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "canonical Schedule replay"):
             compiler.lower(replace(assessment, target="sm_90"))
 
-    def test_profile_cannot_generate_a_kernel_from_missing_schedule_semantics(self) -> None:
+    def test_route_cannot_generate_a_kernel_from_missing_schedule_semantics(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
             (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
@@ -276,10 +276,10 @@ class CompilerContractTests(unittest.TestCase):
         )
 
     def test_unlowered_operation_and_access_commitments_fail_closed(self) -> None:
-        """Each violation names its own path instead of one opaque profile code.
+        """Each violation names its own path instead of one opaque use-case code.
 
-        Every one of these used to report `PROFILE_SEMANTICS_MISMATCH` at
-        `metadata.profile` -- true, but no repair target. A closed-vocabulary violation
+        Every one of these used to report one mismatch at the metadata use-case key --
+        true, but no repair target. A closed-vocabulary violation
         is now a structural Finding at the offending path, and an access map naming an
         axis that does not exist is a contract Finding from the verifier.
         """
@@ -362,31 +362,18 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(released_gate.compiler_revision_id, released["revision_id"])
         self.assertTrue(released_gate.passed)
 
-    def test_the_architecture_map_counts_the_profiles_that_exist(self) -> None:
-        """The alignment table drifted twice in one day, the second time by one operator.
+    def test_the_architecture_map_names_the_lowering_mechanisms(self) -> None:
+        """The architecture documents mechanisms, not a growing use-case registry."""
 
-        It is the document that tells a reader what this implementation is missing, so a
-        count in it that lags the registry sends someone to build what is already there.
-        Both times the fix was to read the registry; this reads it.
-        """
-
-        import re
-
-        from open_cake_ir.compiler.core import _PROFILES
+        from open_cake_ir.compiler.core import _GENERATED_BACKENDS, _SOURCE_ASSETS
 
         text = (ROOT / "docs/ARCHITECTURE.md").read_text(encoding="utf-8")
-        match = re.search(r"generates for (\d+) of the (\d+) admitted profiles", text)
-        self.assertIsNotNone(match, "the alignment table no longer states the counts")
-        generating, total = (int(value) for value in match.groups())
-        self.assertEqual(total, len(_PROFILES))
-        self.assertEqual(
-            generating, sum(1 for profile in _PROFILES.values() if profile.backend)
-        )
-        for name, profile in _PROFILES.items():
-            with self.subTest(profile=name):
-                # And every one of them is named, so the table cannot count right while
-                # listing the wrong ones.
-                self.assertIn(f"`{name}`", text)
+        for backend in _GENERATED_BACKENDS:
+            with self.subTest(backend=backend.value):
+                self.assertIn(f"`{backend.value}`", text)
+        for entry_point in _SOURCE_ASSETS:
+            with self.subTest(entry_point=entry_point):
+                self.assertIn(f"`{entry_point}`", text)
 
     def test_a_schedule_outside_the_corpus_is_history_something_else_pins(self) -> None:
         """Why an ungated Schedule is allowed to sit in the corpus directory.
@@ -452,35 +439,28 @@ class CompilerContractTests(unittest.TestCase):
         stale = {p for p in bound if p.startswith("corpus/schedules/")} - gated
         self.assertEqual(stale, set())
 
-    def test_every_admitted_profile_has_a_corpus_case_that_lowers(self) -> None:
-        """A profile is admitted by a row; a row that nothing exercises is a claim.
+    def test_every_lowering_mechanism_has_a_corpus_case_that_lowers(self) -> None:
+        """Every implementation route is exercised without enumerating Workloads."""
 
-        The registry was reshaped so that an operator is one record plus the Schedules
-        that claim it. Nothing held the second half: a profile could be added with a
-        toolchain, a conformance rule and a backend, and no Schedule anywhere proving the
-        combination lowers. This is what makes the corpus the evidence for the row.
-        """
-
-        from open_cake_ir.compiler.core import _PROFILES
+        from open_cake_ir.compiler.core import _GENERATED_BACKENDS, _SOURCE_ASSETS
 
         manifest = json.loads(
             (ROOT / "corpus/manifest.json").read_text(encoding="utf-8")
         )
-        lowering: dict[str, list[str]] = {}
+        backends: set[str] = set()
+        entry_points: set[str] = set()
         for case in manifest["cases"]:
             document = json.loads(
                 (ROOT / case["schedule"]).read_text(encoding="utf-8")
             )
-            profile = document.get("metadata", {}).get("profile")
             if case["expected"]["lowering_eligible"]:
-                lowering.setdefault(profile, []).append(case["case_id"])
+                backends.add(document["lowering"]["backend"])
+                entry_points.add(document["lowering"]["entry_point"])
 
-        for name in _PROFILES:
-            with self.subTest(profile=name):
-                self.assertTrue(
-                    lowering.get(name),
-                    f"profile {name!r} is admitted but no corpus case lowers through it",
-                )
+        self.assertLessEqual(
+            {backend.value for backend in _GENERATED_BACKENDS}, backends
+        )
+        self.assertLessEqual(set(_SOURCE_ASSETS), entry_points)
 
     def test_full_compiler_corpus_gate_passes(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
@@ -489,15 +469,15 @@ class CompilerContractTests(unittest.TestCase):
 
         self.assertTrue(report.passed, report.cases)
         self.assertEqual(report.case_count, 32)
-        # Every operator lands as a kernel plus the drift that proves its profile rule
+        # Every operator lands as a kernel plus a drift that proves a semantic rule
         # fires. The three normalization drifts are rejected rather than merely
         # unlowerable: their staged tile contradicts the extent it addresses, which the
         # access-map rule could not see until it stopped comparing a store's global
         # output against the tile axes.
-        self.assertEqual(report.accepted_case_count, 19)
-        self.assertEqual(report.rejected_case_count, 13)
-        self.assertEqual(report.lowerable_case_count, 14)
-        self.assertEqual(report.nonlowerable_case_count, 18)
+        self.assertEqual(report.accepted_case_count, 20)
+        self.assertEqual(report.rejected_case_count, 12)
+        self.assertEqual(report.lowerable_case_count, 15)
+        self.assertEqual(report.nonlowerable_case_count, 17)
 
     def test_r16_program_map_schedule_uses_the_canonical_compiler(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
@@ -514,7 +494,7 @@ class CompilerContractTests(unittest.TestCase):
             {"load": 3, "mma": 1, "elementwise": 2, "reduce_argmin": 1, "store": 1},
         )
 
-    def test_r16_workload_shape_drift_blocks_lowering(self) -> None:
+    def test_r16_external_shape_variant_is_a_lowerable_program(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
             (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
@@ -524,11 +504,8 @@ class CompilerContractTests(unittest.TestCase):
         assessment = compiler.assess(schedule)
 
         self.assertTrue(assessment.accepted)
-        self.assertFalse(assessment.lowering_eligible)
-        self.assertEqual(
-            [(finding.code, finding.path) for finding in _decisive(assessment)],
-            [("PROFILE_SHAPE_MISMATCH", "buffers.tokens.shape")],
-        )
+        self.assertTrue(assessment.lowering_eligible)
+        self.assertEqual(list(_decisive(assessment)), [])
 
     def test_triton_warp_specialized_argmin_is_structured_feedback(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
@@ -558,7 +535,7 @@ class CompilerContractTests(unittest.TestCase):
 
         lowering = compiler.lower(assessment)
 
-        self.assertEqual(lowering.entry_point, "cake_flash_kmeans_assign")
+        self.assertEqual(lowering.route.entry_point, "cake_flash_kmeans_assign")
         self.assertIn("N_TOKEN_BLOCK=512", lowering.source)
         self.assertIn("[(2, 32, 1)]", lowering.source)
         self.assertEqual(
@@ -574,7 +551,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_frozen_seed_lowers_three_distinct_exact_shape_specialists(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v2.json"
+            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"
         )
         workload = json.loads(
             (ROOT / "contracts/workloads/flash-kmeans-assign-v2.json").read_text()
@@ -602,7 +579,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_frozen_seed_rejects_a_non_exact_tail_without_retuning(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v2.json"
+            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"
         )
 
         with self.assertRaisesRegex(ValueError, "exactly tiled"):
@@ -618,15 +595,19 @@ class CompilerContractTests(unittest.TestCase):
             (ROOT / "corpus/schedules/flash-kmeans-assignment-full.json").read_text()
         )
         schedule["allocations"][0]["size_bytes"] = 300000
-        schedule["metadata"]["mma_instruction"] = "unbound.instruction"
+        next(
+            operation for operation in schedule["operations"]
+            if operation["kind"] == "mma"
+        )["parameters"]["instruction"]["contract"] = (
+            "mma.sync.aligned.m16n8k8.row.col.f32.bf16.bf16.f32"
+        )
 
         assessment = compiler.assess(schedule)
 
         self.assertFalse(assessment.accepted)
-        self.assertEqual(
-            [finding.code for finding in assessment.findings[:2]],
-            ["TARGET_SHARED_MEMORY_LIMIT", "TARGET_INSTRUCTION_UNSUPPORTED"],
-        )
+        codes = [finding.code for finding in assessment.findings]
+        self.assertIn("TARGET_SHARED_MEMORY_LIMIT", codes)
+        self.assertIn("TARGET_INSTRUCTION_UNSUPPORTED", codes)
 
         schedule = json.loads(
             (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
@@ -664,7 +645,7 @@ class CompilerContractTests(unittest.TestCase):
             },
         )
 
-    def test_r25_full_assignment_shape_drift_blocks_lowering(self) -> None:
+    def test_r25_internal_shape_variant_is_a_lowerable_program(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
             (ROOT / "corpus/schedules/flash-kmeans-assignment-full.json").read_text()
@@ -674,11 +655,8 @@ class CompilerContractTests(unittest.TestCase):
         assessment = compiler.assess(schedule)
 
         self.assertTrue(assessment.accepted)
-        self.assertFalse(assessment.lowering_eligible)
-        self.assertEqual(
-            [(finding.code, finding.path) for finding in _decisive(assessment)],
-            [("PROFILE_SHAPE_MISMATCH", "buffers.distance_scratch.shape")],
-        )
+        self.assertTrue(assessment.lowering_eligible)
+        self.assertEqual(list(_decisive(assessment)), [])
 
     def test_r25_lowering_is_deterministic_and_inspectable(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
@@ -692,7 +670,7 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(first.source, second.source)
         self.assertEqual(first.source_sha256, second.source_sha256)
         self.assertTrue(first.generated)
-        self.assertEqual(first.entry_point, "cake_flash_kmeans_assignment_full")
+        self.assertEqual(first.route.entry_point, "cake_flash_kmeans_assignment_full")
         self.assertIn(f"# schedule_sha256={assessment.schedule_sha256}", first.source)
         self.assertEqual(
             set(first.source_map),
@@ -722,7 +700,7 @@ class CompilerContractTests(unittest.TestCase):
             {"epilogue": 1, "load": 3, "mma": 1, "reduce": 1},
         )
 
-    def test_r31_reduction_semantic_drift_is_rejected(self) -> None:
+    def test_r31_reduction_semantic_drift_blocks_only_the_checked_asset(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
             (ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json").read_text()
@@ -735,14 +713,14 @@ class CompilerContractTests(unittest.TestCase):
 
         assessment = compiler.assess(schedule)
 
-        self.assertFalse(assessment.accepted)
+        self.assertTrue(assessment.accepted)
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(
             [(finding.code, finding.path) for finding in _decisive(assessment)],
             [("REDUCE_SUM_SEMANTICS", "operations.reduce_partials.parameters.axis")],
         )
 
-    def test_r31_epilogue_formula_is_checked_against_the_closed_asset(self) -> None:
+    def test_r31_epilogue_formula_blocks_only_the_checked_asset(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         schedule = json.loads(
             (ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json").read_text()
@@ -755,7 +733,7 @@ class CompilerContractTests(unittest.TestCase):
 
         assessment = compiler.assess(schedule)
 
-        self.assertFalse(assessment.accepted)
+        self.assertTrue(assessment.accepted)
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(
             [(finding.code, finding.path) for finding in _decisive(assessment)],
@@ -800,7 +778,7 @@ class CompilerContractTests(unittest.TestCase):
         lowering = compiler.lower(assessment)
 
         self.assertFalse(lowering.generated)
-        self.assertEqual(lowering.entry_point, "cake_tinygemm2_stage4_split_k")
+        self.assertEqual(lowering.route.entry_point, "cake_tinygemm2_stage4_split_k")
         self.assertIn(assessment.schedule_sha256, lowering.source)
         self.assertEqual(
             set(lowering.source_map),

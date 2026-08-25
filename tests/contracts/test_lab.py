@@ -1848,7 +1848,7 @@ class LabContractTests(unittest.TestCase):
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v2.json"
+            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"
         )
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
         cases = {
@@ -1873,7 +1873,7 @@ class LabContractTests(unittest.TestCase):
             candidates[item.case_id] = LaunchableCandidate(
                 candidate_sha256=item.lowering.schedule_sha256,
                 target="sm_100a",
-                entry_point=item.lowering.entry_point,
+                entry_point=item.lowering.route.entry_point,
                 artifact_roles={
                     role: sha256(payload).hexdigest()
                     for role, payload in payloads.items()

@@ -383,11 +383,14 @@
     }
   ],
   "metadata": {
-    "profile": "rmsnorm_b8_smoke",
     "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "residency": {
     "ctas_per_multiprocessor": 4,
     "registers_per_thread": 96
+  },
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_rmsnorm_b8_smoke"
   }
 }

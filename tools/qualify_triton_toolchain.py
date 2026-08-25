@@ -95,7 +95,7 @@ def main() -> int:
             source_role="lowered_source",
             source_sha256=lowering.source_sha256,
             target=lowering.target,
-            entry_point=lowering.entry_point,
+            entry_point=lowering.route.entry_point,
             toolchain_requirements=lowering.toolchain_requirements,
         )
         candidate = TritonToolchainBuilder().build(request)

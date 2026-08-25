@@ -144,7 +144,7 @@ def main() -> int:
 
         # Triton reads a @jit function's own source back off disk, so a lowering has to
         # reach a real file before it can be launched. Nothing here edits it.
-        module_path = Path(workspace) / f"{lowering.entry_point}_b{batch:04d}.py"
+        module_path = Path(workspace) / f"{lowering.route.entry_point}_b{batch:04d}.py"
         module_path.write_text(lowering.source, encoding="utf-8")
         specification = importlib.util.spec_from_file_location(
             module_path.stem, module_path
@@ -152,7 +152,7 @@ def main() -> int:
         assert specification is not None and specification.loader is not None
         module = importlib.util.module_from_spec(specification)
         specification.loader.exec_module(module)
-        launch = getattr(module, lowering.entry_point)
+        launch = getattr(module, lowering.route.entry_point)
 
         shape = tuple(
             buffer["shape"]

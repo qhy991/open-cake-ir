@@ -16,7 +16,7 @@ worktree; every conclusion below was reproduced or falsified again on the curren
 | 5 | residency provenance was operator-supplied | fixed; host and time derive from the run |
 | 6 | Compiler release writes its own approval | open governance defect |
 | 7 | revision identities cause Study successor churn | fixed by stable templates and exact CampaignLocks |
-| 8 | lowering profile is both routing and workload constraint | open architecture defect |
+| 8 | lowering profile is both routing and workload constraint | fixed in Compiler v24 |
 | 9 | emitter preconditions were late failures | fixed in Compiler v23 |
 
 ## Re-verification and action
@@ -32,7 +32,7 @@ preflight. The formula drift is a reviewed negative Corpus case rather than only
 test. ADR 0027 records the boundary.
 
 TinyGEMM2 already expressed and checked the four-part CTA sum. Its epilogue formula was
-only indirectly protected by a whole-Schedule digest; profile conformance now explicitly
+only indirectly protected by a whole-Schedule digest; asset preflight now explicitly
 requires `bias_add_bf16_round`. The kernel remains a closed source asset and truthfully
 reports `generated=false`: schedule-level reduction semantics are solved, full code
 generation is not.
@@ -88,18 +88,28 @@ Executor release no longer requires five Study copies. This does not pretend tha
 unexecuted frozen Study verifies against a newer source tree: only terminal evidence earns
 a copied Executor source archive.
 
-### 8: the main remaining paper-level architecture debt
+### 8: route and Workload now have separate owners
 
-`metadata.profile` currently owns backend route, entry ABI and bespoke workload
-conformance. This makes the profile table grow with the corpus even though the Schedule
-body is compositional.
+Compiler v24 removes `metadata.profile` without a compatibility alias. Schedule syntax
+has one typed `lowering = {backend, entry_point}` record. Its three backend values name
+materialization mechanisms, not operators; the two generated-backend rows are independent
+of the thirteen corpus program slices. Global Buffers derive the executable signature, so
+the unused and already-wrong ABI labels are gone.
 
-The minimal next redesign is to separate three existing facts, not add a framework:
+The Lab remains the Workload consumer: it checks the opaque Workload digest and exact
+external tensor contract for the admitted case. The Compiler checks Schedule/Target
+legality and backend support. As failure-capable evidence, a GEMM bias-extent variant now
+lowers without a named-Workload exception, while the Lab would reject a tensor mismatch
+inside a frozen Flash-KMeans Run.
 
-1. Workload Contract owns external tensor and oracle semantics.
-2. Schedule plus Target owns operation and hardware legality.
-3. A small lowering route owns backend and entry ABI only.
+TinyGEMM2 is the bounded exception, not a counterexample. Its route names one checked
+source asset; the four-part CTA sum, BF16-round epilogue and whole-Schedule semantic pin
+block only lowering, not IR acceptance. The reduction drift Corpus case is therefore
+`accepted=true, lowering_eligible=false`. ADR 0029 records the ownership boundary.
 
-Unknown workload names should not make an otherwise complete Schedule unlowerable. This
-migration must replace the current writable authority in one successor; parallel profile
-and route spellings would make the ownership problem worse.
+Frozen pre-v24 observations and ranking calibrations keep their old Schedule/source
+bytes. They are not re-labelled as v24 evidence: successor B200 observations and a
+successor ranking calibration instrument are currently missing. The v24 Corpus Gate is
+32/32 and the zero-GPU contract suite passes 386 tests plus 322 parameterized subtests;
+those gates validate the ownership migration but do not substitute for the missing
+on-device successors.

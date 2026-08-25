@@ -35,6 +35,10 @@
     {"operation": "load_selected_rows", "buffer": "expert_rows", "indices": [{"source": "buffer", "name": "expert_id_tile"}, {"source": "buffer", "name": "row_id_tile"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
     {"operation": "store_gathered_rows", "buffer": "gathered_rows", "indices": [{"source": "program", "name": "token"}, {"source": "dimension", "dimension": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"}
   ],
-  "metadata": {"profile": "indexed_gather_b8_smoke", "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
-  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64}
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_indexed_gather_b8_smoke"
+  }
 }

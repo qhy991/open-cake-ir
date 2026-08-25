@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from kernel_inputs import build_inputs  # noqa: E402
-from kernel_oracles import ORACLES  # noqa: E402
+from kernel_oracles import ORACLE_BY_ENTRY_POINT  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
 
 
@@ -63,18 +63,19 @@ def main() -> int:
         raise SystemExit(f"the gates refused this Schedule: {codes}")
     lowering = compiler.lower(assessment)
 
-    oracle = ORACLES.get(assessment.profile)
+    entry_point = lowering.route.entry_point
+    oracle = ORACLE_BY_ENTRY_POINT.get(entry_point)
     if oracle is None:
         raise SystemExit(
-            f"no oracle for profile {assessment.profile!r}; this tool observes "
-            f"{', '.join(sorted(ORACLES))}"
+            f"no oracle for entry point {entry_point!r}; this tool observes "
+            f"{', '.join(sorted(ORACLE_BY_ENTRY_POINT))}"
         )
     torch.manual_seed(0)
     inputs = build_inputs(document, torch)
     reference, distance = oracle(inputs, torch)
 
     with tempfile.TemporaryDirectory(prefix="cake-observe-") as directory:
-        module_path = Path(directory) / f"{lowering.entry_point}.py"
+        module_path = Path(directory) / f"{entry_point}.py"
         module_path.write_text(lowering.source, encoding="utf-8")
         specification = importlib.util.spec_from_file_location(
             module_path.stem, module_path
@@ -83,7 +84,7 @@ def main() -> int:
         module = importlib.util.module_from_spec(specification)
         specification.loader.exec_module(module)
         launch = getattr(module, "launch_once", None) or getattr(
-            module, lowering.entry_point
+            module, entry_point
         )
         observed = launch(*inputs)
         torch.cuda.synchronize()
@@ -146,7 +147,7 @@ def main() -> int:
         },
         "lowering": {
             "generated": lowering.generated,
-            "entry_point": lowering.entry_point,
+            "entry_point": entry_point,
             "source_sha256": lowering.source_sha256,
             "source_lines": len(lowering.source.splitlines()),
         },
@@ -161,7 +162,7 @@ def main() -> int:
         "note": (
             (
                 "Compiler.lower generated this source from the Schedule; there is no "
-                "checked-in template for this profile. "
+                "checked-in template for this lowering route. "
             )
             if lowering.generated
             else (

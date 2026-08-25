@@ -166,7 +166,7 @@ and sub-rate pipelines remain separate missing mechanisms.
 
 ## Corpus coverage
 
-The current Compiler Corpus has 29 cases across twelve admitted profiles, against the
+The current Compiler Corpus has 32 cases across thirteen program slices, against the
 paper's roughly four hundred cases across twenty-eight. Attention and MoE, which are what
 the surveyed work is actually about, still have no complete representation here.
 
@@ -189,7 +189,7 @@ an implicit emitter choice or a conveniently widened oracle. Complete KDA covera
 0/57.
 
 ADR 0023 closes the first KDA v1 quantization relation without claiming the complete
-kernel. The static smoke profile uses KDA's FP8 E4M3 data, FP32 scales, activation storage
+kernel. The static smoke slice uses KDA's FP8 E4M3 data, FP32 scales, activation storage
 `[K/128, M]`, weight storage `[N/128, K/128]` and two independently scaled K contractions.
 Its released v17 source compiled and matched 2,048/2,048 B200 outputs at maximum deviation
 `1.788e-7` under the preregistered `1e-5` gate. General K-block counts, grouped routing and

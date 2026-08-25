@@ -120,7 +120,9 @@ class GpuQuickstartContractTests(unittest.TestCase):
             inventory["superseded"]["observed_runner_raw_sha256"],
             inventory["runner"]["raw_sha256"],
         )
-        self.assertEqual(
+        # That supersession statement is itself frozen. Later runner revisions do not
+        # turn its then-current digest into a writable pointer to HEAD.
+        self.assertNotEqual(
             inventory["superseded"]["current_runner_raw_sha256"],
             sha256(runner.read_bytes()).hexdigest(),
         )
@@ -295,7 +297,12 @@ class GpuQuickstartContractTests(unittest.TestCase):
         environment = OpenCakeEnvironment(
             compiler,
             toolchain,
-            authority_document={"schedule_profile": "flash_kmeans_b32_smoke"},
+            authority_document={
+                "lowering_route": {
+                    "backend": "triton",
+                    "entry_point": "cake_flash_kmeans_assign",
+                }
+            },
             workload=workload,
             case_id="b32_smoke",
         )

@@ -317,24 +317,14 @@
     "assignments"
   ],
   "metadata": {
-    "profile": "flash_kmeans_assignment_full",
     "legacy_source": {
       "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
       "path": "examples/schedules/flash-kmeans-assignment-full-explicit-v1.json",
       "canonical_json_sha256": "ab091feacda93fde391335e0a9ae9f49ca26c2399b7d648b13ca14c8d51e5e63"
-    },
-    "shape": {
-      "rows": 128,
-      "centroids": 1024,
-      "features": 128
-    },
-    "threads_per_cta": 224,
-    "pipeline_stages": 2,
-    "mma_instruction": "tcgen05.mma.cta_group::1.kind::f16",
-    "dtypes": {
-      "input": "bf16",
-      "accumulator": "fp32",
-      "output": "int32"
     }
+  },
+  "lowering": {
+    "backend": "cutlass_cute_dsl",
+    "entry_point": "cake_flash_kmeans_assignment_full"
   }
 }

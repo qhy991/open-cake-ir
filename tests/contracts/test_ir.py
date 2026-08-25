@@ -115,7 +115,16 @@ class RetainedScheduleTest(unittest.TestCase):
 
     def test_gpu_quickstart_schedule_parses(self) -> None:
         schedule = Schedule.load(ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke-v2.json")
-        self.assertEqual(schedule.profile, "flash_kmeans_b32_smoke")
+        self.assertEqual(schedule.lowering.backend.value, "triton")
+        self.assertEqual(schedule.lowering.entry_point, "cake_flash_kmeans_assign")
+
+    def test_workload_profile_is_not_a_second_route_spelling(self) -> None:
+        document = _document(B32)
+        document["metadata"]["profile"] = "flash_kmeans_b32_smoke"
+
+        with self.assertRaisesRegex(ScheduleParseError, "schedule.metadata unknown fields"):
+            Schedule.from_dict(document)
+        self.assertTrue(list(Draft202012Validator(schedule_schema()).iter_errors(document)))
 
     def test_grid_and_program_map_are_exclusive(self) -> None:
         b32 = Schedule.load(B32)
@@ -362,7 +371,7 @@ class StrictStructureTest(unittest.TestCase):
 class LocalizedDiagnosticTest(unittest.TestCase):
     """A rejection must name the path and the admitted values.
 
-    The string-keyed compiler reports one opaque `PROFILE_SEMANTICS_MISMATCH` for every
+    The former use-case-keyed compiler reported one opaque semantics mismatch for every
     one of these; the agent gets no repair target from that.
     """
 

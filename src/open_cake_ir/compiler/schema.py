@@ -23,6 +23,7 @@ from .ir import (
     IndexTieBreak,
     LoadMovement,
     LoadReuse,
+    LoweringBackend,
     MemorySpace,
     NaNPolicy,
     OperandMajorMode,
@@ -37,6 +38,7 @@ _NAME = {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
 _NAMES = {"type": "array", "items": _NAME}
 _POSITIVE = {"type": "integer", "minimum": 1}
 _NONNEGATIVE = {"type": "integer", "minimum": 0}
+_SHA256 = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
 
 
 def _values(enum_type: type) -> list[str]:
@@ -217,6 +219,7 @@ def schedule_schema() -> dict[str, Any]:
             "allocations",
             "barriers",
             "buffers",
+            "lowering",
             "metadata",
             "operations",
             "outputs",
@@ -234,6 +237,12 @@ def schedule_schema() -> dict[str, Any]:
             "schema_version": {"const": 1},
             "schedule_id": {"type": "string", "minLength": 1},
             "target": {"type": "string", "minLength": 1},
+            "lowering": _object(
+                {
+                    "backend": _enum(LoweringBackend),
+                    "entry_point": _NAME,
+                }
+            ),
             "grid": {
                 "type": "array",
                 "minItems": 3,
@@ -456,8 +465,17 @@ def schedule_schema() -> dict[str, Any]:
             "outputs": _NAMES,
             "metadata": {
                 "type": "object",
-                "required": ["profile"],
-                "properties": {"profile": {"type": "string", "minLength": 1}},
+                "additionalProperties": False,
+                "properties": {
+                    "workload_contract_sha256": _SHA256,
+                    "legacy_source": _object(
+                        {
+                            "revision": {"type": "string", "minLength": 1},
+                            "path": {"type": "string", "minLength": 1},
+                            "canonical_json_sha256": _SHA256,
+                        }
+                    ),
+                },
             },
         },
     }

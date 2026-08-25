@@ -1,8 +1,8 @@
 # Current-state inventory
 
 Snapshot: 2026-08-25 after declared-domain ranking calibration, candidate-set envelope implementation and live
-system qualification, historical Executor-v10 NCU attribution validation, Executor v27 release and Compiler v23
-KDA-derived primitive expressibility slices. The final
+system qualification, historical Executor-v10 NCU attribution validation, Executor v27 release and Compiler v24
+lowering-route/Workload ownership separation over the KDA-derived primitive slices. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
 It was initially observed 68 commits ahead of `origin/main`; origin now carries the final revision, while
@@ -29,7 +29,7 @@ causal effect, serving and paper reproduction are not.
 
 ## New repository state
 
-- Compiler Revision `open-cake-ir-sm100a-v23` binds the exact Target, public Schedule authoring contract, 48-source
+- Compiler Revision `open-cake-ir-sm100a-v24` binds the exact Target, public Schedule authoring contract, 48-source
   closure, 32-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
   remain immutable history; v7 and v8 are archived byte-for-byte because retained calibration and Study authorities
   witness them. v9 makes an otherwise-lowerable backend-emitted MMA without an instruction contract a structured,
@@ -66,7 +66,13 @@ causal effect, serving and paper reproduction are not.
   successor changes no lowering digest. v22 adds runtime INT32 Buffer coordinates to the existing AccessMap; the
   KDA-derived route/combine gather generated, compiled on B200 and matched all 1,024 outputs exactly. v23 moves
   emitter preconditions into backend preflight and explicitly rejects unsupported CuTe epilogue formulas;
-  TinyGEMM2 now checks its bias/BF16-round formula while truthfully remaining a closed source asset. The reviewed
+  TinyGEMM2 now checks its bias/BF16-round formula while truthfully remaining a closed source asset. v24 removes the
+  thirteen use-case `profile` spellings and their duplicated Workload rules. One typed `{backend, entry_point}` route
+  now chooses between two generated mechanisms and the bounded TinyGEMM2 checked asset; global Buffers derive the
+  emitted signature, while Workload shape/oracle checks remain in Lab. A GEMM bias-extent variant is consequently
+  lowerable, whereas three-part reduction and wrong-epilogue TinyGEMM2 variants are valid IR but cannot use the
+  retained asset. Frozen pre-v24 GPU observations and ranking decisions remain historical; no current v24 B200 or
+  ranking successor is inferred from them. The reviewed
   KDA snapshot
   remains 0/57 for complete-version expressibility because routing/group formation, valid-tile work acquisition,
   the second contraction, scatter and the multi-kernel program DAG are still absent; no KDA performance claim is
@@ -95,7 +101,7 @@ causal effect, serving and paper reproduction are not.
   single authority for choosing the
   closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
-- Five current Study templates resolve Compiler v23 and Executor v27 into exact CampaignLocks without revision-only
+- Five current Study templates resolve Compiler v24 and Executor v27 into exact CampaignLocks without revision-only
   Study successors. The matched templates profile every correctness-qualified search
   survivor through the existing no-timing attribution purpose, and feed back only the selected survivor's checked
   projection. Frozen selected-only evidence
@@ -118,7 +124,7 @@ causal effect, serving and paper reproduction are not.
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 383 tests and 322 parameterized subtests; the earlier remote qualification passed its
+- The current local contract suite passes 386 tests and 322 parameterized subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain

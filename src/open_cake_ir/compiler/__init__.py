@@ -22,7 +22,7 @@ from .core import (
     Lowering,
 )
 from .emit_cutedsl import EmitError, Emission, emit
-from .ir import Schedule, ScheduleParseError
+from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
 from .target import Target, TargetParseError
 from .verifier import FindingCategory, FindingSeverity, verify
 
@@ -38,6 +38,8 @@ __all__ = [
     "FindingCategory",
     "FindingSeverity",
     "Lowering",
+    "LoweringBackend",
+    "LoweringRoute",
     "Schedule",
     "ScheduleParseError",
     "Target",

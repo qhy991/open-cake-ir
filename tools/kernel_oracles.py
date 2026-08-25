@@ -113,3 +113,25 @@ ORACLES = {
     "ragged_grouped_gemm_b1_smoke": _ragged_grouped_gemm_oracle,
     "indexed_gather_b8_smoke": _indexed_gather_oracle,
 }
+
+# Observation tools select an oracle by the executable interface the Compiler returns.
+# The retained registry remains keyed by its historical calibration vocabulary because
+# its bytes are frozen evidence; this is the sole current projection from lowering routes.
+_WORKLOAD_BY_ENTRY_POINT = {
+    "cake_flash_kmeans_assign": "flash_kmeans_b32_smoke",
+    "cake_flash_kmeans_assignment_full": "flash_kmeans_assignment_full",
+    "cake_softmax_b8_smoke": "softmax_b8_smoke",
+    "cake_rmsnorm_b8_smoke": "rmsnorm_b8_smoke",
+    "cake_layernorm_b8_smoke": "layernorm_b8_smoke",
+    "cake_gemm_bias_b1_smoke": "gemm_bias_b1_smoke",
+    "cake_block_scaled_gemm_b1_smoke": "block_scaled_gemm_b1_smoke",
+    "cake_ragged_zero_pad_b1_smoke": "ragged_zero_pad_b1_smoke",
+    "cake_ragged_grouped_gemm_b1_smoke": "ragged_grouped_gemm_b1_smoke",
+    "cake_indexed_gather_b8_smoke": "indexed_gather_b8_smoke",
+    "cake_swiglu_b8_smoke": "swiglu_b8_smoke",
+    "cake_top_k_b8_smoke": "top_k_b8_smoke",
+}
+ORACLE_BY_ENTRY_POINT = {
+    entry_point: ORACLES[workload]
+    for entry_point, workload in _WORKLOAD_BY_ENTRY_POINT.items()
+}

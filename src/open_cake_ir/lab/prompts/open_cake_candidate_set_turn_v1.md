@@ -7,8 +7,8 @@ distinct; renaming or reordering one Schedule is not a new program.
 
 Use only the Schedule tool surface and the complete frozen reference bundle embedded later in this prompt. No
 reference files are mounted in the writable workspace. Do not invoke CUDA, GPU tools, network tools, or another
-compiler. Start from the embedded `schedule-skeleton.json` and preserve its profile, Workload binding and external
-tensor shapes. Cumulative provider tokens before this Turn: {{CUMULATIVE_PROVIDER_TOKENS}}.
+compiler. Start from the embedded `schedule-skeleton.json` and preserve its lowering route, Workload binding and
+external tensor shapes. Cumulative provider tokens before this Turn: {{CUMULATIVE_PROVIDER_TOKENS}}.
 The bounded feedback from the preceding Turn is: {{FEEDBACK_JSON}}
 The complete read-only authority for this arm is embedded below:
 {{REFERENCE_BUNDLE}}

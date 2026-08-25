@@ -158,7 +158,7 @@ the closed `matched_run_v1` policy, while the replay adapter for earlier frozen 
 | Schedule vocabulary and semantics | Compiler Revision | examples, docs, generated source |
 | Exact target capabilities | Target inside Compiler Revision | GPU name, backend flag |
 | Findings and analysis coverage | Compiler Revision + Assessment | stderr, prompt feedback |
-| Lowering lineage and whether operation bodies were generated | Lowering record | filename, profile inference |
+| Lowering route, lineage and whether operation bodies were generated | Lowering record | filename or Workload inference |
 | Compiler release eligibility | Corpus manifest + Corpus Gate report + human merge | test count, Git message |
 | Operator semantics, input domain and oracle | Workload Contract | task prompt, benchmark script |
 | Unit, treatment, endpoints and Estimand | Study Contract | Campaign name, report narrative |

@@ -267,10 +267,10 @@ question than the filter's actual pruning decision.
 
 No threshold or domain was changed after measurement, and no coverage is promoted. The
 next ranking hypothesis must resolve ties from performance-semantic declarations and pass
-this same all-subset decision boundary before it is tested on held-out shapes or profiles.
-The current profile-name-only coverage spelling is also too broad for an exact-shape
-result; a future release must make the evidence domain explicit rather than projecting
-one shape to every Schedule sharing the profile name.
+this same all-subset decision boundary before it is tested on held-out shapes or
+Workloads. The historical profile-name-only coverage spelling was too broad for an
+exact-shape result. Compiler v24 removes it; current coverage can name only exact semantic
+digests and is empty rather than projecting one measured shape to unrelated Schedules.
 
 ## Tie abstention and drift control still do not calibrate device fill
 

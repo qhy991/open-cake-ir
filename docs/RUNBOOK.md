@@ -57,7 +57,7 @@ of trusted; `docs/ANALYSIS_CALIBRATION.md` reads their output and `evidence/cali
 ```bash
 python tools/calibrate_wave_term.py --first 60 --last 400 --step 2      # exclusive: benchmark
 python tools/calibrate_ranking_at_scale.py --size 512 --observed-at <iso8601> \
-  --out /new/path/ranking.json                                          # exclusive: benchmark
+  --out /new/path/ranking.json                  # historical pre-v24 closure only
 python tools/check_ranking_calibration.py                               # no GPU; exit 1 is a retained negative decision
 python tools/normalize_evidence_custody.py                              # no GPU; check clone-time mode custody
 python tools/observe_lowered_kernel.py --out inventory/<NEW>.json
@@ -71,11 +71,11 @@ before replaying committed Evidence. The default is check-only and exits nonzero
 does not report a state it silently repaired. This is an operational prerequisite, not
 proof that an archived Run retained live filesystem custody; see the audit register.
 
-The ranking calibration measures the dormant structural hypothesis even when the released
-Compiler has no profile coverage. Its output informs a later reviewed Revision; running
-the instrument never changes `calibration_coverage`. A decision plan must be committed
-before measurement. The checker applies that frozen rule and exits nonzero when the
-evidence fails; do not change its threshold or regenerate the raw records to make it pass.
+The retained ranking drivers and v6-v8 plans bind pre-v24 Schedule syntax and exact source
+bytes. They are historical evidence, not current instruments: in the current checkout the
+checker fails explicitly with `calibration Schedule differs`. A v24 successor driver and
+plan must be created before another measurement; old thresholds, records and drivers are
+never rewritten. Released `calibration_coverage` remains empty.
 
 Both `observe_lowered_kernel.py` and `profile_lowered_kernel.py` build their inputs from
 `tools/kernel_inputs.py`, so a kernel one of them profiles is a kernel the other checked.
@@ -83,7 +83,7 @@ Shapes, dtypes and argument order are derived from the Schedule's global buffers
 that is where they are already declared and where the emitted host function validates
 them. The adapter projects the retained builder and owns only post-freeze inputs such as
 FP8 E4M3 tensors and the fixed empty/partial/full runtime extents of the admitted ragged
-profile. Current correctness answers come from `tools/kernel_oracles.py`; it likewise
+slice. Current correctness answers come from `tools/kernel_oracles.py`; it likewise
 projects the retained base registry because `kernel_cases.py` bytes are part of frozen
 ranking calibration authority and cannot be rewritten to add a new operator.
 

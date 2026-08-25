@@ -1638,7 +1638,7 @@ class Lab:
             "scaffold",
             "prompt_template",
             "compiler_revision",
-            "schedule_profile",
+            "lowering_route",
             "schedule_skeleton",
             "tool_surface",
             "feedback",
@@ -1658,8 +1658,11 @@ class Lab:
             "environment_kind"
         ) != "direct_cuda":
             raise ValueError("Study Contract Authoring Environment kinds differ")
-        if open_cake.get("schedule_profile") != "flash_kmeans_b32_smoke":
-            raise ValueError("Study Contract Open Cake Schedule profile differs")
+        if open_cake.get("lowering_route") != {
+            "backend": "triton",
+            "entry_point": "cake_flash_kmeans_assign",
+        }:
+            raise ValueError("Study Contract Open Cake lowering route differs")
         schedule_skeleton = _object(
             open_cake.get("schedule_skeleton"), "study.arms.open_cake.schedule_skeleton"
         )
@@ -1675,15 +1678,14 @@ class Lab:
             "study.arms.open_cake.schedule_skeleton",
         )
         if (
-            skeleton_document.get("metadata", {}).get("profile")
-            != open_cake.get("schedule_profile")
+            skeleton_document.get("lowering") != open_cake.get("lowering_route")
             or _digest(
                 schedule_skeleton.get("canonical_sha256"),
                 "study.arms.open_cake.schedule_skeleton.canonical_sha256",
             )
             != sha256(_canonical_json_bytes(skeleton_document)).hexdigest()
         ):
-            raise ValueError("Study Contract Schedule skeleton bytes or profile differ")
+            raise ValueError("Study Contract Schedule skeleton bytes or lowering route differ")
         if open_cake.get("provider") != direct_cuda.get(
             "provider"
         ) or open_cake.get("scaffold") != direct_cuda.get("scaffold"):

@@ -262,8 +262,8 @@ the way to tell is to look for the same operation somewhere it is already writte
 
 ## What a second operator actually cost
 
-Softmax was admitted to test the claim the profile registry was reshaped to make: that an
-operator is one row plus the Schedules that claim it. The bill, end to end:
+Softmax was originally admitted to test whether a new operator could reuse the typed
+primitives and one generated backend. The bill, end to end:
 
 * **Vocabulary: three additions and one merge.** `exp` and `div` joined `ElementwiseOp`.
   A max fold was needed, and that was the decision -- a `reduce_max` kind beside
@@ -277,14 +277,15 @@ operator is one row plus the Schedules that claim it. The bill, end to end:
   iteration. At this shape the row is already resident and there is nothing to iterate, so
   the Schedule declares no loop and the emitter no longer insists on one. The loop it used
   to emit had a trip count of one and an unused iterator.
-* **Everything else: nothing.** One profile row, one conformance function, two corpus
-  cases. No new finding code, no emitter structure, no scheduler.
+* **Everything else: one oracle and two corpus cases.** No new lowering route, backend
+  row, finding code, emitter structure or scheduler. The former workload-named profile
+  row and conformance function were accidental complexity and Compiler v24 removed them.
 
 **And a third operator cost nothing.** LayerNorm was admitted next, chosen because on
 paper it needed no vocabulary: two folds, `mul`, `sub`, `square`, `add`, `rsqrt` and two
 broadcasts, every one of them already there for the two before it. It landed that way --
-one profile row, one conformance rule, two corpus cases, one oracle, and not a single
-change to the IR or to either backend. Fifteen operations and eighteen buffers, correct on
+two corpus cases, one oracle, and not a single change to the IR or either backend. Fifteen
+operations and eighteen buffers, historically correct on
 a B200 against `torch.nn.functional.layer_norm` to 1.9e-06.
 
 That is the claim under test, and softmax could not make it: softmax had to decide what a
@@ -315,8 +316,9 @@ does not add a second math operation: it separates the operation's meaning from 
 mechanism that is permitted to realize it.
 
 The gate earned its keep twice here. It refused the two-pass-in-a-loop Schedule that would
-have computed a softmax over stale maxima, and the profile rule refused a drift case with
-a mismatched output shape. Both were predicted before running and both fired exactly there.
+have computed a softmax over stale maxima, and the generic access/tile invariant refused a
+drift case with a mismatched output shape. Both were predicted before running and both
+fired exactly there.
 
 What this does **not** show is that attention follows. This softmax holds a whole row in
 registers; a long one needs online rescaling, which is a different Schedule and probably a
@@ -332,8 +334,8 @@ before the fact would have shown and a corpus of six families cannot.
 
 ## Corpus coverage, restated
 
-Twenty-seven cases across eleven admitted profiles, against the paper's roughly four
-hundred across twenty-eight. Standalone SwiGLU arithmetic, deterministic indexed
+Thirty-two cases across thirteen standalone program slices, against the paper's roughly
+four hundred across twenty-eight. Standalone SwiGLU arithmetic, deterministic indexed
 selection, one static two-block FP8/FP32-scale contraction and one device-resident
 valid-prefix relation are local now; attention, complete MoE, general quantized GEMM and
 fused graph kernels are not.

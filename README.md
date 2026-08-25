@@ -37,7 +37,7 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 
 ## Status
 
-- Compiler Revision `open-cake-ir-sm100a-v23` is content-bound to an exact `sm_100a` Target and a 32-case,
+- Compiler Revision `open-cake-ir-sm100a-v24` is content-bound to an exact `sm_100a` Target and a 32-case,
   48-source Corpus Gate. Its release lock binds the persistent Gate Report and approval. Historical v4
   observations are unchanged; an incident record accounts for their conflicting descriptor digests and the
   unresolvable v6 name, while v7 and v8 are archived by exact bytes. v9 closes the verifier/emitter gap that let an
@@ -75,7 +75,12 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   the data-dependent gather shared by KDA v1 route/combine; its generated source compiled on B200 and matched
   all 1,024 outputs exactly. v23 makes emitter preconditions visible before lowering and explicitly refuses a
   CuTe epilogue formula the backend does not implement; TinyGEMM2 now checks its bias/BF16-round formula rather
-  than relying only on a whole-Schedule digest. These slices prove primitive expressibility, not MoE or performance reproduction. Public ranking obeys its calibration
+  than relying only on a whole-Schedule digest. v24 removes the thirteen-name lowering profile registry: one typed
+  `{backend, entry_point}` route selects two generated mechanisms or the bounded TinyGEMM2 asset, while the Lab owns
+  Workload tensor/oracle conformance. The executable ABI is derived from global Buffers. A GEMM bias-extent variant
+  now lowers without a Workload-name exception, and TinyGEMM2 asset mismatches block lowering without making the IR
+  program invalid. Pre-v24 B200 observations and ranking plans remain historical rather than being relabelled as
+  v24 evidence. These slices prove primitive expressibility, not MoE or performance reproduction. Public ranking obeys its calibration
   coverage; current coverage remains empty rather than falling back to an uncalibrated order. A
   preregistered two-repeat B200 successor tested the Lab's actual three-to-two pruning decision across all 2,300
   eligible GEMM triplets and failed the fixed 5% boundary at 35.95% and 8.16%. A drift-controlled successor then

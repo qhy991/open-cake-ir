@@ -62,6 +62,23 @@ def _headline_schedule(workload: WorkloadContract) -> dict[str, object]:
 
 
 class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
+    def test_current_prompts_name_the_only_route_spelling(self) -> None:
+        templates = (
+            "artifact-optimization-template.json",
+            "matched-search-clean-start-reference-template.json",
+            "matched-search-infrastructure-template.json",
+            "matched-search-system-qualification-template.json",
+        )
+        for name in templates:
+            with self.subTest(template=name):
+                study = json.loads(
+                    (ROOT / "contracts" / "studies" / name).read_text(encoding="utf-8")
+                )
+                relative = study["arms"]["open_cake"]["prompt_template"]["path"]
+                prompt = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("preserve its lowering route", prompt)
+                self.assertNotIn("preserve its profile", prompt)
+
     def test_clean_start_starters_expose_contract_without_implementation(self) -> None:
         study_path = (
             ROOT
@@ -90,6 +107,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
                 "operations",
                 "outputs",
                 "metadata",
+                "lowering",
             },
         )
         self.assertNotIn("grid", starter)
@@ -100,10 +118,12 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         self.assertEqual(
             starter["metadata"],
             {
-                "profile": "flash_kmeans_b32_smoke",
-                "starter_scope": "authoring_contract_only",
                 "workload_contract_sha256": workload.canonical_sha256,
             },
+        )
+        self.assertEqual(
+            starter["lowering"],
+            {"backend": "triton", "entry_point": "cake_flash_kmeans_assign"},
         )
         buffers = {item["name"]: item for item in starter["buffers"]}
         self.assertEqual(
@@ -295,7 +315,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
 
         self.assertEqual(result.disposition, "rejected")
         self.assertEqual(result.feedback["stage"], "assessment")
-        self.assertIn("profile", result.feedback["error"])
+        self.assertIn("lowering route", result.feedback["error"])
         self.assertEqual(toolchain.requests, [])
         # The fourth route on real feedback: a Schedule the gates refused is the
         # candidate's to fix, and it is the fallback, so nothing else must claim it.
@@ -328,6 +348,39 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         result = environment.build(
             CandidateSubmission.seal(
                 "application/vnd.open-cake.schedule+json", payload
+            )
+        )
+
+        self.assertEqual(result.disposition, "rejected")
+        self.assertEqual(result.feedback["stage"], "assessment")
+        self.assertIn("Workload binding", result.feedback["error"])
+        self.assertEqual(toolchain.requests, [])
+
+    def test_non_object_metadata_is_candidate_feedback_not_a_harness_fault(self) -> None:
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        workload = WorkloadContract.load(
+            ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
+        )
+        study = json.loads(
+            (
+                ROOT / "contracts/studies/matched-search-infrastructure-template.json"
+            ).read_text(encoding="utf-8")
+        )
+        toolchain = RecordingToolchain()
+        environment = OpenCakeEnvironment(
+            compiler,
+            toolchain,
+            authority_document=study["arms"]["open_cake"],
+            workload=workload,
+            case_id="headline_b32",
+        )
+        schedule = _headline_schedule(workload)
+        schedule["metadata"] = []
+
+        result = environment.build(
+            CandidateSubmission.seal(
+                "application/vnd.open-cake.schedule+json",
+                json.dumps(schedule, sort_keys=True, separators=(",", ":")).encode(),
             )
         )
 
@@ -414,7 +467,7 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
             for row in result.feedback["findings"]
             if row["blocks_lowering"]
         }
-        self.assertIn("PROFILE_OPERATION_UNEMITTABLE", codes)
+        self.assertIn("BACKEND_OPERATION_UNEMITTABLE", codes)
         self.assertEqual(route_rejection(result.feedback).destination, IR_VOCABULARY)
 
     def test_an_argmin_dtype_violation_is_candidate_feedback(self) -> None:
@@ -441,5 +494,5 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
             for row in result.feedback["findings"]
             if row["blocks_lowering"]
         }
-        self.assertIn("PROFILE_MMA_INSTRUCTION_REQUIRED", codes)
+        self.assertIn("BACKEND_MMA_INSTRUCTION_REQUIRED", codes)
         self.assertEqual(route_rejection(result.feedback).destination, CANDIDATE)

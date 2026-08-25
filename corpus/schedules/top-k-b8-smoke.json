@@ -114,11 +114,14 @@
     }
   ],
   "metadata": {
-    "profile": "top_k_b8_smoke",
     "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "residency": {
     "ctas_per_multiprocessor": 4,
     "registers_per_thread": 64
+  },
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_top_k_b8_smoke"
   }
 }

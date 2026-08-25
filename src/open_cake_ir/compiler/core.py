@@ -17,8 +17,14 @@ from .ir import (
     _SCHEDULE_OPTIONAL,
     _SCHEDULE_REQUIRED,
     DType,
+    EpilogueParameters,
     EpilogueFormula,
+    LoweringBackend,
+    LoweringRoute,
     OperationKind,
+    ReduceOp,
+    ReduceParameters,
+    ReductionScope,
     Schedule,
     ScheduleParseError,
 )
@@ -51,7 +57,7 @@ class Assessment:
     schedule_id: str
     schedule_sha256: str
     target: str
-    profile: str
+    route: LoweringRoute | None
     accepted: bool
     lowering_eligible: bool
     findings: tuple[Finding, ...]
@@ -75,9 +81,8 @@ class Lowering:
     schedule_id: str
     schedule_sha256: str
     target: str
-    profile: str
+    route: LoweringRoute
     generated: bool
-    entry_point: str
     source: str
     source_sha256: str
     source_map: Mapping[str, tuple[int, int]]
@@ -171,617 +176,90 @@ _DTYPE_BYTES = {member.value: member.itemsize for member in DType}
 _SUPPORTED_OPERATION_KINDS = {member.value for member in OperationKind}
 
 
-def _flash_kmeans_b32_smoke_conformance(buffers, operations) -> list["Finding"]:
-    tokens = _shape_of(buffers, "tokens")
-    centroids = _shape_of(buffers, "centroids")
-    coheres = (
-        tokens is not None
-        and len(tokens) == 3
-        and centroids is not None
-        and len(centroids) == 3
-        and tokens[0] == centroids[0]
-        and tokens[2] == centroids[2] == 128
-        and _shape_of(buffers, "centroid_sq") == (tokens[0], centroids[1])
-        and _shape_of(buffers, "assignments") == (tokens[0], tokens[1])
+def _tinygemm2_asset_preflight(schedule: Schedule) -> list["Finding"]:
+    """Check only facts implemented by the retained source asset."""
+
+    reduction = schedule.operation("reduce_partials")
+    parameters = reduction.parameters if reduction is not None else None
+    source = (
+        schedule.buffer(reduction.reads[0])
+        if reduction is not None and reduction.reads
+        else None
     )
-    if coheres:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.tokens.shape",
-            "Flash-KMeans external tensor shapes are inconsistent",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
-
-
-def _flash_kmeans_assignment_full_conformance(buffers, operations) -> list["Finding"]:
-    distance = buffers.get("distance_scratch")
-    shape = distance.get("shape") if distance is not None else None
-    if shape == [128, 1024]:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.distance_scratch.shape",
-            "full Flash-KMeans assignment requires distance_scratch shape [128, 1024]",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
-
-
-def _tinygemm2_stage4_split_k_conformance(buffers, operations) -> list["Finding"]:
-    reduction = next(
-        (operation for operation in operations if operation.get("id") == "reduce_partials"),
-        None,
-    )
-    parameters = (
-        _object(reduction.get("parameters"), "operations.reduce_partials.parameters")
-        if reduction is not None
-        else {}
-    )
-    # The part count is the extent of the axis the sum collapses, which the read buffer
-    # already declares. Reading it there keeps this profile rule and the Schedule from
-    # disagreeing about how many partials stage4 combines.
-    source = buffers.get(str(reduction.get("reads", [""])[0])) if reduction else None
-    shape = source.get("shape") if isinstance(source, Mapping) else None
-    axis = parameters.get("axis")
     parts = (
-        shape[axis]
-        if isinstance(shape, list) and isinstance(axis, int) and 0 <= axis < len(shape)
+        source.shape[parameters.axis]
+        if source is not None
+        and isinstance(parameters, ReduceParameters)
+        and 0 <= parameters.axis < len(source.shape)
         else None
     )
     findings: list[Finding] = []
     if not (
         reduction is not None
-        and reduction.get("kind") == "reduce"
-        # The operator is now the operation's to declare, so this profile has to say it
-        # wants a sum. A max over four partials is a different kernel with the same shape.
-        and parameters.get("op") == "sum"
+        and reduction.kind is OperationKind.REDUCE
+        and isinstance(parameters, ReduceParameters)
+        and parameters.op is ReduceOp.SUM
         and parts == 4
-        and parameters.get("scope") == "cta"
+        and parameters.scope is ReductionScope.CTA
     ):
         findings.append(
             Finding(
                 "REDUCE_SUM_SEMANTICS",
                 "operations.reduce_partials.parameters.axis",
-                "TinyGEMM2 stage4 requires a four-part CTA reduction",
+                "the checked TinyGEMM2 asset requires a four-part CTA sum",
+                blocks_acceptance=False,
+                blocks_lowering=True,
             )
         )
-    epilogue = next(
-        (operation for operation in operations if operation.get("id") == "bias_epilogue"),
-        None,
-    )
-    epilogue_parameters = (
-        _object(epilogue.get("parameters"), "operations.bias_epilogue.parameters")
-        if epilogue is not None
-        else {}
-    )
-    if (
-        epilogue is None
-        or epilogue.get("kind") != OperationKind.EPILOGUE.value
-        or epilogue_parameters.get("formula")
-        != EpilogueFormula.BIAS_ADD_BF16_ROUND.value
+    epilogue = schedule.operation("bias_epilogue")
+    epilogue_parameters = epilogue.parameters if epilogue is not None else None
+    if not (
+        epilogue is not None
+        and epilogue.kind is OperationKind.EPILOGUE
+        and isinstance(epilogue_parameters, EpilogueParameters)
+        and epilogue_parameters.formula is EpilogueFormula.BIAS_ADD_BF16_ROUND
     ):
         findings.append(
             Finding(
                 "TINYGEMM_EPILOGUE_SEMANTICS",
                 "operations.bias_epilogue.parameters.formula",
-                "TinyGEMM2 requires bias addition followed by BF16 rounding",
+                "the checked TinyGEMM2 asset requires bias addition then BF16 rounding",
+                blocks_acceptance=False,
+                blocks_lowering=True,
             )
         )
     return findings
 
 
-def _rmsnorm_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
-    x = _shape_of(buffers, "x")
-    coheres = (
-        x is not None
-        and len(x) == 3
-        and _shape_of(buffers, "y") == x
-        and _shape_of(buffers, "gamma") == (x[2],)
-    )
-    if coheres:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.x.shape",
-            "RMSNorm normalizes the last axis, so y matches x and gamma spans it",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
-
-
-def _softmax_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
-    """Softmax normalizes the last axis, so y matches x and nothing else is read.
-
-    The shape rule is the same one RMSNorm states; what differs is that softmax has no
-    learned parameter, so a Schedule that reads a third buffer is not this operator.
-    """
-
-    x = _shape_of(buffers, "x")
-    coheres = x is not None and len(x) == 3 and _shape_of(buffers, "y") == x
-    if coheres:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.x.shape",
-            "softmax normalizes the last axis, so y matches x",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
-
-
-def _layernorm_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
-    """LayerNorm normalizes the last axis and both parameters span it.
-
-    Two parameters rather than RMSNorm's one, which is the whole difference at this level:
-    a Schedule that declares only a scale is that operator and not this one.
-    """
-
-    x = _shape_of(buffers, "x")
-    coheres = (
-        x is not None
-        and len(x) == 3
-        and _shape_of(buffers, "y") == x
-        and _shape_of(buffers, "gamma") == (x[2],)
-        and _shape_of(buffers, "beta") == (x[2],)
-    )
-    if coheres:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.x.shape",
-            "LayerNorm normalizes the last axis, so y matches x and gamma and beta span it",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
-
-
-def _gemm_bias_b1_smoke_conformance(buffers, operations) -> list["Finding"]:
-    """A contraction with a per-column bias: `c[M, N] = a[M, K] @ b[N, K]^T + bias[N]`.
-
-    Both operands carry K last, because that is the axis a `tl.dot` and a tcgen05 MMA
-    both contract. The bias spans the output's N, which is what makes it a bias rather
-    than a second operand.
-    """
-
-    a = _shape_of(buffers, "a")
-    b = _shape_of(buffers, "b")
-    coheres = (
-        a is not None
-        and b is not None
-        and len(a) == 2
-        and len(b) == 2
-        and a[1] == b[1]
-        and _shape_of(buffers, "c") == (a[0], b[0])
-        and _shape_of(buffers, "bias") == (b[0],)
-    )
-    if coheres:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.a.shape",
-            "a GEMM contracts the last axis of both operands and biases the output column",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
-
-
-def _block_scaled_gemm_b1_smoke_conformance(buffers, operations) -> list["Finding"]:
-    """The smallest KDA-style FP8/FP32-scale contraction with two K blocks."""
-
-    dot = next(
-        (operation for operation in operations if operation.get("id") == "scaled_dot"),
-        None,
-    )
-    instruction = (
-        dot.get("parameters", {}).get("instruction")
-        if isinstance(dot, Mapping) and isinstance(dot.get("parameters"), Mapping)
-        else None
-    )
-    coheres = (
-        _shape_of(buffers, "a") == (16, 256)
-        and _shape_of(buffers, "b") == (128, 256)
-        and _shape_of(buffers, "sfa") == (2, 16)
-        and _shape_of(buffers, "sfb") == (1, 2)
-        and _shape_of(buffers, "c") == (16, 128)
-        and isinstance(dot, Mapping)
-        and dot.get("kind") == "mma"
-        and isinstance(instruction, Mapping)
-        and instruction.get("contract") == "triton.dot.fp8e4m3_block_scale_fp32"
-    )
-    if coheres:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.a.shape",
-            "the block-scale smoke profile is a 16x128x256 FP8 contraction with "
-            "two K-scale blocks and explicitly related FP32 scales",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
-
-
-def _ragged_zero_pad_b1_smoke_conformance(buffers, operations) -> list["Finding"]:
-    """Four padded groups materialized with their runtime-invalid rows zeroed."""
-
-    coheres = (
-        _shape_of(buffers, "ragged") == (4, 8, 16)
-        and _shape_of(buffers, "lengths") == (4,)
-        and _shape_of(buffers, "dense") == (4, 8, 16)
-        and _shape_of(buffers, "tile") == (8, 16)
-    )
-    if coheres:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.ragged.shape",
-            "the ragged smoke profile has four capacity-8 groups of 16-wide rows",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
-
-
-def _ragged_grouped_gemm_b1_smoke_conformance(buffers, operations) -> list["Finding"]:
-    """Four group-specific contractions whose padded A rows have runtime lengths."""
-
-    coheres = (
-        _shape_of(buffers, "a") == (4, 16, 32)
-        and _shape_of(buffers, "b") == (4, 16, 32)
-        and _shape_of(buffers, "lengths") == (4,)
-        and _shape_of(buffers, "c") == (4, 16, 16)
-        and _shape_of(buffers, "a_tile") == (16, 16)
-        and _shape_of(buffers, "b_tile") == (16, 16)
-        and _shape_of(buffers, "acc") == (16, 16)
-    )
-    if coheres:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.a.shape",
-            "the grouped-ragged smoke profile has four 16x16x32 contractions "
-            "whose A rows share one runtime length per group",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
-
-
-def _indexed_gather_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
-    """Eight tokens gather eight routed rows from four expert-major groups.
-
-    The generic verifier owns runtime-index dtype, placement, zipped-domain and result
-    rules. This profile binds only the independent observation's workload geometry.
-    """
-
-    coheres = (
-        _shape_of(buffers, "expert_rows") == (4, 8, 16)
-        and _shape_of(buffers, "expert_ids") == (8, 8)
-        and _shape_of(buffers, "row_ids") == (8, 8)
-        and _shape_of(buffers, "gathered_rows") == (8, 8, 16)
-        and _shape_of(buffers, "expert_id_tile") == (8,)
-        and _shape_of(buffers, "row_id_tile") == (8,)
-        and _shape_of(buffers, "gathered_tile") == (8, 16)
-    )
-    if coheres:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.expert_rows.shape",
-            "the indexed-gather smoke profile gathers eight 16-value rows for each "
-            "of eight tokens from four capacity-8 expert groups",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
-
-
-def _swiglu_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
-    """SwiGLU is two equally shaped inputs and one equally shaped output.
-
-    This is deliberately only the arithmetic slice exercised by the KDA v12 delta. The
-    grouped-GEMM producer, quantization scales and routed scatter are separate missing
-    mechanisms, so accepting this profile does not call the complete MoE kernel
-    expressible.
-    """
-
-    up = _shape_of(buffers, "up")
-    gate = _shape_of(buffers, "gate")
-    coheres = (
-        up is not None
-        and len(up) == 3
-        and gate == up
-        and _shape_of(buffers, "y") == up
-    )
-    if coheres:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.up.shape",
-            "SwiGLU requires up, gate and y to have the same rank-3 shape",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
-
-
-def _top_k_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
-    """Eight deterministic expert indices from each resident 256-score row.
-
-    This binds the standalone indexed-selection slice, not DeepSeek group routing. The
-    generic verifier owns top_k's rank, dtype and result rules; this profile owns only the
-    workload shape and the one operation that connects its named tiles.
-    """
-
-    selection = next(
-        (operation for operation in operations if operation.get("id") == "select_experts"),
-        None,
-    )
-    parameters = selection.get("parameters") if isinstance(selection, Mapping) else None
-    coheres = (
-        _shape_of(buffers, "scores") == (8, 256)
-        and _shape_of(buffers, "indices") == (8, 8)
-        and isinstance(selection, Mapping)
-        and selection.get("kind") == "top_k"
-        and selection.get("reads") == ["score_row"]
-        and selection.get("writes") == ["top_values", "top_indices"]
-        and isinstance(parameters, Mapping)
-        and parameters.get("k") == 8
-        and parameters.get("tie_break") == "lowest_index"
-        and parameters.get("nan_policy") == "reject_input"
-    )
-    if coheres:
-        return []
-    return [
-        Finding(
-            "PROFILE_SHAPE_MISMATCH",
-            "buffers.scores.shape",
-            "the Top-K smoke profile selects eight deterministic indices from each "
-            "of eight 256-score rows",
-            blocks_acceptance=False,
-            blocks_lowering=True,
-        )
-    ]
+@dataclass(frozen=True)
+class _GeneratedBackend:
+    module: Any
+    source_language: str
+    compiler: str
 
 
 @dataclass(frozen=True)
-class _Profile:
-    """One admitted lowering profile and every fact that follows from admitting it.
-
-    These facts used to live in five dictionaries and an `elif` chain keyed by the same
-    profile string, so adding an operator meant finding all six and keeping them in step.
-    One record owns them, and a profile that omits one is a construction error rather than
-    a lookup that silently returns nothing.
-
-    `backend` is the module that generates the source from the Schedule; `asset` is the
-    older path that fills a digest into a checked-in template, and only that path needs
-    `closed_semantics` -- the file matches one Schedule, so a pin is what keeps a second
-    one from reaching it.
-
-    The backend is held as a module rather than as its `emit` function so that the kinds
-    it can lower travel with it. Naming them separately would let a profile pair one
-    backend's emitter with another's coverage, which is the class of mistake this record
-    exists to make impossible.
-    """
-
-    toolchain: Mapping[str, object]
-    conformance: "Callable[[Mapping[str, object], Sequence[Mapping[str, object]]], list[Finding]]"
-    backend: Any | None = None
-    asset: tuple[str, str, str] | None = None
-    closed_semantics: str | None = None
-
-    @property
-    def emitter(self) -> object | None:
-        return None if self.backend is None else self.backend.emit
-
-    @property
-    def emittable_kinds(self) -> frozenset:
-        """The operation kinds this profile's backend has a body for.
-
-        Derived from the backend's own dispatch table, so it states what the code does
-        rather than what someone remembered it did.
-        """
-
-        if self.backend is None:
-            return frozenset()
-        return self.backend.SUPPORTED_OPERATION_KINDS
-
-    @property
-    def emittable_dtypes(self) -> frozenset:
-        """The dtypes this profile's backend can name wherever it has to name them."""
-
-        if self.backend is None:
-            return frozenset()
-        return self.backend.SUPPORTED_DTYPES
-
-    def __post_init__(self) -> None:
-        if (self.backend is None) == (self.asset is None):
-            raise CompilerError("a profile lowers through exactly one of backend or asset")
-        if self.asset is None and self.closed_semantics is not None:
-            raise CompilerError("an emitted profile pins no closed semantics digest")
+class _SourceAsset:
+    path: str
+    placeholder: str
+    semantic_sha256: str
+    preflight: Callable[[Schedule], list[Finding]]
 
 
-_PROFILES: Mapping[str, _Profile] = {
-    "flash_kmeans_b32_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_flash_kmeans_assign",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
-        conformance=_flash_kmeans_b32_smoke_conformance,
-        backend=emit_triton,
+_GENERATED_BACKENDS: Mapping[LoweringBackend, _GeneratedBackend] = {
+    LoweringBackend.TRITON: _GeneratedBackend(emit_triton, "python", "triton"),
+    LoweringBackend.CUTLASS_CUTE_DSL: _GeneratedBackend(
+        emit_cutedsl, "python", "cutlass_cute_dsl"
     ),
-    "flash_kmeans_assignment_full": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "cutlass_cute_dsl",
-            "entry_point": "cake_flash_kmeans_assignment_full",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
-        conformance=_flash_kmeans_assignment_full_conformance,
-        backend=emit_cutedsl,
-    ),
-    # The first operator admitted after the registry became one record. It needed no
-    # emitter change, no formula of its own and no entry anywhere else: an operator is
-    # now one row plus the Schedules that claim it.
-    # The second operator admitted through the same row. It needed two vocabulary
-    # additions -- a max fold and `exp`/`div` -- and no emitter structure at all, which
-    # is the claim the registry was reshaped to make testable.
-    "softmax_b8_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_softmax_b8_smoke",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
-        conformance=_softmax_b8_smoke_conformance,
-        backend=emit_triton,
-    ),
-    # The third operator admitted through the same row, and the first that needed no
-    # vocabulary at all: two folds, seven arithmetic primitives and two broadcasts that
-    # were already there for the two before it.
-    # The first admitted operator whose loop walks the contraction rather than an output
-    # axis, which is what a GEMM is and what the accumulation derivation exists for.
-    "gemm_bias_b1_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_gemm_bias_b1_smoke",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
-        conformance=_gemm_bias_b1_smoke_conformance,
-        backend=emit_triton,
-    ),
-    "block_scaled_gemm_b1_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_block_scaled_gemm_b1_smoke",
-            "target": "sm_100a",
-            "entry_abi": "five_cuda_tensors_current_stream",
-        },
-        conformance=_block_scaled_gemm_b1_smoke_conformance,
-        backend=emit_triton,
-    ),
-    "ragged_zero_pad_b1_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_ragged_zero_pad_b1_smoke",
-            "target": "sm_100a",
-            "entry_abi": "three_cuda_tensors_current_stream",
-        },
-        conformance=_ragged_zero_pad_b1_smoke_conformance,
-        backend=emit_triton,
-    ),
-    "ragged_grouped_gemm_b1_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_ragged_grouped_gemm_b1_smoke",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
-        conformance=_ragged_grouped_gemm_b1_smoke_conformance,
-        backend=emit_triton,
-    ),
-    "indexed_gather_b8_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_indexed_gather_b8_smoke",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
-        conformance=_indexed_gather_b8_smoke_conformance,
-        backend=emit_triton,
-    ),
-    "layernorm_b8_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_layernorm_b8_smoke",
-            "target": "sm_100a",
-            "entry_abi": "four_cuda_tensors_current_stream",
-        },
-        conformance=_layernorm_b8_smoke_conformance,
-        backend=emit_triton,
-    ),
-    "rmsnorm_b8_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_rmsnorm_b8_smoke",
-            "target": "sm_100a",
-            "entry_abi": "three_cuda_tensors_current_stream",
-        },
-        conformance=_rmsnorm_b8_smoke_conformance,
-        backend=emit_triton,
-    ),
-    "swiglu_b8_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_swiglu_b8_smoke",
-            "target": "sm_100a",
-            "entry_abi": "three_cuda_tensors_current_stream",
-        },
-        conformance=_swiglu_b8_smoke_conformance,
-        backend=emit_triton,
-    ),
-    "top_k_b8_smoke": _Profile(
-        toolchain={
-            "source_language": "python",
-            "compiler": "triton",
-            "entry_point": "cake_top_k_b8_smoke",
-            "target": "sm_100a",
-            "entry_abi": "two_cuda_tensors_current_stream",
-        },
-        conformance=_top_k_b8_smoke_conformance,
-        backend=emit_triton,
-    ),
-    "tinygemm2_stage4_split_k": _Profile(
-        toolchain={
-            "source_language": "cuda_cpp",
-            "compiler": "nvcc",
-            "target": "sm_100a",
-            "entry_abi": "tinygemm2_tensor_map_v1",
-        },
-        conformance=_tinygemm2_stage4_split_k_conformance,
-        asset=(
-            "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
-            "@@SCHEDULE_SHA256@@",
-            "cake_tinygemm2_stage4_split_k",
-        ),
-        # Re-pinned when reduce_sum became reduce with op: sum. The pin says which
-        # Schedule may reach this checked-in template, and the kernel it describes
-        # did not change -- only how the Schedule writes it down.
-        closed_semantics="7aa2fdb287d7d8af141ef83b84cf17409a2a4de8c4f90c6eaac3a4490865e799",
-    ),
+}
+_SOURCE_ASSETS: Mapping[str, _SourceAsset] = {
+    "cake_tinygemm2_stage4_split_k": _SourceAsset(
+        path="src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
+        placeholder="@@SCHEDULE_SHA256@@",
+        # Re-pinned by the route migration; the checked asset body itself is unchanged.
+        semantic_sha256="fea164e3667d99bdd1d26a9bd11ca7ee4dca08c2cad66d47dc4719dcd529ec2c",
+        preflight=_tinygemm2_asset_preflight,
+    )
 }
 
 
@@ -1016,19 +494,6 @@ def _semantic_schedule_sha256(schedule: Mapping[str, object]) -> str:
     metadata.pop("legacy_source", None)
     semantic["metadata"] = metadata
     return sha256(_canonical_json_bytes(semantic)).hexdigest()
-
-
-def _shape_of(
-    buffers: Mapping[str, Mapping[str, object]],
-    name: str,
-) -> tuple[int, ...] | None:
-    buffer = buffers.get(name)
-    shape = buffer.get("shape") if buffer is not None else None
-    if not isinstance(shape, list) or any(
-        not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in shape
-    ):
-        return None
-    return tuple(cast(list[int], shape))
 
 
 class Compiler:
@@ -1539,65 +1004,71 @@ class Compiler:
                     )
                 )
 
-        metadata = _object(schedule.get("metadata"), "metadata")
-        instruction = metadata.get("mma_instruction")
-        if (
-            instruction is not None
-            and target_definition is not None
-            and _name(instruction, "metadata.mma_instruction")
-            not in target_definition.instruction_contracts
-        ):
+        route = typed_schedule.lowering
+        lowering_parameters: dict[str, int] = {}
+        backend = _GENERATED_BACKENDS.get(route.backend)
+        asset = (
+            _SOURCE_ASSETS.get(route.entry_point)
+            if route.backend is LoweringBackend.CHECKED_CUDA_ASSET
+            else None
+        )
+        if route.backend is LoweringBackend.CHECKED_CUDA_ASSET and asset is None:
             findings.append(
                 Finding(
-                    "TARGET_INSTRUCTION_UNSUPPORTED",
-                    "metadata.mma_instruction",
-                    f"instruction {instruction!r} is not admitted by Target {target!r}",
+                    "SOURCE_ASSET_UNSUPPORTED",
+                    "lowering.entry_point",
+                    f"checked source asset {route.entry_point!r} is not bound by this Revision",
+                    blocks_acceptance=False,
+                    blocks_lowering=True,
                 )
             )
-        profile = _name(metadata.get("profile"), "metadata.profile")
-        lowering_parameters: dict[str, int] = {}
-        definition = _PROFILES.get(profile)
-        if definition is None:
-            findings.append(
-                Finding("LOWERING_PROFILE_UNSUPPORTED", "metadata.profile", f"profile {profile!r} is unsupported")
-            )
-        else:
-            findings.extend(definition.conformance(buffer_by_name, operations))
-            # A kind this profile's backend has no body for cannot be lowered wherever it
+        elif asset is not None:
+            asset_findings = asset.preflight(typed_schedule)
+            findings.extend(asset_findings)
+            if (
+                _semantic_schedule_sha256(schedule) != asset.semantic_sha256
+                and not asset_findings
+            ):
+                findings.append(
+                    Finding(
+                        "SOURCE_ASSET_SEMANTICS_MISMATCH",
+                        "lowering",
+                        "Schedule semantics differ from the checked source asset",
+                        blocks_acceptance=False,
+                        blocks_lowering=True,
+                    )
+                )
+        elif backend is not None:
+            # A kind this backend has no body for cannot be lowered wherever it
             # is placed, and that is knowable here rather than when emission raises. The
             # Schedule is not ill-formed -- the IR expresses the kind and the Target
             # supports it -- so this blocks lowering and not acceptance, and it names the
             # backend rather than the author.
-            #
-            # Only for a profile that emits. The asset path fills a digest into a
-            # checked-in template and has no operation bodies at all, so it has no
-            # coverage to be outside of.
-            for index, buffer in enumerate(buffers if definition.backend else ()):
+            for index, buffer in enumerate(buffers):
                 dtype = buffer.get("dtype") if isinstance(buffer, Mapping) else None
                 if dtype not in _DTYPE_BYTES:
                     continue
-                if DType(dtype) not in definition.emittable_dtypes:
+                if DType(dtype) not in backend.module.SUPPORTED_DTYPES:
                     findings.append(
                         Finding(
-                            "PROFILE_DTYPE_UNEMITTABLE",
+                            "BACKEND_DTYPE_UNEMITTABLE",
                             f"buffers[{index}].dtype",
-                            f"profile {profile!r} lowers through a backend that cannot "
-                            f"name dtype {dtype!r}",
+                            f"backend {route.backend.value!r} cannot name dtype {dtype!r}",
                             blocks_acceptance=False,
                             blocks_lowering=True,
                         )
                     )
-            for index, operation in enumerate(operations if definition.backend else ()):
+            for index, operation in enumerate(operations):
                 kind = operation.get("kind")
                 if kind not in _SUPPORTED_OPERATION_KINDS:
                     continue
-                if OperationKind(kind) not in definition.emittable_kinds:
+                if OperationKind(kind) not in backend.module.SUPPORTED_OPERATION_KINDS:
                     findings.append(
                         Finding(
-                            "PROFILE_OPERATION_UNEMITTABLE",
+                            "BACKEND_OPERATION_UNEMITTABLE",
                             f"operations[{index}].kind",
-                            f"profile {profile!r} lowers through a backend with no body "
-                            f"for operation kind {kind!r}",
+                            f"backend {route.backend.value!r} has no body for operation "
+                            f"kind {kind!r}",
                             blocks_acceptance=False,
                             blocks_lowering=True,
                         )
@@ -1606,7 +1077,7 @@ class Compiler:
             # reduction in the specialized loop to have one result. `reduce_argmin`
             # returns both value and index, so this exact combination is a known
             # backend legality failure rather than an in-process toolchain crash.
-            if definition.backend is emit_triton:
+            if backend.module is emit_triton:
                 operations_by_id = {
                     operation.get("id"): operation for operation in operations
                 }
@@ -1633,41 +1104,18 @@ class Compiler:
                                 blocks_lowering=True,
                             )
                         )
-        if definition is not None and definition.closed_semantics is not None:
-            semantic_sha = _semantic_schedule_sha256(schedule)
-            known_delta = any(
-                finding.code
-                in {
-                    "PROFILE_SHAPE_MISMATCH",
-                    "REDUCE_SUM_SEMANTICS",
-                    "TINYGEMM_EPILOGUE_SEMANTICS",
-                }
-                for finding in findings
-            )
-            if semantic_sha != definition.closed_semantics and not known_delta:
-                findings.append(
-                    Finding(
-                        "PROFILE_SEMANTICS_MISMATCH",
-                        "metadata.profile",
-                        f"Schedule semantics are outside the closed lowering subset for {profile!r}",
-                        blocks_acceptance=False,
-                        blocks_lowering=True,
-                    )
-                )
-
         findings.extend(self._contract_findings(typed_schedule, target))
 
         # The backend owns these predicates and its direct emitter consumes the same
         # preflight.  Project them only for an otherwise-lowerable Schedule: common
         # structural/Target Findings remain the more precise authority when present.
         if (
-            definition is not None
-            and definition.backend
+            backend is not None
             and target_definition is not None
             and not any(finding.blocks_lowering for finding in findings)
         ):
             typed_target = Target.from_dict(dict(target_definition.document))
-            for failure in definition.backend.preflight(typed_schedule, typed_target):
+            for failure in backend.module.preflight(typed_schedule, typed_target):
                 findings.append(
                     Finding(
                         failure.code,
@@ -1682,13 +1130,14 @@ class Compiler:
         lowering_eligible = accepted and not any(
             finding.blocks_lowering for finding in findings
         )
+        semantic_sha256 = _semantic_schedule_sha256(schedule)
         analysis = MappingProxyType(
             {
                 "grid": parsed_grid,
                 "operation_counts": dict(sorted(operation_counts.items())),
                 "role_count": len(roles),
                 "total_warps": len(used_warps),
-                "semantic_sha256": _semantic_schedule_sha256(schedule),
+                "semantic_sha256": semantic_sha256,
             }
         )
         return Assessment(
@@ -1697,13 +1146,13 @@ class Compiler:
             schedule_id=schedule_id,
             schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
             target=target,
-            profile=profile,
+            route=route,
             accepted=accepted,
             lowering_eligible=lowering_eligible,
             findings=tuple(findings),
             analysis=analysis,
             lowering_parameters=MappingProxyType(dict(lowering_parameters)),
-            calibration_available=profile in self._calibration_coverage,
+            calibration_available=semantic_sha256 in self._calibration_coverage,
             schedule_bytes=_canonical_json_bytes(schedule),
         )
 
@@ -1714,10 +1163,11 @@ class Compiler:
 
         message = str(error)
         path, _, detail = message.partition(" ")
-        metadata = schedule.get("metadata")
-        profile = ""
-        if isinstance(metadata, Mapping) and isinstance(metadata.get("profile"), str):
-            profile = cast(str, metadata["profile"])
+        route = None
+        try:
+            route = LoweringRoute.from_dict(schedule.get("lowering"))
+        except ScheduleParseError:
+            pass
         schedule_id = schedule.get("schedule_id")
         target = schedule.get("target")
         return Assessment(
@@ -1726,7 +1176,7 @@ class Compiler:
             schedule_id=schedule_id if isinstance(schedule_id, str) else "",
             schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
             target=target if isinstance(target, str) else "",
-            profile=profile,
+            route=route,
             accepted=False,
             lowering_eligible=False,
             findings=(
@@ -1738,7 +1188,7 @@ class Compiler:
             schedule_bytes=_canonical_json_bytes(schedule),
         )
 
-    def _emit(self, assessment: Assessment, emitter) -> Lowering:
+    def _emit(self, assessment: Assessment, backend: _GeneratedBackend) -> Lowering:
         """Generate the target source from the Schedule."""
 
         definition = self._target_definitions.get(assessment.target)
@@ -1747,11 +1197,14 @@ class Compiler:
         schedule = Schedule.from_dict(
             _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
         )
+        route = assessment.route
+        if route is None:
+            raise CompilerError("assessment has no lowering route")
         try:
-            emission = emitter(
+            emission = backend.module.emit(
                 schedule,
                 Target.from_dict(dict(definition.document)),
-                entry_point=_PROFILES[assessment.profile].toolchain["entry_point"],
+                entry_point=route.entry_point,
             )
         except EmitError as error:
             raise CompilerError(f"Schedule does not determine its source: {error}") from error
@@ -1762,15 +1215,16 @@ class Compiler:
             schedule_id=assessment.schedule_id,
             schedule_sha256=assessment.schedule_sha256,
             target=assessment.target,
-            profile=assessment.profile,
+            route=route,
             generated=True,
-            entry_point=emission.entry_point,
             source=source,
             source_sha256=sha256(source.encode("utf-8")).hexdigest(),
             source_map=MappingProxyType(_source_map(source)),
             toolchain_requirements=MappingProxyType(
                 {
-                    **_PROFILES[assessment.profile].toolchain,
+                    "source_language": backend.source_language,
+                    "compiler": backend.compiler,
+                    "target": assessment.target,
                     **(emission.toolchain or {}),
                 }
             ),
@@ -1823,7 +1277,7 @@ class Compiler:
         dropped, so a caller cannot mistake the order for a complete view of its set.
 
         The released Revision owns calibration coverage. An eligible candidate from an
-        uncovered profile is returned as withheld rather than being assigned precision
+        uncovered semantic domain is returned as withheld rather than being assigned precision
         that the Revision does not claim. The order carries no predicted time;
         `compiler/ranking.py` defines the dormant structural primitive and
         `docs/ANALYSIS_CALIBRATION.md` records the measurements required to activate it.
@@ -1883,34 +1337,39 @@ class Compiler:
         if not assessment.lowering_eligible:
             codes = ", ".join(finding.code for finding in assessment.findings)
             raise CompilerError(f"assessment is not lowering eligible: {codes}")
-        definition = _PROFILES[assessment.profile]
-        emitter = definition.emitter
-        if emitter is not None:
-            return self._emit(assessment, emitter)
-        asset = definition.asset
-        if asset is None:
-            raise CompilerError(f"lowering profile {assessment.profile!r} is not implemented")
-        relative_path, placeholder, entry_point = asset
-        template_path = self._project_root / relative_path
+        route = assessment.route
+        if route is None:
+            raise CompilerError("assessment has no lowering route")
+        backend = _GENERATED_BACKENDS.get(route.backend)
+        if backend is not None:
+            return self._emit(assessment, backend)
+        asset = _SOURCE_ASSETS.get(route.entry_point)
+        if route.backend is not LoweringBackend.CHECKED_CUDA_ASSET or asset is None:
+            raise CompilerError(f"lowering route {route!r} is not implemented")
+        template_path = self._project_root / asset.path
         template = template_path.read_text(encoding="utf-8")
-        if template.count(placeholder) != 1:
-            raise CompilerError(f"lowering template for {assessment.profile!r} has an invalid placeholder")
-        source = template.replace(placeholder, assessment.schedule_sha256)
+        if template.count(asset.placeholder) != 1:
+            raise CompilerError("checked source asset has an invalid placeholder")
+        source = template.replace(asset.placeholder, assessment.schedule_sha256)
         source_map = _source_map(source)
-        requirements = dict(definition.toolchain)
         return Lowering(
             compiler_revision_id=self._revision_id,
             compiler_revision_sha256=self._revision_sha256,
             schedule_id=assessment.schedule_id,
             schedule_sha256=assessment.schedule_sha256,
             target=assessment.target,
-            profile=assessment.profile,
+            route=route,
             generated=False,
-            entry_point=entry_point,
             source=source,
             source_sha256=sha256(source.encode("utf-8")).hexdigest(),
             source_map=MappingProxyType(source_map),
-            toolchain_requirements=MappingProxyType(requirements),
+            toolchain_requirements=MappingProxyType(
+                {
+                    "source_language": "cuda_cpp",
+                    "compiler": "nvcc",
+                    "target": assessment.target,
+                }
+            ),
         )
 
 

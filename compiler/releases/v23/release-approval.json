@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "d00c97d91bae97b5c313356a5dbce7fa5b5a007e4fc67620a5e519fab92135f5"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Runtime-indexed AccessMap B200 correctness plus backend-preflight audit repair; manually reviewed 32-case expectations; unsupported CuTe epilogue is the sole new negative case"
+}

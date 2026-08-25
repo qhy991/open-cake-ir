@@ -56,7 +56,14 @@ def _compiler(args: argparse.Namespace) -> int:
                 "schedule_id": assessment.schedule_id,
                 "schedule_sha256": assessment.schedule_sha256,
                 "target": assessment.target,
-                "profile": assessment.profile,
+                "lowering": (
+                    {
+                        "backend": assessment.route.backend.value,
+                        "entry_point": assessment.route.entry_point,
+                    }
+                    if assessment.route is not None
+                    else None
+                ),
                 "accepted": assessment.accepted,
                 "lowering_eligible": assessment.lowering_eligible,
                 "findings": [asdict(finding) for finding in assessment.findings],
@@ -87,7 +94,7 @@ def _compiler(args: argparse.Namespace) -> int:
             "schedule_sha256": lowering.schedule_sha256,
             "source_sha256": lowering.source_sha256,
             "generated": lowering.generated,
-            "entry_point": lowering.entry_point,
+            "entry_point": lowering.route.entry_point,
             "output": str(output),
         }
     )

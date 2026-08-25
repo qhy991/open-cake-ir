@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "seed_id": "r42-cake-r1-turn1",
+  "workload_sha256": "37e0f57020d9807a6c77c5ef6e56c8c771274c11c745b58022ae85091d567c3a",
+  "base_schedule": {
+    "path": "corpus/schedules/flash-kmeans-b32-smoke-v2.json",
+    "canonical_sha256": "2ed70904bbca9d83346ef4280cef610717ae8aebd28a88e3f245c2ceb9524787"
+  },
+  "configuration": {
+    "BLOCK_N": 256,
+    "BLOCK_K": 128,
+    "num_warps": 8,
+    "num_stages": 3
+  },
+  "provenance": {
+    "legacy_revision": "3f445b3a93fa8e45b665f8daf907701afb85f227",
+    "legacy_path": "evidence/raw/r42-codex-matched-replication-campaign-v3/cake_ir-r1/turn-01/candidate.json",
+    "raw_sha256": "581b928b172ca06bf34f2d6cf086f6ddc5d910bdaa8fa4fc215310b23e26e1c0",
+    "selection": "pre_heldout_first_valid_candidate"
+  }
+}

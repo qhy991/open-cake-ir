@@ -235,14 +235,15 @@ ROW_SUM_SCHEDULE = {
             {"source": "program", "name": "batch"},
             {"source": "program_tile", "name": "row_block"}], "boundary": "mask_tiled_axes"},
     ],
-    "metadata": {"profile": "row_sum_contract", "workload_contract_sha256": "0" * 64},
+    "lowering": {"backend": "triton", "entry_point": "cake_row_sum_contract"},
+    "metadata": {"workload_contract_sha256": "0" * 64},
 }
 
 
 class OperatorShapeIndependenceTest(unittest.TestCase):
     """The emitter must follow the Schedule, not the operator it was written against.
 
-    Both admitted profiles contract and then reduce, so the emitter could require an mma
+    Both retained program slices contract and then reduce, so the emitter could require an mma
     and an argmin and still emit both correctly. A sum over an axis, with no contraction
     at all, is the smallest Schedule that tells those two apart.
     """
@@ -385,7 +386,8 @@ class ComposedArithmeticTest(unittest.TestCase):
                     {"source": "program_tile", "name": "row_block"},
                     {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
             ],
-            "metadata": {"profile": "rmsnorm", "workload_contract_sha256": "0" * 64},
+            "lowering": {"backend": "triton", "entry_point": "cake_rmsnorm"},
+            "metadata": {"workload_contract_sha256": "0" * 64},
         }
 
     def test_rmsnorm_lowers_without_a_formula_of_its_own(self) -> None:
@@ -518,7 +520,7 @@ class EmittedObservationTest(unittest.TestCase):
         "layernorm-b8-smoke.json",
     )
 
-    def test_each_observation_matches_what_the_compiler_lowers_now(self) -> None:
+    def test_each_observation_remains_historical_after_route_migration(self) -> None:
         from open_cake_ir.compiler import Compiler
 
         compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
@@ -531,8 +533,15 @@ class EmittedObservationTest(unittest.TestCase):
                     compiler.assess_file(ROOT / "corpus" / "schedules" / schedule_name)
                 )
                 self.assertEqual(lowering.generated, record["lowering"]["generated"])
-                self.assertEqual(
+                self.assertNotEqual(
+                    lowering.schedule_sha256, record["schedule"]["canonical_sha256"]
+                )
+                self.assertNotEqual(
                     lowering.source_sha256, record["lowering"]["source_sha256"]
+                )
+                self.assertNotEqual(
+                    lowering.compiler_revision_id,
+                    record["compiler_revision"]["revision_id"],
                 )
                 self.assertEqual(record["result"]["mismatch_count"], 0)
                 if "exact_match" in record["result"]:

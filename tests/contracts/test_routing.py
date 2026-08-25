@@ -56,12 +56,12 @@ class RoutingContractTests(unittest.TestCase):
                 "stage": "lowering",
                 "findings": [
                     {
-                        "code": "PROFILE_OPERATION_UNEMITTABLE",
+                        "code": "BACKEND_OPERATION_UNEMITTABLE",
                         "blocks_acceptance": False,
                         "blocks_lowering": True,
                     },
                     {
-                        "code": "PROFILE_DTYPE_UNEMITTABLE",
+                        "code": "BACKEND_DTYPE_UNEMITTABLE",
                         "blocks_acceptance": False,
                         "blocks_lowering": True,
                     },
@@ -70,7 +70,7 @@ class RoutingContractTests(unittest.TestCase):
             }
         )
         self.assertEqual(decision.destination, IR_VOCABULARY)
-        self.assertIn("PROFILE_OPERATION_UNEMITTABLE", decision.reason)
+        self.assertIn("BACKEND_OPERATION_UNEMITTABLE", decision.reason)
 
     def test_a_real_gate_refusal_still_wins_over_a_report(self) -> None:
         # A Schedule can be both wrong and unlowerable. The gate refusal is the one the

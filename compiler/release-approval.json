@@ -3,8 +3,8 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "d00c97d91bae97b5c313356a5dbce7fa5b5a007e4fc67620a5e519fab92135f5"
+    "canonical_sha256": "4e2c9376080db1af163eb633b15c5412354912634d32cd1161933f7fba1bfb15"
   },
   "reviewer": "repository_owner",
-  "approval_basis": "Runtime-indexed AccessMap B200 correctness plus backend-preflight audit repair; manually reviewed 32-case expectations; unsupported CuTe epilogue is the sole new negative case"
+  "approval_basis": "Repository-owner-authorized Finding 8 migration: replace workload profiles with explicit lowering routes, keep Workload semantics in Lab, bind TinyGEMM2 checked-asset semantics, and adopt the separately reviewed 32-case expectation diff."
 }

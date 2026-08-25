@@ -43,6 +43,10 @@
     {"operation": "load_gate", "buffer": "gate", "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
     {"operation": "store_y", "buffer": "y", "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"}
   ],
-  "metadata": {"profile": "swiglu_b8_smoke", "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
-  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 128}
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 128},
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_swiglu_b8_smoke"
+  }
 }
