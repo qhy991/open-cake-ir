@@ -8,9 +8,9 @@ gfx1151 execution are pending.
 
 The next high-impact llama.cpp decode direction after one-row RMSNorm is Q4_0 × Q8_1
 MMVQ. The current audited upstream authority is
-`ggml-org/llama.cpp@1729ed5371cd1ac6f6d6f3226f8803b080042839`. Its Q4/Q8,
-quantizer, integer-dot and MMVQ source bytes are unchanged from the prior `eb25b726`
-audit.
+`ggml-org/llama.cpp@0a5ac49bce4c42893368585edf3ffb41a38f0108`. Its Q4/Q8,
+quantizer, integer-dot and MMVQ source bytes are unchanged from the prior `1729ed5` and
+`eb25b726` audits.
 
 The native boundary is not a matvec over caller-provided Q8 data. It starts with an FP32
 activation, materializes Q8_1 on device, then consumes that block with packed Q4_0

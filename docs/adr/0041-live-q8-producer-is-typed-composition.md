@@ -5,7 +5,7 @@ prepared locally, while independent Compiler approval and gfx1151 execution are 
 
 ## Context
 
-ADR 0039 freezes `llama.cpp@1729ed5371cd1ac6f6d6f3226f8803b080042839`
+ADR 0039 freezes `llama.cpp@0a5ac49bce4c42893368585edf3ffb41a38f0108`
 Q4_0 × live-Q8_1 semantics. ADR 0040 gives the Compiler raw packed-record custody but
 deliberately cannot produce typed Q8_1 fields. The first executable slice must quantize
 one FP32 block and its 480 zero-padding values into sixteen exact 36-byte records without

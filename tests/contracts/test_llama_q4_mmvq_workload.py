@@ -59,7 +59,7 @@ class LlamaQ4MmvqWorkloadTests(unittest.TestCase):
 
         self.assertEqual(
             document["provenance"][0]["revision"],
-            "1729ed5371cd1ac6f6d6f3226f8803b080042839",
+            "0a5ac49bce4c42893368585edf3ffb41a38f0108",
         )
         q4_semantics = next(
             value

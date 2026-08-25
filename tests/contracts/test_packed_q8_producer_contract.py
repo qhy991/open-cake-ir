@@ -23,7 +23,7 @@ RECORD_COUNT_DRIFT = (
     / "corpus/schedules/packed-q8_1-producer-gfx1151-record-count-drift.json"
 )
 WORKLOAD = ROOT / "contracts/workloads/llama-q4_0-q8_1-mmvq-f32-v1.json"
-WORKLOAD_SHA256 = "34b6abd138fe909bc94b5098a0ab977e0673652ee16fff719cc657017f89652b"
+WORKLOAD_SHA256 = "41388c3cae8032d1c8281495eae2b071fac59a82d59bd292e0195b3b451dd629"
 
 
 def _document(path: Path = POSITIVE) -> dict[str, object]:

@@ -7,7 +7,7 @@
     {
       "kind": "upstream_git",
       "repository": "https://github.com/ggml-org/llama.cpp.git",
-      "revision": "1729ed5371cd1ac6f6d6f3226f8803b080042839"
+      "revision": "0a5ac49bce4c42893368585edf3ffb41a38f0108"
     },
     {
       "kind": "upstream_source",
