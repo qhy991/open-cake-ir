@@ -64,6 +64,7 @@ make a successful lowering weaker than the Workload contract.
 ## Next gate
 
 After independent Compiler approval and an exact released gfx1151 Executor exist, compile
-and launch the producer on infplane for every frozen Workload case. Retain source, IR,
-AMDGCN, HSACO, runtime identity, launch count and the complete 576-byte comparison. A
-single byte mismatch stops the path before dot4 or wave tuning.
+and launch the producer on infplane for every frozen Workload case through
+`examples/gpu/llama_q8_1_amd_quickstart.py`. Retain source, IR, AMDGCN, HSACO, runtime
+identity, launch count and both observed/reference 576-byte workspaces. A single byte
+mismatch stops the path before ADR 0042's consumer, dot4 or wave tuning.

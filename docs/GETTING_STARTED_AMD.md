@@ -50,6 +50,18 @@ does not declare per-compute-unit occupancy limits, so accepted AMD Schedules al
 the non-blocking `RESIDENCY_TARGET_UNMODELED` report. That report is a deliberate limit:
 the Compiler does not infer residency, and the GPU measurement remains authoritative.
 
+The live-Q8_1 producer has a separate correctness-only successor runner. Its prepare
+path uses the draft Compiler by default and imports no ROCm runtime:
+
+```bash
+PYTHONPATH=src python3 examples/gpu/llama_q8_1_amd_quickstart.py \
+  --prepare-only
+```
+
+Preparation must report the seven frozen Workload cases, one `grid=[1,1,1]` Triton
+kernel, `num_warps=8`, HIP `gfx1151/wave32`, a UINT8 `[16,36]` output and zero submitted
+GPU work. It proves source construction only.
+
 After an external approval releases v29 and the exact gfx1151 Executor is released, use
 the qualified ROCm Python and new evidence directories outside the checkout:
 
@@ -71,6 +83,24 @@ non-finite counts, launch counts and zero-fallback custody. A draft Compiler rem
 available only to `--prepare-only`; GPU execution requires the externally released
 Compiler and its passing Gate. Each requested live attempt creates an authority receipt
 first and retains either `result.json` or a stage-typed `failure.json`, plus a manifest.
+
+After both Compiler v29 and `open-cake-ir-gfx1151-v1` are independently released, run
+the Q8 producer from a clean checkout with a new evidence root outside it:
+
+```bash
+PYTHONPATH=src /path/to/rocm/python \
+  examples/gpu/llama_q8_1_amd_quickstart.py \
+  --executor runtime/executors/open-cake-ir-gfx1151-v1.json \
+  --evidence-root /new/external/path/gfx1151-q8-producer-v1
+```
+
+The live path refuses a draft or non-canonical Compiler path, a non-gfx1151 schema-v2
+Executor, an Executor that does not custody this runner, a dirty checkout, non-HIP
+runtime, wrong architecture or non-wave32 target before launch. It then launches once
+per frozen case, requires the activation to remain unchanged, checks all 576 output
+bytes and the fifteen zero padding records, records zero fallback, and retains both
+observed/reference workspaces plus generated source, TTIR, TTGIR, LLVM IR, AMDGCN and
+HSACO. It performs no timing and cannot authorize MMVQ or promotion.
 
 ## True-one-row hypothesis
 
@@ -111,4 +141,6 @@ explicit wave32 XOR reductions, precise FP32 division, half-away rounding, typed
 and relation-derived little-endian Q8_1 stores. It passes deterministic source lowering,
 but the v29 approval, exact gfx1151 Executor and on-device 576-byte comparison are still
 pending. The Q4 consumer, dot4 contract, HSACO evidence, timing and promotion claims do
-not yet exist.
+not yet exist. ADR 0042 records the gated consumer design as typed packed Load plus one
+instruction-bound generic Dot and two widening casts; it is not implemented before the
+producer passes real gfx1151 correctness.

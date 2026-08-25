@@ -74,6 +74,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
         } | {
             "examples/gpu/amd_triton_quickstart.py",
             "examples/gpu/flash_kmeans_quickstart.py",
+            "examples/gpu/llama_q8_1_amd_quickstart.py",
             "examples/gpu/rmsnorm_amd_quickstart.py",
             "examples/gpu/rmsnorm_amd_search.py",
             "examples/gpu/swiglu_amd_quickstart.py",
