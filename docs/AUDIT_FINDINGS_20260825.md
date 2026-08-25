@@ -15,7 +15,7 @@ worktree; every conclusion below was reproduced or falsified again on the curren
 | 4 | historical ranking checker duplicates current order | refuted; historical/current split is intentional |
 | 5 | residency provenance was operator-supplied | fixed; host and time derive from the run |
 | 6 | Compiler release writes its own approval | open governance defect |
-| 7 | revision identities cause Study successor churn | open ownership defect |
+| 7 | revision identities cause Study successor churn | fixed by stable templates and exact CampaignLocks |
 | 8 | lowering profile is both routing and workload constraint | open architecture defect |
 | 9 | emitter preconditions were late failures | fixed in Compiler v23 |
 
@@ -53,7 +53,7 @@ preserve those mode bits, so the same check can reject committed archives after 
 `tools/normalize_evidence_custody.py` makes the operational precondition checkable and
 repairs it only under `--apply`; it does not silently manufacture a pass.
 
-The design remains open. A future Executor successor should expose archive replay as
+The design remains open. A later archive-format migration should expose replay as
 “hash-chain verified, filesystem custody not verified” rather than either claiming live
 custody or refusing intact committed evidence. That status must be observable before
 the operational tool can be retired.
@@ -72,12 +72,27 @@ the gate it approves. The Corpus expectations can fail, but the approval is a re
 the same actor's decision, not independent review. Until a distinct reviewer produces
 that artifact, documentation and paper claims must not call it independent evidence.
 
-### 7 and 8: the main remaining paper-level architecture debt
+### 7: stable design templates, exact execution locks
 
-Study contracts inline changing Compiler/Executor identities, so routine revisions mint
-near-identical successors. Separately, `metadata.profile` currently owns backend route,
-entry ABI and bespoke workload conformance. This makes the profile table grow with the
-corpus even though the Schedule body is compositional.
+The defect was reproduced: five current zero-GPU Study fixtures differed from their
+predecessors only because Compiler or Executor identity advanced. ADR 0028 now separates
+stable experimental design from execution authority. A `template` Study has one legal
+revision spelling, `{"binding":"current_release"}`. `Lab.preflight` resolves both
+authorities exactly once; the resulting CampaignLock retains the Study digest plus exact
+Compiler and Executor id, path, and digest. A `frozen` Study still requires exact
+references and cannot follow current state. The two freeze tools replace both bindings
+atomically before emitting a frozen successor.
+
+The five current fixtures are now templates. Historical v37 files were not edited, and an
+Executor release no longer requires five Study copies. This does not pretend that an old
+unexecuted frozen Study verifies against a newer source tree: only terminal evidence earns
+a copied Executor source archive.
+
+### 8: the main remaining paper-level architecture debt
+
+`metadata.profile` currently owns backend route, entry ABI and bespoke workload
+conformance. This makes the profile table grow with the corpus even though the Schedule
+body is compositional.
 
 The minimal next redesign is to separate three existing facts, not add a framework:
 

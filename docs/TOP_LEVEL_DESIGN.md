@@ -315,7 +315,8 @@ only the agent workspace. A compiler evolved from the same task history is an ex
 study may estimate package effectiveness but cannot claim task-naive discovery without a stronger firewall.
 The clean-start reference fixture keeps this boundary concrete without another runtime mode: its Open Cake document
 cannot parse as a complete Schedule and its direct CUDA function body is empty; both references change together in
-one frozen Study successor.
+one frozen Study successor. Stable zero-GPU Study templates defer only Compiler and Executor identity to preflight;
+the exact CampaignLock, never the template, is execution authority.
 For v25+ Runs the rendered bundle itself is also a retained Evidence object on every completed Turn. The Study owns
 what content is permitted; retention proves which bytes crossed the authoring boundary and missing bytes make the
 endpoint unavailable.

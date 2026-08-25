@@ -1,7 +1,7 @@
 # Current-state inventory
 
 Snapshot: 2026-08-25 after declared-domain ranking calibration, candidate-set envelope implementation and live
-system qualification, historical Executor-v10 NCU attribution validation, Executor v26 release and Compiler v21
+system qualification, historical Executor-v10 NCU attribution validation, Executor v27 release and Compiler v23
 KDA-derived primitive expressibility slices. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
@@ -29,8 +29,8 @@ causal effect, serving and paper reproduction are not.
 
 ## New repository state
 
-- Compiler Revision `open-cake-ir-sm100a-v21` binds the exact Target, public Schedule authoring contract, 45-source
-  closure, 29-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
+- Compiler Revision `open-cake-ir-sm100a-v23` binds the exact Target, public Schedule authoring contract, 48-source
+  closure, 32-case Corpus Gate and approval. Externally sealed v2/v3 releases and the last recoverable v4 descriptor
   remain immutable history; v7 and v8 are archived byte-for-byte because retained calibration and Study authorities
   witness them. v9 makes an otherwise-lowerable backend-emitted MMA without an instruction contract a structured,
   candidate-actionable Finding instead of a late emitter exception. v10 similarly makes the pinned Triton backend's
@@ -63,16 +63,20 @@ causal effect, serving and paper reproduction are not.
   accesses, K loop, `mma` and `valid_extent` compose into a ragged grouped-GEMM arithmetic slice that matches
   1,024/1,024 B200 outputs with maximum deviation `1.9073486328125e-06` under `1e-5`. v21 then rejects a scalar
   program coordinate whose derived range exceeds the indexed dimension of another Buffer; this generic safety
-  successor changes no lowering digest. The reviewed KDA snapshot
+  successor changes no lowering digest. v22 adds runtime INT32 Buffer coordinates to the existing AccessMap; the
+  KDA-derived route/combine gather generated, compiled on B200 and matched all 1,024 outputs exactly. v23 moves
+  emitter preconditions into backend preflight and explicitly rejects unsupported CuTe epilogue formulas;
+  TinyGEMM2 now checks its bias/BF16-round formula while truthfully remaining a closed source asset. The reviewed
+  KDA snapshot
   remains 0/57 for complete-version expressibility because routing/group formation, valid-tile work acquisition,
   the second contraction, scatter and the multi-kernel program DAG are still absent; no KDA performance claim is
   made.
-- Current Executor Revision `open-cake-ir-b200-v26` binds 34 runtime sources, including deterministic external
+- Current Executor Revision `open-cake-ir-b200-v27` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
   and no-GPU Triton-to-CUBIN qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor.
   The Executor pins NCU 2026.1.1.0 by path, bytes and size. G8 r6 retains its exact v1 closure, later source baselines
-  retain v2–v5, and v6–v25 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all twenty-six revisions. v19
+  retain v2–v5, and v6–v26 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all twenty-seven revisions. v19
   normalizes the observed same-path delete/add replacement lifecycle to the single canonical resumed update, while
   rejecting different paths, orderings and kinds. v20 routes a measured order inversion to the cost model only when
   complete released cost coverage actually ordered the candidate set; provider order with null costs no longer
@@ -85,15 +89,18 @@ causal effect, serving and paper reproduction are not.
   diagnosis projections from retained authorities; v24 makes reasoning effort an explicit, qualification-bound
   treatment factor shared by both arms. v25 retains the exact rendered authoring bundle as a replay-checked Evidence
   object for every completed provider Turn and makes its absence a harness fault. v26 adds only the public CLI
-  projection of the Compiler-owned generation fact. The Lab makes Claim Scope the
+  projection of the Compiler-owned generation fact. v27 separates stable Study templates from exact execution:
+  preflight resolves current Compiler/Executor references into the CampaignLock, while frozen Studies never follow
+  inventory state. The Lab makes Claim Scope the
   single authority for choosing the
   closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
-- Current matched Study v31 fixtures bind Compiler v16 and Executor v26, profile every correctness-qualified search
+- Five current Study templates resolve Compiler v23 and Executor v27 into exact CampaignLocks without revision-only
+  Study successors. The matched templates profile every correctness-qualified search
   survivor through the existing no-timing attribution purpose, and feed back only the selected survivor's checked
   projection. Frozen selected-only evidence
   retains its earlier operation spelling; the current live v3 successor now passes this relation on B200 for both
-  selected and non-selected survivors in both arms. A separate v31 reference fixture pairs an operation-free Open
+  selected and non-selected survivors in both arms. The clean-start reference template pairs an operation-free Open
   Cake interface with an empty-body CUDA ABI starter; it validates reference access only and retains the local
   150k/`max` factors rather than claiming paper alignment.
 - Workload Contracts own Flash-KMeans and TinyGEMM2 semantics/oracles.
@@ -111,7 +118,7 @@ causal effect, serving and paper reproduction are not.
   investigate read-only and the primary thread alone writes the envelope. Live two-arm provider qualification and a
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema and fresh-process replay.
-- The current local contract suite passes 370 tests, including its parameterized contract cases; the earlier remote qualification passed its
+- The current local contract suite passes 383 tests and 322 parameterized subtests; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain

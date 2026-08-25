@@ -167,6 +167,6 @@ lock = json.loads(pathlib.Path("compiler/revision.lock.json").read_text())
 canonical = json.dumps(lock, sort_keys=True, separators=(",", ":"),
                        ensure_ascii=False).encode()
 print(f"    {lock['revision_id']} -> {hashlib.sha256(canonical).hexdigest()[:16]}")
-print("    create successor Study Contracts explicitly; frozen contracts were unchanged")
+print("    Study templates resolve current; frozen contracts were unchanged")
 PY
 echo "--- done ---"

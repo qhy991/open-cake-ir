@@ -5,7 +5,7 @@
 #
 # An Executor Revision binds every Lab, Evaluation, and Evidence source byte, so any edit
 # to that closure invalidates the released descriptor. This settles and releases the id;
-# frozen Study Contracts consume it only through explicit successors.
+# templates resolve it during preflight, while frozen Study Contracts remain unchanged.
 #
 # The id is derived, not passed, on the same rule the Compiler cycle uses: a Revision that
 # any frozen artifact names is history and immutable, and one nothing names is a working
@@ -149,6 +149,6 @@ if (
     inventory["superseded"].append(previous)
 inventory["superseded"].sort(key=lambda entry: entry["executor_id"])
 inventory_path.write_text(json.dumps(inventory, indent=2, sort_keys=True) + "\n")
-print("    create successor Study Contracts explicitly; frozen contracts were unchanged")
+print("    Study templates resolve current; frozen contracts were unchanged")
 PY
 echo "--- done ---"

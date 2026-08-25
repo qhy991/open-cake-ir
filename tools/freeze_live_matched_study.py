@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "src"))
 
+from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.lab import (  # noqa: E402
     ExecutorRevision,
     Lab,
@@ -142,7 +143,7 @@ def main() -> int:
     )
     if (
         study.get("kind") != "matched_search"
-        or study.get("state") != "frozen"
+        or study.get("state") not in {"template", "frozen"}
     ):
         raise ValueError("live matched Study template policy differs")
     if study.get("claim_scope") == "scientific_matched_search":
@@ -200,6 +201,15 @@ def main() -> int:
         raise ValueError("qualified provider executable differs")
 
     arms = _object(study["arms"], "study.arms")
+    compiler = Compiler.load(root, root / "compiler/revision.lock.json")
+    gate = compiler.check_corpus()
+    if compiler.state != "released" or not gate.passed:
+        raise ValueError("live Study requires the current gated Compiler release")
+    _object(arms["open_cake"], "study.arms.open_cake")["compiler_revision"] = {
+        "revision_id": gate.compiler_revision_id,
+        "path": "compiler/revision.lock.json",
+        "canonical_sha256": gate.compiler_revision_sha256,
+    }
     for arm_name in ("open_cake", "direct_cuda"):
         arm = _object(arms[arm_name], f"study.arms.{arm_name}")
         provider = _object(arm["provider"], f"study.arms.{arm_name}.provider")
@@ -272,6 +282,7 @@ def main() -> int:
                 raise ValueError("Study attribution feedback authority differs")
             if "profile" not in feedback:
                 feedback.append("profile")
+    study["state"] = "frozen"
     study["study_id"] = arguments.study_id
 
     output.parent.resolve(strict=True)

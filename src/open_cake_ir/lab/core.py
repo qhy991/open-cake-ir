@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
-from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler import Compiler, CorpusGateReport
 from open_cake_ir.evaluation import (
     CudaLaunchManifest,
     EvaluationReceipt,
@@ -42,6 +42,7 @@ from .providers import (
 )
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_CURRENT_RELEASE_BINDING = {"binding": "current_release"}
 _ARM_ARTIFACT_ROLES = {
     "open_cake": {
         "lowered_source",
@@ -343,6 +344,86 @@ def _validate_executor_revision(
     ):
         raise ValueError(f"{context} Executor Revision differs")
     return revision
+
+
+def _resolve_executor_reference(
+    root: Path,
+    value: object,
+    context: str,
+    *,
+    template: bool,
+) -> dict[str, object]:
+    """Resolve the one Executor spelling allowed by this Study state."""
+
+    reference = _object(value, f"{context}.executor_revision")
+    if template:
+        if reference != _CURRENT_RELEASE_BINDING:
+            raise ValueError("Study template Executor binding differs")
+        inventory = _object(
+            json.loads((root / "inventory/EXECUTOR_REVISIONS.json").read_text()),
+            "Executor inventory",
+        )
+        current = _object(inventory.get("current"), "current Executor")
+        exact = {
+            field: current[field]
+            for field in ("executor_id", "path", "canonical_sha256")
+        }
+    else:
+        if reference == _CURRENT_RELEASE_BINDING:
+            raise ValueError("frozen Study cannot follow the current Executor")
+        exact = dict(reference)
+    _validate_executor_revision(
+        root,
+        {"executor_revision": exact},
+        context,
+    )
+    return exact
+
+
+def _resolve_compiler_reference(
+    root: Path,
+    value: object,
+    context: str,
+    *,
+    template: bool,
+) -> tuple[CorpusGateReport, str, dict[str, object]]:
+    """Resolve a template binding or verify one frozen Compiler reference."""
+
+    reference = _object(value, context)
+    if template:
+        if reference != _CURRENT_RELEASE_BINDING:
+            raise ValueError("Study template Compiler binding differs")
+        relative = "compiler/revision.lock.json"
+        path = (root / relative).resolve(strict=True)
+    else:
+        if reference == _CURRENT_RELEASE_BINDING:
+            raise ValueError("frozen Study cannot follow the current Compiler")
+        if set(reference) not in (
+            {"path", "canonical_sha256"},
+            {"path", "canonical_sha256", "revision_id"},
+        ):
+            raise ValueError("Compiler Revision reference fields differ")
+        relative, path = _project_path(root, reference["path"], f"{context}.path")
+
+    compiler = Compiler.load(root, path)
+    gate = compiler.check_corpus()
+    if compiler.state != "released" or not gate.passed:
+        raise ValueError("Study Contract requires a released gated Compiler Revision")
+    if not template and (
+        gate.compiler_revision_sha256
+        != _digest(reference["canonical_sha256"], f"{context}.canonical_sha256")
+        or (
+            "revision_id" in reference
+            and reference["revision_id"] != gate.compiler_revision_id
+        )
+    ):
+        raise ValueError("Study Contract Compiler Revision differs")
+    exact = {
+        "revision_id": gate.compiler_revision_id,
+        "path": relative,
+        "canonical_sha256": gate.compiler_revision_sha256,
+    }
+    return gate, relative, exact
 
 
 def _evaluation_receipt_document(receipt: EvaluationReceipt) -> dict[str, object]:
@@ -1126,6 +1207,7 @@ class StudyContract:
     document: Mapping[str, object]
     source_path: Path
     study_id: str
+    state: str
     canonical_sha256: str
 
     @classmethod
@@ -1138,8 +1220,12 @@ class StudyContract:
         fields = _STUDY_FIELDS if kind == "matched_search" else _PORTFOLIO_STUDY_FIELDS
         if set(document) != fields or document.get("schema_version") != 1:
             raise ValueError("study root fields or schema_version differ")
-        if document.get("state") != "frozen" or kind not in {"matched_search", "portfolio"}:
-            raise ValueError("only frozen matched_search or portfolio studies are supported")
+        state = document.get("state")
+        if state not in {"template", "frozen"} or kind not in {
+            "matched_search",
+            "portfolio",
+        }:
+            raise ValueError("Study state or kind differs")
         study_id = _name(document.get("study_id"), "study.study_id")
         claim_scope = _name(document.get("claim_scope"), "study.claim_scope")
         if kind == "matched_search" and claim_scope not in _MATCHED_CLAIM_SCOPES:
@@ -1177,6 +1263,7 @@ class StudyContract:
             document=detached,
             source_path=source,
             study_id=study_id,
+            state=cast(str, state),
             canonical_sha256=sha256(_canonical_json_bytes(document)).hexdigest(),
         )
 
@@ -1887,36 +1974,14 @@ class Lab:
             *profile_feedback,
         ]:
             raise ValueError("Study Contract Authoring Environment feedback differs")
-        compiler_ref = _object(
-            open_cake.get("compiler_revision"), "study.arms.open_cake.compiler_revision"
-        )
-        if set(compiler_ref) not in (
-            {"path", "canonical_sha256"},
-            {"path", "canonical_sha256", "revision_id"},
-        ):
-            raise ValueError("Compiler Revision reference fields differ")
-        compiler_relative, compiler_path = _project_path(
-            self._root,
-            compiler_ref.get("path"),
-            "study.arms.open_cake.compiler_revision.path",
-        )
-        compiler = Compiler.load(self._root, compiler_path)
-        if compiler.state != "released":
-            raise ValueError("Study Contract requires a released Compiler Revision")
-        gate = compiler.check_corpus()
-        compiler_sha = _digest(
-            compiler_ref.get("canonical_sha256"),
-            "study.arms.open_cake.compiler_revision.canonical_sha256",
-        )
-        if (
-            not gate.passed
-            or gate.compiler_revision_sha256 != compiler_sha
-            or (
-                "revision_id" in compiler_ref
-                and compiler_ref["revision_id"] != gate.compiler_revision_id
+        gate, compiler_relative, compiler_reference = (
+            _resolve_compiler_reference(
+                self._root,
+                open_cake.get("compiler_revision"),
+                "study.arms.open_cake.compiler_revision",
+                template=study.state == "template",
             )
-        ):
-            raise ValueError("Study Contract Compiler Revision differs or fails its Corpus Gate")
+        )
 
         allocation = _object(study.document.get("allocation"), "study.allocation")
         order = allocation.get("order")
@@ -2028,7 +2093,12 @@ class Lab:
             execution.get("broker_execution_sha256"),
             "study.execution.broker_execution_sha256",
         )
-        _validate_executor_revision(self._root, execution, "study.execution")
+        executor_reference = _resolve_executor_reference(
+            self._root,
+            execution.get("executor_revision"),
+            "study.execution",
+            template=study.state == "template",
+        )
         gpu = _object(execution.get("gpu"), "study.execution.gpu")
         if gpu != {"name": "NVIDIA B200", "count": 1, "mode": "exclusive"}:
             raise ValueError("Study Contract GPU admission differs")
@@ -2047,9 +2117,19 @@ class Lab:
         evidence_policy = _object(study.document.get("evidence"), "study.evidence")
         _matched_evidence_policy_version(evidence_policy, "study.evidence")
 
+        resolved_arms = cast(
+            dict[str, object], json.loads(_canonical_json_bytes(arms))
+        )
+        _object(
+            resolved_arms["open_cake"], "resolved open_cake arm"
+        )["compiler_revision"] = compiler_reference
+        resolved_execution = cast(
+            dict[str, object], json.loads(_canonical_json_bytes(execution))
+        )
+        resolved_execution["executor_revision"] = executor_reference
         arm_digests = {
             name: sha256(_canonical_json_bytes(value)).hexdigest()
-            for name, value in (("open_cake", open_cake), ("direct_cuda", direct_cuda))
+            for name, value in resolved_arms.items()
         }
         lock_document: dict[str, object] = {
             "schema_version": 1,
@@ -2070,7 +2150,7 @@ class Lab:
                 "canonical_sha256": gate.compiler_revision_sha256,
             },
             "resolved_inputs": {
-                "arm_environments": arms,
+                "arm_environments": resolved_arms,
                 "arm_environment_sha256": arm_digests,
                 "budget": budget,
                 "run_protocol": run_protocol,
@@ -2078,7 +2158,7 @@ class Lab:
             },
             "run_order": list(run_order),
             "evaluation_protocol": evaluation,
-            "execution": execution,
+            "execution": resolved_execution,
             "analysis_plan": analysis,
             "analysis_plan_sha256": sha256(_canonical_json_bytes(analysis)).hexdigest(),
         }
@@ -2108,30 +2188,14 @@ class Lab:
         ):
             raise ValueError("portfolio Workload bytes differ")
 
-        compiler_ref = _object(study.document["compiler_revision"], "study.compiler_revision")
-        if set(compiler_ref) not in (
-            {"path", "canonical_sha256"},
-            {"path", "canonical_sha256", "revision_id"},
-        ):
-            raise ValueError("portfolio Compiler Revision reference differs")
-        compiler_relative, compiler_path = _project_path(
-            self._root, compiler_ref["path"], "study.compiler_revision.path"
-        )
-        compiler = Compiler.load(self._root, compiler_path)
-        gate = compiler.check_corpus()
-        compiler_sha = _digest(
-            compiler_ref["canonical_sha256"], "study.compiler_revision.canonical_sha256"
-        )
-        if (
-            compiler.state != "released"
-            or not gate.passed
-            or gate.compiler_revision_sha256 != compiler_sha
-            or (
-                "revision_id" in compiler_ref
-                and compiler_ref["revision_id"] != gate.compiler_revision_id
+        gate, compiler_relative, _compiler_reference = (
+            _resolve_compiler_reference(
+                self._root,
+                study.document["compiler_revision"],
+                "study.compiler_revision",
+                template=study.state == "template",
             )
-        ):
-            raise ValueError("portfolio requires the exact released Compiler Revision")
+        )
 
         seed_ref = _object(study.document["kernel_seed"], "study.kernel_seed")
         if set(seed_ref) != {"path", "canonical_sha256"}:
@@ -2213,7 +2277,12 @@ class Lab:
             raise ValueError("portfolio execution fields differ")
         if execution.get("target") != "sm_100a" or execution.get("sandbox") != "workspace-write":
             raise ValueError("portfolio execution target or sandbox differs")
-        _validate_executor_revision(self._root, execution, "study.execution")
+        executor_reference = _resolve_executor_reference(
+            self._root,
+            execution.get("executor_revision"),
+            "study.execution",
+            template=study.state == "template",
+        )
         if _object(execution.get("gpu"), "study.execution.gpu") != {
             "name": "NVIDIA B200",
             "count": 1,
@@ -2245,6 +2314,10 @@ class Lab:
         }:
             raise ValueError("portfolio Evidence policy differs")
 
+        resolved_execution = cast(
+            dict[str, object], json.loads(_canonical_json_bytes(execution))
+        )
+        resolved_execution["executor_revision"] = executor_reference
         lock_document: dict[str, object] = {
             "schema_version": 1,
             "study": {
@@ -2276,7 +2349,7 @@ class Lab:
             },
             "run_order": ["portfolio-1"],
             "evaluation_protocol": evaluation,
-            "execution": execution,
+            "execution": resolved_execution,
             "analysis_plan": analysis,
             "analysis_plan_sha256": sha256(_canonical_json_bytes(analysis)).hexdigest(),
         }
