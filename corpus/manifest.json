@@ -526,6 +526,60 @@
         "schedule_sha256": "f00f3164e5bc1c469eb97ba152381dc99c59b7ac26b45b0f6a4a6238af2903c0",
         "lowering_source_sha256": "ebef90d87902a554081204f6097a865ea62863f693ecd917a7c81696257eb79c"
       }
+    },
+    {
+      "case_id": "packed-q4_0-record-copy-gfx1151-accepted",
+      "schedule": "corpus/schedules/packed-q4_0-record-copy-gfx1151.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_TARGET_UNMODELED"
+        ],
+        "schedule_sha256": "b5ecb6e8d0522dd4f8aec5cb043b9787690439a24752e741d0d8d53dbc901f81",
+        "lowering_source_sha256": "9afe4ab2064134a5e2d80440d0475cc4d68dc25f2985a8703ec2a1f7046185fa"
+      }
+    },
+    {
+      "case_id": "packed-q8_1-record-copy-gfx1151-accepted",
+      "schedule": "corpus/schedules/packed-q8_1-record-copy-gfx1151.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_TARGET_UNMODELED"
+        ],
+        "schedule_sha256": "a8f351d5b19e164ef1adfa5eb809d6ce304253676eaaef17d97c253d3c6b37e6",
+        "lowering_source_sha256": "6f4ca852bb00a9991c9545c5eed0d1c23d9fc05386a9213d4361b4b3252a3569"
+      }
+    },
+    {
+      "case_id": "int8-byte-copy-gfx1151-accepted",
+      "schedule": "corpus/schedules/int8-byte-copy-gfx1151.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_TARGET_UNMODELED"
+        ],
+        "schedule_sha256": "2ea00edf1cba12b22c281d4126b8e16e5961cf68699e509af02972cd30b67d18",
+        "lowering_source_sha256": "ccea5a074dc2c97e67c21d059a1e65a40c40e3936d01270a4f989b1c4b2f2b78"
+      }
+    },
+    {
+      "case_id": "packed-q8_1-direct-dimension-gfx1151-unsupported",
+      "schedule": "corpus/schedules/packed-q8_1-direct-dimension-gfx1151-unsupported.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_TARGET_UNMODELED",
+          "TRITON_ARANGE_EXTENT_UNSUPPORTED",
+          "TRITON_ARANGE_EXTENT_UNSUPPORTED"
+        ],
+        "schedule_sha256": "99cc36d2b9f9179576201a46f00d4599010f8b2d13a67aaa31fc428b02853fff",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

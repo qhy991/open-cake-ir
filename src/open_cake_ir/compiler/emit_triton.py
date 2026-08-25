@@ -37,6 +37,8 @@ from .ir import (
 from .target import Target
 
 _TL_DTYPE = {
+    DType.UINT8: "tl.uint8",
+    DType.INT8: "tl.int8",
     DType.BF16: "tl.bfloat16",
     DType.FP16: "tl.float16",
     DType.FP32: "tl.float32",
@@ -45,6 +47,8 @@ _TL_DTYPE = {
 }
 
 _TORCH_DTYPE = {
+    DType.UINT8: "torch.uint8",
+    DType.INT8: "torch.int8",
     DType.BF16: "torch.bfloat16",
     DType.FP16: "torch.float16",
     DType.FP32: "torch.float32",
@@ -118,6 +122,81 @@ SUPPORTED_OPERATION_KINDS = frozenset(OUTSIDE_LOOP_EMITTERS) | frozenset(
 _ATOMIC_RMW_CONTRACT = "triton.atomic_add.i32.relaxed.gpu"
 
 
+def _is_power_of_two(value: int) -> bool:
+    return value > 0 and (value & (value - 1)) == 0
+
+
+def _arange_preconditions(schedule: Schedule) -> tuple[BackendPrecondition, ...]:
+    """Refuse every declared extent that would become an invalid ``tl.arange``.
+
+    Program axes used only as scalar ``program`` coordinates do not create a range.
+    ``program_tile`` axes create one shared range, full ``dimension`` accesses create one
+    range per Buffer axis, and each TileLoop creates its own tiled range.  Keeping the
+    check on those exact sites avoids rejecting an unrelated non-power-of-two shape.
+    """
+
+    failures: list[BackendPrecondition] = []
+
+    def add(value: int, path: str, owner: str) -> None:
+        if _is_power_of_two(value):
+            return
+        failures.append(
+            BackendPrecondition(
+                "TRITON_ARANGE_EXTENT_UNSUPPORTED",
+                path,
+                "the Triton backend requires every emitted tl.arange range to be a "
+                f"power of two; {owner} has extent {value}; use a power-of-two tile "
+                "and mask_tiled_axes for the tail",
+            )
+        )
+
+    program_tile_axes = {
+        component.name
+        for access in schedule.access_maps
+        for component in access.indices
+        if component.source is AccessIndexKind.PROGRAM_TILE
+    }
+    if schedule.program_map is not None:
+        for index, axis in enumerate(schedule.program_map.axes):
+            if axis.name in program_tile_axes:
+                add(
+                    axis.tile,
+                    f"program_map.axes[{index}].tile",
+                    f"program tile {axis.name!r}",
+                )
+
+    seen_dimensions: set[tuple[str, int]] = set()
+    for access in schedule.access_maps:
+        buffer = schedule.buffer(access.buffer)
+        if buffer is None:
+            continue
+        buffer_index = schedule.buffers.index(buffer)
+        for component in access.indices:
+            if component.source is not AccessIndexKind.DIMENSION:
+                continue
+            dimension = component.dimension
+            if dimension is None or not 0 <= dimension < len(buffer.shape):
+                continue
+            key = (buffer.name, dimension)
+            if key in seen_dimensions:
+                continue
+            seen_dimensions.add(key)
+            add(
+                buffer.shape[dimension],
+                f"buffers[{buffer_index}].shape[{dimension}]",
+                f"buffer {buffer.name!r} dimension {dimension}",
+            )
+
+    for index, loop in enumerate(schedule.tile_loops):
+        add(
+            loop.tile,
+            f"tile_loops[{index}].tile",
+            f"tile loop {loop.name!r}",
+        )
+
+    return tuple(failures)
+
+
 def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, ...]:
     """Return the constructor's backend-owned lowering requirements.
 
@@ -156,6 +235,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         "roles",
         "the Triton backend requires exactly one role",
     )
+    findings.extend(_arange_preconditions(schedule))
 
     counts = {
         kind: sum(operation.kind is kind for operation in schedule.operations)
@@ -637,6 +717,8 @@ class _TritonEmitter:
         )
 
     _POINTER = {
+        DType.UINT8: "*u8",
+        DType.INT8: "*i8",
         DType.BF16: "*bf16",
         DType.FP16: "*fp16",
         DType.FP32: "*fp32",

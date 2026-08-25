@@ -100,3 +100,11 @@ token trajectory or serving result. No candidate is promoted without the frozen
 correctness/noise/materiality gates and profiler evidence. The next planned AMD direction
 after this bounded result is the complete Q4_0/Q8_1 MMVQ path, including activation
 quantization and packed scale/sum semantics—not an opaque block-dot primitive.
+
+ADR 0039 now freezes the first dependency-free Q4 conformance boundary: one raw 18-byte
+Q4_0 block plus one FP32 activation block, a byte-exact live-produced 576-byte padded
+Q8_1 workspace (one consumed record plus 15 zero records), and the source-ordered
+two-part stored-s correction oracle. This is
+Workload/oracle evidence only. ADR 0040 adds raw UINT8/INT8 storage and exact Q4/Q8
+record custody, but the Compiler still lacks decode/encode, round/cast/select and dot4
+primitives, so no Q4 compute Schedule, HSACO, timing or promotion claim exists yet.

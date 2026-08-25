@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "workload_id": "llama-q4_0-q8_1-mmvq-f32-conformance-v1",
+  "revision": "1",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "upstream_git",
+      "repository": "https://github.com/ggml-org/llama.cpp.git",
+      "revision": "1729ed5371cd1ac6f6d6f3226f8803b080042839"
+    },
+    {
+      "kind": "upstream_source",
+      "path": "ggml/src/ggml-common.h",
+      "sha256": "af255601767325f087313fa84b9435cb77aeec37df6b61b98d9ecc65f29fb4a0",
+      "symbols": ["block_q4_0", "block_q8_1"]
+    },
+    {
+      "kind": "upstream_source",
+      "path": "ggml/src/ggml-quants.c",
+      "sha256": "07143d7068936ae46b3c528b2f3d4bbb666e74d88992165716174d243573965d",
+      "symbols": ["quantize_row_q4_0_ref", "dequantize_row_q4_0"]
+    },
+    {
+      "kind": "upstream_source",
+      "path": "ggml/src/ggml-cuda/quantize.cu",
+      "sha256": "71cd7baab62ee1f457d23ae648c381d18b9b1327ec34832f31463b14b81895b3",
+      "symbols": ["quantize_q8_1", "quantize_row_q8_1_cuda"]
+    },
+    {
+      "kind": "upstream_source",
+      "path": "ggml/src/ggml-cuda/vecdotq.cuh",
+      "sha256": "2d6a6ce1a60eed1e80912e6a76ef480bd2ef0648a1d7da1a10fae49ee2c27bb6",
+      "symbols": ["vec_dot_q4_0_q8_1_impl", "vec_dot_q4_0_q8_1"]
+    },
+    {
+      "kind": "upstream_source",
+      "path": "ggml/src/ggml-cuda/common.cuh",
+      "sha256": "af2bf79c832015090f186ae8aca2a7af4343cc9d9b9d52ed09060a6728692b87",
+      "symbols": ["ggml_cuda_dp4a"]
+    },
+    {
+      "kind": "upstream_source",
+      "path": "ggml/src/ggml-cuda/mmvq.cu",
+      "sha256": "6c8a629f890f64c8a514555326049df356e946d4091d3e22aa3f5f7403803b3b",
+      "symbols": ["mul_mat_vec_q", "ggml_cuda_mul_mat_vec_q"]
+    }
+  ],
+  "operator": "llama_q4_0_q8_1_mmvq_f32",
+  "cases": [
+    {
+      "case_id": "seeded_random",
+      "shape": {"N": 1, "M": 1, "K": 32},
+      "seed": 20260825,
+      "mode": "seeded_random_q4_and_activation"
+    },
+    {
+      "case_id": "stored_sum_correction_stress",
+      "shape": {"N": 1, "M": 1, "K": 32},
+      "seed": null,
+      "mode": "constructed_stored_sum_correction_stress"
+    },
+    {
+      "case_id": "zero_scale",
+      "shape": {"N": 1, "M": 1, "K": 32},
+      "seed": null,
+      "mode": "constructed_zero_scale"
+    },
+    {
+      "case_id": "roundf_boundary",
+      "shape": {"N": 1, "M": 1, "K": 32},
+      "seed": null,
+      "mode": "constructed_roundf_half_away_boundary"
+    },
+    {
+      "case_id": "xor_tree_sum",
+      "shape": {"N": 1, "M": 1, "K": 32},
+      "seed": null,
+      "mode": "constructed_xor_tree_sum_discriminator"
+    },
+    {
+      "case_id": "partial_rounding",
+      "shape": {"N": 1, "M": 1, "K": 32},
+      "seed": 1,
+      "mode": "seeded_partial_rounding_discriminator"
+    },
+    {
+      "case_id": "q4_zero_scale",
+      "shape": {"N": 1, "M": 1, "K": 32},
+      "seed": null,
+      "mode": "constructed_q4_zero_scale"
+    }
+  ],
+  "tensors": {
+    "activation": {
+      "shape": ["K"],
+      "dtype": "fp32",
+      "layout": "contiguous",
+      "finite_only": true,
+      "public_input": true
+    },
+    "weight_q4_0": {
+      "shape": [18],
+      "dtype": "uint8",
+      "layout": "ggml_q4_0_v1",
+      "public_input": true
+    },
+    "q8_1_workspace": {
+      "shape": [576],
+      "dtype": "uint8",
+      "layout": "ggml_q8_1_v1",
+      "public_input": false
+    },
+    "output": {
+      "shape": ["M"],
+      "dtype": "fp32",
+      "layout": "contiguous",
+      "public_input": false
+    }
+  },
+  "semantics": {
+    "definition": "live_q8_1(activation_fp32) then q4_0_x_q8_1_mmvq to fp32",
+    "claim_scope": "one_block_two_kernel_correctness_conformance_only",
+    "block_size": 32,
+    "q4_0_record": {
+      "size_bytes": 18,
+      "scale": "fp16 at byte 0",
+      "payload": "16 uint8 at byte 2",
+      "logical_order": "low nibble -> j; high nibble -> 16+j",
+      "zero_point": 8,
+      "scale_finite": true
+    },
+    "q8_1_record": {
+      "size_bytes": 36,
+      "scale": "fp16 at byte 0",
+      "stored_sum": "fp16 at byte 2",
+      "payload": "32 int8 at byte 4"
+    },
+    "q8_1_workspace": {
+      "logical_k": 32,
+      "padded_k": 512,
+      "record_count": 16,
+      "consumer_record_count": 1,
+      "padding_records": "15 all-zero Q8_1 records"
+    },
+    "q8_quantization": {
+      "amax": "wave32 max(abs(fp32 x))",
+      "sum": "wave32 xor-tree fp32 sum(original x)",
+      "quant_scale": "fp32 amax / 127",
+      "rounding": "roundf nearest with halfway away from zero",
+      "zero_case": "amax == 0 produces d=0,s=0,q=0",
+      "stored_scale": "fp16(quant_scale)",
+      "stored_sum": "fp16(sum(original x))"
+    },
+    "stored_sum": "fp16(warp_tree_fp32_sum(original_x))",
+    "partial_indices": ["0..7 plus 16..23", "8..15 plus 24..31"],
+    "partial_result": "fp32(d4) * (fp32(partial_sumi) * fp32(d8) - 4 * fp32(s8))",
+    "block_result": "fp32(partial_iqs0 + partial_iqs2)",
+    "public_q8_input": "forbidden",
+    "required_kernel_sequence": ["fp32_to_q8_1", "q4_0_x_q8_1_mmvq"],
+    "performance_measured": false,
+    "llama_cpp_build_claim": false,
+    "llama_cpp_e2e_claim": false
+  },
+  "oracle": {
+    "kind": "stdlib_source_ordered_ggml_q4_0_live_q8_1_block32",
+    "source_sha256": "392b388757aa2fb71fd008bdabf4b88c83e6aba50acdcc44e26212e592f1f11d"
+  },
+  "validation": {
+    "canonical": "byte_exact_q8_1_workspace_and_tolerant_fp32_block_output",
+    "q8_1_workspace": "all 576 bytes exact: consumed block plus 15 zero padding blocks",
+    "atol": 0.000005,
+    "rtol": 0.000005,
+    "required_kernel_launches": 2,
+    "fallback_calls": 0,
+    "performance_measured": false,
+    "promotion_authorized": false
+  }
+}

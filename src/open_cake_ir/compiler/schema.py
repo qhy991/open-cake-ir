@@ -34,6 +34,7 @@ from .ir import (
     OperandMajorMode,
     OperandSource,
     OperationKind,
+    PackedBlockFormat,
     ReduceOp,
     ReductionScope,
     Swizzle,
@@ -410,6 +411,12 @@ def schedule_schema() -> dict[str, Any]:
                         "byte_offset": _NONNEGATIVE,
                         "stages": _POSITIVE,
                         "swizzle": _enum(Swizzle),
+                        "packed_block": _object(
+                            {
+                                "format": _enum(PackedBlockFormat),
+                                "record_axis": _NONNEGATIVE,
+                            }
+                        ),
                         "scale_of": _object(
                             {
                                 "buffer": _NAME,

@@ -16,6 +16,13 @@ Assessment projects them into lowering-blocking Findings before `lower`; a backe
 not silently reinterpret an unsupported epilogue formula or wait for emission to reject
 its role, loop, pipeline, operation-count, load-movement or descriptor requirements.
 Register findings are static bounds over declared logical storage, never a claim about ptxas's physical allocation.
+A `packed_block` relation binds the contiguous last axis of a raw UINT8 Buffer to one
+closed mechanical record ABI. `ggml_q4_0_v1` is 18 bytes with 2-byte alignment;
+`ggml_q8_1_v1` is 36 bytes with 4-byte alignment because its d/s union contains a
+`half2`. The registry owns field offsets, scalar field types, logical extent 32 and Q4
+physical nibble-to-logical order. This relation proves raw-byte custody only: it does not
+decode nibbles, quantize Q8, select an integer-dot instruction or authorize MMVQ. INT8
+and UINT8 remain ordinary one-byte scalar storage types; Q4_0 is not a scalar DType.
 A block scale is an FP32 Buffer with one `scale_of` relation. `granularity` is written in
 the FP8 data buffer's axis order; `axis_order` is the full permutation that gives the
 scale buffer's physical grouped-axis order. The Compiler derives the scale shape and

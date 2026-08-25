@@ -918,6 +918,75 @@ _ELEMENTWISE_INSTRUCTION_DTYPES = {
 }
 
 
+def _verify_packed_block_relations(schedule: Schedule, out: _Collector) -> None:
+    """Hold raw Buffer storage to its declared packed-record ABI."""
+
+    category = FindingCategory.DATA_CONSISTENCY
+    for index, buffer in enumerate(schedule.buffers):
+        relation = buffer.packed_block
+        if relation is None:
+            continue
+        path = f"buffers[{index}]"
+        contract = relation.contract
+        if buffer.dtype is not DType.UINT8:
+            out.add(
+                "PACKED_BLOCK_DTYPE",
+                f"{path}.dtype",
+                f"packed record {buffer.name!r} must use raw uint8 storage, not "
+                f"{buffer.dtype.value}",
+                category,
+            )
+        if relation.record_axis >= len(buffer.shape):
+            out.add(
+                "PACKED_BLOCK_RECORD_AXIS",
+                f"{path}.packed_block.record_axis",
+                f"packed record axis {relation.record_axis} is outside "
+                f"{buffer.name!r}, which has {len(buffer.shape)} dimension(s)",
+                category,
+            )
+        elif relation.record_axis != len(buffer.shape) - 1:
+            out.add(
+                "PACKED_BLOCK_RECORD_AXIS",
+                f"{path}.packed_block.record_axis",
+                f"packed record bytes must occupy the contiguous last axis of "
+                f"{buffer.name!r}, not axis {relation.record_axis}",
+                category,
+            )
+        elif buffer.shape[relation.record_axis] != contract.record_bytes:
+            out.add(
+                "PACKED_BLOCK_RECORD_EXTENT",
+                f"{path}.shape[{relation.record_axis}]",
+                f"{relation.format.value} requires {contract.record_bytes} record "
+                f"bytes, but {buffer.name!r} declares "
+                f"{buffer.shape[relation.record_axis]}",
+                category,
+            )
+        if buffer.stages != 1:
+            out.add(
+                "PACKED_BLOCK_STAGES",
+                f"{path}.stages",
+                f"packed raw storage has one physical record per index, but "
+                f"{buffer.name!r} declares {buffer.stages} stages",
+                category,
+            )
+        if buffer.byte_offset % contract.record_alignment_bytes:
+            out.add(
+                "PACKED_BLOCK_ALIGNMENT",
+                f"{path}.byte_offset",
+                f"{relation.format.value} requires {contract.record_alignment_bytes}-byte "
+                f"record alignment, but {buffer.name!r} starts at {buffer.byte_offset}",
+                category,
+            )
+        if buffer.scale_of is not None:
+            out.add(
+                "PACKED_BLOCK_SCALE_CONFLICT",
+                f"{path}.packed_block",
+                f"packed record {buffer.name!r} already owns its metadata fields and "
+                "cannot also be an FP8 scale relation",
+                category,
+            )
+
+
 _ARITY = {
     OperationKind.LOAD: (1, 1, "load"),
     OperationKind.MMA: (2, 1, "mma"),
@@ -1149,6 +1218,7 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     roles = {role.name for role in schedule.roles}
     pipelines = {pipeline.name for pipeline in schedule.pipelines}
 
+    _verify_packed_block_relations(schedule, out)
     _verify_scale_relations(schedule, buffers, out)
     _verify_valid_extents(schedule, buffers, out)
 

@@ -40,6 +40,8 @@ from .target import Target
 
 
 _CUTLASS_DTYPE = {
+    DType.UINT8: "cutlass.Uint8",
+    DType.INT8: "cutlass.Int8",
     DType.BF16: "cutlass.BFloat16",
     DType.FP16: "cutlass.Float16",
     DType.FP32: "cutlass.Float32",
@@ -48,6 +50,8 @@ _CUTLASS_DTYPE = {
 }
 
 _TORCH_DTYPE = {
+    DType.UINT8: "torch.uint8",
+    DType.INT8: "torch.int8",
     DType.BF16: "torch.bfloat16",
     DType.FP16: "torch.float16",
     DType.FP32: "torch.float32",
@@ -156,6 +160,13 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
             "CUTE_STATE_UNSUPPORTED",
             f"buffers[{index}].mode",
             "the CuTe-DSL backend does not implement caller-owned mutable state",
+        )
+        add(
+            buffer.packed_block is None,
+            "CUTE_PACKED_BLOCK_UNSUPPORTED",
+            f"buffers[{index}].packed_block",
+            "the current CuTe-DSL backend can name byte storage but does not implement "
+            "packed-record decode or an identity-only packed-buffer path",
         )
 
     for index, mma in kinds[OperationKind.MMA]:

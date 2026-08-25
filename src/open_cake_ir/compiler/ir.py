@@ -26,6 +26,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Mapping, Sequence, Union
 
 
@@ -37,6 +38,8 @@ class ScheduleParseError(ValueError):
 
 
 class DType(str, Enum):
+    UINT8 = "uint8"
+    INT8 = "int8"
     BF16 = "bf16"
     FP16 = "fp16"
     FP32 = "fp32"
@@ -49,6 +52,8 @@ class DType(str, Enum):
 
 
 _DTYPE_ITEMSIZE = {
+    DType.UINT8: 1,
+    DType.INT8: 1,
     DType.BF16: 2,
     DType.FP16: 2,
     DType.FP32: 4,
@@ -69,6 +74,18 @@ class BufferMode(str, Enum):
     OUTPUT = "output"
     STATE = "state"
     SCRATCH = "scratch"
+
+
+class PackedBlockFormat(str, Enum):
+    """Closed raw-record formats whose mechanical ABI is part of the IR.
+
+    A packed block is not a scalar dtype: one record contains metadata and a quant
+    payload with different scalar types.  This vocabulary owns only those physical
+    bytes.  Quantization, decode and dot semantics remain future operations.
+    """
+
+    GGML_Q4_0_V1 = "ggml_q4_0_v1"
+    GGML_Q8_1_V1 = "ggml_q8_1_v1"
 
 
 # `tl.dot(a, trans(b))` and tcgen05 alike contract the last axis of both staged operands,
@@ -476,6 +493,86 @@ class Allocation:
 
 
 @dataclass(frozen=True)
+class PackedBlockField:
+    """One typed, non-overlapping field in a packed record."""
+
+    name: str
+    byte_offset: int
+    dtype: DType
+    elements: int
+
+    @property
+    def size_bytes(self) -> int:
+        return self.dtype.itemsize * self.elements
+
+
+@dataclass(frozen=True)
+class PackedBlockContract:
+    """Canonical mechanical ABI for one closed packed-block format."""
+
+    logical_extent: int
+    record_bytes: int
+    record_alignment_bytes: int
+    fields: tuple[PackedBlockField, ...]
+    nibble_logical_order: tuple[int, ...] = ()
+
+
+# One authority for the bytes shared by Workload materialization, Schedule validation
+# and future decode/encode operations.  Q4's tuple is physical nibble order: low then
+# high for each payload byte maps to logical j then 16+j.
+PACKED_BLOCK_FORMATS: Mapping[PackedBlockFormat, PackedBlockContract] = MappingProxyType(
+    {
+        PackedBlockFormat.GGML_Q4_0_V1: PackedBlockContract(
+            logical_extent=32,
+            record_bytes=18,
+            record_alignment_bytes=2,
+            fields=(
+                PackedBlockField("d", 0, DType.FP16, 1),
+                PackedBlockField("qs", 2, DType.UINT8, 16),
+            ),
+            nibble_logical_order=tuple(
+                value for byte in range(16) for value in (byte, byte + 16)
+            ),
+        ),
+        PackedBlockFormat.GGML_Q8_1_V1: PackedBlockContract(
+            logical_extent=32,
+            record_bytes=36,
+            record_alignment_bytes=4,
+            fields=(
+                PackedBlockField("d", 0, DType.FP16, 1),
+                PackedBlockField("s", 2, DType.FP16, 1),
+                PackedBlockField("qs", 4, DType.INT8, 32),
+            ),
+        ),
+    }
+)
+
+
+@dataclass(frozen=True)
+class PackedBlockRelation:
+    """Bind one UINT8 Buffer axis to a closed packed-record ABI."""
+
+    format: PackedBlockFormat
+    record_axis: int
+
+    @property
+    def contract(self) -> PackedBlockContract:
+        return PACKED_BLOCK_FORMATS[self.format]
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "PackedBlockRelation":
+        obj = _strict_object(
+            value,
+            required={"format", "record_axis"},
+            context=context,
+        )
+        return cls(
+            _enum(PackedBlockFormat, obj["format"], f"{context}.format"),
+            _nonnegative_int(obj["record_axis"], f"{context}.record_axis"),
+        )
+
+
+@dataclass(frozen=True)
 class ScaleRelation:
     """How one scale buffer partitions and names its FP8 data buffer.
 
@@ -561,6 +658,7 @@ class Buffer:
     byte_offset: int
     stages: int
     swizzle: Swizzle | None
+    packed_block: PackedBlockRelation | None
     scale_of: ScaleRelation | None
     valid_extent: ValidExtentRelation | None
 
@@ -591,6 +689,7 @@ class Buffer:
                 "byte_offset",
                 "stages",
                 "swizzle",
+                "packed_block",
                 "scale_of",
                 "valid_extent",
             },
@@ -599,6 +698,7 @@ class Buffer:
         shape = _object_list(obj["shape"], f"{context}.shape", allow_empty=False)
         allocation = obj.get("allocation")
         swizzle = obj.get("swizzle")
+        packed_block = obj.get("packed_block")
         scale_of = obj.get("scale_of")
         valid_extent = obj.get("valid_extent")
         return cls(
@@ -614,6 +714,11 @@ class Buffer:
             _nonnegative_int(obj.get("byte_offset", 0), f"{context}.byte_offset"),
             _positive_int(obj.get("stages", 1), f"{context}.stages"),
             None if swizzle is None else _enum(Swizzle, swizzle, f"{context}.swizzle"),
+            None
+            if packed_block is None
+            else PackedBlockRelation.from_dict(
+                packed_block, f"{context}.packed_block"
+            ),
             None
             if scale_of is None
             else ScaleRelation.from_dict(scale_of, f"{context}.scale_of"),
