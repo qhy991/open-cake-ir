@@ -104,8 +104,24 @@ def _indexed_gather_oracle(inputs, torch):
     return torch.where(valid[:, :, None], selected, torch.zeros_like(selected)), None
 
 
+def _masked_gemm_bias_oracle(inputs, torch):
+    """Dense contraction plus the AccessMap's masked-zero bias semantics.
+
+    A program coordinate may index a shorter Buffer.  `mask_tiled_axes` bounds that
+    Buffer by its own declared extent and a masked load contributes zero, so pad the bias
+    independently instead of assuming the Workload's output width.
+    """
+
+    a, b, bias, _ = inputs
+    product = a.to(torch.float32) @ b.to(torch.float32).t()
+    width = product.shape[-1]
+    padded_bias = torch.nn.functional.pad(bias, (0, max(0, width - bias.shape[0])))[:width]
+    return product + padded_bias[None, :], None
+
+
 ORACLES = {
     **_RETAINED_ORACLES,
+    "gemm_bias_b1_smoke": _masked_gemm_bias_oracle,
     "swiglu_b8_smoke": _swiglu_oracle,
     "top_k_b8_smoke": _top_k_oracle,
     "block_scaled_gemm_b1_smoke": _block_scaled_gemm_oracle,

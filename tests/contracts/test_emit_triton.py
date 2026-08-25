@@ -77,6 +77,19 @@ class EmissionTest(unittest.TestCase):
             "mask=token_block_offsets[:, None] < N_TOKEN_BLOCK", self.emission.source
         )
 
+    def test_a_reused_program_coordinate_is_bounded_by_the_accessed_buffer(self) -> None:
+        schedule = Schedule.load(
+            ROOT / "corpus" / "schedules" / "gemm-bias-b1-smoke-shape-drift.json"
+        )
+
+        source = emit(schedule, TARGET).source
+
+        self.assertIn("D_BIAS_0=128", source)
+        self.assertIn("mask=n_block_offsets < D_BIAS_0", source)
+        self.assertNotIn("mask=n_block_offsets < N_N_BLOCK,\n        other=0.0", source)
+        self.assertIn("m_block_offsets[:, None] < D_C_0", source)
+        self.assertIn("n_block_offsets[None, :] < D_C_1", source)
+
     def test_the_loop_carries_its_declared_knobs(self) -> None:
         options = self.schedule.tile_loops[0].range_options
         self.assertIn(f"num_stages={options.num_stages}", self.emission.source)

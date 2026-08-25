@@ -364,12 +364,19 @@ class _TritonEmitter:
         return expressions, vectors
 
     def _bound(self, access: AccessMap, buffer: Buffer, vector: str) -> str | None:
-        """The extent a masked tile axis is bounded by, if it is masked at all."""
+        """The accessed Buffer extent that bounds one tiled coordinate.
+
+        Program axes and loops own work decomposition, not the size of every Buffer
+        indexed by their coordinate.  Using the axis owner's extent here made a shorter
+        Buffer readable past its declaration.  Always derive the name from the accessed
+        Buffer dimension; ``_extent`` reuses its canonical axis or loop name when one
+        owns that same dimension.
+        """
 
         for position, component in enumerate(access.indices):
             if component.source is AccessIndexKind.PROGRAM_TILE and f"{component.name}_offsets" == vector:
-                axis = self._axis(component.name)
-                return self._extent(axis.buffer, axis.dimension)
+                self._axis(component.name)
+                return self._extent(buffer.name, position)
             if (
                 component.source is AccessIndexKind.LOOP_TILE
                 and f"{component.name}_offsets" == vector
@@ -379,7 +386,7 @@ class _TritonEmitter:
                 # silent fall-through to "needs no mask", which is a wrong kernel rather
                 # than a refused one.
                 _require(self.loop is not None, f"{vector} indexes a loop there is none of")
-                return self._extent(self.loop.buffer, self.loop.dimension)
+                return self._extent(buffer.name, position)
         return None  # a full-dimension index spans its axis and needs no mask
 
     def _address(self, access: AccessMap, pad: str) -> tuple[str, str]:

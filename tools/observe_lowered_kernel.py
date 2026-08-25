@@ -37,6 +37,51 @@ from kernel_oracles import ORACLE_BY_ENTRY_POINT  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
 
 
+def measure_correctness(observed, reference, distance, torch, tolerance: float):
+    """Return one result disposition without assuming a rank-one index output."""
+
+    if reference.dtype.is_floating_point:
+        # A float-valued kernel is judged by how far it is, not by whether it matches:
+        # an exact-equality rule would call float32 softmax wrong for reassociating a
+        # sum, which is not a defect and is not something the Schedule chose.
+        deviation = (observed - reference).abs()
+        mismatch = int(deviation.gt(tolerance).sum().item())
+        measured = {
+            "max_deviation": float(deviation.max().item()),
+            "tolerance": tolerance,
+        }
+        passed = measured["max_deviation"] <= tolerance
+    elif distance is None:
+        # A deterministic index-valued operation such as top-k owns the exact source
+        # positions and their order. Unlike nearest-neighbour assignment, there is no
+        # separate distance oracle under which a different index may be equally legal.
+        mismatch = int((observed != reference).sum().item())
+        measured = {"exact_match": mismatch == 0}
+        passed = mismatch == 0
+    else:
+        mismatch = int((observed != reference).sum().item())
+        flat_observed = observed.reshape(-1)
+        flat_reference = reference.reshape(-1)
+        flat_distance = distance.reshape(-1, distance.shape[-1])
+        if flat_distance.shape[0] != flat_observed.numel():
+            raise ValueError("distance rows and index outputs differ")
+        rows = torch.arange(flat_observed.numel(), device=observed.device)
+        chosen = flat_distance[
+            rows, flat_observed.long().clamp(0, flat_distance.shape[1] - 1)
+        ]
+        # A mismatch can still be a legal tie, so the claim is about the distance chosen
+        # rather than about the index: an equal distance is an equally correct answer.
+        excess = float(
+            (chosen - flat_distance[rows, flat_reference.long()]).max().item()
+        )
+        # Two kernels, two questions. An index kernel is asked whether the answer it
+        # chose is as good; a float kernel is asked how far off it is. One field name
+        # for both would have made the record say something it did not measure.
+        measured = {"max_chosen_distance_excess": excess}
+        passed = mismatch == 0 or excess == 0.0
+    return mismatch, measured, passed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -89,36 +134,9 @@ def main() -> int:
         observed = launch(*inputs)
         torch.cuda.synchronize()
 
-    if reference.dtype.is_floating_point:
-        # A float-valued kernel is judged by how far it is, not by whether it matches:
-        # an exact-equality rule would call float32 softmax wrong for reassociating a
-        # sum, which is not a defect and is not something the Schedule chose.
-        deviation = (observed - reference).abs()
-        mismatch = int(deviation.gt(arguments.tolerance).sum().item())
-        measured = {
-            "max_deviation": float(deviation.max().item()),
-            "tolerance": arguments.tolerance,
-        }
-        passed = measured["max_deviation"] <= arguments.tolerance
-    elif distance is None:
-        # A deterministic index-valued operation such as top-k owns the exact source
-        # positions and their order. Unlike nearest-neighbour assignment, there is no
-        # separate distance oracle under which a different index may be equally legal.
-        mismatch = int((observed != reference).sum().item())
-        measured = {"exact_match": mismatch == 0}
-        passed = mismatch == 0
-    else:
-        mismatch = int((observed != reference).sum().item())
-        rows = torch.arange(observed.shape[0], device=observed.device)
-        chosen = distance[rows, observed.long().clamp(0, distance.shape[1] - 1)]
-        # A mismatch can still be a legal tie, so the claim is about the distance chosen
-        # rather than about the index: an equal distance is an equally correct answer.
-        excess = float((chosen - distance[rows, reference.long()]).max().item())
-        # Two kernels, two questions. An index kernel is asked whether the answer it
-        # chose is as good; a float kernel is asked how far off it is. One field name
-        # for both would have made the record say something it did not measure.
-        measured = {"max_chosen_distance_excess": excess}
-        passed = mismatch == 0 or excess == 0.0
+    mismatch, measured, passed = measure_correctness(
+        observed, reference, distance, torch, arguments.tolerance
+    )
 
     device = torch.cuda.get_device_properties(0)
     import cutlass
