@@ -128,6 +128,8 @@ invalidates the comparison, not just the run.
 - The Compiler is the product core. It must not import Lab, provider, workload, campaign, evidence-store or claim code.
 - The Lab may depend on a frozen Compiler Revision; a campaign may never mutate that revision.
 - Workload Contract owns operator semantics and oracle. Study Contract owns treatment, estimand and analysis.
+- Study templates are stable and execution binding lives in the CampaignLock. Do not mint a frozen Study successor per
+  Compiler or Executor Revision; re-stamping identity into every contract gives one fact many owners.
 - `matched_search` and the evidence-justified exact-shape `portfolio` variant share one Lab path. Serving remains a
   future artifact handoff, not a runtime mode.
 - `artifact_optimization_only` is a non-scientific Claim Scope on `matched_search`, not a mode. It may expose
@@ -135,16 +137,37 @@ invalidates the comparison, not just the run.
   an arm comparison.
 - KernelSeed and Workload-case specialization are owned by Lab; Compiler accepts complete Schedules and must remain
   unaware of held-out roles or Study policy.
-- Compiler changes require a full Corpus Gate and human merge before producing a new Compiler Revision.
+- A Schedule declares its own `lowering` route — backend and entry point. There is no profile table to add a row to,
+  and no per-operator conformance function to write. Refusal is a property of the Schedule: an unsupported dtype or
+  operation body is a backend capability Finding before lowering, not a name lookup. A new operator that composes
+  existing primitives therefore needs a Workload Contract, not a Compiler change; if it needs a Compiler change, say
+  which primitive is missing rather than widening a route.
+- Compiler changes require a full Corpus Gate and an approval written outside this automation before producing a new
+  Compiler Revision. You may prepare a release — derive the id, run the Gate — but you may never create or modify
+  `compiler/release-approval.json`. A missing, malformed or stale approval exits 3 and leaves the prior lock and
+  approval bytes untouched; that is the gate working, not an obstacle to route around (ADR 0030).
+- A file can be frozen by being named with a digest somewhere else, not only by living under `evidence/`. Before
+  editing anything under `tools/`, `src/`, `examples/` or `corpus/`, check whether `compiler/source_set.json`, a
+  `runtime/executors/*.json` closure or a `contracts/calibrations/*.json` plan pins its bytes. Editing a pinned file
+  breaks the replay of whatever that digest supports; the answer is a successor, not an edit. If you already edited
+  one, restore it and re-verify the digest before doing anything else.
 - A Revision id is derived by its cycle script, never chosen by hand. An id some frozen artifact names is history and
   its bytes are immutable; an id nothing names is a working artifact and is re-released in place. Editing a
   Revision-bound source is therefore free of version churn until a sealed run witnesses the id.
 - Never regenerate Corpus Gate expectations to make the gate pass — that reports a match it just manufactured. Adopt
-  new expectations as a separate, reviewed act (`tools/refresh_corpus_expectations.py --write`) and name the reason in
-  the release approval basis.
+  new expectations as a separate, reviewed act (`tools/refresh_corpus_expectations.py --write`). State the reason to
+  the reviewer who writes the approval; do not write that basis yourself.
+- More generally: a repair run just before the check it satisfies manufactures the state it then reports. If a check
+  fails because of the environment, say so and stop — do not normalize the environment and rerun.
 - Cake versus CUDA is an Authoring Environment assignment, not a syntax-only representation switch.
 - Common Evaluation begins only after an arm produces a sealed launchable artifact.
 - Every candidate, evaluation and terminal outcome is append-only; reports and status docs are derived views.
+- An Evidence audit returns two orthogonal facts. `archive_integrity` can be true while `filesystem_custody_verified`
+  is false: a git checkout replays correctly but carries permissive modes, because git records the executable bit and
+  nothing else. Such an archive supports no promotion, system qualification or estimate. Never restore modes so a
+  custody check passes — present mode bits cannot prove continuous historical custody (ADR 0031). A contract test that
+  asserts a claim-bearing property therefore needs a custody environment; report that as an environment precondition
+  rather than manufacturing one.
 - Do not copy legacy `rXX`, `vN`, failure or archive runners. Historical implementation lives in pinned Git.
 - No formal provider or GPU experiment is authorized before all applicable acceptance gates pass.
 - Generated runs and secret bytes stay outside source. Cleanup of legacy data requires separate user authorization.
