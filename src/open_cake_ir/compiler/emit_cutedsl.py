@@ -18,13 +18,14 @@ reproducing them would mean hardcoding the thing this module exists to compute.
 
 from __future__ import annotations
 
-from .emit import Emission, EmitError, require as _require
+from .emit import BackendPrecondition, Emission, EmitError, require as _require
 
 from .ir import (
     AccessIndexKind,
     Barrier,
     BarrierMechanism,
     DType,
+    EpilogueFormula,
     LoadMovement,
     MemorySpace,
     OperationKind,
@@ -88,6 +89,88 @@ BODY_EMITTERS: dict[OperationKind, str] = {
 }
 
 SUPPORTED_OPERATION_KINDS = frozenset(BODY_EMITTERS)
+SUPPORTED_EPILOGUE_FORMULAS = frozenset(
+    {EpilogueFormula.CENTROID_SQ_MINUS_TWO_DOT}
+)
+
+
+def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, ...]:
+    """Return the CuTe emitter's backend-owned constructor requirements."""
+
+    findings: list[BackendPrecondition] = []
+
+    def add(condition: object, code: str, path: str, message: str) -> None:
+        if not condition:
+            findings.append(BackendPrecondition(code, path, message))
+
+    kinds = {
+        kind: [
+            (index, operation)
+            for index, operation in enumerate(schedule.operations)
+            if operation.kind is kind
+        ]
+        for kind in (OperationKind.MMA, OperationKind.EPILOGUE, OperationKind.LOAD)
+    }
+    add(
+        len(kinds[OperationKind.MMA]) == 1,
+        "CUTE_MMA_COUNT",
+        "operations",
+        "the CuTe-DSL backend requires exactly one mma operation",
+    )
+    add(
+        len(kinds[OperationKind.EPILOGUE]) == 1,
+        "CUTE_EPILOGUE_COUNT",
+        "operations",
+        "the CuTe-DSL backend requires exactly one epilogue operation",
+    )
+    add(
+        len(schedule.pipelines) == 1,
+        "CUTE_PIPELINE_COUNT",
+        "pipelines",
+        "the CuTe-DSL backend requires exactly one pipeline",
+    )
+    add(
+        bool(kinds[OperationKind.LOAD]),
+        "CUTE_LOAD_REQUIRED",
+        "operations",
+        "the CuTe-DSL backend requires at least one load operation",
+    )
+
+    for index, mma in kinds[OperationKind.MMA]:
+        add(
+            mma.parameters.instruction is not None,
+            "PROFILE_MMA_INSTRUCTION_REQUIRED",
+            f"operations[{index}].parameters.instruction",
+            "the CuTe-DSL backend requires the mma to name an instruction atom",
+        )
+        add(
+            mma.parameters.tile_shape is not None,
+            "CUTE_MMA_TILE_REQUIRED",
+            f"operations[{index}].parameters.tile_shape",
+            "the CuTe-DSL backend requires the mma to name a tile shape",
+        )
+    for index, epilogue in kinds[OperationKind.EPILOGUE]:
+        add(
+            epilogue.parameters.formula in SUPPORTED_EPILOGUE_FORMULAS,
+            "CUTE_EPILOGUE_FORMULA_UNSUPPORTED",
+            f"operations[{index}].parameters.formula",
+            f"the CuTe-DSL backend does not implement epilogue formula "
+            f"{epilogue.parameters.formula.value!r}",
+        )
+    for index, load in kinds[OperationKind.LOAD]:
+        add(
+            load.parameters.movement is LoadMovement.TMA,
+            "CUTE_LOAD_MOVEMENT",
+            f"operations[{index}].parameters.movement",
+            "the CuTe-DSL backend only emits TMA loads",
+        )
+        add(
+            load.parameters.descriptor_box is not None,
+            "CUTE_LOAD_DESCRIPTOR_REQUIRED",
+            f"operations[{index}].parameters.descriptor_box",
+            "the CuTe-DSL backend requires every load to name a descriptor box",
+        )
+    return tuple(findings)
 
 
 class _Emitter:
@@ -101,36 +184,21 @@ class _Emitter:
         # Revision names it rather than the emitter inventing one from the profile.
         self.entry_point = entry_point or f"cake_{schedule.profile}"
 
+        failures = preflight(schedule, target)
+        if failures:
+            raise EmitError(failures[0].message)
         self.mma = self._single(OperationKind.MMA, "mma")
         self.epilogue = self._single(OperationKind.EPILOGUE, "epilogue")
-        _require(
-            self.mma.parameters.instruction is not None,
-            "mma operation must commit to an instruction atom",
-        )
-        _require(
-            self.mma.parameters.tile_shape is not None,
-            "mma operation must commit to a tile shape",
-        )
+        assert self.mma.parameters.instruction is not None
+        assert self.mma.parameters.tile_shape is not None
         self.atom = self.mma.parameters.instruction
         self.tile = self.mma.parameters.tile_shape
 
-        _require(len(schedule.pipelines) == 1, "expected exactly one pipeline")
         self.pipeline = schedule.pipelines[0]
 
         self.loads = tuple(
             op for op in schedule.operations if op.kind is OperationKind.LOAD
         )
-        _require(self.loads, "expected at least one load")
-        for load in self.loads:
-            _require(
-                load.parameters.movement is LoadMovement.TMA,
-                f"load {load.op_id!r} must move by TMA on this backend",
-            )
-            _require(
-                load.parameters.descriptor_box is not None,
-                f"load {load.op_id!r} must commit to a descriptor box",
-            )
-
         self.roles = {role.name: role for role in schedule.roles}
         self.nest = self._loop_nest()
 

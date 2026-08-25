@@ -5,7 +5,6 @@
     "corpus/manifest.json",
     "corpus/schedules/block-scaled-gemm-b1-smoke-scale-drift.json",
     "corpus/schedules/block-scaled-gemm-b1-smoke.json",
-    "corpus/schedules/flash-kmeans-assignment-full-epilogue-drift.json",
     "corpus/schedules/flash-kmeans-assignment-full-shape-drift.json",
     "corpus/schedules/flash-kmeans-assignment-full.json",
     "corpus/schedules/flash-kmeans-b32-smoke-dtype-drift-v2.json",

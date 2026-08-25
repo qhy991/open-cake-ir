@@ -11,6 +11,10 @@ shapes, operations, instructions, memory spaces or uncalibrated analyses are exp
 An otherwise-lowerable `mma` in a backend-emitted profile names the Target instruction contract that determines its
 lowering; omitting it is a lowering-blocking candidate Finding rather than a late emitter failure. Instruction-free
 asset profiles remain valid because they do not emit operation bodies.
+Emitter-only program-shape requirements have one owner in that backend's `preflight`.
+Assessment projects them into lowering-blocking Findings before `lower`; a backend must
+not silently reinterpret an unsupported epilogue formula or wait for emission to reject
+its role, loop, pipeline, operation-count, load-movement or descriptor requirements.
 Register findings are static bounds over declared logical storage, never a claim about ptxas's physical allocation.
 A block scale is an FP32 Buffer with one `scale_of` relation. `granularity` is written in
 the FP8 data buffer's axis order; `axis_order` is the full permutation that gives the
@@ -23,6 +27,11 @@ names the padded axis, `buffer` names the global INT32 input that owns the lengt
 coordinate authority, so every access derives `coordinate < length` rather than
 restating a predicate. The first Triton subset lowers one length axis indexed by one
 scalar program axis and refuses wider mappings explicitly.
+An AccessMap index with `source: buffer` names a rank-one register INT32 Buffer that the
+operation also reads. Multiple such coordinates share one shape and are zipped into one
+runtime-index domain; they are not a Cartesian product. `mask_tiled_axes` bounds both
+sides of each runtime coordinate, and an invalid indexed load yields zero. The admitted
+subset is a direct global load: TMA and indexed stores remain explicitly unlowerable.
 `reduce_argmin` compares FP32 values and returns INT32 source positions; admitting FP8
 storage for another operation does not widen that semantic contract.
 

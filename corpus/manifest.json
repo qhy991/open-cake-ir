@@ -90,6 +90,20 @@
       }
     },
     {
+      "case_id": "flash-kmeans-r25-epilogue-drift",
+      "schedule": "corpus/schedules/flash-kmeans-assignment-full-epilogue-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "CUTE_EPILOGUE_FORMULA_UNSUPPORTED"
+        ],
+        "schedule_sha256": "fda3ceca5e383d7fda01e0cf547f85b1926d2b22a3d346f6ffba0e1b3174360b",
+        "lowering_source_sha256": null
+      }
+    },
+    {
       "case_id": "tinygemm2-r31-accepted",
       "schedule": "corpus/schedules/tinygemm2-stage4-split-k.json",
       "expected": {
@@ -419,6 +433,33 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "a343852aaba09d30169e8c457e5607b2915449cd37de49857c956b6b273713aa",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "indexed-gather-accepted",
+      "schedule": "corpus/schedules/indexed-gather-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "e56b8be077092fdc4a84e6b898ab13e1d64ac0049c30c16d6b6eba3bbd5938b9",
+        "lowering_source_sha256": "3816ef830a3218c6e80489d562b83c2618dc628d057c86d308aa8baa12d095b9"
+      }
+    },
+    {
+      "case_id": "indexed-gather-dtype-drift",
+      "schedule": "corpus/schedules/indexed-gather-b8-smoke-dtype-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "ACCESS_INDEX_BUFFER_DTYPE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "9e051a0f5c4d09a23e14f4d51e7915ea8b49b430fcf44240cba7594380c7fe01",
         "lowering_source_sha256": null
       }
     }

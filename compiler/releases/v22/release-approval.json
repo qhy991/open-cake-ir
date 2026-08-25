@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "7255ddb63e37f85a41767485be07c1ddf75b163f5f32c782c0408e8812e8c53a"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Runtime-indexed AccessMap load composition; reviewed 31-case expectations; prior 29 findings and lowering digests unchanged"
+}

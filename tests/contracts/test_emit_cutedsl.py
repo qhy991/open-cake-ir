@@ -301,6 +301,32 @@ class BackendCoverageTest(unittest.TestCase):
             emit_cutedsl.SUPPORTED_OPERATION_KINDS, emit_triton.SUPPORTED_OPERATION_KINDS
         )
 
+    def test_backend_constructor_requirements_have_one_preflight_owner(self) -> None:
+        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+
+        triton_document = json.loads(
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
+        )
+        triton_document["roles"].append({"name": "unused", "warps": [4]})
+        triton_failures = emit_triton.preflight(
+            Schedule.from_dict(triton_document), TARGET
+        )
+        self.assertIn("TRITON_ROLE_COUNT", {item.code for item in triton_failures})
+
+        cute_document = json.loads(SCHEDULE.read_text())
+        next(
+            operation
+            for operation in cute_document["operations"]
+            if operation["kind"] == "epilogue"
+        )["parameters"]["formula"] = "bias_add_bf16_round"
+        cute_failures = emit_cutedsl.preflight(
+            Schedule.from_dict(cute_document), TARGET
+        )
+        self.assertEqual(
+            [item.code for item in cute_failures],
+            ["CUTE_EPILOGUE_FORMULA_UNSUPPORTED"],
+        )
+
 
 class AllocationOwnershipTest(unittest.TestCase):
     """Who takes out the tensor-memory allocation is the Schedule's decision.

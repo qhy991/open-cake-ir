@@ -340,8 +340,8 @@ class CompilerContractTests(unittest.TestCase):
         )
 
         self.assertEqual(release.document["state"], "released")
-        self.assertEqual(release.document["corpus_gate"]["case_count"], 29)
-        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 29)
+        self.assertEqual(release.document["corpus_gate"]["case_count"], 32)
+        self.assertEqual(release.document["corpus_gate"]["matched_case_count"], 32)
         self.assertEqual(
             len(release.document["sources"]),
             len(json.loads((ROOT / "compiler" / "source_set.json").read_text())["paths"]),
@@ -488,16 +488,16 @@ class CompilerContractTests(unittest.TestCase):
         report = compiler.check_corpus()
 
         self.assertTrue(report.passed, report.cases)
-        self.assertEqual(report.case_count, 29)
+        self.assertEqual(report.case_count, 32)
         # Every operator lands as a kernel plus the drift that proves its profile rule
         # fires. The three normalization drifts are rejected rather than merely
         # unlowerable: their staged tile contradicts the extent it addresses, which the
         # access-map rule could not see until it stopped comparing a store's global
         # output against the tile axes.
-        self.assertEqual(report.accepted_case_count, 17)
-        self.assertEqual(report.rejected_case_count, 12)
-        self.assertEqual(report.lowerable_case_count, 13)
-        self.assertEqual(report.nonlowerable_case_count, 16)
+        self.assertEqual(report.accepted_case_count, 19)
+        self.assertEqual(report.rejected_case_count, 13)
+        self.assertEqual(report.lowerable_case_count, 14)
+        self.assertEqual(report.nonlowerable_case_count, 18)
 
     def test_r16_program_map_schedule_uses_the_canonical_compiler(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
@@ -740,6 +740,55 @@ class CompilerContractTests(unittest.TestCase):
         self.assertEqual(
             [(finding.code, finding.path) for finding in _decisive(assessment)],
             [("REDUCE_SUM_SEMANTICS", "operations.reduce_partials.parameters.axis")],
+        )
+
+    def test_r31_epilogue_formula_is_checked_against_the_closed_asset(self) -> None:
+        compiler = Compiler.load(ROOT, REVISION_PATH)
+        schedule = json.loads(
+            (ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json").read_text()
+        )
+        next(
+            operation
+            for operation in schedule["operations"]
+            if operation["id"] == "bias_epilogue"
+        )["parameters"]["formula"] = "centroid_sq_minus_two_dot"
+
+        assessment = compiler.assess(schedule)
+
+        self.assertFalse(assessment.accepted)
+        self.assertFalse(assessment.lowering_eligible)
+        self.assertEqual(
+            [(finding.code, finding.path) for finding in _decisive(assessment)],
+            [
+                (
+                    "TINYGEMM_EPILOGUE_SEMANTICS",
+                    "operations.bias_epilogue.parameters.formula",
+                )
+            ],
+        )
+
+    def test_cute_formula_drift_is_refused_before_lowering(self) -> None:
+        compiler = Compiler.load(ROOT, REVISION_PATH)
+        schedule = json.loads(
+            (ROOT / "corpus/schedules/flash-kmeans-assignment-full.json").read_text()
+        )
+        epilogue = next(
+            operation
+            for operation in schedule["operations"]
+            if operation["kind"] == "epilogue"
+        )
+        epilogue["parameters"]["formula"] = "bias_add_bf16_round"
+
+        assessment = compiler.assess(schedule)
+
+        self.assertTrue(assessment.accepted)
+        self.assertFalse(assessment.lowering_eligible)
+        self.assertIn(
+            (
+                "CUTE_EPILOGUE_FORMULA_UNSUPPORTED",
+                "operations[3].parameters.formula",
+            ),
+            [(finding.code, finding.path) for finding in assessment.findings],
         )
 
     def test_r31_lowering_uses_the_same_compiler_interface(self) -> None:

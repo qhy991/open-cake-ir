@@ -59,10 +59,17 @@ python tools/calibrate_wave_term.py --first 60 --last 400 --step 2      # exclus
 python tools/calibrate_ranking_at_scale.py --size 512 --observed-at <iso8601> \
   --out /new/path/ranking.json                                          # exclusive: benchmark
 python tools/check_ranking_calibration.py                               # no GPU; exit 1 is a retained negative decision
-python tools/observe_lowered_kernel.py --observed-at <iso8601> --out inventory/<NEW>.json
-python tools/profile_lowered_kernel.py --schedule <path> --observed-at <iso8601> --out <NEW>.json
+python tools/normalize_evidence_custody.py                              # no GPU; check clone-time mode custody
+python tools/observe_lowered_kernel.py --out inventory/<NEW>.json
+python tools/profile_lowered_kernel.py --schedule <path> --out <NEW>.json
 python tools/ir_vocabulary.py                                           # no GPU
 ```
+
+Git does not preserve group/other write bits. After a fresh checkout, run
+`python tools/normalize_evidence_custody.py`; if it reports paths, use `--apply` once
+before replaying committed Evidence. The default is check-only and exits nonzero, so it
+does not report a state it silently repaired. This is an operational prerequisite, not
+proof that an archived Run retained live filesystem custody; see the audit register.
 
 The ranking calibration measures the dormant structural hypothesis even when the released
 Compiler has no profile coverage. Its output informs a later reviewed Revision; running
@@ -86,7 +93,7 @@ and a new date; the earlier record stays as history for the Revision it was take
 ## 2. Resolve a Study
 
 ```bash
-open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v35.json \
+open-cake-ir lab preflight contracts/studies/matched-search-infrastructure-v37.json \
   --output /new/path/campaign.lock.json
 ```
 
@@ -96,29 +103,29 @@ validates it through Lab preflight. It deliberately refuses a live Study because
 broker command digest; `freeze_live_matched_study.py` is the sole path that refreshes that complete authority. The
 names below were current when written.
 
-The current checked-in scientific matched contract, `matched-search-infrastructure-v35.json`, uses a zero-GPU fixture
+The current checked-in scientific matched contract, `matched-search-infrastructure-v37.json`, uses a zero-GPU fixture
 provider and intentionally cannot start a live provider. Its Analysis Plan is the ADR 0013 successor: the terminal
 budget comes only from `budget.limit`, candidate failure is observed, external failure is missing, and a complete
 estimate requires conditional latency in both arms. Its Evidence policy is the ADR 0014 successor: every event kind
 is closed, Run boundaries are checked, and search/diagnosis projections are derived during replay. The current
-non-scientific G8 template is `matched-search-system-qualification-v35.json`; earlier versions remain frozen
+non-scientific G8 template is `matched-search-system-qualification-v37.json`; earlier versions remain frozen
 historical records. Freeze
 a live successor only after a real two-Turn qualification emits a receipt with
 the matching closed or tool-rich scope and binds the exact executable, model, reasoning effort, service tier, output
 schema, prompt/scaffold bytes, removed environment, reference visibility, feature overrides and event contract.
-`artifact-optimization-v35.json` is the current zero-GPU contract fixture. The frozen
+`artifact-optimization-v37.json` is the current zero-GPU contract fixture. The frozen
 `artifact-optimization-verda-v7.json` remains a historical live authority for Executor v8; it is not executable
 from the current source closure. Re-freeze a successor with the exact accessible checkout and broker command before
 launching a live Campaign. Earlier revisions remain historical.
 
-`matched-search-clean-start-reference-v35.json` is the reference-access fixture. It inherits the scientific
+`matched-search-clean-start-reference-v37.json` is the reference-access fixture. It inherits the scientific
 template's local 150k/`max` factors, so preflight validates only that both arms receive implementation-free starters;
 it is not a runnable paper result. Create later reference successors through the paired operation below so one arm
 cannot silently retain a task implementation:
 
 ```bash
 python tools/create_study_successor.py \
-  --source contracts/studies/matched-search-infrastructure-v35.json \
+  --source contracts/studies/matched-search-infrastructure-v37.json \
   --output contracts/studies/<new-clean-reference-study>.json \
   --study-id <new-clean-reference-study-id> \
   --open-cake-schedule-skeleton contracts/scaffolds/open-cake-clean-start-v1.json \
@@ -175,7 +182,7 @@ Then freeze either non-scientific Study from its matching receipt, seal anchor a
 ```bash
 python tools/freeze_live_matched_study.py \
   --project-root . \
-  --template contracts/studies/matched-search-system-qualification-v35.json \
+  --template contracts/studies/matched-search-system-qualification-v37.json \
   --qualification contracts/providers/<new-live-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-live-anchor>.json \
   --executor runtime/executors/open-cake-ir-b200-v26.json \

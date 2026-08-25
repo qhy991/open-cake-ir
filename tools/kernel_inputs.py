@@ -12,6 +12,7 @@ from kernel_cases import build_inputs as _retained_build_inputs
 
 
 def build_inputs(document: dict, torch) -> tuple:
+    profile = document.get("metadata", {}).get("profile")
     extent_contracts = {
         buffer["valid_extent"]["buffer"]: buffer["shape"][
             buffer["valid_extent"]["dimension"]
@@ -19,7 +20,7 @@ def build_inputs(document: dict, torch) -> tuple:
         for buffer in document["buffers"]
         if buffer.get("valid_extent") is not None
     }
-    if not extent_contracts and not any(
+    if profile != "indexed_gather_b8_smoke" and not extent_contracts and not any(
         buffer["dtype"] == "fp8_e4m3" for buffer in document["buffers"]
     ):
         return _retained_build_inputs(document, torch)
@@ -35,7 +36,22 @@ def build_inputs(document: dict, torch) -> tuple:
         )
         dtype = getattr(torch, dtype_name)
         shape = tuple(buffer["shape"])
-        if buffer["name"] in extent_contracts:
+        if profile == "indexed_gather_b8_smoke" and buffer["name"] == "expert_ids":
+            # Rotate valid expert ids per token and retain KDA's -1 no-route sentinel.
+            # This makes a Cartesian-product lowering, a fixed coordinate and missing
+            # lower-bound mask all disagree with the oracle.
+            base = torch.tensor(
+                [0, 1, 2, 3, 3, 2, 1, -1], dtype=dtype, device="cuda"
+            )
+            value = torch.stack(
+                [torch.roll(base, shifts=token) for token in range(shape[0])]
+            )
+        elif profile == "indexed_gather_b8_smoke" and buffer["name"] == "row_ids":
+            slots = torch.arange(shape[1], dtype=dtype, device="cuda")
+            value = torch.stack(
+                [(slots + token) % 8 for token in range(shape[0])]
+            )
+        elif buffer["name"] in extent_contracts:
             capacity = extent_contracts[buffer["name"]]
             # Empty, partial, full and another partial group are all observable. The
             # relation verifier proves this input has four entries; the values derive

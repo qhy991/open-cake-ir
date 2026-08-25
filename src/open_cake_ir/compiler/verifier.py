@@ -1629,7 +1629,11 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                 category,
             )
     if operation.kind is OperationKind.LOAD:
-        for name in operation.reads:
+        # The first read is the data source. Later reads are permitted only as
+        # AccessMap-owned runtime coordinates; _verify_access_maps proves their exact
+        # set, placement and dtype. Treating every read as a second data source made the
+        # operation graph unable to name those real dependencies.
+        for name in operation.reads[:1]:
             buffer = buffers.get(name)
             if buffer is not None and buffer.space is not MemorySpace.GLOBAL:
                 out.add(
@@ -1839,6 +1843,32 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         f"unknown loop iterator {component.name!r}",
                         category,
                     )
+            elif component.source is AccessIndexKind.BUFFER:
+                index_buffer = buffers.get(component.name)
+                if index_buffer is None:
+                    out.add(
+                        "ACCESS_INDEX_BUFFER_UNKNOWN",
+                        component_path,
+                        f"unknown runtime index buffer {component.name!r}",
+                        category,
+                    )
+                else:
+                    if index_buffer.space is not MemorySpace.REGISTER:
+                        out.add(
+                            "ACCESS_INDEX_BUFFER_SPACE",
+                            component_path,
+                            f"runtime index buffer {component.name!r} is in "
+                            f"{index_buffer.space.value}, not registers",
+                            category,
+                        )
+                    if index_buffer.dtype is not DType.INT32:
+                        out.add(
+                            "ACCESS_INDEX_BUFFER_DTYPE",
+                            component_path,
+                            f"runtime index buffer {component.name!r} is "
+                            f"{index_buffer.dtype.value}, not int32",
+                            category,
+                        )
             else:
                 if component.name not in axis_names:
                     out.add(
@@ -1878,6 +1908,120 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                                 f"{buffer.shape[position]}",
                                 category,
                             )
+
+        indirect = [
+            component
+            for component in access.indices
+            if component.source is AccessIndexKind.BUFFER
+        ]
+        if indirect:
+            index_names = tuple(dict.fromkeys(component.name for component in indirect))
+            if operation.kind is not OperationKind.LOAD:
+                out.add(
+                    "ACCESS_INDEXED_OPERATION_UNLOWERABLE",
+                    path,
+                    "the admitted runtime-indexed subset applies to global loads only",
+                    FindingCategory.HARDWARE_CONFORMANCE,
+                )
+            else:
+                if operation.parameters.movement is not LoadMovement.GLOBAL:
+                    out.add(
+                        "ACCESS_INDEXED_MOVEMENT_UNLOWERABLE",
+                        path,
+                        "runtime-indexed loads use direct global movement; TMA transfer "
+                        "semantics are not admitted",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+                expected_reads = (access.buffer,) + index_names
+                if operation.reads != expected_reads:
+                    out.add(
+                        "ACCESS_INDEX_BUFFER_READS",
+                        f"operations[{schedule.operations.index(operation)}].reads",
+                        f"runtime-indexed load reads data then its first-use ordered "
+                        f"index buffers {list(expected_reads)}, got "
+                        f"{list(operation.reads)}",
+                        category,
+                    )
+
+            index_buffers = [buffers.get(name) for name in index_names]
+            known = [item for item in index_buffers if item is not None]
+            if len(known) == len(index_buffers):
+                shapes = {item.shape for item in known}
+                if any(len(item.shape) != 1 for item in known):
+                    out.add(
+                        "ACCESS_INDEX_DOMAIN_RANK",
+                        path,
+                        "the admitted runtime index domain is rank one",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+                elif len(shapes) != 1:
+                    out.add(
+                        "ACCESS_INDEX_DOMAIN_MISMATCH",
+                        path,
+                        f"runtime index buffers must share one zipped domain, got "
+                        f"{[list(item.shape) for item in known]}",
+                        category,
+                    )
+
+            # This first slice is a load whose one local result has the zipped index
+            # domain once, plus every independent tile/full-dimension domain in access
+            # order. That is the exact shape the Triton address branch emits.
+            if operation.kind is OperationKind.LOAD and len(operation.writes) == 1:
+                staged = buffers.get(operation.writes[0])
+                source = buffer
+                expected_shape: list[int] = []
+                added_index_domain = False
+                shape_known = len(known) == len(index_buffers) and bool(known)
+                for component in access.indices:
+                    if component.source is AccessIndexKind.PROGRAM:
+                        continue
+                    if component.source is AccessIndexKind.BUFFER:
+                        if not added_index_domain and shape_known:
+                            expected_shape.extend(known[0].shape)
+                            added_index_domain = True
+                        continue
+                    if component.source is AccessIndexKind.PROGRAM_TILE:
+                        axis = (
+                            schedule.program_map.axis(component.name)
+                            if schedule.program_map is not None
+                            else None
+                        )
+                        if axis is not None:
+                            expected_shape.append(axis.tile)
+                    elif component.source is AccessIndexKind.LOOP_TILE:
+                        loop = next(
+                            (
+                                item
+                                for item in schedule.tile_loops
+                                if item.iterator == component.name
+                            ),
+                            None,
+                        )
+                        if loop is not None:
+                            expected_shape.append(loop.tile)
+                    elif (
+                        component.dimension is not None
+                        and component.dimension < len(source.shape)
+                    ):
+                        expected_shape.append(source.shape[component.dimension])
+                if staged is not None and shape_known:
+                    if staged.shape != tuple(expected_shape):
+                        out.add(
+                            "ACCESS_INDEXED_RESULT_SHAPE",
+                            f"operations[{schedule.operations.index(operation)}].writes",
+                            f"runtime-indexed access yields {expected_shape}, but "
+                            f"{staged.name!r} has shape {list(staged.shape)}",
+                            category,
+                        )
+                    if staged.dtype is not source.dtype:
+                        out.add(
+                            "ACCESS_INDEXED_RESULT_DTYPE",
+                            f"operations[{schedule.operations.index(operation)}].writes",
+                            f"runtime-indexed load preserves {source.name!r}'s "
+                            f"{source.dtype.value}, but {staged.name!r} is "
+                            f"{staged.dtype.value}",
+                            category,
+                        )
 
         relation = buffer.valid_extent
         if relation is not None and relation.indexed_by:
@@ -1920,6 +2064,14 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
         )
         source = buffers.get(access.buffer)
         if staged is None or source is None or source.space is not MemorySpace.GLOBAL:
+            continue
+        # Buffer-valued accesses have one zipped domain no matter how many coordinates
+        # it supplies. The dedicated check above derives that shape; the legacy loop
+        # below intentionally remains byte-for-byte the path for all existing cases.
+        if any(
+            component.source is AccessIndexKind.BUFFER
+            for component in access.indices
+        ):
             continue
         if len(staged.shape) != sum(1 for c in access.indices if c.is_vector):
             continue

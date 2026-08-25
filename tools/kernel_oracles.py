@@ -82,6 +82,28 @@ def _ragged_grouped_gemm_oracle(inputs, torch):
     return torch.bmm(masked_a.float(), b.float().transpose(1, 2)), None
 
 
+def _indexed_gather_oracle(inputs, torch):
+    """KDA-style expert/position tuples select rows; invalid routes contribute zero.
+
+    Advanced indexing states the mathematical answer independently of the lowering's
+    flattened pointer arithmetic and broadcasting. Clamping is only for memory safety;
+    the explicit validity predicate owns the result for KDA's -1 sentinel.
+    """
+
+    expert_rows, expert_ids, row_ids, _ = inputs
+    valid = (
+        (expert_ids >= 0)
+        & (expert_ids < expert_rows.shape[0])
+        & (row_ids >= 0)
+        & (row_ids < expert_rows.shape[1])
+    )
+    selected = expert_rows[
+        expert_ids.clamp(0, expert_rows.shape[0] - 1).long(),
+        row_ids.clamp(0, expert_rows.shape[1] - 1).long(),
+    ]
+    return torch.where(valid[:, :, None], selected, torch.zeros_like(selected)), None
+
+
 ORACLES = {
     **_RETAINED_ORACLES,
     "swiglu_b8_smoke": _swiglu_oracle,
@@ -89,4 +111,5 @@ ORACLES = {
     "block_scaled_gemm_b1_smoke": _block_scaled_gemm_oracle,
     "ragged_zero_pad_b1_smoke": _ragged_zero_pad_oracle,
     "ragged_grouped_gemm_b1_smoke": _ragged_grouped_gemm_oracle,
+    "indexed_gather_b8_smoke": _indexed_gather_oracle,
 }

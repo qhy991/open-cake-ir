@@ -255,6 +255,7 @@ class AccessIndexKind(str, Enum):
     PROGRAM_TILE = "program_tile"
     LOOP_TILE = "loop_tile"
     DIMENSION = "dimension"
+    BUFFER = "buffer"
 
 
 class BoundaryPolicy(str, Enum):
@@ -1421,9 +1422,17 @@ class Schedule:
         if access is None:
             return None
         axis = 0
+        saw_buffer_domain = False
         for component in access.indices:
             if component.source is AccessIndexKind.PROGRAM:
                 continue
+            if component.source is AccessIndexKind.BUFFER:
+                # All buffer-valued coordinates in one access are zipped over one
+                # common domain. Counting each coordinate separately would turn
+                # [expert[k], row[k]] into a k-by-k product and shift every later axis.
+                if saw_buffer_domain:
+                    continue
+                saw_buffer_domain = True
             if (
                 component.source is AccessIndexKind.LOOP_TILE
                 and component.name == loop.iterator

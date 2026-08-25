@@ -1,0 +1,422 @@
+{
+  "schema_version": 1,
+  "schedule_id": "flash-kmeans-assignment-full-explicit-sm100a-v1",
+  "target": "sm_100a",
+  "grid": [
+    1,
+    1,
+    1
+  ],
+  "roles": [
+    {
+      "name": "epilogue",
+      "warps": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "name": "mma",
+      "warps": [
+        4
+      ]
+    },
+    {
+      "name": "tma",
+      "warps": [
+        5
+      ]
+    },
+    {
+      "name": "reduce",
+      "warps": [
+        6
+      ]
+    }
+  ],
+  "allocations": [
+    {
+      "name": "smem_operands",
+      "space": "shared",
+      "size_bytes": 98304
+    },
+    {
+      "name": "tmem_accumulator",
+      "space": "tensor",
+      "size_bytes": 131072,
+      "tensor_columns": 256,
+      "allocating_role": "epilogue"
+    }
+  ],
+  "buffers": [
+    {
+      "name": "tokens",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        128,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "centroids",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        1024,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "centroid_sq",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        1024
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "distance_scratch",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        1024
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "best_index",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "assignments",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        128
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "token_stage",
+      "space": "shared",
+      "dtype": "bf16",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch",
+      "allocation": "smem_operands",
+      "byte_offset": 0,
+      "stages": 2,
+      "swizzle": "swizzle_128b"
+    },
+    {
+      "name": "centroid_stage",
+      "space": "shared",
+      "dtype": "bf16",
+      "shape": [
+        256,
+        64
+      ],
+      "mode": "scratch",
+      "allocation": "smem_operands",
+      "byte_offset": 32768,
+      "stages": 2,
+      "swizzle": "swizzle_128b"
+    },
+    {
+      "name": "accumulator",
+      "space": "tensor",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        256
+      ],
+      "mode": "scratch",
+      "allocation": "tmem_accumulator",
+      "byte_offset": 0,
+      "stages": 1
+    }
+  ],
+  "pipelines": [
+    {
+      "name": "main",
+      "stages": 2
+    }
+  ],
+  "barriers": [
+    {
+      "name": "tiles_ready",
+      "count": 2,
+      "producers": [
+        "tma"
+      ],
+      "consumers": [
+        "mma"
+      ],
+      "pipeline": "main",
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "accumulator_ready",
+      "count": 1,
+      "producers": [
+        "mma"
+      ],
+      "consumers": [
+        "epilogue"
+      ],
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "distance_ready",
+      "count": 1,
+      "producers": [
+        "epilogue"
+      ],
+      "consumers": [
+        "reduce"
+      ],
+      "mechanism": "barrier.sync"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_tokens",
+      "kind": "load",
+      "role": "tma",
+      "reads": [
+        "tokens"
+      ],
+      "writes": [
+        "token_stage"
+      ],
+      "signals": [
+        "tiles_ready"
+      ],
+      "pipeline": "main",
+      "parameters": {
+        "movement": "tma",
+        "descriptor_box": [
+          128,
+          64
+        ]
+      }
+    },
+    {
+      "id": "load_centroids",
+      "kind": "load",
+      "role": "tma",
+      "reads": [
+        "centroids"
+      ],
+      "writes": [
+        "centroid_stage"
+      ],
+      "signals": [
+        "tiles_ready"
+      ],
+      "pipeline": "main",
+      "parameters": {
+        "movement": "tma",
+        "descriptor_box": [
+          256,
+          64
+        ]
+      }
+    },
+    {
+      "id": "dot_mma",
+      "kind": "mma",
+      "role": "mma",
+      "reads": [
+        "token_stage",
+        "centroid_stage"
+      ],
+      "writes": [
+        "accumulator"
+      ],
+      "waits": [
+        "tiles_ready"
+      ],
+      "signals": [
+        "accumulator_ready"
+      ],
+      "depends_on": [
+        "load_tokens",
+        "load_centroids"
+      ],
+      "pipeline": "main",
+      "parameters": {
+        "accumulator": "fp32",
+        "instruction": {
+          "contract": "tcgen05.mma.cta_group::1.kind::f16",
+          "shape": [
+            128,
+            256,
+            16
+          ],
+          "cta_group": 1,
+          "operand_source": "shared",
+          "operand_major": [
+            "k",
+            "k"
+          ]
+        },
+        "tile_shape": [
+          128,
+          256,
+          64
+        ]
+      }
+    },
+    {
+      "id": "distance_epilogue",
+      "kind": "epilogue",
+      "role": "epilogue",
+      "reads": [
+        "accumulator",
+        "centroid_sq"
+      ],
+      "writes": [
+        "distance_scratch"
+      ],
+      "waits": [
+        "accumulator_ready"
+      ],
+      "signals": [
+        "distance_ready"
+      ],
+      "depends_on": [
+        "dot_mma"
+      ],
+      "parameters": {
+        "formula": "bias_add_bf16_round",
+        "coalesced": true,
+        "subtile": [
+          128,
+          64
+        ],
+        "source_atom": {
+          "op": "tcgen05.Ld32x32b",
+          "repetition": 64
+        }
+      }
+    },
+    {
+      "id": "argmin",
+      "kind": "reduce_argmin",
+      "role": "reduce",
+      "reads": [
+        "distance_scratch"
+      ],
+      "writes": [
+        "best_index"
+      ],
+      "waits": [
+        "distance_ready"
+      ],
+      "depends_on": [
+        "distance_epilogue"
+      ],
+      "parameters": {
+        "tie_break": "lowest_index",
+        "nan_policy": "reject_input"
+      }
+    },
+    {
+      "id": "store_assignment",
+      "kind": "store",
+      "role": "reduce",
+      "reads": [
+        "best_index"
+      ],
+      "writes": [
+        "assignments"
+      ],
+      "depends_on": [
+        "argmin"
+      ],
+      "parameters": {
+        "coalesced": true
+      }
+    }
+  ],
+  "outputs": [
+    "assignments"
+  ],
+  "metadata": {
+    "profile": "flash_kmeans_assignment_full",
+    "legacy_source": {
+      "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
+      "path": "examples/schedules/flash-kmeans-assignment-full-explicit-v1.json",
+      "canonical_json_sha256": "ab091feacda93fde391335e0a9ae9f49ca26c2399b7d648b13ca14c8d51e5e63"
+    },
+    "shape": {
+      "rows": 128,
+      "centroids": 1024,
+      "features": 128
+    },
+    "threads_per_cta": 224,
+    "pipeline_stages": 2,
+    "mma_instruction": "tcgen05.mma.cta_group::1.kind::f16",
+    "dtypes": {
+      "input": "bf16",
+      "accumulator": "fp32",
+      "output": "int32"
+    }
+  },
+  "tile_loops": [
+    {
+      "name": "centroid_loop",
+      "iterator": "centroid_tile",
+      "buffer": "centroids",
+      "dimension": 0,
+      "tile": 256,
+      "body": [
+        "k_loop",
+        "distance_epilogue"
+      ],
+      "range_options": {
+        "num_stages": 1,
+        "loop_unroll_factor": 1,
+        "flatten": false,
+        "warp_specialize": true,
+        "disallow_acc_multi_buffer": true,
+        "disable_licm": false
+      }
+    },
+    {
+      "name": "k_loop",
+      "iterator": "k_tile",
+      "buffer": "centroids",
+      "dimension": 1,
+      "tile": 64,
+      "body": [
+        "load_tokens",
+        "load_centroids",
+        "dot_mma"
+      ],
+      "range_options": {
+        "num_stages": 2,
+        "loop_unroll_factor": 1,
+        "flatten": false,
+        "warp_specialize": true,
+        "disallow_acc_multi_buffer": true,
+        "disable_licm": false
+      }
+    }
+  ]
+}

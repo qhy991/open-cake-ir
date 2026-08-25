@@ -17,6 +17,7 @@ from .ir import (
     _SCHEDULE_OPTIONAL,
     _SCHEDULE_REQUIRED,
     DType,
+    EpilogueFormula,
     OperationKind,
     Schedule,
     ScheduleParseError,
@@ -233,7 +234,8 @@ def _tinygemm2_stage4_split_k_conformance(buffers, operations) -> list["Finding"
         if isinstance(shape, list) and isinstance(axis, int) and 0 <= axis < len(shape)
         else None
     )
-    if (
+    findings: list[Finding] = []
+    if not (
         reduction is not None
         and reduction.get("kind") == "reduce"
         # The operator is now the operation's to declare, so this profile has to say it
@@ -242,14 +244,36 @@ def _tinygemm2_stage4_split_k_conformance(buffers, operations) -> list["Finding"
         and parts == 4
         and parameters.get("scope") == "cta"
     ):
-        return []
-    return [
-        Finding(
-            "REDUCE_SUM_SEMANTICS",
-            "operations.reduce_partials.parameters.axis",
-            "TinyGEMM2 stage4 requires a four-part CTA reduction",
+        findings.append(
+            Finding(
+                "REDUCE_SUM_SEMANTICS",
+                "operations.reduce_partials.parameters.axis",
+                "TinyGEMM2 stage4 requires a four-part CTA reduction",
+            )
         )
-    ]
+    epilogue = next(
+        (operation for operation in operations if operation.get("id") == "bias_epilogue"),
+        None,
+    )
+    epilogue_parameters = (
+        _object(epilogue.get("parameters"), "operations.bias_epilogue.parameters")
+        if epilogue is not None
+        else {}
+    )
+    if (
+        epilogue is None
+        or epilogue.get("kind") != OperationKind.EPILOGUE.value
+        or epilogue_parameters.get("formula")
+        != EpilogueFormula.BIAS_ADD_BF16_ROUND.value
+    ):
+        findings.append(
+            Finding(
+                "TINYGEMM_EPILOGUE_SEMANTICS",
+                "operations.bias_epilogue.parameters.formula",
+                "TinyGEMM2 requires bias addition followed by BF16 rounding",
+            )
+        )
+    return findings
 
 
 def _rmsnorm_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
@@ -434,6 +458,36 @@ def _ragged_grouped_gemm_b1_smoke_conformance(buffers, operations) -> list["Find
             "buffers.a.shape",
             "the grouped-ragged smoke profile has four 16x16x32 contractions "
             "whose A rows share one runtime length per group",
+            blocks_acceptance=False,
+            blocks_lowering=True,
+        )
+    ]
+
+
+def _indexed_gather_b8_smoke_conformance(buffers, operations) -> list["Finding"]:
+    """Eight tokens gather eight routed rows from four expert-major groups.
+
+    The generic verifier owns runtime-index dtype, placement, zipped-domain and result
+    rules. This profile binds only the independent observation's workload geometry.
+    """
+
+    coheres = (
+        _shape_of(buffers, "expert_rows") == (4, 8, 16)
+        and _shape_of(buffers, "expert_ids") == (8, 8)
+        and _shape_of(buffers, "row_ids") == (8, 8)
+        and _shape_of(buffers, "gathered_rows") == (8, 8, 16)
+        and _shape_of(buffers, "expert_id_tile") == (8,)
+        and _shape_of(buffers, "row_id_tile") == (8,)
+        and _shape_of(buffers, "gathered_tile") == (8, 16)
+    )
+    if coheres:
+        return []
+    return [
+        Finding(
+            "PROFILE_SHAPE_MISMATCH",
+            "buffers.expert_rows.shape",
+            "the indexed-gather smoke profile gathers eight 16-value rows for each "
+            "of eight tokens from four capacity-8 expert groups",
             blocks_acceptance=False,
             blocks_lowering=True,
         )
@@ -653,6 +707,17 @@ _PROFILES: Mapping[str, _Profile] = {
             "entry_abi": "four_cuda_tensors_current_stream",
         },
         conformance=_ragged_grouped_gemm_b1_smoke_conformance,
+        backend=emit_triton,
+    ),
+    "indexed_gather_b8_smoke": _Profile(
+        toolchain={
+            "source_language": "python",
+            "compiler": "triton",
+            "entry_point": "cake_indexed_gather_b8_smoke",
+            "target": "sm_100a",
+            "entry_abi": "four_cuda_tensors_current_stream",
+        },
+        conformance=_indexed_gather_b8_smoke_conformance,
         backend=emit_triton,
     ),
     "layernorm_b8_smoke": _Profile(
@@ -1571,7 +1636,12 @@ class Compiler:
         if definition is not None and definition.closed_semantics is not None:
             semantic_sha = _semantic_schedule_sha256(schedule)
             known_delta = any(
-                finding.code in {"PROFILE_SHAPE_MISMATCH", "REDUCE_SUM_SEMANTICS"}
+                finding.code
+                in {
+                    "PROFILE_SHAPE_MISMATCH",
+                    "REDUCE_SUM_SEMANTICS",
+                    "TINYGEMM_EPILOGUE_SEMANTICS",
+                }
                 for finding in findings
             )
             if semantic_sha != definition.closed_semantics and not known_delta:
@@ -1587,29 +1657,26 @@ class Compiler:
 
         findings.extend(self._contract_findings(typed_schedule, target))
 
-        # The IR permits instruction-free MMA assets, but an otherwise-lowerable
-        # backend profile must choose the Target contract that determines its lowering.
-        # This is an eligibility-completeness check, not a redundant linter: a Schedule
-        # already blocked for another exact reason retains that stable Finding set.
+        # The backend owns these predicates and its direct emitter consumes the same
+        # preflight.  Project them only for an otherwise-lowerable Schedule: common
+        # structural/Target Findings remain the more precise authority when present.
         if (
             definition is not None
             and definition.backend
+            and target_definition is not None
             and not any(finding.blocks_lowering for finding in findings)
         ):
-            for index, operation in enumerate(operations):
-                if operation.get("kind") == OperationKind.MMA.value and not _object(
-                    operation.get("parameters"), f"operations[{index}].parameters"
-                ).get("instruction"):
-                    findings.append(
-                        Finding(
-                            "PROFILE_MMA_INSTRUCTION_REQUIRED",
-                            f"operations[{index}].parameters.instruction",
-                            f"profile {profile!r} lowers through a backend whose mma "
-                            "must name an instruction contract",
-                            blocks_acceptance=False,
-                            blocks_lowering=True,
-                        )
+            typed_target = Target.from_dict(dict(target_definition.document))
+            for failure in definition.backend.preflight(typed_schedule, typed_target):
+                findings.append(
+                    Finding(
+                        failure.code,
+                        failure.path,
+                        failure.message,
+                        blocks_acceptance=False,
+                        blocks_lowering=True,
                     )
+                )
 
         accepted = not any(finding.blocks_acceptance for finding in findings)
         lowering_eligible = accepted and not any(
