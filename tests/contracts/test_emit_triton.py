@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import copy
+from hashlib import sha256
 import itertools
 import json
 import re
@@ -617,3 +618,53 @@ class EmittedObservationTest(unittest.TestCase):
             re.findall(r"^\s+(TOTAL_TILES|NUM_CTAS)=(\d+),$", source, re.MULTILINE)
         )
         self.assertGreater(int(constants["TOTAL_TILES"]), int(constants["NUM_CTAS"]))
+
+
+class FailedV24ObservationAttemptTest(unittest.TestCase):
+    """The current-lowering probe failed, and that negative must stay legible."""
+
+    def test_frozen_plan_and_every_written_record_remain_bound(self) -> None:
+        attempt = json.loads(
+            (ROOT / "inventory" / "V24_B200_CORRECTNESS_ATTEMPT_20260825.json").read_text()
+        )
+        plan_path = ROOT / attempt["plan"]["path"]
+        self.assertEqual(
+            sha256(plan_path.read_bytes()).hexdigest(), attempt["plan"]["raw_sha256"]
+        )
+        plan = json.loads(plan_path.read_text())
+        self.assertEqual(plan["state"], "frozen")
+        self.assertEqual(
+            plan["partitions"]["generated_external_oracle"]["expected_case_count"],
+            14,
+        )
+
+        passed = 0
+        failed = 0
+        schedules: set[str] = set()
+        for authority in attempt["recorded_results"]:
+            path = ROOT / authority["path"]
+            self.assertEqual(
+                sha256(path.read_bytes()).hexdigest(), authority["raw_sha256"]
+            )
+            record = json.loads(path.read_text())
+            self.assertEqual(
+                record["compiler_revision"]["revision_id"],
+                "open-cake-ir-sm100a-v24",
+            )
+            self.assertTrue(record["lowering"]["generated"])
+            self.assertFalse(record["scientific_claim_authorized"])
+            self.assertFalse(record["performance_measured"])
+            schedules.add(record["schedule"]["path"])
+            if record["result"]["passed"]:
+                passed += 1
+            else:
+                failed += 1
+
+        self.assertEqual(len(schedules), 12)
+        self.assertEqual((passed, failed), (11, 1))
+        self.assertEqual(
+            {item["case_id"] for item in attempt["unrecorded_failures"]},
+            {"flash-kmeans-r16-accepted", "gemm-bias-shape-drift"},
+        )
+        self.assertFalse(attempt["disposition"]["generated_partition_passed"])
+        self.assertEqual(attempt["disposition"]["checked_asset_partition"], "missing")

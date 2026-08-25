@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "purpose": "current_lowering_correctness_attempt",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "plan": {
+    "path": "inventory/V24_B200_CORRECTNESS_PLAN_20260825.json",
+    "raw_sha256": "bc40fa154fb0893a1499c27b77041c447ae96c5a78a7241c764675f37c2b87c0"
+  },
+  "execution": {
+    "broker_job_id": "gpuq-f71d1d907fe3",
+    "mode": "shared",
+    "gpu_count": 1,
+    "device": "NVIDIA B200",
+    "started_at": "2026-08-25T06:43:58Z",
+    "completed_at": "2026-08-25T06:44:46Z",
+    "automatic_case_retries": 0
+  },
+  "selected_case_count": 14,
+  "recorded_results": [
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/block-scaled-gemm-accepted.json", "raw_sha256": "fc117ff5de0d36a18b1a15890b3059ea503de7d7cbbdfbfb0086f9f4404a30a1"},
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/flash-kmeans-r25-accepted.json", "raw_sha256": "c0b9d809086a23b0f5d55442197036392109e1fda55a2f7e72fa7e883bf84cc4"},
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/gemm-bias-accepted.json", "raw_sha256": "8e3e1e8516a135756982f0f4daa7cbffe1375ea4fb81b7539ad4eef7e4653285"},
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/indexed-gather-accepted.json", "raw_sha256": "8dda2f6e88f9cc511950c3761133eb4d8c50bc0b22e92cb7ae10d2d8c37b6ff2"},
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/layernorm-accepted.json", "raw_sha256": "619537744bbd78cb1e0a63f59016945ac1308e8cef4d7ff46e655b3fe0bb479c"},
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/ragged-grouped-gemm-accepted.json", "raw_sha256": "84758d39a3c13a4dc5a194017780ad64749505405bb2c06aa95a96fe66996576"},
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/ragged-zero-pad-accepted.json", "raw_sha256": "033ee5b697a112c8178612f70561ff291510ce04e6bf89a91bdba818869fcab0"},
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/rmsnorm-accepted.json", "raw_sha256": "23c0d1ba7fd108edeb0ab65fc76b199413fec73022b957bb0e72b03b09a4a8e7"},
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/rmsnorm-persistent.json", "raw_sha256": "3b889025da0c8c5a069622fed0033b5af53d1ab8a05edae1c65f632ebdacf4f8"},
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/softmax-accepted.json", "raw_sha256": "08161368b0db1cfba1e321d9cb13e7a7e39d61a9c152a470516cfbc4b5bbe08f"},
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/swiglu-accepted.json", "raw_sha256": "fae25f030c915c08a1eef86501cd03a599e3b8f29e89f8e47187eee9ec06eb68"},
+    {"path": "inventory/V24_B200_CORRECTNESS_20260825/top-k-accepted.json", "raw_sha256": "6a45157dd3122f5ce48aa42948351e66140ba9a796795b85f1cf9438121826cf"}
+  ],
+  "unrecorded_failures": [
+    {
+      "case_id": "flash-kmeans-r16-accepted",
+      "phase": "result_audit_after_launch_and_synchronize",
+      "error_type": "IndexError",
+      "message": "tie-aware distance indexing could not broadcast row indices [32] against batched assignments [32, 512]"
+    },
+    {
+      "case_id": "gemm-bias-shape-drift",
+      "phase": "external_oracle_before_compile_or_launch",
+      "error_type": "RuntimeError",
+      "message": "fixed-shape GEMM oracle could not add bias[128] to output[512,256]"
+    }
+  ],
+  "disposition": {
+    "generated_partition_passed": false,
+    "recorded_pass_count": 11,
+    "recorded_fail_count": 1,
+    "unrecorded_failure_count": 2,
+    "checked_asset_partition": "missing",
+    "note": "The failed attempt is retained. It authorizes no correctness or performance claim and its observations are never restamped as successor evidence."
+  }
+}
