@@ -42,6 +42,7 @@ from open_cake_ir.evaluation import (  # noqa: E402
     replay_portfolio_receipt,
     tensor_raw_sha256,
     tinygemm_metrics,
+    tinygemm_oracle,
 )
 
 
@@ -757,6 +758,40 @@ class EvaluationContractTests(unittest.TestCase):
         )
         self.assertFalse(old_self_consistent["bitwise_parent_equal"])
         self.assertTrue(old_self_consistent["tolerance_equal"])
+
+    def test_tinygemm_oracle_replays_cpu_fp32_linear_bytes(self) -> None:
+        document = json.loads(
+            (ROOT / "contracts/workloads/tinygemm2-stage4-v2.json").read_text()
+        )
+        generator = torch.Generator().manual_seed(17)
+        input_tensor = torch.randn((8, 1024), generator=generator).to(torch.bfloat16)
+        weight = torch.randn((1024, 1024), generator=generator).to(torch.bfloat16)
+        bias = torch.randn((1024,), generator=generator).to(torch.bfloat16)
+        expected = torch.nn.functional.linear(
+            input_tensor.cpu().float(),
+            weight.cpu().float(),
+            bias.cpu().float(),
+        ).to(torch.bfloat16)
+        expected_raw = expected.view(torch.uint8).numpy().tobytes(order="C")
+        document["cases"][0]["materialized"]["fp32_linear_bf16_oracle"] = {
+            "sha256": sha256(expected_raw).hexdigest(),
+            "size_bytes": len(expected_raw),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "workload.json"
+            path.write_text(json.dumps(document))
+            workload = WorkloadContract.load(path)
+
+        observed = tinygemm_oracle(
+            workload,
+            input_tensor,
+            weight,
+            bias,
+            case_id="stage4_n8_m1024_k1024",
+        )
+
+        self.assertEqual(observed.device.type, "cpu")
+        self.assertTrue(torch.equal(observed, expected))
 
     def test_r39_raw_samples_rederive_the_fixed_pair_observation(self) -> None:
         raw = json.loads((ROOT / "tests/fixtures/r39-paired-timing-result.json").read_text())

@@ -106,9 +106,9 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
 - Evidence v2 uses a no-follow CAS, create-only event files, authority genesis and one terminal schema. Read-only
   audit separates replayed archive integrity from current filesystem custody; weak clone modes never gain claim
   authority, while writer admission remains strict.
-- Current Executor Revision `open-cake-ir-b200-v28` binds the 34-source runtime closure, including deterministic
+- Current Executor Revision `open-cake-ir-b200-v29` binds the 34-source runtime closure, including deterministic
   external Campaign custody, the exact Nsight Compute executable and replay-checked attribution profiles, plus the
-  exact B200 host packages; v1–v5 are archived and v6–v27 are superseded descriptors. v19 canonically treats one
+  exact B200 host packages; v1–v5 are archived and v6–v28 are superseded descriptors. v19 canonically treats one
   observed same-path delete/add replacement as a resumed candidate update. v20 applies
   a cost order only when every launchable member is scored and emits a cost-model misranking diagnosis only when
   that order was actually applied; otherwise the whole set keeps provider order without inventing a ranking. v21
@@ -131,9 +131,11 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   selected survivor's projection becomes feedback. A frozen live successor now passes that exact protocol on B200
   after re-freezing its broker command. v28 repairs TinyGEMM2's Workload adapter: current v2 materialization pins the
   exact `/8` CUDA inputs, independent FP32 oracle and retained parent output, then evaluates parent-bitwise equality
-  separately from oracle tolerance. This closes the self-consistent input/oracle defect, not the still-missing
-  current checked-asset launch.
-  The current local suite passes 396 pytest items. The earlier remote qualification passed its frozen
+  separately from oracle tolerance. Its first fully admitted B200 observer then caught that the adapter evaluated
+  the pinned CPU oracle with CUDA matmul. v29 restores the historical CPU FP32-linear execution and performs both
+  metric operands on CPU. The failed pre-kernel observation is retained; a successor current checked-asset launch
+  remains missing.
+  The current local suite passes 397 pytest items. The earlier remote qualification passed its frozen
   contract suite, host admission and compile-only Triton check without launching a kernel.
 - The beginner GPU quickstart passes on an exclusive B200: one candidate kernel launch from the loaded CUBIN,
   16,384 correct assignments, zero fallback calls, synchronized module unload, no performance measurement and no

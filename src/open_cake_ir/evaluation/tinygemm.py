@@ -101,14 +101,15 @@ def tinygemm_oracle(
     *,
     case_id: str,
 ) -> object:
-    """Apply the Workload-owned FP32 linear semantics then BF16 rounding."""
+    """Apply the Workload-owned CPU FP32 linear semantics then BF16 rounding."""
 
     if workload.document["oracle"]["kind"] != "fp32_linear_then_bf16_round":
         raise ValueError("TinyGEMM oracle authority differs")
     torch = __import__("torch")
-    oracle = (
-        torch.matmul(input_tensor.to(torch.float32), weight.to(torch.float32).transpose(0, 1))
-        + bias.to(torch.float32)
+    oracle = torch.nn.functional.linear(
+        input_tensor.detach().cpu().float(),
+        weight.detach().cpu().float(),
+        bias.detach().cpu().float(),
     ).to(torch.bfloat16)
     _require_materialized_match(
         workload, case_id, "fp32_linear_bf16_oracle", oracle
@@ -138,18 +139,18 @@ def tinygemm_metrics(
         output_sha256 == parent.get("sha256")
         and output_size == parent.get("size_bytes")
     )
+    output_fp32 = output.detach().cpu().float()
+    oracle_fp32 = oracle.detach().cpu().float()
     close = bool(
         torch.allclose(
-            output.to(torch.float32),
-            oracle.to(torch.float32),
+            output_fp32,
+            oracle_fp32,
             atol=float(tolerance["atol"]),
             rtol=float(tolerance["rtol"]),
             equal_nan=False,
         )
     )
-    maximum = float(
-        (output.to(torch.float32) - oracle.to(torch.float32)).abs().max().item()
-    )
+    maximum = float((output_fp32 - oracle_fp32).abs().max().item())
     return {
         "bitwise_parent_equal": parent_exact,
         "tolerance_equal": close,

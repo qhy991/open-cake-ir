@@ -19,7 +19,7 @@ disposition.
 | 8 | lowering profile is both routing and workload constraint | fixed in Compiler v24 |
 | 9 | emitter preconditions were late failures | fixed in Compiler v23 |
 | 10 | tiled accesses used the coordinate owner's extent instead of the accessed Buffer's extent | fixed in Compiler v25; B200 successor retains two separate numerical failures |
-| 11 | TinyGEMM2 regenerated a different input distribution and compared output bitwise to its own oracle | fixed by Workload v2 and Executor v28; current checked-asset launch remains missing |
+| 11 | TinyGEMM2 regenerated a different input distribution and compared output bitwise to its own oracle | fixed by Workload v2 and Executor v29; current checked-asset launch remains missing |
 
 ## Re-verification and action
 
@@ -127,7 +127,7 @@ bytes. They were not re-labelled as v24 evidence. The frozen v24 diagnostic atte
 the v25 successor now provide the historical/current split for generated lowering, while
 a successor ranking calibration remains missing. The TinyGEMM2 checked-asset partition
 also remains missing because the historical r31 launch is not current-v25 binary
-evidence. The v25 Corpus Gate is 32/32 and the zero-GPU suite passes 396 pytest items;
+evidence. The v25 Corpus Gate is 32/32 and the zero-GPU suite passes 397 pytest items;
 those gates validate the ownership migration but do not substitute for either missing
 successor.
 
@@ -179,5 +179,15 @@ launch, and implements the two declared predicates independently: output bytes m
 equal the pinned parent and output values must satisfy the unchanged FP32-oracle
 tolerance. An inventory plan that binds exact Executor descriptor bytes now witnesses
 that revision during release, preventing another observed descriptor from being reclaimed
-in place. This fixes the Workload and Evaluation semantics; it does not relabel r31 as a
-current Compiler-v25 binary launch, so the checked-asset partition remains missing.
+in place.
+
+The first attempt to reach the current binary exposed two staged-import closure failures;
+both happened before materialization and are retained. The next shared-B200 attempt
+(`gpuq-e425666c5de2`, no timing, zero retries) passed all 17 byte-authority checks and all
+three generated input receipts, then failed before candidate launch. The adapter had
+evaluated the receipt-pinned historical CPU oracle with CUDA matmul, producing different
+BF16 bytes. Executor v29 makes the existing declaration executable without adding a mode:
+it moves all three operands to CPU, calls FP32 linear, rounds to BF16, and compares output
+and oracle metrics on CPU. This repairs the second self-consistent oracle defect; it does
+not relabel r31 or the failed v28 attempt as a current Compiler-v25 binary launch, so the
+checked-asset partition remains missing pending one successor observation.

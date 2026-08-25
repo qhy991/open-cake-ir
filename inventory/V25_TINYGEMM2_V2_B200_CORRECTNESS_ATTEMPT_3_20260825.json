@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "purpose": "current_checked_asset_correctness",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "plan": {
+    "path": "inventory/V25_TINYGEMM2_V2_B200_CORRECTNESS_SUCCESSOR_2_PLAN_20260825.json",
+    "raw_sha256": "e0acdf039ffe29f0068bb3358737f67dde0fa1589d51d07865cca5130b375561"
+  },
+  "executor_binding": {
+    "executor_id": "open-cake-ir-b200-v28",
+    "executor_descriptor": "runtime/executors/open-cake-ir-b200-v28.json",
+    "executor_descriptor_raw_sha256": "6de7c4637b9f5e97cd07c7d41b5673167bc232f6eee5989e35e8150c3995a095"
+  },
+  "execution": {
+    "broker_job_id": "gpuq-e425666c5de2",
+    "mode": "shared",
+    "gpu_count": 1,
+    "automatic_retries": 0,
+    "broker_exit_code": 1,
+    "environment": {
+      "device": "NVIDIA B200",
+      "torch": "2.13.0+cu130",
+      "cuda_runtime": "13.0",
+      "visible_device_count": 1
+    }
+  },
+  "raw_observation": {
+    "external_path": "/home/qinhaiyan/tinygemm-v28-launch.1c05047/observation.json",
+    "raw_sha256": "ffadad359ae8d98da0c24732d33dbfe8be938566d429e09ce912edbca60acb98"
+  },
+  "result": {
+    "status": "failed_before_kernel",
+    "authority_byte_check_count": 17,
+    "all_authority_byte_checks_passed": true,
+    "input_weight_bias_receipts_passed": true,
+    "kernel_calls": 0,
+    "fallback_calls": 0,
+    "failure_code": "oracle_execution_location_differs",
+    "failure_boundary": "fp32_linear_bf16_oracle_receipt",
+    "exception_type": "ValueError",
+    "message": "The adapter evaluated the declared oracle with CUDA matmul, while the pinned historical authority moves input, weight and bias to CPU before FP32 linear and BF16 rounding. The resulting BF16 bytes differ. No candidate kernel executed."
+  },
+  "disposition": {
+    "passed": false,
+    "checked_asset_partition": "missing",
+    "successor_required": true,
+    "note": "Repair the existing oracle implementation to execute the already-declared CPU FP32 linear semantics and compare metrics on one device. Workload receipts, binary, Compiler, tolerance and expected parent output remain unchanged."
+  }
+}

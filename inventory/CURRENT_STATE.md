@@ -1,7 +1,7 @@
 # Current-state inventory
 
 Snapshot: 2026-08-25 after declared-domain ranking calibration, candidate-set envelope implementation and live
-system qualification, historical Executor-v10 NCU attribution validation, Executor v28 release and Compiler v25
+system qualification, historical Executor-v10 NCU attribution validation, Executor v29 release and Compiler v25
 access-boundary successor over the v24 lowering-route/Workload ownership separation. The final
 legacy authority is clean revision
 `2fa79092c143fd8c2d9caa93fd84ad79a7504836`, tree `b02d730bb892629f250a20b8c5bd5869262e5c03`.
@@ -85,12 +85,12 @@ causal effect, serving and paper reproduction are not.
   remains 0/57 for complete-version expressibility because routing/group formation, valid-tile work acquisition,
   the second contraction, scatter and the multi-kernel program DAG are still absent; no KDA performance claim is
   made.
-- Current Executor Revision `open-cake-ir-b200-v28` binds 34 runtime sources, including deterministic external
+- Current Executor Revision `open-cake-ir-b200-v29` binds 34 runtime sources, including deterministic external
   Campaign custody, the GPU teaching smoke, and the typed NCU profile parser, plus
   the exact remote Python, Torch/Triton, CUDA bindings, FlashInfer helper and CUPTI Python files. Remote host admission
   and no-GPU Triton-to-CUBIN qualification pass; the latter produced a 149,792-byte CUBIN and external seal anchor.
   The Executor pins NCU 2026.1.1.0 by path, bytes and size. G8 r6 retains its exact v1 closure, later source baselines
-  retain v2–v5, and v6–v27 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all twenty-eight revisions. v19
+  retain v2–v5, and v6–v28 are superseded; `inventory/EXECUTOR_REVISIONS.json` resolves all twenty-nine revisions. v19
   normalizes the observed same-path delete/add replacement lifecycle to the single canonical resumed update, while
   rejecting different paths, orderings and kinds. v20 routes a measured order inversion to the cost model only when
   complete released cost coverage actually ordered the candidate set; provider order with null costs no longer
@@ -110,11 +110,13 @@ causal effect, serving and paper reproduction are not.
   claim-bearing projection. v28 gives TinyGEMM2 one current v2 Workload authority: exact regenerated input, weight,
   bias and oracle receipts plus the retained upstream-parent output. Its adapter restores `/8` input/weight scaling,
   fails before launch on any byte drift, and implements parent-bitwise equality separately from FP32-oracle
-  tolerance. The Lab makes Claim Scope the
+  tolerance. A fully admitted v28 B200 attempt then failed before kernel launch because the adapter used CUDA
+  matmul for the receipt-pinned CPU oracle. v29 executes the historical CPU FP32 linear exactly and compares metric
+  operands on CPU; the failure remains frozen and a successor launch is still required. The Lab makes Claim Scope the
   single authority for choosing the
   closed versus tool-rich live provider qualification, so
   artifact-only live composition no longer rejects its own qualified provider.
-- Five current Study templates resolve Compiler v25 and Executor v28 into exact CampaignLocks without revision-only
+- Five current Study templates resolve Compiler v25 and Executor v29 into exact CampaignLocks without revision-only
   Study successors. The matched templates profile every correctness-qualified search
   survivor through the existing no-timing attribution purpose, and feed back only the selected survivor's checked
   projection. Frozen selected-only evidence
@@ -139,7 +141,7 @@ causal effect, serving and paper reproduction are not.
   non-scientific two-search Campaign now pass all three ADR 0009 acceptance steps.
 - Evidence v2 has no-follow CAS, serialized create-only events, one terminal schema, fresh-process replay and one
   RunAudit authority for separate archive-integrity and filesystem-custody facts.
-- The current local contract suite passes 396 pytest items; the earlier remote qualification passed its
+- The current local contract suite passes 397 pytest items; the earlier remote qualification passed its
   frozen 123-test/13-subtest suite. G7 r4 qualifies the real provider under a
   closed feature denylist. G8 r6 completes two adhered Runs and four semantically replayed GPU Evaluation Receipts;
   independent offline audit sets only `system_qualification_passed=true`, while estimand/estimate/uncertainty remain
