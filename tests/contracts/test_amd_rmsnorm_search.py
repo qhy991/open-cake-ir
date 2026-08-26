@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from hashlib import sha256
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,6 +29,7 @@ from open_cake_ir.evaluation.amd_rmsnorm_search import (  # noqa: E402
     candidate_id,
     diagnose_terminal_decision,
     derive_confirmatory_decision,
+    derive_noise_decision,
     materialize_candidates,
 )
 from open_cake_ir.evaluation.timing import summarize_cohort  # noqa: E402
@@ -125,6 +127,24 @@ class ContractFixture:
                 "l2_flush_bytes": 268435456,
                 "maximum_cv": 0.05,
             },
+            "noise": {
+                "case_id": "seeded_random",
+                "arms": ["baseline_a", "baseline_b"],
+                "pair_order": [
+                    ["baseline_a", "baseline_b"],
+                    ["baseline_b", "baseline_a"],
+                    ["baseline_b", "baseline_a"],
+                    ["baseline_a", "baseline_b"],
+                ],
+                "samples_per_cohort": 25,
+                "warmup_launches_per_cohort": 5,
+                "launches_per_sample": 50,
+                "route_calls_per_cohort": 1255,
+                "maximum_cv": 0.05,
+                "materiality_ratio": 1.05,
+                "required_pair_wins": 3,
+                "required_classification": "close_null",
+            },
             "confirmatory": {
                 "arms": ["candidate", "baseline"],
                 "pair_order": [
@@ -190,6 +210,35 @@ def _measurements(
     return result
 
 
+def _noise_measurements(
+    contract: AmdRmsNormSearchContract,
+    baseline_a_samples: list[float],
+    baseline_b_samples: list[float],
+) -> list[dict[str, object]]:
+    protocol = contract.noise.timing
+    result: list[dict[str, object]] = []
+    for pair_index, order in enumerate(protocol.pair_order):
+        arms: dict[str, object] = {}
+        for position, arm in enumerate(order):
+            samples = (
+                baseline_a_samples if arm == "baseline_a" else baseline_b_samples
+            )
+            arms[arm] = {
+                "position": position,
+                "samples_ms": list(samples),
+                "summary": summarize_cohort(samples),
+                "route_calls": protocol.route_calls_per_cohort,
+            }
+        result.append(
+            {
+                "pair_index": pair_index,
+                "order": list(order),
+                "arms": arms,
+            }
+        )
+    return result
+
+
 class AmdRmsNormSearchContractTests(unittest.TestCase):
     @unittest.skipUnless(
         SEARCH_CONTRACT.exists(),
@@ -219,7 +268,9 @@ class AmdRmsNormSearchContractTests(unittest.TestCase):
         self.assertEqual(result["status"], "prepared")
         self.assertEqual(result["candidate_count"], 4)
         self.assertEqual(result["compiler"]["revision_id"], "open-cake-ir-v29")
-        self.assertEqual(result["executor"]["executor_id"], "open-cake-ir-b200-v30")
+        self.assertEqual(
+            result["executor"]["executor_id"], "open-cake-ir-gfx1151-v3"
+        )
         self.assertFalse(result["gpu_submitted"])
 
     @unittest.skipUnless(
@@ -263,6 +314,11 @@ class AmdRmsNormSearchContractTests(unittest.TestCase):
         self.assertEqual(contract.executor_id, "open-cake-ir-test-v30")
         self.assertEqual(contract.screening.case_id, "seeded_random")
         self.assertEqual(contract.screening.launches_per_sample, 50)
+        self.assertEqual(contract.noise.case_id, "seeded_random")
+        self.assertEqual(
+            contract.noise.timing.arms, ("baseline_a", "baseline_b")
+        )
+        self.assertEqual(contract.noise.required_classification, "close_null")
         self.assertEqual(contract.confirmatory.launches_per_sample, 50)
         self.assertEqual(
             contract.attribution.arm_order, ("candidate", "baseline")
@@ -271,6 +327,10 @@ class AmdRmsNormSearchContractTests(unittest.TestCase):
         self.assertTrue(contract.attribution.stats)
         self.assertEqual(contract.attribution.output_formats, ("csv", "json"))
         self.assertEqual(contract.attribution.timing, "none")
+        self.assertEqual(
+            contract.noise.timing.route_calls_per_cohort,
+            5 + 25 * 50,
+        )
         self.assertEqual(
             contract.confirmatory.timing.route_calls_per_cohort,
             5 + 25 * 50,
@@ -289,6 +349,12 @@ class AmdRmsNormSearchContractTests(unittest.TestCase):
             ].append(128),
             "route_count": lambda fixture: fixture.document["confirmatory"].__setitem__(
                 "route_calls_per_cohort", 30
+            ),
+            "noise_route_count": lambda fixture: fixture.document["noise"].__setitem__(
+                "route_calls_per_cohort", 30
+            ),
+            "noise_direction": lambda fixture: fixture.document["noise"].__setitem__(
+                "required_classification", "first_arm_faster"
             ),
             "screening": lambda fixture: fixture.document["screening"].__setitem__(
                 "rounds_per_candidate", 6
@@ -419,6 +485,49 @@ class AmdRmsNormDecisionTests(unittest.TestCase):
         self.contract = ContractFixture(self).load()
         self.count = self.contract.confirmatory.timing.samples_per_cohort
 
+    def test_baseline_noise_requires_a_stable_close_null(self) -> None:
+        count = self.contract.noise.timing.samples_per_cohort
+        stable = derive_noise_decision(
+            self.contract,
+            _noise_measurements(
+                self.contract,
+                [1.0] * count,
+                [1.01] * count,
+            ),
+        )
+        directional = derive_noise_decision(
+            self.contract,
+            _noise_measurements(
+                self.contract,
+                [0.9] * count,
+                [1.0] * count,
+            ),
+        )
+        noisy = [0.5 if index % 2 == 0 else 1.5 for index in range(count)]
+        unstable = derive_noise_decision(
+            self.contract,
+            _noise_measurements(self.contract, noisy, [1.0] * count),
+        )
+
+        self.assertTrue(stable.passed)
+        self.assertEqual(stable.observation.classification, "close_null")
+        self.assertFalse(directional.passed)
+        self.assertEqual(
+            directional.observation.classification, "first_arm_faster"
+        )
+        self.assertFalse(unstable.passed)
+        self.assertFalse(unstable.observation.measurement_quality_passed)
+
+    def test_baseline_noise_rejects_raw_measurement_tampering(self) -> None:
+        count = self.contract.noise.timing.samples_per_cohort
+        measurements = _noise_measurements(
+            self.contract, [1.0] * count, [1.0] * count
+        )
+        measurements[0]["arms"]["baseline_a"]["summary"]["median_ms"] = 0.1
+
+        with self.assertRaisesRegex(ValueError, "summary differs"):
+            derive_noise_decision(self.contract, measurements)
+
     def test_maps_every_stable_direction_and_close_null(self) -> None:
         cases = (
             (0.90, 1.00, LEAF_TIMING_WIN),
@@ -508,6 +617,112 @@ class AmdRmsNormDecisionTests(unittest.TestCase):
         self.assertEqual(
             profiled["reason_code"], "LEAF_WIN_READY_FOR_AITER_COMPARISON"
         )
+
+
+class _FakeTensor:
+    def __init__(
+        self,
+        value: float,
+        pointer: int,
+        *,
+        shape: tuple[int, ...] = (),
+        dtype: object = None,
+    ) -> None:
+        self.value = value
+        self.pointer = pointer
+        self.shape = shape
+        self.dtype = dtype
+
+    def clone(self) -> "_FakeTensor":
+        return _FakeTensor(
+            self.value,
+            self.pointer,
+            shape=self.shape,
+            dtype=self.dtype,
+        )
+
+    def data_ptr(self) -> int:
+        return self.pointer
+
+    def is_contiguous(self) -> bool:
+        return True
+
+
+class _FakeTorch:
+    float32 = object()
+
+    class cuda:
+        @staticmethod
+        def synchronize() -> None:
+            return None
+
+    @staticmethod
+    def equal(first: _FakeTensor, second: _FakeTensor) -> bool:
+        return first.value == second.value
+
+
+class _FakeCandidate:
+    def __init__(self, *, mutate_input: bool) -> None:
+        self.artifacts = {"hsaco": b"fixed"}
+        self.outputs = {
+            "case": _FakeTensor(
+                0.0,
+                30,
+                shape=(1, 2, 3),
+                dtype=_FakeTorch.float32,
+            )
+        }
+        self.mutate_input = mutate_input
+
+    def launch(self, case_id: str, material: object) -> object:
+        if self.mutate_input:
+            material.inputs[0].value += 1.0
+        return object()
+
+
+class AmdRmsNormRuntimeCorrectnessTests(unittest.TestCase):
+    def _material(self) -> object:
+        inputs = (_FakeTensor(1.0, 10), _FakeTensor(2.0, 20))
+        return search_runner._CaseMaterial(
+            inputs=inputs,
+            reference=object(),
+            shape=(1, 2, 3),
+            input_snapshots=tuple(value.clone() for value in inputs),
+            input_data_ptrs=tuple(value.data_ptr() for value in inputs),
+        )
+
+    def test_correctness_fails_if_a_kernel_mutates_an_input(self) -> None:
+        workload = object()
+        with (
+            patch.object(
+                search_runner,
+                "artifact_records",
+                return_value={"hsaco": {"sha256": "fixed"}},
+            ),
+            patch.object(search_runner, "extract_artifacts", return_value={}),
+            patch.object(
+                search_runner,
+                "rmsnorm_metrics",
+                return_value={"passed": True, "maximum_absolute_error": 0.0},
+            ),
+        ):
+            unchanged = search_runner._correctness(
+                _FakeCandidate(mutate_input=False),
+                workload,
+                {"case": self._material()},
+                _FakeTorch,
+            )
+            mutated = search_runner._correctness(
+                _FakeCandidate(mutate_input=True),
+                workload,
+                {"case": self._material()},
+                _FakeTorch,
+            )
+
+        self.assertTrue(unchanged["passed"])
+        self.assertTrue(unchanged["inputs_unchanged"])
+        self.assertFalse(mutated["passed"])
+        self.assertFalse(mutated["inputs_unchanged"])
 
 
 if __name__ == "__main__":

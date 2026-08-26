@@ -43,6 +43,7 @@ _TOP_LEVEL_FIELDS = {
     "workload",
     "geometry",
     "screening",
+    "noise",
     "confirmatory",
     "attribution",
 }
@@ -68,6 +69,24 @@ _SCREENING = {
     "launches_per_sample": 50,
     "l2_flush_bytes": 268435456,
     "maximum_cv": 0.05,
+}
+_NOISE = {
+    "case_id": "seeded_random",
+    "arms": ["baseline_a", "baseline_b"],
+    "pair_order": [
+        ["baseline_a", "baseline_b"],
+        ["baseline_b", "baseline_a"],
+        ["baseline_b", "baseline_a"],
+        ["baseline_a", "baseline_b"],
+    ],
+    "samples_per_cohort": 25,
+    "warmup_launches_per_cohort": 5,
+    "launches_per_sample": 50,
+    "route_calls_per_cohort": 1255,
+    "maximum_cv": 0.05,
+    "materiality_ratio": 1.05,
+    "required_pair_wins": 3,
+    "required_classification": "close_null",
 }
 _CONFIRMATORY = {
     "arms": ["candidate", "baseline"],
@@ -264,6 +283,17 @@ class AmdRmsNormScreeningProtocol:
 
 
 @dataclass(frozen=True)
+class AmdRmsNormNoiseProtocol:
+    """Baseline-to-baseline false-win gate before any candidate timing."""
+
+    case_id: str
+    timing: PairedTimingProtocol
+    warmup_launches_per_cohort: int
+    launches_per_sample: int
+    required_classification: str
+
+
+@dataclass(frozen=True)
 class AmdRmsNormConfirmatoryProtocol:
     """Paired decision protocol plus the launch aggregation it does not model."""
 
@@ -309,6 +339,29 @@ class AmdRmsNormCandidate:
         return Schedule.from_dict(self.document)
 
 
+def _paired_protocol(
+    document: Mapping[str, object], context: str
+) -> tuple[PairedTimingProtocol, int, int]:
+    timing = PairedTimingProtocol(
+        arms=cast(tuple[str, str], tuple(document["arms"])),
+        pair_order=tuple(
+            cast(tuple[str, str], tuple(pair))
+            for pair in cast(list[list[str]], document["pair_order"])
+        ),
+        samples_per_cohort=cast(int, document["samples_per_cohort"]),
+        route_calls_per_cohort=cast(int, document["route_calls_per_cohort"]),
+        maximum_cv=cast(float, document["maximum_cv"]),
+        materiality_ratio=cast(float, document["materiality_ratio"]),
+        required_pair_wins=cast(int, document["required_pair_wins"]),
+    )
+    warmups = cast(int, document["warmup_launches_per_cohort"])
+    launches_per_sample = cast(int, document["launches_per_sample"])
+    expected_route_calls = warmups + timing.samples_per_cohort * launches_per_sample
+    if timing.route_calls_per_cohort != expected_route_calls:
+        raise ValueError(f"{context} route_calls_per_cohort differs")
+    return timing, warmups, launches_per_sample
+
+
 @dataclass(frozen=True)
 class AmdRmsNormSearchContract:
     """Validated authority for the one bounded gfx1151 hardware search."""
@@ -328,6 +381,7 @@ class AmdRmsNormSearchContract:
     workload_path: Path
     workload_sha256: str
     screening: AmdRmsNormScreeningProtocol
+    noise: AmdRmsNormNoiseProtocol
     confirmatory: AmdRmsNormConfirmatoryProtocol
     attribution: AmdRmsNormAttributionProtocol
     _template_bytes: bytes
@@ -361,6 +415,8 @@ class AmdRmsNormSearchContract:
             raise ValueError("search contract geometry differs")
         if document.get("screening") != _SCREENING:
             raise ValueError("search contract screening protocol differs")
+        if document.get("noise") != _NOISE:
+            raise ValueError("search contract baseline noise protocol differs")
         if document.get("confirmatory") != _CONFIRMATORY:
             raise ValueError("search contract confirmatory protocol differs")
         if document.get("attribution") != _ATTRIBUTION:
@@ -409,26 +465,15 @@ class AmdRmsNormSearchContract:
         )
         _validate_template(template, workload_sha256)
 
-        confirmatory = cast(Mapping[str, object], document["confirmatory"])
-        timing = PairedTimingProtocol(
-            arms=cast(tuple[str, str], tuple(confirmatory["arms"])),
-            pair_order=tuple(
-                cast(tuple[str, str], tuple(pair))
-                for pair in cast(list[list[str]], confirmatory["pair_order"])
-            ),
-            samples_per_cohort=cast(int, confirmatory["samples_per_cohort"]),
-            route_calls_per_cohort=cast(int, confirmatory["route_calls_per_cohort"]),
-            maximum_cv=cast(float, confirmatory["maximum_cv"]),
-            materiality_ratio=cast(float, confirmatory["materiality_ratio"]),
-            required_pair_wins=cast(int, confirmatory["required_pair_wins"]),
-        )
-        warmups = cast(int, confirmatory["warmup_launches_per_cohort"])
-        launches_per_sample = cast(int, confirmatory["launches_per_sample"])
-        expected_route_calls = warmups + timing.samples_per_cohort * launches_per_sample
-        if timing.route_calls_per_cohort != expected_route_calls:
-            raise ValueError("confirmatory route_calls_per_cohort differs")
-
         screening = cast(Mapping[str, object], document["screening"])
+        noise = cast(Mapping[str, object], document["noise"])
+        noise_timing, noise_warmups, noise_launches = _paired_protocol(
+            noise, "baseline noise"
+        )
+        confirmatory = cast(Mapping[str, object], document["confirmatory"])
+        timing, warmups, launches_per_sample = _paired_protocol(
+            confirmatory, "confirmatory"
+        )
         attribution = cast(Mapping[str, object], document["attribution"])
         return cls(
             project_root=root,
@@ -453,6 +498,15 @@ class AmdRmsNormSearchContract:
                 launches_per_sample=cast(int, screening["launches_per_sample"]),
                 l2_flush_bytes=cast(int, screening["l2_flush_bytes"]),
                 maximum_cv=cast(float, screening["maximum_cv"]),
+            ),
+            noise=AmdRmsNormNoiseProtocol(
+                case_id=cast(str, noise["case_id"]),
+                timing=noise_timing,
+                warmup_launches_per_cohort=noise_warmups,
+                launches_per_sample=noise_launches,
+                required_classification=cast(
+                    str, noise["required_classification"]
+                ),
             ),
             confirmatory=AmdRmsNormConfirmatoryProtocol(
                 timing=timing,
@@ -481,6 +535,14 @@ class AmdRmsNormSearchDecision:
     """Terminal leaf-only interpretation of one retained paired measurement."""
 
     status: str
+    observation: PairedTimingObservation
+
+
+@dataclass(frozen=True)
+class AmdRmsNormNoiseDecision:
+    """Replayable decision for one baseline-to-baseline measurement."""
+
+    passed: bool
     observation: PairedTimingObservation
 
 
@@ -586,6 +648,22 @@ def derive_confirmatory_decision(
     except KeyError as error:
         raise ValueError("paired timing classification is unsupported") from error
     return AmdRmsNormSearchDecision(status=status, observation=observation)
+
+
+def derive_noise_decision(
+    contract: AmdRmsNormSearchContract,
+    measurements: object,
+) -> AmdRmsNormNoiseDecision:
+    """Reject timing when the same baseline produces a material false winner."""
+
+    observation = derive_paired_timing(measurements, contract.noise.timing)
+    return AmdRmsNormNoiseDecision(
+        passed=(
+            observation.measurement_quality_passed
+            and observation.classification == contract.noise.required_classification
+        ),
+        observation=observation,
+    )
 
 
 def diagnose_terminal_decision(
@@ -720,6 +798,8 @@ __all__ = [
     "AmdRmsNormCandidate",
     "AmdRmsNormAttributionProtocol",
     "AmdRmsNormConfirmatoryProtocol",
+    "AmdRmsNormNoiseDecision",
+    "AmdRmsNormNoiseProtocol",
     "AmdRmsNormScreeningProtocol",
     "AmdRmsNormSearchContract",
     "AmdRmsNormSearchDecision",
@@ -736,6 +816,7 @@ __all__ = [
     "TARGET",
     "candidate_id",
     "derive_confirmatory_decision",
+    "derive_noise_decision",
     "derive_profiled_diagnosis",
     "diagnose_terminal_decision",
     "materialize_candidates",

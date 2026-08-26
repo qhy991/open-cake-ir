@@ -23,6 +23,7 @@ from open_cake_ir.evaluation.amd_rmsnorm_search import (  # noqa: E402
     AmdRmsNormCandidate,
     AmdRmsNormSearchContract,
     derive_confirmatory_decision,
+    derive_noise_decision,
     derive_profiled_diagnosis,
     materialize_candidates,
 )
@@ -203,7 +204,19 @@ def _all_correctness_passed(value: object, context: str) -> bool:
     document = require_object(value, context)
     return set(document) == set(_ARMS) and all(
         require_object(document[arm], f"{context}.{arm}").get("passed") is True
+        and require_object(document[arm], f"{context}.{arm}").get(
+            "inputs_unchanged"
+        )
+        is True
         for arm in _ARMS
+    )
+
+
+def _correctness_passed(value: object, context: str) -> bool:
+    document = require_object(value, context)
+    return (
+        document.get("passed") is True
+        and document.get("inputs_unchanged") is True
     )
 
 
@@ -216,7 +229,11 @@ def _load_timing_handoff(
     records, payloads, manifest_sha256 = _verify_manifest(
         evidence_root,
         expected_kind="open_cake_gfx1151_rmsnorm_search_manifest_v2",
-        required_paths=("result.json", "confirmatory/measurements.json"),
+        required_paths=(
+            "result.json",
+            "noise/measurements.json",
+            "confirmatory/measurements.json",
+        ),
     )
     result_record = records["result.json"]
     result_value = _canonical_value(payloads["result.json"], "parent result")
@@ -226,6 +243,10 @@ def _load_timing_handoff(
     measurements = _canonical_value(
         payloads["confirmatory/measurements.json"],
         "parent confirmatory measurements",
+    )
+    noise_measurements = _canonical_value(
+        payloads["noise/measurements.json"],
+        "parent baseline noise measurements",
     )
     if result.get("kind") != "open_cake_gfx1151_llama_rmsnorm_search_v2":
         raise ValueError("parent result kind differs")
@@ -255,6 +276,28 @@ def _load_timing_handoff(
     source = git_state(project_root)
     if result.get("source_custody") != source or source["tree_clean"] is not True:
         raise ValueError("parent and current source custody differ")
+    noise = require_object(result.get("noise"), "parent baseline noise")
+    if set(noise) != {
+        "preflight_correctness",
+        "measurements",
+        "observation",
+        "postflight_correctness",
+        "passed",
+    } or noise.get("measurements") != noise_measurements:
+        raise ValueError("parent raw baseline noise measurements differ")
+    if not _correctness_passed(
+        noise.get("preflight_correctness"), "parent noise preflight"
+    ) or not _correctness_passed(
+        noise.get("postflight_correctness"), "parent noise postflight"
+    ):
+        raise ValueError("parent baseline noise correctness differs")
+    noise_decision = derive_noise_decision(contract, noise_measurements)
+    if (
+        not noise_decision.passed
+        or noise.get("passed") is not True
+        or search._observation_document(noise_decision) != noise.get("observation")
+    ):
+        raise ValueError("parent baseline noise decision does not replay")
     confirmatory = require_object(result.get("confirmatory"), "parent confirmatory")
     if set(confirmatory) != {
         "preflight_correctness",

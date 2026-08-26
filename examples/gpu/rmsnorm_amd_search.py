@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.evaluation import (  # noqa: E402
+    PairedTimingProtocol,
     WorkloadContract,
     generate_rmsnorm_case,
     rmsnorm_metrics,
@@ -35,6 +36,7 @@ from open_cake_ir.evaluation.amd_rmsnorm_search import (  # noqa: E402
     AmdRmsNormSearchContract,
     diagnose_terminal_decision,
     derive_confirmatory_decision,
+    derive_noise_decision,
     materialize_candidates,
 )
 from open_cake_ir.evaluation.triton_hip import (  # noqa: E402
@@ -63,6 +65,8 @@ class _CaseMaterial:
     inputs: tuple[object, ...]
     reference: object
     shape: tuple[int, int, int]
+    input_snapshots: tuple[object, ...]
+    input_data_ptrs: tuple[int, ...]
 
 
 @dataclass
@@ -275,7 +279,15 @@ def _case_materials(
         reference = rmsnorm_oracle(workload, *inputs)
         if tuple(inputs[0].shape) != shape:
             raise RuntimeError("Workload materialization shape differs")
-        result[case_id] = _CaseMaterial(inputs, reference, cast(tuple[int, int, int], shape))
+        snapshots = tuple(value.clone() for value in inputs)
+        pointers = tuple(int(value.data_ptr()) for value in inputs)
+        result[case_id] = _CaseMaterial(
+            inputs=inputs,
+            reference=reference,
+            shape=cast(tuple[int, int, int], shape),
+            input_snapshots=snapshots,
+            input_data_ptrs=pointers,
+        )
     torch.cuda.synchronize()
     return result
 
@@ -388,6 +400,18 @@ def _compile_candidate(
         raise
 
 
+def _inputs_unchanged(material: _CaseMaterial, torch: object) -> bool:
+    return all(
+        int(value.data_ptr()) == pointer and bool(torch.equal(value, snapshot))
+        for value, snapshot, pointer in zip(
+            material.inputs,
+            material.input_snapshots,
+            material.input_data_ptrs,
+            strict=True,
+        )
+    )
+
+
 def _correctness(
     candidate: _RuntimeCandidate,
     workload: WorkloadContract,
@@ -404,9 +428,33 @@ def _correctness(
         metrics = rmsnorm_metrics(
             workload, candidate.outputs[case_id], material.reference
         )
-        records.append({"case_id": case_id, **metrics})
+        inputs_unchanged = _inputs_unchanged(material, torch)
+        output = candidate.outputs[case_id]
+        output_contract = {
+            "shape_matches": tuple(output.shape) == material.shape,
+            "dtype_matches": output.dtype == torch.float32,
+            "contiguous": bool(output.is_contiguous()),
+            "aliases_input": int(output.data_ptr()) in material.input_data_ptrs,
+        }
+        records.append(
+            {
+                "case_id": case_id,
+                **metrics,
+                "inputs_unchanged": inputs_unchanged,
+                "output_contract": output_contract,
+                "passed": bool(metrics["passed"])
+                and inputs_unchanged
+                and output_contract["shape_matches"]
+                and output_contract["dtype_matches"]
+                and output_contract["contiguous"]
+                and not output_contract["aliases_input"],
+            }
+        )
     return {
         "passed": all(bool(item["passed"]) for item in records),
+        "inputs_unchanged": all(
+            bool(item["inputs_unchanged"]) for item in records
+        ),
         "cases": records,
         "fallback_calls": 0,
     }
@@ -556,6 +604,88 @@ def _screen(
     return selected, result
 
 
+def _measure_paired(
+    *,
+    timing: PairedTimingProtocol,
+    warmup_launches_per_cohort: int,
+    launches_per_sample: int,
+    arms: Mapping[str, _RuntimeCandidate],
+    case_id: str,
+    cases: Mapping[str, _CaseMaterial],
+    torch: object,
+    flush: object,
+    evidence: _Evidence,
+    event_kind: str,
+) -> list[dict[str, object]]:
+    material = cases[case_id]
+    measurements: list[dict[str, object]] = []
+    if set(arms) != set(timing.arms):
+        raise ValueError("paired runtime arm set differs")
+    for pair_index, order in enumerate(timing.pair_order):
+        records: dict[str, object] = {}
+        for position, arm in enumerate(order):
+            runtime = arms[arm]
+            _warmup(
+                torch,
+                runtime,
+                case_id,
+                material,
+                warmup_launches_per_cohort,
+            )
+            samples = [
+                _event_sample_ms(
+                    torch,
+                    runtime,
+                    case_id,
+                    material,
+                    flush,
+                    launches_per_sample,
+                )
+                for _ in range(timing.samples_per_cohort)
+            ]
+            records[arm] = {
+                "position": position,
+                "samples_ms": samples,
+                "summary": summarize_cohort(samples),
+                "route_calls": timing.route_calls_per_cohort,
+            }
+        measurement = {
+            "pair_index": pair_index,
+            "order": list(order),
+            "arms": records,
+        }
+        measurements.append(measurement)
+        evidence.event(event_kind, cast(Mapping[str, object], measurement))
+    return measurements
+
+
+def _noise(
+    *,
+    contract: AmdRmsNormSearchContract,
+    baseline: _RuntimeCandidate,
+    cases: Mapping[str, _CaseMaterial],
+    torch: object,
+    flush: object,
+    evidence: _Evidence,
+) -> tuple[object, list[dict[str, object]]]:
+    protocol = contract.noise
+    measurements = _measure_paired(
+        timing=protocol.timing,
+        warmup_launches_per_cohort=protocol.warmup_launches_per_cohort,
+        launches_per_sample=protocol.launches_per_sample,
+        arms={"baseline_a": baseline, "baseline_b": baseline},
+        case_id=protocol.case_id,
+        cases=cases,
+        torch=torch,
+        flush=flush,
+        evidence=evidence,
+        event_kind="baseline_noise_pair",
+    )
+    decision = derive_noise_decision(contract, measurements)
+    evidence.json("noise/measurements.json", measurements)
+    return decision, measurements
+
+
 def _confirm(
     *,
     contract: AmdRmsNormSearchContract,
@@ -567,45 +697,18 @@ def _confirm(
     evidence: _Evidence,
 ) -> tuple[object, list[dict[str, object]]]:
     protocol = contract.confirmatory
-    case_id = contract.screening.case_id
-    material = cases[case_id]
-    arms = {"candidate": candidate, "baseline": baseline}
-    measurements: list[dict[str, object]] = []
-    for pair_index, order in enumerate(protocol.timing.pair_order):
-        records: dict[str, object] = {}
-        for position, arm in enumerate(order):
-            runtime = arms[arm]
-            _warmup(
-                torch,
-                runtime,
-                case_id,
-                material,
-                protocol.warmup_launches_per_cohort,
-            )
-            samples = [
-                _event_sample_ms(
-                    torch,
-                    runtime,
-                    case_id,
-                    material,
-                    flush,
-                    protocol.launches_per_sample,
-                )
-                for _ in range(protocol.timing.samples_per_cohort)
-            ]
-            records[arm] = {
-                "position": position,
-                "samples_ms": samples,
-                "summary": summarize_cohort(samples),
-                "route_calls": protocol.timing.route_calls_per_cohort,
-            }
-        measurement = {
-            "pair_index": pair_index,
-            "order": list(order),
-            "arms": records,
-        }
-        measurements.append(measurement)
-        evidence.event("confirmatory_pair", cast(Mapping[str, object], measurement))
+    measurements = _measure_paired(
+        timing=protocol.timing,
+        warmup_launches_per_cohort=protocol.warmup_launches_per_cohort,
+        launches_per_sample=protocol.launches_per_sample,
+        arms={"candidate": candidate, "baseline": baseline},
+        case_id=contract.screening.case_id,
+        cases=cases,
+        torch=torch,
+        flush=flush,
+        evidence=evidence,
+        event_kind="confirmatory_pair",
+    )
     decision = derive_confirmatory_decision(contract, measurements)
     evidence.json("confirmatory/measurements.json", measurements)
     return decision, measurements
@@ -829,6 +932,57 @@ def _run(
             stage = "baseline_correctness_rejected"
             raise RuntimeError("baseline correctness failed")
 
+        profiler_record = _profiler_record(host_admission.profilers, "rocprofv3")
+        profiler = (
+            str(profiler_record["path"]) if profiler_record is not None else None
+        )
+        stage = "baseline_noise"
+        noise_decision, noise_measurements = _noise(
+            contract=contract,
+            baseline=baseline,
+            cases=cases,
+            torch=torch,
+            flush=flush,
+            evidence=evidence,
+        )
+        stage = "baseline_noise_postflight_correctness"
+        noise_postflight = _correctness(baseline, workload, cases, torch)
+        noise_record = {
+            "preflight_correctness": baseline_correctness,
+            "measurements": noise_measurements,
+            "observation": _observation_document(noise_decision),
+            "postflight_correctness": noise_postflight,
+            "passed": bool(noise_decision.passed),
+        }
+        evidence.json("noise/result.json", noise_record)
+        if not noise_postflight["passed"]:
+            stage = "baseline_noise_postflight_correctness_rejected"
+            raise RuntimeError("baseline noise postflight correctness failed")
+        if not noise_decision.passed:
+            result = {
+                "schema_version": 1,
+                "kind": "open_cake_gfx1151_llama_rmsnorm_search_v2",
+                "status": INCONCLUSIVE_MEASUREMENT_QUALITY,
+                "search_id": contract.search_id,
+                "search_contract_sha256": contract.canonical_sha256,
+                "source_custody": source,
+                "filter": filter_document,
+                "noise": noise_record,
+                "candidate_timing_started": False,
+                "performance_measured": True,
+                "profiler_tooling_available": profiler is not None,
+                "profiler_evidence_collected": False,
+                "promotion_authorized": False,
+                "llama_cpp_e2e_claim": False,
+                "diagnosis": diagnose_terminal_decision(
+                    INCONCLUSIVE_MEASUREMENT_QUALITY,
+                    profiler_evidence_collected=False,
+                ).document(),
+            }
+            evidence.json("result.json", result)
+            evidence.manifest()
+            return 3, result
+
         survivors: dict[str, _RuntimeCandidate] = {}
         dispositions: dict[str, object] = {}
         stage = "candidate_correctness"
@@ -849,6 +1003,11 @@ def _run(
             evidence.json(
                 f"candidates/{spec.candidate_id}/correctness.json", correctness
             )
+            if not correctness["inputs_unchanged"]:
+                stage = "candidate_correctness_rejected"
+                raise RuntimeError(
+                    f"candidate {spec.candidate_id} mutated a Workload input"
+                )
             if correctness["passed"]:
                 survivors[spec.candidate_id] = runtime
                 disposition = "correctness_qualified"
@@ -876,10 +1035,9 @@ def _run(
             flush=flush,
             evidence=evidence,
         )
-        profiler_record = _profiler_record(host_admission.profilers, "rocprofv3")
-        profiler = (
-            str(profiler_record["path"]) if profiler_record is not None else None
-        )
+        if not all(_inputs_unchanged(material, torch) for material in cases.values()):
+            stage = "screening_correctness_rejected"
+            raise RuntimeError("screening mutated a Workload input")
         if selected_id is None:
             result = {
                 "schema_version": 1,
@@ -890,6 +1048,7 @@ def _run(
                 "source_custody": source,
                 "correctness_qualified_candidate_count": len(survivors),
                 "screening": screening,
+                "noise": noise_record,
                 "filter": filter_document,
                 "performance_measured": True,
                 "profiler_tooling_available": profiler is not None,
@@ -1016,6 +1175,7 @@ def _run(
             "candidate_dispositions": dispositions,
             "filter": filter_document,
             "screening": screening,
+            "noise": noise_record,
             "confirmatory": {
                 "preflight_correctness": preflight,
                 "measurements": measurements,

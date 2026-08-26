@@ -22,6 +22,7 @@ import rmsnorm_amd_search as search_runner  # noqa: E402
 from open_cake_ir.evaluation.amd_rmsnorm_search import (  # noqa: E402
     LEAF_TIMING_WIN,
     derive_confirmatory_decision,
+    derive_noise_decision,
     derive_profiled_diagnosis,
     materialize_candidates,
 )
@@ -36,6 +37,7 @@ from tests.contracts.test_amd_rmsnorm_search import (  # noqa: E402
     ContractFixture,
     _canonical_bytes,
     _measurements,
+    _noise_measurements,
 )
 
 
@@ -478,6 +480,11 @@ class Rocprofv3RunnerContractTests(unittest.TestCase):
         count = contract.confirmatory.timing.samples_per_cohort
         measurements = _measurements(contract, [0.9] * count, [1.0] * count)
         decision = derive_confirmatory_decision(contract, measurements)
+        noise_count = contract.noise.timing.samples_per_cohort
+        noise_measurements = _noise_measurements(
+            contract, [1.0] * noise_count, [1.0] * noise_count
+        )
+        noise_decision = derive_noise_decision(contract, noise_measurements)
         source = {"revision": "fixed-revision", "tree_clean": True}
         result = {
             "schema_version": 1,
@@ -517,16 +524,29 @@ class Rocprofv3RunnerContractTests(unittest.TestCase):
                 "amdgcn_resources": {"kernel_name": KERNEL},
             },
             "screening": {"selected_candidate_id": candidate.candidate_id},
+            "noise": {
+                "preflight_correctness": {
+                    "passed": True,
+                    "inputs_unchanged": True,
+                },
+                "measurements": noise_measurements,
+                "observation": search_runner._observation_document(noise_decision),
+                "postflight_correctness": {
+                    "passed": True,
+                    "inputs_unchanged": True,
+                },
+                "passed": True,
+            },
             "confirmatory": {
                 "preflight_correctness": {
-                    "candidate": {"passed": True},
-                    "baseline": {"passed": True},
+                    "candidate": {"passed": True, "inputs_unchanged": True},
+                    "baseline": {"passed": True, "inputs_unchanged": True},
                 },
                 "measurements": measurements,
                 "observation": search_runner._observation_document(decision),
                 "postflight_correctness": {
-                    "candidate": {"passed": True},
-                    "baseline": {"passed": True},
+                    "candidate": {"passed": True, "inputs_unchanged": True},
+                    "baseline": {"passed": True, "inputs_unchanged": True},
                 },
             },
             "performance_measured": True,
@@ -539,10 +559,17 @@ class Rocprofv3RunnerContractTests(unittest.TestCase):
             def write_parent(value: dict[str, object]) -> None:
                 measurements_path = root / "confirmatory/measurements.json"
                 measurements_path.parent.mkdir(parents=True, exist_ok=True)
-                measurements_path.write_bytes(_canonical_bytes(measurements) + b"\n")
+                measurements_path.write_bytes(
+                    _canonical_bytes(value["confirmatory"]["measurements"]) + b"\n"
+                )
+                noise_path = root / "noise/measurements.json"
+                noise_path.parent.mkdir(parents=True, exist_ok=True)
+                noise_path.write_bytes(
+                    _canonical_bytes(value["noise"]["measurements"]) + b"\n"
+                )
                 (root / "result.json").write_bytes(_canonical_bytes(value) + b"\n")
                 records = []
-                for path in (measurements_path, root / "result.json"):
+                for path in (measurements_path, noise_path, root / "result.json"):
                     payload = path.read_bytes()
                     records.append(
                         {
@@ -578,6 +605,25 @@ class Rocprofv3RunnerContractTests(unittest.TestCase):
             with (
                 patch.object(runner, "git_state", return_value=source),
                 self.assertRaisesRegex(ValueError, "measurements differ"),
+            ):
+                runner._load_timing_handoff(
+                    project_root=fixture.root,
+                    contract=contract,
+                    evidence_root=root,
+                )
+
+            changed_noise = copy.deepcopy(result)
+            for measurement in changed_noise["noise"]["measurements"]:
+                measurement["arms"]["baseline_a"]["samples_ms"] = [
+                    0.9
+                ] * noise_count
+                measurement["arms"]["baseline_a"][
+                    "summary"
+                ] = search_runner.summarize_cohort([0.9] * noise_count)
+            write_parent(changed_noise)
+            with (
+                patch.object(runner, "git_state", return_value=source),
+                self.assertRaisesRegex(ValueError, "noise decision does not replay"),
             ):
                 runner._load_timing_handoff(
                     project_root=fixture.root,
