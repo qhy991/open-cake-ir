@@ -604,7 +604,7 @@ class Rocprofv3RunnerContractTests(unittest.TestCase):
             write_parent(changed)
             with (
                 patch.object(runner, "git_state", return_value=source),
-                self.assertRaisesRegex(ValueError, "measurements differ"),
+                self.assertRaisesRegex(ValueError, "summary differs"),
             ):
                 runner._load_timing_handoff(
                     project_root=fixture.root,
