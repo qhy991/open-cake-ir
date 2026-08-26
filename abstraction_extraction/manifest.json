@@ -1,0 +1,46 @@
+{
+  "$schema": "schema.json#/$defs/manifest",
+  "schema_version": 1,
+  "extraction_id": "source-grounded-abstraction-extraction-v1",
+  "state": "in_progress",
+  "paper_source_path": "operator_library/sources/cake-paper-v1.json",
+  "input_library": {
+    "manifest_path": "operator_library/manifest.json",
+    "library_id": "open-cake-operator-library-v1",
+    "canonical_sha256": "59960e8885e3114521d3584b7f10d9fce8a5c59be627f8c50a6dc5a3e044579b"
+  },
+  "selection_policy": {
+    "name": "source-grounded-recurrence-tracer-v1",
+    "minimum_distinct_observations": 2,
+    "threshold_authority": "local_repository_policy_not_paper_requirement",
+    "inclusions": [
+      "Exact source spans reviewed for repeated implementation structure and bound to collected operator occurrences.",
+      "Only normalized structure directly supported by at least two distinct implementation IDs and Git blobs."
+    ],
+    "exclusions": [
+      "No semantic observation is inferred solely from pre-tagged operator-library mechanism labels.",
+      "No upstream source, generated artifact, benchmark output, or tuning result is copied into this extraction."
+    ],
+    "deviations": [
+      "Native Metal structure is retained instead of normalizing every implementation to CUDA, preserving Apple-target facts for this local study."
+    ],
+    "non_claims": [
+      "This in-progress tracer is not an exhaustive abstraction extraction over the collected corpus.",
+      "A source pattern is not an admitted compiler IR operation or Target contract.",
+      "No Schedule expressibility, correctness, calibration, or performance result follows from extraction."
+    ]
+  },
+  "observations": [
+    "observations/mlx-layer-norm-hierarchical-reduction.json",
+    "observations/mlx-rms-norm-hierarchical-reduction.json"
+  ],
+  "candidates": [
+    "candidates/hierarchical-simdgroup-threadgroup-reduction.json"
+  ],
+  "counts": {
+    "observation_count": 2,
+    "candidate_count": 1,
+    "implementation_count": 2,
+    "source_count": 1
+  }
+}

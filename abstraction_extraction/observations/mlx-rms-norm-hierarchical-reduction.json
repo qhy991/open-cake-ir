@@ -1,0 +1,41 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "mlx-metal-rms-norm.rms-single-row",
+  "pattern_signature": "simdgroup-partial.threadgroup-publish.simdgroup-final",
+  "implementation_id": "mlx.metal-rms-norm",
+  "operator_id": "normalization.rms_norm",
+  "source_id": "mlx-main-1f8e74e",
+  "source_locator": {
+    "path": "mlx/backend/metal/kernels/rms_norm.metal",
+    "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+    "git_object": "eb9b5c0af1cde571570ea749c95969d963262882",
+    "symbol": "rms_single_row"
+  },
+  "source_span": {
+    "start_line": 26,
+    "end_line": 64,
+    "sha256": "243d351a98ae46f26e924ee6827c22db6b6c06b4084f2f1beb844dd77446669c",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "Each thread accumulates squared input values into an FP32 register.",
+    "A first simd_sum reduces that register within its SIMDgroup.",
+    "Threadgroup storage is initialized and synchronized before SIMDgroup lane zero publishes one partial.",
+    "A second threadgroup barrier orders partial publication before SIMDgroup zero loads the partial slots.",
+    "A second simd_sum reduces those threadgroup partials, and lane zero publishes one precise inverse-root-mean scalar before a final barrier."
+  ],
+  "observed_primitives": [
+    "lane_zero_partial_store",
+    "precise_rsqrt",
+    "simd_sum",
+    "threadgroup_barrier",
+    "threadgroup_memory"
+  ],
+  "variant_notes": [
+    "This specialization materializes a single inverse-root-mean value in threadgroup memory before a final barrier.",
+    "Its local input statistic is a sum of squares rather than a general caller-provided accumulator."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

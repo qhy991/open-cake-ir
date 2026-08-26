@@ -1,0 +1,40 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "mlx-metal-layer-norm.threadgroup-sum",
+  "pattern_signature": "simdgroup-partial.threadgroup-publish.simdgroup-final",
+  "implementation_id": "mlx.metal-layer-norm",
+  "operator_id": "normalization.layer_norm",
+  "source_id": "mlx-main-1f8e74e",
+  "source_locator": {
+    "path": "mlx/backend/metal/kernels/layer_norm.metal",
+    "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+    "git_object": "ea77b53dcaa1c64e72c50f5917e64b5b7b93817e",
+    "symbol": "threadgroup_sum"
+  },
+  "source_span": {
+    "start_line": 12,
+    "end_line": 45,
+    "sha256": "5b69421782f1c102b74f80ad2529c658e1c6d78909b8f0a8b119296fe7eeba55",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "The helper accepts one or more FP32 per-thread register values through its thread-local input.",
+    "A first simd_sum reduces each value within its SIMDgroup.",
+    "After synchronization, SIMDgroup lane zero writes one partial per value into threadgroup memory.",
+    "A second threadgroup barrier orders publication before lanes load partial slots.",
+    "A second simd_sum reduces the loaded threadgroup partials and returns the result through per-thread state."
+  ],
+  "observed_primitives": [
+    "lane_zero_partial_store",
+    "simd_sum",
+    "threadgroup_barrier",
+    "threadgroup_memory"
+  ],
+  "variant_notes": [
+    "The N template parameter permits multiple per-thread accumulators to share the same reduction choreography.",
+    "A separate helper initializes the partial buffer; the caller determines how the returned reduced values are consumed."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}
