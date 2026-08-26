@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
+import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from hashlib import sha256
@@ -65,6 +67,12 @@ _SCHEMA_DEFINITION_NAMES = frozenset(
         "per_item_verdict_contract",
         "ambiguity_resolution_contract",
         "review_authorizations",
+        "hardware_review_decision",
+        "review_decision_request_binding",
+        "reviewer_attestation",
+        "review_item_verdict",
+        "review_ambiguity_resolution",
+        "review_scope_acknowledgements",
         "proposal",
         "candidate_binding",
         "evidence_binding",
@@ -96,6 +104,8 @@ _SCHEMA_DEFINITION_NAMES = frozenset(
         "https_url",
         "id",
         "id_list",
+        "git_commit",
+        "human_review_text",
         "sha256",
         "nonempty_strings",
     }
@@ -401,18 +411,72 @@ _PER_ITEM_VERDICT_CONTRACT_KEYS = frozenset(
     {
         "per_item_verdict_required",
         "verdict_values",
+        "global_disposition_aggregation",
+        "verdict_severity_order",
         "localized_reason_required",
         "stage_clear_requires_all_item_verdicts_approved",
         "non_approved_item_blocks_stage_transition",
     }
 )
 _AMBIGUITY_RESOLUTION_CONTRACT_KEYS = frozenset(
-    {"required_ambiguity_id", "allowed_option_ids", "localized_reason_required"}
+    {
+        "required_ambiguity_id",
+        "allowed_option_ids",
+        "localized_reason_required",
+        "approval_compatible_option_id",
+        "successor_required_option_id",
+        "successor_required_option_allowed_global_dispositions",
+        "successor_required_option_required_non_approved_review_item_id",
+    }
 )
 _REVIEW_AUTHORIZATION_KEYS = frozenset(
     {
         "human_hardware_review_cleared",
         "principle_driven_iteration_authorized",
+        "compiler_change_authorized",
+        "implementation_authorized",
+        "evaluation_authorized",
+        "performance_claim_authorized",
+        "scientific_claim_authorized",
+        "promotion_authorized",
+    }
+)
+_HARDWARE_REVIEW_DECISION_KEYS = frozenset(
+    {
+        "$schema",
+        "schema_version",
+        "decision_id",
+        "kind",
+        "authority",
+        "binding",
+        "reviewer_attestation",
+        "global_disposition",
+        "item_verdicts",
+        "ambiguity_resolution",
+        "scope_acknowledgements",
+    }
+)
+_REVIEW_DECISION_REQUEST_BINDING_KEYS = frozenset(
+    {
+        "design_stage_id",
+        "request_id",
+        "path",
+        "reviewed_git_revision",
+        "reviewed_artifact_paths",
+    }
+)
+_REVIEWER_ATTESTATION_KEYS = frozenset(
+    {"reviewer_identity", "authorship_attestation", "decision_basis"}
+)
+_REVIEW_ITEM_VERDICT_KEYS = frozenset({"review_item_id", "verdict", "localized_reason"})
+_REVIEW_AMBIGUITY_RESOLUTION_KEYS = frozenset(
+    {"ambiguity_id", "selected_option_id", "localized_reason"}
+)
+_REVIEW_SCOPE_ACKNOWLEDGEMENT_KEYS = frozenset(
+    {
+        "approval_scope",
+        "principle_driven_iteration_required",
+        "resource_accounting_hypothesis_resolved",
         "compiler_change_authorized",
         "implementation_authorized",
         "evaluation_authorized",
@@ -623,6 +687,12 @@ _SCHEMA_OBJECT_KEYS_BY_DEFINITION = {
     "per_item_verdict_contract": _PER_ITEM_VERDICT_CONTRACT_KEYS,
     "ambiguity_resolution_contract": _AMBIGUITY_RESOLUTION_CONTRACT_KEYS,
     "review_authorizations": _REVIEW_AUTHORIZATION_KEYS,
+    "hardware_review_decision": _HARDWARE_REVIEW_DECISION_KEYS,
+    "review_decision_request_binding": _REVIEW_DECISION_REQUEST_BINDING_KEYS,
+    "reviewer_attestation": _REVIEWER_ATTESTATION_KEYS,
+    "review_item_verdict": _REVIEW_ITEM_VERDICT_KEYS,
+    "review_ambiguity_resolution": _REVIEW_AMBIGUITY_RESOLUTION_KEYS,
+    "review_scope_acknowledgements": _REVIEW_SCOPE_ACKNOWLEDGEMENT_KEYS,
     "proposal": _PROPOSAL_KEYS,
     "candidate_binding": _CANDIDATE_BINDING_KEYS,
     "evidence_binding": _EVIDENCE_BINDING_KEYS,
@@ -650,8 +720,13 @@ _SCHEMA_OBJECT_KEYS_BY_DEFINITION = {
 
 _ID = re.compile(r"[a-z0-9][a-z0-9._-]+")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_GIT_COMMIT = re.compile(r"[0-9a-f]{40}")
 _SAFE_PATH_CHARACTERS = re.compile(r"[A-Za-z0-9._/-]+")
 _HTTPS_URL = re.compile(r"https://[^ ]+")
+_HUMAN_REVIEW_TEXT = re.compile(
+    r"[^\x00-\x1f\x7f-\x9f]*[^\s\x00-\x1f\x7f-\x9f][^\x00-\x1f\x7f-\x9f]*"
+)
+_HUMAN_REVIEW_TEXT_MAX_LENGTH = 4096
 
 _STATE = "review_pending"
 _CLAIM_SCOPE = "hardware_mapping_only"
@@ -664,6 +739,19 @@ _REVIEW_REQUEST_PATH = (
 _REVIEW_EVIDENCE_PATH = "evidence/apple-metal-hierarchical-reduction-v1.json"
 _REVIEW_PROPOSAL_PATH = (
     "proposals/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+)
+_HARDWARE_REVIEW_DECISION_SCHEMA = (
+    "https://open-cake-ir.local/hardware-informed-design/schema-v1.json"
+    "#/$defs/hardware_review_decision"
+)
+_HARDWARE_REVIEW_ARTIFACT_PATHS = (
+    "hardware_informed_design/schema.json",
+    "hardware_informed_design/manifest.json",
+    "hardware_informed_design/evidence/apple-metal-hierarchical-reduction-v1.json",
+    "hardware_informed_design/proposals/"
+    "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json",
+    "hardware_informed_design/review_requests/"
+    "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json",
 )
 _PHASE_ORDER_AMBIGUITY_ID = "resource-accounting-phase-order"
 _RESOURCE_PHASE_CONTRADICTION = (
@@ -726,12 +814,26 @@ _RESOURCE_HYPOTHESIS_FALSIFIER_CONTRACT = {
     ),
 }
 _STAGE_TRANSITION_RULE = (
-    "Only an approved external decision that covers every review item, supplies "
-    "every localized reason, identifies the reviewed Git revision, and selects one "
-    "resource-accounting-phase-order option may clear Stage 3. A changes_requested "
-    "or rejected decision cannot advance the gate."
+    "Stage 3 clears only when an external human decision is bound to the reviewed "
+    "Git revision, covers every review item with a localized reason, has "
+    "global_disposition=approved equal to the maximum review-item verdict severity, "
+    "has every review-item verdict approved, and selects "
+    "preimplementation-standalone-metal-prototypes. Selecting "
+    "amend-gate-to-port-acceptance-after-bounded-implementation requires a "
+    "non-approved resource-accounting-and-runtime-gates item, permits only "
+    "changes_requested or rejected globally, and requires a successor Stage-3 "
+    "proposal and review request; it cannot clear the current Stage-3 closure."
 )
 _REVIEW_DISPOSITIONS = ("approved", "changes_requested", "rejected")
+_REVIEW_DISPOSITION_SEVERITY = {
+    disposition: severity for severity, disposition in enumerate(_REVIEW_DISPOSITIONS)
+}
+_APPROVAL_COMPATIBLE_OPTION_ID = _PHASE_ORDER_OPTION_IDS[0]
+_SUCCESSOR_REQUIRED_OPTION_ID = _PHASE_ORDER_OPTION_IDS[1]
+_SUCCESSOR_REQUIRED_GLOBAL_DISPOSITIONS = ("changes_requested", "rejected")
+_SUCCESSOR_REQUIRED_NON_APPROVED_REVIEW_ITEM_ID = (
+    "resource-accounting-and-runtime-gates"
+)
 _GIT_PARENT_REVISION = "2238610a4e8923330d73d125e79fd374fc7d2397"
 _PROBE_PATH = "tools/probe_metal_operators.py"
 _LOCAL_PROBE_OBSERVATION_ID = "local-apple-m4-metal-operator-probe-2026-08-26"
@@ -1057,6 +1159,17 @@ _SCHEMA_NON_OBJECT_CONTRACTS: dict[str, dict[str, object]] = {
         "uniqueItems": True,
         "items": {"$ref": "#/$defs/id"},
     },
+    "git_commit": {"type": "string", "pattern": r"^[0-9a-f]{40}$"},
+    "human_review_text": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": _HUMAN_REVIEW_TEXT_MAX_LENGTH,
+        "pattern": (
+            r"^[^\u0000-\u001F\u007F-\u009F]*"
+            r"[^\s\u0000-\u001F\u007F-\u009F]"
+            r"[^\u0000-\u001F\u007F-\u009F]*$"
+        ),
+    },
     "sha256": {"type": "string", "pattern": r"^[0-9a-f]{64}$"},
     "nonempty_strings": {
         "type": "array",
@@ -1225,6 +1338,10 @@ _SCHEMA_CRITICAL_PROPERTY_CONTRACTS: dict[str, dict[str, object]] = {
     "per_item_verdict_contract": {
         "per_item_verdict_required": {"const": True},
         "verdict_values": {"const": list(_REVIEW_DISPOSITIONS)},
+        "global_disposition_aggregation": {
+            "const": "maximum_review_item_verdict_severity"
+        },
+        "verdict_severity_order": {"const": list(_REVIEW_DISPOSITIONS)},
         "localized_reason_required": {"const": True},
         "stage_clear_requires_all_item_verdicts_approved": {"const": True},
         "non_approved_item_blocks_stage_transition": {"const": True},
@@ -1233,9 +1350,69 @@ _SCHEMA_CRITICAL_PROPERTY_CONTRACTS: dict[str, dict[str, object]] = {
         "required_ambiguity_id": {"const": _PHASE_ORDER_AMBIGUITY_ID},
         "allowed_option_ids": {"const": list(_PHASE_ORDER_OPTION_IDS)},
         "localized_reason_required": {"const": True},
+        "approval_compatible_option_id": {"const": _APPROVAL_COMPATIBLE_OPTION_ID},
+        "successor_required_option_id": {"const": _SUCCESSOR_REQUIRED_OPTION_ID},
+        "successor_required_option_allowed_global_dispositions": {
+            "const": list(_SUCCESSOR_REQUIRED_GLOBAL_DISPOSITIONS)
+        },
+        "successor_required_option_required_non_approved_review_item_id": {
+            "const": _SUCCESSOR_REQUIRED_NON_APPROVED_REVIEW_ITEM_ID
+        },
     },
     "review_authorizations": {
         field: {"const": False} for field in _REVIEW_AUTHORIZATION_KEYS
+    },
+    "hardware_review_decision": {
+        "$schema": {"const": _HARDWARE_REVIEW_DECISION_SCHEMA},
+        "schema_version": {"const": 1},
+        "decision_id": {"$ref": "#/$defs/id"},
+        "kind": {"const": "external_human_hardware_review_decision"},
+        "authority": {"const": "external_human_hardware_reviewer_only"},
+        "binding": {"$ref": "#/$defs/review_decision_request_binding"},
+        "reviewer_attestation": {"$ref": "#/$defs/reviewer_attestation"},
+        "global_disposition": {"enum": list(_REVIEW_DISPOSITIONS)},
+        "item_verdicts": {
+            "type": "array",
+            "minItems": 9,
+            "maxItems": 9,
+            "uniqueItems": True,
+            "items": {"$ref": "#/$defs/review_item_verdict"},
+        },
+        "ambiguity_resolution": {"$ref": "#/$defs/review_ambiguity_resolution"},
+        "scope_acknowledgements": {"$ref": "#/$defs/review_scope_acknowledgements"},
+    },
+    "review_decision_request_binding": {
+        "design_stage_id": {"const": "apple-metal-hardware-informed-design-v1"},
+        "request_id": {"const": _REVIEW_REQUEST_ID},
+        "path": {"const": f"hardware_informed_design/{_REVIEW_REQUEST_PATH}"},
+        "reviewed_git_revision": {"$ref": "#/$defs/git_commit"},
+        "reviewed_artifact_paths": {"const": list(_HARDWARE_REVIEW_ARTIFACT_PATHS)},
+    },
+    "reviewer_attestation": {
+        "reviewer_identity": {"$ref": "#/$defs/human_review_text"},
+        "authorship_attestation": {"const": "external-human-outside-automation"},
+        "decision_basis": {"$ref": "#/$defs/human_review_text"},
+    },
+    "review_item_verdict": {
+        "review_item_id": {"enum": list(_REVIEW_ITEM_IDS)},
+        "verdict": {"enum": list(_REVIEW_DISPOSITIONS)},
+        "localized_reason": {"$ref": "#/$defs/human_review_text"},
+    },
+    "review_ambiguity_resolution": {
+        "ambiguity_id": {"const": _PHASE_ORDER_AMBIGUITY_ID},
+        "selected_option_id": {"enum": list(_PHASE_ORDER_OPTION_IDS)},
+        "localized_reason": {"$ref": "#/$defs/human_review_text"},
+    },
+    "review_scope_acknowledgements": {
+        "approval_scope": {"const": "stage3_hardware_review_only"},
+        "principle_driven_iteration_required": {"const": True},
+        "resource_accounting_hypothesis_resolved": {"const": False},
+        "compiler_change_authorized": {"const": False},
+        "implementation_authorized": {"const": False},
+        "evaluation_authorized": {"const": False},
+        "performance_claim_authorized": {"const": False},
+        "scientific_claim_authorized": {"const": False},
+        "promotion_authorized": {"const": False},
     },
     "hierarchical_probe_aggregate": {
         "all_command_buffers_completed": {"const": True},
@@ -1277,12 +1454,39 @@ class HardwareInformedDesignSummary:
     retained_local_probe_scope: str = "observed_apple_m4_fp32_rms_probe_pipeline_only"
     review_request_count: int = 1
     hardware_review_decision_present: bool = False
+    hardware_review_decision_id: str | None = None
+    hardware_review_decision_disposition: str | None = None
+    hardware_reviewed_git_revision: str | None = None
+    hardware_reviewed_revision_bound: bool = False
+    non_approved_review_item_ids: tuple[str, ...] = ()
+    resource_phase_option_id: str | None = None
+    successor_stage3_proposal_required: bool = False
+    resource_accounting_hypothesis_resolved: bool = False
+    reviewer_authorship_assurance: str = "no_external_decision_supplied"
+    stage_transition_applied: bool = False
+    next_action: str = "obtain_external_human_hardware_review"
     resource_phase_ambiguity_exposed: bool = True
     hardware_review_complete: bool = False
+    implementation_authorized: bool = False
+    evaluation_authorized: bool = False
+    scientific_claim_authorized: bool = False
+    promotion_authorized: bool = False
     evaluation_evidence_present: bool = False
 
     def report(self) -> dict[str, object]:
         return {"valid": True, **asdict(self)}
+
+
+@dataclass(frozen=True)
+class _HardwareReviewDecisionResult:
+    decision_id: str
+    disposition: str
+    reviewed_git_revision: str
+    non_approved_review_item_ids: tuple[str, ...]
+    selected_option_id: str
+    successor_stage3_proposal_required: bool
+    hardware_review_clear: bool
+    next_action: str
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -1426,6 +1630,24 @@ class _Validator:
             self.error(path, f"must be valid UTF-8 ({error})")
             return None
         return value
+
+    def human_review_text(self, value: object, path: str) -> str | None:
+        parsed = self.string(value, path)
+        if parsed is None:
+            return None
+        if len(parsed) > _HUMAN_REVIEW_TEXT_MAX_LENGTH:
+            self.error(
+                path,
+                f"must contain at most {_HUMAN_REVIEW_TEXT_MAX_LENGTH} characters",
+            )
+            return None
+        if _HUMAN_REVIEW_TEXT.fullmatch(parsed) is None:
+            self.error(
+                path,
+                "must contain a non-whitespace character and no C0 or C1 controls",
+            )
+            return None
+        return parsed
 
     def integer(self, value: object, path: str, minimum: int = 0) -> int | None:
         if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
@@ -1599,6 +1821,7 @@ def _public_schema(validator: _Validator, schema: Mapping[str, object]) -> None:
             {"$ref": "#/$defs/evidence"},
             {"$ref": "#/$defs/proposal"},
             {"$ref": "#/$defs/review_request"},
+            {"$ref": "#/$defs/hardware_review_decision"},
         ],
     )
     definitions = validator.exact(
@@ -3830,6 +4053,18 @@ def _review_request_document(
                 list(_REVIEW_DISPOSITIONS),
             )
             validator.literal(
+                per_item_contract.get("global_disposition_aggregation"),
+                f"{relative}.external_human_decision_contract."
+                "per_item_verdict_contract.global_disposition_aggregation",
+                "maximum_review_item_verdict_severity",
+            )
+            validator.literal(
+                per_item_contract.get("verdict_severity_order"),
+                f"{relative}.external_human_decision_contract."
+                "per_item_verdict_contract.verdict_severity_order",
+                list(_REVIEW_DISPOSITIONS),
+            )
+            validator.literal(
                 per_item_contract.get("localized_reason_required"),
                 f"{relative}.external_human_decision_contract."
                 "per_item_verdict_contract.localized_reason_required",
@@ -3882,6 +4117,23 @@ def _review_request_document(
                 "ambiguity_resolution_contract.localized_reason_required",
                 True,
             )
+            ambiguity_literals = {
+                "approval_compatible_option_id": _APPROVAL_COMPATIBLE_OPTION_ID,
+                "successor_required_option_id": _SUCCESSOR_REQUIRED_OPTION_ID,
+                "successor_required_option_allowed_global_dispositions": list(
+                    _SUCCESSOR_REQUIRED_GLOBAL_DISPOSITIONS
+                ),
+                "successor_required_option_required_non_approved_review_item_id": (
+                    _SUCCESSOR_REQUIRED_NON_APPROVED_REVIEW_ITEM_ID
+                ),
+            }
+            for field, expected in ambiguity_literals.items():
+                validator.literal(
+                    ambiguity_contract.get(field),
+                    f"{relative}.external_human_decision_contract."
+                    f"ambiguity_resolution_contract.{field}",
+                    expected,
+                )
         validator.literal(
             decision_contract.get("stage_transition_rule"),
             f"{relative}.external_human_decision_contract.stage_transition_rule",
@@ -3910,11 +4162,600 @@ def _review_request_document(
     return review_request_id
 
 
+def _run_git(
+    validator: _Validator,
+    repository_root: Path,
+    arguments: Sequence[str],
+    diagnostic_path: str,
+) -> subprocess.CompletedProcess[str] | None:
+    try:
+        return subprocess.run(
+            [
+                "git",
+                "--no-replace-objects",
+                "-C",
+                str(repository_root),
+                *arguments,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            env=_git_environment(),
+            check=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired, UnicodeError) as error:
+        validator.error(
+            diagnostic_path, f"could not inspect local Git repository ({error})"
+        )
+        return None
+
+
+def _run_git_bytes(
+    validator: _Validator,
+    repository_root: Path,
+    arguments: Sequence[str],
+    diagnostic_path: str,
+) -> subprocess.CompletedProcess[bytes] | None:
+    try:
+        return subprocess.run(
+            [
+                "git",
+                "--no-replace-objects",
+                "-C",
+                str(repository_root),
+                *arguments,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=_git_environment(),
+            check=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        validator.error(
+            diagnostic_path, f"could not inspect local Git repository ({error})"
+        )
+        return None
+
+
+def _git_environment() -> dict[str, str]:
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    environment["GIT_NO_LAZY_FETCH"] = "1"
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
+    return environment
+
+
+def _verify_reviewed_git_revision(
+    validator: _Validator,
+    repository_root: Path,
+    reviewed_git_revision: str,
+) -> bool:
+    diagnostic_path = "review-decision.binding.reviewed_git_revision"
+    top_level = _run_git(
+        validator,
+        repository_root,
+        ("rev-parse", "--show-toplevel"),
+        "repository-root",
+    )
+    if top_level is None:
+        return False
+    if top_level.returncode != 0:
+        detail = top_level.stderr.strip() or "not a non-bare Git worktree"
+        validator.error(
+            "repository-root",
+            f"must be the root of a non-bare Git worktree ({detail})",
+        )
+        return False
+    discovered_text = top_level.stdout.strip()
+    if not discovered_text or "\n" in discovered_text:
+        validator.error(
+            "repository-root", "Git worktree discovery returned an invalid path"
+        )
+        return False
+    try:
+        discovered_root = Path(discovered_text).resolve(strict=True)
+        same_repository = discovered_root.samefile(repository_root)
+    except OSError as error:
+        validator.error(
+            "repository-root", f"could not verify discovered Git worktree ({error})"
+        )
+        return False
+    if not same_repository:
+        validator.error(
+            "repository-root",
+            "Git worktree discovery must resolve to the supplied repository root",
+        )
+        return False
+    verified = _run_git(
+        validator,
+        repository_root,
+        (
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            f"{reviewed_git_revision}^{{commit}}",
+        ),
+        diagnostic_path,
+    )
+    if verified is None:
+        return False
+    if verified.returncode != 0 or verified.stdout.strip() != reviewed_git_revision:
+        detail = verified.stderr.strip() or "commit does not exist"
+        validator.error(
+            diagnostic_path,
+            f"must name an existing full commit in this repository ({detail})",
+        )
+        return False
+
+    tree = _run_git(
+        validator,
+        repository_root,
+        (
+            "ls-tree",
+            "-r",
+            "--full-tree",
+            reviewed_git_revision,
+            "--",
+            *_HARDWARE_REVIEW_ARTIFACT_PATHS,
+        ),
+        diagnostic_path,
+    )
+    if tree is None:
+        return False
+    if tree.returncode != 0:
+        detail = tree.stderr.strip() or "git ls-tree failed"
+        validator.error(
+            diagnostic_path,
+            f"could not inspect the reviewed artifact tree ({detail})",
+        )
+        return False
+
+    entries: dict[str, tuple[str, str, str]] = {}
+    malformed_entries: list[str] = []
+    for line in tree.stdout.splitlines():
+        try:
+            metadata, path = line.split("\t", 1)
+            mode, object_type, object_id = metadata.split(" ", 2)
+        except ValueError:
+            malformed_entries.append(line)
+            continue
+        if path in entries:
+            malformed_entries.append(path)
+            continue
+        entries[path] = (mode, object_type, object_id)
+    if malformed_entries:
+        validator.error(
+            diagnostic_path,
+            "reviewed tree returned malformed or duplicate entries: "
+            + ", ".join(sorted(malformed_entries)),
+        )
+    expected_paths = set(_HARDWARE_REVIEW_ARTIFACT_PATHS)
+    actual_paths = set(entries)
+    missing = sorted(expected_paths - actual_paths)
+    unexpected = sorted(actual_paths - expected_paths)
+    if missing:
+        validator.error(
+            diagnostic_path,
+            "reviewed commit is missing required closure paths: " + ", ".join(missing),
+        )
+    if unexpected:
+        validator.error(
+            diagnostic_path,
+            "reviewed tree returned unexpected closure paths: " + ", ".join(unexpected),
+        )
+    for path in sorted(expected_paths & actual_paths):
+        mode, object_type, object_id = entries[path]
+        if mode != "100644" or object_type != "blob":
+            validator.error(
+                f"review-decision.binding.reviewed_artifact_paths[{path}]",
+                "reviewed tree entry must be a 100644 blob",
+            )
+        if _GIT_COMMIT.fullmatch(object_id) is None:
+            validator.error(
+                f"review-decision.binding.reviewed_artifact_paths[{path}]",
+                "reviewed tree blob must have a full 40-character object ID",
+            )
+
+    live_bytes: dict[str, bytes] = {}
+    for path in _HARDWARE_REVIEW_ARTIFACT_PATHS:
+        live_path = repository_root / path
+        try:
+            live_is_file = not live_path.is_symlink() and live_path.is_file()
+        except OSError as error:
+            validator.error(
+                f"review-decision.binding.reviewed_artifact_paths[{path}]",
+                f"could not inspect live closure path ({error})",
+            )
+            continue
+        if not live_is_file:
+            validator.error(
+                f"review-decision.binding.reviewed_artifact_paths[{path}]",
+                "live closure path must be a regular non-symlink file",
+            )
+            continue
+        try:
+            live_bytes[path] = live_path.read_bytes()
+        except OSError as error:
+            validator.error(
+                f"review-decision.binding.reviewed_artifact_paths[{path}]",
+                f"could not read live closure bytes ({error})",
+            )
+
+    if validator.errors:
+        return False
+    drifted_paths: list[str] = []
+    for path in _HARDWARE_REVIEW_ARTIFACT_PATHS:
+        _mode, _object_type, object_id = entries[path]
+        blob = _run_git_bytes(
+            validator,
+            repository_root,
+            ("cat-file", "blob", object_id),
+            f"review-decision.binding.reviewed_artifact_paths[{path}]",
+        )
+        if blob is None:
+            continue
+        if blob.returncode != 0:
+            detail = blob.stderr.decode("utf-8", errors="replace").strip()
+            validator.error(
+                f"review-decision.binding.reviewed_artifact_paths[{path}]",
+                "could not read reviewed tree blob"
+                + (f" ({detail})" if detail else ""),
+            )
+            continue
+        if blob.stdout != live_bytes[path]:
+            drifted_paths.append(path)
+    if drifted_paths:
+        validator.error(
+            diagnostic_path,
+            "reviewed commit closure differs byte-for-byte from the live worktree: "
+            + ", ".join(drifted_paths),
+        )
+    return not validator.errors
+
+
+def _review_decision_document(
+    validator: _Validator,
+    document: Mapping[str, object],
+    design_stage_id: str,
+    repository_root: Path,
+) -> _HardwareReviewDecisionResult | None:
+    start_error_count = len(validator.errors)
+    relative = "review-decision"
+    validator.exact(document, relative, _HARDWARE_REVIEW_DECISION_KEYS)
+    validator.literal(
+        document.get("$schema"),
+        f"{relative}.$schema",
+        _HARDWARE_REVIEW_DECISION_SCHEMA,
+    )
+    validator.literal(document.get("schema_version"), f"{relative}.schema_version", 1)
+    decision_id = validator.string(
+        document.get("decision_id"), f"{relative}.decision_id", _ID
+    )
+    validator.literal(
+        document.get("kind"),
+        f"{relative}.kind",
+        "external_human_hardware_review_decision",
+    )
+    validator.literal(
+        document.get("authority"),
+        f"{relative}.authority",
+        "external_human_hardware_reviewer_only",
+    )
+
+    reviewed_git_revision: str | None = None
+    binding = validator.exact(
+        document.get("binding"),
+        f"{relative}.binding",
+        _REVIEW_DECISION_REQUEST_BINDING_KEYS,
+    )
+    if binding is not None:
+        validator.literal(
+            binding.get("design_stage_id"),
+            f"{relative}.binding.design_stage_id",
+            design_stage_id,
+        )
+        validator.literal(
+            binding.get("request_id"),
+            f"{relative}.binding.request_id",
+            _REVIEW_REQUEST_ID,
+        )
+        validator.literal(
+            binding.get("path"),
+            f"{relative}.binding.path",
+            f"hardware_informed_design/{_REVIEW_REQUEST_PATH}",
+        )
+        reviewed_git_revision = validator.string(
+            binding.get("reviewed_git_revision"),
+            f"{relative}.binding.reviewed_git_revision",
+            _GIT_COMMIT,
+        )
+        validator.literal(
+            binding.get("reviewed_artifact_paths"),
+            f"{relative}.binding.reviewed_artifact_paths",
+            list(_HARDWARE_REVIEW_ARTIFACT_PATHS),
+        )
+
+    attestation = validator.exact(
+        document.get("reviewer_attestation"),
+        f"{relative}.reviewer_attestation",
+        _REVIEWER_ATTESTATION_KEYS,
+    )
+    if attestation is not None:
+        validator.human_review_text(
+            attestation.get("reviewer_identity"),
+            f"{relative}.reviewer_attestation.reviewer_identity",
+        )
+        validator.literal(
+            attestation.get("authorship_attestation"),
+            f"{relative}.reviewer_attestation.authorship_attestation",
+            "external-human-outside-automation",
+        )
+        validator.human_review_text(
+            attestation.get("decision_basis"),
+            f"{relative}.reviewer_attestation.decision_basis",
+        )
+
+    disposition = validator.string(
+        document.get("global_disposition"), f"{relative}.global_disposition"
+    )
+    if disposition is not None and disposition not in _REVIEW_DISPOSITIONS:
+        validator.error(
+            f"{relative}.global_disposition",
+            "must be one of " + ", ".join(_REVIEW_DISPOSITIONS),
+        )
+
+    item_ids: list[str] = []
+    item_dispositions: list[str] = []
+    item_disposition_by_id: dict[str, str] = {}
+    item_values = document.get("item_verdicts")
+    if not isinstance(item_values, list):
+        validator.error(f"{relative}.item_verdicts", "must be an array")
+    else:
+        if len(item_values) != len(_REVIEW_ITEM_IDS):
+            validator.error(
+                f"{relative}.item_verdicts",
+                f"must contain exactly {len(_REVIEW_ITEM_IDS)} review-item verdicts",
+            )
+        for index, value in enumerate(item_values):
+            path = f"{relative}.item_verdicts[{index}]"
+            item = validator.exact(value, path, _REVIEW_ITEM_VERDICT_KEYS)
+            if item is None:
+                continue
+            item_id = validator.string(
+                item.get("review_item_id"), f"{path}.review_item_id", _ID
+            )
+            verdict = validator.string(item.get("verdict"), f"{path}.verdict")
+            if verdict is not None and verdict not in _REVIEW_DISPOSITIONS:
+                validator.error(
+                    f"{path}.verdict",
+                    "must be one of " + ", ".join(_REVIEW_DISPOSITIONS),
+                )
+            validator.human_review_text(
+                item.get("localized_reason"), f"{path}.localized_reason"
+            )
+            if item_id is not None:
+                item_ids.append(item_id)
+            if item_id is not None and verdict in _REVIEW_DISPOSITIONS:
+                item_disposition_by_id[item_id] = verdict
+            if verdict in _REVIEW_DISPOSITIONS:
+                item_dispositions.append(verdict)
+        if item_ids != list(_REVIEW_ITEM_IDS):
+            validator.error(
+                f"{relative}.item_verdicts",
+                "review_item_id values must equal the ordered review-item closure",
+            )
+
+    selected_option_id: str | None = None
+    ambiguity = validator.exact(
+        document.get("ambiguity_resolution"),
+        f"{relative}.ambiguity_resolution",
+        _REVIEW_AMBIGUITY_RESOLUTION_KEYS,
+    )
+    if ambiguity is not None:
+        validator.literal(
+            ambiguity.get("ambiguity_id"),
+            f"{relative}.ambiguity_resolution.ambiguity_id",
+            _PHASE_ORDER_AMBIGUITY_ID,
+        )
+        selected_option_id = validator.string(
+            ambiguity.get("selected_option_id"),
+            f"{relative}.ambiguity_resolution.selected_option_id",
+            _ID,
+        )
+        if (
+            selected_option_id is not None
+            and selected_option_id not in _PHASE_ORDER_OPTION_IDS
+        ):
+            validator.error(
+                f"{relative}.ambiguity_resolution.selected_option_id",
+                "must be one of " + ", ".join(_PHASE_ORDER_OPTION_IDS),
+            )
+        validator.human_review_text(
+            ambiguity.get("localized_reason"),
+            f"{relative}.ambiguity_resolution.localized_reason",
+        )
+
+    acknowledgements = validator.exact(
+        document.get("scope_acknowledgements"),
+        f"{relative}.scope_acknowledgements",
+        _REVIEW_SCOPE_ACKNOWLEDGEMENT_KEYS,
+    )
+    if acknowledgements is not None:
+        acknowledgement_literals = {
+            "approval_scope": "stage3_hardware_review_only",
+            "principle_driven_iteration_required": True,
+            "resource_accounting_hypothesis_resolved": False,
+            "compiler_change_authorized": False,
+            "implementation_authorized": False,
+            "evaluation_authorized": False,
+            "performance_claim_authorized": False,
+            "scientific_claim_authorized": False,
+            "promotion_authorized": False,
+        }
+        for field, expected in acknowledgement_literals.items():
+            validator.literal(
+                acknowledgements.get(field),
+                f"{relative}.scope_acknowledgements.{field}",
+                expected,
+            )
+
+    if disposition in _REVIEW_DISPOSITIONS and len(item_dispositions) == len(
+        _REVIEW_ITEM_IDS
+    ):
+        aggregate = max(item_dispositions, key=_REVIEW_DISPOSITION_SEVERITY.__getitem__)
+        if disposition != aggregate:
+            validator.error(
+                f"{relative}.global_disposition",
+                f"must equal the maximum review-item verdict severity {aggregate!r}",
+            )
+    if (
+        disposition == "approved"
+        and selected_option_id != _APPROVAL_COMPATIBLE_OPTION_ID
+    ):
+        validator.error(
+            f"{relative}.ambiguity_resolution.selected_option_id",
+            "an approved decision must select the approval-compatible option",
+        )
+    if selected_option_id == _SUCCESSOR_REQUIRED_OPTION_ID:
+        if disposition not in _SUCCESSOR_REQUIRED_GLOBAL_DISPOSITIONS:
+            validator.error(
+                f"{relative}.global_disposition",
+                "the successor-required option permits only changes_requested or rejected",
+            )
+        resource_verdict = item_disposition_by_id.get(
+            _SUCCESSOR_REQUIRED_NON_APPROVED_REVIEW_ITEM_ID
+        )
+        if resource_verdict == "approved":
+            validator.error(
+                f"{relative}.item_verdicts["
+                f"{_REVIEW_ITEM_IDS.index(_SUCCESSOR_REQUIRED_NON_APPROVED_REVIEW_ITEM_ID)}].verdict",
+                "the successor-required option requires this review item to be non-approved",
+            )
+
+    if len(validator.errors) != start_error_count:
+        return None
+    assert decision_id is not None
+    assert disposition is not None
+    assert reviewed_git_revision is not None
+    assert selected_option_id is not None
+    if not _verify_reviewed_git_revision(
+        validator, repository_root, reviewed_git_revision
+    ):
+        return None
+    non_approved = tuple(
+        item_id
+        for item_id in _REVIEW_ITEM_IDS
+        if item_disposition_by_id[item_id] != "approved"
+    )
+    hardware_review_clear = (
+        disposition == "approved"
+        and not non_approved
+        and selected_option_id == _APPROVAL_COMPATIBLE_OPTION_ID
+    )
+    successor_required = selected_option_id == _SUCCESSOR_REQUIRED_OPTION_ID
+    if hardware_review_clear:
+        next_action = "begin_principle_driven_iteration"
+    elif successor_required:
+        next_action = "author_successor_stage3_proposal_and_review_request"
+    elif disposition == "changes_requested":
+        next_action = "revise_stage3_closure_and_request_new_human_review"
+    else:
+        next_action = "stop_or_replace_stage3_proposal_before_new_review"
+    return _HardwareReviewDecisionResult(
+        decision_id=decision_id,
+        disposition=disposition,
+        reviewed_git_revision=reviewed_git_revision,
+        non_approved_review_item_ids=non_approved,
+        selected_option_id=selected_option_id,
+        successor_stage3_proposal_required=successor_required,
+        hardware_review_clear=hardware_review_clear,
+        next_action=next_action,
+    )
+
+
+def _external_review_decision(
+    validator: _Validator,
+    decision_path: Path,
+    repository_root: Path,
+    design_root: Path,
+    design_stage_id: str,
+) -> _HardwareReviewDecisionResult | None:
+    diagnostic_path = "review-decision"
+    if not decision_path.is_absolute():
+        validator.error(diagnostic_path, "path must be absolute and caller-managed")
+        return None
+    if repository_root.is_symlink():
+        validator.error("repository-root", "must be a regular non-symlink directory")
+        return None
+    try:
+        resolved_repository_root = repository_root.resolve(strict=True)
+    except OSError as error:
+        validator.error("repository-root", f"directory does not exist ({error})")
+        return None
+    if not resolved_repository_root.is_dir():
+        validator.error("repository-root", "must be a directory")
+        return None
+    if design_root != resolved_repository_root / "hardware_informed_design":
+        validator.error(
+            "repository-root",
+            "must own the validated hardware_informed_design directory",
+        )
+        return None
+    try:
+        if decision_path.is_symlink() or not decision_path.is_file():
+            validator.error(
+                diagnostic_path, "must be a regular non-symlink external file"
+            )
+            return None
+        resolved_decision_path = decision_path.resolve(strict=True)
+    except OSError as error:
+        validator.error(diagnostic_path, f"could not inspect external file ({error})")
+        return None
+    inside_checkout = resolved_decision_path.is_relative_to(resolved_repository_root)
+    if not inside_checkout:
+        for parent in resolved_decision_path.parents:
+            try:
+                if parent.samefile(resolved_repository_root):
+                    inside_checkout = True
+                    break
+            except OSError as error:
+                validator.error(
+                    diagnostic_path,
+                    "could not establish that the decision is outside the source "
+                    f"checkout ({error})",
+                )
+                return None
+    if inside_checkout:
+        validator.error(diagnostic_path, "must remain outside the source checkout")
+        return None
+    document = validator.read(resolved_decision_path, diagnostic_path)
+    if document is None:
+        return None
+    return _review_decision_document(
+        validator,
+        document,
+        design_stage_id,
+        resolved_repository_root,
+    )
+
+
 def validate_hardware_informed_design(
     design_root: Path,
     extraction_root: Path,
     library_root: Path,
     target_path: Path,
+    decision_path: Path | None = None,
+    repository_root: Path | None = None,
 ) -> HardwareInformedDesignSummary:
     """Validate stage-three artifacts after validating stage-two inputs."""
 
@@ -3938,7 +4779,7 @@ def validate_hardware_informed_design(
     validator = _Validator(root)
     validator.root_closure()
 
-    # The public schema is parsed for UTF-8/JSON closure here. Its four document
+    # The public schema is parsed for UTF-8/JSON closure here. Its five document
     # definitions are exercised by the contract tests; this validator keeps
     # the live stage boundary to the single candidate-closure digest.
     schema = validator.read(root / "schema.json", "schema.json")
@@ -4105,6 +4946,21 @@ def validate_hardware_informed_design(
     if validator.errors:
         raise HardwareInformedDesignValidationError(validator.errors)
     assert design_stage_id is not None
+    decision_result: _HardwareReviewDecisionResult | None = None
+    if decision_path is not None:
+        decision_result = _external_review_decision(
+            validator,
+            decision_path,
+            repository_root if repository_root is not None else root.parent,
+            root,
+            design_stage_id,
+        )
+        if validator.errors:
+            raise HardwareInformedDesignValidationError(validator.errors)
+        assert decision_result is not None
+    review_clear = (
+        decision_result.hardware_review_clear if decision_result is not None else False
+    )
     return HardwareInformedDesignSummary(
         design_stage_id=design_stage_id,
         state=_STATE,
@@ -4112,33 +4968,108 @@ def validate_hardware_informed_design(
         next_gate=_NEXT_GATE,
         counts=derived_counts,
         proposal_ids=tuple(sorted(proposal_ids)),
+        verification_scope=(
+            "offline_metadata_derivation_and_external_decision_binding_validation"
+            if decision_result is not None
+            else "offline_metadata_and_derivation_validation"
+        ),
+        ready_for_principle_review=review_clear,
         review_request_count=derived_counts["review_request_count"],
-        hardware_review_decision_present=False,
+        hardware_review_decision_present=decision_result is not None,
+        hardware_review_decision_id=(
+            decision_result.decision_id if decision_result is not None else None
+        ),
+        hardware_review_decision_disposition=(
+            decision_result.disposition if decision_result is not None else None
+        ),
+        hardware_reviewed_git_revision=(
+            decision_result.reviewed_git_revision
+            if decision_result is not None
+            else None
+        ),
+        hardware_reviewed_revision_bound=decision_result is not None,
+        non_approved_review_item_ids=(
+            decision_result.non_approved_review_item_ids
+            if decision_result is not None
+            else ()
+        ),
+        resource_phase_option_id=(
+            decision_result.selected_option_id if decision_result is not None else None
+        ),
+        successor_stage3_proposal_required=(
+            decision_result.successor_stage3_proposal_required
+            if decision_result is not None
+            else False
+        ),
+        reviewer_authorship_assurance=(
+            "external_human_process_attested_not_cryptographically_verified"
+            if decision_result is not None
+            else "no_external_decision_supplied"
+        ),
+        next_action=(
+            decision_result.next_action
+            if decision_result is not None
+            else "obtain_external_human_hardware_review"
+        ),
         resource_phase_ambiguity_exposed=True,
+        hardware_review_complete=review_clear,
     )
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
 
 
 def _text(summary: HardwareInformedDesignSummary) -> str:
     lines = [
         f"hardware-informed design metadata consistent: {summary.design_stage_id} ({summary.state})",
         f"verification scope: {summary.verification_scope}",
-        "ready for principle review: no",
+        f"ready for principle review: {_yes_no(summary.ready_for_principle_review)}",
         "hardware semantics verified: no",
         "performance claim authorized: no",
         "compiler change authorized: no",
+        "implementation authorized: no",
+        "evaluation authorized: no",
+        "scientific claim authorized: no",
+        "promotion authorized: no",
         "remote source bytes verified: no",
         "engineering observation record consistent: yes",
         "retained local probe reported outcome: yes (6 cases, 12 epochs)",
         f"retained local probe scope: {summary.retained_local_probe_scope}",
         f"review requests: {summary.review_request_count}",
-        "hardware review decision present: no",
+        "hardware review decision present: "
+        f"{_yes_no(summary.hardware_review_decision_present)}",
+        "hardware reviewed revision bound: "
+        f"{_yes_no(summary.hardware_reviewed_revision_bound)}",
         "resource phase ambiguity exposed: yes",
-        "hardware review complete: no",
+        f"hardware review complete: {_yes_no(summary.hardware_review_complete)}",
+        "resource accounting hypothesis resolved: no",
+        f"stage transition applied: {_yes_no(summary.stage_transition_applied)}",
+        f"next action: {summary.next_action}",
         "evaluation evidence present: no",
         f"evidence artifacts: {summary.counts['evidence_count']}",
         f"proposals: {summary.counts['proposal_count']}",
-        "proposal IDs:",
     ]
+    if summary.hardware_review_decision_present:
+        lines.extend(
+            (
+                f"hardware review decision ID: {summary.hardware_review_decision_id}",
+                "hardware review decision disposition: "
+                f"{summary.hardware_review_decision_disposition}",
+                f"reviewed Git revision: {summary.hardware_reviewed_git_revision}",
+                f"resource phase option: {summary.resource_phase_option_id}",
+                "successor Stage-3 proposal required: "
+                f"{_yes_no(summary.successor_stage3_proposal_required)}",
+                "non-approved review items: "
+                + (
+                    ", ".join(summary.non_approved_review_item_ids)
+                    if summary.non_approved_review_item_ids
+                    else "none"
+                ),
+                f"reviewer authorship assurance: {summary.reviewer_authorship_assurance}",
+            )
+        )
+    lines.append("proposal IDs:")
     lines.extend(f"  {proposal_id}" for proposal_id in summary.proposal_ids)
     return "\n".join(lines)
 
@@ -4153,25 +5084,59 @@ def _markdown(summary: HardwareInformedDesignSummary) -> str:
         "",
         "| Boundary | Value |",
         "| --- | --- |",
-        "| Ready for principle review | No |",
+        "| Ready for principle review | "
+        f"{_yes_no(summary.ready_for_principle_review).title()} |",
         "| Hardware semantics verified | No |",
         "| Performance claim authorized | No |",
         "| Compiler change authorized | No |",
+        "| Implementation authorized | No |",
+        "| Evaluation authorized | No |",
+        "| Scientific claim authorized | No |",
+        "| Promotion authorized | No |",
         "| Remote source bytes verified | No |",
         "| Engineering observation record consistent | Yes |",
         "| Retained local probe reported outcome | Yes (6 cases, 12 epochs) |",
         f"| Retained local probe scope | `{summary.retained_local_probe_scope}` |",
         f"| Review requests | {summary.review_request_count} |",
-        "| Hardware review decision present | No |",
+        "| Hardware review decision present | "
+        f"{_yes_no(summary.hardware_review_decision_present).title()} |",
+        "| Hardware reviewed revision bound | "
+        f"{_yes_no(summary.hardware_reviewed_revision_bound).title()} |",
         "| Resource phase ambiguity exposed | Yes |",
-        "| Hardware review complete | No |",
+        "| Hardware review complete | "
+        f"{_yes_no(summary.hardware_review_complete).title()} |",
+        "| Resource accounting hypothesis resolved | No |",
+        "| Stage transition applied | No |",
+        f"| Next action | `{summary.next_action}` |",
         "| Evaluation evidence present | No |",
         f"| Evidence artifacts | {summary.counts['evidence_count']} |",
         f"| Proposals | {summary.counts['proposal_count']} |",
-        "",
-        "## Proposal IDs",
-        "",
     ]
+    if summary.hardware_review_decision_present:
+        lines.extend(
+            (
+                f"| Hardware review decision ID | `{summary.hardware_review_decision_id}` |",
+                "| Hardware review decision disposition | "
+                f"`{summary.hardware_review_decision_disposition}` |",
+                f"| Reviewed Git revision | `{summary.hardware_reviewed_git_revision}` |",
+                f"| Resource phase option | `{summary.resource_phase_option_id}` |",
+                "| Successor Stage-3 proposal required | "
+                f"{_yes_no(summary.successor_stage3_proposal_required).title()} |",
+                "| Non-approved review items | "
+                + (
+                    ", ".join(
+                        f"`{item_id}`"
+                        for item_id in summary.non_approved_review_item_ids
+                    )
+                    if summary.non_approved_review_item_ids
+                    else "None"
+                )
+                + " |",
+                "| Reviewer authorship assurance | "
+                f"`{summary.reviewer_authorship_assurance}` |",
+            )
+        )
+    lines.extend(("", "## Proposal IDs", ""))
     lines.extend(f"- `{proposal_id}`" for proposal_id in summary.proposal_ids)
     return "\n".join(lines)
 
@@ -4212,6 +5177,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         default=project_root / "compiler" / "targets" / "apple_gpu_family9.json",
     )
+    parser.add_argument("--repository-root", type=Path, default=project_root)
+    parser.add_argument(
+        "--review-decision",
+        type=Path,
+        help="absolute path to a caller-managed external human review decision",
+    )
+    parser.add_argument(
+        "--require-hardware-review-clear",
+        action="store_true",
+        help="exit 3 when the valid reviewed state does not clear Stage 3",
+    )
     parser.add_argument(
         "--format", choices=("text", "markdown", "json"), default="text"
     )
@@ -4222,6 +5198,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             arguments.extraction_root,
             arguments.library_root,
             arguments.target_path,
+            arguments.review_decision,
+            arguments.repository_root,
         )
     except (
         HardwareInformedDesignValidationError,
@@ -4236,6 +5214,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(_markdown(summary))
     else:
         print(_text(summary))
+    if arguments.require_hardware_review_clear and not summary.hardware_review_complete:
+        return 3
     return 0
 
 

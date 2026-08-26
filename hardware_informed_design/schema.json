@@ -5,7 +5,8 @@
     {"$ref": "#/$defs/manifest"},
     {"$ref": "#/$defs/evidence"},
     {"$ref": "#/$defs/proposal"},
-    {"$ref": "#/$defs/review_request"}
+    {"$ref": "#/$defs/review_request"},
+    {"$ref": "#/$defs/hardware_review_decision"}
   ],
   "$defs": {
     "manifest": {
@@ -929,7 +930,7 @@
           "$ref": "#/$defs/ambiguity_resolution_contract"
         },
         "stage_transition_rule": {
-          "const": "Only an approved external decision that covers every review item, supplies every localized reason, identifies the reviewed Git revision, and selects one resource-accounting-phase-order option may clear Stage 3. A changes_requested or rejected decision cannot advance the gate."
+          "const": "Stage 3 clears only when an external human decision is bound to the reviewed Git revision, covers every review item with a localized reason, has global_disposition=approved equal to the maximum review-item verdict severity, has every review-item verdict approved, and selects preimplementation-standalone-metal-prototypes. Selecting amend-gate-to-port-acceptance-after-bounded-implementation requires a non-approved resource-accounting-and-runtime-gates item, permits only changes_requested or rejected globally, and requires a successor Stage-3 proposal and review request; it cannot clear the current Stage-3 closure."
         },
         "automation_may_write_decision": {"const": false}
       }
@@ -940,6 +941,8 @@
       "required": [
         "per_item_verdict_required",
         "verdict_values",
+        "global_disposition_aggregation",
+        "verdict_severity_order",
         "localized_reason_required",
         "stage_clear_requires_all_item_verdicts_approved",
         "non_approved_item_blocks_stage_transition"
@@ -947,6 +950,12 @@
       "properties": {
         "per_item_verdict_required": {"const": true},
         "verdict_values": {
+          "const": ["approved", "changes_requested", "rejected"]
+        },
+        "global_disposition_aggregation": {
+          "const": "maximum_review_item_verdict_severity"
+        },
+        "verdict_severity_order": {
           "const": ["approved", "changes_requested", "rejected"]
         },
         "localized_reason_required": {"const": true},
@@ -960,7 +969,11 @@
       "required": [
         "required_ambiguity_id",
         "allowed_option_ids",
-        "localized_reason_required"
+        "localized_reason_required",
+        "approval_compatible_option_id",
+        "successor_required_option_id",
+        "successor_required_option_allowed_global_dispositions",
+        "successor_required_option_required_non_approved_review_item_id"
       ],
       "properties": {
         "required_ambiguity_id": {"const": "resource-accounting-phase-order"},
@@ -970,7 +983,19 @@
             "amend-gate-to-port-acceptance-after-bounded-implementation"
           ]
         },
-        "localized_reason_required": {"const": true}
+        "localized_reason_required": {"const": true},
+        "approval_compatible_option_id": {
+          "const": "preimplementation-standalone-metal-prototypes"
+        },
+        "successor_required_option_id": {
+          "const": "amend-gate-to-port-acceptance-after-bounded-implementation"
+        },
+        "successor_required_option_allowed_global_dispositions": {
+          "const": ["changes_requested", "rejected"]
+        },
+        "successor_required_option_required_non_approved_review_item_id": {
+          "const": "resource-accounting-and-runtime-gates"
+        }
       }
     },
     "review_authorizations": {
@@ -989,6 +1014,161 @@
       "properties": {
         "human_hardware_review_cleared": {"const": false},
         "principle_driven_iteration_authorized": {"const": false},
+        "compiler_change_authorized": {"const": false},
+        "implementation_authorized": {"const": false},
+        "evaluation_authorized": {"const": false},
+        "performance_claim_authorized": {"const": false},
+        "scientific_claim_authorized": {"const": false},
+        "promotion_authorized": {"const": false}
+      }
+    },
+    "hardware_review_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "decision_id",
+        "kind",
+        "authority",
+        "binding",
+        "reviewer_attestation",
+        "global_disposition",
+        "item_verdicts",
+        "ambiguity_resolution",
+        "scope_acknowledgements"
+      ],
+      "properties": {
+        "$schema": {
+          "const": "https://open-cake-ir.local/hardware-informed-design/schema-v1.json#/$defs/hardware_review_decision"
+        },
+        "schema_version": {"const": 1},
+        "decision_id": {"$ref": "#/$defs/id"},
+        "kind": {"const": "external_human_hardware_review_decision"},
+        "authority": {"const": "external_human_hardware_reviewer_only"},
+        "binding": {"$ref": "#/$defs/review_decision_request_binding"},
+        "reviewer_attestation": {"$ref": "#/$defs/reviewer_attestation"},
+        "global_disposition": {
+          "enum": ["approved", "changes_requested", "rejected"]
+        },
+        "item_verdicts": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/review_item_verdict"}
+        },
+        "ambiguity_resolution": {
+          "$ref": "#/$defs/review_ambiguity_resolution"
+        },
+        "scope_acknowledgements": {
+          "$ref": "#/$defs/review_scope_acknowledgements"
+        }
+      }
+    },
+    "review_decision_request_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "design_stage_id",
+        "request_id",
+        "path",
+        "reviewed_git_revision",
+        "reviewed_artifact_paths"
+      ],
+      "properties": {
+        "design_stage_id": {"const": "apple-metal-hardware-informed-design-v1"},
+        "request_id": {
+          "const": "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1"
+        },
+        "path": {
+          "const": "hardware_informed_design/review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+        },
+        "reviewed_git_revision": {"$ref": "#/$defs/git_commit"},
+        "reviewed_artifact_paths": {
+          "const": [
+            "hardware_informed_design/schema.json",
+            "hardware_informed_design/manifest.json",
+            "hardware_informed_design/evidence/apple-metal-hierarchical-reduction-v1.json",
+            "hardware_informed_design/proposals/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json",
+            "hardware_informed_design/review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+          ]
+        }
+      }
+    },
+    "reviewer_attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewer_identity",
+        "authorship_attestation",
+        "decision_basis"
+      ],
+      "properties": {
+        "reviewer_identity": {"$ref": "#/$defs/human_review_text"},
+        "authorship_attestation": {
+          "const": "external-human-outside-automation"
+        },
+        "decision_basis": {"$ref": "#/$defs/human_review_text"}
+      }
+    },
+    "review_item_verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["review_item_id", "verdict", "localized_reason"],
+      "properties": {
+        "review_item_id": {
+          "enum": [
+            "vendor-fact-applicability",
+            "width-policy-and-fail-closed-selection",
+            "partial-cardinality-and-final-reduction",
+            "barrier-participation-and-publication",
+            "scratch-initialization-lifetime-and-reuse",
+            "variant-owner-split",
+            "resource-accounting-and-runtime-gates",
+            "numeric-scope-and-oracle-boundary",
+            "observed-scope-and-authority-boundary"
+          ]
+        },
+        "verdict": {
+          "enum": ["approved", "changes_requested", "rejected"]
+        },
+        "localized_reason": {"$ref": "#/$defs/human_review_text"}
+      }
+    },
+    "review_ambiguity_resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ambiguity_id", "selected_option_id", "localized_reason"],
+      "properties": {
+        "ambiguity_id": {"const": "resource-accounting-phase-order"},
+        "selected_option_id": {
+          "enum": [
+            "preimplementation-standalone-metal-prototypes",
+            "amend-gate-to-port-acceptance-after-bounded-implementation"
+          ]
+        },
+        "localized_reason": {"$ref": "#/$defs/human_review_text"}
+      }
+    },
+    "review_scope_acknowledgements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approval_scope",
+        "principle_driven_iteration_required",
+        "resource_accounting_hypothesis_resolved",
+        "compiler_change_authorized",
+        "implementation_authorized",
+        "evaluation_authorized",
+        "performance_claim_authorized",
+        "scientific_claim_authorized",
+        "promotion_authorized"
+      ],
+      "properties": {
+        "approval_scope": {"const": "stage3_hardware_review_only"},
+        "principle_driven_iteration_required": {"const": true},
+        "resource_accounting_hypothesis_resolved": {"const": false},
         "compiler_change_authorized": {"const": false},
         "implementation_authorized": {"const": false},
         "evaluation_authorized": {"const": false},
@@ -1480,6 +1660,13 @@
       "type": "array",
       "uniqueItems": true,
       "items": {"$ref": "#/$defs/id"}
+    },
+    "git_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "human_review_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*[^\\s\\u0000-\\u001F\\u007F-\\u009F][^\\u0000-\\u001F\\u007F-\\u009F]*$"
     },
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "nonempty_strings": {

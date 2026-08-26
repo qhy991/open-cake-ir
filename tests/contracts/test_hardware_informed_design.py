@@ -44,6 +44,15 @@ RESOURCE_PHASE_OPTION_IDS_ORDERED = (
     "amend-gate-to-port-acceptance-after-bounded-implementation",
 )
 RESOURCE_PHASE_OPTION_IDS = frozenset(RESOURCE_PHASE_OPTION_IDS_ORDERED)
+REVIEWED_ARTIFACT_PATHS = (
+    "hardware_informed_design/schema.json",
+    "hardware_informed_design/manifest.json",
+    "hardware_informed_design/evidence/apple-metal-hierarchical-reduction-v1.json",
+    "hardware_informed_design/proposals/"
+    "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json",
+    "hardware_informed_design/review_requests/"
+    "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json",
+)
 
 
 def _read(path: Path) -> dict[str, object]:
@@ -62,6 +71,63 @@ def _review_request(design: Path = DESIGN) -> tuple[Path, dict[str, object]]:
     assert paths == [REVIEW_REQUEST_RELATIVE_PATH]
     path = design / REVIEW_REQUEST_RELATIVE_PATH
     return path, _read(path)
+
+
+def _public_schema_decision() -> dict[str, object]:
+    """Return schema-test bytes, not an authoritative review decision fixture."""
+
+    _, request = _review_request()
+    return {
+        "$schema": (
+            "https://open-cake-ir.local/hardware-informed-design/"
+            "schema-v1.json#/$defs/hardware_review_decision"
+        ),
+        "schema_version": 1,
+        "decision_id": "schema-contract-only-hardware-review-decision",
+        "kind": "external_human_hardware_review_decision",
+        "authority": "external_human_hardware_reviewer_only",
+        "binding": {
+            "design_stage_id": "apple-metal-hardware-informed-design-v1",
+            "request_id": request["review_request_id"],
+            "path": (f"hardware_informed_design/{REVIEW_REQUEST_RELATIVE_PATH}"),
+            "reviewed_git_revision": "0" * 40,
+            "reviewed_artifact_paths": list(REVIEWED_ARTIFACT_PATHS),
+        },
+        "reviewer_attestation": {
+            "reviewer_identity": "Schema contract test reviewer",
+            "authorship_attestation": "external-human-outside-automation",
+            "decision_basis": "Exercise the closed public decision schema only.",
+        },
+        "global_disposition": "approved",
+        "item_verdicts": [
+            {
+                "review_item_id": item["review_item_id"],
+                "verdict": "approved",
+                "localized_reason": (
+                    f"Schema contract reason for {item['review_item_id']}."
+                ),
+            }
+            for item in request["review_items"]
+        ],
+        "ambiguity_resolution": {
+            "ambiguity_id": RESOURCE_PHASE_AMBIGUITY_ID,
+            "selected_option_id": RESOURCE_PHASE_OPTION_IDS_ORDERED[0],
+            "localized_reason": (
+                "The schema test selects the approval-compatible option."
+            ),
+        },
+        "scope_acknowledgements": {
+            "approval_scope": "stage3_hardware_review_only",
+            "principle_driven_iteration_required": True,
+            "resource_accounting_hypothesis_resolved": False,
+            "compiler_change_authorized": False,
+            "implementation_authorized": False,
+            "evaluation_authorized": False,
+            "performance_claim_authorized": False,
+            "scientific_claim_authorized": False,
+            "promotion_authorized": False,
+        },
+    }
 
 
 def _definition_validator(
@@ -167,7 +233,7 @@ class HardwareInformedDesignSchemaTests(unittest.TestCase):
         visit(schema, "$")
         self.assertEqual(missing, [])
 
-    def test_all_four_document_kinds_conform_to_the_public_schema(self) -> None:
+    def test_all_five_document_kinds_conform_to_the_public_schema(self) -> None:
         schema = _read(DESIGN / "schema.json")
         Draft202012Validator.check_schema(schema)
         manifest = _read(DESIGN / "manifest.json")
@@ -178,6 +244,7 @@ class HardwareInformedDesignSchemaTests(unittest.TestCase):
             "review_request": [
                 _read(DESIGN / path) for path in manifest["review_requests"]
             ],
+            "hardware_review_decision": [_public_schema_decision()],
         }
         root_validator = Draft202012Validator(schema, format_checker=FormatChecker())
         for definition, values in documents.items():
@@ -496,6 +563,22 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
         ]
         self.assertEqual(contract["required_ambiguity_id"], RESOURCE_PHASE_AMBIGUITY_ID)
         self.assertEqual(set(contract["allowed_option_ids"]), RESOURCE_PHASE_OPTION_IDS)
+        self.assertEqual(
+            contract["approval_compatible_option_id"],
+            RESOURCE_PHASE_OPTION_IDS_ORDERED[0],
+        )
+        self.assertEqual(
+            contract["successor_required_option_id"],
+            RESOURCE_PHASE_OPTION_IDS_ORDERED[1],
+        )
+        self.assertEqual(
+            contract["successor_required_option_allowed_global_dispositions"],
+            ["changes_requested", "rejected"],
+        )
+        self.assertEqual(
+            contract["successor_required_option_required_non_approved_review_item_id"],
+            "resource-accounting-and-runtime-gates",
+        )
 
     def test_resource_phase_order_options_cannot_be_removed_or_auto_resolved(
         self,
@@ -530,6 +613,32 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
                 lambda request: request["external_human_decision_contract"][
                     "ambiguity_resolution_contract"
                 ]["allowed_option_ids"].pop(),
+            ),
+            (
+                "approval_compatible_option_id",
+                lambda request: request["external_human_decision_contract"][
+                    "ambiguity_resolution_contract"
+                ].__setitem__(
+                    "approval_compatible_option_id",
+                    RESOURCE_PHASE_OPTION_IDS_ORDERED[1],
+                ),
+            ),
+            (
+                "successor_required_option_allowed_global_dispositions",
+                lambda request: request["external_human_decision_contract"][
+                    "ambiguity_resolution_contract"
+                ]["successor_required_option_allowed_global_dispositions"].append(
+                    "approved"
+                ),
+            ),
+            (
+                "successor_required_option_required_non_approved_review_item_id",
+                lambda request: request["external_human_decision_contract"][
+                    "ambiguity_resolution_contract"
+                ].__setitem__(
+                    "successor_required_option_required_non_approved_review_item_id",
+                    "vendor-fact-applicability",
+                ),
             ),
         )
         for expected, edit in mutations:
@@ -705,8 +814,40 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
         contract = request["external_human_decision_contract"][
             "per_item_verdict_contract"
         ]
+        self.assertEqual(
+            contract["global_disposition_aggregation"],
+            "maximum_review_item_verdict_severity",
+        )
+        self.assertEqual(
+            contract["verdict_severity_order"],
+            ["approved", "changes_requested", "rejected"],
+        )
         for field in aggregate_fields:
             self.assertIs(contract[field], True)
+
+        for field, replacement in (
+            ("global_disposition_aggregation", "first_item_wins"),
+            ("verdict_severity_order", ["rejected", "changes_requested", "approved"]),
+        ):
+            with self.subTest(field=field):
+
+                def mutate_aggregation(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    field: str = field,
+                    replacement: object = replacement,
+                ) -> None:
+                    del library, extraction, target
+                    path, request = _review_request(design)
+                    request["external_human_decision_contract"][
+                        "per_item_verdict_contract"
+                    ][field] = replacement
+                    _write(path, request)
+
+                self._assert_mutation_rejected(mutate_aggregation, field)
 
         mutations: tuple[tuple[str, str], ...] = tuple(
             (field, action)
@@ -1011,6 +1152,95 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
                     mutate,
                     f"schema.json.$defs.{definition}.properties.{field}",
                 )
+
+    def test_cli_rejects_weakened_public_hardware_review_decision_schema(
+        self,
+    ) -> None:
+        def remove_root_entry(schema: dict[str, object]) -> None:
+            schema["oneOf"].pop()
+
+        def replace_definition(schema: dict[str, object]) -> None:
+            schema["$defs"]["hardware_review_decision"] = {}
+
+        mutations: tuple[tuple[str, Callable[[dict[str, object]], None]], ...] = (
+            ("schema.json.oneOf", remove_root_entry),
+            (
+                "schema.json.$defs.hardware_review_decision",
+                replace_definition,
+            ),
+            (
+                "hardware_review_decision.properties.binding",
+                lambda schema: schema["$defs"]["hardware_review_decision"][
+                    "properties"
+                ].__setitem__("binding", {"type": "object"}),
+            ),
+            (
+                "hardware_review_decision.properties.authority",
+                lambda schema: schema["$defs"]["hardware_review_decision"][
+                    "properties"
+                ].__setitem__("authority", {"type": "string"}),
+            ),
+            (
+                "review_decision_request_binding.properties.reviewed_artifact_paths",
+                lambda schema: schema["$defs"]["review_decision_request_binding"][
+                    "properties"
+                ].__setitem__("reviewed_artifact_paths", {"type": "array"}),
+            ),
+            (
+                "review_item_verdict.properties.review_item_id",
+                lambda schema: schema["$defs"]["review_item_verdict"][
+                    "properties"
+                ].__setitem__("review_item_id", {"$ref": "#/$defs/id"}),
+            ),
+            (
+                "review_scope_acknowledgements.properties.implementation_authorized",
+                lambda schema: schema["$defs"]["review_scope_acknowledgements"][
+                    "properties"
+                ].__setitem__("implementation_authorized", {"type": "boolean"}),
+            ),
+            (
+                "schema.json.$defs.git_commit",
+                lambda schema: schema["$defs"]["git_commit"].__setitem__(
+                    "pattern", ".+"
+                ),
+            ),
+            (
+                "schema.json.$defs.human_review_text",
+                lambda schema: schema["$defs"]["human_review_text"].__setitem__(
+                    "pattern", ".*"
+                ),
+            ),
+            (
+                "per_item_verdict_contract.properties.global_disposition_aggregation",
+                lambda schema: schema["$defs"]["per_item_verdict_contract"][
+                    "properties"
+                ].__setitem__("global_disposition_aggregation", {"type": "string"}),
+            ),
+            (
+                "ambiguity_resolution_contract.properties.approval_compatible_option_id",
+                lambda schema: schema["$defs"]["ambiguity_resolution_contract"][
+                    "properties"
+                ].__setitem__("approval_compatible_option_id", {"type": "string"}),
+            ),
+        )
+        for expected, edit in mutations:
+            with self.subTest(expected=expected):
+
+                def mutate(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    edit: Callable[[dict[str, object]], None] = edit,
+                ) -> None:
+                    del library, extraction, target
+                    path = design / "schema.json"
+                    schema = _read(path)
+                    edit(schema)
+                    _write(path, schema)
+
+                self._assert_mutation_rejected(mutate, expected)
 
     def test_cli_rejects_a_weakened_public_falsifier_schema(self) -> None:
         def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:

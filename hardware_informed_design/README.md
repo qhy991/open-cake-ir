@@ -164,11 +164,21 @@ Automation may not choose between these options or reinterpret the existing
 proposal. The future external decision contract permits only `approved`,
 `changes_requested`, or `rejected`; it requires one verdict and localized
 reason for every review item, the exact reviewed Git revision, and one
-localized ambiguity resolution. Every review-item verdict must be `approved`
-to clear Stage 3; any `changes_requested` or `rejected` item blocks the stage
-transition, regardless of the global disposition. The contradiction, the two
-ordered option texts, and the stage-transition rule are literal public schema
-contracts rather than reviewer-request prose that automation may rewrite.
+localized ambiguity resolution. The global disposition is the maximum of the
+nine review-item severities under the fixed order `approved <
+changes_requested < rejected`; it is not an independent override. Every
+review-item verdict must therefore be `approved` to clear Stage 3.
+
+The two ambiguity choices are not approval-equivalent:
+
+| Selected option | Required item/global result | Result for this Stage-3 closure |
+| --- | --- | --- |
+| `preimplementation-standalone-metal-prototypes` | All nine items and the derived global disposition may be `approved` | May clear only the hardware-review gate and proceed to the separate P1-P8 review |
+| `amend-gate-to-port-acceptance-after-bounded-implementation` | `resource-accounting-and-runtime-gates` must be non-approved; global disposition must be `changes_requested` or `rejected` | Cannot clear this closure; a successor Stage-3 proposal and review request are required |
+
+The contradiction, the two ordered option texts, aggregation rule, option
+matrix, and stage-transition rule are literal public schema contracts rather
+than reviewer-request prose that automation may rewrite.
 `automation_may_write_decision` is false.
 No decision artifact exists in this closure, and all human-review, next-gate,
 Compiler-change, implementation, Evaluation, performance-claim,
@@ -177,6 +187,60 @@ scientific-claim, and promotion authorizations remain false.
 An eventual approved external hardware decision can clear only this Stage-3
 gate. The next action would still be the separate P1-P8 principle-driven
 iteration, not implementation.
+
+## External decision intake boundary
+
+The public schema defines the closed structural shape of
+`hardware_review_decision` so an external human can write a decision after
+reviewing an exact Git revision. The offline intake validator additionally
+enforces the ordered nine-item closure, derived global disposition, and option
+matrix; generic JSON Schema validation alone is not semantic intake. This
+repository does not contain a decision instance or a `decisions/` membership
+directory, and the Stage-3 review request continues to record the decision as
+absent. The decision remains in caller-managed storage and may be supplied
+read-only to the offline validator:
+
+```sh
+python tools/validate_hardware_informed_design.py \
+  --review-decision /absolute/caller-managed/hardware-review-decision.json \
+  --format json
+```
+
+Omitting `--review-decision` preserves the current review-pending validation.
+Supplying one does not copy, normalize, rewrite, or admit it into the checkout.
+A well-formed `changes_requested` or `rejected` document is a valid completed
+human review but does not clear the gate; malformed, stale, or contradictory
+bytes are an intake validation failure.
+
+The decision binds a complete 40-character lowercase Git commit and exactly
+these five reviewed paths, in order:
+
+1. `hardware_informed_design/schema.json`
+2. `hardware_informed_design/manifest.json`
+3. `hardware_informed_design/evidence/apple-metal-hierarchical-reduction-v1.json`
+4. `hardware_informed_design/proposals/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json`
+5. `hardware_informed_design/review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json`
+
+The intake verifies that commit and the reviewed path closure at this external
+handoff boundary without adding a digest field or requiring the current `HEAD`
+to equal the reviewed commit. The existing Stage-1-to-Stage-3 validators still
+validate the semantic and predecessor closure independently.
+
+`reviewer_identity`, `decision_basis`, every per-item verdict and localized
+reason, the global disposition, the reviewed revision, and the ambiguity
+choice and reason are human-authored fields. Automation may only read them,
+validate their closed contract, and report derived in-memory status. It may
+not create a template that purports to be a decision, fill any human field,
+change the request or manifest, or materialize the next stage.
+
+`authorship_attestation = external-human-outside-automation` records a process
+attestation. This JSON protocol has no signature or reviewer-account system,
+so structural validation does not prove the person's identity, independence,
+or custody. Those remain repository-process facts. The decision's fixed scope
+acknowledgements also retain the unresolved resource hypothesis and keep
+Compiler change, implementation, Evaluation, performance, scientific, and
+promotion authority false. Even a fully approved intake means only that the
+separate P1-P8 principle-driven review may begin.
 
 ## Validation is not readiness
 

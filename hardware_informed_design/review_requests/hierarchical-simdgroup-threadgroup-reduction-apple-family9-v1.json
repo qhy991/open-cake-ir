@@ -399,6 +399,12 @@
         "changes_requested",
         "rejected"
       ],
+      "global_disposition_aggregation": "maximum_review_item_verdict_severity",
+      "verdict_severity_order": [
+        "approved",
+        "changes_requested",
+        "rejected"
+      ],
       "localized_reason_required": true,
       "stage_clear_requires_all_item_verdicts_approved": true,
       "non_approved_item_blocks_stage_transition": true
@@ -410,9 +416,16 @@
         "preimplementation-standalone-metal-prototypes",
         "amend-gate-to-port-acceptance-after-bounded-implementation"
       ],
-      "localized_reason_required": true
+      "localized_reason_required": true,
+      "approval_compatible_option_id": "preimplementation-standalone-metal-prototypes",
+      "successor_required_option_id": "amend-gate-to-port-acceptance-after-bounded-implementation",
+      "successor_required_option_allowed_global_dispositions": [
+        "changes_requested",
+        "rejected"
+      ],
+      "successor_required_option_required_non_approved_review_item_id": "resource-accounting-and-runtime-gates"
     },
-    "stage_transition_rule": "Only an approved external decision that covers every review item, supplies every localized reason, identifies the reviewed Git revision, and selects one resource-accounting-phase-order option may clear Stage 3. A changes_requested or rejected decision cannot advance the gate.",
+    "stage_transition_rule": "Stage 3 clears only when an external human decision is bound to the reviewed Git revision, covers every review item with a localized reason, has global_disposition=approved equal to the maximum review-item verdict severity, has every review-item verdict approved, and selects preimplementation-standalone-metal-prototypes. Selecting amend-gate-to-port-acceptance-after-bounded-implementation requires a non-approved resource-accounting-and-runtime-gates item, permits only changes_requested or rejected globally, and requires a successor Stage-3 proposal and review request; it cannot clear the current Stage-3 closure.",
     "automation_may_write_decision": false
   },
   "authorizations": {
