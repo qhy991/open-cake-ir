@@ -440,6 +440,28 @@ class AmdRmsNormSearchDecision:
     observation: PairedTimingObservation
 
 
+@dataclass(frozen=True)
+class AmdRmsNormDiagnosis:
+    """Typed next owner for one terminal no-profiler RMSNorm decision."""
+
+    route_owner: str
+    disposition: str
+    reason_code: str
+    next_action: str
+    complete: bool
+
+    def document(self) -> dict[str, object]:
+        return {
+            "route_owner": self.route_owner,
+            "disposition": self.disposition,
+            "reason_code": self.reason_code,
+            "next_action": self.next_action,
+            "complete": self.complete,
+            "cost_model_evaluated": False,
+            "cost_model_abstained_reason": "gfx1151_calibration_unavailable",
+        }
+
+
 def candidate_id(row_tile: int, num_warps: int) -> str:
     """Return the stable identity of one member of the closed geometry domain."""
 
@@ -522,12 +544,63 @@ def derive_confirmatory_decision(
     return AmdRmsNormSearchDecision(status=status, observation=observation)
 
 
+def diagnose_terminal_decision(
+    status: str, *, profiler_evidence_collected: bool
+) -> AmdRmsNormDiagnosis:
+    """Route retained timing evidence without treating an abstaining model as wrong."""
+
+    if type(profiler_evidence_collected) is not bool:
+        raise ValueError("profiler_evidence_collected must be boolean")
+    if status == LEAF_TIMING_WIN:
+        if profiler_evidence_collected:
+            return AmdRmsNormDiagnosis(
+                route_owner="candidate",
+                disposition="continue",
+                reason_code="LEAF_WIN_READY_FOR_AITER_COMPARISON",
+                next_action="run_matched_aiter_abba",
+                complete=True,
+            )
+        return AmdRmsNormDiagnosis(
+            route_owner="candidate",
+            disposition="continue",
+            reason_code="LEAF_WIN_PROFILE_REQUIRED",
+            next_action="collect_selected_and_baseline_rocprofv3",
+            complete=False,
+        )
+    if status == STOP_CLOSE_NULL:
+        return AmdRmsNormDiagnosis(
+            route_owner="candidate",
+            disposition="stop",
+            reason_code="BELOW_MATERIALITY",
+            next_action="close_one_row_search",
+            complete=True,
+        )
+    if status == STOP_BASELINE_FASTER:
+        return AmdRmsNormDiagnosis(
+            route_owner="candidate",
+            disposition="stop",
+            reason_code="BASELINE_FASTER",
+            next_action="close_one_row_search",
+            complete=True,
+        )
+    if status == INCONCLUSIVE_MEASUREMENT_QUALITY:
+        return AmdRmsNormDiagnosis(
+            route_owner="candidate",
+            disposition="inconclusive",
+            reason_code="MEASUREMENT_QUALITY_FAILED",
+            next_action="inspect_machine_health_without_promoting",
+            complete=False,
+        )
+    raise ValueError("terminal RMSNorm status is unsupported")
+
+
 __all__ = [
     "AmdRmsNormCandidate",
     "AmdRmsNormConfirmatoryProtocol",
     "AmdRmsNormScreeningProtocol",
     "AmdRmsNormSearchContract",
     "AmdRmsNormSearchDecision",
+    "AmdRmsNormDiagnosis",
     "INCONCLUSIVE_MEASUREMENT_QUALITY",
     "LEAF_TIMING_WIN",
     "NUM_WARPS",
@@ -540,5 +613,6 @@ __all__ = [
     "TARGET",
     "candidate_id",
     "derive_confirmatory_decision",
+    "diagnose_terminal_decision",
     "materialize_candidates",
 ]

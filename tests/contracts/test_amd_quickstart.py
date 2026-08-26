@@ -12,8 +12,10 @@ from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "examples/gpu"))
+sys.path.insert(0, str(ROOT / "src"))
 
 import amd_triton_quickstart as quickstart  # noqa: E402
+from open_cake_ir.evaluation.triton_hip import amdgcn_resource_record  # noqa: E402
 
 SCRIPT = ROOT / "examples/gpu/swiglu_amd_quickstart.py"
 RMSNORM_SCRIPT = ROOT / "examples/gpu/rmsnorm_amd_quickstart.py"
@@ -25,6 +27,39 @@ SWIGLU_WORKLOAD = ROOT / "contracts/workloads/swiglu-fp32-v1.json"
 
 
 class AmdQuickstartContractTests(unittest.TestCase):
+    def test_amdgcn_resources_are_structured_without_inventing_occupancy(self) -> None:
+        source = b"""
+        .amdhsa_kernel _fixture
+          .amdhsa_group_segment_fixed_size 256
+          .amdhsa_private_segment_fixed_size 64
+          .amdhsa_kernarg_size 40
+          .amdhsa_wavefront_size32 1
+          .amdhsa_uses_dynamic_stack 0
+          .amdhsa_next_free_vgpr 117
+          .amdhsa_next_free_sgpr 39
+          .amdhsa_shared_vgpr_count 0
+          .amdhsa_workgroup_processor_mode 1
+        .end_amdhsa_kernel
+        """
+
+        record = amdgcn_resource_record(source)
+
+        self.assertEqual(record["kernel_name"], "_fixture")
+        self.assertEqual(record["wave_size"], 32)
+        self.assertEqual(record["vgpr_count"], 117)
+        self.assertEqual(record["sgpr_count"], 39)
+        self.assertEqual(record["lds_bytes_per_workgroup"], 256)
+        self.assertEqual(record["scratch_bytes_per_workitem"], 64)
+        self.assertFalse(record["occupancy_derived"])
+        self.assertEqual(
+            record["occupancy_limit"], "gfx1151_target_facts_unavailable"
+        )
+
+        with self.assertRaisesRegex(ValueError, "resource declarations differ"):
+            amdgcn_resource_record(
+                source.replace(b"wavefront_size32 1", b"wavefront_size32 0")
+            )
+
     def test_gpu_execution_refuses_a_draft_or_failed_compiler_gate(self) -> None:
         draft = SimpleNamespace(state="draft", check_corpus=Mock())
         with self.assertRaisesRegex(ValueError, "released Compiler"):

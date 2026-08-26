@@ -33,11 +33,13 @@ from open_cake_ir.evaluation.amd_rmsnorm_search import (  # noqa: E402
     LEAF_TIMING_WIN,
     AmdRmsNormCandidate,
     AmdRmsNormSearchContract,
+    diagnose_terminal_decision,
     derive_confirmatory_decision,
     materialize_candidates,
 )
 from open_cake_ir.evaluation.triton_hip import (  # noqa: E402
     admit_exact_hip,
+    amdgcn_resource_record,
     artifact_records,
     canonical_json_bytes,
     extract_artifacts,
@@ -342,6 +344,9 @@ def _compile_candidate(
                 "grid": list(grid),
                 "block": [num_warps * 32, 1, 1],
                 "shared_memory_bytes": int(compiled.metadata.shared),
+                "amdgcn_resources": amdgcn_resource_record(
+                    artifacts["amdgcn"]
+                ),
                 "artifacts": artifact_records(artifacts),
             },
         )
@@ -606,11 +611,51 @@ def _observation_document(decision: object) -> dict[str, object]:
 def _failure_class(stage: str) -> str:
     if stage == "source_custody":
         return "CUSTODY_BLOCKED"
+    if stage == "static_filter":
+        return "AUTHORITY_BLOCKED"
     if stage in {"host_and_process_admission", "runtime_admission"}:
         return "ENVIRONMENT_BLOCKED"
     if stage.endswith("correctness_rejected"):
         return "CORRECTNESS_REJECTED"
     return "HARNESS_FAULT"
+
+
+def _filter_document(
+    compiler: Compiler,
+    candidates: tuple[AmdRmsNormCandidate, ...],
+) -> dict[str, object]:
+    assessments = tuple(compiler.assess(item.document) for item in candidates)
+    if any(not item.lowering_eligible for item in assessments):
+        raise ValueError("the frozen search domain contains a non-lowerable candidate")
+    scored, withheld = compiler.rank(assessments)
+    expected_withheld = tuple(item.schedule_id for item in assessments)
+    if scored or withheld != expected_withheld:
+        raise ValueError("first gfx1151 search requires explicit ranking abstention")
+    return {
+        "construction_passed_count": len(candidates),
+        "verifier_passed_count": sum(item.accepted for item in assessments),
+        "lowering_eligible_count": sum(
+            item.lowering_eligible for item in assessments
+        ),
+        "candidate_findings": {
+            candidate.candidate_id: {
+                "schedule_id": assessment.schedule_id,
+                "schedule_sha256": assessment.schedule_sha256,
+                "accepted": assessment.accepted,
+                "lowering_eligible": assessment.lowering_eligible,
+                "calibration_available": assessment.calibration_available,
+                "finding_codes": [item.code for item in assessment.findings],
+            }
+            for candidate, assessment in zip(candidates, assessments)
+        },
+        "ranking_attempted": True,
+        "ranking_applied": False,
+        "ranking_abstained_reason": "gfx1151_calibration_unavailable",
+        "scored_candidates": [],
+        "withheld_candidate_ids": [item.candidate_id for item in candidates],
+        "withheld_schedule_ids": list(withheld),
+        "gpu_survivor_policy": "empirical_calibration_sweep_all_verifier_survivors",
+    }
 
 
 def _prepare(
@@ -634,9 +679,7 @@ def _prepare(
     ):
         raise ValueError("search Executor authority differs")
     candidates = materialize_candidates(contract)
-    assessments = [compiler.assess(item.document) for item in candidates]
-    if any(not item.lowering_eligible for item in assessments):
-        raise ValueError("the frozen search domain contains a non-lowerable candidate")
+    filter_document = _filter_document(compiler, candidates)
     prepared = {
         "schema_version": 1,
         "kind": "open_cake_gfx1151_llama_rmsnorm_search_v2",
@@ -653,6 +696,7 @@ def _prepare(
         },
         "candidate_count": len(candidates),
         "candidate_ids": [item.candidate_id for item in candidates],
+        "filter": filter_document,
         "gpu_submitted": False,
         "performance_measured": False,
     }
@@ -701,6 +745,9 @@ def _run(
     try:
         if not bool(source["tree_clean"]):
             raise RuntimeError("a clean Git tree is required for retained timing")
+        stage = "static_filter"
+        filter_document = _filter_document(compiler, candidate_specs)
+        evidence.json("filter.json", filter_document)
         stage = "host_and_process_admission"
         host_admission, process_initial = _admit_search_host(executor)
         monitor_path = str(host_admission.device_monitor["path"])
@@ -829,11 +876,16 @@ def _run(
                 "source_custody": source,
                 "correctness_qualified_candidate_count": len(survivors),
                 "screening": screening,
+                "filter": filter_document,
                 "performance_measured": True,
                 "profiler_tooling_available": profiler is not None,
                 "profiler_evidence_collected": False,
                 "promotion_authorized": False,
                 "llama_cpp_e2e_claim": False,
+                "diagnosis": diagnose_terminal_decision(
+                    INCONCLUSIVE_MEASUREMENT_QUALITY,
+                    profiler_evidence_collected=False,
+                ).document(),
             }
             evidence.json("result.json", result)
             evidence.manifest()
@@ -927,6 +979,9 @@ def _run(
                 "hsaco_sha256": artifact_records(confirm_candidate.artifacts)["hsaco"][
                     "sha256"
                 ],
+                "amdgcn_resources": amdgcn_resource_record(
+                    confirm_candidate.artifacts["amdgcn"]
+                ),
             },
             "baseline": {
                 "route": {
@@ -940,8 +995,12 @@ def _run(
                 "hsaco_sha256": artifact_records(confirm_baseline.artifacts)["hsaco"][
                     "sha256"
                 ],
+                "amdgcn_resources": amdgcn_resource_record(
+                    confirm_baseline.artifacts["amdgcn"]
+                ),
             },
             "candidate_dispositions": dispositions,
+            "filter": filter_document,
             "screening": screening,
             "confirmatory": {
                 "preflight_correctness": preflight,
@@ -960,6 +1019,10 @@ def _run(
             "promotion_authorized": False,
             "llama_cpp_build_claim": False,
             "llama_cpp_e2e_claim": False,
+            "diagnosis": diagnose_terminal_decision(
+                decision.status,
+                profiler_evidence_collected=False,
+            ).document(),
         }
         evidence.json(
             "amd-smi-metric-final.json", _amd_smi(monitor_path, ["metric"])

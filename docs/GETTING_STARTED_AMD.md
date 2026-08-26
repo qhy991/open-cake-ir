@@ -4,11 +4,13 @@ This branch retains the earlier gfx1151/Q4 lineage and is merged through GitHub
 `main@415a1f0f4d090e7f97292adcf3a539be67269550`. It adds exact gfx1151 Target support,
 standalone FP32 SwiGLU, llama.cpp FP32 RMSNorm+Mul, a true-one-row hypothesis, a
 generated live-Q8_1 producer and the source-pinned AITER RMSNorm baseline below. The
-historical 45-case AMD Gate was prepared against the pre-RoPE Compiler and is no longer
-the current Gate after this alignment; it is not carried forward or rewritten. The
-current 37-case main manifest remains canonical. Any future AMD Compiler promotion must
-prepare a new combined Gate and receive the independent approval required by ADR 0030.
-Prepare-only commands below submit no GPU work.
+historical 45-case AMD Gate was prepared against the pre-RoPE Compiler and was not
+carried forward or rewritten. The post-alignment draft now combines the released main
+37 cases with the unchanged ten AMD expectations: its Gate matches 47/47 over 64
+sources. It remains `awaiting_human_review`; the existing approval binds only the main
+37-case report and is deliberately stale for this proposal. Any AMD Compiler promotion
+therefore still requires the independent approval required by ADR 0030. Prepare-only
+commands below submit no GPU work.
 
 ## Environment
 
@@ -16,9 +18,9 @@ The previously qualified runtime combination is one visible gfx1151 wave32 devic
 ROCm 7.2.1, Python 3.12, ROCm PyTorch 2.9.1 and Triton 3.5.1. PyTorch intentionally uses
 the `torch.cuda` namespace for ROCm. Runtime admission checks `torch.version.hip`, the
 active Triton target, `gcnArchName=gfx1151` and wave width; another device or a CUDA
-build fails before compilation. These observed versions are not yet a released Executor
-authority. The B200 v30 descriptor pins CUDA/CUPTI/NCU and cannot authorize this path;
-ADR 0038 requires a separately released exact gfx1151 Executor before formal GPU work.
+build fails before compilation. These facts and the AITER JIT closure are now released
+as `open-cake-ir-gfx1151-v1`; the B200 v30 descriptor still cannot authorize this path.
+ADR 0038 keeps the two Executor lineages independent.
 
 On the admitted infplane host, with exactly one gfx1151 device visible, release that
 authority from the final clean candidate checkout:
@@ -176,7 +178,16 @@ frozen until the post-alignment AMD Compiler successor is externally approved; t
 no GPU timing command or performance result is claimed yet. Once frozen, the runner will
 retain correctness for both Workload cases, L2-flushed HIP-event screening, four ABBA
 confirmation cohorts, raw samples, a 0.05 CV gate and the unchanged 1.05x materiality
-rule.
+rule. Because gfx1151 has no calibrated ranking coverage, preparation now records all
+four candidates as explicitly withheld, `ranking_applied=false`, and sends every
+Verifier survivor to the first empirical calibration sweep. This is an honest ranking
+abstention, not a cost-model filter. Terminal timing records carry a typed candidate
+diagnosis: a null or slower result closes the one-row branch, while a leaf win remains
+incomplete until selected/baseline `rocprofv3` evidence is collected; only then may it
+enter a matched AITER comparison. Every compiled survivor also projects its AMDHSA
+kernel name, wave size, VGPR/SGPR counts, LDS, per-workitem scratch, kernarg size and
+dynamic-stack bit from the retained AMDGCN. The record deliberately says
+`occupancy_derived=false` until independently calibrated gfx1151 residency facts exist.
 
 ## Boundary
 
@@ -193,8 +204,9 @@ two-part stored-s correction oracle. ADR 0040 adds raw UINT8/INT8 storage and ex
 record custody. ADR 0041 adds the first composed Q8 producer: masked 512-value padding,
 explicit wave32 XOR reductions, precise FP32 division, half-away rounding, typed casts
 and relation-derived little-endian Q8_1 stores. It passes deterministic source lowering,
-but the new combined AMD Gate and approval, exact gfx1151 Executor and on-device
-576-byte comparison are still pending. The Q4 consumer, dot4 contract, HSACO evidence,
+but independent approval of the prepared combined AMD Gate and the on-device 576-byte
+comparison are still pending. The exact gfx1151 Executor is released. The Q4 consumer,
+dot4 contract, HSACO evidence,
 timing and promotion claims do not yet exist. ADR 0042 records the gated consumer design
 as typed packed Load plus one
 instruction-bound generic Dot and two widening casts; it is not implemented before the

@@ -12,7 +12,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "examples/gpu"))
 
+import rmsnorm_amd_search as search_runner  # noqa: E402
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.evaluation.amd_rmsnorm_search import (  # noqa: E402
     INCONCLUSIVE_MEASUREMENT_QUALITY,
@@ -24,6 +26,7 @@ from open_cake_ir.evaluation.amd_rmsnorm_search import (  # noqa: E402
     STOP_CLOSE_NULL,
     AmdRmsNormSearchContract,
     candidate_id,
+    diagnose_terminal_decision,
     derive_confirmatory_decision,
     materialize_candidates,
 )
@@ -356,6 +359,39 @@ class AmdRmsNormCandidateTests(unittest.TestCase):
             with self.subTest(geometry=geometry), self.assertRaises(ValueError):
                 candidate_id(*geometry)
 
+    def test_current_gfx1151_ranking_explicitly_abstains(self) -> None:
+        fixture = ContractFixture(self)
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        assessments = tuple(
+            compiler.assess(candidate.document)
+            for candidate in materialize_candidates(fixture.load())
+        )
+
+        scored, withheld = compiler.rank(assessments)
+
+        self.assertEqual(scored, ())
+        self.assertEqual(
+            withheld,
+            tuple(assessment.schedule_id for assessment in assessments),
+        )
+        self.assertTrue(
+            all(not assessment.calibration_available for assessment in assessments)
+        )
+
+        document = search_runner._filter_document(
+            compiler, materialize_candidates(fixture.load())
+        )
+        self.assertTrue(document["ranking_attempted"])
+        self.assertFalse(document["ranking_applied"])
+        self.assertEqual(
+            document["ranking_abstained_reason"],
+            "gfx1151_calibration_unavailable",
+        )
+        self.assertEqual(
+            document["withheld_candidate_ids"],
+            ["r1-w1", "r1-w2", "r1-w4", "r1-w8"],
+        )
+
 
 class AmdRmsNormDecisionTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -417,6 +453,40 @@ class AmdRmsNormDecisionTests(unittest.TestCase):
                 mutate(value)
                 with self.assertRaises(ValueError):
                     derive_confirmatory_decision(self.contract, value)
+
+    def test_terminal_diagnosis_routes_without_inventing_cost_model_evidence(self) -> None:
+        expected = {
+            LEAF_TIMING_WIN: ("continue", "LEAF_WIN_PROFILE_REQUIRED", False),
+            STOP_CLOSE_NULL: ("stop", "BELOW_MATERIALITY", True),
+            STOP_BASELINE_FASTER: ("stop", "BASELINE_FASTER", True),
+            INCONCLUSIVE_MEASUREMENT_QUALITY: (
+                "inconclusive",
+                "MEASUREMENT_QUALITY_FAILED",
+                False,
+            ),
+        }
+        for status, values in expected.items():
+            with self.subTest(status=status):
+                document = diagnose_terminal_decision(
+                    status, profiler_evidence_collected=False
+                ).document()
+                self.assertEqual(document["route_owner"], "candidate")
+                self.assertEqual(document["disposition"], values[0])
+                self.assertEqual(document["reason_code"], values[1])
+                self.assertEqual(document["complete"], values[2])
+                self.assertFalse(document["cost_model_evaluated"])
+                self.assertEqual(
+                    document["cost_model_abstained_reason"],
+                    "gfx1151_calibration_unavailable",
+                )
+
+        profiled = diagnose_terminal_decision(
+            LEAF_TIMING_WIN, profiler_evidence_collected=True
+        ).document()
+        self.assertTrue(profiled["complete"])
+        self.assertEqual(
+            profiled["reason_code"], "LEAF_WIN_READY_FOR_AITER_COMPARISON"
+        )
 
 
 if __name__ == "__main__":

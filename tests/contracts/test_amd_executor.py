@@ -347,6 +347,9 @@ class HipSearchFailureEvidenceTests(unittest.TestCase):
     def test_failure_classes_preserve_the_next_action(self) -> None:
         self.assertEqual(amd_search._failure_class("source_custody"), "CUSTODY_BLOCKED")
         self.assertEqual(
+            amd_search._failure_class("static_filter"), "AUTHORITY_BLOCKED"
+        )
+        self.assertEqual(
             amd_search._failure_class("runtime_admission"),
             "ENVIRONMENT_BLOCKED",
         )
@@ -419,6 +422,11 @@ class HipSearchFailureEvidenceTests(unittest.TestCase):
             artifact_dir = root / "evidence"
 
             with (
+                patch.object(
+                    amd_search,
+                    "_filter_document",
+                    return_value={"ranking_applied": False},
+                ),
                 patch.object(
                     amd_search,
                     "git_state",

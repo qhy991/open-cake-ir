@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import tempfile
 from hashlib import sha256
@@ -12,6 +13,11 @@ from typing import Mapping, cast
 
 
 ARTIFACT_ROLES = ("source", "ttir", "ttgir", "llir", "amdgcn", "hsaco")
+_AMDHSA_KERNEL = re.compile(r"^\s*\.amdhsa_kernel\s+(\S+)\s*$", re.MULTILINE)
+_AMDHSA_FIELD = re.compile(
+    r"^\s*\.amdhsa_(?P<name>[a-z0-9_]+)\s+(?P<value>[0-9]+)\s*$",
+    re.MULTILINE,
+)
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -133,6 +139,49 @@ def artifact_records(payloads: Mapping[str, bytes]) -> dict[str, dict[str, objec
     }
 
 
+def amdgcn_resource_record(payload: bytes) -> dict[str, object]:
+    """Extract exact AMDHSA resource declarations from one emitted assembly artifact."""
+
+    try:
+        source = payload.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("AMDGCN artifact is not UTF-8 assembly") from error
+    kernels = _AMDHSA_KERNEL.findall(source)
+    if len(kernels) != 1:
+        raise ValueError("AMDGCN artifact must declare exactly one kernel")
+    fields = {
+        match.group("name"): int(match.group("value"))
+        for match in _AMDHSA_FIELD.finditer(source)
+    }
+    required = {
+        "group_segment_fixed_size",
+        "private_segment_fixed_size",
+        "kernarg_size",
+        "wavefront_size32",
+        "uses_dynamic_stack",
+        "next_free_vgpr",
+        "next_free_sgpr",
+        "shared_vgpr_count",
+        "workgroup_processor_mode",
+    }
+    if not required.issubset(fields) or fields["wavefront_size32"] != 1:
+        raise ValueError("AMDGCN resource declarations differ")
+    return {
+        "kernel_name": kernels[0],
+        "wave_size": 32,
+        "vgpr_count": fields["next_free_vgpr"],
+        "sgpr_count": fields["next_free_sgpr"],
+        "shared_vgpr_count": fields["shared_vgpr_count"],
+        "lds_bytes_per_workgroup": fields["group_segment_fixed_size"],
+        "scratch_bytes_per_workitem": fields["private_segment_fixed_size"],
+        "kernarg_bytes": fields["kernarg_size"],
+        "uses_dynamic_stack": bool(fields["uses_dynamic_stack"]),
+        "workgroup_processor_mode": bool(fields["workgroup_processor_mode"]),
+        "occupancy_derived": False,
+        "occupancy_limit": "gfx1151_target_facts_unavailable",
+    }
+
+
 def resolve_new_external_directory(project_root: Path, value: Path) -> Path:
     """Resolve, but do not create, a new evidence directory outside the checkout."""
 
@@ -148,4 +197,3 @@ def resolve_new_external_directory(project_root: Path, value: Path) -> Path:
 def write_new_json(path: Path, value: object) -> None:
     with path.open("xb") as stream:
         stream.write(canonical_json_bytes(value) + b"\n")
-
