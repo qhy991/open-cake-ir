@@ -13,6 +13,8 @@ import json
 from typing import Any
 
 from .ir import (
+    PLACED_CONTRACT_PREFIXES,
+    PLACEMENT_FIELDS,
     AccessIndexKind,
     AtomicMemoryOrder,
     AtomicMemoryScope,
@@ -62,6 +64,50 @@ def _mnk(description: str) -> dict[str, Any]:
     }
 
 
+def _permitted_only_when(
+    obj: dict[str, Any],
+    sibling: str,
+    permitting: dict[str, Any],
+    fields: tuple[str, ...],
+    description: str,
+) -> dict[str, Any]:
+    """Forbid `fields` unless `sibling` satisfies `permitting`.
+
+    Some fields are legal only for particular values of a neighbour. The Verifier already
+    refuses the other combinations, but only after a Turn has been spent writing one. The
+    authoring Schema is the agent's one machine-readable guide, so it carries the same
+    condition instead of leaving the rule to be discovered from a blocking Finding.
+    """
+
+    return {
+        **obj,
+        "allOf": [
+            {
+                "if": {
+                    "required": [sibling],
+                    "properties": {sibling: {"not": permitting}},
+                },
+                "then": {
+                    "not": {"anyOf": [{"required": [name]} for name in fields]},
+                    "description": description,
+                },
+            }
+        ],
+    }
+
+
+def _placed_only(instruction: dict[str, Any]) -> dict[str, Any]:
+    escaped = "|".join(prefix.replace(".", r"\.") for prefix in PLACED_CONTRACT_PREFIXES)
+    return _permitted_only_when(
+        instruction,
+        "contract",
+        {"pattern": "^(?:%s)" % escaped},
+        PLACEMENT_FIELDS,
+        "Only %s place their operands; every other contract leaves %s to the backend."
+        % (", ".join(PLACED_CONTRACT_PREFIXES), ", ".join(PLACEMENT_FIELDS)),
+    )
+
+
 def _object(
     required: dict[str, Any], optional: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -74,39 +120,47 @@ def _object(
 
 
 _PARAMETERS = {
-    OperationKind.LOAD: _object(
-        {"movement": _enum(LoadMovement)},
-        {
-            "reuse": _enum(LoadReuse),
-            "descriptor_box": {
-                "type": "array",
-                "minItems": 1,
-                "items": _POSITIVE,
-                "description": "TMA descriptor box extents; tma movement only.",
-            }
-        },
+    OperationKind.LOAD: _permitted_only_when(
+        _object(
+            {"movement": _enum(LoadMovement)},
+            {
+                "reuse": _enum(LoadReuse),
+                "descriptor_box": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": _POSITIVE,
+                    "description": "TMA descriptor box extents; tma movement only.",
+                }
+            },
+        ),
+        "movement",
+        {"const": LoadMovement.TMA.value},
+        ("descriptor_box",),
+        "Only tma movement addresses a descriptor box; a global load has none.",
     ),
     OperationKind.MMA: _object(
         {"accumulator": {"const": DType.FP32.value}},
         {
             "tile_shape": _mnk("The tile this operation walks, as M, N and K."),
-            "instruction": _object(
-                {"contract": {
-                    "type": "string",
-                    "description": "Must be admitted by the Target.",
-                }},
-                {
-                    "shape": _mnk("The atom's M, N and K, which is not the tile's."),
-                    "cta_group": {"enum": [1, 2]},
-                    "operand_source": _enum(OperandSource),
-                    "operand_major": {
-                        "type": "array",
-                        "minItems": 2,
-                        "maxItems": 2,
-                        "items": _enum(OperandMajorMode),
-                        "description": "Major mode for operand A and operand B.",
-                    },
-                }
+            "instruction": _placed_only(
+                _object(
+                    {"contract": {
+                        "type": "string",
+                        "description": "Must be admitted by the Target.",
+                    }},
+                    {
+                        "shape": _mnk("The atom's M, N and K, which is not the tile's."),
+                        "cta_group": {"enum": [1, 2]},
+                        "operand_source": _enum(OperandSource),
+                        "operand_major": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "items": _enum(OperandMajorMode),
+                            "description": "Major mode for operand A and operand B.",
+                        },
+                    }
+                )
             ),
         },
     ),
@@ -196,6 +250,13 @@ def schedule_schema() -> dict[str, Any]:
                 "properties": {
                     "source": {"const": AccessIndexKind.DIMENSION.value},
                     "dimension": _NONNEGATIVE,
+                    # Omitting both covers the whole axis, which is why they are optional
+                    # rather than defaulted here: one spelling of "all of it", not two.
+                    # `offset` starts at 1 for the same reason -- writing 0 would be a
+                    # second spelling of omitting it. The Verifier owns the matching
+                    # rule for `extent`, which needs the axis size to state.
+                    "offset": _POSITIVE,
+                    "extent": _POSITIVE,
                 },
                 "required": ["source", "dimension"],
             },

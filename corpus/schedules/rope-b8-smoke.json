@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "schedule_id": "rope-b8-smoke-v1",
+  "target": "sm_100a",
+  "roles": [
+    {"name": "compute", "warps": [0, 1, 2, 3]}
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "x_lo", "space": "global", "dtype": "fp32", "shape": [8, 512, 64], "mode": "input"},
+    {"name": "x_hi", "space": "global", "dtype": "fp32", "shape": [8, 512, 64], "mode": "input"},
+    {"name": "cos", "space": "global", "dtype": "fp32", "shape": [8, 512, 64], "mode": "input"},
+    {"name": "sin", "space": "global", "dtype": "fp32", "shape": [8, 512, 64], "mode": "input"},
+    {"name": "y_lo", "space": "global", "dtype": "fp32", "shape": [8, 512, 64], "mode": "output"},
+    {"name": "y_hi", "space": "global", "dtype": "fp32", "shape": [8, 512, 64], "mode": "output"},
+    {"name": "x_lo_tile", "space": "register", "dtype": "fp32", "shape": [64, 64], "mode": "scratch"},
+    {"name": "x_hi_tile", "space": "register", "dtype": "fp32", "shape": [64, 64], "mode": "scratch"},
+    {"name": "cos_tile", "space": "register", "dtype": "fp32", "shape": [64, 64], "mode": "scratch"},
+    {"name": "sin_tile", "space": "register", "dtype": "fp32", "shape": [64, 64], "mode": "scratch"},
+    {"name": "lo_cos", "space": "register", "dtype": "fp32", "shape": [64, 64], "mode": "scratch"},
+    {"name": "hi_sin", "space": "register", "dtype": "fp32", "shape": [64, 64], "mode": "scratch"},
+    {"name": "lo_sin", "space": "register", "dtype": "fp32", "shape": [64, 64], "mode": "scratch"},
+    {"name": "hi_cos", "space": "register", "dtype": "fp32", "shape": [64, 64], "mode": "scratch"},
+    {"name": "y_lo_tile", "space": "register", "dtype": "fp32", "shape": [64, 64], "mode": "scratch"},
+    {"name": "y_hi_tile", "space": "register", "dtype": "fp32", "shape": [64, 64], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_x_lo", "kind": "load", "role": "compute", "reads": ["x_lo"], "writes": ["x_lo_tile"],
+     "parameters": {"movement": "global", "reuse": "reused"}},
+    {"id": "load_x_hi", "kind": "load", "role": "compute", "reads": ["x_hi"], "writes": ["x_hi_tile"],
+     "parameters": {"movement": "global", "reuse": "reused"}},
+    {"id": "load_cos", "kind": "load", "role": "compute", "reads": ["cos"], "writes": ["cos_tile"],
+     "parameters": {"movement": "global", "reuse": "reused"}},
+    {"id": "load_sin", "kind": "load", "role": "compute", "reads": ["sin"], "writes": ["sin_tile"],
+     "parameters": {"movement": "global", "reuse": "reused"}},
+
+    {"id": "mul_lo_cos", "kind": "elementwise", "role": "compute",
+     "reads": ["x_lo_tile", "cos_tile"], "writes": ["lo_cos"],
+     "depends_on": ["load_x_lo", "load_cos"], "parameters": {"op": "mul"}},
+    {"id": "mul_hi_sin", "kind": "elementwise", "role": "compute",
+     "reads": ["x_hi_tile", "sin_tile"], "writes": ["hi_sin"],
+     "depends_on": ["load_x_hi", "load_sin"], "parameters": {"op": "mul"}},
+    {"id": "rotate_lo", "kind": "elementwise", "role": "compute",
+     "reads": ["lo_cos", "hi_sin"], "writes": ["y_lo_tile"],
+     "depends_on": ["mul_lo_cos", "mul_hi_sin"], "parameters": {"op": "sub"}},
+
+    {"id": "mul_lo_sin", "kind": "elementwise", "role": "compute",
+     "reads": ["x_lo_tile", "sin_tile"], "writes": ["lo_sin"],
+     "depends_on": ["load_x_lo", "load_sin"], "parameters": {"op": "mul"}},
+    {"id": "mul_hi_cos", "kind": "elementwise", "role": "compute",
+     "reads": ["x_hi_tile", "cos_tile"], "writes": ["hi_cos"],
+     "depends_on": ["load_x_hi", "load_cos"], "parameters": {"op": "mul"}},
+    {"id": "rotate_hi", "kind": "elementwise", "role": "compute",
+     "reads": ["lo_sin", "hi_cos"], "writes": ["y_hi_tile"],
+     "depends_on": ["mul_lo_sin", "mul_hi_cos"], "parameters": {"op": "add"}},
+
+    {"id": "store_y_lo", "kind": "store", "role": "compute", "reads": ["y_lo_tile"], "writes": ["y_lo"],
+     "depends_on": ["rotate_lo"], "parameters": {"coalesced": true}},
+    {"id": "store_y_hi", "kind": "store", "role": "compute", "reads": ["y_hi_tile"], "writes": ["y_hi"],
+     "depends_on": ["rotate_hi"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["y_lo", "y_hi"],
+  "program_map": {
+    "axes": [
+      {"name": "row_block", "axis": 0, "buffer": "x_lo", "dimension": 1, "tile": 64},
+      {"name": "batch", "axis": 1, "buffer": "x_lo", "dimension": 0, "tile": 1}
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_x_lo", "buffer": "x_lo", "boundary": "mask_tiled_axes",
+     "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}]},
+    {"operation": "load_x_hi", "buffer": "x_hi", "boundary": "mask_tiled_axes",
+     "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}]},
+    {"operation": "load_cos", "buffer": "cos", "boundary": "mask_tiled_axes",
+     "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}]},
+    {"operation": "load_sin", "buffer": "sin", "boundary": "mask_tiled_axes",
+     "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}]},
+    {"operation": "store_y_lo", "buffer": "y_lo", "boundary": "mask_tiled_axes",
+     "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}]},
+    {"operation": "store_y_hi", "buffer": "y_hi", "boundary": "mask_tiled_axes",
+     "indices": [{"source": "program", "name": "batch"}, {"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 2}]}
+  ],
+  "metadata": {
+    "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 128},
+  "lowering": {"backend": "triton", "entry_point": "cake_rope_b8_smoke"}
+}

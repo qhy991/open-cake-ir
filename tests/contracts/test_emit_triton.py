@@ -9,6 +9,7 @@ because the source now follows the Schedule instead of being selected by it.
 from __future__ import annotations
 
 import ast
+import builtins
 import copy
 from hashlib import sha256
 import itertools
@@ -20,7 +21,7 @@ from pathlib import Path
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.emit_cutedsl import EmitError
 from open_cake_ir.compiler.emit_triton import emit
-from open_cake_ir.compiler.ir import Schedule
+from open_cake_ir.compiler.ir import Schedule, ScheduleParseError
 from open_cake_ir.compiler.target import Target
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -476,6 +477,303 @@ class TopKEmissionTest(unittest.TestCase):
         self.assertIn("top_values = tl.where(select_experts_slots == 7", source)
         self.assertIn("top_indices = tl.where(select_experts_slots == 7", source)
         self.assertNotIn("return_indices_tie_break_left", source)
+
+
+class DimensionSubRangeTest(unittest.TestCase):
+    """Two operations may address disjoint halves of one buffer.
+
+    Without this, an operator whose consumer wants half a row -- RoPE is the case that
+    exposed it -- can only be authored if something upstream already split the buffer
+    into two. That split is a materialization the IR would then be unable to describe
+    removing, so the only expressible spelling was the un-optimized one.
+    """
+
+    FUSED = ROOT / "corpus" / "schedules" / "rope-b8-fused.json"
+
+    def test_each_half_walks_its_own_offsets(self) -> None:
+        schedule = Schedule.from_dict(json.loads(self.FUSED.read_text(encoding="utf-8")))
+
+        source = emit(schedule, TARGET).source
+
+        self.assertIn("x_d2_o0_e64_offsets = tl.arange(0, 64)", source)
+        self.assertIn("x_d2_o64_eend_offsets = tl.arange(64, D_X_2)", source)
+        # Both halves stride by the full row, or they would not be halves of one buffer.
+        self.assertIn(
+            "load_x_hi_ptrs = x + batch * N_ROW_BLOCK * D_X_2 "
+            "+ row_block_offsets[:, None] * D_X_2 + x_d2_o64_eend_offsets[None, :]",
+            source,
+        )
+
+    def test_a_whole_axis_keeps_its_original_spelling(self) -> None:
+        """Every pre-existing case pins these bytes; the default must not drift."""
+
+        schedule = Schedule.load(SCHEDULE)
+
+        self.assertIn("tokens_d2_offsets = tl.arange(0, D_TOKENS_2)", emit(schedule, TARGET).source)
+
+    def _with_hi_component(self, component: dict) -> dict:
+        document = json.loads(self.FUSED.read_text(encoding="utf-8"))
+        for access in document["access_maps"]:
+            if access["operation"] == "load_x_hi":
+                access["indices"][2] = component
+        return document
+
+    def test_a_sub_range_past_the_axis_is_refused(self) -> None:
+        from open_cake_ir.compiler.verifier import verify
+
+        document = self._with_hi_component(
+            {"source": "dimension", "dimension": 2, "offset": 96, "extent": 64}
+        )
+        codes = {f.code for f in verify(Schedule.from_dict(document), TARGET)}
+
+        self.assertIn("ACCESS_DIMENSION_SUBRANGE", codes)
+
+    def test_one_range_has_one_spelling(self) -> None:
+        """Two spellings of one range would lower to two sources, so two digests."""
+
+        from open_cake_ir.compiler.verifier import verify
+
+        # `[64, 128)` reaches the end of the axis, so `extent` must be omitted.
+        redundant = self._with_hi_component(
+            {"source": "dimension", "dimension": 2, "offset": 64, "extent": 64}
+        )
+        codes = {f.code for f in verify(Schedule.from_dict(redundant), TARGET)}
+        self.assertIn("ACCESS_SUBRANGE_NONCANONICAL", codes)
+
+        # A written zero offset is a second spelling of omitting it, refused at parse.
+        with self.assertRaises(ScheduleParseError):
+            Schedule.from_dict(
+                self._with_hi_component(
+                    {"source": "dimension", "dimension": 2, "offset": 0, "extent": 64}
+                )
+            )
+
+    def test_a_sub_range_composes_with_a_runtime_indexed_gather(self) -> None:
+        """Two primitives that each work must work together, or they are not orthogonal.
+
+        The indexed value-domain derivation read the axis size while the emitter read
+        the sub-range, so a gather the backend lowered correctly was refused for staging
+        a buffer sized to what the access actually covers.
+        """
+
+        document = json.loads(
+            (ROOT / "corpus" / "schedules" / "indexed-gather-b8-smoke.json")
+            .read_text(encoding="utf-8")
+        )
+        for access in document["access_maps"]:
+            if access["operation"] == "load_selected_rows":
+                access["indices"][2] = {"source": "dimension", "dimension": 2, "extent": 8}
+        for buffer in document["buffers"]:
+            if buffer["name"] == "gathered_tile":
+                buffer["shape"] = [8, 8]
+            elif buffer["name"] == "gathered_rows":
+                buffer["shape"] = [8, 8, 8]
+
+        assessment = Compiler.load(ROOT, DRAFT).assess(document)
+
+        self.assertNotIn(
+            "ACCESS_INDEXED_VALUE_SHAPE", [f.code for f in assessment.findings]
+        )
+        self.assertTrue(assessment.accepted)
+        self.assertTrue(assessment.lowering_eligible)
+        self.assertIn(
+            "expert_rows_d2_o0_e8_offsets = tl.arange(0, 8)",
+            emit(Schedule.from_dict(document), TARGET).source,
+        )
+
+    def test_an_explicit_null_is_not_an_omitted_key(self) -> None:
+        """`Compiler.assess` takes a document, so `null` reaches the parser directly.
+
+        Reading the field with `.get` made `{"offset": null}` parse as the omitted
+        spelling: identical kernel body, different Schedule bytes, so one program held
+        two identities -- and the typed parser admitted what its own authoring Schema
+        refuses. Presence of the key is what decides, not the value behind it.
+        """
+
+        for field, component in (
+            ("offset", {"source": "dimension", "dimension": 2, "offset": None, "extent": 64}),
+            ("extent", {"source": "dimension", "dimension": 2, "offset": 64, "extent": None}),
+        ):
+            with self.subTest(field=field):
+                document = self._with_hi_component(component)
+                with self.assertRaises(ScheduleParseError):
+                    Schedule.from_dict(document)
+                # and it must not slip through the public interface either
+                assessment = Compiler.load(ROOT, DRAFT).assess(document)
+                self.assertFalse(assessment.accepted)
+                self.assertFalse(assessment.lowering_eligible)
+
+
+class MultiOutputHostTest(unittest.TestCase):
+    """A kernel with several outputs must hand back a host wrapper that can run.
+
+    The store-count precondition used to read "exactly one store", but what it was
+    protecting was the host wrapper, which bound a single tensor called `out`. Relaxing
+    the count alone emitted a launch passing the second output's *buffer name* -- a name
+    nothing defines -- so the emitter reported success and returned source that raises
+    NameError when called. Syntax alone does not catch that, so this walks the wrapper
+    and fails if any loaded name is unbound.
+    """
+
+    SCHEDULE = ROOT / "corpus" / "schedules" / "rope-b8-smoke.json"
+
+    def _host(self, source: str) -> tuple[ast.FunctionDef, set[str]]:
+        """The wrapper, and the module-level names it may legitimately reach for."""
+
+        tree = ast.parse(source)
+        module = {
+            node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+        } | {"torch", "tl", "triton"}
+        host = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef) and not node.name.startswith("_")
+        )
+        return host, module
+
+    def test_every_output_reaches_the_kernel_through_a_bound_name(self) -> None:
+        schedule = Schedule.from_dict(
+            json.loads(self.SCHEDULE.read_text(encoding="utf-8"))
+        )
+        source = emit(schedule, TARGET).source
+        host, module = self._host(source)
+
+        bound = {argument.arg for argument in host.args.args} | module
+        for node in ast.walk(host):
+            targets = []
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, (ast.For, ast.comprehension)):
+                targets = [node.target]
+            for target in targets:
+                bound |= {
+                    name.id for name in ast.walk(target) if isinstance(name, ast.Name)
+                }
+
+        unbound = sorted(
+            {
+                node.id
+                for node in ast.walk(host)
+                if isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id not in bound
+                and not hasattr(builtins, node.id)
+            }
+        )
+        self.assertEqual(unbound, [])
+
+        launch = next(
+            node
+            for node in ast.walk(host)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+        )
+        passed = [ast.unparse(argument) for argument in launch.args]
+        self.assertEqual(passed[-2:], ["out[0]", "out[1]"])
+
+    def test_a_stateful_kernel_binds_every_output_too(self) -> None:
+        """Caller-owned state routes through a second host wrapper, which had the same
+        defect. Both now share one output-binding owner, so this cannot diverge again."""
+
+        document = json.loads(
+            (ROOT / "corpus" / "schedules" / "reservation-owned-store-b8-smoke.json")
+            .read_text(encoding="utf-8")
+        )
+        mirror = copy.deepcopy(
+            next(b for b in document["buffers"] if b["name"] == "dispatched")
+        )
+        mirror["name"] = "dispatched_mirror"
+        document["buffers"].append(mirror)
+        store = copy.deepcopy(
+            next(o for o in document["operations"] if o["id"] == "store_dispatched")
+        )
+        store["id"] = "store_dispatched_mirror"
+        store["writes"] = ["dispatched_mirror"]
+        document["operations"].append(store)
+        access = copy.deepcopy(
+            next(a for a in document["access_maps"] if a["operation"] == "store_dispatched")
+        )
+        access["operation"] = "store_dispatched_mirror"
+        access["buffer"] = "dispatched_mirror"
+        document["access_maps"].append(access)
+        document["outputs"] = ["dispatched", "dispatched_mirror"]
+
+        host, module = self._host(emit(Schedule.from_dict(document), TARGET).source)
+
+        bound = {argument.arg for argument in host.args.args} | module
+        for node in ast.walk(host):
+            targets = []
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, (ast.For, ast.comprehension)):
+                targets = [node.target]
+            for target in targets:
+                bound |= {
+                    name.id for name in ast.walk(target) if isinstance(name, ast.Name)
+                }
+        unbound = sorted(
+            {
+                node.id
+                for node in ast.walk(host)
+                if isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id not in bound
+                and not hasattr(builtins, node.id)
+            }
+        )
+        self.assertEqual(unbound, [])
+
+        launch = next(
+            node
+            for node in ast.walk(host)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+        )
+        passed = [ast.unparse(argument) for argument in launch.args]
+        # the state buffer stays caller-owned by name; only the outputs take slots
+        self.assertEqual(passed, ["expert_ids", "payloads", "counts", "out[0]", "out[1]"])
+
+    def test_the_export_list_owns_the_slot_order(self) -> None:
+        """`Schedule.outputs` is the order the caller reads results back in.
+
+        Deriving it from buffer declaration order instead gave one fact two authorities,
+        and they disagreed without saying so: a Schedule exporting `[y_hi, y_lo]` still
+        handed back `y_lo` first, so every caller got its halves swapped.
+        """
+
+        document = json.loads(self.SCHEDULE.read_text(encoding="utf-8"))
+        document["outputs"] = ["y_hi", "y_lo"]
+
+        host, _ = self._host(emit(Schedule.from_dict(document), TARGET).source)
+        launch = next(
+            node
+            for node in ast.walk(host)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+        )
+        passed = [ast.unparse(argument) for argument in launch.args]
+
+        # y_lo is declared first among the buffers but exported second, so it is out[1].
+        self.assertEqual(passed[-2:], ["out[1]", "out[0]"])
+
+    def test_one_buffer_cannot_take_two_slots(self) -> None:
+        from open_cake_ir.compiler.verifier import verify
+
+        document = json.loads(self.SCHEDULE.read_text(encoding="utf-8"))
+        document["outputs"] = ["y_lo", "y_hi", "y_lo"]
+
+        codes = {f.code for f in verify(Schedule.from_dict(document), TARGET)}
+
+        self.assertIn("OUTPUT_DUPLICATE", codes)
+
+    def test_one_output_still_binds_the_bare_name(self) -> None:
+        """The single-output spelling is pinned by every other corpus case's digest."""
+
+        schedule = Schedule.from_dict(json.loads(SCHEDULE.read_text(encoding="utf-8")))
+        host, _ = self._host(emit(schedule, TARGET).source)
+        launch = next(
+            node
+            for node in ast.walk(host)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+        )
+        self.assertIn("out", [ast.unparse(argument) for argument in launch.args])
 
 
 class EmittedObservationTest(unittest.TestCase):
