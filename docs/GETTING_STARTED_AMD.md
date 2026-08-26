@@ -126,10 +126,11 @@ PYTHONPATH=src /path/to/rocm/python \
 The live path calls `aiter.ops.rmsnorm.rms_norm_opus` directly with caller-owned output,
 fixes `GPU_ARCHS=gfx1151`, rejects source-tree import shadows, a wheel or dynamic
 dispatch, then builds, validates and retains the JIT ELF before submitting the first
-operator call. AITER's import-time `module_aiter_core` ELF and its build plan are also
-validated and retained before the RMSNorm module is built. Both ELFs must contain only a
-gfx1151 code object, the RMSNorm ELF must export `rms_norm_opus`, and neither artifact
-may change across the two cases. Both cases must pass the existing CPU-FP64
+operator call. AITER's import-time, host-only `module_aiter_core` ELF and its gfx1151
+build plan are also validated and retained before the RMSNorm module is built. The core
+ELF must export its Python initializer and contain no device code; the RMSNorm ELF must
+export `rms_norm_opus` and contain only a gfx1151 code object. Neither artifact may
+change across the two cases. Both cases must pass the existing CPU-FP64
 tolerance without mutating inputs. The result remains an external-baseline candidate:
 it performs no timing and authorizes no speedup, promotion, llama.cpp end-to-end or
 serving claim. AITER SwiGLU is deliberately excluded because its packed `[gate,up]`

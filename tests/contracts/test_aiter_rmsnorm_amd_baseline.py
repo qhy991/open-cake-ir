@@ -260,7 +260,7 @@ class AiterRmsnormAuthorityTests(unittest.TestCase):
             self.assertEqual(record["exported_symbol"], "rms_norm_opus")
 
             module.write_bytes(b"\x7fELF fixture amdhsa--gfx1100 payload")
-            with self.assertRaisesRegex(RuntimeError, "code object differs"):
+            with self.assertRaisesRegex(RuntimeError, "code object set differs"):
                 baseline._validate_module_artifact(module)
 
             module.write_bytes(b"not-elf amdhsa--gfx1151")
@@ -273,6 +273,16 @@ class AiterRmsnormAuthorityTests(unittest.TestCase):
                 self.assertRaisesRegex(RuntimeError, "export rms_norm_opus"),
             ):
                 baseline._validate_module_artifact(module)
+
+            core = Path(directory) / "module_aiter_core.so"
+            core.write_bytes(b"\x7fELF host-only fixture")
+            core_library = SimpleNamespace(PyInit_module_aiter_core=object())
+            with patch.object(
+                baseline.ctypes, "CDLL", return_value=core_library
+            ):
+                core_record = baseline._validate_core_artifact(core)
+            self.assertFalse(core_record["device_code_present"])
+            self.assertEqual(core_record["code_objects"], [])
 
     def test_jit_environment_uses_only_executor_admitted_build_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

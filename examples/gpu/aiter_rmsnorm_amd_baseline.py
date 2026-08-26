@@ -797,7 +797,9 @@ def _evaluate_cases(
 
 
 def _validate_elf_artifact(
-    path: Path, exported_symbol: str
+    path: Path,
+    exported_symbol: str,
+    expected_code_objects: list[str],
 ) -> dict[str, object]:
     if path.is_symlink() or not path.is_file():
         raise RuntimeError(f"AITER {path.name} artifact is missing")
@@ -807,8 +809,8 @@ def _validate_elf_artifact(
     code_objects = sorted(
         {match.group(1).decode() for match in _CODE_OBJECT.finditer(payload)}
     )
-    if code_objects != ["gfx1151"]:
-        raise RuntimeError(f"AITER {path.name} code object differs from gfx1151")
+    if code_objects != expected_code_objects:
+        raise RuntimeError(f"AITER {path.name} code object set differs")
     library = ctypes.CDLL(str(path))
     if getattr(library, exported_symbol, None) is None:
         raise RuntimeError(f"AITER {path.name} does not export {exported_symbol}")
@@ -818,16 +820,17 @@ def _validate_elf_artifact(
         "size_bytes": len(payload),
         "elf": True,
         "code_objects": code_objects,
+        "device_code_present": bool(code_objects),
         "exported_symbol": exported_symbol,
     }
 
 
 def _validate_module_artifact(path: Path) -> dict[str, object]:
-    return _validate_elf_artifact(path, "rms_norm_opus")
+    return _validate_elf_artifact(path, "rms_norm_opus", ["gfx1151"])
 
 
 def _validate_core_artifact(path: Path) -> dict[str, object]:
-    return _validate_elf_artifact(path, "PyInit_module_aiter_core")
+    return _validate_elf_artifact(path, "PyInit_module_aiter_core", [])
 
 
 def _validate_build_plan(

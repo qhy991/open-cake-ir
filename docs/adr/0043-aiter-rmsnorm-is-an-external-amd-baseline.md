@@ -41,11 +41,11 @@ copy or hide producer work outside timing, so it is not a matched baseline.
    whose system libxml2 has a newer SONAME.
 5. The retained module must be ELF, export `rms_norm_opus`, contain only a gfx1151 code
    object and have a build plan naming only `--offload-arch=gfx1151`. A
-   `module_rmsnorm_quant` artifact is a path violation. AITER import also builds
-   `module_aiter_core`; the runner validates and retains that exact gfx1151 dependency
-   before explicitly building RMSNorm. Both modules and build plans are admitted before
-   it materializes a Workload case or calls the operator, then rechecked after
-   correctness.
+   `module_rmsnorm_quant` artifact is a path violation. AITER import also builds the
+   host-only `module_aiter_core`; the runner requires its Python initializer, no device
+   code and a gfx1151-targeted build plan before explicitly building RMSNorm. Both
+   modules and build plans are admitted before it materializes a Workload case or calls
+   the operator, then rechecked after correctness.
 6. Each Workload case calls the operator once, synchronizes, verifies input immutability,
    output shape/dtype/layout and the existing oracle tolerance. The receipt records the
    source-derived expectation of one launch per call but does not claim an observed
