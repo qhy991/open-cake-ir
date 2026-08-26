@@ -535,6 +535,8 @@ _WIDTH_POLICY_KEYS = frozenset(
         "required_runtime_width",
         "runtime_query",
         "mismatch_action",
+        "threadgroup_shape_contract",
+        "shape_mismatch_action",
         "threadgroup_multiple_requirement",
         "partial_capacity_formula",
     }
@@ -554,6 +556,8 @@ _RESOURCE_KEYS = frozenset(
         "variant_input_scope",
         "threadgroup_allocation_alignment_bytes",
         "total_threadgroup_memory_ceiling_bytes",
+        "runtime_dimension_limit_query",
+        "runtime_dimension_limit_gate",
         "runtime_thread_limit_gate",
     }
 )
@@ -797,16 +801,19 @@ _RESOURCE_HYPOTHESIS_FALSIFIER_CONTRACT = {
     "method": (
         "Compile every retained variant and inspect "
         "pipeline.staticThreadgroupMemoryLength, that variant's aligned dynamic "
-        "allocation, device.maxThreadgroupMemoryLength, and "
-        "maxTotalThreadsPerThreadgroup."
+        "allocation, device.maxThreadgroupMemoryLength, "
+        "device.maxThreadsPerThreadgroup, and "
+        "pipeline.maxTotalThreadsPerThreadgroup."
     ),
     "observable": (
-        "Total static-plus-dynamic bytes, alignment padding, requested threads, and "
-        "both runtime ceilings for each pipeline variant."
+        "Total static-plus-dynamic bytes, alignment padding, requested "
+        "one-dimensional threadgroup shape, device dimension limits, and pipeline "
+        "total-thread and device memory ceilings for each variant."
     ),
     "reject_when": (
-        "Any retained configuration exceeds either runtime limit or the 32768-byte "
-        "family ceiling."
+        "Any retained configuration exceeds a device dimension limit, the pipeline "
+        "total-thread limit, the device memory limit, or the 32768-byte family "
+        "ceiling."
     ),
     "retained_result_contract": (
         "Append-only per-variant resource observations including refused "
@@ -869,6 +876,7 @@ _HIERARCHICAL_PROBE_FACT_IDS = frozenset(
 )
 _HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES = {
     "runtime-width-not-32": "not_triggered_in_observed_cases",
+    "threadgroup-shape-or-dimension-limit-unsupported": "requires_source_review",
     "pipeline-thread-limit-exceeded": "not_triggered_in_observed_cases",
     "partial-final-simdgroup-outside-v1": ("precondition_satisfied_in_observed_cases"),
     "partial-set-exceeds-final-simdgroup": "not_triggered_in_observed_cases",
@@ -902,6 +910,7 @@ _OBSERVED_SCOPE_FINDINGS = {
         (
             "resource-accounting-fits-selected-pipelines",
             "specialization-is-performance-competitive",
+            "width32-specialization-covers-intended-devices",
         ),
     ),
 }
@@ -919,6 +928,7 @@ _REVIEW_ITEM_REFERENCES: dict[str, dict[str, tuple[str, ...]]] = {
             "metal-threadgroup-publication-barrier",
             "metal-simd-width-must-be-queried",
             "metal-pipeline-thread-limit-must-be-queried",
+            "metal-device-threadgroup-dimension-limits-must-be-queried",
             "metal-total-threadgroup-memory-runtime-gate",
             "metal-family-query-is-lower-bound",
             "observed-m4-supports-apple9-or-newer",
@@ -934,6 +944,7 @@ _REVIEW_ITEM_REFERENCES: dict[str, dict[str, tuple[str, ...]]] = {
     "width-policy-and-fail-closed-selection": {
         "fact_ids": (
             "apple-family9-thread-ceiling-1024",
+            "metal-device-threadgroup-dimension-limits-must-be-queried",
             "metal-simd-width-must-be-queried",
             "metal-pipeline-thread-limit-must-be-queried",
             "observed-m4-pipeline-width-32",
@@ -948,6 +959,7 @@ _REVIEW_ITEM_REFERENCES: dict[str, dict[str, tuple[str, ...]]] = {
         "observed_scope_finding_ids": ("observed-width32-case-matrix",),
         "falsifier_ids": (
             "runtime-width-not-32",
+            "threadgroup-shape-or-dimension-limit-unsupported",
             "pipeline-thread-limit-exceeded",
             "partial-final-simdgroup-outside-v1",
             "partial-set-exceeds-final-simdgroup",
@@ -1027,6 +1039,7 @@ _REVIEW_ITEM_REFERENCES: dict[str, dict[str, tuple[str, ...]]] = {
             "apple-family9-thread-ceiling-1024",
             "apple-family9-threadgroup-memory-ceiling-32768",
             "apple-family9-threadgroup-memory-alignment-16",
+            "metal-device-threadgroup-dimension-limits-must-be-queried",
             "metal-pipeline-thread-limit-must-be-queried",
             "metal-total-threadgroup-memory-runtime-gate",
             "observed-m4-threadgroup-memory-32768",
@@ -1040,6 +1053,7 @@ _REVIEW_ITEM_REFERENCES: dict[str, dict[str, tuple[str, ...]]] = {
         ),
         "observed_scope_finding_ids": ("observed-runtime-resource-gates",),
         "falsifier_ids": (
+            "threadgroup-shape-or-dimension-limit-unsupported",
             "pipeline-thread-limit-exceeded",
             "threadgroup-memory-budget-exceeded",
             "current-lowering-capability-missing",
@@ -1089,6 +1103,7 @@ _REVIEW_ITEM_REFERENCES: dict[str, dict[str, tuple[str, ...]]] = {
         ),
         "falsifier_ids": (
             "runtime-width-not-32",
+            "threadgroup-shape-or-dimension-limit-unsupported",
             "pipeline-thread-limit-exceeded",
             "partial-final-simdgroup-outside-v1",
             "partial-set-exceeds-final-simdgroup",
@@ -1127,6 +1142,110 @@ _PINNED_PDF_IDENTITIES = {
         "content_sha256": "9f31df15dd6827545702c5a0845f6e36e1889878cd0e534123bd70211e5c00a8",
     },
 }
+_CRITICAL_WEB_SOURCE_IDENTITIES = {
+    "apple-api-maxthreadsperthreadgroup": {
+        "kind": "vendor_web_documentation",
+        "title": "MTLDevice maxThreadsPerThreadgroup",
+        "url": (
+            "https://developer.apple.com/documentation/metal/"
+            "mtldevice/maxthreadsperthreadgroup"
+        ),
+        "locators": [
+            "The MTLSize value reports the maximum number of threads along each "
+            "threadgroup dimension.",
+            "The device or trivial-shader limit does not replace the selected "
+            "compute pipeline's shader-specific maxTotalThreadsPerThreadgroup limit.",
+        ],
+        "offline_content_verification": "not_performed",
+    }
+}
+_CRITICAL_VENDOR_FACTS = {
+    "metal-device-threadgroup-dimension-limits-must-be-queried": {
+        "statement": (
+            "MTLDevice.maxThreadsPerThreadgroup reports the maximum supported "
+            "threadgroup extent along each dimension; every MTLSize component must "
+            "fit that device limit in addition to the selected pipeline's "
+            "maxTotalThreadsPerThreadgroup total-thread limit."
+        ),
+        "scope": "language_semantics",
+        "authority": "apple_vendor_documentation",
+        "source_ids": [
+            "apple-api-maxthreadsperthreadgroup",
+            "apple-api-maxtotalthreadsperthreadgroup",
+        ],
+    }
+}
+_CRITICAL_DECISION_CONTRACTS = {
+    "refine-width32-fail-closed-specialization": {
+        "statement": (
+            "Refine one Apple-family specialization around width 32 and "
+            "one-dimensional (threads,1,1) threadgroups, selectable only after "
+            "querying the device and selected pipeline and failing closed before "
+            "dispatch on any mismatch."
+        ),
+        "fact_ids": [
+            "apple-family9-thread-ceiling-1024",
+            "metal-device-threadgroup-dimension-limits-must-be-queried",
+            "metal-pipeline-thread-limit-must-be-queried",
+            "metal-simd-width-must-be-queried",
+            "observed-m4-pipeline-thread-limit-1024",
+            "observed-m4-pipeline-width-32",
+        ],
+    },
+    "refine-explicit-resource-accounting": {
+        "statement": (
+            "Refine the specialization with a componentwise device "
+            "threadgroup-shape gate, a pipeline total-thread gate, a 32-partial "
+            "FP32 ceiling of 128 bytes per accumulator, one combined aligned "
+            "dynamic region per current operator variant, and a variant-specific "
+            "total static-plus-dynamic memory gate."
+        ),
+        "fact_ids": [
+            "apple-family9-thread-ceiling-1024",
+            "apple-family9-threadgroup-memory-alignment-16",
+            "apple-family9-threadgroup-memory-ceiling-32768",
+            "metal-device-threadgroup-dimension-limits-must-be-queried",
+            "metal-pipeline-thread-limit-must-be-queried",
+            "metal-total-threadgroup-memory-runtime-gate",
+            "observed-m4-threadgroup-memory-32768",
+        ],
+    },
+}
+_CRITICAL_FALSIFIER_CONTRACTS = {
+    "threadgroup-shape-or-dimension-limit-unsupported": {
+        "condition": (
+            "The requested threadsPerThreadgroup is not exactly "
+            "MTLSize(width=N,height=1,depth=1), or any component exceeds the "
+            "corresponding device.maxThreadsPerThreadgroup component."
+        ),
+        "required_action": (
+            "Reject the launch before dispatch; a 2D or 3D shape requires a "
+            "separately reviewed hardware design."
+        ),
+    },
+    "partial-final-simdgroup-outside-v1": {
+        "condition": (
+            "threads_per_threadgroup_width is not an exact multiple of the "
+            "queried runtime width."
+        ),
+        "required_action": (
+            "Reject this v1 specialization; partial final SIMDgroups require a "
+            "separately reviewed design even though Metal defines active-thread "
+            "SIMDgroup semantics."
+        ),
+    },
+    "partial-set-exceeds-final-simdgroup": {
+        "condition": (
+            "ceil(threads_per_threadgroup_width/runtime_width) exceeds "
+            "runtime_width, so one final SIMDgroup cannot hold all partials."
+        ),
+        "required_action": (
+            "Reject this one-pass final-reduction design and return to hardware "
+            "design for another hierarchy."
+        ),
+    },
+}
+_DEPRECATED_THREADGROUP_BARRIER_NOTATION = "threadgroup_barrier(mem_threadgroup)"
 _FALSIFIER_IDS = frozenset(
     {
         "ambiguous-final-reducer-owner",
@@ -1138,6 +1257,7 @@ _FALSIFIER_IDS = frozenset(
         "partial-set-exceeds-final-simdgroup",
         "pipeline-thread-limit-exceeded",
         "runtime-width-not-32",
+        "threadgroup-shape-or-dimension-limit-unsupported",
         "scratch-read-before-publication",
         "scratch-reuse-race",
         "threadgroup-memory-budget-exceeded",
@@ -1233,8 +1353,8 @@ _SCHEMA_CRITICAL_PROPERTY_CONTRACTS: dict[str, dict[str, object]] = {
     "review_closure": {
         "fact_ids": {
             "type": "array",
-            "minItems": 21,
-            "maxItems": 21,
+            "minItems": 22,
+            "maxItems": 22,
             "uniqueItems": True,
             "items": {"$ref": "#/$defs/id"},
         },
@@ -1261,19 +1381,19 @@ _SCHEMA_CRITICAL_PROPERTY_CONTRACTS: dict[str, dict[str, object]] = {
         },
         "falsifier_ids": {
             "type": "array",
-            "minItems": 12,
-            "maxItems": 12,
+            "minItems": 13,
+            "maxItems": 13,
             "uniqueItems": True,
             "items": {"$ref": "#/$defs/id"},
         },
         "counts": {"$ref": "#/$defs/review_closure_counts"},
     },
     "review_closure_counts": {
-        "fact_count": {"const": 21},
+        "fact_count": {"const": 22},
         "decision_count": {"const": 5},
         "hypothesis_count": {"const": 5},
         "observed_scope_finding_count": {"const": 4},
-        "falsifier_count": {"const": 12},
+        "falsifier_count": {"const": 13},
     },
     "review_item": {
         "review_item_id": {"$ref": "#/$defs/id"},
@@ -1458,6 +1578,9 @@ class HardwareInformedDesignSummary:
     hardware_review_decision_disposition: str | None = None
     hardware_reviewed_git_revision: str | None = None
     hardware_reviewed_revision_bound: bool = False
+    reviewable_head_check_performed: bool = False
+    reviewable_head_git_revision: str | None = None
+    reviewable_head_fixed_closure_verified: bool = False
     non_approved_review_item_ids: tuple[str, ...] = ()
     resource_phase_option_id: str | None = None
     successor_stage3_proposal_required: bool = False
@@ -1497,6 +1620,32 @@ def _canonical_json_bytes(value: object) -> bytes:
         ensure_ascii=False,
         allow_nan=False,
     ).encode("utf-8")
+
+
+def _reject_deprecated_threadgroup_barrier_notation(
+    validator: _Validator,
+    value: object,
+    path: str,
+) -> None:
+    if isinstance(value, str):
+        if _DEPRECATED_THREADGROUP_BARRIER_NOTATION in value:
+            validator.error(
+                path,
+                "normative proposal text must use exact MSL "
+                "threadgroup_barrier(mem_flags::mem_threadgroup) notation",
+            )
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _reject_deprecated_threadgroup_barrier_notation(
+                validator, item, f"{path}[{index}]"
+            )
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _reject_deprecated_threadgroup_barrier_notation(
+                validator, item, f"{path}.{key}"
+            )
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -2052,6 +2201,11 @@ def _source(
             f"{path}.offline_content_verification",
             "not_performed",
         )
+        if source_id is not None:
+            identity = _CRITICAL_WEB_SOURCE_IDENTITIES.get(source_id)
+            if identity is not None:
+                for field, expected in identity.items():
+                    validator.literal(source.get(field), f"{path}.{field}", expected)
     return source_id, cast(str | None, kind)
 
 
@@ -2423,7 +2577,7 @@ def _hierarchical_probe_observation(
         if len(outcomes_value) != len(_HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES):
             validator.error(
                 f"{path}.falsifier_outcomes",
-                "must contain exactly 12 local falsifier outcomes",
+                "must contain exactly 13 local falsifier outcomes",
             )
         for index, outcome_value in enumerate(outcomes_value):
             outcome_path = f"{path}.falsifier_outcomes[{index}]"
@@ -2582,6 +2736,11 @@ def _evidence_document(
                 known_sources,
             )
             referenced_sources.update(fact_source_ids)
+            if fact_id is not None:
+                critical_fact = _CRITICAL_VENDOR_FACTS.get(fact_id)
+                if critical_fact is not None:
+                    for field, expected in critical_fact.items():
+                        validator.literal(fact.get(field), f"{path}.{field}", expected)
             if authority == "local_engineering_observation":
                 if scope != "observed_device_pipeline":
                     validator.error(
@@ -2840,6 +2999,7 @@ def _proposal_document(
     evidence_facts: Mapping[str, Mapping[str, Mapping[str, object]]],
 ) -> str | None:
     validator.exact(document, relative, _PROPOSAL_KEYS)
+    _reject_deprecated_threadgroup_barrier_notation(validator, document, relative)
     validator.literal(
         document.get("$schema"), f"{relative}.$schema", "../schema.json#/$defs/proposal"
     )
@@ -2967,8 +3127,10 @@ def _proposal_document(
                 "required_runtime_width": 32,
                 "runtime_query": "MTLComputePipelineState.threadExecutionWidth",
                 "mismatch_action": "fail_closed_before_dispatch",
-                "threadgroup_multiple_requirement": "threads_per_threadgroup_mod_runtime_width_equals_zero",
-                "partial_capacity_formula": "ceil(threads_per_threadgroup/runtime_width)<=runtime_width",
+                "threadgroup_shape_contract": "MTLSize(width=N,height=1,depth=1)",
+                "shape_mismatch_action": "fail_closed_before_dispatch",
+                "threadgroup_multiple_requirement": "threads_per_threadgroup_width_mod_runtime_width_equals_zero",
+                "partial_capacity_formula": "ceil(threads_per_threadgroup_width/runtime_width)<=runtime_width",
             }
             for field, expected in width_literals.items():
                 validator.literal(
@@ -2994,7 +3156,9 @@ def _proposal_document(
                 "variant_input_scope": "accumulator_count_is_current_variant_input_not_candidate_invariant",
                 "threadgroup_allocation_alignment_bytes": 16,
                 "total_threadgroup_memory_ceiling_bytes": 32768,
-                "runtime_thread_limit_gate": "threads_per_threadgroup<=pipeline.maxTotalThreadsPerThreadgroup",
+                "runtime_dimension_limit_query": "MTLDevice.maxThreadsPerThreadgroup",
+                "runtime_dimension_limit_gate": "threadsPerThreadgroup.width<=device.maxThreadsPerThreadgroup.width_and_threadsPerThreadgroup.height<=device.maxThreadsPerThreadgroup.height_and_threadsPerThreadgroup.depth<=device.maxThreadsPerThreadgroup.depth",
+                "runtime_thread_limit_gate": "threadsPerThreadgroup.width*threadsPerThreadgroup.height*threadsPerThreadgroup.depth<=pipeline.maxTotalThreadsPerThreadgroup",
             }
             for field, expected in resource_literals.items():
                 validator.literal(
@@ -3176,7 +3340,7 @@ def _proposal_document(
             validator.literal(
                 reduction.get("publication_barrier"),
                 f"{relative}.design.reduction_sequence.publication_barrier",
-                "threadgroup_barrier(mem_threadgroup)",
+                "threadgroup_barrier(mem_flags::mem_threadgroup)",
             )
             validator.literal(
                 reduction.get("barrier_participation"),
@@ -3282,6 +3446,19 @@ def _proposal_document(
                 pattern=_ID,
                 sorted_required=True,
             )
+            if decision_id is not None:
+                critical_decision = _CRITICAL_DECISION_CONTRACTS.get(decision_id)
+                if critical_decision is not None:
+                    validator.literal(
+                        decision.get("statement"),
+                        f"{path}.statement",
+                        critical_decision["statement"],
+                    )
+                    validator.literal(
+                        fact_ids,
+                        f"{path}.fact_ids",
+                        critical_decision["fact_ids"],
+                    )
             unknown_facts = sorted(set(fact_ids) - bound_fact_ids)
             if unknown_facts:
                 validator.error(
@@ -3493,6 +3670,13 @@ def _proposal_document(
             validator.string(
                 falsifier.get("required_action"), f"{path}.required_action"
             )
+            if falsifier_id is not None:
+                critical_falsifier = _CRITICAL_FALSIFIER_CONTRACTS.get(falsifier_id)
+                if critical_falsifier is not None:
+                    for field, expected in critical_falsifier.items():
+                        validator.literal(
+                            falsifier.get(field), f"{path}.{field}", expected
+                        )
         if len(set(falsifier_ids)) != len(falsifier_ids):
             validator.error(f"{relative}.falsifiers", "falsifier IDs must be unique")
         observed_falsifier_ids = set(falsifier_ids)
@@ -3744,11 +3928,11 @@ def _review_request_document(
                 "falsifier_count": "falsifier_ids",
             }
             required_counts = {
-                "fact_count": 21,
+                "fact_count": 22,
                 "decision_count": 5,
                 "hypothesis_count": 5,
                 "observed_scope_finding_count": 4,
-                "falsifier_count": 12,
+                "falsifier_count": 13,
             }
             for count_field, closure_field in count_fields.items():
                 expected_count = (
@@ -4235,12 +4419,18 @@ def _git_environment() -> dict[str, str]:
     return environment
 
 
-def _verify_reviewed_git_revision(
+def _verify_git_artifact_closure(
     validator: _Validator,
     repository_root: Path,
-    reviewed_git_revision: str,
-) -> bool:
-    diagnostic_path = "review-decision.binding.reviewed_git_revision"
+    revisionish: str,
+    *,
+    revision_diagnostic_path: str,
+    artifact_diagnostic_prefix: str,
+    require_exact_revision: bool,
+) -> str | None:
+    start_error_count = len(validator.errors)
+    reviewed_subject = require_exact_revision
+    subject = "reviewed" if reviewed_subject else "reviewable HEAD"
     top_level = _run_git(
         validator,
         repository_root,
@@ -4248,20 +4438,20 @@ def _verify_reviewed_git_revision(
         "repository-root",
     )
     if top_level is None:
-        return False
+        return None
     if top_level.returncode != 0:
         detail = top_level.stderr.strip() or "not a non-bare Git worktree"
         validator.error(
             "repository-root",
             f"must be the root of a non-bare Git worktree ({detail})",
         )
-        return False
+        return None
     discovered_text = top_level.stdout.strip()
     if not discovered_text or "\n" in discovered_text:
         validator.error(
             "repository-root", "Git worktree discovery returned an invalid path"
         )
-        return False
+        return None
     try:
         discovered_root = Path(discovered_text).resolve(strict=True)
         same_repository = discovered_root.samefile(repository_root)
@@ -4269,13 +4459,13 @@ def _verify_reviewed_git_revision(
         validator.error(
             "repository-root", f"could not verify discovered Git worktree ({error})"
         )
-        return False
+        return None
     if not same_repository:
         validator.error(
             "repository-root",
             "Git worktree discovery must resolve to the supplied repository root",
         )
-        return False
+        return None
     verified = _run_git(
         validator,
         repository_root,
@@ -4283,19 +4473,29 @@ def _verify_reviewed_git_revision(
             "rev-parse",
             "--verify",
             "--end-of-options",
-            f"{reviewed_git_revision}^{{commit}}",
+            f"{revisionish}^{{commit}}",
         ),
-        diagnostic_path,
+        revision_diagnostic_path,
     )
     if verified is None:
-        return False
-    if verified.returncode != 0 or verified.stdout.strip() != reviewed_git_revision:
+        return None
+    resolved_revision = verified.stdout.strip()
+    invalid_revision = (
+        verified.returncode != 0
+        or _GIT_COMMIT.fullmatch(resolved_revision) is None
+        or (require_exact_revision and resolved_revision != revisionish)
+    )
+    if invalid_revision:
         detail = verified.stderr.strip() or "commit does not exist"
         validator.error(
-            diagnostic_path,
-            f"must name an existing full commit in this repository ({detail})",
+            revision_diagnostic_path,
+            (
+                f"must name an existing full commit in this repository ({detail})"
+                if require_exact_revision
+                else f"HEAD must resolve to an existing full commit in this repository ({detail})"
+            ),
         )
-        return False
+        return None
 
     tree = _run_git(
         validator,
@@ -4304,21 +4504,21 @@ def _verify_reviewed_git_revision(
             "ls-tree",
             "-r",
             "--full-tree",
-            reviewed_git_revision,
+            resolved_revision,
             "--",
             *_HARDWARE_REVIEW_ARTIFACT_PATHS,
         ),
-        diagnostic_path,
+        revision_diagnostic_path,
     )
     if tree is None:
-        return False
+        return None
     if tree.returncode != 0:
         detail = tree.stderr.strip() or "git ls-tree failed"
         validator.error(
-            diagnostic_path,
-            f"could not inspect the reviewed artifact tree ({detail})",
+            revision_diagnostic_path,
+            f"could not inspect the {subject} artifact tree ({detail})",
         )
-        return False
+        return None
 
     entries: dict[str, tuple[str, str, str]] = {}
     malformed_entries: list[str] = []
@@ -4335,8 +4535,8 @@ def _verify_reviewed_git_revision(
         entries[path] = (mode, object_type, object_id)
     if malformed_entries:
         validator.error(
-            diagnostic_path,
-            "reviewed tree returned malformed or duplicate entries: "
+            revision_diagnostic_path,
+            f"{subject} tree returned malformed or duplicate entries: "
             + ", ".join(sorted(malformed_entries)),
         )
     expected_paths = set(_HARDWARE_REVIEW_ARTIFACT_PATHS)
@@ -4345,25 +4545,27 @@ def _verify_reviewed_git_revision(
     unexpected = sorted(actual_paths - expected_paths)
     if missing:
         validator.error(
-            diagnostic_path,
-            "reviewed commit is missing required closure paths: " + ", ".join(missing),
+            revision_diagnostic_path,
+            f"{subject} commit is missing required closure paths: "
+            + ", ".join(missing),
         )
     if unexpected:
         validator.error(
-            diagnostic_path,
-            "reviewed tree returned unexpected closure paths: " + ", ".join(unexpected),
+            revision_diagnostic_path,
+            f"{subject} tree returned unexpected closure paths: "
+            + ", ".join(unexpected),
         )
     for path in sorted(expected_paths & actual_paths):
         mode, object_type, object_id = entries[path]
         if mode != "100644" or object_type != "blob":
             validator.error(
-                f"review-decision.binding.reviewed_artifact_paths[{path}]",
-                "reviewed tree entry must be a 100644 blob",
+                f"{artifact_diagnostic_prefix}[{path}]",
+                f"{subject} tree entry must be a 100644 blob",
             )
         if _GIT_COMMIT.fullmatch(object_id) is None:
             validator.error(
-                f"review-decision.binding.reviewed_artifact_paths[{path}]",
-                "reviewed tree blob must have a full 40-character object ID",
+                f"{artifact_diagnostic_prefix}[{path}]",
+                f"{subject} tree blob must have a full 40-character object ID",
             )
 
     live_bytes: dict[str, bytes] = {}
@@ -4373,13 +4575,13 @@ def _verify_reviewed_git_revision(
             live_is_file = not live_path.is_symlink() and live_path.is_file()
         except OSError as error:
             validator.error(
-                f"review-decision.binding.reviewed_artifact_paths[{path}]",
+                f"{artifact_diagnostic_prefix}[{path}]",
                 f"could not inspect live closure path ({error})",
             )
             continue
         if not live_is_file:
             validator.error(
-                f"review-decision.binding.reviewed_artifact_paths[{path}]",
+                f"{artifact_diagnostic_prefix}[{path}]",
                 "live closure path must be a regular non-symlink file",
             )
             continue
@@ -4387,12 +4589,12 @@ def _verify_reviewed_git_revision(
             live_bytes[path] = live_path.read_bytes()
         except OSError as error:
             validator.error(
-                f"review-decision.binding.reviewed_artifact_paths[{path}]",
+                f"{artifact_diagnostic_prefix}[{path}]",
                 f"could not read live closure bytes ({error})",
             )
 
-    if validator.errors:
-        return False
+    if len(validator.errors) != start_error_count:
+        return None
     drifted_paths: list[str] = []
     for path in _HARDWARE_REVIEW_ARTIFACT_PATHS:
         _mode, _object_type, object_id = entries[path]
@@ -4400,15 +4602,15 @@ def _verify_reviewed_git_revision(
             validator,
             repository_root,
             ("cat-file", "blob", object_id),
-            f"review-decision.binding.reviewed_artifact_paths[{path}]",
+            f"{artifact_diagnostic_prefix}[{path}]",
         )
         if blob is None:
             continue
         if blob.returncode != 0:
             detail = blob.stderr.decode("utf-8", errors="replace").strip()
             validator.error(
-                f"review-decision.binding.reviewed_artifact_paths[{path}]",
-                "could not read reviewed tree blob"
+                f"{artifact_diagnostic_prefix}[{path}]",
+                f"could not read {subject} tree blob"
                 + (f" ({detail})" if detail else ""),
             )
             continue
@@ -4416,11 +4618,47 @@ def _verify_reviewed_git_revision(
             drifted_paths.append(path)
     if drifted_paths:
         validator.error(
-            diagnostic_path,
-            "reviewed commit closure differs byte-for-byte from the live worktree: "
+            revision_diagnostic_path,
+            f"{subject} commit closure differs byte-for-byte from the live worktree: "
             + ", ".join(drifted_paths),
         )
-    return not validator.errors
+    if len(validator.errors) != start_error_count:
+        return None
+    return resolved_revision
+
+
+def _verify_reviewed_git_revision(
+    validator: _Validator,
+    repository_root: Path,
+    reviewed_git_revision: str,
+) -> bool:
+    return (
+        _verify_git_artifact_closure(
+            validator,
+            repository_root,
+            reviewed_git_revision,
+            revision_diagnostic_path="review-decision.binding.reviewed_git_revision",
+            artifact_diagnostic_prefix=(
+                "review-decision.binding.reviewed_artifact_paths"
+            ),
+            require_exact_revision=True,
+        )
+        is not None
+    )
+
+
+def _verify_reviewable_head(
+    validator: _Validator,
+    repository_root: Path,
+) -> str | None:
+    return _verify_git_artifact_closure(
+        validator,
+        repository_root,
+        "HEAD",
+        revision_diagnostic_path="reviewable-head.git-revision",
+        artifact_diagnostic_prefix="reviewable-head.artifact-paths",
+        require_exact_revision=False,
+    )
 
 
 def _review_decision_document(
@@ -4683,17 +4921,11 @@ def _review_decision_document(
     )
 
 
-def _external_review_decision(
+def _resolve_review_repository_root(
     validator: _Validator,
-    decision_path: Path,
     repository_root: Path,
     design_root: Path,
-    design_stage_id: str,
-) -> _HardwareReviewDecisionResult | None:
-    diagnostic_path = "review-decision"
-    if not decision_path.is_absolute():
-        validator.error(diagnostic_path, "path must be absolute and caller-managed")
-        return None
+) -> Path | None:
     if repository_root.is_symlink():
         validator.error("repository-root", "must be a regular non-symlink directory")
         return None
@@ -4710,6 +4942,25 @@ def _external_review_decision(
             "repository-root",
             "must own the validated hardware_informed_design directory",
         )
+        return None
+    return resolved_repository_root
+
+
+def _external_review_decision(
+    validator: _Validator,
+    decision_path: Path,
+    repository_root: Path,
+    design_root: Path,
+    design_stage_id: str,
+) -> _HardwareReviewDecisionResult | None:
+    diagnostic_path = "review-decision"
+    if not decision_path.is_absolute():
+        validator.error(diagnostic_path, "path must be absolute and caller-managed")
+        return None
+    resolved_repository_root = _resolve_review_repository_root(
+        validator, repository_root, design_root
+    )
+    if resolved_repository_root is None:
         return None
     try:
         if decision_path.is_symlink() or not decision_path.is_file():
@@ -4756,6 +5007,8 @@ def validate_hardware_informed_design(
     target_path: Path,
     decision_path: Path | None = None,
     repository_root: Path | None = None,
+    *,
+    check_reviewable_head: bool = False,
 ) -> HardwareInformedDesignSummary:
     """Validate stage-three artifacts after validating stage-two inputs."""
 
@@ -4947,17 +5200,34 @@ def validate_hardware_informed_design(
         raise HardwareInformedDesignValidationError(validator.errors)
     assert design_stage_id is not None
     decision_result: _HardwareReviewDecisionResult | None = None
+    selected_repository_root = (
+        repository_root if repository_root is not None else root.parent
+    )
     if decision_path is not None:
         decision_result = _external_review_decision(
             validator,
             decision_path,
-            repository_root if repository_root is not None else root.parent,
+            selected_repository_root,
             root,
             design_stage_id,
         )
-        if validator.errors:
-            raise HardwareInformedDesignValidationError(validator.errors)
+    reviewable_head_revision: str | None = None
+    if check_reviewable_head:
+        resolved_repository_root = _resolve_review_repository_root(
+            validator,
+            selected_repository_root,
+            root,
+        )
+        if resolved_repository_root is not None:
+            reviewable_head_revision = _verify_reviewable_head(
+                validator, resolved_repository_root
+            )
+    if validator.errors:
+        raise HardwareInformedDesignValidationError(validator.errors)
+    if decision_path is not None:
         assert decision_result is not None
+    if check_reviewable_head:
+        assert reviewable_head_revision is not None
     review_clear = (
         decision_result.hardware_review_clear if decision_result is not None else False
     )
@@ -4969,9 +5239,17 @@ def validate_hardware_informed_design(
         counts=derived_counts,
         proposal_ids=tuple(sorted(proposal_ids)),
         verification_scope=(
-            "offline_metadata_derivation_and_external_decision_binding_validation"
-            if decision_result is not None
-            else "offline_metadata_and_derivation_validation"
+            "offline_metadata_derivation_reviewable_head_and_external_decision_binding_validation"
+            if decision_result is not None and check_reviewable_head
+            else (
+                "offline_metadata_derivation_and_external_decision_binding_validation"
+                if decision_result is not None
+                else (
+                    "offline_metadata_derivation_and_reviewable_head_binding_validation"
+                    if check_reviewable_head
+                    else "offline_metadata_and_derivation_validation"
+                )
+            )
         ),
         ready_for_principle_review=review_clear,
         review_request_count=derived_counts["review_request_count"],
@@ -4988,6 +5266,11 @@ def validate_hardware_informed_design(
             else None
         ),
         hardware_reviewed_revision_bound=decision_result is not None,
+        reviewable_head_check_performed=check_reviewable_head,
+        reviewable_head_git_revision=reviewable_head_revision,
+        reviewable_head_fixed_closure_verified=(
+            check_reviewable_head and reviewable_head_revision is not None
+        ),
         non_approved_review_item_ids=(
             decision_result.non_approved_review_item_ids
             if decision_result is not None
@@ -5050,6 +5333,14 @@ def _text(summary: HardwareInformedDesignSummary) -> str:
         f"evidence artifacts: {summary.counts['evidence_count']}",
         f"proposals: {summary.counts['proposal_count']}",
     ]
+    if summary.reviewable_head_check_performed:
+        lines.extend(
+            (
+                "reviewable HEAD fixed closure verified: "
+                f"{_yes_no(summary.reviewable_head_fixed_closure_verified)}",
+                f"reviewable HEAD Git revision: {summary.reviewable_head_git_revision}",
+            )
+        )
     if summary.hardware_review_decision_present:
         lines.extend(
             (
@@ -5112,6 +5403,14 @@ def _markdown(summary: HardwareInformedDesignSummary) -> str:
         f"| Evidence artifacts | {summary.counts['evidence_count']} |",
         f"| Proposals | {summary.counts['proposal_count']} |",
     ]
+    if summary.reviewable_head_check_performed:
+        lines.extend(
+            (
+                "| Reviewable HEAD fixed closure verified | "
+                f"{_yes_no(summary.reviewable_head_fixed_closure_verified).title()} |",
+                f"| Reviewable HEAD Git revision | `{summary.reviewable_head_git_revision}` |",
+            )
+        )
     if summary.hardware_review_decision_present:
         lines.extend(
             (
@@ -5184,6 +5483,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="absolute path to a caller-managed external human review decision",
     )
     parser.add_argument(
+        "--check-reviewable-head",
+        action="store_true",
+        help=(
+            "verify that HEAD contains the fixed five-file review closure and that "
+            "its bytes match the live validated files; this does not supply or "
+            "clear a human hardware review"
+        ),
+    )
+    parser.add_argument(
         "--require-hardware-review-clear",
         action="store_true",
         help="exit 3 when the valid reviewed state does not clear Stage 3",
@@ -5200,6 +5508,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             arguments.target_path,
             arguments.review_decision,
             arguments.repository_root,
+            check_reviewable_head=arguments.check_reviewable_head,
         )
     except (
         HardwareInformedDesignValidationError,

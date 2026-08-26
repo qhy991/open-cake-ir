@@ -1380,6 +1380,51 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
 
                 self._assert_mutation_rejected(mutate, field)
 
+    def test_device_threadgroup_dimension_source_and_fact_are_exactly_bound(
+        self,
+    ) -> None:
+        def mutate_source(
+            library: Path, extraction: Path, design: Path, target: Path
+        ) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["evidence"][0])
+            evidence = _read(path)
+            source = next(
+                value
+                for value in evidence["sources"]
+                if value["source_id"] == "apple-api-maxthreadsperthreadgroup"
+            )
+            source["url"] = "https://example.invalid/maxthreadsperthreadgroup"
+            _write(path, evidence)
+
+        self._assert_mutation_rejected(
+            mutate_source,
+            "sources[5].url",
+        )
+
+        def mutate_fact(
+            library: Path, extraction: Path, design: Path, target: Path
+        ) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["evidence"][0])
+            evidence = _read(path)
+            fact = next(
+                value
+                for value in evidence["facts"]
+                if value["fact_id"]
+                == "metal-device-threadgroup-dimension-limits-must-be-queried"
+            )
+            fact["statement"] = "A weakened per-dimension limit statement."
+            fact["source_ids"] = ["apple-api-maxthreadsperthreadgroup"]
+            _write(path, evidence)
+
+        self._assert_mutation_rejected(
+            mutate_fact,
+            ("statement", "source_ids"),
+        )
+
     def test_hierarchical_probe_source_and_external_artifact_metadata_are_bound(
         self,
     ) -> None:
@@ -1868,12 +1913,42 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
             (
                 ("reduction_sequence", "publication_barrier"),
                 "simdgroup_barrier(mem_threadgroup)",
-                "threadgroup_barrier(mem_threadgroup)",
+                "threadgroup_barrier(mem_flags::mem_threadgroup)",
             ),
             (
                 ("width_policy", "mismatch_action"),
                 "dispatch_anyway",
                 "fail_closed_before_dispatch",
+            ),
+            (
+                ("width_policy", "threadgroup_shape_contract"),
+                "MTLSize(width=N,height=M,depth=1)",
+                "MTLSize(width=N,height=1,depth=1)",
+            ),
+            (
+                ("width_policy", "shape_mismatch_action"),
+                "dispatch_anyway",
+                "fail_closed_before_dispatch",
+            ),
+            (
+                ("resource_derivation", "runtime_dimension_limit_query"),
+                "pipeline.maxTotalThreadsPerThreadgroup",
+                "MTLDevice.maxThreadsPerThreadgroup",
+            ),
+            (
+                ("resource_derivation", "runtime_dimension_limit_gate"),
+                "threadsPerThreadgroup.width<=device.maxThreadsPerThreadgroup.width",
+                "runtime_dimension_limit_gate",
+            ),
+            (
+                ("resource_derivation", "runtime_thread_limit_gate"),
+                "threadsPerThreadgroup.width<=pipeline.maxTotalThreadsPerThreadgroup",
+                "runtime_thread_limit_gate",
+            ),
+            (
+                ("scratch_lifecycle", "initialization_barrier"),
+                "threadgroup_barrier(mem_threadgroup)",
+                "threadgroup_barrier(mem_flags::mem_threadgroup)",
             ),
         )
         for (section, field), replacement, expected in mutations:
@@ -1909,6 +1984,7 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
             "partial-set-exceeds-final-simdgroup",
             "pipeline-thread-limit-exceeded",
             "runtime-width-not-32",
+            "threadgroup-shape-or-dimension-limit-unsupported",
             "scratch-read-before-publication",
             "scratch-reuse-race",
             "threadgroup-memory-budget-exceeded",
@@ -1943,6 +2019,65 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
                     _write(path, proposal)
 
                 self._assert_mutation_rejected(mutate, missing_id)
+
+    def test_threadgroup_shape_decision_and_falsifier_cannot_be_weakened(
+        self,
+    ) -> None:
+        def mutate_decision(
+            library: Path, extraction: Path, design: Path, target: Path
+        ) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["proposals"][0])
+            proposal = _read(path)
+            decision = next(
+                value
+                for value in proposal["decisions"]
+                if value["decision_id"] == "refine-explicit-resource-accounting"
+            )
+            decision["fact_ids"].remove(
+                "metal-device-threadgroup-dimension-limits-must-be-queried"
+            )
+            _write(path, proposal)
+
+        self._assert_mutation_rejected(mutate_decision, "fact_ids")
+
+        def mutate_width_decision(
+            library: Path, extraction: Path, design: Path, target: Path
+        ) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["proposals"][0])
+            proposal = _read(path)
+            decision = next(
+                value
+                for value in proposal["decisions"]
+                if value["decision_id"] == "refine-width32-fail-closed-specialization"
+            )
+            decision["fact_ids"].remove(
+                "metal-device-threadgroup-dimension-limits-must-be-queried"
+            )
+            _write(path, proposal)
+
+        self._assert_mutation_rejected(mutate_width_decision, "fact_ids")
+
+        def mutate_falsifier(
+            library: Path, extraction: Path, design: Path, target: Path
+        ) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["proposals"][0])
+            proposal = _read(path)
+            falsifier = next(
+                value
+                for value in proposal["falsifiers"]
+                if value["falsifier_id"]
+                == "threadgroup-shape-or-dimension-limit-unsupported"
+            )
+            falsifier["condition"] = "Only width is checked."
+            _write(path, proposal)
+
+        self._assert_mutation_rejected(mutate_falsifier, "condition")
 
     def test_review_pending_validation_cannot_claim_readiness(self) -> None:
         def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:

@@ -24,6 +24,7 @@
       "apple-family9-thread-ceiling-1024",
       "apple-family9-threadgroup-memory-alignment-16",
       "apple-family9-threadgroup-memory-ceiling-32768",
+      "metal-device-threadgroup-dimension-limits-must-be-queried",
       "metal-pipeline-thread-limit-must-be-queried",
       "metal-simd-sum-active-thread-scope",
       "metal-simd-sum-excludes-bfloat-input",
@@ -47,8 +48,10 @@
       "required_runtime_width": 32,
       "runtime_query": "MTLComputePipelineState.threadExecutionWidth",
       "mismatch_action": "fail_closed_before_dispatch",
-      "threadgroup_multiple_requirement": "threads_per_threadgroup_mod_runtime_width_equals_zero",
-      "partial_capacity_formula": "ceil(threads_per_threadgroup/runtime_width)<=runtime_width"
+      "threadgroup_shape_contract": "MTLSize(width=N,height=1,depth=1)",
+      "shape_mismatch_action": "fail_closed_before_dispatch",
+      "threadgroup_multiple_requirement": "threads_per_threadgroup_width_mod_runtime_width_equals_zero",
+      "partial_capacity_formula": "ceil(threads_per_threadgroup_width/runtime_width)<=runtime_width"
     },
     "resource_derivation": {
       "family_thread_ceiling": 1024,
@@ -85,27 +88,29 @@
       "variant_input_scope": "accumulator_count_is_current_variant_input_not_candidate_invariant",
       "threadgroup_allocation_alignment_bytes": 16,
       "total_threadgroup_memory_ceiling_bytes": 32768,
-      "runtime_thread_limit_gate": "threads_per_threadgroup<=pipeline.maxTotalThreadsPerThreadgroup"
+      "runtime_dimension_limit_query": "MTLDevice.maxThreadsPerThreadgroup",
+      "runtime_dimension_limit_gate": "threadsPerThreadgroup.width<=device.maxThreadsPerThreadgroup.width_and_threadsPerThreadgroup.height<=device.maxThreadsPerThreadgroup.height_and_threadsPerThreadgroup.depth<=device.maxThreadsPerThreadgroup.depth",
+      "runtime_thread_limit_gate": "threadsPerThreadgroup.width*threadsPerThreadgroup.height*threadsPerThreadgroup.depth<=pipeline.maxTotalThreadsPerThreadgroup"
     },
     "reduction_sequence": {
       "steps": [
         "Convert any bfloat input contribution to float32 and form one float32 per-thread accumulator value.",
         "Reduce each accumulator with simd_sum over the active threads of its SIMDgroup.",
         "Have SIMDgroup lane zero write exactly one float32 partial per accumulator to that SIMDgroup's threadgroup-memory slot.",
-        "Execute threadgroup_barrier(mem_threadgroup) uniformly across all live threads after partial publication.",
+        "Execute threadgroup_barrier(mem_flags::mem_threadgroup) uniformly across all live threads after partial publication.",
         "Have the selected final reducer load written partials and float32 zero for lanes beyond the live SIMDgroup count, then apply simd_sum.",
         "If a final scalar is published for other SIMDgroups, have one owner lane store it and execute a second uniform threadgroup barrier before any cross-SIMDgroup consumer reads it."
       ],
-      "publication_barrier": "threadgroup_barrier(mem_threadgroup)",
+      "publication_barrier": "threadgroup_barrier(mem_flags::mem_threadgroup)",
       "barrier_participation": "uniform_across_all_live_threads",
       "early_return_policy": "no_early_return_or_divergent_control_around_threadgroup_barriers"
     },
     "scratch_lifecycle": {
       "initialization": "Every scratch slot that can be read must either receive its lane-zero partial before the publication barrier or be initialized to float32 zero before that barrier.",
-      "initialization_barrier": "When initialization is performed by threads other than the subsequent writer or reader, complete it with a uniform threadgroup_barrier(mem_threadgroup) before partial stores begin.",
+      "initialization_barrier": "When initialization is performed by threads other than the subsequent writer or reader, complete it with a uniform threadgroup_barrier(mem_flags::mem_threadgroup) before partial stores begin.",
       "unused_final_lanes": "load_float32_zero_instead_of_unwritten_scratch",
-      "reuse_rule": "Do not reuse partial or final-scalar scratch until all prior readers have crossed a uniform threadgroup_barrier(mem_threadgroup) separating the last read from the next write.",
-      "final_scalar_visibility_rule": "A final scalar consumed outside its producing SIMDgroup must be published by an explicit owner and followed by a uniform threadgroup_barrier(mem_threadgroup) before consumption."
+      "reuse_rule": "Do not reuse partial or final-scalar scratch until all prior readers have crossed a uniform threadgroup_barrier(mem_flags::mem_threadgroup) separating the last read from the next write.",
+      "final_scalar_visibility_rule": "A final scalar consumed outside its producing SIMDgroup must be published by an explicit owner and followed by a uniform threadgroup_barrier(mem_flags::mem_threadgroup) before consumption."
     },
     "final_reducer_variants": {
       "rms_norm": {
@@ -143,16 +148,17 @@
     },
     {
       "decision_id": "refine-width32-fail-closed-specialization",
-      "statement": "Refine one Apple-family specialization around width 32, selectable only after querying the selected pipeline and failing closed before dispatch on mismatch.",
+      "statement": "Refine one Apple-family specialization around width 32 and one-dimensional (threads,1,1) threadgroups, selectable only after querying the device and selected pipeline and failing closed before dispatch on any mismatch.",
       "candidate_effect": "refine",
       "fact_ids": [
         "apple-family9-thread-ceiling-1024",
+        "metal-device-threadgroup-dimension-limits-must-be-queried",
         "metal-pipeline-thread-limit-must-be-queried",
         "metal-simd-width-must-be-queried",
         "observed-m4-pipeline-thread-limit-1024",
         "observed-m4-pipeline-width-32"
       ],
-      "rationale": "The guard preserves the hardware-neutral abstraction while enabling exact 1024/32 capacity arithmetic for the first locally observed specialization.",
+      "rationale": "The guards preserve the hardware-neutral abstraction while making the first locally observed specialization's one-dimensional shape and exact 1024/32 capacity arithmetic explicit.",
       "alternatives": [
         "Generate a width-polymorphic final reduction in the first implementation.",
         "Silently fall back to another width or target when the query differs."
@@ -160,7 +166,7 @@
     },
     {
       "decision_id": "refine-metal-two-level-reduction-sequence",
-      "statement": "Refine the candidate to simd_sum, lane-zero FP32 partial publication, a uniform threadgroup_barrier(mem_threadgroup), and a final simd_sum over valid partials and zero-filled unused lanes.",
+      "statement": "Refine the candidate to simd_sum, lane-zero FP32 partial publication, a uniform threadgroup_barrier(mem_flags::mem_threadgroup), and a final simd_sum over valid partials and zero-filled unused lanes.",
       "candidate_effect": "refine",
       "fact_ids": [
         "apple-family9-supports-simdgroup-reductions",
@@ -192,16 +198,18 @@
     },
     {
       "decision_id": "refine-explicit-resource-accounting",
-      "statement": "Refine the specialization with a 32-partial FP32 ceiling of 128 bytes per accumulator, one combined aligned dynamic region per current operator variant, and a variant-specific total static-plus-dynamic memory gate.",
+      "statement": "Refine the specialization with a componentwise device threadgroup-shape gate, a pipeline total-thread gate, a 32-partial FP32 ceiling of 128 bytes per accumulator, one combined aligned dynamic region per current operator variant, and a variant-specific total static-plus-dynamic memory gate.",
       "candidate_effect": "refine",
       "fact_ids": [
         "apple-family9-thread-ceiling-1024",
         "apple-family9-threadgroup-memory-alignment-16",
         "apple-family9-threadgroup-memory-ceiling-32768",
+        "metal-device-threadgroup-dimension-limits-must-be-queried",
+        "metal-pipeline-thread-limit-must-be-queried",
         "metal-total-threadgroup-memory-runtime-gate",
         "observed-m4-threadgroup-memory-32768"
       ],
-      "rationale": "Explicit arithmetic and layout keep both accumulator partials and broadcast scratch in the legality decision. RMS currently supplies one accumulator and one 4-byte scalar (132 raw, 144 aligned); Layer currently supplies two accumulators and no scalar (256 raw and aligned). These counts are variant inputs, not invariants of the generic candidate.",
+      "rationale": "Explicit componentwise, total-thread, arithmetic, and layout gates keep the one-dimensional dispatch shape, accumulator partials, and broadcast scratch in the legality decision. RMS currently supplies one accumulator and one 4-byte scalar (132 raw, 144 aligned); Layer currently supplies two accumulators and no scalar (256 raw and aligned). These counts are variant inputs, not invariants of the generic candidate.",
       "alternatives": [
         "Model only the partial array and omit the broadcast scalar.",
         "Treat the family memory ceiling as sufficient without inspecting pipeline static allocation."
@@ -216,14 +224,14 @@
   "hypotheses": [
     {
       "hypothesis_id": "width32-specialization-covers-intended-devices",
-      "statement": "The fail-closed width-32 specialization is available on the intended Apple-device and pipeline matrix often enough to be a useful retained specialization.",
+      "statement": "The fail-closed width-32, one-dimensional threadgroup specialization is available on the intended Apple-device and pipeline matrix often enough to be a useful retained specialization.",
       "related_decision_ids": ["refine-width32-fail-closed-specialization"],
       "status": "unresolved",
       "required_before": "port_acceptance",
       "falsifier": {
-        "method": "Compile the future reduction pipeline on every intended device class and record threadExecutionWidth before dispatch.",
-        "observable": "Per-device and per-pipeline threadExecutionWidth plus whether guarded selection accepted or refused the specialization.",
-        "reject_when": "The intended deployment set materially requires a non-32 width and no separately reviewed specialization covers it.",
+        "method": "Compile the future reduction pipeline on every intended device class and record threadExecutionWidth, device.maxThreadsPerThreadgroup, pipeline.maxTotalThreadsPerThreadgroup, and the requested one-dimensional shape before dispatch.",
+        "observable": "Per-device dimension limits, per-pipeline width and total-thread limit, requested (threads,1,1) shape, and whether guarded selection accepted or refused the specialization.",
+        "reject_when": "The intended deployment set materially requires a non-32 width, a 2D or 3D threadgroup shape, or a one-dimensional extent outside the device component or pipeline total limits, and no separately reviewed specialization covers it.",
         "retained_result_contract": "Append-only device-class and pipeline observation records that exclude stable device identifiers and preserve every refusal."
       },
       "result_binding": null
@@ -247,14 +255,14 @@
     },
     {
       "hypothesis_id": "resource-accounting-fits-selected-pipelines",
-      "statement": "Representative future pipelines leave enough threadgroup memory and thread capacity for each variant's aligned combined allocation and all compiler-created static allocation.",
+      "statement": "Representative future pipelines admit the exact one-dimensional MTLSize and leave enough total thread capacity and threadgroup memory for each variant's aligned combined allocation and all compiler-created static allocation.",
       "related_decision_ids": ["refine-explicit-resource-accounting"],
       "status": "unresolved",
       "required_before": "implementation",
       "falsifier": {
-        "method": "Compile every retained variant and inspect pipeline.staticThreadgroupMemoryLength, that variant's aligned dynamic allocation, device.maxThreadgroupMemoryLength, and maxTotalThreadsPerThreadgroup.",
-        "observable": "Total static-plus-dynamic bytes, alignment padding, requested threads, and both runtime ceilings for each pipeline variant.",
-        "reject_when": "Any retained configuration exceeds either runtime limit or the 32768-byte family ceiling.",
+        "method": "Compile every retained variant and inspect pipeline.staticThreadgroupMemoryLength, that variant's aligned dynamic allocation, device.maxThreadgroupMemoryLength, device.maxThreadsPerThreadgroup, and pipeline.maxTotalThreadsPerThreadgroup.",
+        "observable": "Total static-plus-dynamic bytes, alignment padding, requested one-dimensional threadgroup shape, device dimension limits, and pipeline total-thread and device memory ceilings for each variant.",
+        "reject_when": "Any retained configuration exceeds a device dimension limit, the pipeline total-thread limit, the device memory limit, or the 32768-byte family ceiling.",
         "retained_result_contract": "Append-only per-variant resource observations including refused configurations; no regenerated expectation may erase an overflow."
       },
       "result_binding": null
@@ -301,7 +309,7 @@
       "does_not_resolve_hypothesis_ids": [
         "width32-specialization-covers-intended-devices"
       ],
-      "scope_limit": "This one pipeline does not establish width-32 availability or usefulness on any other Apple device class or future compiled pipeline, so the linked deployment-matrix hypothesis remains unresolved."
+      "scope_limit": "This one pipeline used only MTLSize(width=N,height=1,depth=1), and the retained record does not include device.maxThreadsPerThreadgroup; it does not establish width-32 availability, componentwise shape admission, or usefulness on any other Apple device class or future compiled pipeline, so the linked deployment-matrix hypothesis remains unresolved."
     },
     {
       "finding_id": "observed-exact-owner-and-broadcast",
@@ -334,9 +342,10 @@
       "reported_outcome": "The one bound FP32 RMS-style pipeline's 144-byte dynamic allocation and 32-through-1024-thread matrix fit its observed runtime thread and threadgroup-memory limits.",
       "does_not_resolve_hypothesis_ids": [
         "resource-accounting-fits-selected-pipelines",
-        "specialization-is-performance-competitive"
+        "specialization-is-performance-competitive",
+        "width32-specialization-covers-intended-devices"
       ],
-      "scope_limit": "This does not cover Layer's 256-byte design, future Compiler-created static allocation, representative deployment pipelines, occupancy, timing, or profiling, so both linked hypotheses remain unresolved."
+      "scope_limit": "This does not retain device.maxThreadsPerThreadgroup, cover Layer's 256-byte design, future Compiler-created static allocation, representative deployment pipelines, occupancy, timing, or profiling, so all three linked hypotheses remain unresolved."
     }
   ],
   "falsifiers": [
@@ -346,18 +355,23 @@
       "required_action": "Reject this width-32 specialization before dispatch; do not rewrite the width-neutral candidate or silently fall back."
     },
     {
+      "falsifier_id": "threadgroup-shape-or-dimension-limit-unsupported",
+      "condition": "The requested threadsPerThreadgroup is not exactly MTLSize(width=N,height=1,depth=1), or any component exceeds the corresponding device.maxThreadsPerThreadgroup component.",
+      "required_action": "Reject the launch before dispatch; a 2D or 3D shape requires a separately reviewed hardware design."
+    },
+    {
       "falsifier_id": "pipeline-thread-limit-exceeded",
       "condition": "Requested threads per threadgroup exceed the selected pipeline's maxTotalThreadsPerThreadgroup or the 1024 family ceiling.",
       "required_action": "Reject the launch configuration."
     },
     {
       "falsifier_id": "partial-final-simdgroup-outside-v1",
-      "condition": "threads_per_threadgroup is not an exact multiple of the queried runtime width.",
+      "condition": "threads_per_threadgroup_width is not an exact multiple of the queried runtime width.",
       "required_action": "Reject this v1 specialization; partial final SIMDgroups require a separately reviewed design even though Metal defines active-thread SIMDgroup semantics."
     },
     {
       "falsifier_id": "partial-set-exceeds-final-simdgroup",
-      "condition": "ceil(threads_per_threadgroup/runtime_width) exceeds runtime_width, so one final SIMDgroup cannot hold all partials.",
+      "condition": "ceil(threads_per_threadgroup_width/runtime_width) exceeds runtime_width, so one final SIMDgroup cannot hold all partials.",
       "required_action": "Reject this one-pass final-reduction design and return to hardware design for another hierarchy."
     },
     {
@@ -372,7 +386,7 @@
     },
     {
       "falsifier_id": "scratch-read-before-publication",
-      "condition": "A final reducer can read an unwritten partial or cross-SIMDgroup publication occurs without threadgroup_barrier(mem_threadgroup).",
+      "condition": "A final reducer can read an unwritten partial or cross-SIMDgroup publication occurs without threadgroup_barrier(mem_flags::mem_threadgroup).",
       "required_action": "Reject the mapping as a data-consistency violation."
     },
     {
@@ -430,7 +444,7 @@
     "This proposal is not an IR admission, Target mutation, lowering implementation, or assertion of current Schedule expressibility.",
     "This proposal does not establish Metal correctness, race freedom, numerical tolerance, performance, occupancy, calibration, Evaluation evidence, or scientific results.",
     "The observed-scope findings report only one Apple M4 FP32 RMS-style probe pipeline; they do not cover BF16 input conversion or the Layer-style all-SIMDgroup final reducer and explicitly do not resolve any hypothesis.",
-    "The 1024-thread and 32768-byte family limits are ceilings, not a launch authorization; the concrete pipeline and total allocation remain runtime and implementation gates.",
+    "The 1024-thread and 32768-byte family limits are ceilings, not a launch authorization; device component limits, the concrete pipeline total-thread limit, and total allocation remain runtime and implementation gates.",
     "Passing offline validation cannot set readiness=true or replace human hardware and principle review."
   ]
 }

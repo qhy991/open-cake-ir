@@ -209,6 +209,7 @@ def _run(
     decision: Path | str | None = None,
     output_format: str = "json",
     require_clear: bool = False,
+    check_reviewable_head: bool = False,
     environment: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [
@@ -229,6 +230,8 @@ def _run(
     ]
     if decision is not None:
         command.extend(("--review-decision", str(decision)))
+    if check_reviewable_head:
+        command.append("--check-reviewable-head")
     if require_clear:
         command.append("--require-hardware-review-clear")
     return subprocess.run(
@@ -289,6 +292,9 @@ class HardwareReviewDecisionIntakeTests(unittest.TestCase):
         self.assertIsNone(summary["hardware_review_decision_disposition"])
         self.assertIsNone(summary["hardware_reviewed_git_revision"])
         self.assertIs(summary["hardware_reviewed_revision_bound"], False)
+        self.assertIs(summary["reviewable_head_check_performed"], False)
+        self.assertIsNone(summary["reviewable_head_git_revision"])
+        self.assertIs(summary["reviewable_head_fixed_closure_verified"], False)
         self.assertEqual(summary["non_approved_review_item_ids"], [])
         self.assertIsNone(summary["resource_phase_option_id"])
         self.assertIs(summary["successor_stage3_proposal_required"], False)
@@ -300,6 +306,268 @@ class HardwareReviewDecisionIntakeTests(unittest.TestCase):
             summary["reviewer_authorship_assurance"],
             "no_external_decision_supplied",
         )
+
+    def test_reviewable_head_preflight_binds_only_the_fixed_live_closure(
+        self,
+    ) -> None:
+        with _temporary_git_project() as fixture:
+            before_files = {
+                str(path.relative_to(fixture.project)): path.read_bytes()
+                for path in fixture.project.rglob("*")
+                if path.is_file() and ".git" not in path.parts
+            }
+            before_objects = _object_store_snapshot(fixture.project)
+            head = _git(fixture.project, "rev-parse", "HEAD")
+            result = _run(fixture, check_reviewable_head=True)
+            gate = _run(
+                fixture,
+                check_reviewable_head=True,
+                require_clear=True,
+            )
+            after_files = {
+                str(path.relative_to(fixture.project)): path.read_bytes()
+                for path in fixture.project.rglob("*")
+                if path.is_file() and ".git" not in path.parts
+            }
+            after_objects = _object_store_snapshot(fixture.project)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(gate.returncode, 3, gate.stdout + gate.stderr)
+        summary = json.loads(result.stdout)
+        self.assertIs(summary["reviewable_head_check_performed"], True)
+        self.assertEqual(summary["reviewable_head_git_revision"], head)
+        self.assertIs(summary["reviewable_head_fixed_closure_verified"], True)
+        self.assertEqual(
+            summary["verification_scope"],
+            "offline_metadata_derivation_and_reviewable_head_binding_validation",
+        )
+        self.assertIs(summary["hardware_review_decision_present"], False)
+        self.assertIs(summary["hardware_reviewed_revision_bound"], False)
+        self.assertIs(summary["hardware_review_complete"], False)
+        self.assertIs(summary["ready_for_principle_review"], False)
+        self.assertEqual(
+            summary["reviewer_authorship_assurance"],
+            "no_external_decision_supplied",
+        )
+        self.assertEqual(
+            summary["next_action"], "obtain_external_human_hardware_review"
+        )
+        self.assertEqual(after_files, before_files)
+        self.assertEqual(after_objects, before_objects)
+
+    def test_reviewable_head_rejects_fixed_byte_drift_but_ignores_other_files(
+        self,
+    ) -> None:
+        with _temporary_git_project() as fixture:
+            manifest = fixture.design / "manifest.json"
+            manifest.write_bytes(manifest.read_bytes() + b"\n")
+            default_result = _run(fixture)
+            result = _run(fixture, check_reviewable_head=True)
+            strict = _run(
+                fixture,
+                check_reviewable_head=True,
+                require_clear=True,
+            )
+            text_failure = _run(
+                fixture,
+                check_reviewable_head=True,
+                output_format="text",
+            )
+            markdown_failure = _run(
+                fixture,
+                check_reviewable_head=True,
+                output_format="markdown",
+            )
+
+        self.assertEqual(default_result.returncode, 0, default_result.stderr)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(strict.returncode, 1, strict.stdout + strict.stderr)
+        self.assertIn("reviewable-head.git-revision", _combined(result))
+        self.assertIn("differs byte-for-byte", _combined(result))
+        self.assertNotIn("review-decision", _combined(result))
+        self.assertEqual(json.loads(result.stdout)["valid"], False)
+        self.assertEqual(result.stderr, "")
+        for failure in (text_failure, markdown_failure):
+            self.assertEqual(failure.returncode, 1, failure.stdout + failure.stderr)
+            self.assertEqual(failure.stdout, "")
+            self.assertIn("reviewable-head.git-revision", failure.stderr)
+
+        with _temporary_git_project() as fixture:
+            dirty_head = _git(fixture.project, "rev-parse", "HEAD")
+            readme = fixture.design / "README.md"
+            readme.write_text(
+                readme.read_text(encoding="utf-8") + "\nUnbound handoff note.\n",
+                encoding="utf-8",
+            )
+            untracked = fixture.project / "untracked-handoff-note.txt"
+            untracked.write_text(
+                "untracked and outside fixed closure\n", encoding="utf-8"
+            )
+            dirty_status = _git(
+                fixture.project, "status", "--short", "--untracked-files=all"
+            )
+            dirty_result = _run(fixture, check_reviewable_head=True)
+            _git(
+                fixture.project,
+                "add",
+                str(readme.relative_to(fixture.project)),
+                untracked.name,
+            )
+            _git(fixture.project, "commit", "--quiet", "-m", "unbound readme note")
+            head = _git(fixture.project, "rev-parse", "HEAD")
+            result = _run(fixture, check_reviewable_head=True)
+
+        self.assertIn("M hardware_informed_design/README.md", dirty_status)
+        self.assertIn("?? untracked-handoff-note.txt", dirty_status)
+        self.assertEqual(
+            dirty_result.returncode, 0, dirty_result.stdout + dirty_result.stderr
+        )
+        self.assertEqual(
+            json.loads(dirty_result.stdout)["reviewable_head_git_revision"],
+            dirty_head,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout)["reviewable_head_git_revision"], head
+        )
+
+    def test_reviewable_head_preflight_is_visible_in_every_cli_format(self) -> None:
+        markers = {
+            "text": "reviewable HEAD fixed closure verified: yes",
+            "markdown": "| Reviewable HEAD fixed closure verified | Yes |",
+            "json": '"reviewable_head_fixed_closure_verified": true',
+        }
+        with _temporary_git_project() as fixture:
+            for output_format, marker in markers.items():
+                with self.subTest(output_format=output_format):
+                    result = _run(
+                        fixture,
+                        check_reviewable_head=True,
+                        output_format=output_format,
+                    )
+                    self.assertEqual(
+                        result.returncode, 0, result.stdout + result.stderr
+                    )
+                    self.assertIn(marker, result.stdout)
+                    self.assertIn(fixture.reviewed_revision, result.stdout)
+
+    def test_reviewable_head_rejects_missing_or_non_blob_fixed_paths(self) -> None:
+        with _temporary_git_project() as fixture:
+            path = fixture.project / REVIEW_REQUEST_PATH
+            original = path.read_bytes()
+            path.unlink()
+            _git(fixture.project, "add", "-A")
+            _git(fixture.project, "commit", "--quiet", "-m", "missing review request")
+            path.write_bytes(original)
+            result = _run(fixture, check_reviewable_head=True)
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("missing required closure paths", _combined(result))
+        self.assertNotIn("review-decision", _combined(result))
+
+        with _temporary_git_project() as fixture:
+            path = fixture.project / REVIEW_REQUEST_PATH
+            original = path.read_bytes()
+            path.unlink()
+            path.symlink_to("../manifest.json")
+            _git(fixture.project, "add", "-A")
+            _git(fixture.project, "commit", "--quiet", "-m", "symlink review request")
+            path.unlink()
+            path.write_bytes(original)
+            result = _run(fixture, check_reviewable_head=True)
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("reviewable-head.artifact-paths", _combined(result))
+        self.assertIn("must be a 100644 blob", _combined(result))
+        self.assertNotIn("review-decision", _combined(result))
+
+    def test_reviewable_head_rejects_an_unborn_head(self) -> None:
+        with _temporary_git_project() as fixture:
+            _git(fixture.project, "update-ref", "-d", "HEAD")
+            result = _run(fixture, check_reviewable_head=True)
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("reviewable-head.git-revision", _combined(result))
+        self.assertIn("head must resolve to an existing full commit", _combined(result))
+        self.assertNotIn("review-decision", _combined(result))
+
+    def test_reviewable_head_and_external_decision_are_independent_bindings(
+        self,
+    ) -> None:
+        with _temporary_git_project() as fixture:
+            main_branch = _git(fixture.project, "branch", "--show-current")
+            _git(fixture.project, "switch", "--quiet", "-c", "review-side")
+            side_note = fixture.project / "review-side-note.txt"
+            side_note.write_text("nonancestor review commit\n", encoding="utf-8")
+            _git(fixture.project, "add", side_note.name)
+            _git(fixture.project, "commit", "--quiet", "-m", "side review note")
+            side_revision = _git(fixture.project, "rev-parse", "HEAD")
+            _git(fixture.project, "switch", "--quiet", main_branch)
+            main_note = fixture.project / "main-handoff-note.txt"
+            main_note.write_text("independent reviewable HEAD\n", encoding="utf-8")
+            _git(fixture.project, "add", main_note.name)
+            _git(fixture.project, "commit", "--quiet", "-m", "advance main head")
+            head = _git(fixture.project, "rev-parse", "HEAD")
+            ancestry = subprocess.run(
+                (
+                    "git",
+                    "-C",
+                    str(fixture.project),
+                    "merge-base",
+                    "--is-ancestor",
+                    side_revision,
+                    head,
+                ),
+                check=False,
+            )
+            self.assertEqual(ancestry.returncode, 1)
+            decision = _decision(fixture, reviewed_revision=side_revision)
+            _write(fixture.decision, decision)
+            result = _run(
+                fixture,
+                decision=fixture.decision,
+                check_reviewable_head=True,
+                require_clear=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary["hardware_reviewed_git_revision"], side_revision)
+        self.assertEqual(summary["reviewable_head_git_revision"], head)
+        self.assertNotEqual(
+            summary["hardware_reviewed_git_revision"],
+            summary["reviewable_head_git_revision"],
+        )
+        self.assertIs(summary["hardware_review_complete"], True)
+        self.assertIs(summary["reviewable_head_fixed_closure_verified"], True)
+        self.assertEqual(
+            summary["verification_scope"],
+            "offline_metadata_derivation_reviewable_head_and_external_decision_binding_validation",
+        )
+
+    def test_combined_invalid_decision_and_head_drift_report_both_failures(
+        self,
+    ) -> None:
+        with _temporary_git_project() as fixture:
+            decision = _decision(fixture)
+            decision["authority"] = "automation"
+            _write(fixture.decision, decision)
+            manifest = fixture.design / "manifest.json"
+            manifest.write_bytes(manifest.read_bytes() + b"\n")
+            result = _run(
+                fixture,
+                decision=fixture.decision,
+                check_reviewable_head=True,
+                require_clear=True,
+            )
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        errors = json.loads(result.stdout)["errors"]
+        self.assertTrue(any("review-decision.authority" in error for error in errors))
+        self.assertTrue(
+            any("reviewable-head.git-revision" in error for error in errors)
+        )
+        self.assertTrue(any("differs byte-for-byte" in error for error in errors))
 
     def test_approved_option_one_clears_only_stage_three_in_memory(self) -> None:
         with _temporary_git_project() as fixture:

@@ -343,8 +343,8 @@
         },
         "falsifier_outcomes": {
           "type": "array",
-          "minItems": 12,
-          "maxItems": 12,
+          "minItems": 13,
+          "maxItems": 13,
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/local_falsifier_outcome"}
         },
@@ -748,8 +748,8 @@
       "properties": {
         "fact_ids": {
           "type": "array",
-          "minItems": 21,
-          "maxItems": 21,
+          "minItems": 22,
+          "maxItems": 22,
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/id"}
         },
@@ -776,8 +776,8 @@
         },
         "falsifier_ids": {
           "type": "array",
-          "minItems": 12,
-          "maxItems": 12,
+          "minItems": 13,
+          "maxItems": 13,
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/id"}
         },
@@ -795,11 +795,11 @@
         "falsifier_count"
       ],
       "properties": {
-        "fact_count": {"const": 21},
+        "fact_count": {"const": 22},
         "decision_count": {"const": 5},
         "hypothesis_count": {"const": 5},
         "observed_scope_finding_count": {"const": 4},
-        "falsifier_count": {"const": 12}
+        "falsifier_count": {"const": 13}
       }
     },
     "review_item": {
@@ -1313,6 +1313,8 @@
         "required_runtime_width",
         "runtime_query",
         "mismatch_action",
+        "threadgroup_shape_contract",
+        "shape_mismatch_action",
         "threadgroup_multiple_requirement",
         "partial_capacity_formula"
       ],
@@ -1322,8 +1324,10 @@
         "required_runtime_width": {"const": 32},
         "runtime_query": {"const": "MTLComputePipelineState.threadExecutionWidth"},
         "mismatch_action": {"const": "fail_closed_before_dispatch"},
-        "threadgroup_multiple_requirement": {"const": "threads_per_threadgroup_mod_runtime_width_equals_zero"},
-        "partial_capacity_formula": {"const": "ceil(threads_per_threadgroup/runtime_width)<=runtime_width"}
+        "threadgroup_shape_contract": {"const": "MTLSize(width=N,height=1,depth=1)"},
+        "shape_mismatch_action": {"const": "fail_closed_before_dispatch"},
+        "threadgroup_multiple_requirement": {"const": "threads_per_threadgroup_width_mod_runtime_width_equals_zero"},
+        "partial_capacity_formula": {"const": "ceil(threads_per_threadgroup_width/runtime_width)<=runtime_width"}
       }
     },
     "resource_derivation": {
@@ -1343,6 +1347,8 @@
         "variant_input_scope",
         "threadgroup_allocation_alignment_bytes",
         "total_threadgroup_memory_ceiling_bytes",
+        "runtime_dimension_limit_query",
+        "runtime_dimension_limit_gate",
         "runtime_thread_limit_gate"
       ],
       "properties": {
@@ -1363,8 +1369,14 @@
         },
         "threadgroup_allocation_alignment_bytes": {"const": 16},
         "total_threadgroup_memory_ceiling_bytes": {"const": 32768},
+        "runtime_dimension_limit_query": {
+          "const": "MTLDevice.maxThreadsPerThreadgroup"
+        },
+        "runtime_dimension_limit_gate": {
+          "const": "threadsPerThreadgroup.width<=device.maxThreadsPerThreadgroup.width_and_threadsPerThreadgroup.height<=device.maxThreadsPerThreadgroup.height_and_threadsPerThreadgroup.depth<=device.maxThreadsPerThreadgroup.depth"
+        },
         "runtime_thread_limit_gate": {
-          "const": "threads_per_threadgroup<=pipeline.maxTotalThreadsPerThreadgroup"
+          "const": "threadsPerThreadgroup.width*threadsPerThreadgroup.height*threadsPerThreadgroup.depth<=pipeline.maxTotalThreadsPerThreadgroup"
         }
       }
     },
@@ -1452,7 +1464,7 @@
           "uniqueItems": true,
           "items": {"type": "string", "minLength": 1}
         },
-        "publication_barrier": {"const": "threadgroup_barrier(mem_threadgroup)"},
+        "publication_barrier": {"const": "threadgroup_barrier(mem_flags::mem_threadgroup)"},
         "barrier_participation": {"const": "uniform_across_all_live_threads"},
         "early_return_policy": {"const": "no_early_return_or_divergent_control_around_threadgroup_barriers"}
       }

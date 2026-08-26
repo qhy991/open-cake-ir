@@ -69,6 +69,17 @@
       "offline_content_verification": "not_performed"
     },
     {
+      "source_id": "apple-api-maxthreadsperthreadgroup",
+      "kind": "vendor_web_documentation",
+      "title": "MTLDevice maxThreadsPerThreadgroup",
+      "url": "https://developer.apple.com/documentation/metal/mtldevice/maxthreadsperthreadgroup",
+      "locators": [
+        "The MTLSize value reports the maximum number of threads along each threadgroup dimension.",
+        "The device or trivial-shader limit does not replace the selected compute pipeline's shader-specific maxTotalThreadsPerThreadgroup limit."
+      ],
+      "offline_content_verification": "not_performed"
+    },
+    {
       "source_id": "apple-api-staticthreadgroupmemorylength",
       "kind": "vendor_web_documentation",
       "title": "MTLComputePipelineState staticThreadgroupMemoryLength",
@@ -194,6 +205,16 @@
       "source_ids": [
         "apple-api-maxtotalthreadsperthreadgroup",
         "apple-metal-feature-set-tables-2026-05-21"
+      ]
+    },
+    {
+      "fact_id": "metal-device-threadgroup-dimension-limits-must-be-queried",
+      "statement": "MTLDevice.maxThreadsPerThreadgroup reports the maximum supported threadgroup extent along each dimension; every MTLSize component must fit that device limit in addition to the selected pipeline's maxTotalThreadsPerThreadgroup total-thread limit.",
+      "scope": "language_semantics",
+      "authority": "apple_vendor_documentation",
+      "source_ids": [
+        "apple-api-maxthreadsperthreadgroup",
+        "apple-api-maxtotalthreadsperthreadgroup"
       ]
     },
     {
@@ -453,6 +474,11 @@
         "basis": "The one bound pipeline reported threadExecutionWidth 32; no other pipeline or device was observed."
       },
       {
+        "falsifier_id": "threadgroup-shape-or-dimension-limit-unsupported",
+        "outcome": "requires_source_review",
+        "basis": "The bound Swift source dispatches only MTLSize(width=threadCount,height=1,depth=1), but the retained normalized output did not record MTLDevice.maxThreadsPerThreadgroup; finite successful dispatches do not establish an explicit future componentwise gate."
+      },
+      {
         "falsifier_id": "pipeline-thread-limit-exceeded",
         "outcome": "not_triggered_in_observed_cases",
         "basis": "The pipeline reported a 1024-thread maximum and every observed case requested at most 1024 threads."
@@ -540,7 +566,8 @@
     "The cited 2026 vendor PDFs apply to the Metal language and Apple GPU family exposed by the local macOS toolchain used for later review.",
     "The vendor webpage statements recorded here match the pages inspected online; their content was not captured or content-hash-verified for offline replay.",
     "The sanitized local probe fields faithfully preserve the relevant pipeline observations while intentionally discarding raw output and device identifiers; the Git parent revision binds the historical probe source but cannot make the observation automatically reproducible.",
-    "For the hierarchical-reduction probe, the clean source commit identifies the complete tracked probe source closure; the caller-root-relative external artifact path is an unverified reference that the offline validator cannot access, and neither record reproduces mutable device state or establishes semantic correctness."
+    "For the hierarchical-reduction probe, the clean source commit identifies the complete tracked probe source closure; the caller-root-relative external artifact path is an unverified reference that the offline validator cannot access, and neither record reproduces mutable device state or establishes semantic correctness.",
+    "The retained uniform_reuse_barrier value threadgroup_barrier(mem_threadgroup) is a normalized historical runner label, not exact MSL syntax; the bound MSL source and the normative proposal use threadgroup_barrier(mem_flags::mem_threadgroup)."
   ],
   "gate_separation": {
     "validation": {
@@ -557,7 +584,7 @@
       "blocking_reviews": [
         "Confirm every vendor-document locator and the applicability of each atomic fact to the proposed Metal specialization.",
         "Confirm that sanitized local observations remain scoped to their bound Apple M4 pipelines and make no family-wide, performance, or scientific claim.",
-        "Review the commit-bound hierarchical-probe source and all 12 local falsifier outcomes; finite matching outputs do not prove uniform barriers, race freedom, BF16 handling, Layer-style ownership, compiler expressibility, or workload correctness."
+        "Review the commit-bound hierarchical-probe source and all 13 local falsifier outcomes; finite matching outputs do not prove componentwise threadgroup admission, uniform barriers, race freedom, BF16 handling, Layer-style ownership, compiler expressibility, or workload correctness."
       ]
     }
   },
@@ -566,6 +593,7 @@
     "supports_apple9_or_newer is a lower-bound capability observation, not proof that the local device is exactly and only Apple GPU family 9.",
     "The local probe is engineering verification only: it contains no timing, occupancy, calibration, evaluation, or scientific evidence.",
     "The retained hierarchical probe is FP32 and RMS-style only; it does not test BF16 conversion, the Layer-style all-SIMDgroup final reducer, an external workload oracle, or the current Compiler lowering.",
+    "The retained normalized barrier label is not an emitted-source spelling contract; exact MSL uses mem_flags::mem_threadgroup.",
     "A local falsifier outcome describes only what occurred in the six finite bound cases; it does not resolve a proposal hypothesis or clear human hardware review.",
     "Vendor support for the ingredients does not establish that the proposed mapping is correct, performant, expressible in the current IR, or supported by the current lowering."
   ]

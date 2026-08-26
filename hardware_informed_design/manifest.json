@@ -46,7 +46,7 @@
       "ready": false,
       "authority": "human_hardware_review",
       "blocking_reviews": [
-        "A human hardware reviewer must confirm the vendor-document interpretation and the width-32 fail-closed specialization.",
+        "A human hardware reviewer must confirm the vendor-document interpretation and the width-32, one-dimensional, componentwise fail-closed specialization.",
         "A later, separate principle-driven iteration must evaluate P1-P8 before any compiler change is authorized."
       ]
     }

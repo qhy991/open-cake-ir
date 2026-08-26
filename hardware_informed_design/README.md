@@ -98,13 +98,66 @@ device identifier is recorded. The commit does not bind device state. Neither
 the normalized record nor the external reference grants Evaluation, scientific,
 performance, Compiler-change, human-review, or promotion authority.
 
+An external reviewer can make a fresh, non-authoritative replay from the exact
+historical source closure by using a separate detached worktree. The destination
+paths below must be caller-managed absolute paths outside the source checkout:
+
+```sh
+set -eu
+set -C
+probe_worktree=/absolute/caller-managed/open-cake-probe-f858
+probe_observation_root=/absolute/caller-managed/engineering-observations
+probe_toolchain_output="$probe_observation_root/metal-hierarchical-reduction-replay-toolchain.txt"
+probe_json_output="$probe_observation_root/metal-hierarchical-reduction-replay.json"
+test ! -e "$probe_toolchain_output"
+test ! -L "$probe_toolchain_output"
+test ! -e "$probe_json_output"
+test ! -L "$probe_json_output"
+git worktree add --detach "$probe_worktree" \
+  f858612c7ee695b57d72115c76723c7bacc22a9b
+probe_status="$(git -C "$probe_worktree" \
+  status --porcelain=v1 --untracked-files=all)"
+test -z "$probe_status"
+{
+  sw_vers
+  xcodebuild -version
+  xcrun --sdk macosx --show-sdk-version
+} > "$probe_toolchain_output"
+cd "$probe_worktree"
+python3 tools/probe_metal_hierarchical_reduction.py --timeout-seconds 120 \
+  > "$probe_json_output"
+```
+
+This non-normative replay recipe is not part of the five-path reviewed byte
+closure. Both output paths must be fresh caller-managed names so the shell
+redirections cannot overwrite a retained observation.
+
+The captured worktree status must be empty before the probe runs. The JSON
+must report `status=passed`, repository revision `f858612...`, a clean source
+worktree, and the same three source paths. The newly captured OS, Xcode, SDK,
+and probe output describe only that fresh run; they cannot recover the missing
+2026-08-26 toolchain values, raw stdout, device state, or original external
+artifact. The replay must be retained append-only under a new caller-managed
+name and cannot replace the historical reference, resolve a hypothesis, or
+grant implementation, Evaluation, performance, scientific, or promotion
+authority.
+
 ## Proposed mapping
 
 The extracted candidate remains width-neutral. The first concrete design is a
-fail-closed width-32 specialization: it may be selected only when the actual
-compute pipeline reports `threadExecutionWidth == 32`. It uses `simd_sum`, one
-lane-zero partial store per SIMDgroup and accumulator, a uniform
-`threadgroup_barrier(mem_threadgroup)`, and an explicit final-reducer owner.
+fail-closed width-32, one-dimensional specialization: it admits only
+`MTLSize(width=N,height=1,depth=1)` and may be selected only when the actual
+compute pipeline reports `threadExecutionWidth == 32`. Every component must
+fit `device.maxThreadsPerThreadgroup`, while the total must independently fit
+`pipeline.maxTotalThreadsPerThreadgroup`. It uses `simd_sum`, one lane-zero
+partial store per SIMDgroup and accumulator, the exact MSL call
+`threadgroup_barrier(mem_flags::mem_threadgroup)`, and an explicit
+final-reducer owner.
+
+The historical probe's normalized `uniform_reuse_barrier` field retains the
+semantic label `threadgroup_barrier(mem_threadgroup)`. That label is not an
+emitted-source spelling contract; the commit-bound MSL source and the normative
+proposal use `mem_flags::mem_threadgroup`.
 
 At the Apple GPU family 9 theoretical ceiling, `1024 / 32 = 32` SIMDgroups fit
 in a threadgroup, so one width-32 final SIMDgroup can consume the partial set.
@@ -122,7 +175,8 @@ by `raw_dynamic_bytes = accumulator_count * 128 + broadcast_scalar_bytes` and
 
 The Layer count of two is an input of this current variant, not an invariant of
 the width-neutral candidate. This arithmetic is only a ceiling derivation: the
-selected pipeline's actual maximum thread count remains a blocking gate, and
+device's componentwise threadgroup limit and the selected pipeline's actual
+total-thread limit remain independent blocking gates, and
 `pipeline.staticThreadgroupMemoryLength` plus the selected variant's 144- or
 256-byte aligned dynamic allocation must fit both
 `device.maxThreadgroupMemoryLength` and the 32768-byte family ceiling. Scratch
@@ -139,9 +193,9 @@ result in thread-local state. BF16 contributions are converted to FP32 before
 
 `review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json`
 binds the live Stage-3 manifest, evidence, and proposal by their repository
-paths and document IDs. It lists the complete review closure: 21 fact IDs,
+paths and document IDs. It lists the complete review closure: 22 fact IDs,
 five decision IDs, five unresolved hypothesis IDs, four observed-scope finding
-IDs, and twelve falsifier IDs. Nine review items organize that closure around
+IDs, and thirteen falsifier IDs. Nine review items organize that closure around
 vendor applicability, width policy, partial cardinality, barriers, scratch
 lifetime, final-reducer ownership, resource accounting, numeric scope, and the
 observation/authority boundary.
@@ -202,9 +256,26 @@ read-only to the offline validator:
 
 ```sh
 python tools/validate_hardware_informed_design.py \
+  --check-reviewable-head \
+  --format json
+
+python tools/validate_hardware_informed_design.py \
   --review-decision /absolute/caller-managed/hardware-review-decision.json \
   --format json
 ```
+
+The optional HEAD preflight resolves the current commit once, requires the five
+fixed paths below to be `100644` blobs, and compares each blob byte-for-byte
+with the live file that was semantically validated. It does not require the
+whole worktree to be clean, create a decision, establish reviewer identity, or
+clear the human hardware-review gate. With
+`--require-hardware-review-clear`, a successful HEAD-only preflight therefore
+still exits 3 while the stage remains `review_pending`.
+
+The CLI exits 0 after a requested validation succeeds, 1 for any validation
+or HEAD-binding failure, 2 for command-line parsing errors, and 3 only when
+the requested validation succeeds but `--require-hardware-review-clear` finds
+that Stage 3 is not clear. A validation failure takes precedence over exit 3.
 
 Omitting `--review-decision` preserves the current review-pending validation.
 Supplying one does not copy, normalize, rewrite, or admit it into the checkout.
