@@ -419,6 +419,18 @@ class HipSearchFailureEvidenceTests(unittest.TestCase):
                 num_warps=1,
                 document={},
             )
+            noise_decision = SimpleNamespace(
+                passed=True,
+                observation=SimpleNamespace(
+                    measurement_quality_passed=True,
+                    pair_wins={"baseline_a": 0, "baseline_b": 0},
+                    tied_pairs=4,
+                    pooled_sample_counts={"baseline_a": 100, "baseline_b": 100},
+                    pooled_medians_ms={"baseline_a": 1.0, "baseline_b": 1.0},
+                    speedup=1.0,
+                    classification="close_null",
+                ),
+            )
             artifact_dir = root / "evidence"
 
             with (
@@ -459,7 +471,16 @@ class HipSearchFailureEvidenceTests(unittest.TestCase):
                     "_compile_candidate",
                     side_effect=[baseline, RuntimeError("HIP reset")],
                 ),
-                patch.object(amd_search, "_correctness", return_value={"passed": True}),
+                patch.object(
+                    amd_search,
+                    "_correctness",
+                    return_value={"passed": True, "inputs_unchanged": True},
+                ),
+                patch.object(
+                    amd_search,
+                    "_noise",
+                    return_value=(noise_decision, []),
+                ),
                 patch.object(amd_search, "_screen") as screen,
                 self.assertRaisesRegex(RuntimeError, "HIP reset"),
             ):
