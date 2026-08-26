@@ -191,6 +191,61 @@ class OperatorLibrarySchemaTests(unittest.TestCase):
                     {locator_pair},
                 )
 
+    def test_mlx_matrix_occurrences_bind_reviewed_algorithm_symbols(self) -> None:
+        manifest = _read(LIBRARY / "manifest.json")
+        occurrences = {
+            occurrence["implementation_id"]: occurrence
+            for relative in manifest["operators"]
+            for occurrence in [_read(_catalog_path(LIBRARY, relative))]
+        }
+        algorithms = {
+            "mlx.metal-convolution": (
+                "mlx/backend/metal/kernels/steel/conv/kernels/steel_conv.h",
+                "implicit_gemm_conv_2d",
+            ),
+            "mlx.metal-quantized-matmul": (
+                "mlx/backend/metal/kernels/quantized.h",
+                "qmm_n_impl",
+            ),
+            "mlx.metal-steel-gemm": (
+                "mlx/backend/metal/kernels/steel/gemm/gemm.h",
+                "mlx::steel::GEMMKernel::gemm_loop",
+            ),
+        }
+
+        for implementation_id, locator_pair in algorithms.items():
+            with self.subTest(implementation_id=implementation_id):
+                locators = occurrences[implementation_id]["locators"]
+                self.assertIn(
+                    locator_pair,
+                    {
+                        (locator["value"], locator["symbol"])
+                        for locator in locators
+                        if locator["kind"] == "repository_path"
+                    },
+                )
+
+        wrappers = {
+            "mlx.metal-convolution": (
+                "mlx/backend/metal/kernels/conv.metal",
+                None,
+            ),
+            "mlx.metal-quantized-matmul": (
+                "mlx/backend/metal/kernels/quantized.metal",
+                None,
+            ),
+        }
+        for implementation_id, locator_pair in wrappers.items():
+            with self.subTest(wrapper=implementation_id):
+                self.assertIn(
+                    locator_pair,
+                    {
+                        (locator["value"], locator["symbol"])
+                        for locator in occurrences[implementation_id]["locators"]
+                        if locator["kind"] == "repository_path"
+                    },
+                )
+
 
 class OperatorLibraryValidatorTests(unittest.TestCase):
     def test_cli_validates_and_reports_each_required_count(self) -> None:

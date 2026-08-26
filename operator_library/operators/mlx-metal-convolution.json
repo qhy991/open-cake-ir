@@ -22,6 +22,13 @@
       "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
       "git_object": "6f3ce0cd43851d073f883c4d9a9198baaba6439f",
       "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/steel/conv/kernels/steel_conv.h",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "f559596b732b399783e151bc43bb838d3fb3b3cd",
+      "symbol": "implicit_gemm_conv_2d"
     }
   ],
   "upstream_state": "repository_main",

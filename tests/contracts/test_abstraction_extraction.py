@@ -445,7 +445,7 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
             with self.subTest(boundary=boundary):
                 self.assertIn(boundary, variants)
         manifest = _read(EXTRACTION / "manifest.json")
-        self.assertEqual(manifest["counts"]["implementation_count"], 10)
+        self.assertEqual(manifest["counts"]["implementation_count"], 13)
         non_claims = " ".join(manifest["selection_policy"]["non_claims"])
         for boundary in (
             "does not establish a common thread or SIMDgroup ownership model",
@@ -453,6 +453,198 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
             "zero-centered versus direct normalization-weight factors",
             "independent of hierarchical-simdgroup-threadgroup-reduction",
             "does not admit a Compiler RMS operation",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, non_claims)
+
+    def test_matrix_k_loop_keeps_only_the_paired_tile_mma_choreography(
+        self,
+    ) -> None:
+        candidate = _read(
+            EXTRACTION / "candidates" / "paired-threadgroup-tile-mma-k-loop.json"
+        )
+        observation_paths = (
+            "observations/mlx-convolution-implicit-gemm-threadgroup-mma-k-loop.json",
+            "observations/mlx-quantized-qmm-n-threadgroup-mma-k-loop.json",
+            "observations/mlx-steel-gemm-paired-threadgroup-mma-k-loop.json",
+        )
+        observations = [_read(EXTRACTION / path) for path in observation_paths]
+        by_id = {
+            observation["observation_id"]: observation for observation in observations
+        }
+
+        self.assertEqual(
+            candidate["observation_ids"],
+            [observation["observation_id"] for observation in observations],
+        )
+        self.assertEqual(
+            {observation["pattern_signature"] for observation in observations},
+            {candidate["pattern_signature"]},
+        )
+        self.assertEqual(
+            {
+                (
+                    observation["source_locator"]["path"],
+                    observation["source_locator"]["symbol"],
+                    observation["source_span"]["start_line"],
+                    observation["source_span"]["end_line"],
+                )
+                for observation in observations
+            },
+            {
+                (
+                    "mlx/backend/metal/kernels/quantized.h",
+                    "qmm_n_impl",
+                    1320,
+                    1454,
+                ),
+                (
+                    "mlx/backend/metal/kernels/steel/conv/kernels/steel_conv.h",
+                    "implicit_gemm_conv_2d",
+                    7,
+                    176,
+                ),
+                (
+                    "mlx/backend/metal/kernels/steel/gemm/gemm.h",
+                    "mlx::steel::GEMMKernel::gemm_loop",
+                    48,
+                    137,
+                ),
+            },
+        )
+        common_primitives = set(observations[0]["observed_primitives"]).intersection(
+            *(
+                set(observation["observed_primitives"])
+                for observation in observations[1:]
+            )
+        )
+        self.assertEqual(
+            common_primitives,
+            {
+                "block_mma_accumulate",
+                "k_tile_iteration",
+                "paired_loader_advance",
+                "paired_operand_block_loaders",
+                "paired_threadgroup_operand_tiles",
+                "postload_threadgroup_barrier",
+                "preload_threadgroup_barrier",
+            },
+        )
+
+        exclusive_primitives = {
+            "mlx-metal-steel-gemm.paired-threadgroup-mma-k-loop": {
+                "compile_time_alignment_specialization",
+                "mn_edge_load_specialization",
+                "parameterized_accumulator_epilogue",
+                "safe_k_remainder_load",
+                "transpose_aware_edge_tile_shape",
+            },
+            "mlx-metal-quantized-matmul.qmm-n-threadgroup-mma-k-loop": {
+                "fixed_nn_transpose_mode",
+                "packed_quantized_weight_addressing",
+                "partial_m_load_specialization",
+                "quantized_weight_block_loader",
+                "runtime_k_remainder_load",
+                "safe_or_full_result_store",
+                "scale_bias_loader_binding",
+            },
+            "mlx-metal-convolution.implicit-gemm-threadgroup-mma-k-loop": {
+                "conditional_convolution_input_loader",
+                "conditional_convolution_weight_loader",
+                "fixed_nt_transpose_mode",
+                "grid_swizzle_tile_guard",
+                "grouped_convolution_addressing",
+                "safe_result_store_terminal",
+                "spatial_filter_loader_specialization",
+            },
+        }
+        for observation_id, primitives in exclusive_primitives.items():
+            observation = by_id[observation_id]
+            other_observations = [
+                value for key, value in by_id.items() if key != observation_id
+            ]
+            for primitive in primitives:
+                with self.subTest(observation=observation_id, primitive=primitive):
+                    self.assertIn(primitive, observation["observed_primitives"])
+                    self.assertTrue(
+                        all(
+                            primitive not in other["observed_primitives"]
+                            for other in other_observations
+                        )
+                    )
+
+        normalized = " ".join(candidate["normalized_steps"]).lower()
+        for variant_only in (
+            "transpose",
+            "layout",
+            "quant",
+            "dequant",
+            "scale",
+            "bias",
+            "group_size",
+            "bits",
+            "pack",
+            "stride",
+            "padding",
+            "dilation",
+            "filter",
+            "window",
+            "groups",
+            "tail",
+            "aligned",
+            "k_eff",
+            "load_safe",
+            "load_unsafe",
+            "zero-fill",
+            "store",
+            "epilogue",
+            "uniform",
+            "race-free",
+            "deadlock",
+            "correctness",
+            "bitwise",
+            "occupancy",
+            "throughput",
+            "performance",
+            "compiler",
+            "target",
+            "simd_sum",
+            "lane_zero",
+            "broadcast",
+            "final simdgroup reducer",
+            "hierarchical",
+        ):
+            with self.subTest(variant_only=variant_only):
+                self.assertNotIn(variant_only, normalized)
+
+        variants = " ".join(candidate["observed_variants"])
+        for boundary in (
+            "packed quantized-weight loader",
+            "convolution stride, padding, dilation",
+            "Barrier names and safe or unsafe helper names do not establish",
+            "hardware-instruction mapping",
+            "Compiler operation, Target capability, Schedule form, lowering route",
+            "hierarchical SIMDgroup reduction candidate",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, variants)
+
+        manifest = _read(EXTRACTION / "manifest.json")
+        self.assertEqual(
+            manifest["counts"],
+            {
+                "observation_count": 15,
+                "candidate_count": 6,
+                "implementation_count": 13,
+                "source_count": 2,
+            },
+        )
+        non_claims = " ".join(manifest["selection_policy"]["non_claims"])
+        for boundary in (
+            "records source call order only",
+            "does not normalize physical layout",
+            "establishes no asynchronous overlap",
+            "does not alter the frozen Stage 3 candidate closure",
         ):
             with self.subTest(boundary=boundary):
                 self.assertIn(boundary, non_claims)

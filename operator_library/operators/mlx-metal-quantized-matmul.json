@@ -18,6 +18,13 @@
   "locators": [
     {
       "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/quantized.h",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "42855e14d880cab5f9d194edb1a6ca7c9e28b1c7",
+      "symbol": "qmm_n_impl"
+    },
+    {
+      "kind": "repository_path",
       "value": "mlx/backend/metal/kernels/quantized.metal",
       "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
       "git_object": "069482cbaf0b67c24411afd3f80d7498a9a4d301",

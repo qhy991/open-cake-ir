@@ -3,7 +3,7 @@
 This directory is the first tracer for stage 2 of the method described in
 [CAKE v1 Appendix A](https://arxiv.org/html/2608.12629v1#A1): extract recurring
 abstractions from concrete operator implementations after corpus collection.
-The stage remains `in_progress`; this tracer records five recurring source
+The stage remains `in_progress`; this tracer records six recurring source
 patterns and does not claim that extraction over the operator library is
 complete.
 
@@ -43,7 +43,7 @@ upstream bytes are intentionally not vendored, it does not fetch a repository or
 recompute a source-span hash. `semantics_reviewed` is therefore a reviewer
 attestation, not an automated source-content proof. The authoring/review workflow
 must independently recompute each Git blob and span hash from the pinned checkout;
-the twelve observations in this tracer were checked that way before admission.
+the fifteen observations in this tracer were checked that way before admission.
 Free-text semantics likewise remain reviewer-attested: the validator enforces the
 closed `source_structure_only` and `source_pattern_only` claim scopes, but does
 not pretend that a lexical filter can prove the meaning of prose.
@@ -64,6 +64,12 @@ not pretend that a lexical filter can prove the meaning of prose.
   exponential-denominator update and parallel partial-summary merge. Chunked
   probability regeneration versus masked, sink-aware weighted-payload
   accumulation remains an explicit operator-level variant.
+- `paired-threadgroup-tile-mma-k-loop` records the repeated MLX source order
+  across dense GEMM, QMM-N, and implicit-GEMM convolution: barrier, paired
+  threadgroup operand loads, barrier, block MMA, then paired loader advance.
+  Matrix layout and transpose meaning, quantization, convolution addressing,
+  edge and tail handling, result storage, numerics, and synchronization safety
+  remain explicit implementation variants or non-claims.
 - `runtime-index-axis-stride-offset-fold` records the repeated MLX index-tensor
   element-location and accessed-buffer axis-stride fold into a linear element
   offset. Rank specialization, grid mapping, update addressing, and the terminal
@@ -102,6 +108,16 @@ also does not establish a shared reduction order, floating-point result,
 physical row residency, memory-traffic benefit, RMS Compiler operation, Target
 capability, Schedule form, or lowering route. Direct versus zero-centered
 normalization-weight factors and the GDN projected-SiLU gate remain distinct.
+
+The paired threadgroup-tile MMA candidate is likewise a source choreography,
+not a shared matrix or convolution semantics claim. Loader and barrier names do
+not prove bounds, zero fill, memory visibility, uniform participation, race or
+deadlock freedom, or memory safety. The extraction does not normalize physical
+tile layout, transpose modes, quantization metadata, convolution windows,
+edge/tail policy, result storage, accumulator or numerical behavior, nor does it
+establish performance, hardware-instruction mapping, a Compiler operation,
+Target capability, Schedule form, lowering route, or any change to the frozen
+Stage 3 closure.
 
 The next gates remain in paper order: hardware-informed design, P1-P8
 principle-driven iteration, and only then port-driven expansion. The richer

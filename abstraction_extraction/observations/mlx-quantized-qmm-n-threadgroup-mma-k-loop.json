@@ -1,0 +1,50 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "mlx-metal-quantized-matmul.qmm-n-threadgroup-mma-k-loop",
+  "pattern_signature": "k-tile-loop.preload-barrier.paired-threadgroup-load.postload-barrier.tile-mma.paired-advance",
+  "implementation_id": "mlx.metal-quantized-matmul",
+  "operator_id": "contraction.quantized_matmul",
+  "source_id": "mlx-main-1f8e74e",
+  "source_locator": {
+    "path": "mlx/backend/metal/kernels/quantized.h",
+    "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+    "git_object": "42855e14d880cab5f9d194edb1a6ca7c9e28b1c7",
+    "symbol": "qmm_n_impl"
+  },
+  "source_span": {
+    "start_line": 1320,
+    "end_line": 1454,
+    "sha256": "e129fe8f1d137c9314cdabd90111425ba81192d32aea2fb77daeaa7a22799b66",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "qmm_n_impl fixes a non-transposed BlockMMA configuration, pairs a dense activation BlockLoader with a QuantizedBlockLoader bound to packed weights, scales, biases, group size, and bit width, and stages them in separate threadgroup tiles.",
+    "The kernel derives output-tile addresses, adjusts the packed-weight and scale/bias bases, constructs both loaders and the BlockMMA object, and derives the number of admitted output rows.",
+    "Four partial-M and K-divisibility branches repeat the same full-K sequence: a threadgroup-memory barrier, one load through each loader, a second threadgroup-memory barrier, mma on the staged tiles, and advancement of both loaders.",
+    "Branches with a K remainder safely load the final activation and weight extents for one terminal mma, then the kernel executes another barrier and selects a safe or full result store according to the output-row extent."
+  ],
+  "observed_primitives": [
+    "block_mma_accumulate",
+    "fixed_nn_transpose_mode",
+    "k_tile_iteration",
+    "packed_quantized_weight_addressing",
+    "paired_loader_advance",
+    "paired_operand_block_loaders",
+    "paired_threadgroup_operand_tiles",
+    "partial_m_load_specialization",
+    "postload_threadgroup_barrier",
+    "preload_threadgroup_barrier",
+    "quantized_weight_block_loader",
+    "runtime_k_remainder_load",
+    "safe_or_full_result_store",
+    "scale_bias_loader_binding"
+  ],
+  "variant_notes": [
+    "The packed-weight, scale, bias, group-size, bit-width, and dequantizing loader behavior belongs to this QMM-N implementation and is not normalized into the common recurrence.",
+    "Partial-M and K-remainder branches select safe-versus-unsafe load calls and a safe-versus-full result store; helper names do not establish bounds, zero-fill, or memory safety.",
+    "This observation covers qmm_n_impl only and does not generalize to the QMV, QMM-T, NAX, packing, rounding, numerical, or dispatch paths collected by the same operator occurrence."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

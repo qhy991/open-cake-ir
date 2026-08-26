@@ -7,7 +7,7 @@
   "input_library": {
     "manifest_path": "operator_library/manifest.json",
     "library_id": "open-cake-operator-library-v1",
-    "canonical_sha256": "561c24c60187515602a157b95987efe32cffba6632ffb3ae08c78028880985da"
+    "canonical_sha256": "c4b28aa34c488c1d614b22f630a09fbd74d9e8894ee2d3970d8207604c7e562f"
   },
   "selection_policy": {
     "name": "source-grounded-recurrence-tracer-v1",
@@ -33,7 +33,10 @@
       "The runtime-index address-fold recurrence does not establish equivalence to Compiler AccessIndexKind.BUFFER, mask_tiled_axes zero-fill behavior, accessed-buffer boundary analysis, or any admitted lowering subset.",
       "The two-pass row RMS recurrence does not establish a common thread or SIMDgroup ownership model, reduction order, floating-point reproducibility, launch topology, synchronization contract, physical row residency, or memory-traffic and performance result.",
       "The recurrence does not normalize fixed versus runtime row extents, layer-slot addressing, zero-centered versus direct normalization-weight factors, the GDN projected SiLU gate, bounds handling, output layout, aliasing, or memory safety.",
-      "The recurrence is independent of hierarchical-simdgroup-threadgroup-reduction and does not admit a Compiler RMS operation, Target capability, Schedule form, or lowering subset."
+      "The recurrence is independent of hierarchical-simdgroup-threadgroup-reduction and does not admit a Compiler RMS operation, Target capability, Schedule form, or lowering subset.",
+      "The paired threadgroup-tile MMA recurrence records source call order only; barrier and safe or unsafe helper names do not establish visibility, uniform participation, bounds, zero fill, scratch lifetime, race or deadlock freedom, or memory safety.",
+      "The matrix-loop recurrence does not normalize physical layout, transpose meaning, quantization, scales or biases, convolution window, grouping or spatial addressing, edge or tail handling, result storage, accumulator behavior, or numerical equivalence.",
+      "The matrix-loop recurrence establishes no asynchronous overlap, double buffering, resource, occupancy, throughput, instruction mapping, Compiler or Target contract, Schedule or lowering result, and does not alter the frozen Stage 3 candidate closure."
     ]
   },
   "observations": [
@@ -43,24 +46,28 @@
     "observations/apxinf-w8-gdn-norm-gate-rms-modulation.json",
     "observations/apxinf-w8-lm-head-row-projection.json",
     "observations/apxinf-w8-mlp-gate-up-row-projection.json",
+    "observations/mlx-convolution-implicit-gemm-threadgroup-mma-k-loop.json",
     "observations/mlx-gather-runtime-index-axis-stride-fold.json",
     "observations/mlx-layer-norm-hierarchical-reduction.json",
+    "observations/mlx-quantized-qmm-n-threadgroup-mma-k-loop.json",
     "observations/mlx-rms-norm-hierarchical-reduction.json",
     "observations/mlx-scaled-dot-product-attention-max-rebased-summary.json",
     "observations/mlx-scatter-runtime-index-axis-stride-fold.json",
-    "observations/mlx-softmax-looped-max-rebased-summary.json"
+    "observations/mlx-softmax-looped-max-rebased-summary.json",
+    "observations/mlx-steel-gemm-paired-threadgroup-mma-k-loop.json"
   ],
   "candidates": [
     "candidates/hierarchical-simdgroup-threadgroup-reduction.json",
     "candidates/max-rebased-exponential-summary.json",
+    "candidates/paired-threadgroup-tile-mma-k-loop.json",
     "candidates/row-per-simdgroup-groupwise-w8-projection.json",
     "candidates/runtime-index-axis-stride-offset-fold.json",
     "candidates/two-pass-row-rms-modulation.json"
   ],
   "counts": {
-    "observation_count": 12,
-    "candidate_count": 5,
-    "implementation_count": 10,
+    "observation_count": 15,
+    "candidate_count": 6,
+    "implementation_count": 13,
     "source_count": 2
   }
 }
