@@ -241,6 +241,34 @@
       "scope": "observed_device_pipeline",
       "authority": "local_engineering_observation",
       "source_ids": ["local-apple-m4-metal-operator-probe-2026-08-26"]
+    },
+    {
+      "fact_id": "observed-m4-hierarchical-width32-case-matrix",
+      "statement": "The retained normalized output for the bound Apple M4 FP32 RMS-style probe pipeline reported threadExecutionWidth equal to 32 and passed the guarded whole-SIMDgroup matrix of 1, 2, 4, 8, 16, and 32 SIMDgroups, corresponding to 32 through 1024 threads per threadgroup.",
+      "scope": "observed_device_pipeline",
+      "authority": "local_engineering_observation",
+      "source_ids": ["local-apple-m4-hierarchical-reduction-probe-2026-08-26"]
+    },
+    {
+      "fact_id": "observed-m4-hierarchical-exact-owner-and-broadcast",
+      "statement": "Across all 12 FP32 dyadic-fixture epochs in the six bound cases, the retained normalized output reported the two-level single-owner sum exactly equal to the independent finite probe oracle under its exact-FP32-bits rule and zero broadcast mismatches across 4032 thread-consumer checks.",
+      "scope": "observed_device_pipeline",
+      "authority": "local_engineering_observation",
+      "source_ids": ["local-apple-m4-hierarchical-reduction-probe-2026-08-26"]
+    },
+    {
+      "fact_id": "observed-m4-hierarchical-two-epoch-scratch-reuse",
+      "statement": "Each of the six bound dispatches exercised two distinct FP32 input patterns and dirty sentinels around scratch reuse; the retained normalized output reported every dirty snapshot preserved before reuse and zero dirty-snapshot, owner, or broadcast mismatches after reuse.",
+      "scope": "observed_device_pipeline",
+      "authority": "local_engineering_observation",
+      "source_ids": ["local-apple-m4-hierarchical-reduction-probe-2026-08-26"]
+    },
+    {
+      "fact_id": "observed-m4-hierarchical-runtime-resource-gates",
+      "statement": "The bound Apple M4 FP32 RMS-style probe pipeline reported width 32, maxTotalThreadsPerThreadgroup 1024, zero static and 144 bytes dynamic threadgroup memory, while the device reported maxThreadgroupMemoryLength 32768; every observed launch remained within those finite runtime gates.",
+      "scope": "observed_device_pipeline",
+      "authority": "local_engineering_observation",
+      "source_ids": ["local-apple-m4-hierarchical-reduction-probe-2026-08-26"]
     }
   ],
   "local_probe_observation": {
@@ -272,6 +300,226 @@
     "scientific_claim_authorized": false,
     "scope": "local_engineering_observation_only"
   },
+  "hierarchical_reduction_probe_observation": {
+    "observation_id": "local-apple-m4-hierarchical-reduction-probe-2026-08-26",
+    "observed_at": "2026-08-26",
+    "repository_snapshot": {
+      "repository_revision": "f858612c7ee695b57d72115c76723c7bacc22a9b",
+      "worktree_clean_at_observation": true,
+      "source_paths": [
+        "tools/probe_metal_hierarchical_reduction.py",
+        "tools/metal_hierarchical_reduction_probe/hierarchical_reduction.metal",
+        "tools/metal_hierarchical_reduction_probe/run_hierarchical_reduction.swift"
+      ],
+      "binding_scope": "complete_tracked_probe_source_closure"
+    },
+    "retained_artifact": {
+      "storage_scope": "external_generated_artifact_outside_checkout",
+      "relative_path": "f858612c7ee695b57d72115c76723c7bacc22a9b/metal-hierarchical-reduction.json",
+      "artifact_kind": "open_cake_metal_hierarchical_reduction_probe_v1",
+      "reference_status": "unverified_external_artifact_reference",
+      "offline_validator_access": "not_available"
+    },
+    "probe_scope": "fp32_rms_style_single_owner_hierarchical_reduction_only",
+    "normalized_output": {
+      "status": "passed",
+      "device": {
+        "device_class": "Apple M4",
+        "supports_apple9_or_newer": true,
+        "max_threadgroup_memory_bytes": 32768
+      },
+      "pipeline": {
+        "entry_point": "hierarchical_reduction_w32_probe",
+        "thread_execution_width": 32,
+        "max_total_threads_per_threadgroup": 1024,
+        "static_threadgroup_memory_bytes": 0,
+        "dynamic_threadgroup_memory_bytes": 144
+      },
+      "coverage": {
+        "simdgroup_counts": [1, 2, 4, 8, 16, 32],
+        "threads_per_threadgroup": [32, 64, 128, 256, 512, 1024],
+        "epochs_per_dispatch": 2,
+        "input_patterns": [
+          "((thread_mod_13)-6)*0.125+0.5",
+          "((thread_mod_11)-5)*0.25-0.75"
+        ],
+        "dirty_sentinels": [-12345.25, 9876.5],
+        "single_owner_final_scalar_broadcast": true,
+        "scratch_reused_within_dispatch": true,
+        "uniform_reuse_barrier": "threadgroup_barrier(mem_threadgroup)",
+        "layer_all_simdgroups_tested": false,
+        "bfloat_input_conversion_tested": false
+      },
+      "oracle": {
+        "dtype": "float32",
+        "tolerance_rule": "exact_fp32_bits_for_dyadic_fixture",
+        "kind": "internal_finite_probe_oracle_not_workload_oracle"
+      },
+      "case_results": [
+        {
+          "simdgroup_count": 1,
+          "threads_per_threadgroup": 32,
+          "expected_owner_sums": [13.375, -25.25],
+          "observed_owner_sums": [13.375, -25.25],
+          "broadcast_thread_counts": [32, 32],
+          "dirty_sentinel_preserved": [true, true],
+          "owner_mismatch_count": 0,
+          "broadcast_mismatch_count": 0,
+          "dirty_snapshot_mismatch_count": 0,
+          "command_buffer_status": "completed",
+          "passed": true
+        },
+        {
+          "simdgroup_count": 2,
+          "threads_per_threadgroup": 64,
+          "expected_owner_sums": [31.25, -50.25],
+          "observed_owner_sums": [31.25, -50.25],
+          "broadcast_thread_counts": [64, 64],
+          "dirty_sentinel_preserved": [true, true],
+          "owner_mismatch_count": 0,
+          "broadcast_mismatch_count": 0,
+          "dirty_snapshot_mismatch_count": 0,
+          "command_buffer_status": "completed",
+          "passed": true
+        },
+        {
+          "simdgroup_count": 4,
+          "threads_per_threadgroup": 128,
+          "expected_owner_sums": [62.625, -99.5],
+          "observed_owner_sums": [62.625, -99.5],
+          "broadcast_thread_counts": [128, 128],
+          "dirty_sentinel_preserved": [true, true],
+          "owner_mismatch_count": 0,
+          "broadcast_mismatch_count": 0,
+          "dirty_snapshot_mismatch_count": 0,
+          "command_buffer_status": "completed",
+          "passed": true
+        },
+        {
+          "simdgroup_count": 8,
+          "threads_per_threadgroup": 256,
+          "expected_owner_sums": [125.75, -195.0],
+          "observed_owner_sums": [125.75, -195.0],
+          "broadcast_thread_counts": [256, 256],
+          "dirty_sentinel_preserved": [true, true],
+          "owner_mismatch_count": 0,
+          "broadcast_mismatch_count": 0,
+          "dirty_snapshot_mismatch_count": 0,
+          "command_buffer_status": "completed",
+          "passed": true
+        },
+        {
+          "simdgroup_count": 16,
+          "threads_per_threadgroup": 512,
+          "expected_owner_sums": [253.5, -387.75],
+          "observed_owner_sums": [253.5, -387.75],
+          "broadcast_thread_counts": [512, 512],
+          "dirty_sentinel_preserved": [true, true],
+          "owner_mismatch_count": 0,
+          "broadcast_mismatch_count": 0,
+          "dirty_snapshot_mismatch_count": 0,
+          "command_buffer_status": "completed",
+          "passed": true
+        },
+        {
+          "simdgroup_count": 32,
+          "threads_per_threadgroup": 1024,
+          "expected_owner_sums": [510.125, -769.25],
+          "observed_owner_sums": [510.125, -769.25],
+          "broadcast_thread_counts": [1024, 1024],
+          "dirty_sentinel_preserved": [true, true],
+          "owner_mismatch_count": 0,
+          "broadcast_mismatch_count": 0,
+          "dirty_snapshot_mismatch_count": 0,
+          "command_buffer_status": "completed",
+          "passed": true
+        }
+      ],
+      "aggregate": {
+        "case_count": 6,
+        "epoch_result_count": 12,
+        "broadcast_consumer_check_count": 4032,
+        "owner_mismatch_count": 0,
+        "broadcast_mismatch_count": 0,
+        "dirty_snapshot_mismatch_count": 0,
+        "all_command_buffers_completed": true,
+        "all_cases_passed": true
+      }
+    },
+    "falsifier_outcomes": [
+      {
+        "falsifier_id": "runtime-width-not-32",
+        "outcome": "not_triggered_in_observed_cases",
+        "basis": "The one bound pipeline reported threadExecutionWidth 32; no other pipeline or device was observed."
+      },
+      {
+        "falsifier_id": "pipeline-thread-limit-exceeded",
+        "outcome": "not_triggered_in_observed_cases",
+        "basis": "The pipeline reported a 1024-thread maximum and every observed case requested at most 1024 threads."
+      },
+      {
+        "falsifier_id": "partial-final-simdgroup-outside-v1",
+        "outcome": "precondition_satisfied_in_observed_cases",
+        "basis": "Every observed threadgroup size was an exact multiple of the reported width 32; partial final SIMDgroups were not exercised."
+      },
+      {
+        "falsifier_id": "partial-set-exceeds-final-simdgroup",
+        "outcome": "not_triggered_in_observed_cases",
+        "basis": "The observed matrix ended at 32 live SIMDgroups, equal to the reported width 32 and therefore within the one-final-SIMDgroup capacity precondition."
+      },
+      {
+        "falsifier_id": "threadgroup-memory-budget-exceeded",
+        "outcome": "not_triggered_in_observed_cases",
+        "basis": "The pipeline reported zero static bytes and used 144 dynamic bytes against the observed 32768-byte device limit."
+      },
+      {
+        "falsifier_id": "barrier-not-uniform",
+        "outcome": "requires_source_review",
+        "basis": "Successful finite outputs do not prove uniform barrier participation; the commit-bound MSL source remains subject to human source review."
+      },
+      {
+        "falsifier_id": "scratch-read-before-publication",
+        "outcome": "not_observed_in_tested_outputs",
+        "basis": "All 12 owner results and 4032 broadcast consumer checks matched, but finite output agreement is not a proof of publication safety."
+      },
+      {
+        "falsifier_id": "scratch-reuse-race",
+        "outcome": "not_observed_in_tested_outputs",
+        "basis": "Two distinct dirty-sentinel epochs per dispatch reported zero dirty-snapshot, owner, and broadcast mismatches; finite outputs do not prove race freedom."
+      },
+      {
+        "falsifier_id": "bfloat-simd-sum-input",
+        "outcome": "outside_probe_scope",
+        "basis": "The retained probe inputs and oracle were FP32 and did not exercise BF16 conversion."
+      },
+      {
+        "falsifier_id": "ambiguous-final-reducer-owner",
+        "outcome": "not_triggered_for_single_owner_probe_only",
+        "basis": "The bound probe source names one RMS-style final owner and broadcast path; the Layer-style all-SIMDgroup variant was not tested."
+      },
+      {
+        "falsifier_id": "bitwise-order-required",
+        "outcome": "outside_probe_scope",
+        "basis": "No Workload Contract or external workload oracle was used, so the probe cannot decide any workload requirement for reduction order."
+      },
+      {
+        "falsifier_id": "current-lowering-capability-missing",
+        "outcome": "condition_still_present",
+        "basis": "The standalone probe bypassed the finite Compiler lowering and grants no compiler-change or implementation authority."
+      }
+    ],
+    "normalized_probe_output_retained": true,
+    "raw_runner_output_retained": false,
+    "stable_device_identifiers_retained": false,
+    "external_workload_oracle_used": false,
+    "performance_measured": false,
+    "evaluation_evidence": false,
+    "scientific_claim_authorized": false,
+    "compiler_change_authorized": false,
+    "human_hardware_review_cleared": false,
+    "promotion_authorized": false,
+    "scope": "local_engineering_observation_only"
+  },
   "non_evidentiary_context": {
     "role": "non_evidentiary_context_only",
     "repository_snapshot": {
@@ -291,7 +539,8 @@
   "assumptions": [
     "The cited 2026 vendor PDFs apply to the Metal language and Apple GPU family exposed by the local macOS toolchain used for later review.",
     "The vendor webpage statements recorded here match the pages inspected online; their content was not captured or content-hash-verified for offline replay.",
-    "The sanitized local probe fields faithfully preserve the relevant pipeline observations while intentionally discarding raw output and device identifiers; the Git parent revision binds the historical probe source but cannot make the observation automatically reproducible."
+    "The sanitized local probe fields faithfully preserve the relevant pipeline observations while intentionally discarding raw output and device identifiers; the Git parent revision binds the historical probe source but cannot make the observation automatically reproducible.",
+    "For the hierarchical-reduction probe, the clean source commit identifies the complete tracked probe source closure; the caller-root-relative external artifact path is an unverified reference that the offline validator cannot access, and neither record reproduces mutable device state or establishes semantic correctness."
   ],
   "gate_separation": {
     "validation": {
@@ -307,7 +556,8 @@
       "authority": "human_hardware_review",
       "blocking_reviews": [
         "Confirm every vendor-document locator and the applicability of each atomic fact to the proposed Metal specialization.",
-        "Confirm that sanitized local observations remain scoped to the two probed pipelines and make no family-wide, performance, or scientific claim."
+        "Confirm that sanitized local observations remain scoped to their bound Apple M4 pipelines and make no family-wide, performance, or scientific claim.",
+        "Review the commit-bound hierarchical-probe source and all 12 local falsifier outcomes; finite matching outputs do not prove uniform barriers, race freedom, BF16 handling, Layer-style ownership, compiler expressibility, or workload correctness."
       ]
     }
   },
@@ -315,6 +565,8 @@
     "The two observed width-32 pipelines do not establish a fixed SIMDgroup width for every Apple GPU, every Apple GPU family 9 device, or every future pipeline.",
     "supports_apple9_or_newer is a lower-bound capability observation, not proof that the local device is exactly and only Apple GPU family 9.",
     "The local probe is engineering verification only: it contains no timing, occupancy, calibration, evaluation, or scientific evidence.",
+    "The retained hierarchical probe is FP32 and RMS-style only; it does not test BF16 conversion, the Layer-style all-SIMDgroup final reducer, an external workload oracle, or the current Compiler lowering.",
+    "A local falsifier outcome describes only what occurred in the six finite bound cases; it does not resolve a proposal hypothesis or clear human hardware review.",
     "Vendor support for the ingredients does not establish that the proposed mapping is correct, performant, expressible in the current IR, or supported by the current lowering."
   ]
 }

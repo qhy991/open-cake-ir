@@ -31,6 +31,10 @@
       "metal-threadgroup-memory-scope",
       "metal-threadgroup-publication-barrier",
       "metal-total-threadgroup-memory-runtime-gate",
+      "observed-m4-hierarchical-exact-owner-and-broadcast",
+      "observed-m4-hierarchical-runtime-resource-gates",
+      "observed-m4-hierarchical-two-epoch-scratch-reuse",
+      "observed-m4-hierarchical-width32-case-matrix",
       "observed-m4-pipeline-thread-limit-1024",
       "observed-m4-pipeline-width-32",
       "observed-m4-threadgroup-memory-32768"
@@ -287,6 +291,54 @@
       "result_binding": null
     }
   ],
+  "observed_scope_findings": [
+    {
+      "finding_id": "observed-width32-case-matrix",
+      "fact_ids": ["observed-m4-hierarchical-width32-case-matrix"],
+      "status": "reported_in_observed_scope",
+      "scope": "observed_apple_m4_fp32_rms_probe_pipeline_only",
+      "reported_outcome": "The guarded width-32 specialization's finite whole-SIMDgroup launch matrix was executable on the one bound Apple M4 probe pipeline from 1 through 32 SIMDgroups.",
+      "does_not_resolve_hypothesis_ids": [
+        "width32-specialization-covers-intended-devices"
+      ],
+      "scope_limit": "This one pipeline does not establish width-32 availability or usefulness on any other Apple device class or future compiled pipeline, so the linked deployment-matrix hypothesis remains unresolved."
+    },
+    {
+      "finding_id": "observed-exact-owner-and-broadcast",
+      "fact_ids": ["observed-m4-hierarchical-exact-owner-and-broadcast"],
+      "status": "reported_in_observed_scope",
+      "scope": "observed_apple_m4_fp32_rms_probe_pipeline_only",
+      "reported_outcome": "The commit-bound two-level FP32 RMS-style single-owner choreography produced the exact finite probe-oracle sums and broadcasts for all retained cases and epochs.",
+      "does_not_resolve_hypothesis_ids": [
+        "floating-reassociation-meets-workload-tolerances",
+        "one-partial-per-simdgroup-is-expressible"
+      ],
+      "scope_limit": "The internal dyadic fixture is not an external Workload Contract oracle, and standalone MSL execution does not establish an analyzable Compiler primitive; both linked hypotheses remain unresolved."
+    },
+    {
+      "finding_id": "observed-two-epoch-scratch-reuse",
+      "fact_ids": ["observed-m4-hierarchical-two-epoch-scratch-reuse"],
+      "status": "reported_in_observed_scope",
+      "scope": "observed_apple_m4_fp32_rms_probe_pipeline_only",
+      "reported_outcome": "Two distinct dirty-sentinel epochs completed without retained output mismatches for every finite matrix case; this reports only those observed outputs.",
+      "does_not_resolve_hypothesis_ids": [
+        "one-partial-per-simdgroup-is-expressible"
+      ],
+      "scope_limit": "Finite matching outputs do not prove race freedom, uniform barrier participation, or static Compiler representation of ownership and scratch lifetime, so the linked expressibility hypothesis remains unresolved."
+    },
+    {
+      "finding_id": "observed-runtime-resource-gates",
+      "fact_ids": ["observed-m4-hierarchical-runtime-resource-gates"],
+      "status": "reported_in_observed_scope",
+      "scope": "observed_apple_m4_fp32_rms_probe_pipeline_only",
+      "reported_outcome": "The one bound FP32 RMS-style pipeline's 144-byte dynamic allocation and 32-through-1024-thread matrix fit its observed runtime thread and threadgroup-memory limits.",
+      "does_not_resolve_hypothesis_ids": [
+        "resource-accounting-fits-selected-pipelines",
+        "specialization-is-performance-competitive"
+      ],
+      "scope_limit": "This does not cover Layer's 256-byte design, future Compiler-created static allocation, representative deployment pipelines, occupancy, timing, or profiling, so both linked hypotheses remain unresolved."
+    }
+  ],
   "falsifiers": [
     {
       "falsifier_id": "runtime-width-not-32",
@@ -369,6 +421,7 @@
       "authority": "human_hardware_review",
       "blocking_reviews": [
         "Confirm vendor-fact interpretation, runtime width handling, resource accounting, barrier participation, scratch lifetime, and numeric scope.",
+        "Confirm the finite FP32 RMS-style probe findings remain reported outcomes in the observed scope only and leave all five proposal hypotheses unresolved.",
         "Keep implementation unauthorized until the subsequent P1-P8 principle-driven iteration accepts an analyzable compiler-evolution design."
       ]
     }
@@ -376,6 +429,7 @@
   "non_claims": [
     "This proposal is not an IR admission, Target mutation, lowering implementation, or assertion of current Schedule expressibility.",
     "This proposal does not establish Metal correctness, race freedom, numerical tolerance, performance, occupancy, calibration, Evaluation evidence, or scientific results.",
+    "The observed-scope findings report only one Apple M4 FP32 RMS-style probe pipeline; they do not cover BF16 input conversion or the Layer-style all-SIMDgroup final reducer and explicitly do not resolve any hypothesis.",
     "The 1024-thread and 32768-byte family limits are ceilings, not a launch authorization; the concrete pipeline and total allocation remain runtime and implementation gates.",
     "Passing offline validation cannot set readiness=true or replace human hardware and principle review."
   ]

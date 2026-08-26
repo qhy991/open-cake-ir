@@ -212,6 +212,18 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
         self.assertIs(summary["performance_claim_authorized"], False)
         self.assertIs(summary["compiler_change_authorized"], False)
         self.assertIs(summary["remote_source_bytes_verified"], False)
+        self.assertIs(
+            summary["engineering_observation_record_consistent"], True
+        )
+        self.assertIs(summary["retained_local_probe_reported_outcome"], True)
+        self.assertEqual(summary["retained_local_probe_case_count"], 6)
+        self.assertEqual(summary["retained_local_probe_epoch_count"], 12)
+        self.assertEqual(
+            summary["retained_local_probe_scope"],
+            "observed_apple_m4_fp32_rms_probe_pipeline_only",
+        )
+        self.assertIs(summary["hardware_review_complete"], False)
+        self.assertIs(summary["evaluation_evidence_present"], False)
         self.assertEqual(
             summary["verification_scope"],
             "offline_metadata_and_derivation_validation",
@@ -367,6 +379,315 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
                     _write(path, evidence)
 
                 self._assert_mutation_rejected(mutate, field)
+
+    def test_hierarchical_probe_source_and_external_artifact_metadata_are_bound(
+        self,
+    ) -> None:
+        def mutate_source_binding(
+            library: Path, extraction: Path, design: Path, target: Path
+        ) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["evidence"][0])
+            evidence = _read(path)
+            snapshot = evidence["hierarchical_reduction_probe_observation"][
+                "repository_snapshot"
+            ]
+            snapshot["repository_revision"] = "0" * 40
+            snapshot["worktree_clean_at_observation"] = False
+            snapshot["source_paths"][-1] = (
+                "tools/metal_hierarchical_reduction_probe/different_runner.swift"
+            )
+            _write(path, evidence)
+
+        self._assert_mutation_rejected(
+            mutate_source_binding,
+            (
+                "repository_revision",
+                "worktree_clean_at_observation",
+                "source_paths",
+            ),
+        )
+
+        def mutate_artifact_binding(
+            library: Path, extraction: Path, design: Path, target: Path
+        ) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["evidence"][0])
+            evidence = _read(path)
+            artifact = evidence["hierarchical_reduction_probe_observation"][
+                "retained_artifact"
+            ]
+            artifact["relative_path"] = (
+                "different-revision/metal-hierarchical-reduction.json"
+            )
+            artifact["reference_status"] = "verified_external_artifact"
+            artifact["offline_validator_access"] = "available"
+            _write(path, evidence)
+
+        # The validator receives no artifact root. It validates an explicitly
+        # unverified reference and never claims access to or byte identity for it.
+        self._assert_mutation_rejected(
+            mutate_artifact_binding,
+            (
+                "retained_artifact.relative_path",
+                "retained_artifact.reference_status",
+                "retained_artifact.offline_validator_access",
+            ),
+        )
+
+    def test_hierarchical_probe_no_claim_fields_cannot_grant_authority(self) -> None:
+        false_observation_fields = (
+            "raw_runner_output_retained",
+            "stable_device_identifiers_retained",
+            "external_workload_oracle_used",
+            "performance_measured",
+            "evaluation_evidence",
+            "scientific_claim_authorized",
+            "compiler_change_authorized",
+            "human_hardware_review_cleared",
+            "promotion_authorized",
+        )
+
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["evidence"][0])
+            evidence = _read(path)
+            observation = evidence["hierarchical_reduction_probe_observation"]
+            for field in false_observation_fields:
+                observation[field] = True
+            coverage = observation["normalized_output"]["coverage"]
+            coverage["layer_all_simdgroups_tested"] = True
+            coverage["bfloat_input_conversion_tested"] = True
+            _write(path, evidence)
+
+        self._assert_mutation_rejected(
+            mutate,
+            false_observation_fields
+            + ("layer_all_simdgroups_tested", "bfloat_input_conversion_tested"),
+        )
+
+    def test_hierarchical_probe_case_matrix_and_results_are_exactly_bound(
+        self,
+    ) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["evidence"][0])
+            evidence = _read(path)
+            output = evidence["hierarchical_reduction_probe_observation"][
+                "normalized_output"
+            ]
+            output["coverage"]["simdgroup_counts"][-1] = 31
+            output["coverage"]["threads_per_threadgroup"][-1] = 992
+            output["case_results"][0]["expected_owner_sums"][0] = 13.5
+            output["case_results"][1]["observed_owner_sums"][1] = -50.0
+            output["case_results"][2]["broadcast_thread_counts"][0] = 127
+            output["case_results"][3]["simdgroup_count"] = 7
+            output["aggregate"]["broadcast_consumer_check_count"] = 4031
+            output["aggregate"]["all_cases_passed"] = False
+            _write(path, evidence)
+
+        self._assert_mutation_rejected(
+            mutate,
+            (
+                "coverage.simdgroup_counts",
+                "coverage.threads_per_threadgroup",
+                "case_results[0].expected_owner_sums",
+                "case_results[1].observed_owner_sums",
+                "case_results[2].broadcast_thread_counts",
+                "case_results[3].simdgroup_count",
+                "aggregate.broadcast_consumer_check_count",
+                "aggregate.all_cases_passed",
+            ),
+        )
+
+    def test_hierarchical_probe_runtime_resource_observations_are_exactly_bound(
+        self,
+    ) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["evidence"][0])
+            evidence = _read(path)
+            output = evidence["hierarchical_reduction_probe_observation"][
+                "normalized_output"
+            ]
+            output["device"]["max_threadgroup_memory_bytes"] = 16384
+            output["pipeline"]["thread_execution_width"] = 64
+            output["pipeline"]["max_total_threads_per_threadgroup"] = 512
+            output["pipeline"]["static_threadgroup_memory_bytes"] = 16
+            output["pipeline"]["dynamic_threadgroup_memory_bytes"] = 128
+            _write(path, evidence)
+
+        self._assert_mutation_rejected(
+            mutate,
+            (
+                "device.max_threadgroup_memory_bytes",
+                "pipeline.thread_execution_width",
+                "pipeline.max_total_threads_per_threadgroup",
+                "pipeline.static_threadgroup_memory_bytes",
+                "pipeline.dynamic_threadgroup_memory_bytes",
+            ),
+        )
+
+    def test_hierarchical_probe_falsifier_outcomes_have_exact_closure_and_mapping(
+        self,
+    ) -> None:
+        manifest = _read(DESIGN / "manifest.json")
+        evidence = _read(DESIGN / str(manifest["evidence"][0]))
+        proposal = _read(DESIGN / str(manifest["proposals"][0]))
+        outcomes = evidence["hierarchical_reduction_probe_observation"][
+            "falsifier_outcomes"
+        ]
+        self.assertEqual(
+            {value["falsifier_id"] for value in outcomes},
+            {value["falsifier_id"] for value in proposal["falsifiers"]},
+        )
+
+        def remove_outcome(
+            library: Path, extraction: Path, design: Path, target: Path
+        ) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["evidence"][0])
+            evidence = _read(path)
+            evidence["hierarchical_reduction_probe_observation"][
+                "falsifier_outcomes"
+            ].pop()
+            _write(path, evidence)
+
+        self._assert_mutation_rejected(remove_outcome, "falsifier_outcomes")
+
+        def remap_outcome(
+            library: Path, extraction: Path, design: Path, target: Path
+        ) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["evidence"][0])
+            evidence = _read(path)
+            outcomes = evidence["hierarchical_reduction_probe_observation"][
+                "falsifier_outcomes"
+            ]
+            barrier = next(
+                value
+                for value in outcomes
+                if value["falsifier_id"] == "barrier-not-uniform"
+            )
+            barrier["outcome"] = "outside_probe_scope"
+            _write(path, evidence)
+
+        self._assert_mutation_rejected(
+            remap_outcome, ("falsifier_outcomes", "outcome")
+        )
+
+    def test_local_outcomes_track_the_actual_proposal_falsifier_closure(
+        self,
+    ) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["proposals"][0])
+            proposal = _read(path)
+            proposal["falsifiers"][0]["falsifier_id"] = "replacement-falsifier"
+            _write(path, proposal)
+
+        self._assert_mutation_rejected(
+            mutate,
+            ("required falsifier id closure", "cross_document_falsifier_closure"),
+        )
+
+    def test_new_hierarchical_probe_facts_cannot_widen_or_change_observation(
+        self,
+    ) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["evidence"][0])
+            evidence = _read(path)
+            facts = {value["fact_id"]: value for value in evidence["facts"]}
+            facts["observed-m4-hierarchical-width32-case-matrix"]["scope"] = (
+                "gpu_family"
+            )
+            facts["observed-m4-hierarchical-exact-owner-and-broadcast"][
+                "source_ids"
+            ] = ["local-apple-m4-metal-operator-probe-2026-08-26"]
+            _write(path, evidence)
+
+        self._assert_mutation_rejected(
+            mutate,
+            (
+                "observed-m4-hierarchical-width32-case-matrix",
+                "observed-m4-hierarchical-exact-owner-and-broadcast",
+                "source_ids",
+            ),
+        )
+
+    def test_observed_scope_findings_cannot_widen_their_exact_mappings(
+        self,
+    ) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["proposals"][0])
+            proposal = _read(path)
+            findings = {
+                value["finding_id"]: value
+                for value in proposal["observed_scope_findings"]
+            }
+            findings["observed-width32-case-matrix"]["status"] = (
+                "reported_globally"
+            )
+            findings["observed-exact-owner-and-broadcast"][
+                "fact_ids"
+            ].append("observed-m4-hierarchical-runtime-resource-gates")
+            findings["observed-two-epoch-scratch-reuse"][
+                "does_not_resolve_hypothesis_ids"
+            ].append("specialization-is-performance-competitive")
+            findings["observed-runtime-resource-gates"]["scope"] = (
+                "observed_apple_m4_all_workloads"
+            )
+            _write(path, proposal)
+
+        self._assert_mutation_rejected(
+            mutate,
+            (
+                "observed_scope_findings",
+                "status",
+                "fact_ids",
+                "does_not_resolve_hypothesis_ids",
+                "scope",
+            ),
+        )
+
+    def test_observed_scope_findings_leave_hypotheses_unresolved_and_unbound(
+        self,
+    ) -> None:
+        manifest = _read(DESIGN / "manifest.json")
+        proposal = _read(DESIGN / str(manifest["proposals"][0]))
+        self.assertTrue(proposal["hypotheses"])
+        self.assertTrue(
+            all(
+                hypothesis["status"] == "unresolved"
+                and hypothesis["result_binding"] is None
+                for hypothesis in proposal["hypotheses"]
+            )
+        )
+
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            manifest = _read(design / "manifest.json")
+            path = design / str(manifest["proposals"][0])
+            proposal = _read(path)
+            proposal["hypotheses"][0]["status"] = "reported_in_observed_scope"
+            proposal["hypotheses"][1]["result_binding"] = (
+                "local-apple-m4-hierarchical-reduction-probe-2026-08-26"
+            )
+            _write(path, proposal)
+
+        self._assert_mutation_rejected(mutate, ("status", "result_binding"))
 
     def test_hardware_evidence_does_not_claim_the_proposal_scope(self) -> None:
         def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:

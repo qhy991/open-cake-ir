@@ -11,17 +11,19 @@ principle gate and does not implement the design.
 
 - `manifest.json` admits one candidate closure from `abstraction_extraction/`
   and lists the complete Stage-3 evidence and proposal closure.
-- `evidence/*.json` separates vendor-documented facts, a sanitized local
-  engineering observation, assumptions, and non-evidentiary repository
+- `evidence/*.json` separates vendor-documented facts, sanitized local
+  engineering observations, assumptions, and non-evidentiary repository
   context. The bound Target snapshot is context only; it is not treated as
-  proof of Apple hardware behaviour.
+  proof of Apple hardware behaviour. The newer hierarchical-reduction
+  observation is retained separately from the earlier graph-pipeline metadata
+  probe so their scopes cannot be conflated.
 - `proposals/*.json` separates mapping decisions from facts and assumptions,
   exposes resource arithmetic and synchronization commitments, records every
   unresolved hypothesis with a falsifier and retained-result contract, and
   names conditions that invalidate this particular design.
 - `schema.json` is closed: every object sets `additionalProperties: false`.
 
-The only digest introduced for the Stage-2-to-Stage-3 handoff is
+The only digest used for the Stage-2-to-Stage-3 candidate handoff is
 `candidate_closure_sha256`. It binds the selected candidate and exactly its two
 observations. Parse the three input files as JSON and form this object, using
 the repository-relative observation paths as keys:
@@ -52,9 +54,45 @@ names `tools/probe_metal_operators.py`; the implementation-context binding
 names `compiler/targets/apple_gpu_family9.json` and
 `src/open_cake_ir/compiler/emit_metal.py`. This revision identifies only the
 historical repository inputs used for the observation and context inspection.
-Raw probe output was not retained, so the binding does not preserve device
-state or make the observation automatically reproducible. It is not a new
-per-file hash inventory or hardware-evidence claim.
+Raw output from that earlier probe was not retained, so the binding does not
+preserve device state or make the observation automatically reproducible. It
+is not a per-file hash inventory or hardware-evidence claim.
+
+## Local FP32 RMS-style semantics probe
+
+A later standalone Metal probe exercises the common two-level choreography and
+the RMS-style single-owner path on the local Apple M4. Its six dispatches cover
+1, 2, 4, 8, 16, and 32 SIMDgroups at an observed width of 32, with two distinct
+FP32 dyadic-fixture epochs per dispatch. The normalized record retains the
+expected and observed owner sums, broadcast-consumer counts, dirty-sentinel
+reuse checks, and runtime pipeline resource fields. All finite retained cases
+passed their internal exact-FP32-bits fixture rule.
+
+This scope is deliberately narrow: it is FP32 and RMS-style only. It does not
+exercise BF16-to-FP32 conversion, the Layer-style all-SIMDgroup final reducer,
+an external Workload Contract oracle, framework correctness, timing, profiling,
+or the current Compiler lowering. Matching finite outputs do not prove uniform
+barrier participation or race freedom. The evidence therefore records a local
+outcome for every existing proposal falsifier, including out-of-scope and
+still-blocking outcomes, without resolving any hypothesis.
+
+The source role and artifact role are separate:
+
+- Git commit `f858612c7ee695b57d72115c76723c7bacc22a9b` binds the complete
+  tracked source closure for the Python driver, MSL kernel, and Swift runner.
+  There are no per-file hashes.
+- The generated probe artifact remains outside the checkout under a
+  caller-managed engineering-observation root, at relative path
+  `f858612c7ee695b57d72115c76723c7bacc22a9b/metal-hierarchical-reduction.json`.
+  This is an unverified external reference: the offline validator has no
+  artifact root and neither locates nor reads those bytes.
+
+The source-controlled evidence document is the only normalized record reviewed
+by this stage. Its relationship to the caller-managed external artifact is not
+byte-verified here. Raw Swift-runner stdout is not retained, and no stable
+device identifier is recorded. The commit does not bind device state. Neither
+the normalized record nor the external reference grants Evaluation, scientific,
+performance, Compiler-change, human-review, or promotion authority.
 
 ## Proposed mapping
 
@@ -96,10 +134,12 @@ result in thread-local state. BF16 contributions are converted to FP32 before
 ## Validation is not readiness
 
 The offline validator can establish closed artifact membership, JSON shape,
-candidate identity, source-reference closure, resource arithmetic, and fixed
-review-boundary fields. It does not fetch the web, interpret vendor prose,
-compile or run Metal, prove barrier safety, check an external oracle, or measure
-performance.
+candidate identity, source-reference closure, normalized local-observation
+shape, falsifier-outcome coverage, resource arithmetic, and fixed
+review-boundary fields. The external generated artifact is intentionally not a
+checkout member. Validation does not fetch the web, interpret vendor prose,
+compile or run Metal, reproduce device state, prove barrier safety, check an
+external workload oracle, or measure performance.
 
 Accordingly the manifest and proposal remain:
 
@@ -121,5 +161,5 @@ finite Metal lowering has no threadgroup allocation or barrier support, so this
 directory neither modifies it nor claims that it can materialize the proposal.
 
 No correctness, performance, calibration, occupancy, Evaluation, or scientific
-claim is made here. Raw local probe output and device identifiers are not
-retained.
+claim is made here. Raw runner output and stable device identifiers are not
+retained in this Stage-3 closure.

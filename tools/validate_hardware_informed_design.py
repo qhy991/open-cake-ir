@@ -36,6 +36,17 @@ _SCHEMA_DEFINITION_NAMES = frozenset(
         "local_probe_observation",
         "local_probe_repository_snapshot",
         "pipeline_observation",
+        "hierarchical_reduction_probe_observation",
+        "hierarchical_probe_repository_snapshot",
+        "hierarchical_probe_retained_artifact",
+        "hierarchical_probe_normalized_output",
+        "hierarchical_probe_device",
+        "hierarchical_probe_pipeline",
+        "hierarchical_probe_coverage",
+        "hierarchical_probe_oracle",
+        "hierarchical_probe_case_result",
+        "hierarchical_probe_aggregate",
+        "local_falsifier_outcome",
         "non_evidentiary_context",
         "non_evidentiary_repository_snapshot",
         "proposal",
@@ -56,6 +67,7 @@ _SCHEMA_DEFINITION_NAMES = frozenset(
         "decision",
         "hypothesis",
         "hypothesis_falsifier",
+        "observed_scope_finding",
         "falsifier",
         "gate_separation",
         "validation_gate",
@@ -117,6 +129,7 @@ _EVIDENCE_KEYS = frozenset(
         "sources",
         "facts",
         "local_probe_observation",
+        "hierarchical_reduction_probe_observation",
         "non_evidentiary_context",
         "assumptions",
         "gate_separation",
@@ -167,6 +180,107 @@ _LOCAL_PROBE_REPOSITORY_SNAPSHOT_KEYS = frozenset(
 _PIPELINE_KEYS = frozenset(
     {"kind", "thread_execution_width", "max_total_threads_per_threadgroup"}
 )
+_HIERARCHICAL_PROBE_KEYS = frozenset(
+    {
+        "observation_id",
+        "observed_at",
+        "repository_snapshot",
+        "retained_artifact",
+        "probe_scope",
+        "normalized_output",
+        "falsifier_outcomes",
+        "normalized_probe_output_retained",
+        "raw_runner_output_retained",
+        "stable_device_identifiers_retained",
+        "external_workload_oracle_used",
+        "performance_measured",
+        "evaluation_evidence",
+        "scientific_claim_authorized",
+        "compiler_change_authorized",
+        "human_hardware_review_cleared",
+        "promotion_authorized",
+        "scope",
+    }
+)
+_HIERARCHICAL_PROBE_REPOSITORY_SNAPSHOT_KEYS = frozenset(
+    {
+        "repository_revision",
+        "worktree_clean_at_observation",
+        "source_paths",
+        "binding_scope",
+    }
+)
+_HIERARCHICAL_PROBE_RETAINED_ARTIFACT_KEYS = frozenset(
+    {
+        "storage_scope",
+        "relative_path",
+        "artifact_kind",
+        "reference_status",
+        "offline_validator_access",
+    }
+)
+_HIERARCHICAL_PROBE_NORMALIZED_OUTPUT_KEYS = frozenset(
+    {"status", "device", "pipeline", "coverage", "oracle", "case_results", "aggregate"}
+)
+_HIERARCHICAL_PROBE_DEVICE_KEYS = frozenset(
+    {
+        "device_class",
+        "supports_apple9_or_newer",
+        "max_threadgroup_memory_bytes",
+    }
+)
+_HIERARCHICAL_PROBE_PIPELINE_KEYS = frozenset(
+    {
+        "entry_point",
+        "thread_execution_width",
+        "max_total_threads_per_threadgroup",
+        "static_threadgroup_memory_bytes",
+        "dynamic_threadgroup_memory_bytes",
+    }
+)
+_HIERARCHICAL_PROBE_COVERAGE_KEYS = frozenset(
+    {
+        "simdgroup_counts",
+        "threads_per_threadgroup",
+        "epochs_per_dispatch",
+        "input_patterns",
+        "dirty_sentinels",
+        "single_owner_final_scalar_broadcast",
+        "scratch_reused_within_dispatch",
+        "uniform_reuse_barrier",
+        "layer_all_simdgroups_tested",
+        "bfloat_input_conversion_tested",
+    }
+)
+_HIERARCHICAL_PROBE_ORACLE_KEYS = frozenset({"dtype", "tolerance_rule", "kind"})
+_HIERARCHICAL_PROBE_CASE_RESULT_KEYS = frozenset(
+    {
+        "simdgroup_count",
+        "threads_per_threadgroup",
+        "expected_owner_sums",
+        "observed_owner_sums",
+        "broadcast_thread_counts",
+        "dirty_sentinel_preserved",
+        "owner_mismatch_count",
+        "broadcast_mismatch_count",
+        "dirty_snapshot_mismatch_count",
+        "command_buffer_status",
+        "passed",
+    }
+)
+_HIERARCHICAL_PROBE_AGGREGATE_KEYS = frozenset(
+    {
+        "case_count",
+        "epoch_result_count",
+        "broadcast_consumer_check_count",
+        "owner_mismatch_count",
+        "broadcast_mismatch_count",
+        "dirty_snapshot_mismatch_count",
+        "all_command_buffers_completed",
+        "all_cases_passed",
+    }
+)
+_LOCAL_FALSIFIER_OUTCOME_KEYS = frozenset({"falsifier_id", "outcome", "basis"})
 _TARGET_CONTEXT_KEYS = frozenset(
     {
         "role",
@@ -198,6 +312,7 @@ _PROPOSAL_KEYS = frozenset(
         "decisions",
         "assumptions",
         "hypotheses",
+        "observed_scope_findings",
         "falsifiers",
         "open_questions",
         "gate_separation",
@@ -314,6 +429,17 @@ _HYPOTHESIS_KEYS = frozenset(
 _HYPOTHESIS_FALSIFIER_KEYS = frozenset(
     {"method", "observable", "reject_when", "retained_result_contract"}
 )
+_OBSERVED_SCOPE_FINDING_KEYS = frozenset(
+    {
+        "finding_id",
+        "fact_ids",
+        "status",
+        "scope",
+        "reported_outcome",
+        "does_not_resolve_hypothesis_ids",
+        "scope_limit",
+    }
+)
 _FALSIFIER_KEYS = frozenset({"falsifier_id", "condition", "required_action"})
 _GATE_KEYS = frozenset({"validation", "readiness"})
 _VALIDATION_GATE_KEYS = frozenset({"kind", "checks", "can_set_readiness"})
@@ -334,6 +460,23 @@ _SCHEMA_OBJECT_KEYS_BY_DEFINITION = {
     "local_probe_observation": _LOCAL_PROBE_KEYS,
     "local_probe_repository_snapshot": _LOCAL_PROBE_REPOSITORY_SNAPSHOT_KEYS,
     "pipeline_observation": _PIPELINE_KEYS,
+    "hierarchical_reduction_probe_observation": _HIERARCHICAL_PROBE_KEYS,
+    "hierarchical_probe_repository_snapshot": (
+        _HIERARCHICAL_PROBE_REPOSITORY_SNAPSHOT_KEYS
+    ),
+    "hierarchical_probe_retained_artifact": (
+        _HIERARCHICAL_PROBE_RETAINED_ARTIFACT_KEYS
+    ),
+    "hierarchical_probe_normalized_output": (
+        _HIERARCHICAL_PROBE_NORMALIZED_OUTPUT_KEYS
+    ),
+    "hierarchical_probe_device": _HIERARCHICAL_PROBE_DEVICE_KEYS,
+    "hierarchical_probe_pipeline": _HIERARCHICAL_PROBE_PIPELINE_KEYS,
+    "hierarchical_probe_coverage": _HIERARCHICAL_PROBE_COVERAGE_KEYS,
+    "hierarchical_probe_oracle": _HIERARCHICAL_PROBE_ORACLE_KEYS,
+    "hierarchical_probe_case_result": _HIERARCHICAL_PROBE_CASE_RESULT_KEYS,
+    "hierarchical_probe_aggregate": _HIERARCHICAL_PROBE_AGGREGATE_KEYS,
+    "local_falsifier_outcome": _LOCAL_FALSIFIER_OUTCOME_KEYS,
     "non_evidentiary_context": _TARGET_CONTEXT_KEYS,
     "non_evidentiary_repository_snapshot": (_NON_EVIDENTIARY_REPOSITORY_SNAPSHOT_KEYS),
     "proposal": _PROPOSAL_KEYS,
@@ -354,6 +497,7 @@ _SCHEMA_OBJECT_KEYS_BY_DEFINITION = {
     "decision": _DECISION_KEYS,
     "hypothesis": _HYPOTHESIS_KEYS,
     "hypothesis_falsifier": _HYPOTHESIS_FALSIFIER_KEYS,
+    "observed_scope_finding": _OBSERVED_SCOPE_FINDING_KEYS,
     "falsifier": _FALSIFIER_KEYS,
     "gate_separation": _GATE_KEYS,
     "validation_gate": _VALIDATION_GATE_KEYS,
@@ -371,6 +515,80 @@ _DISPOSITION = "await_human_hardware_review"
 _NEXT_GATE = "principle_driven_iteration"
 _GIT_PARENT_REVISION = "2238610a4e8923330d73d125e79fd374fc7d2397"
 _PROBE_PATH = "tools/probe_metal_operators.py"
+_LOCAL_PROBE_OBSERVATION_ID = "local-apple-m4-metal-operator-probe-2026-08-26"
+_HIERARCHICAL_PROBE_OBSERVATION_ID = (
+    "local-apple-m4-hierarchical-reduction-probe-2026-08-26"
+)
+_HIERARCHICAL_PROBE_REPOSITORY_REVISION = (
+    "f858612c7ee695b57d72115c76723c7bacc22a9b"
+)
+_HIERARCHICAL_PROBE_SOURCE_PATHS = (
+    "tools/probe_metal_hierarchical_reduction.py",
+    "tools/metal_hierarchical_reduction_probe/hierarchical_reduction.metal",
+    "tools/metal_hierarchical_reduction_probe/run_hierarchical_reduction.swift",
+)
+_HIERARCHICAL_PROBE_ARTIFACT_RELATIVE_PATH = (
+    "f858612c7ee695b57d72115c76723c7bacc22a9b/"
+    "metal-hierarchical-reduction.json"
+)
+_HIERARCHICAL_PROBE_GROUP_COUNTS = (1, 2, 4, 8, 16, 32)
+_HIERARCHICAL_PROBE_THREAD_COUNTS = (32, 64, 128, 256, 512, 1024)
+_HIERARCHICAL_PROBE_EXPECTED_SUMS = (
+    (13.375, -25.25),
+    (31.25, -50.25),
+    (62.625, -99.5),
+    (125.75, -195.0),
+    (253.5, -387.75),
+    (510.125, -769.25),
+)
+_HIERARCHICAL_PROBE_FACT_IDS = frozenset(
+    {
+        "observed-m4-hierarchical-exact-owner-and-broadcast",
+        "observed-m4-hierarchical-runtime-resource-gates",
+        "observed-m4-hierarchical-two-epoch-scratch-reuse",
+        "observed-m4-hierarchical-width32-case-matrix",
+    }
+)
+_HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES = {
+    "runtime-width-not-32": "not_triggered_in_observed_cases",
+    "pipeline-thread-limit-exceeded": "not_triggered_in_observed_cases",
+    "partial-final-simdgroup-outside-v1": (
+        "precondition_satisfied_in_observed_cases"
+    ),
+    "partial-set-exceeds-final-simdgroup": "not_triggered_in_observed_cases",
+    "threadgroup-memory-budget-exceeded": "not_triggered_in_observed_cases",
+    "barrier-not-uniform": "requires_source_review",
+    "scratch-read-before-publication": "not_observed_in_tested_outputs",
+    "scratch-reuse-race": "not_observed_in_tested_outputs",
+    "bfloat-simd-sum-input": "outside_probe_scope",
+    "ambiguous-final-reducer-owner": "not_triggered_for_single_owner_probe_only",
+    "bitwise-order-required": "outside_probe_scope",
+    "current-lowering-capability-missing": "condition_still_present",
+}
+_OBSERVED_SCOPE_FINDINGS = {
+    "observed-width32-case-matrix": (
+        "observed-m4-hierarchical-width32-case-matrix",
+        ("width32-specialization-covers-intended-devices",),
+    ),
+    "observed-exact-owner-and-broadcast": (
+        "observed-m4-hierarchical-exact-owner-and-broadcast",
+        (
+            "floating-reassociation-meets-workload-tolerances",
+            "one-partial-per-simdgroup-is-expressible",
+        ),
+    ),
+    "observed-two-epoch-scratch-reuse": (
+        "observed-m4-hierarchical-two-epoch-scratch-reuse",
+        ("one-partial-per-simdgroup-is-expressible",),
+    ),
+    "observed-runtime-resource-gates": (
+        "observed-m4-hierarchical-runtime-resource-gates",
+        (
+            "resource-accounting-fits-selected-pipelines",
+            "specialization-is-performance-competitive",
+        ),
+    ),
+}
 _TARGET_PATH = "compiler/targets/apple_gpu_family9.json"
 _LOWERING_PATH = "src/open_cake_ir/compiler/emit_metal.py"
 _CANDIDATE_ID = "hierarchical-simdgroup-threadgroup-reduction"
@@ -457,6 +675,15 @@ class HardwareInformedDesignSummary:
     performance_claim_authorized: bool = False
     compiler_change_authorized: bool = False
     remote_source_bytes_verified: bool = False
+    engineering_observation_record_consistent: bool = True
+    retained_local_probe_reported_outcome: bool = True
+    retained_local_probe_case_count: int = 6
+    retained_local_probe_epoch_count: int = 12
+    retained_local_probe_scope: str = (
+        "observed_apple_m4_fp32_rms_probe_pipeline_only"
+    )
+    hardware_review_complete: bool = False
+    evaluation_evidence_present: bool = False
 
     def report(self) -> dict[str, object]:
         return {"valid": True, **asdict(self)}
@@ -1007,6 +1234,424 @@ def _source_ids(
     return values
 
 
+def _hierarchical_probe_observation(
+    validator: _Validator, value: object, path: str
+) -> None:
+    observation = validator.exact(value, path, _HIERARCHICAL_PROBE_KEYS)
+    if observation is None:
+        return
+
+    observation_literals = {
+        "observation_id": _HIERARCHICAL_PROBE_OBSERVATION_ID,
+        "observed_at": "2026-08-26",
+        "probe_scope": "fp32_rms_style_single_owner_hierarchical_reduction_only",
+        "normalized_probe_output_retained": True,
+        "raw_runner_output_retained": False,
+        "stable_device_identifiers_retained": False,
+        "external_workload_oracle_used": False,
+        "performance_measured": False,
+        "evaluation_evidence": False,
+        "scientific_claim_authorized": False,
+        "compiler_change_authorized": False,
+        "human_hardware_review_cleared": False,
+        "promotion_authorized": False,
+        "scope": "local_engineering_observation_only",
+    }
+    for field, expected in observation_literals.items():
+        validator.literal(observation.get(field), f"{path}.{field}", expected)
+
+    snapshot = validator.exact(
+        observation.get("repository_snapshot"),
+        f"{path}.repository_snapshot",
+        _HIERARCHICAL_PROBE_REPOSITORY_SNAPSHOT_KEYS,
+    )
+    if snapshot is not None:
+        validator.literal(
+            snapshot.get("repository_revision"),
+            f"{path}.repository_snapshot.repository_revision",
+            _HIERARCHICAL_PROBE_REPOSITORY_REVISION,
+        )
+        validator.literal(
+            snapshot.get("worktree_clean_at_observation"),
+            f"{path}.repository_snapshot.worktree_clean_at_observation",
+            True,
+        )
+        source_paths = validator.strings(
+            snapshot.get("source_paths"),
+            f"{path}.repository_snapshot.source_paths",
+            nonempty=True,
+        )
+        if tuple(source_paths) != _HIERARCHICAL_PROBE_SOURCE_PATHS:
+            validator.error(
+                f"{path}.repository_snapshot.source_paths",
+                "must equal the complete ordered tracked probe source closure",
+            )
+        for index, source_path in enumerate(source_paths):
+            validator.safe_path(
+                source_path, f"{path}.repository_snapshot.source_paths[{index}]"
+            )
+        validator.literal(
+            snapshot.get("binding_scope"),
+            f"{path}.repository_snapshot.binding_scope",
+            "complete_tracked_probe_source_closure",
+        )
+
+    artifact = validator.exact(
+        observation.get("retained_artifact"),
+        f"{path}.retained_artifact",
+        _HIERARCHICAL_PROBE_RETAINED_ARTIFACT_KEYS,
+    )
+    if artifact is not None:
+        artifact_literals = {
+            "storage_scope": "external_generated_artifact_outside_checkout",
+            "relative_path": _HIERARCHICAL_PROBE_ARTIFACT_RELATIVE_PATH,
+            "artifact_kind": "open_cake_metal_hierarchical_reduction_probe_v1",
+            "reference_status": "unverified_external_artifact_reference",
+            "offline_validator_access": "not_available",
+        }
+        for field, expected in artifact_literals.items():
+            validator.literal(
+                artifact.get(field), f"{path}.retained_artifact.{field}", expected
+            )
+        validator.safe_path(
+            artifact.get("relative_path"), f"{path}.retained_artifact.relative_path"
+        )
+        # This caller-root-relative path is an unverified convenience
+        # reference. The offline stage validator has no artifact root and does
+        # not locate, read, or establish byte identity for external results.
+
+    normalized = validator.exact(
+        observation.get("normalized_output"),
+        f"{path}.normalized_output",
+        _HIERARCHICAL_PROBE_NORMALIZED_OUTPUT_KEYS,
+    )
+    if normalized is not None:
+        validator.literal(
+            normalized.get("status"), f"{path}.normalized_output.status", "passed"
+        )
+
+        device = validator.exact(
+            normalized.get("device"),
+            f"{path}.normalized_output.device",
+            _HIERARCHICAL_PROBE_DEVICE_KEYS,
+        )
+        if device is not None:
+            device_literals = {
+                "device_class": "Apple M4",
+                "supports_apple9_or_newer": True,
+                "max_threadgroup_memory_bytes": 32768,
+            }
+            for field, expected in device_literals.items():
+                validator.literal(
+                    device.get(field),
+                    f"{path}.normalized_output.device.{field}",
+                    expected,
+                )
+
+        pipeline = validator.exact(
+            normalized.get("pipeline"),
+            f"{path}.normalized_output.pipeline",
+            _HIERARCHICAL_PROBE_PIPELINE_KEYS,
+        )
+        if pipeline is not None:
+            pipeline_literals = {
+                "entry_point": "hierarchical_reduction_w32_probe",
+                "thread_execution_width": 32,
+                "max_total_threads_per_threadgroup": 1024,
+                "static_threadgroup_memory_bytes": 0,
+                "dynamic_threadgroup_memory_bytes": 144,
+            }
+            for field, expected in pipeline_literals.items():
+                validator.literal(
+                    pipeline.get(field),
+                    f"{path}.normalized_output.pipeline.{field}",
+                    expected,
+                )
+
+        coverage = validator.exact(
+            normalized.get("coverage"),
+            f"{path}.normalized_output.coverage",
+            _HIERARCHICAL_PROBE_COVERAGE_KEYS,
+        )
+        if coverage is not None:
+            coverage_literals = {
+                "simdgroup_counts": list(_HIERARCHICAL_PROBE_GROUP_COUNTS),
+                "threads_per_threadgroup": list(_HIERARCHICAL_PROBE_THREAD_COUNTS),
+                "epochs_per_dispatch": 2,
+                "input_patterns": [
+                    "((thread_mod_13)-6)*0.125+0.5",
+                    "((thread_mod_11)-5)*0.25-0.75",
+                ],
+                "dirty_sentinels": [-12345.25, 9876.5],
+                "single_owner_final_scalar_broadcast": True,
+                "scratch_reused_within_dispatch": True,
+                "uniform_reuse_barrier": "threadgroup_barrier(mem_threadgroup)",
+                "layer_all_simdgroups_tested": False,
+                "bfloat_input_conversion_tested": False,
+            }
+            for field, expected in coverage_literals.items():
+                validator.literal(
+                    coverage.get(field),
+                    f"{path}.normalized_output.coverage.{field}",
+                    expected,
+                )
+
+        oracle = validator.exact(
+            normalized.get("oracle"),
+            f"{path}.normalized_output.oracle",
+            _HIERARCHICAL_PROBE_ORACLE_KEYS,
+        )
+        if oracle is not None:
+            oracle_literals = {
+                "dtype": "float32",
+                "tolerance_rule": "exact_fp32_bits_for_dyadic_fixture",
+                "kind": "internal_finite_probe_oracle_not_workload_oracle",
+            }
+            for field, expected in oracle_literals.items():
+                validator.literal(
+                    oracle.get(field),
+                    f"{path}.normalized_output.oracle.{field}",
+                    expected,
+                )
+
+        case_results = normalized.get("case_results")
+        parsed_cases: list[dict[str, object]] = []
+        if not isinstance(case_results, list):
+            validator.error(
+                f"{path}.normalized_output.case_results", "must be an array"
+            )
+        else:
+            if len(case_results) != len(_HIERARCHICAL_PROBE_GROUP_COUNTS):
+                validator.error(
+                    f"{path}.normalized_output.case_results",
+                    "must contain exactly 6 ordered SIMDgroup-count cases",
+                )
+            for index, case_value in enumerate(case_results):
+                case_path = f"{path}.normalized_output.case_results[{index}]"
+                case = validator.exact(
+                    case_value, case_path, _HIERARCHICAL_PROBE_CASE_RESULT_KEYS
+                )
+                if case is None:
+                    continue
+                parsed_cases.append(case)
+                if index >= len(_HIERARCHICAL_PROBE_GROUP_COUNTS):
+                    continue
+                groups = _HIERARCHICAL_PROBE_GROUP_COUNTS[index]
+                threads = _HIERARCHICAL_PROBE_THREAD_COUNTS[index]
+                expected_sums = [
+                    sum(
+                        ((thread % 13) - 6) * 0.125 + 0.5
+                        for thread in range(threads)
+                    ),
+                    sum(
+                        ((thread % 11) - 5) * 0.25 - 0.75
+                        for thread in range(threads)
+                    ),
+                ]
+                if tuple(expected_sums) != _HIERARCHICAL_PROBE_EXPECTED_SUMS[index]:
+                    validator.error(
+                        case_path,
+                        "validator's independently derived finite-oracle sums differ "
+                        "from its closed expected-sum contract",
+                    )
+                case_literals = {
+                    "simdgroup_count": groups,
+                    "threads_per_threadgroup": threads,
+                    "expected_owner_sums": expected_sums,
+                    "observed_owner_sums": expected_sums,
+                    "broadcast_thread_counts": [threads, threads],
+                    "dirty_sentinel_preserved": [True, True],
+                    "owner_mismatch_count": 0,
+                    "broadcast_mismatch_count": 0,
+                    "dirty_snapshot_mismatch_count": 0,
+                    "command_buffer_status": "completed",
+                    "passed": True,
+                }
+                for field, expected in case_literals.items():
+                    validator.literal(
+                        case.get(field), f"{case_path}.{field}", expected
+                    )
+
+        aggregate = validator.exact(
+            normalized.get("aggregate"),
+            f"{path}.normalized_output.aggregate",
+            _HIERARCHICAL_PROBE_AGGREGATE_KEYS,
+        )
+        if aggregate is not None:
+            broadcast_checks = 2 * sum(_HIERARCHICAL_PROBE_THREAD_COUNTS)
+            aggregate_literals = {
+                "case_count": len(_HIERARCHICAL_PROBE_GROUP_COUNTS),
+                "epoch_result_count": 2 * len(_HIERARCHICAL_PROBE_GROUP_COUNTS),
+                "broadcast_consumer_check_count": broadcast_checks,
+                "owner_mismatch_count": 0,
+                "broadcast_mismatch_count": 0,
+                "dirty_snapshot_mismatch_count": 0,
+                "all_command_buffers_completed": True,
+                "all_cases_passed": True,
+            }
+            for field, expected in aggregate_literals.items():
+                validator.literal(
+                    aggregate.get(field),
+                    f"{path}.normalized_output.aggregate.{field}",
+                    expected,
+                )
+            if len(parsed_cases) == len(_HIERARCHICAL_PROBE_GROUP_COUNTS):
+                expected_sum_lists = [
+                    item.get("expected_owner_sums") for item in parsed_cases
+                ]
+                broadcast_count_lists = [
+                    item.get("broadcast_thread_counts") for item in parsed_cases
+                ]
+                mismatch_fields = (
+                    "owner_mismatch_count",
+                    "broadcast_mismatch_count",
+                    "dirty_snapshot_mismatch_count",
+                )
+                if all(isinstance(item, list) for item in expected_sum_lists) and all(
+                    isinstance(item, list) for item in broadcast_count_lists
+                ):
+                    derived_aggregate: dict[str, object] = {
+                        "case_count": len(parsed_cases),
+                        "epoch_result_count": sum(
+                            len(cast(list[object], item))
+                            for item in expected_sum_lists
+                        ),
+                        "broadcast_consumer_check_count": sum(
+                            sum(cast(list[int], item))
+                            for item in broadcast_count_lists
+                            if all(
+                                isinstance(count, int)
+                                and not isinstance(count, bool)
+                                for count in cast(list[object], item)
+                            )
+                        ),
+                        "all_command_buffers_completed": all(
+                            item.get("command_buffer_status") == "completed"
+                            for item in parsed_cases
+                        ),
+                        "all_cases_passed": all(
+                            item.get("passed") is True for item in parsed_cases
+                        ),
+                    }
+                    for field in mismatch_fields:
+                        values = [item.get(field) for item in parsed_cases]
+                        if all(
+                            isinstance(item, int) and not isinstance(item, bool)
+                            for item in values
+                        ):
+                            derived_aggregate[field] = sum(cast(list[int], values))
+                    for field, expected in derived_aggregate.items():
+                        validator.literal(
+                            aggregate.get(field),
+                            f"{path}.normalized_output.aggregate.{field}",
+                            expected,
+                        )
+
+        if pipeline is not None and device is not None:
+            width = pipeline.get("thread_execution_width")
+            pipeline_limit = pipeline.get("max_total_threads_per_threadgroup")
+            static_bytes = pipeline.get("static_threadgroup_memory_bytes")
+            dynamic_bytes = pipeline.get("dynamic_threadgroup_memory_bytes")
+            device_limit = device.get("max_threadgroup_memory_bytes")
+            if isinstance(width, int) and not isinstance(width, bool) and width > 0:
+                for index, (groups, threads) in enumerate(
+                    zip(
+                        _HIERARCHICAL_PROBE_GROUP_COUNTS,
+                        _HIERARCHICAL_PROBE_THREAD_COUNTS,
+                        strict=True,
+                    )
+                ):
+                    if groups * width != threads:
+                        validator.error(
+                            f"{path}.normalized_output.case_results[{index}]."
+                            "threads_per_threadgroup",
+                            "does not derive as simdgroup_count * pipeline thread_execution_width",
+                        )
+            if (
+                isinstance(pipeline_limit, int)
+                and not isinstance(pipeline_limit, bool)
+                and max(_HIERARCHICAL_PROBE_THREAD_COUNTS) > pipeline_limit
+            ):
+                validator.error(
+                    f"{path}.normalized_output.pipeline.max_total_threads_per_threadgroup",
+                    "does not admit the complete observed thread-count matrix",
+                )
+            if all(
+                isinstance(number, int) and not isinstance(number, bool)
+                for number in (static_bytes, dynamic_bytes, device_limit)
+            ):
+                assert isinstance(static_bytes, int)
+                assert isinstance(dynamic_bytes, int)
+                assert isinstance(device_limit, int)
+                if static_bytes + dynamic_bytes > device_limit:
+                    validator.error(
+                        f"{path}.normalized_output.pipeline.dynamic_threadgroup_memory_bytes",
+                        "static-plus-dynamic threadgroup memory exceeds the observed device limit",
+                    )
+
+    outcomes_value = observation.get("falsifier_outcomes")
+    observed_outcome_ids: list[str] = []
+    if not isinstance(outcomes_value, list):
+        validator.error(f"{path}.falsifier_outcomes", "must be an array")
+    else:
+        if len(outcomes_value) != len(_HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES):
+            validator.error(
+                f"{path}.falsifier_outcomes",
+                "must contain exactly 12 local falsifier outcomes",
+            )
+        for index, outcome_value in enumerate(outcomes_value):
+            outcome_path = f"{path}.falsifier_outcomes[{index}]"
+            outcome = validator.exact(
+                outcome_value, outcome_path, _LOCAL_FALSIFIER_OUTCOME_KEYS
+            )
+            if outcome is None:
+                continue
+            falsifier_id = validator.string(
+                outcome.get("falsifier_id"), f"{outcome_path}.falsifier_id", _ID
+            )
+            if falsifier_id is not None:
+                observed_outcome_ids.append(falsifier_id)
+                expected_outcome = _HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES.get(
+                    falsifier_id
+                )
+                if expected_outcome is None:
+                    validator.error(
+                        f"{outcome_path}.falsifier_id",
+                        "does not name a proposal falsifier in the local outcome contract",
+                    )
+                else:
+                    validator.literal(
+                        outcome.get("outcome"),
+                        f"{outcome_path}.outcome",
+                        expected_outcome,
+                    )
+            validator.string(outcome.get("basis"), f"{outcome_path}.basis")
+        if len(set(observed_outcome_ids)) != len(observed_outcome_ids):
+            validator.error(
+                f"{path}.falsifier_outcomes", "falsifier outcome IDs must be unique"
+            )
+        if set(observed_outcome_ids) != set(_HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES):
+            missing = sorted(
+                set(_HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES)
+                - set(observed_outcome_ids)
+            )
+            unexpected = sorted(
+                set(observed_outcome_ids)
+                - set(_HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES)
+            )
+            details: list[str] = []
+            if missing:
+                details.append(f"missing: {', '.join(missing)}")
+            if unexpected:
+                details.append(f"unexpected: {', '.join(unexpected)}")
+            validator.error(
+                f"{path}.falsifier_outcomes",
+                "local falsifier outcome closure differs ("
+                + "; ".join(details)
+                + ")",
+            )
+
+
 def _evidence_document(
     validator: _Validator,
     document: dict[str, object],
@@ -1068,13 +1713,17 @@ def _evidence_document(
                 f"{relative}.sources",
                 "pinned PDF identity closure differs (" + "; ".join(details) + ")",
             )
-    local_observation_id = "local-apple-m4-metal-operator-probe-2026-08-26"
     vendor_sources = set(source_ids)
-    known_sources = vendor_sources | {local_observation_id}
+    local_observation_ids = {
+        _LOCAL_PROBE_OBSERVATION_ID,
+        _HIERARCHICAL_PROBE_OBSERVATION_ID,
+    }
+    known_sources = vendor_sources | local_observation_ids
 
     facts_value = document.get("facts")
     facts_by_id: dict[str, dict[str, object]] = {}
     referenced_sources: set[str] = set()
+    hierarchical_probe_fact_ids: set[str] = set()
     if not isinstance(facts_value, list):
         validator.error(f"{relative}.facts", "must be an array")
     else:
@@ -1117,11 +1766,22 @@ def _evidence_document(
                         f"{path}.scope",
                         f"local fact {fact_id!r} cannot be promoted from an observed device or pipeline to a GPU-family or language-semantics scope",
                     )
-                if fact_source_ids != [local_observation_id]:
+                expected_local_source = (
+                    _HIERARCHICAL_PROBE_OBSERVATION_ID
+                    if fact_id in _HIERARCHICAL_PROBE_FACT_IDS
+                    else _LOCAL_PROBE_OBSERVATION_ID
+                )
+                if fact_source_ids != [expected_local_source]:
                     validator.error(
                         f"{path}.source_ids",
-                        "a local engineering fact must reference only its local probe observation",
+                        "a local engineering fact must reference only its exact "
+                        "local probe observation",
                     )
+                if (
+                    fact_id is not None
+                    and fact_source_ids == [_HIERARCHICAL_PROBE_OBSERVATION_ID]
+                ):
+                    hierarchical_probe_fact_ids.add(fact_id)
             elif authority == "apple_vendor_documentation":
                 if scope == "observed_device_pipeline":
                     validator.error(
@@ -1139,6 +1799,22 @@ def _evidence_document(
                     validator.error(path, f"duplicate fact_id {fact_id!r}")
                 else:
                     facts_by_id[fact_id] = fact
+    if hierarchical_probe_fact_ids != _HIERARCHICAL_PROBE_FACT_IDS:
+        missing = sorted(_HIERARCHICAL_PROBE_FACT_IDS - hierarchical_probe_fact_ids)
+        unexpected = sorted(
+            hierarchical_probe_fact_ids - _HIERARCHICAL_PROBE_FACT_IDS
+        )
+        details: list[str] = []
+        if missing:
+            details.append(f"missing: {', '.join(missing)}")
+        if unexpected:
+            details.append(f"unexpected: {', '.join(unexpected)}")
+        validator.error(
+            f"{relative}.facts",
+            "hierarchical-probe local fact closure differs ("
+            + "; ".join(details)
+            + ")",
+        )
     unused_sources = sorted(known_sources - referenced_sources)
     if unused_sources:
         validator.error(
@@ -1153,7 +1829,7 @@ def _evidence_document(
     )
     if probe is not None:
         probe_literals = {
-            "observation_id": "local-apple-m4-metal-operator-probe-2026-08-26",
+            "observation_id": _LOCAL_PROBE_OBSERVATION_ID,
             "observed_at": "2026-08-26",
             "device_class": "Apple M4",
             "supports_apple9_or_newer": True,
@@ -1229,6 +1905,12 @@ def _evidence_document(
                     f"{relative}.local_probe_observation.pipelines",
                     "must contain each observed pipeline exactly once",
                 )
+
+    _hierarchical_probe_observation(
+        validator,
+        document.get("hierarchical_reduction_probe_observation"),
+        f"{relative}.hierarchical_reduction_probe_observation",
+    )
 
     context = validator.exact(
         document.get("non_evidentiary_context"),
@@ -1794,14 +2476,6 @@ def _proposal_document(
                 f"{path}.alternatives",
                 nonempty=True,
             )
-    unused_bound_facts = sorted(bound_fact_ids - decision_fact_ids)
-    if unused_bound_facts:
-        validator.error(
-            f"{relative}.evidence_binding.fact_ids",
-            "bound facts are not referenced by a design decision: "
-            + ", ".join(unused_bound_facts),
-        )
-
     validator.strings(
         document.get("assumptions"), f"{relative}.assumptions", nonempty=True
     )
@@ -1866,6 +2540,125 @@ def _proposal_document(
                 hypothesis.get("result_binding"), f"{path}.result_binding", None
             )
 
+    findings_value = document.get("observed_scope_findings")
+    finding_ids: list[str] = []
+    finding_fact_ids: set[str] = set()
+    if not isinstance(findings_value, list):
+        validator.error(f"{relative}.observed_scope_findings", "must be an array")
+    else:
+        if len(findings_value) != len(_OBSERVED_SCOPE_FINDINGS):
+            validator.error(
+                f"{relative}.observed_scope_findings",
+                "must contain exactly 4 observed-scope findings",
+            )
+        for index, finding_value in enumerate(findings_value):
+            path = f"{relative}.observed_scope_findings[{index}]"
+            finding = validator.exact(
+                finding_value, path, _OBSERVED_SCOPE_FINDING_KEYS
+            )
+            if finding is None:
+                continue
+            finding_id = validator.string(
+                finding.get("finding_id"), f"{path}.finding_id", _ID
+            )
+            expected_binding = (
+                _OBSERVED_SCOPE_FINDINGS.get(finding_id)
+                if finding_id is not None
+                else None
+            )
+            if finding_id is not None:
+                finding_ids.append(finding_id)
+                if expected_binding is None:
+                    validator.error(
+                        f"{path}.finding_id",
+                        "does not name an observed-scope finding in the closed contract",
+                    )
+            fact_ids = validator.strings(
+                finding.get("fact_ids"),
+                f"{path}.fact_ids",
+                nonempty=True,
+                pattern=_ID,
+                sorted_required=True,
+            )
+            finding_fact_ids.update(fact_ids)
+            unknown_facts = sorted(set(fact_ids) - bound_fact_ids)
+            if unknown_facts:
+                validator.error(
+                    f"{path}.fact_ids",
+                    "finding references unknown or unbound fact IDs: "
+                    + ", ".join(unknown_facts),
+                )
+            does_not_resolve_hypothesis_ids = validator.strings(
+                finding.get("does_not_resolve_hypothesis_ids"),
+                f"{path}.does_not_resolve_hypothesis_ids",
+                nonempty=True,
+                pattern=_ID,
+                sorted_required=True,
+            )
+            unknown_hypotheses = sorted(
+                set(does_not_resolve_hypothesis_ids) - hypothesis_ids
+            )
+            if unknown_hypotheses:
+                validator.error(
+                    f"{path}.does_not_resolve_hypothesis_ids",
+                    "finding references unknown hypothesis IDs: "
+                    + ", ".join(unknown_hypotheses),
+                )
+            if expected_binding is not None:
+                expected_fact_id, expected_hypothesis_ids = expected_binding
+                validator.literal(
+                    fact_ids,
+                    f"{path}.fact_ids",
+                    [expected_fact_id],
+                )
+                validator.literal(
+                    does_not_resolve_hypothesis_ids,
+                    f"{path}.does_not_resolve_hypothesis_ids",
+                    list(expected_hypothesis_ids),
+                )
+            validator.literal(
+                finding.get("status"),
+                f"{path}.status",
+                "reported_in_observed_scope",
+            )
+            validator.literal(
+                finding.get("scope"),
+                f"{path}.scope",
+                "observed_apple_m4_fp32_rms_probe_pipeline_only",
+            )
+            validator.string(
+                finding.get("reported_outcome"), f"{path}.reported_outcome"
+            )
+            validator.string(finding.get("scope_limit"), f"{path}.scope_limit")
+        if len(set(finding_ids)) != len(finding_ids):
+            validator.error(
+                f"{relative}.observed_scope_findings", "finding IDs must be unique"
+            )
+        if set(finding_ids) != set(_OBSERVED_SCOPE_FINDINGS):
+            missing = sorted(set(_OBSERVED_SCOPE_FINDINGS) - set(finding_ids))
+            unexpected = sorted(set(finding_ids) - set(_OBSERVED_SCOPE_FINDINGS))
+            details: list[str] = []
+            if missing:
+                details.append(f"missing: {', '.join(missing)}")
+            if unexpected:
+                details.append(f"unexpected: {', '.join(unexpected)}")
+            validator.error(
+                f"{relative}.observed_scope_findings",
+                "observed-scope finding closure differs ("
+                + "; ".join(details)
+                + ")",
+            )
+
+    unused_bound_facts = sorted(
+        bound_fact_ids - (decision_fact_ids | finding_fact_ids)
+    )
+    if unused_bound_facts:
+        validator.error(
+            f"{relative}.evidence_binding.fact_ids",
+            "bound facts are not referenced by a design decision or observed-scope finding: "
+            + ", ".join(unused_bound_facts),
+        )
+
     falsifiers_value = document.get("falsifiers")
     falsifier_ids: list[str] = []
     if not isinstance(falsifiers_value, list):
@@ -1910,6 +2703,54 @@ def _proposal_document(
         document.get("non_claims"), f"{relative}.non_claims", nonempty=True
     )
     return proposal_id
+
+
+def _cross_document_falsifier_closure(
+    validator: _Validator,
+    evidence_documents: Sequence[tuple[str, dict[str, object]]],
+    proposal_documents: Sequence[tuple[str, dict[str, object]]],
+) -> None:
+    """Relate local outcomes to the actual proposal, not a copied ID list."""
+
+    if len(evidence_documents) != 1 or len(proposal_documents) != 1:
+        return
+    evidence_relative, evidence = evidence_documents[0]
+    proposal_relative, proposal = proposal_documents[0]
+    observation = evidence.get("hierarchical_reduction_probe_observation")
+    if not isinstance(observation, dict):
+        return
+    outcomes = observation.get("falsifier_outcomes")
+    falsifiers = proposal.get("falsifiers")
+    if not isinstance(outcomes, list) or not isinstance(falsifiers, list):
+        return
+
+    def identifiers(values: list[object]) -> set[str] | None:
+        result: set[str] = set()
+        for value in values:
+            if not isinstance(value, dict):
+                return None
+            identifier = value.get("falsifier_id")
+            if not isinstance(identifier, str):
+                return None
+            result.add(identifier)
+        return result
+
+    outcome_ids = identifiers(outcomes)
+    proposal_ids = identifiers(falsifiers)
+    if outcome_ids is None or proposal_ids is None or outcome_ids == proposal_ids:
+        return
+    missing = sorted(proposal_ids - outcome_ids)
+    unexpected = sorted(outcome_ids - proposal_ids)
+    details: list[str] = []
+    if missing:
+        details.append("missing local outcomes: " + ", ".join(missing))
+    if unexpected:
+        details.append("outcomes absent from proposal: " + ", ".join(unexpected))
+    validator.error(
+        "cross_document_falsifier_closure",
+        f"{evidence_relative} local outcome IDs differ from "
+        f"{proposal_relative} falsifier IDs (" + "; ".join(details) + ")",
+    )
 
 
 def validate_hardware_informed_design(
@@ -2039,6 +2880,10 @@ def validate_hardware_informed_design(
     if len(set(proposal_ids)) != len(proposal_ids):
         validator.error("manifest.json.proposals", "proposal IDs must be unique")
 
+    _cross_document_falsifier_closure(
+        validator, evidence_documents, proposal_documents
+    )
+
     _gate(validator, manifest.get("gate_separation"), "manifest.json.gate_separation")
 
     counts = validator.exact(
@@ -2092,6 +2937,11 @@ def _text(summary: HardwareInformedDesignSummary) -> str:
         "performance claim authorized: no",
         "compiler change authorized: no",
         "remote source bytes verified: no",
+        "engineering observation record consistent: yes",
+        "retained local probe reported outcome: yes (6 cases, 12 epochs)",
+        f"retained local probe scope: {summary.retained_local_probe_scope}",
+        "hardware review complete: no",
+        "evaluation evidence present: no",
         f"evidence artifacts: {summary.counts['evidence_count']}",
         f"proposals: {summary.counts['proposal_count']}",
         "proposal IDs:",
@@ -2115,6 +2965,11 @@ def _markdown(summary: HardwareInformedDesignSummary) -> str:
         "| Performance claim authorized | No |",
         "| Compiler change authorized | No |",
         "| Remote source bytes verified | No |",
+        "| Engineering observation record consistent | Yes |",
+        "| Retained local probe reported outcome | Yes (6 cases, 12 epochs) |",
+        f"| Retained local probe scope | `{summary.retained_local_probe_scope}` |",
+        "| Hardware review complete | No |",
+        "| Evaluation evidence present | No |",
         f"| Evidence artifacts | {summary.counts['evidence_count']} |",
         f"| Proposals | {summary.counts['proposal_count']} |",
         "",

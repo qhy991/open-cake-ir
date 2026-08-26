@@ -120,6 +120,7 @@
         "sources",
         "facts",
         "local_probe_observation",
+        "hierarchical_reduction_probe_observation",
         "non_evidentiary_context",
         "assumptions",
         "gate_separation",
@@ -151,6 +152,9 @@
           "items": {"$ref": "#/$defs/fact"}
         },
         "local_probe_observation": {"$ref": "#/$defs/local_probe_observation"},
+        "hierarchical_reduction_probe_observation": {
+          "$ref": "#/$defs/hierarchical_reduction_probe_observation"
+        },
         "non_evidentiary_context": {"$ref": "#/$defs/non_evidentiary_context"},
         "assumptions": {"$ref": "#/$defs/nonempty_strings"},
         "gate_separation": {"$ref": "#/$defs/gate_separation"},
@@ -286,6 +290,308 @@
         "max_total_threads_per_threadgroup": {"const": 1024}
       }
     },
+    "hierarchical_reduction_probe_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation_id",
+        "observed_at",
+        "repository_snapshot",
+        "retained_artifact",
+        "probe_scope",
+        "normalized_output",
+        "falsifier_outcomes",
+        "normalized_probe_output_retained",
+        "raw_runner_output_retained",
+        "stable_device_identifiers_retained",
+        "external_workload_oracle_used",
+        "performance_measured",
+        "evaluation_evidence",
+        "scientific_claim_authorized",
+        "compiler_change_authorized",
+        "human_hardware_review_cleared",
+        "promotion_authorized",
+        "scope"
+      ],
+      "properties": {
+        "observation_id": {
+          "const": "local-apple-m4-hierarchical-reduction-probe-2026-08-26"
+        },
+        "observed_at": {"const": "2026-08-26"},
+        "repository_snapshot": {
+          "$ref": "#/$defs/hierarchical_probe_repository_snapshot"
+        },
+        "retained_artifact": {
+          "$ref": "#/$defs/hierarchical_probe_retained_artifact"
+        },
+        "probe_scope": {
+          "const": "fp32_rms_style_single_owner_hierarchical_reduction_only"
+        },
+        "normalized_output": {
+          "$ref": "#/$defs/hierarchical_probe_normalized_output"
+        },
+        "falsifier_outcomes": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/local_falsifier_outcome"}
+        },
+        "normalized_probe_output_retained": {"const": true},
+        "raw_runner_output_retained": {"const": false},
+        "stable_device_identifiers_retained": {"const": false},
+        "external_workload_oracle_used": {"const": false},
+        "performance_measured": {"const": false},
+        "evaluation_evidence": {"const": false},
+        "scientific_claim_authorized": {"const": false},
+        "compiler_change_authorized": {"const": false},
+        "human_hardware_review_cleared": {"const": false},
+        "promotion_authorized": {"const": false},
+        "scope": {"const": "local_engineering_observation_only"}
+      }
+    },
+    "hierarchical_probe_repository_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_revision",
+        "worktree_clean_at_observation",
+        "source_paths",
+        "binding_scope"
+      ],
+      "properties": {
+        "repository_revision": {
+          "const": "f858612c7ee695b57d72115c76723c7bacc22a9b"
+        },
+        "worktree_clean_at_observation": {"const": true},
+        "source_paths": {
+          "const": [
+            "tools/probe_metal_hierarchical_reduction.py",
+            "tools/metal_hierarchical_reduction_probe/hierarchical_reduction.metal",
+            "tools/metal_hierarchical_reduction_probe/run_hierarchical_reduction.swift"
+          ]
+        },
+        "binding_scope": {"const": "complete_tracked_probe_source_closure"}
+      }
+    },
+    "hierarchical_probe_retained_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storage_scope",
+        "relative_path",
+        "artifact_kind",
+        "reference_status",
+        "offline_validator_access"
+      ],
+      "properties": {
+        "storage_scope": {"const": "external_generated_artifact_outside_checkout"},
+        "relative_path": {
+          "const": "f858612c7ee695b57d72115c76723c7bacc22a9b/metal-hierarchical-reduction.json"
+        },
+        "artifact_kind": {
+          "const": "open_cake_metal_hierarchical_reduction_probe_v1"
+        },
+        "reference_status": {
+          "const": "unverified_external_artifact_reference"
+        },
+        "offline_validator_access": {"const": "not_available"}
+      }
+    },
+    "hierarchical_probe_normalized_output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "device",
+        "pipeline",
+        "coverage",
+        "oracle",
+        "case_results",
+        "aggregate"
+      ],
+      "properties": {
+        "status": {"const": "passed"},
+        "device": {"$ref": "#/$defs/hierarchical_probe_device"},
+        "pipeline": {"$ref": "#/$defs/hierarchical_probe_pipeline"},
+        "coverage": {"$ref": "#/$defs/hierarchical_probe_coverage"},
+        "oracle": {"$ref": "#/$defs/hierarchical_probe_oracle"},
+        "case_results": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/hierarchical_probe_case_result"}
+        },
+        "aggregate": {"$ref": "#/$defs/hierarchical_probe_aggregate"}
+      }
+    },
+    "hierarchical_probe_device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device_class",
+        "supports_apple9_or_newer",
+        "max_threadgroup_memory_bytes"
+      ],
+      "properties": {
+        "device_class": {"const": "Apple M4"},
+        "supports_apple9_or_newer": {"const": true},
+        "max_threadgroup_memory_bytes": {"const": 32768}
+      }
+    },
+    "hierarchical_probe_pipeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_point",
+        "thread_execution_width",
+        "max_total_threads_per_threadgroup",
+        "static_threadgroup_memory_bytes",
+        "dynamic_threadgroup_memory_bytes"
+      ],
+      "properties": {
+        "entry_point": {"const": "hierarchical_reduction_w32_probe"},
+        "thread_execution_width": {"const": 32},
+        "max_total_threads_per_threadgroup": {"const": 1024},
+        "static_threadgroup_memory_bytes": {"const": 0},
+        "dynamic_threadgroup_memory_bytes": {"const": 144}
+      }
+    },
+    "hierarchical_probe_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "simdgroup_counts",
+        "threads_per_threadgroup",
+        "epochs_per_dispatch",
+        "input_patterns",
+        "dirty_sentinels",
+        "single_owner_final_scalar_broadcast",
+        "scratch_reused_within_dispatch",
+        "uniform_reuse_barrier",
+        "layer_all_simdgroups_tested",
+        "bfloat_input_conversion_tested"
+      ],
+      "properties": {
+        "simdgroup_counts": {"const": [1, 2, 4, 8, 16, 32]},
+        "threads_per_threadgroup": {"const": [32, 64, 128, 256, 512, 1024]},
+        "epochs_per_dispatch": {"const": 2},
+        "input_patterns": {
+          "const": [
+            "((thread_mod_13)-6)*0.125+0.5",
+            "((thread_mod_11)-5)*0.25-0.75"
+          ]
+        },
+        "dirty_sentinels": {"const": [-12345.25, 9876.5]},
+        "single_owner_final_scalar_broadcast": {"const": true},
+        "scratch_reused_within_dispatch": {"const": true},
+        "uniform_reuse_barrier": {
+          "const": "threadgroup_barrier(mem_threadgroup)"
+        },
+        "layer_all_simdgroups_tested": {"const": false},
+        "bfloat_input_conversion_tested": {"const": false}
+      }
+    },
+    "hierarchical_probe_oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dtype", "tolerance_rule", "kind"],
+      "properties": {
+        "dtype": {"const": "float32"},
+        "tolerance_rule": {"const": "exact_fp32_bits_for_dyadic_fixture"},
+        "kind": {"const": "internal_finite_probe_oracle_not_workload_oracle"}
+      }
+    },
+    "hierarchical_probe_case_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "simdgroup_count",
+        "threads_per_threadgroup",
+        "expected_owner_sums",
+        "observed_owner_sums",
+        "broadcast_thread_counts",
+        "dirty_sentinel_preserved",
+        "owner_mismatch_count",
+        "broadcast_mismatch_count",
+        "dirty_snapshot_mismatch_count",
+        "command_buffer_status",
+        "passed"
+      ],
+      "properties": {
+        "simdgroup_count": {"enum": [1, 2, 4, 8, 16, 32]},
+        "threads_per_threadgroup": {"enum": [32, 64, 128, 256, 512, 1024]},
+        "expected_owner_sums": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "number"}
+        },
+        "observed_owner_sums": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "number"}
+        },
+        "broadcast_thread_counts": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "dirty_sentinel_preserved": {"const": [true, true]},
+        "owner_mismatch_count": {"const": 0},
+        "broadcast_mismatch_count": {"const": 0},
+        "dirty_snapshot_mismatch_count": {"const": 0},
+        "command_buffer_status": {"const": "completed"},
+        "passed": {"const": true}
+      }
+    },
+    "hierarchical_probe_aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_count",
+        "epoch_result_count",
+        "broadcast_consumer_check_count",
+        "owner_mismatch_count",
+        "broadcast_mismatch_count",
+        "dirty_snapshot_mismatch_count",
+        "all_command_buffers_completed",
+        "all_cases_passed"
+      ],
+      "properties": {
+        "case_count": {"const": 6},
+        "epoch_result_count": {"const": 12},
+        "broadcast_consumer_check_count": {"const": 4032},
+        "owner_mismatch_count": {"const": 0},
+        "broadcast_mismatch_count": {"const": 0},
+        "dirty_snapshot_mismatch_count": {"const": 0},
+        "all_command_buffers_completed": {"const": true},
+        "all_cases_passed": {"const": true}
+      }
+    },
+    "local_falsifier_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["falsifier_id", "outcome", "basis"],
+      "properties": {
+        "falsifier_id": {"$ref": "#/$defs/id"},
+        "outcome": {
+          "enum": [
+            "not_triggered_in_observed_cases",
+            "precondition_satisfied_in_observed_cases",
+            "not_observed_in_tested_outputs",
+            "outside_probe_scope",
+            "not_triggered_for_single_owner_probe_only",
+            "requires_source_review",
+            "condition_still_present"
+          ]
+        },
+        "basis": {"type": "string", "minLength": 1}
+      }
+    },
     "non_evidentiary_context": {
       "type": "object",
       "additionalProperties": false,
@@ -347,6 +653,7 @@
         "decisions",
         "assumptions",
         "hypotheses",
+        "observed_scope_findings",
         "falsifiers",
         "open_questions",
         "gate_separation",
@@ -377,6 +684,13 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/hypothesis"}
+        },
+        "observed_scope_findings": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/observed_scope_finding"}
         },
         "falsifiers": {
           "type": "array",
@@ -718,6 +1032,38 @@
         "observable": {"type": "string", "minLength": 1},
         "reject_when": {"type": "string", "minLength": 1},
         "retained_result_contract": {"type": "string", "minLength": 1}
+      }
+    },
+    "observed_scope_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "fact_ids",
+        "status",
+        "scope",
+        "reported_outcome",
+        "does_not_resolve_hypothesis_ids",
+        "scope_limit"
+      ],
+      "properties": {
+        "finding_id": {"$ref": "#/$defs/id"},
+        "fact_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "status": {"const": "reported_in_observed_scope"},
+        "scope": {"const": "observed_apple_m4_fp32_rms_probe_pipeline_only"},
+        "reported_outcome": {"type": "string", "minLength": 1},
+        "does_not_resolve_hypothesis_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "scope_limit": {"type": "string", "minLength": 1}
       }
     },
     "falsifier": {
