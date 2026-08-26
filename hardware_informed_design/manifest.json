@@ -30,6 +30,9 @@
   "proposals": [
     "proposals/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
   ],
+  "review_requests": [
+    "review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+  ],
   "gate_separation": {
     "validation": {
       "kind": "offline_metadata_and_derivation_validation",
@@ -51,6 +54,7 @@
   "counts": {
     "evidence_count": 1,
     "proposal_count": 1,
+    "review_request_count": 1,
     "candidate_count": 1,
     "observation_count": 2
   },

@@ -4,7 +4,8 @@
   "oneOf": [
     {"$ref": "#/$defs/manifest"},
     {"$ref": "#/$defs/evidence"},
-    {"$ref": "#/$defs/proposal"}
+    {"$ref": "#/$defs/proposal"},
+    {"$ref": "#/$defs/review_request"}
   ],
   "$defs": {
     "manifest": {
@@ -23,6 +24,7 @@
         "input_candidate_closure",
         "evidence",
         "proposals",
+        "review_requests",
         "gate_separation",
         "counts",
         "non_claims"
@@ -49,6 +51,13 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/safe_path"}
+        },
+        "review_requests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {"const": "review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"}
         },
         "gate_separation": {"$ref": "#/$defs/gate_separation"},
         "counts": {"$ref": "#/$defs/counts"},
@@ -98,10 +107,11 @@
     "counts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["evidence_count", "proposal_count", "candidate_count", "observation_count"],
+      "required": ["evidence_count", "proposal_count", "review_request_count", "candidate_count", "observation_count"],
       "properties": {
         "evidence_count": {"const": 1},
         "proposal_count": {"const": 1},
+        "review_request_count": {"const": 1},
         "candidate_count": {"const": 1},
         "observation_count": {"const": 2}
       }
@@ -636,6 +646,357 @@
         "binding_scope": {"const": "non_evidentiary_implementation_context_only"}
       }
     },
+    "review_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "review_request_id",
+        "state",
+        "authority",
+        "stage_binding",
+        "closure",
+        "review_items",
+        "phase_order_ambiguity",
+        "decision_artifact",
+        "external_human_decision_contract",
+        "authorizations",
+        "non_claims"
+      ],
+      "properties": {
+        "$schema": {"const": "../schema.json#/$defs/review_request"},
+        "schema_version": {"const": 1},
+        "review_request_id": {
+          "const": "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1"
+        },
+        "state": {"const": "awaiting_human_review"},
+        "authority": {"const": "external_human_hardware_reviewer_only"},
+        "stage_binding": {"$ref": "#/$defs/review_stage_binding"},
+        "closure": {"$ref": "#/$defs/review_closure"},
+        "review_items": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/review_item"}
+        },
+        "phase_order_ambiguity": {"$ref": "#/$defs/phase_order_ambiguity"},
+        "decision_artifact": {"$ref": "#/$defs/absent_decision_artifact"},
+        "external_human_decision_contract": {
+          "$ref": "#/$defs/external_human_decision_contract"
+        },
+        "authorizations": {"$ref": "#/$defs/review_authorizations"},
+        "non_claims": {"$ref": "#/$defs/nonempty_strings"}
+      }
+    },
+    "review_stage_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest", "evidence", "proposal"],
+      "properties": {
+        "manifest": {"$ref": "#/$defs/review_manifest_binding"},
+        "evidence": {"$ref": "#/$defs/review_evidence_binding"},
+        "proposal": {"$ref": "#/$defs/review_proposal_binding"}
+      }
+    },
+    "review_manifest_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["design_stage_id", "path"],
+      "properties": {
+        "design_stage_id": {"const": "apple-metal-hardware-informed-design-v1"},
+        "path": {"const": "hardware_informed_design/manifest.json"}
+      }
+    },
+    "review_evidence_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "path"],
+      "properties": {
+        "evidence_id": {"const": "apple-metal-hierarchical-reduction-v1"},
+        "path": {
+          "const": "hardware_informed_design/evidence/apple-metal-hierarchical-reduction-v1.json"
+        }
+      }
+    },
+    "review_proposal_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposal_id", "path"],
+      "properties": {
+        "proposal_id": {
+          "const": "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1"
+        },
+        "path": {
+          "const": "hardware_informed_design/proposals/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+        }
+      }
+    },
+    "review_closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact_ids",
+        "decision_ids",
+        "hypothesis_ids",
+        "observed_scope_finding_ids",
+        "falsifier_ids",
+        "counts"
+      ],
+      "properties": {
+        "fact_ids": {
+          "type": "array",
+          "minItems": 21,
+          "maxItems": 21,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "decision_ids": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "hypothesis_ids": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "observed_scope_finding_ids": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "falsifier_ids": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "counts": {"$ref": "#/$defs/review_closure_counts"}
+      }
+    },
+    "review_closure_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact_count",
+        "decision_count",
+        "hypothesis_count",
+        "observed_scope_finding_count",
+        "falsifier_count"
+      ],
+      "properties": {
+        "fact_count": {"const": 21},
+        "decision_count": {"const": 5},
+        "hypothesis_count": {"const": 5},
+        "observed_scope_finding_count": {"const": 4},
+        "falsifier_count": {"const": 12}
+      }
+    },
+    "review_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "review_item_id",
+        "question",
+        "fact_ids",
+        "decision_ids",
+        "hypothesis_ids",
+        "observed_scope_finding_ids",
+        "falsifier_ids",
+        "required_human_judgment"
+      ],
+      "properties": {
+        "review_item_id": {"$ref": "#/$defs/id"},
+        "question": {"type": "string", "minLength": 1},
+        "fact_ids": {"$ref": "#/$defs/id_list"},
+        "decision_ids": {"$ref": "#/$defs/id_list"},
+        "hypothesis_ids": {"$ref": "#/$defs/id_list"},
+        "observed_scope_finding_ids": {"$ref": "#/$defs/id_list"},
+        "falsifier_ids": {"$ref": "#/$defs/id_list"},
+        "required_human_judgment": {"type": "string", "minLength": 1}
+      }
+    },
+    "phase_order_ambiguity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ambiguity_id",
+        "status",
+        "contradiction",
+        "resolution_options",
+        "selection_required",
+        "automation_may_select"
+      ],
+      "properties": {
+        "ambiguity_id": {"const": "resource-accounting-phase-order"},
+        "status": {"const": "unresolved_requires_human_choice"},
+        "contradiction": {
+          "const": "The resource-accounting-fits-selected-pipelines hypothesis is marked required_before=implementation, but its falsifier requires compiling every retained future variant and inspecting pipeline-created static threadgroup memory. The current finite Compiler lowering cannot create the required scratch allocation or barriers, so the word implementation cannot simultaneously mean both any materialization code and the accepted Compiler port."
+        },
+        "resolution_options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {"$ref": "#/$defs/preimplementation_standalone_metal_prototypes_option"},
+            {"$ref": "#/$defs/amend_gate_after_bounded_implementation_option"}
+          ],
+          "items": false
+        },
+        "selection_required": {"const": true},
+        "automation_may_select": {"const": false}
+      }
+    },
+    "preimplementation_standalone_metal_prototypes_option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["option_id", "action", "consequence"],
+      "properties": {
+        "option_id": {"const": "preimplementation-standalone-metal-prototypes"},
+        "action": {
+          "const": "Keep required_before=implementation literal by compiling separately reviewed standalone Metal prototype pipelines for every retained RMS and Layer variant before any Compiler implementation."
+        },
+        "consequence": {
+          "const": "Append-only resource observations may resolve the hypothesis without granting Compiler-change, correctness, performance, or promotion authority; the later P1-P8 review still governs the compiler design."
+        }
+      }
+    },
+    "amend_gate_after_bounded_implementation_option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["option_id", "action", "consequence"],
+      "properties": {
+        "option_id": {
+          "const": "amend-gate-to-port-acceptance-after-bounded-implementation"
+        },
+        "action": {
+          "const": "Require a human-requested successor proposal that moves the resource hypothesis to port acceptance and authorizes only the bounded implementation needed to materialize retained pipelines after P1-P8 acceptance."
+        },
+        "consequence": {
+          "const": "The first implementation cannot be accepted, released, evaluated, or used for a claim until every retained variant's resource observation passes; automation may not silently reinterpret the existing required_before field."
+        }
+      }
+    },
+    "absent_decision_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "path", "decision_id"],
+      "properties": {
+        "status": {"const": "absent"},
+        "path": {"type": "null"},
+        "decision_id": {"type": "null"}
+      }
+    },
+    "external_human_decision_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_authority",
+        "global_dispositions",
+        "required_review_item_ids",
+        "per_item_verdict_contract",
+        "reviewed_git_revision_required",
+        "ambiguity_resolution_contract",
+        "stage_transition_rule",
+        "automation_may_write_decision"
+      ],
+      "properties": {
+        "decision_authority": {"const": "external_human_hardware_reviewer_only"},
+        "global_dispositions": {
+          "const": ["approved", "changes_requested", "rejected"]
+        },
+        "required_review_item_ids": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "per_item_verdict_contract": {
+          "$ref": "#/$defs/per_item_verdict_contract"
+        },
+        "reviewed_git_revision_required": {"const": true},
+        "ambiguity_resolution_contract": {
+          "$ref": "#/$defs/ambiguity_resolution_contract"
+        },
+        "stage_transition_rule": {
+          "const": "Only an approved external decision that covers every review item, supplies every localized reason, identifies the reviewed Git revision, and selects one resource-accounting-phase-order option may clear Stage 3. A changes_requested or rejected decision cannot advance the gate."
+        },
+        "automation_may_write_decision": {"const": false}
+      }
+    },
+    "per_item_verdict_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "per_item_verdict_required",
+        "verdict_values",
+        "localized_reason_required",
+        "stage_clear_requires_all_item_verdicts_approved",
+        "non_approved_item_blocks_stage_transition"
+      ],
+      "properties": {
+        "per_item_verdict_required": {"const": true},
+        "verdict_values": {
+          "const": ["approved", "changes_requested", "rejected"]
+        },
+        "localized_reason_required": {"const": true},
+        "stage_clear_requires_all_item_verdicts_approved": {"const": true},
+        "non_approved_item_blocks_stage_transition": {"const": true}
+      }
+    },
+    "ambiguity_resolution_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_ambiguity_id",
+        "allowed_option_ids",
+        "localized_reason_required"
+      ],
+      "properties": {
+        "required_ambiguity_id": {"const": "resource-accounting-phase-order"},
+        "allowed_option_ids": {
+          "const": [
+            "preimplementation-standalone-metal-prototypes",
+            "amend-gate-to-port-acceptance-after-bounded-implementation"
+          ]
+        },
+        "localized_reason_required": {"const": true}
+      }
+    },
+    "review_authorizations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "human_hardware_review_cleared",
+        "principle_driven_iteration_authorized",
+        "compiler_change_authorized",
+        "implementation_authorized",
+        "evaluation_authorized",
+        "performance_claim_authorized",
+        "scientific_claim_authorized",
+        "promotion_authorized"
+      ],
+      "properties": {
+        "human_hardware_review_cleared": {"const": false},
+        "principle_driven_iteration_authorized": {"const": false},
+        "compiler_change_authorized": {"const": false},
+        "implementation_authorized": {"const": false},
+        "evaluation_authorized": {"const": false},
+        "performance_claim_authorized": {"const": false},
+        "scientific_claim_authorized": {"const": false},
+        "promotion_authorized": {"const": false}
+      }
+    },
     "proposal": {
       "type": "object",
       "additionalProperties": false,
@@ -1115,6 +1476,11 @@
     },
     "https_url": {"type": "string", "pattern": "^https://[^ ]+$"},
     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$"},
+    "id_list": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "nonempty_strings": {
       "type": "array",

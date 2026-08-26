@@ -22,6 +22,29 @@ DESIGN = ROOT / "hardware_informed_design"
 TARGET = ROOT / "compiler" / "targets" / "apple_gpu_family9.json"
 TOOL = ROOT / "tools" / "validate_hardware_informed_design.py"
 
+REVIEW_REQUEST_RELATIVE_PATH = (
+    "review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+)
+REVIEW_ITEM_IDS = frozenset(
+    {
+        "vendor-fact-applicability",
+        "width-policy-and-fail-closed-selection",
+        "partial-cardinality-and-final-reduction",
+        "barrier-participation-and-publication",
+        "scratch-initialization-lifetime-and-reuse",
+        "variant-owner-split",
+        "resource-accounting-and-runtime-gates",
+        "numeric-scope-and-oracle-boundary",
+        "observed-scope-and-authority-boundary",
+    }
+)
+RESOURCE_PHASE_AMBIGUITY_ID = "resource-accounting-phase-order"
+RESOURCE_PHASE_OPTION_IDS_ORDERED = (
+    "preimplementation-standalone-metal-prototypes",
+    "amend-gate-to-port-acceptance-after-bounded-implementation",
+)
+RESOURCE_PHASE_OPTION_IDS = frozenset(RESOURCE_PHASE_OPTION_IDS_ORDERED)
+
 
 def _read(path: Path) -> dict[str, object]:
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -31,6 +54,14 @@ def _read(path: Path) -> dict[str, object]:
 
 def _write(path: Path, value: dict[str, object]) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def _review_request(design: Path = DESIGN) -> tuple[Path, dict[str, object]]:
+    manifest = _read(design / "manifest.json")
+    paths = manifest["review_requests"]
+    assert paths == [REVIEW_REQUEST_RELATIVE_PATH]
+    path = design / REVIEW_REQUEST_RELATIVE_PATH
+    return path, _read(path)
 
 
 def _definition_validator(
@@ -136,7 +167,7 @@ class HardwareInformedDesignSchemaTests(unittest.TestCase):
         visit(schema, "$")
         self.assertEqual(missing, [])
 
-    def test_all_three_document_kinds_conform_to_the_public_schema(self) -> None:
+    def test_all_four_document_kinds_conform_to_the_public_schema(self) -> None:
         schema = _read(DESIGN / "schema.json")
         Draft202012Validator.check_schema(schema)
         manifest = _read(DESIGN / "manifest.json")
@@ -144,6 +175,9 @@ class HardwareInformedDesignSchemaTests(unittest.TestCase):
             "manifest": [manifest],
             "evidence": [_read(DESIGN / path) for path in manifest["evidence"]],
             "proposal": [_read(DESIGN / path) for path in manifest["proposals"]],
+            "review_request": [
+                _read(DESIGN / path) for path in manifest["review_requests"]
+            ],
         }
         root_validator = Draft202012Validator(schema, format_checker=FormatChecker())
         for definition, values in documents.items():
@@ -207,14 +241,15 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
         self.assertTrue(summary["valid"])
         self.assertEqual(summary["design_stage_id"], manifest["design_stage_id"])
         self.assertEqual(summary["counts"], manifest["counts"])
+        self.assertEqual(summary["review_request_count"], 1)
+        self.assertIs(summary["hardware_review_decision_present"], False)
+        self.assertIs(summary["resource_phase_ambiguity_exposed"], True)
         self.assertIs(summary["ready_for_principle_review"], False)
         self.assertIs(summary["hardware_semantics_verified"], False)
         self.assertIs(summary["performance_claim_authorized"], False)
         self.assertIs(summary["compiler_change_authorized"], False)
         self.assertIs(summary["remote_source_bytes_verified"], False)
-        self.assertIs(
-            summary["engineering_observation_record_consistent"], True
-        )
+        self.assertIs(summary["engineering_observation_record_consistent"], True)
         self.assertIs(summary["retained_local_probe_reported_outcome"], True)
         self.assertEqual(summary["retained_local_probe_case_count"], 6)
         self.assertEqual(summary["retained_local_probe_epoch_count"], 12)
@@ -241,6 +276,741 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
                 result = _run(output_format=output_format)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn(marker, result.stdout)
+
+    def test_review_request_manifest_membership_and_count_are_exact(self) -> None:
+        manifest = _read(DESIGN / "manifest.json")
+        self.assertEqual(manifest["review_requests"], [REVIEW_REQUEST_RELATIVE_PATH])
+        self.assertEqual(manifest["counts"]["review_request_count"], 1)
+
+        mutations = (
+            ("review_requests", []),
+            ("review_request_count", 0),
+        )
+        for field, replacement in mutations:
+            with self.subTest(field=field):
+
+                def mutate(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    field: str = field,
+                    replacement: object = replacement,
+                ) -> None:
+                    del library, extraction, target
+                    path = design / "manifest.json"
+                    manifest = _read(path)
+                    if field == "review_requests":
+                        manifest[field] = replacement
+                    else:
+                        manifest["counts"][field] = replacement
+                    _write(path, manifest)
+
+                self._assert_mutation_rejected(mutate, field)
+
+    def test_review_request_binds_the_actual_stage_three_document_closures(
+        self,
+    ) -> None:
+        manifest = _read(DESIGN / "manifest.json")
+        evidence_path = DESIGN / str(manifest["evidence"][0])
+        proposal_path = DESIGN / str(manifest["proposals"][0])
+        evidence = _read(evidence_path)
+        proposal = _read(proposal_path)
+        _, request = _review_request()
+
+        self.assertEqual(
+            request["stage_binding"],
+            {
+                "manifest": {
+                    "design_stage_id": manifest["design_stage_id"],
+                    "path": "hardware_informed_design/manifest.json",
+                },
+                "evidence": {
+                    "evidence_id": evidence["evidence_id"],
+                    "path": f"hardware_informed_design/{manifest['evidence'][0]}",
+                },
+                "proposal": {
+                    "proposal_id": proposal["proposal_id"],
+                    "path": f"hardware_informed_design/{manifest['proposals'][0]}",
+                },
+            },
+        )
+
+        closure = request["closure"]
+        expected_closures = {
+            "fact_ids": {value["fact_id"] for value in evidence["facts"]},
+            "decision_ids": {value["decision_id"] for value in proposal["decisions"]},
+            "hypothesis_ids": {
+                value["hypothesis_id"] for value in proposal["hypotheses"]
+            },
+            "observed_scope_finding_ids": {
+                value["finding_id"] for value in proposal["observed_scope_findings"]
+            },
+            "falsifier_ids": {
+                value["falsifier_id"] for value in proposal["falsifiers"]
+            },
+        }
+        for field, expected in expected_closures.items():
+            with self.subTest(field=field):
+                self.assertEqual(set(closure[field]), expected)
+        self.assertEqual(
+            closure["counts"],
+            {
+                "fact_count": len(expected_closures["fact_ids"]),
+                "decision_count": len(expected_closures["decision_ids"]),
+                "hypothesis_count": len(expected_closures["hypothesis_ids"]),
+                "observed_scope_finding_count": len(
+                    expected_closures["observed_scope_finding_ids"]
+                ),
+                "falsifier_count": len(expected_closures["falsifier_ids"]),
+            },
+        )
+
+    def test_review_request_stage_and_atomic_reference_drift_is_rejected(
+        self,
+    ) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            path, request = _review_request(design)
+            request["stage_binding"]["proposal"]["proposal_id"] = (
+                "different-hardware-proposal"
+            )
+            request["closure"]["fact_ids"].pop()
+            request["closure"]["counts"]["fact_count"] -= 1
+            request["review_items"][0]["fact_ids"].append("imaginary-hardware-fact")
+            _write(path, request)
+
+        self._assert_mutation_rejected(
+            mutate,
+            (
+                "stage_binding.proposal.proposal_id",
+                "fact_ids",
+                "imaginary-hardware-fact",
+            ),
+        )
+
+    def test_review_items_have_exact_ids_and_cover_every_atomic_reference(
+        self,
+    ) -> None:
+        _, request = _review_request()
+        items = request["review_items"]
+        item_ids = {value["review_item_id"] for value in items}
+        self.assertEqual(item_ids, REVIEW_ITEM_IDS)
+        contract = request["external_human_decision_contract"]
+        self.assertEqual(set(contract["required_review_item_ids"]), REVIEW_ITEM_IDS)
+
+        reference_fields = (
+            "fact_ids",
+            "decision_ids",
+            "hypothesis_ids",
+            "observed_scope_finding_ids",
+            "falsifier_ids",
+        )
+        for field in reference_fields:
+            with self.subTest(field=field):
+                closure = set(request["closure"][field])
+                used = {reference for item in items for reference in item[field]}
+                self.assertEqual(used, closure)
+                self.assertTrue(
+                    all(set(item[field]).issubset(closure) for item in items)
+                )
+                self.assertTrue(all(item[field] for item in items))
+        self.assertTrue(all(value["required_human_judgment"] for value in items))
+
+    def test_review_item_id_and_coverage_weakening_is_rejected(self) -> None:
+        mutations: tuple[tuple[str, Callable[[dict[str, object]], None]], ...] = (
+            (
+                "review_items",
+                lambda request: request["review_items"].pop(),
+            ),
+            (
+                "required_review_item_ids",
+                lambda request: request["external_human_decision_contract"][
+                    "required_review_item_ids"
+                ].pop(),
+            ),
+            (
+                "observed_scope_finding_ids",
+                lambda request: [
+                    item["observed_scope_finding_ids"].remove(
+                        "observed-runtime-resource-gates"
+                    )
+                    for item in request["review_items"]
+                    if "observed-runtime-resource-gates"
+                    in item["observed_scope_finding_ids"]
+                ],
+            ),
+        )
+        for expected, edit in mutations:
+            with self.subTest(expected=expected):
+
+                def mutate(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    edit: Callable[[dict[str, object]], None] = edit,
+                ) -> None:
+                    del library, extraction, target
+                    path, request = _review_request(design)
+                    edit(request)
+                    _write(path, request)
+
+                self._assert_mutation_rejected(mutate, expected)
+
+    def test_review_item_reference_mapping_cannot_be_remapped_with_known_ids(
+        self,
+    ) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            path, request = _review_request(design)
+            item = next(
+                value
+                for value in request["review_items"]
+                if value["review_item_id"] == "vendor-fact-applicability"
+            )
+            item["fact_ids"].append("observed-m4-hierarchical-runtime-resource-gates")
+            _write(path, request)
+
+        self._assert_mutation_rejected(
+            mutate, ("vendor-fact-applicability", "fact_ids")
+        )
+
+    def test_resource_phase_order_ambiguity_requires_one_external_human_choice(
+        self,
+    ) -> None:
+        _, request = _review_request()
+        ambiguity = request["phase_order_ambiguity"]
+        self.assertEqual(ambiguity["ambiguity_id"], RESOURCE_PHASE_AMBIGUITY_ID)
+        self.assertEqual(ambiguity["status"], "unresolved_requires_human_choice")
+        self.assertIs(ambiguity["selection_required"], True)
+        self.assertIs(ambiguity["automation_may_select"], False)
+        self.assertEqual(
+            {value["option_id"] for value in ambiguity["resolution_options"]},
+            RESOURCE_PHASE_OPTION_IDS,
+        )
+        contract = request["external_human_decision_contract"][
+            "ambiguity_resolution_contract"
+        ]
+        self.assertEqual(contract["required_ambiguity_id"], RESOURCE_PHASE_AMBIGUITY_ID)
+        self.assertEqual(set(contract["allowed_option_ids"]), RESOURCE_PHASE_OPTION_IDS)
+
+    def test_resource_phase_order_options_cannot_be_removed_or_auto_resolved(
+        self,
+    ) -> None:
+        mutations: tuple[tuple[str, Callable[[dict[str, object]], None]], ...] = (
+            (
+                "status",
+                lambda request: request["phase_order_ambiguity"].__setitem__(
+                    "status", "automatically_resolved"
+                ),
+            ),
+            (
+                "resolution_options",
+                lambda request: request["phase_order_ambiguity"][
+                    "resolution_options"
+                ].pop(),
+            ),
+            (
+                "selection_required",
+                lambda request: request["phase_order_ambiguity"].__setitem__(
+                    "selection_required", False
+                ),
+            ),
+            (
+                "automation_may_select",
+                lambda request: request["phase_order_ambiguity"].__setitem__(
+                    "automation_may_select", True
+                ),
+            ),
+            (
+                "allowed_option_ids",
+                lambda request: request["external_human_decision_contract"][
+                    "ambiguity_resolution_contract"
+                ]["allowed_option_ids"].pop(),
+            ),
+        )
+        for expected, edit in mutations:
+            with self.subTest(expected=expected):
+
+                def mutate(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    edit: Callable[[dict[str, object]], None] = edit,
+                ) -> None:
+                    del library, extraction, target
+                    path, request = _review_request(design)
+                    edit(request)
+                    _write(path, request)
+
+                self._assert_mutation_rejected(mutate, expected)
+
+    def test_review_request_human_resolution_prose_is_semantically_pinned(
+        self,
+    ) -> None:
+        mutations: list[tuple[str, Callable[[dict[str, object]], None]]] = [
+            (
+                "phase_order_ambiguity.contradiction",
+                lambda request: request["phase_order_ambiguity"].__setitem__(
+                    "contradiction", "Automation has resolved the phase order."
+                ),
+            ),
+            (
+                "stage_transition_rule",
+                lambda request: request["external_human_decision_contract"].__setitem__(
+                    "stage_transition_rule",
+                    "Any global approval advances Stage 3 despite item verdicts.",
+                ),
+            ),
+        ]
+        for option_index, option_id in enumerate(RESOURCE_PHASE_OPTION_IDS_ORDERED):
+            for field in ("action", "consequence"):
+                mutations.append(
+                    (
+                        f"{option_id}.{field}",
+                        lambda request, option_index=option_index, field=field: request[
+                            "phase_order_ambiguity"
+                        ]["resolution_options"][option_index].__setitem__(
+                            field, f"Automatically rewritten {field}."
+                        ),
+                    )
+                )
+
+        for expected, edit in mutations:
+            with self.subTest(expected=expected):
+
+                def mutate(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    edit: Callable[[dict[str, object]], None] = edit,
+                ) -> None:
+                    del library, extraction, target
+                    path, request = _review_request(design)
+                    edit(request)
+                    _write(path, request)
+
+                expected_parts = (
+                    ("resolution_options", expected.rsplit(".", 1)[-1])
+                    if expected.startswith(tuple(RESOURCE_PHASE_OPTION_IDS))
+                    else tuple(expected.split("."))
+                )
+                self._assert_mutation_rejected(mutate, expected_parts)
+
+    def test_review_request_contains_no_decision_reviewer_or_readiness(self) -> None:
+        _, request = _review_request()
+        self.assertEqual(
+            request["decision_artifact"],
+            {"status": "absent", "path": None, "decision_id": None},
+        )
+        self.assertEqual(request["authority"], "external_human_hardware_reviewer_only")
+        self.assertIs(
+            request["external_human_decision_contract"][
+                "automation_may_write_decision"
+            ],
+            False,
+        )
+        dispositions = {"approved", "changes_requested", "rejected"}
+        self.assertEqual(
+            set(request["external_human_decision_contract"]["global_dispositions"]),
+            dispositions,
+        )
+        self.assertEqual(
+            set(
+                request["external_human_decision_contract"][
+                    "per_item_verdict_contract"
+                ]["verdict_values"]
+            ),
+            dispositions,
+        )
+        self.assertTrue(
+            all(value is False for value in request["authorizations"].values())
+        )
+        for forbidden in (
+            "reviewer",
+            "decision",
+            "approval",
+            "ready",
+            "ready_for_principle_review",
+            "hardware_review_complete",
+        ):
+            self.assertNotIn(forbidden, request)
+
+    def test_review_request_cannot_inject_a_decision_reviewer_or_readiness(
+        self,
+    ) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            path, request = _review_request(design)
+            request["reviewer"] = "automation"
+            request["decision"] = "approved"
+            request["approval"] = True
+            request["ready"] = True
+            request["ready_for_principle_review"] = True
+            request["hardware_review_complete"] = True
+            _write(path, request)
+
+        self._assert_mutation_rejected(
+            mutate,
+            (
+                "reviewer",
+                "decision",
+                "approval",
+                "ready",
+                "ready_for_principle_review",
+                "hardware_review_complete",
+            ),
+        )
+
+    def test_review_request_state_and_authority_cannot_be_automated(self) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            path, request = _review_request(design)
+            request["state"] = "approved"
+            request["authority"] = "offline_validator"
+            contract = request["external_human_decision_contract"]
+            contract["decision_authority"] = "offline_validator"
+            contract["per_item_verdict_contract"]["per_item_verdict_required"] = False
+            contract["per_item_verdict_contract"]["localized_reason_required"] = False
+            contract["reviewed_git_revision_required"] = False
+            _write(path, request)
+
+        self._assert_mutation_rejected(
+            mutate,
+            (
+                "state",
+                "authority",
+                "decision_authority",
+                "per_item_verdict_required",
+                "localized_reason_required",
+                "reviewed_git_revision_required",
+            ),
+        )
+
+    def test_per_item_aggregate_gate_requires_every_item_to_be_approved(
+        self,
+    ) -> None:
+        aggregate_fields = (
+            "stage_clear_requires_all_item_verdicts_approved",
+            "non_approved_item_blocks_stage_transition",
+        )
+        _, request = _review_request()
+        contract = request["external_human_decision_contract"][
+            "per_item_verdict_contract"
+        ]
+        for field in aggregate_fields:
+            self.assertIs(contract[field], True)
+
+        mutations: tuple[tuple[str, str], ...] = tuple(
+            (field, action)
+            for field in aggregate_fields
+            for action in ("false", "delete")
+        )
+        for field, action in mutations:
+            with self.subTest(field=field, action=action):
+
+                def mutate(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    field: str = field,
+                    action: str = action,
+                ) -> None:
+                    del library, extraction, target
+                    path, request = _review_request(design)
+                    contract = request["external_human_decision_contract"][
+                        "per_item_verdict_contract"
+                    ]
+                    if action == "delete":
+                        del contract[field]
+                    else:
+                        contract[field] = False
+                    _write(path, request)
+
+                self._assert_mutation_rejected(mutate, field)
+
+    def test_review_request_cannot_grant_any_authority(self) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            path, request = _review_request(design)
+            for field in request["authorizations"]:
+                request["authorizations"][field] = True
+            request["external_human_decision_contract"][
+                "automation_may_write_decision"
+            ] = True
+            _write(path, request)
+
+        _, request = _review_request()
+        self._assert_mutation_rejected(
+            mutate,
+            tuple(request["authorizations"]) + ("automation_may_write_decision",),
+        )
+
+    def test_passing_m4_probe_cannot_substitute_for_a_human_decision(self) -> None:
+        manifest = _read(DESIGN / "manifest.json")
+        evidence = _read(DESIGN / str(manifest["evidence"][0]))
+        aggregate = evidence["hierarchical_reduction_probe_observation"][
+            "normalized_output"
+        ]["aggregate"]
+        _, request = _review_request()
+        result = _run(output_format="json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = json.loads(result.stdout)
+
+        self.assertIs(aggregate["all_cases_passed"], True)
+        self.assertEqual(request["decision_artifact"]["status"], "absent")
+        self.assertIs(summary["hardware_review_decision_present"], False)
+        self.assertIs(summary["hardware_review_complete"], False)
+        self.assertIs(summary["ready_for_principle_review"], False)
+
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            path, request = _review_request(design)
+            request["decision_artifact"] = {
+                "status": "approved_from_local_probe",
+                "path": None,
+                "decision_id": (
+                    "local-apple-m4-hierarchical-reduction-probe-2026-08-26"
+                ),
+            }
+            request["authorizations"]["human_hardware_review_cleared"] = True
+            request["authorizations"]["principle_driven_iteration_authorized"] = True
+            request["authorizations"]["implementation_authorized"] = True
+            _write(path, request)
+
+        self._assert_mutation_rejected(
+            mutate,
+            (
+                "decision_artifact",
+                "human_hardware_review_cleared",
+                "principle_driven_iteration_authorized",
+                "implementation_authorized",
+            ),
+        )
+
+    def test_cli_rejects_a_weakened_public_review_request_schema(self) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            path = design / "schema.json"
+            schema = _read(path)
+            schema["$defs"]["review_request"] = {}
+            _write(path, schema)
+
+        self._assert_mutation_rejected(mutate, "schema.json.$defs.review_request")
+
+    def test_cli_rejects_broken_public_review_request_safety_references(
+        self,
+    ) -> None:
+        mutations: tuple[tuple[str, dict[str, object]], ...] = (
+            ("stage_binding", {"type": "object"}),
+            ("closure", {"type": "object"}),
+            ("review_items", {"type": "array"}),
+            ("phase_order_ambiguity", {"type": "object"}),
+            ("decision_artifact", {"type": "object"}),
+            ("external_human_decision_contract", {"type": "object"}),
+            ("authorizations", {"type": "object"}),
+            ("non_claims", {"type": "array"}),
+        )
+        for field, replacement in mutations:
+            with self.subTest(field=field):
+
+                def mutate(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    field: str = field,
+                    replacement: dict[str, object] = replacement,
+                ) -> None:
+                    del library, extraction, target
+                    path = design / "schema.json"
+                    schema = _read(path)
+                    schema["$defs"]["review_request"]["properties"][field] = replacement
+                    _write(path, schema)
+
+                self._assert_mutation_rejected(
+                    mutate,
+                    f"schema.json.$defs.review_request.properties.{field}",
+                )
+
+    def test_cli_rejects_weakened_external_human_decision_schema_gates(
+        self,
+    ) -> None:
+        mutations: tuple[tuple[str, dict[str, object]], ...] = (
+            (
+                "global_dispositions",
+                {"type": "array", "items": {"type": "string"}},
+            ),
+            ("required_review_item_ids", {"type": "array"}),
+            ("per_item_verdict_contract", {"type": "object"}),
+            ("reviewed_git_revision_required", {"type": "boolean"}),
+            ("ambiguity_resolution_contract", {"type": "object"}),
+        )
+        for field, replacement in mutations:
+            with self.subTest(field=field):
+
+                def mutate(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    field: str = field,
+                    replacement: dict[str, object] = replacement,
+                ) -> None:
+                    del library, extraction, target
+                    path = design / "schema.json"
+                    schema = _read(path)
+                    schema["$defs"]["external_human_decision_contract"]["properties"][
+                        field
+                    ] = replacement
+                    _write(path, schema)
+
+                self._assert_mutation_rejected(
+                    mutate,
+                    (
+                        "schema.json.$defs.external_human_decision_contract."
+                        f"properties.{field}"
+                    ),
+                )
+
+    def test_cli_rejects_weakened_public_review_authority_schema_fields(
+        self,
+    ) -> None:
+        authorization_fields = (
+            "human_hardware_review_cleared",
+            "principle_driven_iteration_authorized",
+            "compiler_change_authorized",
+            "implementation_authorized",
+            "evaluation_authorized",
+            "performance_claim_authorized",
+            "scientific_claim_authorized",
+            "promotion_authorized",
+        )
+        mutations: list[tuple[str, str, dict[str, object]]] = [
+            (
+                "review_authorizations",
+                field,
+                {"type": "boolean"},
+            )
+            for field in authorization_fields
+        ]
+        mutations.extend(
+            (
+                "absent_decision_artifact",
+                field,
+                (
+                    {"type": "string"}
+                    if field == "status"
+                    else {"type": ["null", "string"]}
+                ),
+            )
+            for field in ("status", "path", "decision_id")
+        )
+        mutations.extend(
+            (
+                definition,
+                field,
+                {"type": "boolean"},
+            )
+            for definition, field in (
+                ("phase_order_ambiguity", "automation_may_select"),
+                (
+                    "external_human_decision_contract",
+                    "automation_may_write_decision",
+                ),
+                (
+                    "per_item_verdict_contract",
+                    "stage_clear_requires_all_item_verdicts_approved",
+                ),
+                (
+                    "per_item_verdict_contract",
+                    "non_approved_item_blocks_stage_transition",
+                ),
+                (
+                    "hierarchical_probe_aggregate",
+                    "all_command_buffers_completed",
+                ),
+                ("hierarchical_probe_aggregate", "all_cases_passed"),
+            )
+        )
+
+        for definition, field, replacement in mutations:
+            with self.subTest(definition=definition, field=field):
+
+                def mutate(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    definition: str = definition,
+                    field: str = field,
+                    replacement: dict[str, object] = replacement,
+                ) -> None:
+                    del library, extraction, target
+                    path = design / "schema.json"
+                    schema = _read(path)
+                    schema["$defs"][definition]["properties"][field] = replacement
+                    _write(path, schema)
+
+                self._assert_mutation_rejected(
+                    mutate,
+                    f"schema.json.$defs.{definition}.properties.{field}",
+                )
+
+    def test_cli_rejects_weakened_public_phase_resolution_schema_fields(
+        self,
+    ) -> None:
+        mutations: list[tuple[str, str, dict[str, object]]] = [
+            ("phase_order_ambiguity", "contradiction", {"type": "string"}),
+            ("phase_order_ambiguity", "resolution_options", {"type": "array"}),
+            (
+                "external_human_decision_contract",
+                "stage_transition_rule",
+                {"type": "string"},
+            ),
+        ]
+        for definition in (
+            "preimplementation_standalone_metal_prototypes_option",
+            "amend_gate_after_bounded_implementation_option",
+        ):
+            for field in ("option_id", "action", "consequence"):
+                mutations.append((definition, field, {"type": "string"}))
+
+        for definition, field, replacement in mutations:
+            with self.subTest(definition=definition, field=field):
+
+                def mutate(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    definition: str = definition,
+                    field: str = field,
+                    replacement: dict[str, object] = replacement,
+                ) -> None:
+                    del library, extraction, target
+                    path = design / "schema.json"
+                    schema = _read(path)
+                    schema["$defs"][definition]["properties"][field] = replacement
+                    _write(path, schema)
+
+                self._assert_mutation_rejected(
+                    mutate,
+                    f"schema.json.$defs.{definition}.properties.{field}",
+                )
 
     def test_cli_rejects_a_weakened_public_falsifier_schema(self) -> None:
         def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
@@ -579,9 +1349,7 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
             barrier["outcome"] = "outside_probe_scope"
             _write(path, evidence)
 
-        self._assert_mutation_rejected(
-            remap_outcome, ("falsifier_outcomes", "outcome")
-        )
+        self._assert_mutation_rejected(remap_outcome, ("falsifier_outcomes", "outcome"))
 
     def test_local_outcomes_track_the_actual_proposal_falsifier_closure(
         self,
@@ -637,12 +1405,10 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
                 value["finding_id"]: value
                 for value in proposal["observed_scope_findings"]
             }
-            findings["observed-width32-case-matrix"]["status"] = (
-                "reported_globally"
+            findings["observed-width32-case-matrix"]["status"] = "reported_globally"
+            findings["observed-exact-owner-and-broadcast"]["fact_ids"].append(
+                "observed-m4-hierarchical-runtime-resource-gates"
             )
-            findings["observed-exact-owner-and-broadcast"][
-                "fact_ids"
-            ].append("observed-m4-hierarchical-runtime-resource-gates")
             findings["observed-two-epoch-scratch-reuse"][
                 "does_not_resolve_hypothesis_ids"
             ].append("specialization-is-performance-competitive")
@@ -769,6 +1535,43 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
             _write(path, proposal)
 
         self._assert_mutation_rejected(mutate, "falsifier")
+
+    def test_resource_phase_hypothesis_falsifier_contract_is_semantically_pinned(
+        self,
+    ) -> None:
+        fields = ("method", "observable", "reject_when", "retained_result_contract")
+        for field in fields:
+            with self.subTest(field=field):
+
+                def mutate(
+                    library: Path,
+                    extraction: Path,
+                    design: Path,
+                    target: Path,
+                    *,
+                    field: str = field,
+                ) -> None:
+                    del library, extraction, target
+                    manifest = _read(design / "manifest.json")
+                    path = design / str(manifest["proposals"][0])
+                    proposal = _read(path)
+                    hypothesis = next(
+                        value
+                        for value in proposal["hypotheses"]
+                        if value["hypothesis_id"]
+                        == "resource-accounting-fits-selected-pipelines"
+                    )
+                    hypothesis["falsifier"][field] = (
+                        "Never reject overflow; always retain the configuration."
+                        if field == "reject_when"
+                        else f"Automation weakened the {field} boundary."
+                    )
+                    _write(path, proposal)
+
+                self._assert_mutation_rejected(
+                    mutate,
+                    ("hypotheses[2]", f"falsifier.{field}"),
+                )
 
     def test_resource_derivations_are_fixed_to_1024_over_32_and_128_bytes(self) -> None:
         mutations = {
@@ -958,11 +1761,28 @@ class HardwareInformedDesignValidatorTests(unittest.TestCase):
 
         self._assert_mutation_rejected(mutate, "unlisted")
 
+    def test_extra_review_request_is_rejected(self) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            _, request = _review_request(design)
+            _write(design / "review_requests" / "unlisted-request.json", request)
+
+        self._assert_mutation_rejected(mutate, "unlisted")
+
     def test_listed_proposal_symlink_is_rejected(self) -> None:
         def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
             del library, extraction, target
             manifest = _read(design / "manifest.json")
             path = design / str(manifest["proposals"][0])
+            path.unlink()
+            path.symlink_to("../manifest.json")
+
+        self._assert_mutation_rejected(mutate, "regular non-symlink file")
+
+    def test_listed_review_request_symlink_is_rejected(self) -> None:
+        def mutate(library: Path, extraction: Path, design: Path, target: Path) -> None:
+            del library, extraction, target
+            path, _ = _review_request(design)
             path.unlink()
             path.symlink_to("../manifest.json")
 

@@ -21,7 +21,7 @@ from validate_operator_library import OperatorLibraryValidationError
 
 
 _ROOT_FILES = frozenset({"README.md", "schema.json", "manifest.json"})
-_ROOT_DIRECTORIES = frozenset({"evidence", "proposals"})
+_ROOT_DIRECTORIES = frozenset({"evidence", "proposals", "review_requests"})
 _SCHEMA_ROOT_KEYS = frozenset({"$schema", "$id", "oneOf", "$defs"})
 _SCHEMA_DEFINITION_NAMES = frozenset(
     {
@@ -49,6 +49,22 @@ _SCHEMA_DEFINITION_NAMES = frozenset(
         "local_falsifier_outcome",
         "non_evidentiary_context",
         "non_evidentiary_repository_snapshot",
+        "review_request",
+        "review_stage_binding",
+        "review_manifest_binding",
+        "review_evidence_binding",
+        "review_proposal_binding",
+        "review_closure",
+        "review_closure_counts",
+        "review_item",
+        "phase_order_ambiguity",
+        "preimplementation_standalone_metal_prototypes_option",
+        "amend_gate_after_bounded_implementation_option",
+        "absent_decision_artifact",
+        "external_human_decision_contract",
+        "per_item_verdict_contract",
+        "ambiguity_resolution_contract",
+        "review_authorizations",
         "proposal",
         "candidate_binding",
         "evidence_binding",
@@ -79,6 +95,7 @@ _SCHEMA_DEFINITION_NAMES = frozenset(
         "safe_path",
         "https_url",
         "id",
+        "id_list",
         "sha256",
         "nonempty_strings",
     }
@@ -97,6 +114,7 @@ _MANIFEST_KEYS = frozenset(
         "input_candidate_closure",
         "evidence",
         "proposals",
+        "review_requests",
         "gate_separation",
         "counts",
         "non_claims",
@@ -115,7 +133,13 @@ _INPUT_CLOSURE_KEYS = frozenset(
     }
 )
 _COUNT_KEYS = frozenset(
-    {"evidence_count", "proposal_count", "candidate_count", "observation_count"}
+    {
+        "evidence_count",
+        "proposal_count",
+        "review_request_count",
+        "candidate_count",
+        "observation_count",
+    }
 )
 _EVIDENCE_KEYS = frozenset(
     {
@@ -296,6 +320,106 @@ _TARGET_CONTEXT_KEYS = frozenset(
 )
 _NON_EVIDENTIARY_REPOSITORY_SNAPSHOT_KEYS = frozenset(
     {"git_parent_revision", "target_path", "lowering_path", "binding_scope"}
+)
+_REVIEW_REQUEST_KEYS = frozenset(
+    {
+        "$schema",
+        "schema_version",
+        "review_request_id",
+        "state",
+        "authority",
+        "stage_binding",
+        "closure",
+        "review_items",
+        "phase_order_ambiguity",
+        "decision_artifact",
+        "external_human_decision_contract",
+        "authorizations",
+        "non_claims",
+    }
+)
+_REVIEW_STAGE_BINDING_KEYS = frozenset({"manifest", "evidence", "proposal"})
+_REVIEW_MANIFEST_BINDING_KEYS = frozenset({"design_stage_id", "path"})
+_REVIEW_EVIDENCE_BINDING_KEYS = frozenset({"evidence_id", "path"})
+_REVIEW_PROPOSAL_BINDING_KEYS = frozenset({"proposal_id", "path"})
+_REVIEW_CLOSURE_KEYS = frozenset(
+    {
+        "fact_ids",
+        "decision_ids",
+        "hypothesis_ids",
+        "observed_scope_finding_ids",
+        "falsifier_ids",
+        "counts",
+    }
+)
+_REVIEW_CLOSURE_COUNT_KEYS = frozenset(
+    {
+        "fact_count",
+        "decision_count",
+        "hypothesis_count",
+        "observed_scope_finding_count",
+        "falsifier_count",
+    }
+)
+_REVIEW_ITEM_KEYS = frozenset(
+    {
+        "review_item_id",
+        "question",
+        "fact_ids",
+        "decision_ids",
+        "hypothesis_ids",
+        "observed_scope_finding_ids",
+        "falsifier_ids",
+        "required_human_judgment",
+    }
+)
+_PHASE_ORDER_AMBIGUITY_KEYS = frozenset(
+    {
+        "ambiguity_id",
+        "status",
+        "contradiction",
+        "resolution_options",
+        "selection_required",
+        "automation_may_select",
+    }
+)
+_PHASE_ORDER_RESOLUTION_OPTION_KEYS = frozenset({"option_id", "action", "consequence"})
+_ABSENT_DECISION_ARTIFACT_KEYS = frozenset({"status", "path", "decision_id"})
+_EXTERNAL_HUMAN_DECISION_CONTRACT_KEYS = frozenset(
+    {
+        "decision_authority",
+        "global_dispositions",
+        "required_review_item_ids",
+        "per_item_verdict_contract",
+        "reviewed_git_revision_required",
+        "ambiguity_resolution_contract",
+        "stage_transition_rule",
+        "automation_may_write_decision",
+    }
+)
+_PER_ITEM_VERDICT_CONTRACT_KEYS = frozenset(
+    {
+        "per_item_verdict_required",
+        "verdict_values",
+        "localized_reason_required",
+        "stage_clear_requires_all_item_verdicts_approved",
+        "non_approved_item_blocks_stage_transition",
+    }
+)
+_AMBIGUITY_RESOLUTION_CONTRACT_KEYS = frozenset(
+    {"required_ambiguity_id", "allowed_option_ids", "localized_reason_required"}
+)
+_REVIEW_AUTHORIZATION_KEYS = frozenset(
+    {
+        "human_hardware_review_cleared",
+        "principle_driven_iteration_authorized",
+        "compiler_change_authorized",
+        "implementation_authorized",
+        "evaluation_authorized",
+        "performance_claim_authorized",
+        "scientific_claim_authorized",
+        "promotion_authorized",
+    }
 )
 _PROPOSAL_KEYS = frozenset(
     {
@@ -479,6 +603,26 @@ _SCHEMA_OBJECT_KEYS_BY_DEFINITION = {
     "local_falsifier_outcome": _LOCAL_FALSIFIER_OUTCOME_KEYS,
     "non_evidentiary_context": _TARGET_CONTEXT_KEYS,
     "non_evidentiary_repository_snapshot": (_NON_EVIDENTIARY_REPOSITORY_SNAPSHOT_KEYS),
+    "review_request": _REVIEW_REQUEST_KEYS,
+    "review_stage_binding": _REVIEW_STAGE_BINDING_KEYS,
+    "review_manifest_binding": _REVIEW_MANIFEST_BINDING_KEYS,
+    "review_evidence_binding": _REVIEW_EVIDENCE_BINDING_KEYS,
+    "review_proposal_binding": _REVIEW_PROPOSAL_BINDING_KEYS,
+    "review_closure": _REVIEW_CLOSURE_KEYS,
+    "review_closure_counts": _REVIEW_CLOSURE_COUNT_KEYS,
+    "review_item": _REVIEW_ITEM_KEYS,
+    "phase_order_ambiguity": _PHASE_ORDER_AMBIGUITY_KEYS,
+    "preimplementation_standalone_metal_prototypes_option": (
+        _PHASE_ORDER_RESOLUTION_OPTION_KEYS
+    ),
+    "amend_gate_after_bounded_implementation_option": (
+        _PHASE_ORDER_RESOLUTION_OPTION_KEYS
+    ),
+    "absent_decision_artifact": _ABSENT_DECISION_ARTIFACT_KEYS,
+    "external_human_decision_contract": _EXTERNAL_HUMAN_DECISION_CONTRACT_KEYS,
+    "per_item_verdict_contract": _PER_ITEM_VERDICT_CONTRACT_KEYS,
+    "ambiguity_resolution_contract": _AMBIGUITY_RESOLUTION_CONTRACT_KEYS,
+    "review_authorizations": _REVIEW_AUTHORIZATION_KEYS,
     "proposal": _PROPOSAL_KEYS,
     "candidate_binding": _CANDIDATE_BINDING_KEYS,
     "evidence_binding": _EVIDENCE_BINDING_KEYS,
@@ -513,23 +657,95 @@ _STATE = "review_pending"
 _CLAIM_SCOPE = "hardware_mapping_only"
 _DISPOSITION = "await_human_hardware_review"
 _NEXT_GATE = "principle_driven_iteration"
+_REVIEW_REQUEST_ID = "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1"
+_REVIEW_REQUEST_PATH = (
+    "review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+)
+_REVIEW_EVIDENCE_PATH = "evidence/apple-metal-hierarchical-reduction-v1.json"
+_REVIEW_PROPOSAL_PATH = (
+    "proposals/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+)
+_PHASE_ORDER_AMBIGUITY_ID = "resource-accounting-phase-order"
+_RESOURCE_PHASE_CONTRADICTION = (
+    "The resource-accounting-fits-selected-pipelines hypothesis is marked "
+    "required_before=implementation, but its falsifier requires compiling every "
+    "retained future variant and inspecting pipeline-created static threadgroup "
+    "memory. The current finite Compiler lowering cannot create the required scratch "
+    "allocation or barriers, so the word implementation cannot simultaneously mean "
+    "both any materialization code and the accepted Compiler port."
+)
+_PHASE_ORDER_OPTIONS = (
+    {
+        "option_id": "preimplementation-standalone-metal-prototypes",
+        "action": (
+            "Keep required_before=implementation literal by compiling separately "
+            "reviewed standalone Metal prototype pipelines for every retained RMS "
+            "and Layer variant before any Compiler implementation."
+        ),
+        "consequence": (
+            "Append-only resource observations may resolve the hypothesis without "
+            "granting Compiler-change, correctness, performance, or promotion "
+            "authority; the later P1-P8 review still governs the compiler design."
+        ),
+    },
+    {
+        "option_id": "amend-gate-to-port-acceptance-after-bounded-implementation",
+        "action": (
+            "Require a human-requested successor proposal that moves the resource "
+            "hypothesis to port acceptance and authorizes only the bounded "
+            "implementation needed to materialize retained pipelines after P1-P8 "
+            "acceptance."
+        ),
+        "consequence": (
+            "The first implementation cannot be accepted, released, evaluated, or "
+            "used for a claim until every retained variant's resource observation "
+            "passes; automation may not silently reinterpret the existing "
+            "required_before field."
+        ),
+    },
+)
+_PHASE_ORDER_OPTION_IDS = tuple(option["option_id"] for option in _PHASE_ORDER_OPTIONS)
+_RESOURCE_HYPOTHESIS_FALSIFIER_CONTRACT = {
+    "method": (
+        "Compile every retained variant and inspect "
+        "pipeline.staticThreadgroupMemoryLength, that variant's aligned dynamic "
+        "allocation, device.maxThreadgroupMemoryLength, and "
+        "maxTotalThreadsPerThreadgroup."
+    ),
+    "observable": (
+        "Total static-plus-dynamic bytes, alignment padding, requested threads, and "
+        "both runtime ceilings for each pipeline variant."
+    ),
+    "reject_when": (
+        "Any retained configuration exceeds either runtime limit or the 32768-byte "
+        "family ceiling."
+    ),
+    "retained_result_contract": (
+        "Append-only per-variant resource observations including refused "
+        "configurations; no regenerated expectation may erase an overflow."
+    ),
+}
+_STAGE_TRANSITION_RULE = (
+    "Only an approved external decision that covers every review item, supplies "
+    "every localized reason, identifies the reviewed Git revision, and selects one "
+    "resource-accounting-phase-order option may clear Stage 3. A changes_requested "
+    "or rejected decision cannot advance the gate."
+)
+_REVIEW_DISPOSITIONS = ("approved", "changes_requested", "rejected")
 _GIT_PARENT_REVISION = "2238610a4e8923330d73d125e79fd374fc7d2397"
 _PROBE_PATH = "tools/probe_metal_operators.py"
 _LOCAL_PROBE_OBSERVATION_ID = "local-apple-m4-metal-operator-probe-2026-08-26"
 _HIERARCHICAL_PROBE_OBSERVATION_ID = (
     "local-apple-m4-hierarchical-reduction-probe-2026-08-26"
 )
-_HIERARCHICAL_PROBE_REPOSITORY_REVISION = (
-    "f858612c7ee695b57d72115c76723c7bacc22a9b"
-)
+_HIERARCHICAL_PROBE_REPOSITORY_REVISION = "f858612c7ee695b57d72115c76723c7bacc22a9b"
 _HIERARCHICAL_PROBE_SOURCE_PATHS = (
     "tools/probe_metal_hierarchical_reduction.py",
     "tools/metal_hierarchical_reduction_probe/hierarchical_reduction.metal",
     "tools/metal_hierarchical_reduction_probe/run_hierarchical_reduction.swift",
 )
 _HIERARCHICAL_PROBE_ARTIFACT_RELATIVE_PATH = (
-    "f858612c7ee695b57d72115c76723c7bacc22a9b/"
-    "metal-hierarchical-reduction.json"
+    "f858612c7ee695b57d72115c76723c7bacc22a9b/metal-hierarchical-reduction.json"
 )
 _HIERARCHICAL_PROBE_GROUP_COUNTS = (1, 2, 4, 8, 16, 32)
 _HIERARCHICAL_PROBE_THREAD_COUNTS = (32, 64, 128, 256, 512, 1024)
@@ -552,9 +768,7 @@ _HIERARCHICAL_PROBE_FACT_IDS = frozenset(
 _HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES = {
     "runtime-width-not-32": "not_triggered_in_observed_cases",
     "pipeline-thread-limit-exceeded": "not_triggered_in_observed_cases",
-    "partial-final-simdgroup-outside-v1": (
-        "precondition_satisfied_in_observed_cases"
-    ),
+    "partial-final-simdgroup-outside-v1": ("precondition_satisfied_in_observed_cases"),
     "partial-set-exceeds-final-simdgroup": "not_triggered_in_observed_cases",
     "threadgroup-memory-budget-exceeded": "not_triggered_in_observed_cases",
     "barrier-not-uniform": "requires_source_review",
@@ -589,6 +803,205 @@ _OBSERVED_SCOPE_FINDINGS = {
         ),
     ),
 }
+_REVIEW_ITEM_REFERENCES: dict[str, dict[str, tuple[str, ...]]] = {
+    "vendor-fact-applicability": {
+        "fact_ids": (
+            "apple-m4-is-gpu-family9",
+            "apple-family9-supports-simdgroup-reductions",
+            "apple-family9-thread-ceiling-1024",
+            "apple-family9-threadgroup-memory-ceiling-32768",
+            "apple-family9-threadgroup-memory-alignment-16",
+            "metal-threadgroup-memory-scope",
+            "metal-simd-sum-active-thread-scope",
+            "metal-simd-sum-excludes-bfloat-input",
+            "metal-threadgroup-publication-barrier",
+            "metal-simd-width-must-be-queried",
+            "metal-pipeline-thread-limit-must-be-queried",
+            "metal-total-threadgroup-memory-runtime-gate",
+            "metal-family-query-is-lower-bound",
+            "observed-m4-supports-apple9-or-newer",
+        ),
+        "decision_ids": (
+            "preserve-width-neutral-candidate",
+            "refine-width32-fail-closed-specialization",
+        ),
+        "hypothesis_ids": ("width32-specialization-covers-intended-devices",),
+        "observed_scope_finding_ids": ("observed-width32-case-matrix",),
+        "falsifier_ids": ("runtime-width-not-32",),
+    },
+    "width-policy-and-fail-closed-selection": {
+        "fact_ids": (
+            "apple-family9-thread-ceiling-1024",
+            "metal-simd-width-must-be-queried",
+            "metal-pipeline-thread-limit-must-be-queried",
+            "observed-m4-pipeline-width-32",
+            "observed-m4-pipeline-thread-limit-1024",
+            "observed-m4-hierarchical-width32-case-matrix",
+        ),
+        "decision_ids": (
+            "preserve-width-neutral-candidate",
+            "refine-width32-fail-closed-specialization",
+        ),
+        "hypothesis_ids": ("width32-specialization-covers-intended-devices",),
+        "observed_scope_finding_ids": ("observed-width32-case-matrix",),
+        "falsifier_ids": (
+            "runtime-width-not-32",
+            "pipeline-thread-limit-exceeded",
+            "partial-final-simdgroup-outside-v1",
+            "partial-set-exceeds-final-simdgroup",
+        ),
+    },
+    "partial-cardinality-and-final-reduction": {
+        "fact_ids": (
+            "apple-family9-supports-simdgroup-reductions",
+            "metal-simd-sum-active-thread-scope",
+            "observed-m4-hierarchical-exact-owner-and-broadcast",
+        ),
+        "decision_ids": (
+            "refine-metal-two-level-reduction-sequence",
+            "split-final-reducer-ownership",
+        ),
+        "hypothesis_ids": ("one-partial-per-simdgroup-is-expressible",),
+        "observed_scope_finding_ids": ("observed-exact-owner-and-broadcast",),
+        "falsifier_ids": (
+            "partial-set-exceeds-final-simdgroup",
+            "scratch-read-before-publication",
+            "ambiguous-final-reducer-owner",
+        ),
+    },
+    "barrier-participation-and-publication": {
+        "fact_ids": (
+            "metal-threadgroup-memory-scope",
+            "metal-threadgroup-publication-barrier",
+            "observed-m4-hierarchical-exact-owner-and-broadcast",
+            "observed-m4-hierarchical-two-epoch-scratch-reuse",
+        ),
+        "decision_ids": (
+            "refine-metal-two-level-reduction-sequence",
+            "split-final-reducer-ownership",
+        ),
+        "hypothesis_ids": ("one-partial-per-simdgroup-is-expressible",),
+        "observed_scope_finding_ids": (
+            "observed-exact-owner-and-broadcast",
+            "observed-two-epoch-scratch-reuse",
+        ),
+        "falsifier_ids": (
+            "barrier-not-uniform",
+            "scratch-read-before-publication",
+            "scratch-reuse-race",
+        ),
+    },
+    "scratch-initialization-lifetime-and-reuse": {
+        "fact_ids": (
+            "metal-threadgroup-memory-scope",
+            "metal-threadgroup-publication-barrier",
+            "observed-m4-hierarchical-two-epoch-scratch-reuse",
+        ),
+        "decision_ids": (
+            "refine-metal-two-level-reduction-sequence",
+            "refine-explicit-resource-accounting",
+        ),
+        "hypothesis_ids": ("one-partial-per-simdgroup-is-expressible",),
+        "observed_scope_finding_ids": ("observed-two-epoch-scratch-reuse",),
+        "falsifier_ids": (
+            "scratch-read-before-publication",
+            "scratch-reuse-race",
+        ),
+    },
+    "variant-owner-split": {
+        "fact_ids": (
+            "metal-simd-sum-active-thread-scope",
+            "metal-threadgroup-memory-scope",
+            "metal-threadgroup-publication-barrier",
+            "observed-m4-hierarchical-exact-owner-and-broadcast",
+        ),
+        "decision_ids": ("split-final-reducer-ownership",),
+        "hypothesis_ids": ("one-partial-per-simdgroup-is-expressible",),
+        "observed_scope_finding_ids": ("observed-exact-owner-and-broadcast",),
+        "falsifier_ids": ("ambiguous-final-reducer-owner",),
+    },
+    "resource-accounting-and-runtime-gates": {
+        "fact_ids": (
+            "apple-family9-thread-ceiling-1024",
+            "apple-family9-threadgroup-memory-ceiling-32768",
+            "apple-family9-threadgroup-memory-alignment-16",
+            "metal-pipeline-thread-limit-must-be-queried",
+            "metal-total-threadgroup-memory-runtime-gate",
+            "observed-m4-threadgroup-memory-32768",
+            "observed-m4-pipeline-thread-limit-1024",
+            "observed-m4-hierarchical-runtime-resource-gates",
+        ),
+        "decision_ids": ("refine-explicit-resource-accounting",),
+        "hypothesis_ids": (
+            "resource-accounting-fits-selected-pipelines",
+            "specialization-is-performance-competitive",
+        ),
+        "observed_scope_finding_ids": ("observed-runtime-resource-gates",),
+        "falsifier_ids": (
+            "pipeline-thread-limit-exceeded",
+            "threadgroup-memory-budget-exceeded",
+            "current-lowering-capability-missing",
+        ),
+    },
+    "numeric-scope-and-oracle-boundary": {
+        "fact_ids": (
+            "metal-simd-sum-active-thread-scope",
+            "metal-simd-sum-excludes-bfloat-input",
+            "observed-m4-hierarchical-exact-owner-and-broadcast",
+        ),
+        "decision_ids": ("refine-metal-two-level-reduction-sequence",),
+        "hypothesis_ids": ("floating-reassociation-meets-workload-tolerances",),
+        "observed_scope_finding_ids": ("observed-exact-owner-and-broadcast",),
+        "falsifier_ids": ("bfloat-simd-sum-input", "bitwise-order-required"),
+    },
+    "observed-scope-and-authority-boundary": {
+        "fact_ids": (
+            "observed-m4-supports-apple9-or-newer",
+            "observed-m4-threadgroup-memory-32768",
+            "observed-m4-pipeline-width-32",
+            "observed-m4-pipeline-thread-limit-1024",
+            "observed-m4-hierarchical-width32-case-matrix",
+            "observed-m4-hierarchical-exact-owner-and-broadcast",
+            "observed-m4-hierarchical-two-epoch-scratch-reuse",
+            "observed-m4-hierarchical-runtime-resource-gates",
+        ),
+        "decision_ids": (
+            "preserve-width-neutral-candidate",
+            "refine-width32-fail-closed-specialization",
+            "refine-metal-two-level-reduction-sequence",
+            "split-final-reducer-ownership",
+            "refine-explicit-resource-accounting",
+        ),
+        "hypothesis_ids": (
+            "width32-specialization-covers-intended-devices",
+            "one-partial-per-simdgroup-is-expressible",
+            "resource-accounting-fits-selected-pipelines",
+            "floating-reassociation-meets-workload-tolerances",
+            "specialization-is-performance-competitive",
+        ),
+        "observed_scope_finding_ids": (
+            "observed-width32-case-matrix",
+            "observed-exact-owner-and-broadcast",
+            "observed-two-epoch-scratch-reuse",
+            "observed-runtime-resource-gates",
+        ),
+        "falsifier_ids": (
+            "runtime-width-not-32",
+            "pipeline-thread-limit-exceeded",
+            "partial-final-simdgroup-outside-v1",
+            "partial-set-exceeds-final-simdgroup",
+            "threadgroup-memory-budget-exceeded",
+            "barrier-not-uniform",
+            "scratch-read-before-publication",
+            "scratch-reuse-race",
+            "bfloat-simd-sum-input",
+            "ambiguous-final-reducer-owner",
+            "bitwise-order-required",
+            "current-lowering-capability-missing",
+        ),
+    },
+}
+_REVIEW_ITEM_IDS = tuple(_REVIEW_ITEM_REFERENCES)
 _TARGET_PATH = "compiler/targets/apple_gpu_family9.json"
 _LOWERING_PATH = "src/open_cake_ir/compiler/emit_metal.py"
 _CANDIDATE_ID = "hierarchical-simdgroup-threadgroup-reduction"
@@ -639,12 +1052,194 @@ _SCHEMA_NON_OBJECT_CONTRACTS: dict[str, dict[str, object]] = {
     },
     "https_url": {"type": "string", "pattern": r"^https://[^ ]+$"},
     "id": {"type": "string", "pattern": r"^[a-z0-9][a-z0-9._-]+$"},
+    "id_list": {
+        "type": "array",
+        "uniqueItems": True,
+        "items": {"$ref": "#/$defs/id"},
+    },
     "sha256": {"type": "string", "pattern": r"^[0-9a-f]{64}$"},
     "nonempty_strings": {
         "type": "array",
         "minItems": 1,
         "uniqueItems": True,
         "items": {"type": "string", "minLength": 1},
+    },
+}
+
+_SCHEMA_CRITICAL_PROPERTY_CONTRACTS: dict[str, dict[str, object]] = {
+    "review_request": {
+        "$schema": {"const": "../schema.json#/$defs/review_request"},
+        "schema_version": {"const": 1},
+        "review_request_id": {"const": _REVIEW_REQUEST_ID},
+        "state": {"const": "awaiting_human_review"},
+        "authority": {"const": "external_human_hardware_reviewer_only"},
+        "stage_binding": {"$ref": "#/$defs/review_stage_binding"},
+        "closure": {"$ref": "#/$defs/review_closure"},
+        "review_items": {
+            "type": "array",
+            "minItems": 9,
+            "maxItems": 9,
+            "uniqueItems": True,
+            "items": {"$ref": "#/$defs/review_item"},
+        },
+        "phase_order_ambiguity": {"$ref": "#/$defs/phase_order_ambiguity"},
+        "decision_artifact": {"$ref": "#/$defs/absent_decision_artifact"},
+        "external_human_decision_contract": {
+            "$ref": "#/$defs/external_human_decision_contract"
+        },
+        "authorizations": {"$ref": "#/$defs/review_authorizations"},
+        "non_claims": {"$ref": "#/$defs/nonempty_strings"},
+    },
+    "review_stage_binding": {
+        "manifest": {"$ref": "#/$defs/review_manifest_binding"},
+        "evidence": {"$ref": "#/$defs/review_evidence_binding"},
+        "proposal": {"$ref": "#/$defs/review_proposal_binding"},
+    },
+    "review_manifest_binding": {
+        "design_stage_id": {"const": "apple-metal-hardware-informed-design-v1"},
+        "path": {"const": "hardware_informed_design/manifest.json"},
+    },
+    "review_evidence_binding": {
+        "evidence_id": {"const": "apple-metal-hierarchical-reduction-v1"},
+        "path": {
+            "const": (
+                "hardware_informed_design/evidence/"
+                "apple-metal-hierarchical-reduction-v1.json"
+            )
+        },
+    },
+    "review_proposal_binding": {
+        "proposal_id": {"const": _REVIEW_REQUEST_ID},
+        "path": {
+            "const": (
+                "hardware_informed_design/proposals/"
+                "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+            )
+        },
+    },
+    "review_closure": {
+        "fact_ids": {
+            "type": "array",
+            "minItems": 21,
+            "maxItems": 21,
+            "uniqueItems": True,
+            "items": {"$ref": "#/$defs/id"},
+        },
+        "decision_ids": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 5,
+            "uniqueItems": True,
+            "items": {"$ref": "#/$defs/id"},
+        },
+        "hypothesis_ids": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 5,
+            "uniqueItems": True,
+            "items": {"$ref": "#/$defs/id"},
+        },
+        "observed_scope_finding_ids": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "uniqueItems": True,
+            "items": {"$ref": "#/$defs/id"},
+        },
+        "falsifier_ids": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "uniqueItems": True,
+            "items": {"$ref": "#/$defs/id"},
+        },
+        "counts": {"$ref": "#/$defs/review_closure_counts"},
+    },
+    "review_closure_counts": {
+        "fact_count": {"const": 21},
+        "decision_count": {"const": 5},
+        "hypothesis_count": {"const": 5},
+        "observed_scope_finding_count": {"const": 4},
+        "falsifier_count": {"const": 12},
+    },
+    "review_item": {
+        "review_item_id": {"$ref": "#/$defs/id"},
+        "question": {"type": "string", "minLength": 1},
+        "fact_ids": {"$ref": "#/$defs/id_list"},
+        "decision_ids": {"$ref": "#/$defs/id_list"},
+        "hypothesis_ids": {"$ref": "#/$defs/id_list"},
+        "observed_scope_finding_ids": {"$ref": "#/$defs/id_list"},
+        "falsifier_ids": {"$ref": "#/$defs/id_list"},
+        "required_human_judgment": {"type": "string", "minLength": 1},
+    },
+    "phase_order_ambiguity": {
+        "ambiguity_id": {"const": _PHASE_ORDER_AMBIGUITY_ID},
+        "status": {"const": "unresolved_requires_human_choice"},
+        "contradiction": {"const": _RESOURCE_PHASE_CONTRADICTION},
+        "resolution_options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+                {
+                    "$ref": (
+                        "#/$defs/preimplementation_standalone_metal_prototypes_option"
+                    )
+                },
+                {"$ref": "#/$defs/amend_gate_after_bounded_implementation_option"},
+            ],
+            "items": False,
+        },
+        "selection_required": {"const": True},
+        "automation_may_select": {"const": False},
+    },
+    "preimplementation_standalone_metal_prototypes_option": {
+        field: {"const": value} for field, value in _PHASE_ORDER_OPTIONS[0].items()
+    },
+    "amend_gate_after_bounded_implementation_option": {
+        field: {"const": value} for field, value in _PHASE_ORDER_OPTIONS[1].items()
+    },
+    "absent_decision_artifact": {
+        "status": {"const": "absent"},
+        "path": {"type": "null"},
+        "decision_id": {"type": "null"},
+    },
+    "external_human_decision_contract": {
+        "decision_authority": {"const": "external_human_hardware_reviewer_only"},
+        "global_dispositions": {"const": list(_REVIEW_DISPOSITIONS)},
+        "required_review_item_ids": {
+            "type": "array",
+            "minItems": 9,
+            "maxItems": 9,
+            "uniqueItems": True,
+            "items": {"$ref": "#/$defs/id"},
+        },
+        "per_item_verdict_contract": {"$ref": "#/$defs/per_item_verdict_contract"},
+        "reviewed_git_revision_required": {"const": True},
+        "ambiguity_resolution_contract": {
+            "$ref": "#/$defs/ambiguity_resolution_contract"
+        },
+        "stage_transition_rule": {"const": _STAGE_TRANSITION_RULE},
+        "automation_may_write_decision": {"const": False},
+    },
+    "per_item_verdict_contract": {
+        "per_item_verdict_required": {"const": True},
+        "verdict_values": {"const": list(_REVIEW_DISPOSITIONS)},
+        "localized_reason_required": {"const": True},
+        "stage_clear_requires_all_item_verdicts_approved": {"const": True},
+        "non_approved_item_blocks_stage_transition": {"const": True},
+    },
+    "ambiguity_resolution_contract": {
+        "required_ambiguity_id": {"const": _PHASE_ORDER_AMBIGUITY_ID},
+        "allowed_option_ids": {"const": list(_PHASE_ORDER_OPTION_IDS)},
+        "localized_reason_required": {"const": True},
+    },
+    "review_authorizations": {
+        field: {"const": False} for field in _REVIEW_AUTHORIZATION_KEYS
+    },
+    "hierarchical_probe_aggregate": {
+        "all_command_buffers_completed": {"const": True},
+        "all_cases_passed": {"const": True},
     },
 }
 
@@ -679,9 +1274,10 @@ class HardwareInformedDesignSummary:
     retained_local_probe_reported_outcome: bool = True
     retained_local_probe_case_count: int = 6
     retained_local_probe_epoch_count: int = 12
-    retained_local_probe_scope: str = (
-        "observed_apple_m4_fp32_rms_probe_pipeline_only"
-    )
+    retained_local_probe_scope: str = "observed_apple_m4_fp32_rms_probe_pipeline_only"
+    review_request_count: int = 1
+    hardware_review_decision_present: bool = False
+    resource_phase_ambiguity_exposed: bool = True
     hardware_review_complete: bool = False
     evaluation_evidence_present: bool = False
 
@@ -1002,6 +1598,7 @@ def _public_schema(validator: _Validator, schema: Mapping[str, object]) -> None:
             {"$ref": "#/$defs/manifest"},
             {"$ref": "#/$defs/evidence"},
             {"$ref": "#/$defs/proposal"},
+            {"$ref": "#/$defs/review_request"},
         ],
     )
     definitions = validator.exact(
@@ -1051,6 +1648,22 @@ def _public_schema(validator: _Validator, schema: Mapping[str, object]) -> None:
                         f"{path}.properties.{property_name}",
                         "must be a non-empty schema object",
                     )
+
+    for definition_name, property_contracts in sorted(
+        _SCHEMA_CRITICAL_PROPERTY_CONTRACTS.items()
+    ):
+        definition = definitions.get(definition_name)
+        if not isinstance(definition, dict):
+            continue
+        properties = definition.get("properties")
+        if not isinstance(properties, dict):
+            continue
+        for property_name, expected_contract in sorted(property_contracts.items()):
+            validator.literal(
+                properties.get(property_name),
+                f"schema.json.$defs.{definition_name}.properties.{property_name}",
+                expected_contract,
+            )
 
     for name, expected_contract in sorted(_SCHEMA_NON_OBJECT_CONTRACTS.items()):
         validator.literal(
@@ -1439,14 +2052,8 @@ def _hierarchical_probe_observation(
                 groups = _HIERARCHICAL_PROBE_GROUP_COUNTS[index]
                 threads = _HIERARCHICAL_PROBE_THREAD_COUNTS[index]
                 expected_sums = [
-                    sum(
-                        ((thread % 13) - 6) * 0.125 + 0.5
-                        for thread in range(threads)
-                    ),
-                    sum(
-                        ((thread % 11) - 5) * 0.25 - 0.75
-                        for thread in range(threads)
-                    ),
+                    sum(((thread % 13) - 6) * 0.125 + 0.5 for thread in range(threads)),
+                    sum(((thread % 11) - 5) * 0.25 - 0.75 for thread in range(threads)),
                 ]
                 if tuple(expected_sums) != _HIERARCHICAL_PROBE_EXPECTED_SUMS[index]:
                     validator.error(
@@ -1468,9 +2075,7 @@ def _hierarchical_probe_observation(
                     "passed": True,
                 }
                 for field, expected in case_literals.items():
-                    validator.literal(
-                        case.get(field), f"{case_path}.{field}", expected
-                    )
+                    validator.literal(case.get(field), f"{case_path}.{field}", expected)
 
         aggregate = validator.exact(
             normalized.get("aggregate"),
@@ -1513,15 +2118,13 @@ def _hierarchical_probe_observation(
                     derived_aggregate: dict[str, object] = {
                         "case_count": len(parsed_cases),
                         "epoch_result_count": sum(
-                            len(cast(list[object], item))
-                            for item in expected_sum_lists
+                            len(cast(list[object], item)) for item in expected_sum_lists
                         ),
                         "broadcast_consumer_check_count": sum(
                             sum(cast(list[int], item))
                             for item in broadcast_count_lists
                             if all(
-                                isinstance(count, int)
-                                and not isinstance(count, bool)
+                                isinstance(count, int) and not isinstance(count, bool)
                                 for count in cast(list[object], item)
                             )
                         ),
@@ -1632,12 +2235,10 @@ def _hierarchical_probe_observation(
             )
         if set(observed_outcome_ids) != set(_HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES):
             missing = sorted(
-                set(_HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES)
-                - set(observed_outcome_ids)
+                set(_HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES) - set(observed_outcome_ids)
             )
             unexpected = sorted(
-                set(observed_outcome_ids)
-                - set(_HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES)
+                set(observed_outcome_ids) - set(_HIERARCHICAL_PROBE_FALSIFIER_OUTCOMES)
             )
             details: list[str] = []
             if missing:
@@ -1646,9 +2247,7 @@ def _hierarchical_probe_observation(
                 details.append(f"unexpected: {', '.join(unexpected)}")
             validator.error(
                 f"{path}.falsifier_outcomes",
-                "local falsifier outcome closure differs ("
-                + "; ".join(details)
-                + ")",
+                "local falsifier outcome closure differs (" + "; ".join(details) + ")",
             )
 
 
@@ -1777,10 +2376,9 @@ def _evidence_document(
                         "a local engineering fact must reference only its exact "
                         "local probe observation",
                     )
-                if (
-                    fact_id is not None
-                    and fact_source_ids == [_HIERARCHICAL_PROBE_OBSERVATION_ID]
-                ):
+                if fact_id is not None and fact_source_ids == [
+                    _HIERARCHICAL_PROBE_OBSERVATION_ID
+                ]:
                     hierarchical_probe_fact_ids.add(fact_id)
             elif authority == "apple_vendor_documentation":
                 if scope == "observed_device_pipeline":
@@ -1801,9 +2399,7 @@ def _evidence_document(
                     facts_by_id[fact_id] = fact
     if hierarchical_probe_fact_ids != _HIERARCHICAL_PROBE_FACT_IDS:
         missing = sorted(_HIERARCHICAL_PROBE_FACT_IDS - hierarchical_probe_fact_ids)
-        unexpected = sorted(
-            hierarchical_probe_fact_ids - _HIERARCHICAL_PROBE_FACT_IDS
-        )
+        unexpected = sorted(hierarchical_probe_fact_ids - _HIERARCHICAL_PROBE_FACT_IDS)
         details: list[str] = []
         if missing:
             details.append(f"missing: {', '.join(missing)}")
@@ -2553,9 +3149,7 @@ def _proposal_document(
             )
         for index, finding_value in enumerate(findings_value):
             path = f"{relative}.observed_scope_findings[{index}]"
-            finding = validator.exact(
-                finding_value, path, _OBSERVED_SCOPE_FINDING_KEYS
-            )
+            finding = validator.exact(finding_value, path, _OBSERVED_SCOPE_FINDING_KEYS)
             if finding is None:
                 continue
             finding_id = validator.string(
@@ -2644,14 +3238,10 @@ def _proposal_document(
                 details.append(f"unexpected: {', '.join(unexpected)}")
             validator.error(
                 f"{relative}.observed_scope_findings",
-                "observed-scope finding closure differs ("
-                + "; ".join(details)
-                + ")",
+                "observed-scope finding closure differs (" + "; ".join(details) + ")",
             )
 
-    unused_bound_facts = sorted(
-        bound_fact_ids - (decision_fact_ids | finding_fact_ids)
-    )
+    unused_bound_facts = sorted(bound_fact_ids - (decision_fact_ids | finding_fact_ids))
     if unused_bound_facts:
         validator.error(
             f"{relative}.evidence_binding.fact_ids",
@@ -2753,6 +3343,573 @@ def _cross_document_falsifier_closure(
     )
 
 
+def _identifier_sequence(
+    document: Mapping[str, object], collection: str, identifier: str
+) -> list[str] | None:
+    values = document.get(collection)
+    if not isinstance(values, list):
+        return None
+    result: list[str] = []
+    for value in values:
+        if not isinstance(value, dict):
+            return None
+        item = value.get(identifier)
+        if not isinstance(item, str):
+            return None
+        result.append(item)
+    return result
+
+
+def _review_request_document(
+    validator: _Validator,
+    document: Mapping[str, object],
+    relative: str,
+    design_stage_id: str | None,
+    evidence_documents: Sequence[tuple[str, dict[str, object]]],
+    proposal_documents: Sequence[tuple[str, dict[str, object]]],
+) -> str | None:
+    validator.exact(document, relative, _REVIEW_REQUEST_KEYS)
+    validator.literal(
+        document.get("$schema"),
+        f"{relative}.$schema",
+        "../schema.json#/$defs/review_request",
+    )
+    validator.literal(document.get("schema_version"), f"{relative}.schema_version", 1)
+    review_request_id = validator.string(
+        document.get("review_request_id"), f"{relative}.review_request_id", _ID
+    )
+    validator.literal(
+        review_request_id, f"{relative}.review_request_id", _REVIEW_REQUEST_ID
+    )
+    validator.literal(
+        document.get("state"), f"{relative}.state", "awaiting_human_review"
+    )
+    validator.literal(
+        document.get("authority"),
+        f"{relative}.authority",
+        "external_human_hardware_reviewer_only",
+    )
+
+    stage_binding = validator.exact(
+        document.get("stage_binding"),
+        f"{relative}.stage_binding",
+        _REVIEW_STAGE_BINDING_KEYS,
+    )
+    if stage_binding is not None:
+        manifest_binding = validator.exact(
+            stage_binding.get("manifest"),
+            f"{relative}.stage_binding.manifest",
+            _REVIEW_MANIFEST_BINDING_KEYS,
+        )
+        if manifest_binding is not None:
+            validator.literal(
+                manifest_binding.get("design_stage_id"),
+                f"{relative}.stage_binding.manifest.design_stage_id",
+                design_stage_id,
+            )
+            validator.literal(
+                manifest_binding.get("path"),
+                f"{relative}.stage_binding.manifest.path",
+                "hardware_informed_design/manifest.json",
+            )
+
+        evidence_binding = validator.exact(
+            stage_binding.get("evidence"),
+            f"{relative}.stage_binding.evidence",
+            _REVIEW_EVIDENCE_BINDING_KEYS,
+        )
+        if evidence_binding is not None:
+            if len(evidence_documents) != 1:
+                validator.error(
+                    f"{relative}.stage_binding.evidence",
+                    "requires exactly one actual evidence document",
+                )
+            else:
+                evidence_relative, evidence = evidence_documents[0]
+                validator.literal(
+                    evidence_binding.get("evidence_id"),
+                    f"{relative}.stage_binding.evidence.evidence_id",
+                    evidence.get("evidence_id"),
+                )
+                validator.literal(
+                    evidence_binding.get("path"),
+                    f"{relative}.stage_binding.evidence.path",
+                    f"hardware_informed_design/{evidence_relative}",
+                )
+
+        proposal_binding = validator.exact(
+            stage_binding.get("proposal"),
+            f"{relative}.stage_binding.proposal",
+            _REVIEW_PROPOSAL_BINDING_KEYS,
+        )
+        if proposal_binding is not None:
+            if len(proposal_documents) != 1:
+                validator.error(
+                    f"{relative}.stage_binding.proposal",
+                    "requires exactly one actual proposal document",
+                )
+            else:
+                proposal_relative, proposal = proposal_documents[0]
+                validator.literal(
+                    proposal_binding.get("proposal_id"),
+                    f"{relative}.stage_binding.proposal.proposal_id",
+                    proposal.get("proposal_id"),
+                )
+                validator.literal(
+                    proposal_binding.get("path"),
+                    f"{relative}.stage_binding.proposal.path",
+                    f"hardware_informed_design/{proposal_relative}",
+                )
+
+    actual_closure: dict[str, list[str]] | None = None
+    if len(evidence_documents) == 1 and len(proposal_documents) == 1:
+        evidence = evidence_documents[0][1]
+        proposal = proposal_documents[0][1]
+        candidate_closure = {
+            "fact_ids": _identifier_sequence(evidence, "facts", "fact_id"),
+            "decision_ids": _identifier_sequence(proposal, "decisions", "decision_id"),
+            "hypothesis_ids": _identifier_sequence(
+                proposal, "hypotheses", "hypothesis_id"
+            ),
+            "observed_scope_finding_ids": _identifier_sequence(
+                proposal, "observed_scope_findings", "finding_id"
+            ),
+            "falsifier_ids": _identifier_sequence(
+                proposal, "falsifiers", "falsifier_id"
+            ),
+        }
+        if all(values is not None for values in candidate_closure.values()):
+            actual_closure = cast(dict[str, list[str]], candidate_closure)
+
+    closure = validator.exact(
+        document.get("closure"), f"{relative}.closure", _REVIEW_CLOSURE_KEYS
+    )
+    observed_closure: dict[str, list[str]] = {}
+    if closure is not None:
+        for field in (
+            "fact_ids",
+            "decision_ids",
+            "hypothesis_ids",
+            "observed_scope_finding_ids",
+            "falsifier_ids",
+        ):
+            values = validator.strings(
+                closure.get(field),
+                f"{relative}.closure.{field}",
+                nonempty=True,
+                pattern=_ID,
+            )
+            observed_closure[field] = values
+            if actual_closure is not None and values != actual_closure[field]:
+                validator.error(
+                    f"{relative}.closure.{field}",
+                    "must equal the ordered ID closure derived from the actual "
+                    "evidence or proposal document",
+                )
+
+        closure_counts = validator.exact(
+            closure.get("counts"),
+            f"{relative}.closure.counts",
+            _REVIEW_CLOSURE_COUNT_KEYS,
+        )
+        if closure_counts is not None:
+            count_fields = {
+                "fact_count": "fact_ids",
+                "decision_count": "decision_ids",
+                "hypothesis_count": "hypothesis_ids",
+                "observed_scope_finding_count": "observed_scope_finding_ids",
+                "falsifier_count": "falsifier_ids",
+            }
+            required_counts = {
+                "fact_count": 21,
+                "decision_count": 5,
+                "hypothesis_count": 5,
+                "observed_scope_finding_count": 4,
+                "falsifier_count": 12,
+            }
+            for count_field, closure_field in count_fields.items():
+                expected_count = (
+                    len(actual_closure[closure_field])
+                    if actual_closure is not None
+                    else required_counts[count_field]
+                )
+                validator.literal(
+                    closure_counts.get(count_field),
+                    f"{relative}.closure.counts.{count_field}",
+                    expected_count,
+                )
+                validator.literal(
+                    closure_counts.get(count_field),
+                    f"{relative}.closure.counts.{count_field}",
+                    required_counts[count_field],
+                )
+
+    review_items = document.get("review_items")
+    review_item_ids: list[str] = []
+    covered_references = {
+        field: set()
+        for field in (
+            "fact_ids",
+            "decision_ids",
+            "hypothesis_ids",
+            "observed_scope_finding_ids",
+            "falsifier_ids",
+        )
+    }
+    if not isinstance(review_items, list):
+        validator.error(f"{relative}.review_items", "must be an array")
+    else:
+        if len(review_items) != len(_REVIEW_ITEM_IDS):
+            validator.error(
+                f"{relative}.review_items",
+                f"must contain exactly {len(_REVIEW_ITEM_IDS)} review items",
+            )
+        for index, value in enumerate(review_items):
+            path = f"{relative}.review_items[{index}]"
+            item = validator.exact(value, path, _REVIEW_ITEM_KEYS)
+            if item is None:
+                continue
+            review_item_id = validator.string(
+                item.get("review_item_id"), f"{path}.review_item_id", _ID
+            )
+            if review_item_id is not None:
+                review_item_ids.append(review_item_id)
+            validator.string(item.get("question"), f"{path}.question")
+            validator.string(
+                item.get("required_human_judgment"),
+                f"{path}.required_human_judgment",
+            )
+            expected_references = (
+                _REVIEW_ITEM_REFERENCES.get(review_item_id)
+                if review_item_id is not None
+                else None
+            )
+            if review_item_id is not None and expected_references is None:
+                validator.error(
+                    f"{path}.review_item_id",
+                    "does not name a review item in the closed request contract",
+                )
+            for field in covered_references:
+                references = validator.strings(
+                    item.get(field),
+                    f"{path}.{field}",
+                    nonempty=True,
+                    pattern=_ID,
+                )
+                covered_references[field].update(references)
+                if actual_closure is not None:
+                    unknown = sorted(set(references) - set(actual_closure[field]))
+                    if unknown:
+                        validator.error(
+                            f"{path}.{field}",
+                            "contains IDs outside the actual stage closure: "
+                            + ", ".join(unknown),
+                        )
+                if expected_references is not None and references != list(
+                    expected_references[field]
+                ):
+                    validator.error(
+                        f"{path}.{field}",
+                        f"must equal the closed {review_item_id!r} reference mapping",
+                    )
+
+        if review_item_ids != list(_REVIEW_ITEM_IDS):
+            validator.error(
+                f"{relative}.review_items",
+                "review item IDs must equal the ordered closed request contract",
+            )
+        if len(set(review_item_ids)) != len(review_item_ids):
+            validator.error(
+                f"{relative}.review_items", "review item IDs must be unique"
+            )
+        if actual_closure is not None:
+            for field, covered in covered_references.items():
+                if covered != set(actual_closure[field]):
+                    missing = sorted(set(actual_closure[field]) - covered)
+                    unexpected = sorted(covered - set(actual_closure[field]))
+                    details: list[str] = []
+                    if missing:
+                        details.append("missing: " + ", ".join(missing))
+                    if unexpected:
+                        details.append("unexpected: " + ", ".join(unexpected))
+                    validator.error(
+                        f"{relative}.review_items",
+                        f"{field} union differs from the actual stage closure ("
+                        + "; ".join(details)
+                        + ")",
+                    )
+
+    ambiguity = validator.exact(
+        document.get("phase_order_ambiguity"),
+        f"{relative}.phase_order_ambiguity",
+        _PHASE_ORDER_AMBIGUITY_KEYS,
+    )
+    option_ids: list[str] = []
+    if ambiguity is not None:
+        validator.literal(
+            ambiguity.get("ambiguity_id"),
+            f"{relative}.phase_order_ambiguity.ambiguity_id",
+            _PHASE_ORDER_AMBIGUITY_ID,
+        )
+        validator.literal(
+            ambiguity.get("status"),
+            f"{relative}.phase_order_ambiguity.status",
+            "unresolved_requires_human_choice",
+        )
+        validator.literal(
+            ambiguity.get("contradiction"),
+            f"{relative}.phase_order_ambiguity.contradiction",
+            _RESOURCE_PHASE_CONTRADICTION,
+        )
+        options = ambiguity.get("resolution_options")
+        if not isinstance(options, list):
+            validator.error(
+                f"{relative}.phase_order_ambiguity.resolution_options",
+                "must be an array",
+            )
+        else:
+            if len(options) != 2:
+                validator.error(
+                    f"{relative}.phase_order_ambiguity.resolution_options",
+                    "must contain exactly two human-selectable options",
+                )
+            for index, value in enumerate(options):
+                path = f"{relative}.phase_order_ambiguity.resolution_options[{index}]"
+                option = validator.exact(
+                    value, path, _PHASE_ORDER_RESOLUTION_OPTION_KEYS
+                )
+                if option is None:
+                    continue
+                option_id = validator.string(
+                    option.get("option_id"), f"{path}.option_id", _ID
+                )
+                if option_id is not None:
+                    option_ids.append(option_id)
+                if index < len(_PHASE_ORDER_OPTIONS):
+                    expected_option = _PHASE_ORDER_OPTIONS[index]
+                    for field in ("option_id", "action", "consequence"):
+                        validator.literal(
+                            option.get(field),
+                            f"{path}.{field}",
+                            expected_option[field],
+                        )
+            if option_ids != list(_PHASE_ORDER_OPTION_IDS):
+                validator.error(
+                    f"{relative}.phase_order_ambiguity.resolution_options",
+                    "option IDs must equal the two ordered human resolution choices",
+                )
+            if len(set(option_ids)) != len(option_ids):
+                validator.error(
+                    f"{relative}.phase_order_ambiguity.resolution_options",
+                    "option IDs must be unique",
+                )
+        validator.literal(
+            ambiguity.get("selection_required"),
+            f"{relative}.phase_order_ambiguity.selection_required",
+            True,
+        )
+        validator.literal(
+            ambiguity.get("automation_may_select"),
+            f"{relative}.phase_order_ambiguity.automation_may_select",
+            False,
+        )
+
+    if len(proposal_documents) == 1:
+        proposal_relative, proposal_document = proposal_documents[0]
+        hypotheses = proposal_document.get("hypotheses")
+        resource_hypothesis = None
+        resource_hypothesis_index: int | None = None
+        if isinstance(hypotheses, list):
+            for index, item in enumerate(hypotheses):
+                if (
+                    isinstance(item, dict)
+                    and item.get("hypothesis_id")
+                    == "resource-accounting-fits-selected-pipelines"
+                ):
+                    resource_hypothesis = item
+                    resource_hypothesis_index = index
+                    break
+        if not isinstance(resource_hypothesis, dict):
+            validator.error(
+                f"{relative}.phase_order_ambiguity",
+                "actual proposal lacks the resource-accounting hypothesis",
+            )
+        else:
+            hypothesis_path = (
+                f"{proposal_relative}.hypotheses[{resource_hypothesis_index}]"
+            )
+            if resource_hypothesis.get("required_before") != "implementation":
+                validator.error(
+                    f"{hypothesis_path}.required_before",
+                    "resource-accounting-fits-selected-pipelines must retain "
+                    "required_before='implementation'",
+                )
+            falsifier = resource_hypothesis.get("falsifier")
+            if not isinstance(falsifier, dict):
+                validator.error(
+                    f"{hypothesis_path}.falsifier",
+                    "must retain the resource phase-order falsifier contract",
+                )
+            else:
+                for field, expected in sorted(
+                    _RESOURCE_HYPOTHESIS_FALSIFIER_CONTRACT.items()
+                ):
+                    if falsifier.get(field) == expected:
+                        continue
+                    validator.error(
+                        f"{hypothesis_path}.falsifier.{field}",
+                        "resource-accounting-fits-selected-pipelines must retain "
+                        f"the exact {field} semantics",
+                    )
+
+    decision_artifact = validator.exact(
+        document.get("decision_artifact"),
+        f"{relative}.decision_artifact",
+        _ABSENT_DECISION_ARTIFACT_KEYS,
+    )
+    if decision_artifact is not None:
+        validator.literal(
+            decision_artifact.get("status"),
+            f"{relative}.decision_artifact.status",
+            "absent",
+        )
+        validator.literal(
+            decision_artifact.get("path"),
+            f"{relative}.decision_artifact.path",
+            None,
+        )
+        validator.literal(
+            decision_artifact.get("decision_id"),
+            f"{relative}.decision_artifact.decision_id",
+            None,
+        )
+
+    decision_contract = validator.exact(
+        document.get("external_human_decision_contract"),
+        f"{relative}.external_human_decision_contract",
+        _EXTERNAL_HUMAN_DECISION_CONTRACT_KEYS,
+    )
+    if decision_contract is not None:
+        validator.literal(
+            decision_contract.get("decision_authority"),
+            f"{relative}.external_human_decision_contract.decision_authority",
+            "external_human_hardware_reviewer_only",
+        )
+        validator.literal(
+            decision_contract.get("global_dispositions"),
+            f"{relative}.external_human_decision_contract.global_dispositions",
+            list(_REVIEW_DISPOSITIONS),
+        )
+        required_item_ids = validator.strings(
+            decision_contract.get("required_review_item_ids"),
+            f"{relative}.external_human_decision_contract.required_review_item_ids",
+            nonempty=True,
+            pattern=_ID,
+        )
+        if required_item_ids != list(_REVIEW_ITEM_IDS):
+            validator.error(
+                f"{relative}.external_human_decision_contract.required_review_item_ids",
+                "must equal the ordered review item closure",
+            )
+        per_item_contract = validator.exact(
+            decision_contract.get("per_item_verdict_contract"),
+            f"{relative}.external_human_decision_contract.per_item_verdict_contract",
+            _PER_ITEM_VERDICT_CONTRACT_KEYS,
+        )
+        if per_item_contract is not None:
+            validator.literal(
+                per_item_contract.get("per_item_verdict_required"),
+                f"{relative}.external_human_decision_contract."
+                "per_item_verdict_contract.per_item_verdict_required",
+                True,
+            )
+            validator.literal(
+                per_item_contract.get("verdict_values"),
+                f"{relative}.external_human_decision_contract."
+                "per_item_verdict_contract.verdict_values",
+                list(_REVIEW_DISPOSITIONS),
+            )
+            validator.literal(
+                per_item_contract.get("localized_reason_required"),
+                f"{relative}.external_human_decision_contract."
+                "per_item_verdict_contract.localized_reason_required",
+                True,
+            )
+            validator.literal(
+                per_item_contract.get(
+                    "stage_clear_requires_all_item_verdicts_approved"
+                ),
+                f"{relative}.external_human_decision_contract."
+                "per_item_verdict_contract."
+                "stage_clear_requires_all_item_verdicts_approved",
+                True,
+            )
+            validator.literal(
+                per_item_contract.get("non_approved_item_blocks_stage_transition"),
+                f"{relative}.external_human_decision_contract."
+                "per_item_verdict_contract."
+                "non_approved_item_blocks_stage_transition",
+                True,
+            )
+        validator.literal(
+            decision_contract.get("reviewed_git_revision_required"),
+            f"{relative}.external_human_decision_contract."
+            "reviewed_git_revision_required",
+            True,
+        )
+        ambiguity_contract = validator.exact(
+            decision_contract.get("ambiguity_resolution_contract"),
+            f"{relative}.external_human_decision_contract."
+            "ambiguity_resolution_contract",
+            _AMBIGUITY_RESOLUTION_CONTRACT_KEYS,
+        )
+        if ambiguity_contract is not None:
+            validator.literal(
+                ambiguity_contract.get("required_ambiguity_id"),
+                f"{relative}.external_human_decision_contract."
+                "ambiguity_resolution_contract.required_ambiguity_id",
+                _PHASE_ORDER_AMBIGUITY_ID,
+            )
+            validator.literal(
+                ambiguity_contract.get("allowed_option_ids"),
+                f"{relative}.external_human_decision_contract."
+                "ambiguity_resolution_contract.allowed_option_ids",
+                list(_PHASE_ORDER_OPTION_IDS),
+            )
+            validator.literal(
+                ambiguity_contract.get("localized_reason_required"),
+                f"{relative}.external_human_decision_contract."
+                "ambiguity_resolution_contract.localized_reason_required",
+                True,
+            )
+        validator.literal(
+            decision_contract.get("stage_transition_rule"),
+            f"{relative}.external_human_decision_contract.stage_transition_rule",
+            _STAGE_TRANSITION_RULE,
+        )
+        validator.literal(
+            decision_contract.get("automation_may_write_decision"),
+            f"{relative}.external_human_decision_contract."
+            "automation_may_write_decision",
+            False,
+        )
+
+    authorizations = validator.exact(
+        document.get("authorizations"),
+        f"{relative}.authorizations",
+        _REVIEW_AUTHORIZATION_KEYS,
+    )
+    if authorizations is not None:
+        for field in sorted(_REVIEW_AUTHORIZATION_KEYS):
+            validator.literal(
+                authorizations.get(field), f"{relative}.authorizations.{field}", False
+            )
+    validator.strings(
+        document.get("non_claims"), f"{relative}.non_claims", nonempty=True
+    )
+    return review_request_id
+
+
 def validate_hardware_informed_design(
     design_root: Path,
     extraction_root: Path,
@@ -2781,7 +3938,7 @@ def validate_hardware_informed_design(
     validator = _Validator(root)
     validator.root_closure()
 
-    # The public schema is parsed for UTF-8/JSON closure here. Its three
+    # The public schema is parsed for UTF-8/JSON closure here. Its four document
     # definitions are exercised by the contract tests; this validator keeps
     # the live stage boundary to the single candidate-closure digest.
     schema = validator.read(root / "schema.json", "schema.json")
@@ -2880,9 +4037,37 @@ def validate_hardware_informed_design(
     if len(set(proposal_ids)) != len(proposal_ids):
         validator.error("manifest.json.proposals", "proposal IDs must be unique")
 
-    _cross_document_falsifier_closure(
-        validator, evidence_documents, proposal_documents
+    _cross_document_falsifier_closure(validator, evidence_documents, proposal_documents)
+
+    review_request_paths = validator.listed_paths(
+        manifest.get("review_requests"), "review_requests", "review_requests"
     )
+    if review_request_paths != [_REVIEW_REQUEST_PATH]:
+        validator.error(
+            "manifest.json.review_requests",
+            f"must equal the single closed review request path {_REVIEW_REQUEST_PATH!r}",
+        )
+    review_request_documents: list[tuple[str, dict[str, object]]] = []
+    review_request_ids: list[str] = []
+    for relative in review_request_paths:
+        document = validator.read(root / relative, relative)
+        if document is None:
+            continue
+        review_request_documents.append((relative, document))
+        review_request_id = _review_request_document(
+            validator,
+            document,
+            relative,
+            design_stage_id,
+            evidence_documents,
+            proposal_documents,
+        )
+        if review_request_id is not None:
+            review_request_ids.append(review_request_id)
+    if len(set(review_request_ids)) != len(review_request_ids):
+        validator.error(
+            "manifest.json.review_requests", "review request IDs must be unique"
+        )
 
     _gate(validator, manifest.get("gate_separation"), "manifest.json.gate_separation")
 
@@ -2892,6 +4077,7 @@ def validate_hardware_informed_design(
     derived_counts = {
         "evidence_count": len(evidence_documents),
         "proposal_count": len(proposal_documents),
+        "review_request_count": len(review_request_documents),
         "candidate_count": 1 if candidate is not None else 0,
         "observation_count": len(observations),
     }
@@ -2899,6 +4085,7 @@ def validate_hardware_informed_design(
         expected_counts = {
             "evidence_count": 1,
             "proposal_count": 1,
+            "review_request_count": 1,
             "candidate_count": 1,
             "observation_count": 2,
         }
@@ -2925,6 +4112,9 @@ def validate_hardware_informed_design(
         next_gate=_NEXT_GATE,
         counts=derived_counts,
         proposal_ids=tuple(sorted(proposal_ids)),
+        review_request_count=derived_counts["review_request_count"],
+        hardware_review_decision_present=False,
+        resource_phase_ambiguity_exposed=True,
     )
 
 
@@ -2940,6 +4130,9 @@ def _text(summary: HardwareInformedDesignSummary) -> str:
         "engineering observation record consistent: yes",
         "retained local probe reported outcome: yes (6 cases, 12 epochs)",
         f"retained local probe scope: {summary.retained_local_probe_scope}",
+        f"review requests: {summary.review_request_count}",
+        "hardware review decision present: no",
+        "resource phase ambiguity exposed: yes",
         "hardware review complete: no",
         "evaluation evidence present: no",
         f"evidence artifacts: {summary.counts['evidence_count']}",
@@ -2968,6 +4161,9 @@ def _markdown(summary: HardwareInformedDesignSummary) -> str:
         "| Engineering observation record consistent | Yes |",
         "| Retained local probe reported outcome | Yes (6 cases, 12 epochs) |",
         f"| Retained local probe scope | `{summary.retained_local_probe_scope}` |",
+        f"| Review requests | {summary.review_request_count} |",
+        "| Hardware review decision present | No |",
+        "| Resource phase ambiguity exposed | Yes |",
         "| Hardware review complete | No |",
         "| Evaluation evidence present | No |",
         f"| Evidence artifacts | {summary.counts['evidence_count']} |",

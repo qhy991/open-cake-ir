@@ -21,6 +21,10 @@ principle gate and does not implement the design.
   exposes resource arithmetic and synchronization commitments, records every
   unresolved hypothesis with a falsifier and retained-result contract, and
   names conditions that invalidate this particular design.
+- `review_requests/*.json` asks an external human hardware reviewer to judge
+  the complete live manifest/evidence/proposal closure. A request is not a
+  decision: it keeps the decision artifact absent, every authorization false,
+  and the Stage-3 state awaiting human review.
 - `schema.json` is closed: every object sets `additionalProperties: false`.
 
 The only digest used for the Stage-2-to-Stage-3 candidate handoff is
@@ -130,6 +134,49 @@ uniform barrier is required before other SIMDgroups consume it. The Layer
 variant permits every SIMDgroup to repeat the final reduction and retain the
 result in thread-local state. BF16 contributions are converted to FP32 before
 `simd_sum`, and no bitwise reduction order is promised.
+
+## Human review request, not decision
+
+`review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json`
+binds the live Stage-3 manifest, evidence, and proposal by their repository
+paths and document IDs. It lists the complete review closure: 21 fact IDs,
+five decision IDs, five unresolved hypothesis IDs, four observed-scope finding
+IDs, and twelve falsifier IDs. Nine review items organize that closure around
+vendor applicability, width policy, partial cardinality, barriers, scratch
+lifetime, final-reducer ownership, resource accounting, numeric scope, and the
+observation/authority boundary.
+
+The request deliberately retains one phase-order contradiction. The
+`resource-accounting-fits-selected-pipelines` hypothesis says it is required
+before implementation, while its falsifier requires compiled future pipelines
+and their compiler-created static threadgroup-memory usage. The current finite
+Compiler lowering cannot create the proposed scratch or barriers. An external
+human reviewer must select and justify exactly one of two options:
+
+1. keep the gate literal and collect resource observations from separately
+   reviewed standalone RMS and Layer Metal prototypes before Compiler
+   implementation; or
+2. require a successor proposal that moves the gate to port acceptance and
+   permits only the bounded post-P1-P8 implementation needed to materialize
+   those pipelines, without accepting or releasing the port first.
+
+Automation may not choose between these options or reinterpret the existing
+proposal. The future external decision contract permits only `approved`,
+`changes_requested`, or `rejected`; it requires one verdict and localized
+reason for every review item, the exact reviewed Git revision, and one
+localized ambiguity resolution. Every review-item verdict must be `approved`
+to clear Stage 3; any `changes_requested` or `rejected` item blocks the stage
+transition, regardless of the global disposition. The contradiction, the two
+ordered option texts, and the stage-transition rule are literal public schema
+contracts rather than reviewer-request prose that automation may rewrite.
+`automation_may_write_decision` is false.
+No decision artifact exists in this closure, and all human-review, next-gate,
+Compiler-change, implementation, Evaluation, performance-claim,
+scientific-claim, and promotion authorizations remain false.
+
+An eventual approved external hardware decision can clear only this Stage-3
+gate. The next action would still be the separate P1-P8 principle-driven
+iteration, not implementation.
 
 ## Validation is not readiness
 
