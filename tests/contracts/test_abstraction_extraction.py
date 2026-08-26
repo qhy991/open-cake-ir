@@ -135,6 +135,59 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
                             ),
                         )
 
+    def test_w8_candidate_binds_both_reviewed_projection_spans(self) -> None:
+        candidate = _read(
+            EXTRACTION / "candidates" / "row-per-simdgroup-groupwise-w8-projection.json"
+        )
+        observation_paths = (
+            "observations/apxinf-w8-lm-head-row-projection.json",
+            "observations/apxinf-w8-mlp-gate-up-row-projection.json",
+        )
+        observations = [_read(EXTRACTION / path) for path in observation_paths]
+
+        self.assertEqual(
+            candidate["observation_ids"],
+            [observation["observation_id"] for observation in observations],
+        )
+        self.assertEqual(
+            {observation["pattern_signature"] for observation in observations},
+            {candidate["pattern_signature"]},
+        )
+        self.assertEqual(
+            {tuple(observation["observed_primitives"]) for observation in observations},
+            {
+                (
+                    "groupwise_int8_scale",
+                    "lane_zero_row_publish",
+                    "row_per_simdgroup",
+                    "simd_sum",
+                    "vectorized_char4_dot",
+                )
+            },
+        )
+        self.assertEqual(
+            {
+                (
+                    observation["source_locator"]["path"],
+                    observation["source_span"]["start_line"],
+                    observation["source_span"]["end_line"],
+                )
+                for observation in observations
+            },
+            {
+                (
+                    "crates/apxinf-metal/src/metal_w8.metal",
+                    39,
+                    73,
+                ),
+                (
+                    "crates/apxinf-metal/src/metal_w8_mlp.metal",
+                    11,
+                    42,
+                ),
+            },
+        )
+
 
 class AbstractionExtractionValidatorTests(unittest.TestCase):
     def test_cli_validates_the_source_grounded_extraction(self) -> None:
@@ -275,9 +328,9 @@ class AbstractionExtractionValidatorTests(unittest.TestCase):
 
             extraction_manifest_path = extraction / "manifest.json"
             extraction_manifest = _read(extraction_manifest_path)
-            extraction_manifest["input_library"][
-                "canonical_sha256"
-            ] = _operator_library_digest(library)
+            extraction_manifest["input_library"]["canonical_sha256"] = (
+                _operator_library_digest(library)
+            )
             _write(extraction_manifest_path, extraction_manifest)
 
         self._assert_mutation_rejected(mutate, "code_copied")
@@ -472,8 +525,15 @@ class AbstractionExtractionValidatorTests(unittest.TestCase):
         def mutate(library: Path, extraction: Path) -> None:
             del library
             manifest = _read(extraction / "manifest.json")
+            candidate = _read(extraction / str(manifest["candidates"][0]))
+            paths_by_id = {
+                _read(extraction / str(relative))["observation_id"]: extraction
+                / str(relative)
+                for relative in manifest["observations"]
+            }
             first_path, second_path = (
-                extraction / str(relative) for relative in manifest["observations"]
+                paths_by_id[observation_id]
+                for observation_id in candidate["observation_ids"][:2]
             )
             first = _read(first_path)
             second = _read(second_path)
@@ -490,8 +550,15 @@ class AbstractionExtractionValidatorTests(unittest.TestCase):
         def mutate(library: Path, extraction: Path) -> None:
             del library
             manifest = _read(extraction / "manifest.json")
+            candidate = _read(extraction / str(manifest["candidates"][0]))
+            paths_by_id = {
+                _read(extraction / str(relative))["observation_id"]: extraction
+                / str(relative)
+                for relative in manifest["observations"]
+            }
             first_path, second_path = (
-                extraction / str(relative) for relative in manifest["observations"]
+                paths_by_id[observation_id]
+                for observation_id in candidate["observation_ids"][:2]
             )
             first = _read(first_path)
             second = _read(second_path)

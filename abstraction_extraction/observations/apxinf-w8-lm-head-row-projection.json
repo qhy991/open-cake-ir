@@ -1,0 +1,42 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "apxinf-metal-w8-lm-head.row-projection",
+  "pattern_signature": "row-owned-simdgroup.groupwise-w8-dot.lane-zero-publish",
+  "implementation_id": "apxinf.metal-w8-lm-head-top4",
+  "operator_id": "selection.quantized_projection_topk",
+  "source_id": "apxinf-qhy-main-df5c55a",
+  "source_locator": {
+    "path": "crates/apxinf-metal/src/metal_w8.metal",
+    "revision": "df5c55a06140107b24964d9e4abbefd9fa2a4733",
+    "git_object": "a1d1aa02c80b167bd2b63bffe94c808d945dd1fa",
+    "symbol": "w8_rows_topk4"
+  },
+  "source_span": {
+    "start_line": 39,
+    "end_line": 73,
+    "sha256": "8208a064a0baeb23edb06ba742bc38a4d1f16821fb1845877e0b084322ea5dc9",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "Each SIMDgroup owns one logical vocabulary row, with eight row owners sharing a threadgroup.",
+    "SIMDgroup lanes walk packed char4 columns with a literal stride of 32.",
+    "Each lane converts one char4 weight vector to FP32, takes its dot product with the corresponding float4 input, and applies the row-local scale selected per 16 char4 values.",
+    "An FP32 register accumulates the scaled vector dot products before simd_sum reduces them across the SIMDgroup.",
+    "Lane zero publishes the row score and token into threadgroup storage."
+  ],
+  "observed_primitives": [
+    "groupwise_int8_scale",
+    "lane_zero_row_publish",
+    "row_per_simdgroup",
+    "simd_sum",
+    "vectorized_char4_dot"
+  ],
+  "variant_notes": [
+    "Out-of-range rows continue through simd_sum, then lane zero publishes negative-infinity and maximum-token sentinels.",
+    "A valid row whose reduced sum is NaN publishes negative infinity as its score while retaining the row token.",
+    "The cited span stages each row result as a score-token pair in threadgroup memory rather than writing it to a device output."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

@@ -31,16 +31,19 @@
     ]
   },
   "observations": [
+    "observations/apxinf-w8-lm-head-row-projection.json",
+    "observations/apxinf-w8-mlp-gate-up-row-projection.json",
     "observations/mlx-layer-norm-hierarchical-reduction.json",
     "observations/mlx-rms-norm-hierarchical-reduction.json"
   ],
   "candidates": [
-    "candidates/hierarchical-simdgroup-threadgroup-reduction.json"
+    "candidates/hierarchical-simdgroup-threadgroup-reduction.json",
+    "candidates/row-per-simdgroup-groupwise-w8-projection.json"
   ],
   "counts": {
-    "observation_count": 2,
-    "candidate_count": 1,
-    "implementation_count": 2,
-    "source_count": 1
+    "observation_count": 4,
+    "candidate_count": 2,
+    "implementation_count": 4,
+    "source_count": 2
   }
 }

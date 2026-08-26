@@ -1,0 +1,55 @@
+{
+  "$schema": "../schema.json#/$defs/candidate",
+  "schema_version": 1,
+  "candidate_id": "row-per-simdgroup-groupwise-w8-projection",
+  "pattern_signature": "row-owned-simdgroup.groupwise-w8-dot.lane-zero-publish",
+  "summary": "Two pinned ApxInf Metal implementations expose the same source-level row projection: one SIMDgroup owns a row, its lanes accumulate group-scaled packed-W8 vector dots, simd_sum combines the lane values, and lane zero publishes the result.",
+  "normalized_steps": [
+    "Assign one logical output row to each SIMDgroup, with multiple row owners sharing a threadgroup.",
+    "Partition packed char4 columns across SIMDgroup lanes with the observed lane-strided traversal.",
+    "Select the row-local FP32 scale for each fixed group of 16 char4 values, representing 64 scalar INT8 weights.",
+    "Accumulate vectorized INT8-to-FP32 dot products multiplied by their group scale in one FP32 register per lane.",
+    "Reduce the lane accumulators with simd_sum.",
+    "Have lane zero publish the row result while leaving destination storage, bounds handling, NaN policy, and downstream synchronization to the enclosing operator."
+  ],
+  "observed_variants": [
+    "The MLP projection permits a whole-SIMDgroup early return for an invalid row and writes a valid result directly to a device gate-up buffer.",
+    "The LM-head projection runs invalid rows through the reduction and publishes negative-infinity and maximum-token sentinels into threadgroup score-token arrays; it also maps a valid row's NaN sum to negative infinity while retaining that row's token."
+  ],
+  "observation_ids": [
+    "apxinf-metal-w8-lm-head.row-projection",
+    "apxinf-metal-w8-mlp.gate-up-projection"
+  ],
+  "evidence_breadth": {
+    "observation_count": 2,
+    "implementation_ids": [
+      "apxinf.metal-w8-lm-head-top4",
+      "apxinf.metal-w8-mlp-block"
+    ],
+    "operator_ids": [
+      "fused_graph.quantized_mlp",
+      "selection.quantized_projection_topk"
+    ],
+    "source_ids": [
+      "apxinf-qhy-main-df5c55a"
+    ],
+    "source_revisions": [
+      "df5c55a06140107b24964d9e4abbefd9fa2a4733"
+    ],
+    "git_objects": [
+      "a1d1aa02c80b167bd2b63bffe94c808d945dd1fa",
+      "a5420f5b4d222b05a947bbbe2b92f99136ef4450"
+    ],
+    "families": [
+      "fused_graph",
+      "selection"
+    ],
+    "hardware_targets": [
+      "apple_gpu_family9",
+      "apple_m4"
+    ]
+  },
+  "state": "extracted_unreviewed",
+  "claim_scope": "source_pattern_only",
+  "next_gate": "hardware_informed_design"
+}

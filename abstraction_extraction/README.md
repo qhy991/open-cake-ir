@@ -3,8 +3,8 @@
 This directory is the first tracer for stage 2 of the method described in
 [CAKE v1 Appendix A](https://arxiv.org/html/2608.12629v1#A1): extract recurring
 abstractions from concrete operator implementations after corpus collection.
-The stage remains `in_progress`; this tracer records one recurring source
-pattern and does not claim that extraction over the operator library is
+The stage remains `in_progress`; this tracer records two recurring source
+patterns and does not claim that extraction over the operator library is
 complete.
 
 ## Contract
@@ -43,10 +43,22 @@ upstream bytes are intentionally not vendored, it does not fetch a repository or
 recompute a source-span hash. `semantics_reviewed` is therefore a reviewer
 attestation, not an automated source-content proof. The authoring/review workflow
 must independently recompute each Git blob and span hash from the pinned checkout;
-the two observations in this tracer were checked that way before admission.
+the four observations in this tracer were checked that way before admission.
 Free-text semantics likewise remain reviewer-attested: the validator enforces the
 closed `source_structure_only` and `source_pattern_only` claim scopes, but does
 not pretend that a lexical filter can prove the meaning of prose.
+
+## Current tracer set
+
+- `hierarchical-simdgroup-threadgroup-reduction` records the repeated MLX
+  SIMDgroup partial, threadgroup publication, and final SIMDgroup reduction
+  choreography.
+- `row-per-simdgroup-groupwise-w8-projection` records the repeated ApxInf
+  packed-W8 row dot product, group-scale application, SIMDgroup reduction, and
+  lane-zero publication choreography. Direct device publication versus
+  threadgroup staging, early return versus sentinel publication, and NaN score
+  handling remain explicit implementation variants rather than normalized
+  semantics.
 
 ## Scope boundary
 
