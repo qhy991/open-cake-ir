@@ -35,6 +35,8 @@ python tools/validate_operator_library.py --format json
 Validation is offline and fail-closed. It checks the closed schemas, path safety, ordering,
 unique identities, source references, clean-start prohibition, canonical mechanism tags,
 and the presence of exact Git blob identities for source-reviewed repository paths.
+One reviewed blob may enumerate multiple named symbols; locator identity and ordering use
+the `(kind, value, symbol)` tuple, while a null symbol is reserved for a file-level locator.
 
 Promotion is a separate change: first create a complete Workload Contract and oracle for
 one vertical slice. Only a recurring, reusable primitive gap justifies a Compiler proposal,

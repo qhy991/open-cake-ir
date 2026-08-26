@@ -13,7 +13,8 @@ complete.
   SHA-256 digest and lists every admitted observation and candidate.
 - `observations/*.json` bind reviewed prose observations to an operator-library
   occurrence, immutable Git revision and blob, upstream symbol, inclusive line
-  span, and span hash. A `source_verified` catalog entry is not semantic
+  span, and span hash. Path, revision, blob, and symbol must exactly match one
+  locator on that occurrence. A `source_verified` catalog entry is not semantic
   evidence by itself; an observation is admitted only after the cited source
   span has been read and summarized.
 - `candidates/*.json` normalize only structure repeated by at least two

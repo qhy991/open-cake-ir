@@ -7,7 +7,7 @@
   "input_library": {
     "manifest_path": "operator_library/manifest.json",
     "library_id": "open-cake-operator-library-v1",
-    "canonical_sha256": "5cf19ca9e8e2ee3945a9b577b521f3d02e2029b15bd84d8c2bedc59f0b079613"
+    "canonical_sha256": "1d93ccef930b49a3e4d8b4e9c167799c4af9708d2ed53da6030966c299040b57"
   },
   "selection_policy": {
     "name": "source-grounded-recurrence-tracer-v1",

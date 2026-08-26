@@ -657,7 +657,7 @@ class _LibraryValidator:
         if not value:
             self.error(path, "must not be empty")
         result: list[dict[str, object]] = []
-        keys: list[tuple[str, str]] = []
+        keys: list[tuple[str, str, str]] = []
         for index, item in enumerate(value):
             item_path = f"{path}[{index}]"
             locator = self.exact_object(item, item_path, _LOCATOR_KEYS)
@@ -668,9 +668,7 @@ class _LibraryValidator:
             revision = self.hex40_or_null(
                 locator.get("revision"), f"{item_path}.revision"
             )
-            git_object = self.hex40_or_null(
-                locator.get("git_object"), f"{item_path}.git_object"
-            )
+            self.hex40_or_null(locator.get("git_object"), f"{item_path}.git_object")
             symbol_value = locator.get("symbol")
             symbol = None
             if symbol_value is not None:
@@ -692,7 +690,7 @@ class _LibraryValidator:
                 self.https_url(locator_value, f"{item_path}.value")
             result.append(locator)
             if kind is not None and locator_value is not None:
-                keys.append((kind, locator_value))
+                keys.append((kind, locator_value, symbol or ""))
         if len(keys) == len(value):
             if len(set(keys)) != len(keys):
                 self.error(path, "must contain unique locators")

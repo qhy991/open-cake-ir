@@ -21,7 +21,7 @@
       "value": "mlx/backend/metal/kernels/rms_norm.metal",
       "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
       "git_object": "eb9b5c0af1cde571570ea749c95969d963262882",
-      "symbol": null
+      "symbol": "rms_single_row"
     }
   ],
   "upstream_state": "repository_main",

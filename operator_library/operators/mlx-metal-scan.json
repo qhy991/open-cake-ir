@@ -11,7 +11,10 @@
   "input_regime": {
     "dtypes": [],
     "extent_class": "bounded_dynamic",
-    "shape_constraints": ["Axis length and inclusive or exclusive mode are runtime choices"]
+    "shape_constraints": [
+      "Axis length and inclusive or exclusive mode are runtime choices",
+      "Axis stride selects the contiguous or strided kernel path"
+    ]
   },
   "hardware_targets": ["apple_silicon_metal"],
   "mechanisms": ["scan", "simdgroup_reduction", "threadgroup_barrier", "threadgroup_memory"],
@@ -29,6 +32,13 @@
       "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
       "git_object": "854db9da229f32a5921eecf511442cc0f03bf076",
       "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/scan.cpp",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "18935191ffa5e62151e60eca312e9d89a136508f",
+      "symbol": "scan_gpu_inplace"
     }
   ],
   "upstream_state": "repository_main",

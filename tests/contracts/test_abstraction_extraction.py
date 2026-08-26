@@ -135,6 +135,39 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
                             ),
                         )
 
+    def test_every_observation_binds_an_exact_occurrence_symbol(self) -> None:
+        library_manifest = _read(LIBRARY / "manifest.json")
+        occurrences = {
+            occurrence["implementation_id"]: occurrence
+            for relative in library_manifest["operators"]
+            for occurrence in [_read(LIBRARY / str(relative))]
+        }
+        extraction_manifest = _read(EXTRACTION / "manifest.json")
+
+        for relative in extraction_manifest["observations"]:
+            observation = _read(EXTRACTION / str(relative))
+            locator = observation["source_locator"]
+            occurrence = occurrences[observation["implementation_id"]]
+            with self.subTest(observation=observation["observation_id"]):
+                self.assertIn(
+                    (
+                        locator["path"],
+                        locator["revision"],
+                        locator["git_object"],
+                        locator["symbol"],
+                    ),
+                    {
+                        (
+                            item["value"],
+                            item["revision"],
+                            item["git_object"],
+                            item["symbol"],
+                        )
+                        for item in occurrence["locators"]
+                        if item["kind"] == "repository_path"
+                    },
+                )
+
     def test_w8_candidate_binds_four_reviewed_projection_spans(self) -> None:
         candidate = _read(
             EXTRACTION / "candidates" / "row-per-simdgroup-groupwise-w8-projection.json"
@@ -1067,6 +1100,36 @@ class AbstractionExtractionValidatorTests(unittest.TestCase):
             path = extraction / str(manifest["observations"][0])
             observation = _read(path)
             observation["source_locator"]["git_object"] = "0" * 40
+            _write(path, observation)
+
+        self._assert_mutation_rejected(
+            mutate, "does not match one repository_path locator"
+        )
+
+    def test_scan_observation_symbol_drift_is_rejected(self) -> None:
+        def mutate(library: Path, extraction: Path) -> None:
+            del library
+            path = (
+                extraction
+                / "observations/mlx-scan-contiguous-block-prefix-handoff.json"
+            )
+            observation = _read(path)
+            observation["source_locator"]["symbol"] = "strided_scan"
+            _write(path, observation)
+
+        self._assert_mutation_rejected(
+            mutate, "does not match one repository_path locator"
+        )
+
+    def test_sort_observation_symbol_drift_is_rejected(self) -> None:
+        def mutate(library: Path, extraction: Path) -> None:
+            del library
+            path = (
+                extraction
+                / "observations/mlx-sort-block-merge-state-exchange.json"
+            )
+            observation = _read(path)
+            observation["source_locator"]["symbol"] = "not_the_bound_symbol"
             _write(path, observation)
 
         self._assert_mutation_rejected(

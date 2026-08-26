@@ -584,11 +584,14 @@ def validate_abstraction_extraction(
         locator_path: str | None = None
         revision: str | None = None
         git_object: str | None = None
+        symbol: str | None = None
         if locator is not None:
             locator_path = validator.safe_path(locator.get("path"), f"{relative}.source_locator.path")
             revision = validator.string(locator.get("revision"), f"{relative}.source_locator.revision", _HEX40)
             git_object = validator.string(locator.get("git_object"), f"{relative}.source_locator.git_object", _HEX40)
-            validator.string(locator.get("symbol"), f"{relative}.source_locator.symbol")
+            symbol = validator.string(
+                locator.get("symbol"), f"{relative}.source_locator.symbol"
+            )
         if occurrence is not None and locator_path and revision and git_object:
             matching = any(
                 isinstance(item, dict)
@@ -596,6 +599,7 @@ def validate_abstraction_extraction(
                 and item.get("value") == locator_path
                 and item.get("revision") == revision
                 and item.get("git_object") == git_object
+                and item.get("symbol") == symbol
                 for item in cast(list[object], occurrence.get("locators", []))
             )
             if not matching:

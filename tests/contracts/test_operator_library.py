@@ -246,7 +246,7 @@ class OperatorLibrarySchemaTests(unittest.TestCase):
                     },
                 )
 
-    def test_mlx_scan_and_sort_bind_algorithm_symbols_and_wrappers(self) -> None:
+    def test_mlx_scan_and_sort_bind_algorithms_wrappers_and_host_dispatch(self) -> None:
         manifest = _read(LIBRARY / "manifest.json")
         occurrences = {
             occurrence["implementation_id"]: occurrence
@@ -258,26 +258,50 @@ class OperatorLibrarySchemaTests(unittest.TestCase):
                 (
                     "mlx/backend/metal/kernels/scan.h",
                     "contiguous_scan",
+                    "2e5493961b7790b03bbe13ec5fa3effc80eb4fc9",
                 ),
-                ("mlx/backend/metal/kernels/scan.metal", None),
+                (
+                    "mlx/backend/metal/kernels/scan.metal",
+                    None,
+                    "854db9da229f32a5921eecf511442cc0f03bf076",
+                ),
+                (
+                    "mlx/backend/metal/scan.cpp",
+                    "scan_gpu_inplace",
+                    "18935191ffa5e62151e60eca312e9d89a136508f",
+                ),
             },
             "mlx.metal-sort": {
                 (
                     "mlx/backend/metal/kernels/sort.h",
                     "BlockMergeSort::sort",
+                    "ea2640bace0ade86f39ea7a04784657765475a44",
                 ),
-                ("mlx/backend/metal/kernels/sort.metal", None),
+                (
+                    "mlx/backend/metal/kernels/sort.metal",
+                    None,
+                    "d9bf20476f527c62c2f3a2cdaeb56840f54ffb13",
+                ),
+                (
+                    "mlx/backend/metal/sort.cpp",
+                    "gpu_merge_sort",
+                    "65f144c026e9ac698023c201dcb5815377e9dba5",
+                ),
             },
         }
 
         for implementation_id, locator_pairs in expected_locators.items():
             with self.subTest(implementation_id=implementation_id):
                 actual = {
-                    (locator["value"], locator["symbol"])
+                    (
+                        locator["value"],
+                        locator["symbol"],
+                        locator["git_object"],
+                    )
                     for locator in occurrences[implementation_id]["locators"]
                     if locator["kind"] == "repository_path"
                 }
-                self.assertTrue(locator_pairs.issubset(actual))
+                self.assertEqual(actual, locator_pairs)
 
 
 class OperatorLibraryValidatorTests(unittest.TestCase):
@@ -498,6 +522,36 @@ class OperatorLibraryValidatorTests(unittest.TestCase):
             path.write_text(json.dumps(occurrence, indent=2) + "\n", encoding="utf-8")
 
         self._assert_mutation_rejected(mutate, "mechanism_vocabulary")
+
+    def test_repeated_repository_path_requires_distinct_symbols(self) -> None:
+        def mutate(library: Path, manifest: dict[str, object]) -> None:
+            del manifest
+            path = library / "operators/apxinf-metal-full-attention-decode-v1.json"
+            occurrence = _read(path)
+            locators = occurrence["locators"]
+            assert isinstance(locators, list)
+            assert isinstance(locators[0], dict)
+            assert isinstance(locators[1], dict)
+            locators[1]["symbol"] = locators[0]["symbol"]
+            path.write_text(
+                json.dumps(occurrence, indent=2) + "\n", encoding="utf-8"
+            )
+
+        self._assert_mutation_rejected(mutate, "must contain unique locators")
+
+    def test_repeated_repository_path_symbols_must_remain_sorted(self) -> None:
+        def mutate(library: Path, manifest: dict[str, object]) -> None:
+            del manifest
+            path = library / "operators/apxinf-metal-full-attention-decode-v1.json"
+            occurrence = _read(path)
+            locators = occurrence["locators"]
+            assert isinstance(locators, list)
+            locators[0], locators[1] = locators[1], locators[0]
+            path.write_text(
+                json.dumps(occurrence, indent=2) + "\n", encoding="utf-8"
+            )
+
+        self._assert_mutation_rejected(mutate, "must be sorted lexicographically")
 
     def test_source_verified_repository_path_requires_a_git_blob(self) -> None:
         def mutate(library: Path, manifest: dict[str, object]) -> None:

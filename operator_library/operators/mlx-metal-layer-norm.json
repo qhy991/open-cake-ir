@@ -21,7 +21,7 @@
       "value": "mlx/backend/metal/kernels/layer_norm.metal",
       "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
       "git_object": "ea77b53dcaa1c64e72c50f5917e64b5b7b93817e",
-      "symbol": null
+      "symbol": "threadgroup_sum"
     }
   ],
   "upstream_state": "repository_main",
