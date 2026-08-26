@@ -20,6 +20,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 
 from open_cake_ir.compiler.ir import (
+    PLACED_CONTRACT_PREFIXES,
     AccessIndexKind,
     BoundaryPolicy,
     DType,
@@ -112,6 +113,51 @@ class RetainedScheduleTest(unittest.TestCase):
                         for error in errors
                     ),
                 )
+
+    def test_schema_refuses_operand_placement_the_contract_cannot_honour(self) -> None:
+        """The authoring surface may not admit what the Verifier fatally refuses.
+
+        Every first-Turn candidate of both completed open_cake Runs in the retained
+        scientific campaign was rejected for exactly this: placement fields declared on
+        a `triton.dot` contract that does not place its operands. The schema offered the
+        fields with closed enums and said nothing about which contracts admit them, so
+        the agent could only learn the rule by spending a Turn on a blocking Finding.
+        """
+
+        validator = Draft202012Validator(schedule_schema())
+        document = _document(ROOT / "corpus" / "schedules" / "gemm-bias-b1-smoke.json")
+        instruction = next(
+            operation for operation in document["operations"]
+            if operation["kind"] == "mma"
+        )["parameters"]["instruction"]
+        self.assertFalse(instruction["contract"].startswith(PLACED_CONTRACT_PREFIXES))
+        self.assertEqual(list(validator.iter_errors(document)), [])
+
+        for field, value in (
+            ("cta_group", 1),
+            ("operand_source", "shared"),
+            ("operand_major", ["k", "k"]),
+            ("shape", [64, 64, 16]),
+        ):
+            with self.subTest(field=field):
+                drifted = copy.deepcopy(document)
+                next(
+                    operation for operation in drifted["operations"]
+                    if operation["kind"] == "mma"
+                )["parameters"]["instruction"][field] = value
+                self.assertTrue(list(validator.iter_errors(drifted)))
+
+        placed = copy.deepcopy(document)
+        placed_instruction = next(
+            operation for operation in placed["operations"]
+            if operation["kind"] == "mma"
+        )["parameters"]["instruction"]
+        placed_instruction["contract"] = PLACED_CONTRACT_PREFIXES[0] + "mma.bf16"
+        placed_instruction.update(
+            {"shape": [64, 64, 16], "cta_group": 1,
+             "operand_source": "shared", "operand_major": ["k", "k"]}
+        )
+        self.assertEqual(list(validator.iter_errors(placed)), [])
 
     def test_gpu_quickstart_schedule_parses(self) -> None:
         schedule = Schedule.load(ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke-v2.json")

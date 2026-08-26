@@ -24,6 +24,8 @@ from enum import Enum
 from typing import Iterable
 
 from .ir import (
+    PLACED_CONTRACT_PREFIXES,
+    PLACEMENT_FIELDS,
     TMEM_COLUMN_BYTES,
     OperandSource,
     AccessIndexKind,
@@ -783,9 +785,10 @@ def _verify_epilogue_commitments(schedule: Schedule, out: _Collector) -> None:
 
 # A tensor-core atom places its operands explicitly; a tile-level dot leaves that to the
 # backend. Requiring both to say the same things would force one of them to invent an
-# answer, so the requirement follows the contract.
-_PLACED_CONTRACT_PREFIXES = ("tcgen05.", "mma.sync.", "wgmma.")
-_PLACEMENT_FIELDS = ("shape", "cta_group", "operand_source", "operand_major")
+# answer, so the requirement follows the contract. The lists live in `ir` because the
+# authoring Schema projects the same fact.
+_PLACED_CONTRACT_PREFIXES = PLACED_CONTRACT_PREFIXES
+_PLACEMENT_FIELDS = PLACEMENT_FIELDS
 
 
 def _verify_atom_placement(operation, instruction, path: str, out: _Collector) -> None:
@@ -1398,6 +1401,16 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
             )
 
     for position, name in enumerate(schedule.outputs):
+        if name in schedule.outputs[:position]:
+            # `outputs` is the order the caller receives its tensors in, so a name
+            # appearing twice asks for one buffer in two slots. The host wrapper can
+            # only allocate it once, and the count it reports would not match.
+            out.add(
+                "OUTPUT_DUPLICATE",
+                f"outputs[{position}]",
+                f"buffer {name!r} is exported more than once",
+                category,
+            )
         if name not in buffers:
             out.add(
                 "OUTPUT_UNKNOWN", f"outputs[{position}]", f"unknown buffer {name!r}", category
@@ -2003,6 +2016,34 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         f"{len(buffer.shape)} buffer {access.buffer!r}",
                         category,
                     )
+                elif component.dimension is not None:
+                    # A sub-range that runs past the axis would read whatever follows it
+                    # in the allocation, so the bound is checked here rather than left
+                    # for the emitter to mask. An offset at or past the end selects
+                    # nothing, which is a declaration no operation can have meant.
+                    size = buffer.shape[component.dimension]
+                    if component.offset >= size or component.offset + component.span(size) > size:
+                        out.add(
+                            "ACCESS_DIMENSION_SUBRANGE",
+                            component_path,
+                            f"sub-range [{component.offset}, "
+                            f"{component.offset + component.span(size)}) leaves dimension "
+                            f"{component.dimension} of size {size} in buffer "
+                            f"{access.buffer!r}",
+                            category,
+                        )
+                    elif component.extent == size - component.offset:
+                        # A range reaching the end of the axis is written by omitting
+                        # `extent`. Spelling it out names the same elements a second way,
+                        # and the two spellings lower to different source -- so the same
+                        # access would pin two different digests.
+                        out.add(
+                            "ACCESS_SUBRANGE_NONCANONICAL",
+                            component_path,
+                            f"extent {component.extent} reaches the end of dimension "
+                            f"{component.dimension}; omit it to name the same range",
+                            category,
+                        )
             elif component.source is AccessIndexKind.LOOP_TILE:
                 if component.name not in loop_iterators:
                     out.add(
@@ -2365,7 +2406,13 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         component.dimension is not None
                         and component.dimension < len(source.shape)
                     ):
-                        expected_shape.append(source.shape[component.dimension])
+                        # The value domain is what the access covers. Reading the axis
+                        # size here demanded a staged buffer sized for elements a
+                        # sub-range never addresses, which blocked a gather the emitter
+                        # already lowered correctly.
+                        expected_shape.append(
+                            component.span(source.shape[component.dimension])
+                        )
                 if staged is not None and shape_known:
                     if staged.shape != tuple(expected_shape):
                         out.add(
@@ -2450,7 +2497,13 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                 )
                 expected = loop.tile if loop is not None else None
             else:
-                expected = source.shape[component.dimension] if component.dimension is not None else None
+                # A sub-range stages what it covers, not the whole axis. Reading the
+                # axis size here would demand a tile the access never addresses.
+                expected = (
+                    component.span(source.shape[component.dimension])
+                    if component.dimension is not None
+                    else None
+                )
             if expected is not None and staged.shape[position] != expected:
                 out.add(
                     "ACCESS_TILE_MISMATCH",

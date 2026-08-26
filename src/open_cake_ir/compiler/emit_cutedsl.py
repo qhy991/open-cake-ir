@@ -136,6 +136,20 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         "operations",
         "the CuTe-DSL backend requires at least one load operation",
     )
+    # A sub-range is `AccessIndex` vocabulary, so every backend either honours it or
+    # says it cannot. This emitter builds addresses without reading `offset` or
+    # `extent`, so a Schedule naming half an axis would lower to one covering all of
+    # it -- the same source, silently answering a different question.
+    for index, access in enumerate(schedule.access_maps):
+        for position, component in enumerate(access.indices):
+            add(
+                component.source is not AccessIndexKind.DIMENSION
+                or (component.offset == 0 and component.extent is None),
+                "CUTE_ACCESS_SUBRANGE_UNSUPPORTED",
+                f"access_maps[{index}].indices[{position}]",
+                "the CuTe-DSL backend addresses whole dimensions; it cannot honour a "
+                "sub-range",
+            )
     for index, buffer in enumerate(schedule.buffers):
         add(
             buffer.mode is not BufferMode.STATE,
