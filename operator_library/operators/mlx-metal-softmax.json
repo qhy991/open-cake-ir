@@ -7,15 +7,22 @@
   "family": "normalization",
   "variant": "MLX Metal row-wise softmax family",
   "scope": "runtime_dispatch",
-  "semantic_role": "Normalize rows using maximum subtraction, exponentiation, and sum reduction while retaining safe special-value behavior.",
+  "semantic_role": "Normalize rows using maximum-referenced exponentiation and sum reduction across single-row and looped Metal kernel variants.",
   "input_regime": {
     "dtypes": ["bf16", "fp16", "fp32"],
     "extent_class": "bounded_dynamic",
-    "shape_constraints": ["Row width selects the workgroup configuration", "Special-value handling is controlled by the Metal math mode"]
+    "shape_constraints": ["Row width selects the workgroup configuration", "FP16 and BF16 have both default-accumulator and FP32-accumulator instantiations"]
   },
   "hardware_targets": ["apple_silicon_metal"],
   "mechanisms": ["dynamic_dispatch", "online_softmax", "reduction", "simdgroup_reduction", "threadgroup_barrier", "threadgroup_memory"],
   "locators": [
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/softmax.h",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "6ea4ac7329cf14b0df61b288c31d2711608d14e0",
+      "symbol": "softmax_looped"
+    },
     {
       "kind": "repository_path",
       "value": "mlx/backend/metal/kernels/softmax.metal",

@@ -22,6 +22,13 @@
       "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
       "git_object": "187e6fffca39b3339bd67dbbf9fe1e5e9f2a4afe",
       "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/sdpa_vector.h",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "3f40dbd7c0ce363b54b84762a51dac30c2d4b628",
+      "symbol": "sdpa_vector"
     }
   ],
   "upstream_state": "repository_main",

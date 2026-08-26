@@ -3,7 +3,7 @@
 This directory is the first tracer for stage 2 of the method described in
 [CAKE v1 Appendix A](https://arxiv.org/html/2608.12629v1#A1): extract recurring
 abstractions from concrete operator implementations after corpus collection.
-The stage remains `in_progress`; this tracer records two recurring source
+The stage remains `in_progress`; this tracer records three recurring source
 patterns and does not claim that extraction over the operator library is
 complete.
 
@@ -43,7 +43,7 @@ upstream bytes are intentionally not vendored, it does not fetch a repository or
 recompute a source-span hash. `semantics_reviewed` is therefore a reviewer
 attestation, not an automated source-content proof. The authoring/review workflow
 must independently recompute each Git blob and span hash from the pinned checkout;
-the four observations in this tracer were checked that way before admission.
+the six observations in this tracer were checked that way before admission.
 Free-text semantics likewise remain reviewer-attested: the validator enforces the
 closed `source_structure_only` and `source_pattern_only` claim scopes, but does
 not pretend that a lexical filter can prove the meaning of prose.
@@ -59,6 +59,10 @@ not pretend that a lexical filter can prove the meaning of prose.
   threadgroup staging, early return versus sentinel publication, and NaN score
   handling remain explicit implementation variants rather than normalized
   semantics.
+- `max-rebased-exponential-summary` records the repeated MLX maximum-aligned
+  exponential-denominator update and parallel partial-summary merge. Chunked
+  probability regeneration versus masked, sink-aware weighted-payload
+  accumulation remains an explicit operator-level variant.
 
 ## Scope boundary
 

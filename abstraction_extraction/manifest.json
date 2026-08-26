@@ -7,7 +7,7 @@
   "input_library": {
     "manifest_path": "operator_library/manifest.json",
     "library_id": "open-cake-operator-library-v1",
-    "canonical_sha256": "59960e8885e3114521d3584b7f10d9fce8a5c59be627f8c50a6dc5a3e044579b"
+    "canonical_sha256": "7cfe1a59d4c87ad24e17bea0d9b8daaaa32d5fbdc2f01f124ef864af5d684247"
   },
   "selection_policy": {
     "name": "source-grounded-recurrence-tracer-v1",
@@ -34,16 +34,19 @@
     "observations/apxinf-w8-lm-head-row-projection.json",
     "observations/apxinf-w8-mlp-gate-up-row-projection.json",
     "observations/mlx-layer-norm-hierarchical-reduction.json",
-    "observations/mlx-rms-norm-hierarchical-reduction.json"
+    "observations/mlx-rms-norm-hierarchical-reduction.json",
+    "observations/mlx-scaled-dot-product-attention-max-rebased-summary.json",
+    "observations/mlx-softmax-looped-max-rebased-summary.json"
   ],
   "candidates": [
     "candidates/hierarchical-simdgroup-threadgroup-reduction.json",
+    "candidates/max-rebased-exponential-summary.json",
     "candidates/row-per-simdgroup-groupwise-w8-projection.json"
   ],
   "counts": {
-    "observation_count": 4,
-    "candidate_count": 2,
-    "implementation_count": 4,
+    "observation_count": 6,
+    "candidate_count": 3,
+    "implementation_count": 6,
     "source_count": 2
   }
 }

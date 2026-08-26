@@ -188,6 +188,71 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
             },
         )
 
+    def test_max_rebased_candidate_preserves_finalize_and_payload_variants(
+        self,
+    ) -> None:
+        candidate = _read(
+            EXTRACTION / "candidates" / "max-rebased-exponential-summary.json"
+        )
+        observation_paths = (
+            "observations/mlx-scaled-dot-product-attention-max-rebased-summary.json",
+            "observations/mlx-softmax-looped-max-rebased-summary.json",
+        )
+        observations = [_read(EXTRACTION / path) for path in observation_paths]
+        by_id = {
+            observation["observation_id"]: observation for observation in observations
+        }
+
+        self.assertEqual(
+            candidate["observation_ids"],
+            [observation["observation_id"] for observation in observations],
+        )
+        self.assertEqual(
+            {observation["pattern_signature"] for observation in observations},
+            {candidate["pattern_signature"]},
+        )
+        self.assertEqual(
+            {
+                (
+                    observation["source_locator"]["path"],
+                    observation["source_locator"]["symbol"],
+                    observation["source_span"]["start_line"],
+                    observation["source_span"]["end_line"],
+                )
+                for observation in observations
+            },
+            {
+                (
+                    "mlx/backend/metal/kernels/sdpa_vector.h",
+                    "sdpa_vector",
+                    87,
+                    169,
+                ),
+                (
+                    "mlx/backend/metal/kernels/softmax.h",
+                    "softmax_looped",
+                    114,
+                    189,
+                ),
+            },
+        )
+        attention = by_id[
+            "mlx-metal-scaled-dot-product-attention.vector-max-rebased-summary"
+        ]
+        softmax = by_id["mlx-metal-softmax.looped-max-rebased-summary"]
+        self.assertIn("weighted_payload_rebase", attention["observed_primitives"])
+        self.assertNotIn("weighted_payload_rebase", softmax["observed_primitives"])
+        for primitive in (
+            "masked_score_update",
+            "sink_seed",
+            "zero_denominator_guard",
+        ):
+            with self.subTest(primitive=primitive):
+                self.assertIn(primitive, attention["observed_primitives"])
+                self.assertNotIn(primitive, softmax["observed_primitives"])
+        self.assertIn("two_pass_finalize", softmax["observed_primitives"])
+        self.assertNotIn("two_pass_finalize", attention["observed_primitives"])
+
 
 class AbstractionExtractionValidatorTests(unittest.TestCase):
     def test_cli_validates_the_source_grounded_extraction(self) -> None:

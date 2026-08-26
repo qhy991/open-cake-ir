@@ -1,0 +1,55 @@
+{
+  "$schema": "../schema.json#/$defs/candidate",
+  "schema_version": 1,
+  "candidate_id": "max-rebased-exponential-summary",
+  "pattern_signature": "max-rebased.exponential-denominator.partial-summary-merge",
+  "summary": "Two pinned MLX Metal implementations expose the same source-level stabilized exponential summary: update a maximum reference, rebase the accumulated denominator whenever that reference changes, and merge parallel partials only after aligning them to a common maximum.",
+  "normalized_steps": [
+    "Initialize a local maximum reference and exponential denominator according to the enclosing operator's seed policy.",
+    "For each admitted score or score chunk, select a new maximum reference covering the prior summary and new values.",
+    "Multiply the prior denominator by exp(old_max-new_max).",
+    "Add exponentials of the new scores relative to the new maximum.",
+    "Merge parallel summaries by selecting a common maximum, rebasing every partial denominator to it, and summing the aligned denominators.",
+    "Finalize with the merged maximum and denominator while leaving full-probability regeneration versus value-weighted payload normalization to the enclosing operator."
+  ],
+  "observed_variants": [
+    "The softmax implementation updates by N_READS-sized chunks, pads its tail, carries a maximum-and-denominator summary but no weighted payload, and re-reads the input to materialize the normalized row.",
+    "The attention implementation admits scores through mask branches, optionally seeds a denominator-only sink, and rebases a value-weighted payload with the same factors before normalization.",
+    "The SIMDgroup and threadgroup merge choreography, storage choices, barriers, mask and sink behavior, tail policy, weighted-payload state, and output strategy remain implementation facts rather than candidate invariants."
+  ],
+  "observation_ids": [
+    "mlx-metal-scaled-dot-product-attention.vector-max-rebased-summary",
+    "mlx-metal-softmax.looped-max-rebased-summary"
+  ],
+  "evidence_breadth": {
+    "observation_count": 2,
+    "implementation_ids": [
+      "mlx.metal-scaled-dot-product-attention",
+      "mlx.metal-softmax"
+    ],
+    "operator_ids": [
+      "attention.scaled_dot_product",
+      "normalization.softmax"
+    ],
+    "source_ids": [
+      "mlx-main-1f8e74e"
+    ],
+    "source_revisions": [
+      "1f8e74e3f12f31365464a6867c6579f0e9b29d85"
+    ],
+    "git_objects": [
+      "3f40dbd7c0ce363b54b84762a51dac30c2d4b628",
+      "6ea4ac7329cf14b0df61b288c31d2711608d14e0"
+    ],
+    "families": [
+      "attention",
+      "normalization"
+    ],
+    "hardware_targets": [
+      "apple_silicon_metal"
+    ]
+  },
+  "state": "extracted_unreviewed",
+  "claim_scope": "source_pattern_only",
+  "next_gate": "hardware_informed_design"
+}

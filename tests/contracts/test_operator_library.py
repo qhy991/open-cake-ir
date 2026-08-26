@@ -130,6 +130,38 @@ class OperatorLibrarySchemaTests(unittest.TestCase):
             )
         )
 
+    def test_mlx_online_summary_occurrences_bind_algorithm_headers(self) -> None:
+        manifest = _read(LIBRARY / "manifest.json")
+        occurrences = {
+            occurrence["implementation_id"]: occurrence
+            for relative in manifest["operators"]
+            for occurrence in [_read(_catalog_path(LIBRARY, relative))]
+        }
+        expected = {
+            "mlx.metal-scaled-dot-product-attention": {
+                (
+                    "mlx/backend/metal/kernels/scaled_dot_product_attention.metal",
+                    None,
+                ),
+                ("mlx/backend/metal/kernels/sdpa_vector.h", "sdpa_vector"),
+            },
+            "mlx.metal-softmax": {
+                ("mlx/backend/metal/kernels/softmax.h", "softmax_looped"),
+                ("mlx/backend/metal/kernels/softmax.metal", None),
+            },
+        }
+
+        for implementation_id, locators in expected.items():
+            with self.subTest(implementation_id=implementation_id):
+                self.assertEqual(
+                    {
+                        (locator["value"], locator["symbol"])
+                        for locator in occurrences[implementation_id]["locators"]
+                        if locator["kind"] == "repository_path"
+                    },
+                    locators,
+                )
+
 
 class OperatorLibraryValidatorTests(unittest.TestCase):
     def test_cli_validates_and_reports_each_required_count(self) -> None:
@@ -173,9 +205,9 @@ class OperatorLibraryValidatorTests(unittest.TestCase):
         self.assertEqual(
             report["family_counts"],
             {
-                family: Counter(
-                    occurrence["family"] for occurrence in occurrences
-                )[family]
+                family: Counter(occurrence["family"] for occurrence in occurrences)[
+                    family
+                ]
                 for family in manifest["family_vocabulary"]
             },
         )
@@ -188,9 +220,9 @@ class OperatorLibraryValidatorTests(unittest.TestCase):
             self.assertEqual(
                 report[report_key],
                 {
-                    value: Counter(
-                        occurrence[field] for occurrence in occurrences
-                    )[value]
+                    value: Counter(occurrence[field] for occurrence in occurrences)[
+                        value
+                    ]
                     for value in operator_properties[field]["enum"]
                 },
             )
@@ -262,9 +294,7 @@ class OperatorLibraryValidatorTests(unittest.TestCase):
             broken[field] = value
             locators.append(broken)
             locators.sort(key=lambda locator: (locator["kind"], locator["value"]))
-            path.write_text(
-                json.dumps(occurrence, indent=2) + "\n", encoding="utf-8"
-            )
+            path.write_text(json.dumps(occurrence, indent=2) + "\n", encoding="utf-8")
             return
         self.fail("fixture has no reviewed repository-path occurrence")
 
