@@ -334,6 +334,129 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
         self.assertIn("two_pass_finalize", softmax["observed_primitives"])
         self.assertNotIn("two_pass_finalize", attention["observed_primitives"])
 
+    def test_two_pass_rms_preserves_reduction_weight_and_fusion_variants(
+        self,
+    ) -> None:
+        candidate = _read(
+            EXTRACTION / "candidates" / "two-pass-row-rms-modulation.json"
+        )
+        observation_paths = (
+            "observations/apxinf-full-attention-input-rms-modulation.json",
+            "observations/apxinf-w8-gdn-norm-gate-rms-modulation.json",
+        )
+        observations = [_read(EXTRACTION / path) for path in observation_paths]
+        by_id = {
+            observation["observation_id"]: observation for observation in observations
+        }
+
+        self.assertEqual(
+            candidate["observation_ids"],
+            [observation["observation_id"] for observation in observations],
+        )
+        self.assertEqual(
+            {observation["pattern_signature"] for observation in observations},
+            {candidate["pattern_signature"]},
+        )
+        self.assertEqual(
+            {
+                (
+                    observation["source_locator"]["path"],
+                    observation["source_locator"]["symbol"],
+                    observation["source_span"]["start_line"],
+                    observation["source_span"]["end_line"],
+                )
+                for observation in observations
+            },
+            {
+                (
+                    "crates/apxinf-metal/src/metal_full_attention_decode_v1.metal",
+                    "full_attention_input_rms_v1",
+                    33,
+                    51,
+                ),
+                (
+                    "crates/apxinf-metal/src/metal_w8_gdn.metal",
+                    "gdn_norm_gate",
+                    509,
+                    533,
+                ),
+            },
+        )
+        common_primitives = set(observations[0]["observed_primitives"]).intersection(
+            observations[1]["observed_primitives"]
+        )
+        self.assertEqual(
+            common_primitives,
+            {
+                "epsilon_stabilized_inverse_rms",
+                "fp32_row_sum_of_squares",
+                "per_element_norm_weight_modulation",
+                "pointwise_inverse_rms_apply",
+                "row_extent_mean_square",
+                "second_pass_source_reread",
+            },
+        )
+        attention = by_id["apxinf-metal-full-attention.input-rms-modulation"]
+        gdn = by_id["apxinf-metal-w8-gdn.norm-gate-rms-modulation"]
+        for primitive in (
+            "fixed_hidden_extent",
+            "lane_strided_row_passes",
+            "layer_slot_norm_weight_offset",
+            "simd_sum",
+            "standalone_normalized_output",
+            "zero_centered_norm_weight_factor",
+        ):
+            with self.subTest(attention_only=primitive):
+                self.assertIn(primitive, attention["observed_primitives"])
+                self.assertNotIn(primitive, gdn["observed_primitives"])
+        for primitive in (
+            "direct_norm_weight_factor",
+            "early_value_head_return",
+            "projected_silu_gate",
+            "runtime_value_extent",
+            "serial_row_passes",
+            "value_head_row_base",
+        ):
+            with self.subTest(gdn_only=primitive):
+                self.assertIn(primitive, gdn["observed_primitives"])
+                self.assertNotIn(primitive, attention["observed_primitives"])
+        normalized = " ".join(candidate["normalized_steps"])
+        for variant_only in (
+            "simd_sum",
+            "SIMDgroup",
+            "threadgroup",
+            "barrier",
+            "layer_slot",
+            "SiLU",
+            "weight + 1",
+            "value_head",
+        ):
+            with self.subTest(variant_only=variant_only):
+                self.assertNotIn(variant_only, normalized)
+        variants = " ".join(candidate["observed_variants"])
+        for boundary in (
+            "zero-centered weight factor",
+            "projected-Z SiLU factor",
+            "reduction order",
+            "physical memory traffic",
+            "does not establish numerical equivalence",
+            "a Compiler or Target abstraction",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, variants)
+        manifest = _read(EXTRACTION / "manifest.json")
+        self.assertEqual(manifest["counts"]["implementation_count"], 10)
+        non_claims = " ".join(manifest["selection_policy"]["non_claims"])
+        for boundary in (
+            "does not establish a common thread or SIMDgroup ownership model",
+            "physical row residency",
+            "zero-centered versus direct normalization-weight factors",
+            "independent of hierarchical-simdgroup-threadgroup-reduction",
+            "does not admit a Compiler RMS operation",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, non_claims)
+
     def test_runtime_index_fold_preserves_terminal_and_safety_boundaries(
         self,
     ) -> None:

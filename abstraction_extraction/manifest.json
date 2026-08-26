@@ -30,12 +30,17 @@
       "No Schedule expressibility, correctness, calibration, or performance result follows from extraction.",
       "Passing an index and accessed-buffer extent to the observed offset_neg_idx helper is not a bounds check; no in-bounds or memory-safety result follows.",
       "No race freedom, destination ownership, atomic conflict policy, determinism, overwrite or reduction semantics, or update ordering follows from the runtime-index address-fold recurrence.",
-      "The runtime-index address-fold recurrence does not establish equivalence to Compiler AccessIndexKind.BUFFER, mask_tiled_axes zero-fill behavior, accessed-buffer boundary analysis, or any admitted lowering subset."
+      "The runtime-index address-fold recurrence does not establish equivalence to Compiler AccessIndexKind.BUFFER, mask_tiled_axes zero-fill behavior, accessed-buffer boundary analysis, or any admitted lowering subset.",
+      "The two-pass row RMS recurrence does not establish a common thread or SIMDgroup ownership model, reduction order, floating-point reproducibility, launch topology, synchronization contract, physical row residency, or memory-traffic and performance result.",
+      "The recurrence does not normalize fixed versus runtime row extents, layer-slot addressing, zero-centered versus direct normalization-weight factors, the GDN projected SiLU gate, bounds handling, output layout, aliasing, or memory safety.",
+      "The recurrence is independent of hierarchical-simdgroup-threadgroup-reduction and does not admit a Compiler RMS operation, Target capability, Schedule form, or lowering subset."
     ]
   },
   "observations": [
+    "observations/apxinf-full-attention-input-rms-modulation.json",
     "observations/apxinf-full-attention-qgkv-row-projection.json",
     "observations/apxinf-w8-gdn-input-row-projection.json",
+    "observations/apxinf-w8-gdn-norm-gate-rms-modulation.json",
     "observations/apxinf-w8-lm-head-row-projection.json",
     "observations/apxinf-w8-mlp-gate-up-row-projection.json",
     "observations/mlx-gather-runtime-index-axis-stride-fold.json",
@@ -49,11 +54,12 @@
     "candidates/hierarchical-simdgroup-threadgroup-reduction.json",
     "candidates/max-rebased-exponential-summary.json",
     "candidates/row-per-simdgroup-groupwise-w8-projection.json",
-    "candidates/runtime-index-axis-stride-offset-fold.json"
+    "candidates/runtime-index-axis-stride-offset-fold.json",
+    "candidates/two-pass-row-rms-modulation.json"
   ],
   "counts": {
-    "observation_count": 10,
-    "candidate_count": 4,
+    "observation_count": 12,
+    "candidate_count": 5,
     "implementation_count": 10,
     "source_count": 2
   }

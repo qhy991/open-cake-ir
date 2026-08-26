@@ -1,0 +1,48 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "apxinf-metal-w8-gdn.norm-gate-rms-modulation",
+  "pattern_signature": "row-square-sum.inverse-rms.second-pass-weight-modulation",
+  "implementation_id": "apxinf.metal-w8-gdn-decode",
+  "operator_id": "recurrent.gated_delta_net_decode",
+  "source_id": "apxinf-qhy-main-df5c55a",
+  "source_locator": {
+    "path": "crates/apxinf-metal/src/metal_w8_gdn.metal",
+    "revision": "df5c55a06140107b24964d9e4abbefd9fa2a4733",
+    "git_object": "f70334c822dcc73d59551098ef8ad53eb0984210",
+    "symbol": "gdn_norm_gate"
+  },
+  "source_span": {
+    "start_line": 509,
+    "end_line": 533,
+    "sha256": "88ee4aea956b6601ead25e2873ebf02a50e2200678fe5b283baadc0c88ac5262",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "A value-head guard precedes a serial traversal of the runtime-width core row, where one source-level float accumulator receives value-squared contributions.",
+    "The kernel divides the accumulated square sum by params.value_dim, adds params.rms_norm_eps, and applies rsqrt.",
+    "A second serial loop reads each core element again and multiplies it by the inverse-RMS scalar and the direct norm_weight factor.",
+    "That output expression also reads projected Z, computes a SiLU factor, and writes the fused product to the gated buffer."
+  ],
+  "observed_primitives": [
+    "direct_norm_weight_factor",
+    "early_value_head_return",
+    "epsilon_stabilized_inverse_rms",
+    "fp32_row_sum_of_squares",
+    "per_element_norm_weight_modulation",
+    "pointwise_inverse_rms_apply",
+    "projected_silu_gate",
+    "row_extent_mean_square",
+    "runtime_value_extent",
+    "second_pass_source_reread",
+    "serial_row_passes",
+    "value_head_row_base"
+  ],
+  "variant_notes": [
+    "One grid thread handles each admitted value head with a runtime params.value_dim extent and a serial accumulation order.",
+    "The kernel uses norm_weight[index] directly and fuses a separately read projected-Z SiLU factor into the gated output; neither choice is normalized into the shared pattern.",
+    "The source-level second read does not establish a physical device-memory reread or any bandwidth result."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

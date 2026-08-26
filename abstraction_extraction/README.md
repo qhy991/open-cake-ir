@@ -3,7 +3,7 @@
 This directory is the first tracer for stage 2 of the method described in
 [CAKE v1 Appendix A](https://arxiv.org/html/2608.12629v1#A1): extract recurring
 abstractions from concrete operator implementations after corpus collection.
-The stage remains `in_progress`; this tracer records four recurring source
+The stage remains `in_progress`; this tracer records five recurring source
 patterns and does not claim that extraction over the operator library is
 complete.
 
@@ -43,7 +43,7 @@ upstream bytes are intentionally not vendored, it does not fetch a repository or
 recompute a source-span hash. `semantics_reviewed` is therefore a reviewer
 attestation, not an automated source-content proof. The authoring/review workflow
 must independently recompute each Git blob and span hash from the pinned checkout;
-the ten observations in this tracer were checked that way before admission.
+the twelve observations in this tracer were checked that way before admission.
 Free-text semantics likewise remain reviewer-attested: the validator enforces the
 closed `source_structure_only` and `source_pattern_only` claim scopes, but does
 not pretend that a lexical filter can prove the meaning of prose.
@@ -68,6 +68,11 @@ not pretend that a lexical filter can prove the meaning of prose.
   element-location and accessed-buffer axis-stride fold into a linear element
   offset. Rank specialization, grid mapping, update addressing, and the terminal
   direct gather access versus atomic scatter update remain explicit variants.
+- `two-pass-row-rms-modulation` records the repeated ApxInf source data flow
+  from a row square sum through an epsilon-stabilized inverse RMS to a second
+  source-row pass with a normalization-weight factor. SIMDgroup versus serial
+  reduction, fixed versus runtime extent, weight parameterization, and the GDN
+  projected-SiLU fusion remain explicit variants.
 
 ## Scope boundary
 
@@ -89,6 +94,14 @@ accessed-buffer boundary contracts in ADRs 0026 and 0032. In particular, the
 observed `offset_neg_idx` call is not a bounds check. The scatter terminal also
 does not establish the reservation-owned indexed-store subset discussed by ADR
 0036, or any conflict, determinism, race-freedom, or memory-safety result.
+
+The two-pass RMS candidate is independent of the frozen hierarchical-reduction
+closure: a single `simd_sum` in the full-attention variant does not admit
+threadgroup publication, barriers, or a final SIMDgroup reducer. The candidate
+also does not establish a shared reduction order, floating-point result,
+physical row residency, memory-traffic benefit, RMS Compiler operation, Target
+capability, Schedule form, or lowering route. Direct versus zero-centered
+normalization-weight factors and the GDN projected-SiLU gate remain distinct.
 
 The next gates remain in paper order: hardware-informed design, P1-P8
 principle-driven iteration, and only then port-driven expansion. The richer
