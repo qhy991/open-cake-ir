@@ -1,0 +1,406 @@
+===== candidate-skeleton.cu =====
+// CAKE_REPRO_LAUNCH_V1 {"abi":"flash_kmeans_assign_v1","block":[64,1,1],"dynamic_shared_memory_bytes":0,"grid":[512,32,1],"kernel_name":"cake_flash_kmeans_assign","schema_version":1,"target":"sm_100a"}
+#include <cuda_bf16.h>
+#include <mma.h>
+#include <stdint.h>
+
+extern "C" __global__ void cake_flash_kmeans_assign(
+    const __nv_bfloat16* tokens,
+    const __nv_bfloat16* centroids,
+    const float* centroid_sq,
+    int32_t* assignments) {
+  using namespace nvcuda;
+
+  constexpr int kN = 65536;
+  constexpr int kD = 128;
+  constexpr int kK = 1024;
+  constexpr int kTokensPerBlock = 128;
+  constexpr int kTokensPerWarp = 64;
+
+  __shared__ __nv_bfloat16 token_tile[kTokensPerBlock * kD];
+  __shared__ float score_tile[2][4][16 * 16];
+
+  const int b = static_cast<int>(blockIdx.y);
+  const int block_token = static_cast<int>(blockIdx.x) * kTokensPerBlock;
+  const long long token_base =
+      (static_cast<long long>(b) * kN + block_token) * kD;
+
+  for (int i = static_cast<int>(threadIdx.x);
+       i < kTokensPerBlock * kD;
+       i += static_cast<int>(blockDim.x)) {
+    token_tile[i] = tokens[token_base + i];
+  }
+  __syncthreads();
+
+  const int warp = static_cast<int>(threadIdx.x) >> 5;
+  const int lane = static_cast<int>(threadIdx.x) & 31;
+  const int warp_token = warp * kTokensPerWarp;
+
+  float best0 = 3.402823466e+38F;
+  float best1 = 3.402823466e+38F;
+  int best_k0 = 0;
+  int best_k1 = 0;
+
+  #pragma unroll 1
+  for (int k0 = 0; k0 < kK; k0 += 16) {
+    wmma::fragment<wmma::accumulator, 16, 16, 16, float> acc0;
+    wmma::fragment<wmma::accumulator, 16, 16, 16, float> acc1;
+    wmma::fragment<wmma::accumulator, 16, 16, 16, float> acc2;
+    wmma::fragment<wmma::accumulator, 16, 16, 16, float> acc3;
+    wmma::fill_fragment(acc0, 0.0F);
+    wmma::fill_fragment(acc1, 0.0F);
+    wmma::fill_fragment(acc2, 0.0F);
+    wmma::fill_fragment(acc3, 0.0F);
+
+    #pragma unroll
+    for (int d0 = 0; d0 < kD; d0 += 16) {
+      wmma::fragment<wmma::matrix_a, 16, 16, 16,
+                     __nv_bfloat16, wmma::row_major> a;
+      wmma::fragment<wmma::matrix_b, 16, 16, 16,
+                     __nv_bfloat16, wmma::col_major> x;
+
+      const __nv_bfloat16* a_ptr =
+          centroids +
+          (static_cast<long long>(b) * kK + k0) * kD + d0;
+      wmma::load_matrix_sync(a, a_ptr, kD);
+
+      wmma::load_matrix_sync(
+          x, token_tile + (warp_token + 0) * kD + d0, kD);
+      wmma::mma_sync(acc0, a, x, acc0);
+      wmma::load_matrix_sync(
+          x, token_tile + (warp_token + 16) * kD + d0, kD);
+      wmma::mma_sync(acc1, a, x, acc1);
+      wmma::load_matrix_sync(
+          x, token_tile + (warp_token + 32) * kD + d0, kD);
+      wmma::mma_sync(acc2, a, x, acc2);
+      wmma::load_matrix_sync(
+          x, token_tile + (warp_token + 48) * kD + d0, kD);
+      wmma::mma_sync(acc3, a, x, acc3);
+    }
+
+    wmma::store_matrix_sync(
+        &score_tile[warp][0][0], acc0, 16, wmma::mem_row_major);
+    wmma::store_matrix_sync(
+        &score_tile[warp][1][0], acc1, 16, wmma::mem_row_major);
+    wmma::store_matrix_sync(
+        &score_tile[warp][2][0], acc2, 16, wmma::mem_row_major);
+    wmma::store_matrix_sync(
+        &score_tile[warp][3][0], acc3, 16, wmma::mem_row_major);
+    __syncwarp();
+
+    const int column = lane & 15;
+    const int first_tile = lane >> 4;
+    #pragma unroll
+    for (int r = 0; r < 16; ++r) {
+      const int k = k0 + r;
+      const float norm = centroid_sq[static_cast<long long>(b) * kK + k];
+      const float dot0 = score_tile[warp][first_tile][r * 16 + column];
+      const float dot1 = score_tile[warp][first_tile + 2][r * 16 + column];
+      const float candidate0 = norm - 2.0F * dot0;
+      const float candidate1 = norm - 2.0F * dot1;
+      if (candidate0 < best0) {
+        best0 = candidate0;
+        best_k0 = k;
+      }
+      if (candidate1 < best1) {
+        best1 = candidate1;
+        best_k1 = k;
+      }
+    }
+    __syncwarp();
+  }
+
+  const long long output_base = static_cast<long long>(b) * kN + block_token;
+  assignments[output_base + warp_token + lane] = best_k0;
+  assignments[output_base + warp_token + lane + 32] = best_k1;
+}
+
+
+===== cuda-launch-abi.json =====
+{
+  "schema_version": 1,
+  "compatibility_prefix": "// CAKE_REPRO_LAUNCH_V1 ",
+  "position": "first_utf8_source_line",
+  "canonical_json_required": true,
+  "manifest_fields": ["abi", "block", "dynamic_shared_memory_bytes", "grid", "kernel_name", "schema_version", "target"],
+  "abi": "flash_kmeans_assign_v1",
+  "target": "sm_100a",
+  "kernel_name": "valid_cuda_identifier",
+  "grid_limits": [[1, 2147483647], [1, 65535], [1, 65535]],
+  "block_threads_maximum": 1024,
+  "dynamic_shared_memory_bytes_maximum": 232448,
+  "explicit_arguments": ["tokens_bf16", "centroids_bf16", "centroid_sq_fp32", "assignments_int32"],
+  "hidden_null_pointer_parameters": 0,
+  "fallback": "forbidden"
+}
+
+
+===== run-authority.json =====
+{"authoring_environment":{"candidate_skeleton":{"path":"contracts/scaffolds/direct-cuda-headline-v1.cu","sha256":"0abb16224b8331ec808ac348648f5a68cc1542f013ebf921c6fca8ec786bd187"},"environment_kind":"direct_cuda","feedback":["compile","correctness","qualified_timing","profile"],"launch_contract":{"path":"contracts/launch/flash-kmeans-cuda-launch-v1.json","sha256":"ce3db9719334ef51dd5487b4f623dc7192f4579ab326724c729d72647324a3ab"},"prompt_template":{"path":"src/open_cake_ir/lab/prompts/direct_cuda_candidate_set_turn_v1.md","sha256":"05a832e1a07b28f5e37d690712672aa9a297e961490fd164c6bf9cc327f9e8c0"},"provider":{"cwd_policy":"independent_empty_workspace","disabled_features":["apps","auth_elicitation","browser_use","browser_use_external","browser_use_full_cdp_access","code_mode_host","computer_use","goals","guardian_approval","hooks","image_generation","in_app_browser","multi_agent","plugin_sharing","plugins","remote_plugin","shell_tool","skill_mcp_dependency_install","tool_call_mcp_elicitation","tool_suggest","workspace_dependencies"],"executable_sha256":"134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477","model":"gpt-5.6-sol","output_schema":{"path":"contracts/providers/codex-turn-output-schema-v1.json","sha256":"5b3b813d98ddae93fe9ff5cf0f1568d64721fa31029cb77a0ad5f2dfc800ed18"},"qualification":{"canonical_sha256":"048546ef00b4eef939b84ad88198dea168e2f2115a82b0424c13077fa706208f","path":"contracts/providers/codex-cli-0.144.4-candidate-set-live-v1.json"},"qualification_anchor":{"canonical_sha256":"1525bc3c30a2b3418bed92c8788aac8b4986c3b717e0ffb93ffb3cd374df22ce","path":"evidence/qualifications/codex-cli-0.144.4-candidate-set-live-v1-anchor.json"},"reasoning_effort":"max","reference_visibility":"embedded_frozen_bundle","removed_environment":["OPENAI_API_KEY","ANTHROPIC_API_KEY"],"revision":"codex-cli-0.144.4-sha134063e133f0b424","sandbox":"workspace-write","service_tier":"default"},"scaffold":{"path":"contracts/scaffolds/matched-search-v1.md","sha256":"3d8d0acee1ac6d314464f25cfc2ee0151c8b133e2ac0539b84391fd791c036fe"},"tool_surface":["submit_cuda"],"toolchain_sha256":"7429e289314831cc33f959440f5d398d2936e969235eef361a277b8719e25d5a"},"budget":{"checkpoints":[50000,100000,150000],"limit":150000,"maximum_candidates_per_turn":3,"maximum_turns":4,"unit":"provider_tokens"},"evaluation_protocol":{"attribution_evaluation":"correctness_then_profile_each_search_survivor","case_id":"headline_b32","confirmatory_evaluation":"fresh_fixed_candidate_correctness_then_paired_cupti","search_evaluation":"correctness_then_paired_cupti","search_materiality_ratio":1.05,"searches_per_turn":2},"execution":{"broker_execution_sha256":"9d8c64a6696fb5ab163652906b9d00958d2c5a14bcb07c0f426b00a04da5b8b8","executor_revision":{"canonical_sha256":"457e9d89623ab370392476e9be73d022c46cdcd2493f35d558f27c5b81f0e490","executor_id":"open-cake-ir-b200-v29","path":"runtime/executors/open-cake-ir-b200-v29.json"},"gpu":{"count":1,"mode":"exclusive","name":"NVIDIA B200"},"sandbox":"workspace-write","target":"sm_100a"},"run_protocol":{"automatic_retries":0,"empty_workspace":true,"independent_thread":true,"replacement_runs":0,"resume_invariants":["authority","cwd","sandbox","provider","scaffold","arm_environment"]},"schema_version":1,"study":{"canonical_sha256":"7cd7970fb7f53e322376eb4ad0a205ccfc83c877c00014c85e49a5155ffe19f9","claim_scope":"scientific_matched_search","kind":"matched_search","study_id":"open-cake-ir-matched-search-v28-rope-r1"},"workload":{"canonical_sha256":"37e0f57020d9807a6c77c5ef6e56c8c771274c11c745b58022ae85091d567c3a","path":"contracts/workloads/flash-kmeans-assign-v2.json","workload_id":"flash-kmeans-assign-independent-v2"}}
+
+===== scaffold.md =====
+# Matched-search scaffold v1
+
+Each Run receives one empty writable candidate workspace and an immutable external reference bundle whose bytes are
+embedded in each Turn prompt. The bundle contains its Workload Contract, Study/Campaign authority, task statement,
+candidate skeleton and assigned Authoring Environment. The provider may change only the one
+candidate file named by the Turn prompt. It cannot invoke the Compiler, toolchain, evaluator, GPU, network or the
+other treatment. Feedback is limited to the Study-declared projection from the preceding Turn.
+
+
+===== target.json =====
+{
+  "schema_version": 1,
+  "target_id": "sm_100a",
+  "architecture": "blackwell",
+  "device_names": [
+    "NVIDIA B200"
+  ],
+  "compute_capability": [
+    10,
+    0
+  ],
+  "memory_spaces": [
+    "global",
+    "shared",
+    "tensor",
+    "register"
+  ],
+  "operation_kinds": [
+    "load",
+    "mma",
+    "epilogue",
+    "reduce_argmin",
+    "reduce",
+    "top_k",
+    "atomic_rmw",
+    "elementwise",
+    "store"
+  ],
+  "resource_limits": {
+    "maximum_threads_per_cta": 1024,
+    "maximum_warps_per_cta": 32,
+    "maximum_shared_memory_bytes": 232448,
+    "maximum_tensor_memory_bytes": 262144,
+    "grid": {
+      "x": 2147483647,
+      "y": 65535,
+      "z": 65535
+    }
+  },
+  "instruction_contracts": [
+    "tcgen05.mma.cta_group::1.kind::f16",
+    "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
+    "triton.dot.bf16_fp32",
+    "triton.dot.fp8e4m3_block_scale_fp32",
+    "triton.atomic_add.i32.relaxed.gpu",
+    "libdevice.tanh.f32"
+  ],
+  "synchronization_contracts": [
+    "mbarrier",
+    "barrier.sync",
+    "triton_program_order"
+  ],
+  "citations": [
+    {
+      "kind": "paper",
+      "source": "arXiv:2608.12629v1 Appendix B.5",
+      "locator": "Table 3 sm_100a"
+    },
+    {
+      "kind": "legacy_source",
+      "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
+      "path": "src/cakerepro/targets.py",
+      "sha256": "b19d6179070e406b5dafcfd81f7e87b568335f342f2b05f29bf31927e2794273"
+    },
+    {
+      "kind": "toolchain_api",
+      "source": "https://triton-lang.org/main/python-api/generated/triton.language.atomic_add.html",
+      "locator": "atomic_add returns the prior value and admits relaxed semantics with gpu scope"
+    },
+    {
+      "kind": "device_observation",
+      "source": "cuDeviceGetAttribute and torch.cuda.get_device_properties on NVIDIA B200",
+      "locator": "occupancy block; observed 2026-08-23 on verda-b200x4 under gpu-run"
+    }
+  ],
+  "occupancy": {
+    "multiprocessor_count": 148,
+    "registers_per_multiprocessor": 65536,
+    "shared_memory_per_multiprocessor_bytes": 233472,
+    "maximum_threads_per_multiprocessor": 2048
+  }
+}
+
+
+===== workload.json =====
+{
+  "schema_version": 1,
+  "workload_id": "flash-kmeans-assign-independent-v2",
+  "revision": "2",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "legacy_canonical_json",
+      "path": "spec/workloads/flash-kmeans-assign-public-v1.json",
+      "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
+      "sha256": "f0528da2eda9cdbb23129a0b89bfe779a5e052596cc84c7186e3880fe8880015"
+    },
+    {
+      "kind": "legacy_canonical_json",
+      "path": "spec/inputs/flash-kmeans-input-plan-v1.json",
+      "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
+      "sha256": "ce94503d91cb2ab9d1159be77c10cd7dc342fecb0228881b6bae481740ae6035"
+    },
+    {
+      "kind": "supersedes_workload",
+      "workload_id": "flash-kmeans-assign-independent-v1",
+      "canonical_sha256": "686451ad594dec223094256003c4738ed2a77e47de7389a4d2741786c7277dc2"
+    }
+  ],
+  "operator": "flash_kmeans_assign",
+  "cases": [
+    {
+      "case_id": "tail_nk",
+      "shape": {
+        "B": 1,
+        "N": 257,
+        "K": 257,
+        "D": 128
+      },
+      "seed": 1001,
+      "mode": "random_standard_normal"
+    },
+    {
+      "case_id": "batched_tail",
+      "shape": {
+        "B": 2,
+        "N": 129,
+        "K": 257,
+        "D": 128
+      },
+      "seed": 1002,
+      "mode": "random_standard_normal"
+    },
+    {
+      "case_id": "b32_smoke",
+      "shape": {
+        "B": 32,
+        "N": 512,
+        "K": 1024,
+        "D": 128
+      },
+      "seed": 1003,
+      "mode": "random_standard_normal",
+      "materialized": {
+        "tokens": {
+          "sha256": "0d091f41cb1b58bc7182fdb41f1a91710067987744483f1736ced50df26e8949",
+          "size_bytes": 4194304
+        },
+        "centroids": {
+          "sha256": "f643ecc32ff550fbe09f9e07f0692dd27605160f6eaffc76de585c8557efcadf",
+          "size_bytes": 8388608
+        },
+        "oracle_assignments": {
+          "sha256": "e815184d69e3356185156fb651049a0e4c48d33875d3ce2bb33d49ce3a41b492",
+          "size_bytes": 65536
+        }
+      }
+    },
+    {
+      "case_id": "duplicate_tie",
+      "shape": {
+        "B": 1,
+        "N": 4,
+        "K": 4,
+        "D": 128
+      },
+      "seed": null,
+      "mode": "constructed_duplicate_centroids"
+    },
+    {
+      "case_id": "public_b1",
+      "shape": {
+        "B": 1,
+        "N": 65536,
+        "K": 1024,
+        "D": 128
+      },
+      "seed": 0,
+      "mode": "random_standard_normal"
+    },
+    {
+      "case_id": "headline_b32",
+      "shape": {
+        "B": 32,
+        "N": 65536,
+        "K": 1024,
+        "D": 128
+      },
+      "seed": 0,
+      "mode": "random_standard_normal",
+      "materialized": {
+        "tokens": {
+          "sha256": "6d29794800c6131b72c6031b9307143003c02d9cdf4aa1c9e788b3300e7708ca",
+          "size_bytes": 536870912
+        },
+        "centroids": {
+          "sha256": "cb08de709a3dcf29fb8e6b7008945f1ab77a3e7e60c151a564d17c71bdaa43b4",
+          "size_bytes": 8388608
+        },
+        "oracle_assignments": {
+          "sha256": "ae2474e2e93392bfec441f284231712b88bc60fbbf3ba8bceeddce21275c4b2f",
+          "size_bytes": 8388608
+        }
+      }
+    }
+  ],
+  "tensors": {
+    "tokens": {
+      "shape": [
+        "B",
+        "N",
+        "D"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "finite_only": true
+    },
+    "centroids": {
+      "shape": [
+        "B",
+        "K",
+        "D"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "finite_only": true
+    },
+    "assignments": {
+      "shape": [
+        "B",
+        "N"
+      ],
+      "dtype": "int32",
+      "layout": "contiguous_row_major"
+    }
+  },
+  "semantics": {
+    "definition": "argmin_k sum_d (tokens[b,n,d] - centroids[b,k,d])^2",
+    "accumulator_dtype": "fp32",
+    "tie_break": "lowest_index_for_equal_fp32_score",
+    "nonfinite": "reject_before_oracle"
+  },
+  "oracle": {
+    "kind": "fp32_full_k_chunked",
+    "source_sha256": "a74090ca7e5575f5fd6a027600d3330b5fa098078944c089e47c3077af3114d2",
+    "chunk_n": 8192,
+    "tf32": false
+  },
+  "validation": {
+    "canonical": "exact_int32_ids_with_lowest_index_ties",
+    "tie_diagnostic_atol": 0.01,
+    "tie_diagnostic_rtol": 0.01,
+    "paper_acceptance_rule": "unknown"
+  }
+}

@@ -1,0 +1,334 @@
+===== run-authority.json =====
+{"authoring_environment":{"compiler_revision":{"canonical_sha256":"142635bab6d66a435eaf8435141f67c1623bed9b22c1d8c7e6356c580add370d","path":"compiler/revision.lock.json","revision_id":"open-cake-ir-sm100a-v28"},"environment_kind":"open_cake","feedback":["findings","correctness","qualified_timing","profile"],"lowering_route":{"backend":"triton","entry_point":"cake_flash_kmeans_assign"},"prompt_template":{"path":"src/open_cake_ir/lab/prompts/open_cake_candidate_set_turn_v1.md","sha256":"4b76d75ed73de39b64cf0912eb57eeffb3eba203d3914d1fb8b0d951c664d8bb"},"provider":{"cwd_policy":"independent_empty_workspace","disabled_features":["apps","auth_elicitation","browser_use","browser_use_external","browser_use_full_cdp_access","code_mode_host","computer_use","goals","guardian_approval","hooks","image_generation","in_app_browser","multi_agent","plugin_sharing","plugins","remote_plugin","shell_tool","skill_mcp_dependency_install","tool_call_mcp_elicitation","tool_suggest","workspace_dependencies"],"executable_sha256":"134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477","model":"gpt-5.6-sol","output_schema":{"path":"contracts/providers/codex-turn-output-schema-v1.json","sha256":"5b3b813d98ddae93fe9ff5cf0f1568d64721fa31029cb77a0ad5f2dfc800ed18"},"qualification":{"canonical_sha256":"048546ef00b4eef939b84ad88198dea168e2f2115a82b0424c13077fa706208f","path":"contracts/providers/codex-cli-0.144.4-candidate-set-live-v1.json"},"qualification_anchor":{"canonical_sha256":"1525bc3c30a2b3418bed92c8788aac8b4986c3b717e0ffb93ffb3cd374df22ce","path":"evidence/qualifications/codex-cli-0.144.4-candidate-set-live-v1-anchor.json"},"reasoning_effort":"max","reference_visibility":"embedded_frozen_bundle","removed_environment":["OPENAI_API_KEY","ANTHROPIC_API_KEY"],"revision":"codex-cli-0.144.4-sha134063e133f0b424","sandbox":"workspace-write","service_tier":"default"},"scaffold":{"path":"contracts/scaffolds/matched-search-v1.md","sha256":"3d8d0acee1ac6d314464f25cfc2ee0151c8b133e2ac0539b84391fd791c036fe"},"schedule_skeleton":{"canonical_sha256":"2ed70904bbca9d83346ef4280cef610717ae8aebd28a88e3f245c2ceb9524787","path":"corpus/schedules/flash-kmeans-b32-smoke-v2.json"},"tool_surface":["submit_schedule"]},"budget":{"checkpoints":[50000,100000,150000],"limit":150000,"maximum_candidates_per_turn":3,"maximum_turns":4,"unit":"provider_tokens"},"evaluation_protocol":{"attribution_evaluation":"correctness_then_profile_each_search_survivor","case_id":"headline_b32","confirmatory_evaluation":"fresh_fixed_candidate_correctness_then_paired_cupti","search_evaluation":"correctness_then_paired_cupti","search_materiality_ratio":1.05,"searches_per_turn":2},"execution":{"broker_execution_sha256":"9d8c64a6696fb5ab163652906b9d00958d2c5a14bcb07c0f426b00a04da5b8b8","executor_revision":{"canonical_sha256":"457e9d89623ab370392476e9be73d022c46cdcd2493f35d558f27c5b81f0e490","executor_id":"open-cake-ir-b200-v29","path":"runtime/executors/open-cake-ir-b200-v29.json"},"gpu":{"count":1,"mode":"exclusive","name":"NVIDIA B200"},"sandbox":"workspace-write","target":"sm_100a"},"run_protocol":{"automatic_retries":0,"empty_workspace":true,"independent_thread":true,"replacement_runs":0,"resume_invariants":["authority","cwd","sandbox","provider","scaffold","arm_environment"]},"schema_version":1,"study":{"canonical_sha256":"7cd7970fb7f53e322376eb4ad0a205ccfc83c877c00014c85e49a5155ffe19f9","claim_scope":"scientific_matched_search","kind":"matched_search","study_id":"open-cake-ir-matched-search-v28-rope-r1"},"workload":{"canonical_sha256":"37e0f57020d9807a6c77c5ef6e56c8c771274c11c745b58022ae85091d567c3a","path":"contracts/workloads/flash-kmeans-assign-v2.json","workload_id":"flash-kmeans-assign-independent-v2"}}
+
+===== scaffold.md =====
+# Matched-search scaffold v1
+
+Each Run receives one empty writable candidate workspace and an immutable external reference bundle whose bytes are
+embedded in each Turn prompt. The bundle contains its Workload Contract, Study/Campaign authority, task statement,
+candidate skeleton and assigned Authoring Environment. The provider may change only the one
+candidate file named by the Turn prompt. It cannot invoke the Compiler, toolchain, evaluator, GPU, network or the
+other treatment. Feedback is limited to the Study-declared projection from the preceding Turn.
+
+
+===== schedule-authoring.md =====
+# Open Cake Schedule authoring contract
+
+Submit one complete JSON document conforming to `schedule.schema.json`. The Compiler—not the prompt—owns semantic
+acceptance. Names are unique within each declaration list; operation dependencies refer only backward; every output
+must be written; buffer allocation extents and role warps must fit the exact Target. `program_map` and `grid` are
+mutually exclusive. Each role owns one ascending contiguous warp interval, and no warp belongs to two roles.
+Findings carry a stable code and path. A blocking Finding is a reason an Assessment is not
+lowering-eligible and no candidate reaches the toolchain; a non-blocking Finding accompanies an Assessment that is,
+and reports what the declared Schedule implies — such as which declared resource bounds its residency. Unsupported
+shapes, operations, instructions, memory spaces or uncalibrated analyses are explicit.
+An otherwise-lowerable `mma` in a generated backend names the Target instruction contract that determines its
+lowering; omitting it is a lowering-blocking candidate Finding rather than a late emitter failure. Instruction-free
+checked assets remain valid only when their asset-specific preflight proves the declared semantics match the asset.
+Emitter-only program-shape requirements have one owner in that backend's `preflight`.
+Assessment projects them into lowering-blocking Findings before `lower`; a backend must
+not silently reinterpret an unsupported epilogue formula or wait for emission to reject
+its role, loop, pipeline, operation-count, load-movement or descriptor requirements.
+Register findings are static bounds over declared logical storage, never a claim about ptxas's physical allocation.
+A block scale is an FP32 Buffer with one `scale_of` relation. `granularity` is written in
+the FP8 data buffer's axis order; `axis_order` is the full permutation that gives the
+scale buffer's physical grouped-axis order. The Compiler derives the scale shape and
+requires loads to preserve the relation. The block-scaled MMA read order is data A, data
+B, scale(A), scale(B); names and convenient shapes never substitute for those relations.
+A padded global Buffer writes one runtime-valid prefix as `valid_extent`; `dimension`
+names the padded axis, `buffer` names the global INT32 input that owns the lengths, and
+`indexed_by` maps each length-buffer axis to one data axis. AccessMap remains the only
+coordinate authority, so every access derives `coordinate < length` rather than
+restating a predicate. The first Triton subset lowers one length axis indexed by one
+scalar program axis and refuses wider mappings explicitly.
+An AccessMap index with `source: buffer` names a rank-one register INT32 Buffer that the
+operation also reads. Multiple such coordinates share one shape and are zipped into one
+runtime-index domain; they are not a Cartesian product. `mask_tiled_axes` bounds both
+sides of each runtime coordinate, and an invalid indexed load yields zero. The admitted
+subset is a direct global load plus the atomic state transition below: TMA and indexed
+stores remain explicitly unlowerable.
+`state` is caller-owned global memory that an operation both reads and writes; read-only
+and write-only Buffers remain `input` and `output`. The admitted `atomic_rmw` reads one
+INT32 state target followed by its one runtime INT32 index, writes that same target and
+one register result, adds its declared signed INT32 scalar with `order: relaxed` and
+`scope: device`, and returns the old value. A masked coordinate has no memory effect and
+returns zero. The Triton route requires the exact Target atomic contract; no backend may
+silently strengthen, weaken or relocate the operation.
+`reduce_argmin` compares FP32 values and returns INT32 source positions; admitting FP8
+storage for another operation does not widen that semantic contract.
+
+`lowering` owns only the materialization mechanism and executable symbol. Its `backend` is
+one of `triton`, `cutlass_cute_dsl`, or `checked_cuda_asset`; `entry_point` is an identifier.
+The executable argument signature is derived from global Buffers and is never restated as
+an ABI label. Metadata may bind a Workload digest, but the Compiler does not infer a
+Workload from a route or hard-code its tensor shapes.
+
+For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics, tie handling and oracle. A Study
+narrows the public Compiler to one exact lowering route and supplies a complete `schedule-skeleton.json`; start from
+that skeleton. A Schedule may change admitted block sizes, warps and stages, but must preserve its route, external
+tensor shapes, `metadata.workload_contract_sha256`, operator semantics, and frozen Compiler Revision during a Run.
+
+
+===== schedule-skeleton.json =====
+{"access_maps":[{"boundary":"mask_tiled_axes","buffer":"tokens","indices":[{"name":"batch","source":"program"},{"name":"token_block","source":"program_tile"},{"dimension":2,"source":"dimension"}],"operation":"load_tokens"},{"boundary":"mask_tiled_axes","buffer":"centroids","indices":[{"name":"batch","source":"program"},{"name":"centroid_start","source":"loop_tile"},{"dimension":2,"source":"dimension"}],"operation":"load_centroids"},{"boundary":"mask_tiled_axes","buffer":"centroid_sq","indices":[{"name":"batch","source":"program"},{"name":"centroid_start","source":"loop_tile"}],"operation":"load_norm"},{"boundary":"mask_tiled_axes","buffer":"assignments","indices":[{"name":"batch","source":"program"},{"name":"token_block","source":"program_tile"}],"operation":"store_assignment"}],"allocations":[],"barriers":[],"buffers":[{"dtype":"bf16","mode":"input","name":"tokens","shape":[32,65536,128],"space":"global"},{"dtype":"bf16","mode":"input","name":"centroids","shape":[32,1024,128],"space":"global"},{"dtype":"fp32","mode":"input","name":"centroid_sq","shape":[32,1024],"space":"global"},{"dtype":"int32","mode":"output","name":"assignments","shape":[32,65536],"space":"global"},{"dtype":"bf16","mode":"scratch","name":"token_tile","shape":[256,128],"space":"register"},{"dtype":"bf16","mode":"scratch","name":"centroid_tile","shape":[64,128],"space":"register"},{"dtype":"fp32","mode":"scratch","name":"distance_tile","shape":[256,64],"space":"register"},{"dtype":"int32","mode":"scratch","name":"best_index_tile","shape":[256],"space":"register"},{"dtype":"fp32","mode":"scratch","name":"norm_tile","shape":[64],"space":"register"},{"dtype":"fp32","mode":"scratch","name":"cross","shape":[256,64],"space":"register"},{"dtype":"fp32","mode":"scratch","name":"scaled_cross","shape":[256,64],"space":"register"}],"lowering":{"backend":"triton","entry_point":"cake_flash_kmeans_assign"},"metadata":{"legacy_source":{"canonical_json_sha256":"8f20df203140758594c28e9cf0dd5f1ef22b39b551f74fc9012a86e2f7a44dce","path":"examples/schedules/flash-kmeans-b32-smoke-v2.json","revision":"b50af21d6d0f11b1833042754dd879bb40e2d05a"},"workload_contract_sha256":"37e0f57020d9807a6c77c5ef6e56c8c771274c11c745b58022ae85091d567c3a"},"operations":[{"id":"load_tokens","kind":"load","parameters":{"movement":"global"},"reads":["tokens"],"role":"compute","writes":["token_tile"]},{"id":"load_centroids","kind":"load","parameters":{"movement":"global"},"reads":["centroids"],"role":"compute","writes":["centroid_tile"]},{"id":"load_norm","kind":"load","parameters":{"movement":"global"},"reads":["centroid_sq"],"role":"compute","writes":["norm_tile"]},{"depends_on":["load_tokens","load_centroids"],"id":"distance_mma","kind":"mma","parameters":{"accumulator":"fp32","instruction":{"contract":"triton.dot.bf16_fp32"},"tile_shape":[256,64,128]},"reads":["token_tile","centroid_tile"],"role":"compute","writes":["cross"]},{"depends_on":["distance_mma"],"id":"scale_cross","kind":"elementwise","parameters":{"op":"mul","scalar":2.0},"reads":["cross"],"role":"compute","writes":["scaled_cross"]},{"depends_on":["scale_cross","load_norm"],"id":"distance","kind":"elementwise","parameters":{"broadcast_axis":1,"op":"sub"},"reads":["norm_tile","scaled_cross"],"role":"compute","writes":["distance_tile"]},{"depends_on":["distance_mma"],"id":"argmin","kind":"reduce_argmin","parameters":{"across_loop":true,"nan_policy":"reject_input","tie_break":"lowest_index"},"reads":["distance_tile"],"role":"compute","writes":["best_index_tile"]},{"depends_on":["argmin"],"id":"store_assignment","kind":"store","parameters":{"coalesced":true},"reads":["best_index_tile"],"role":"compute","writes":["assignments"]}],"outputs":["assignments"],"pipelines":[],"program_map":{"axes":[{"axis":0,"buffer":"tokens","dimension":1,"name":"token_block","tile":256},{"axis":1,"buffer":"tokens","dimension":0,"name":"batch","tile":1}]},"roles":[{"name":"compute","warps":[0,1,2,3]}],"schedule_id":"open-cake-ir-matched-authoring-skeleton-v1","schema_version":1,"target":"sm_100a","tile_loops":[{"body":["load_centroids","load_norm","distance_mma","scale_cross","distance","argmin"],"buffer":"centroids","dimension":1,"iterator":"centroid_start","name":"centroid_loop","range_options":{"disable_licm":false,"disallow_acc_multi_buffer":true,"flatten":false,"loop_unroll_factor":1,"num_stages":2,"warp_specialize":false},"tile":64}]}
+
+===== schedule.schema.json =====
+{"$id":"https://open-cake-ir.local/schema/schedule-v1","$schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"oneOf":[{"not":{"required":["program_map"]},"required":["grid"]},{"not":{"required":["grid"]},"required":["program_map"]}],"properties":{"access_maps":{"items":{"additionalProperties":false,"properties":{"boundary":{"enum":["mask_tiled_axes"]},"buffer":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"indices":{"items":{"oneOf":[{"additionalProperties":false,"properties":{"dimension":{"minimum":0,"type":"integer"},"extent":{"minimum":1,"type":"integer"},"offset":{"minimum":1,"type":"integer"},"source":{"const":"dimension"}},"required":["source","dimension"]},{"additionalProperties":false,"properties":{"name":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"source":{"enum":["program","program_tile","loop_tile","buffer"]}},"required":["source","name"]}],"type":"object"},"minItems":1,"type":"array"},"operation":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"}},"required":["boundary","buffer","indices","operation"],"type":"object"},"type":"array"},"allocations":{"items":{"additionalProperties":false,"properties":{"allocating_role":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"name":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"size_bytes":{"minimum":1,"type":"integer"},"space":{"enum":["global","register","shared","tensor"]},"tensor_columns":{"minimum":1,"type":"integer"}},"required":["name","size_bytes","space"],"type":"object"},"type":"array"},"barriers":{"items":{"additionalProperties":false,"properties":{"consumers":{"items":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"type":"array"},"count":{"minimum":1,"type":"integer"},"mechanism":{"enum":["barrier.sync","mbarrier"]},"name":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"pipeline":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"producers":{"items":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"type":"array"}},"required":["consumers","count","name","producers"],"type":"object"},"type":"array"},"buffers":{"items":{"additionalProperties":false,"properties":{"allocation":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"byte_offset":{"minimum":0,"type":"integer"},"dtype":{"enum":["bf16","fp16","fp32","fp8_e4m3","int32"]},"mode":{"enum":["input","output","scratch","state"]},"name":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"scale_of":{"additionalProperties":false,"properties":{"axis_order":{"items":{"minimum":0,"type":"integer"},"minItems":1,"type":"array","uniqueItems":true},"buffer":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"granularity":{"items":{"minimum":1,"type":"integer"},"minItems":1,"type":"array"}},"required":["axis_order","buffer","granularity"],"type":"object"},"shape":{"items":{"minimum":1,"type":"integer"},"minItems":1,"type":"array"},"space":{"enum":["global","register","shared","tensor"]},"stages":{"minimum":1,"type":"integer"},"swizzle":{"enum":["none","swizzle_128b","swizzle_32b","swizzle_64b"]},"valid_extent":{"additionalProperties":false,"properties":{"buffer":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"dimension":{"minimum":0,"type":"integer"},"indexed_by":{"items":{"minimum":0,"type":"integer"},"minItems":1,"type":"array","uniqueItems":true}},"required":["buffer","dimension","indexed_by"],"type":"object"}},"required":["dtype","mode","name","shape","space"],"type":"object"},"minItems":1,"type":"array"},"grid":{"items":{"minimum":1,"type":"integer"},"maxItems":3,"minItems":3,"type":"array"},"lowering":{"additionalProperties":false,"properties":{"backend":{"enum":["checked_cuda_asset","cutlass_cute_dsl","triton"]},"entry_point":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"}},"required":["backend","entry_point"],"type":"object"},"metadata":{"additionalProperties":false,"properties":{"legacy_source":{"additionalProperties":false,"properties":{"canonical_json_sha256":{"pattern":"^[0-9a-f]{64}$","type":"string"},"path":{"minLength":1,"type":"string"},"revision":{"minLength":1,"type":"string"}},"required":["canonical_json_sha256","path","revision"],"type":"object"},"workload_contract_sha256":{"pattern":"^[0-9a-f]{64}$","type":"string"}},"type":"object"},"operations":{"items":{"additionalProperties":false,"allOf":[{"if":{"properties":{"kind":{"const":"load"}}},"then":{"properties":{"parameters":{"additionalProperties":false,"allOf":[{"if":{"properties":{"movement":{"not":{"const":"tma"}}},"required":["movement"]},"then":{"not":{"anyOf":[{"required":["descriptor_box"]}]}}}],"properties":{"descriptor_box":{"items":{"minimum":1,"type":"integer"},"minItems":1,"type":"array"},"movement":{"enum":["global","tma"]},"reuse":{"enum":["reused","streamed"]}},"required":["movement"],"type":"object"}}}},{"if":{"properties":{"kind":{"const":"mma"}}},"then":{"properties":{"parameters":{"additionalProperties":false,"properties":{"accumulator":{"const":"fp32"},"instruction":{"additionalProperties":false,"allOf":[{"if":{"properties":{"contract":{"not":{"pattern":"^(?:tcgen05\\.|mma\\.sync\\.|wgmma\\.)"}}},"required":["contract"]},"then":{"not":{"anyOf":[{"required":["shape"]},{"required":["cta_group"]},{"required":["operand_source"]},{"required":["operand_major"]}]}}}],"properties":{"contract":{"type":"string"},"cta_group":{"enum":[1,2]},"operand_major":{"items":{"enum":["k","mn"]},"maxItems":2,"minItems":2,"type":"array"},"operand_source":{"enum":["shared","tensor"]},"shape":{"items":{"minimum":1,"type":"integer"},"maxItems":3,"minItems":3,"type":"array"}},"required":["contract"],"type":"object"},"tile_shape":{"items":{"minimum":1,"type":"integer"},"maxItems":3,"minItems":3,"type":"array"}},"required":["accumulator"],"type":"object"}}}},{"if":{"properties":{"kind":{"const":"epilogue"}}},"then":{"properties":{"parameters":{"additionalProperties":false,"properties":{"coalesced":{"type":"boolean"},"formula":{"enum":["bias_add_bf16_round","centroid_sq_minus_two_dot"]},"source_atom":{"additionalProperties":false,"properties":{"op":{"type":"string"},"repetition":{"minimum":1,"type":"integer"}},"required":["op","repetition"],"type":"object"},"subtile":{"items":{"minimum":1,"type":"integer"},"maxItems":2,"minItems":2,"type":"array"}},"required":["coalesced","formula"],"type":"object"}}}},{"if":{"properties":{"kind":{"const":"reduce_argmin"}}},"then":{"properties":{"parameters":{"additionalProperties":false,"properties":{"across_loop":{"type":"boolean"},"nan_policy":{"enum":["reject_input"]},"tie_break":{"enum":["lowest_index"]}},"required":["nan_policy","tie_break"],"type":"object"}}}},{"if":{"properties":{"kind":{"const":"reduce"}}},"then":{"properties":{"parameters":{"additionalProperties":false,"properties":{"axis":{"minimum":0,"type":"integer"},"op":{"enum":["max","sum"]},"scope":{"enum":["cta"]}},"required":["axis","op","scope"],"type":"object"}}}},{"if":{"properties":{"kind":{"const":"top_k"}}},"then":{"properties":{"parameters":{"additionalProperties":false,"properties":{"k":{"minimum":1,"type":"integer"},"nan_policy":{"enum":["reject_input"]},"tie_break":{"enum":["lowest_index"]}},"required":["k","nan_policy","tie_break"],"type":"object"}}}},{"if":{"properties":{"kind":{"const":"atomic_rmw"}}},"then":{"properties":{"parameters":{"additionalProperties":false,"properties":{"op":{"enum":["add"]},"order":{"enum":["relaxed"]},"scope":{"enum":["device"]},"value":{"type":"integer"}},"required":["op","order","scope","value"],"type":"object"}}}},{"if":{"properties":{"kind":{"const":"elementwise"}}},"then":{"properties":{"parameters":{"oneOf":[{"additionalProperties":false,"properties":{"broadcast_axis":{"minimum":0,"type":"integer"},"instruction":{"additionalProperties":false,"properties":{"contract":{"type":"string"}},"required":["contract"],"type":"object"},"op":{"const":"tanh"},"scalar":{"type":"number"}},"required":["instruction","op"],"type":"object"},{"additionalProperties":false,"properties":{"broadcast_axis":{"minimum":0,"type":"integer"},"op":{"enum":["square","rsqrt","exp","add","sub","mul","div"]},"scalar":{"type":"number"}},"required":["op"],"type":"object"}]}}}},{"if":{"properties":{"kind":{"const":"store"}}},"then":{"properties":{"parameters":{"additionalProperties":false,"properties":{"coalesced":{"type":"boolean"}},"required":["coalesced"],"type":"object"}}}}],"properties":{"depends_on":{"items":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"type":"array"},"id":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"kind":{"enum":["atomic_rmw","elementwise","epilogue","load","mma","reduce","reduce_argmin","store","top_k"]},"parameters":{"type":"object"},"pipeline":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"reads":{"items":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"type":"array"},"role":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"signals":{"items":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"type":"array"},"waits":{"items":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"type":"array"},"writes":{"items":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"type":"array"}},"required":["id","kind","role","reads","writes","parameters"],"type":"object"},"minItems":1,"type":"array"},"outputs":{"items":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"type":"array"},"pipelines":{"items":{"additionalProperties":false,"properties":{"name":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"stages":{"minimum":1,"type":"integer"}},"required":["name","stages"],"type":"object"},"type":"array"},"program_map":{"additionalProperties":false,"properties":{"axes":{"items":{"additionalProperties":false,"properties":{"axis":{"minimum":0,"type":"integer"},"buffer":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"dimension":{"minimum":0,"type":"integer"},"name":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"tile":{"minimum":1,"type":"integer"}},"required":["axis","buffer","dimension","name","tile"],"type":"object"},"minItems":1,"type":"array"},"persistent":{"type":"boolean"},"traversal":{"items":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"type":"array"}},"required":["axes"],"type":"object"},"residency":{"additionalProperties":false,"properties":{"allow_spill":{"type":"boolean"},"ctas_per_multiprocessor":{"minimum":1,"type":"integer"},"registers_per_thread":{"minimum":1,"type":"integer"}},"required":[],"type":"object"},"roles":{"items":{"additionalProperties":false,"properties":{"name":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"registers_per_thread":{"maximum":256,"minimum":24,"multipleOf":8,"type":"integer"},"warps":{"items":{"minimum":0,"type":"integer"},"minItems":1,"type":"array","uniqueItems":true}},"required":["name","warps"],"type":"object"},"minItems":1,"type":"array"},"schedule_id":{"minLength":1,"type":"string"},"schema_version":{"const":1},"target":{"minLength":1,"type":"string"},"tile_loops":{"items":{"additionalProperties":false,"properties":{"body":{"items":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"minItems":1,"type":"array"},"buffer":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"dimension":{"minimum":0,"type":"integer"},"iterator":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"name":{"pattern":"^[A-Za-z_][A-Za-z0-9_]*$","type":"string"},"range_options":{"additionalProperties":false,"properties":{"disable_licm":{"type":"boolean"},"disallow_acc_multi_buffer":{"type":"boolean"},"flatten":{"type":"boolean"},"loop_unroll_factor":{"minimum":1,"type":"integer"},"num_stages":{"minimum":1,"type":"integer"},"warp_specialize":{"type":"boolean"}},"required":["disable_licm","disallow_acc_multi_buffer","flatten","loop_unroll_factor","num_stages","warp_specialize"],"type":"object"},"tile":{"minimum":1,"type":"integer"}},"required":["body","buffer","dimension","iterator","name","range_options","tile"],"type":"object"},"type":"array"}},"required":["allocations","barriers","buffers","lowering","metadata","operations","outputs","pipelines","roles","schedule_id","schema_version","target"],"title":"Open Cake Schedule v1","type":"object"}
+
+
+===== target.json =====
+{
+  "schema_version": 1,
+  "target_id": "sm_100a",
+  "architecture": "blackwell",
+  "device_names": [
+    "NVIDIA B200"
+  ],
+  "compute_capability": [
+    10,
+    0
+  ],
+  "memory_spaces": [
+    "global",
+    "shared",
+    "tensor",
+    "register"
+  ],
+  "operation_kinds": [
+    "load",
+    "mma",
+    "epilogue",
+    "reduce_argmin",
+    "reduce",
+    "top_k",
+    "atomic_rmw",
+    "elementwise",
+    "store"
+  ],
+  "resource_limits": {
+    "maximum_threads_per_cta": 1024,
+    "maximum_warps_per_cta": 32,
+    "maximum_shared_memory_bytes": 232448,
+    "maximum_tensor_memory_bytes": 262144,
+    "grid": {
+      "x": 2147483647,
+      "y": 65535,
+      "z": 65535
+    }
+  },
+  "instruction_contracts": [
+    "tcgen05.mma.cta_group::1.kind::f16",
+    "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
+    "triton.dot.bf16_fp32",
+    "triton.dot.fp8e4m3_block_scale_fp32",
+    "triton.atomic_add.i32.relaxed.gpu",
+    "libdevice.tanh.f32"
+  ],
+  "synchronization_contracts": [
+    "mbarrier",
+    "barrier.sync",
+    "triton_program_order"
+  ],
+  "citations": [
+    {
+      "kind": "paper",
+      "source": "arXiv:2608.12629v1 Appendix B.5",
+      "locator": "Table 3 sm_100a"
+    },
+    {
+      "kind": "legacy_source",
+      "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
+      "path": "src/cakerepro/targets.py",
+      "sha256": "b19d6179070e406b5dafcfd81f7e87b568335f342f2b05f29bf31927e2794273"
+    },
+    {
+      "kind": "toolchain_api",
+      "source": "https://triton-lang.org/main/python-api/generated/triton.language.atomic_add.html",
+      "locator": "atomic_add returns the prior value and admits relaxed semantics with gpu scope"
+    },
+    {
+      "kind": "device_observation",
+      "source": "cuDeviceGetAttribute and torch.cuda.get_device_properties on NVIDIA B200",
+      "locator": "occupancy block; observed 2026-08-23 on verda-b200x4 under gpu-run"
+    }
+  ],
+  "occupancy": {
+    "multiprocessor_count": 148,
+    "registers_per_multiprocessor": 65536,
+    "shared_memory_per_multiprocessor_bytes": 233472,
+    "maximum_threads_per_multiprocessor": 2048
+  }
+}
+
+
+===== workload.json =====
+{
+  "schema_version": 1,
+  "workload_id": "flash-kmeans-assign-independent-v2",
+  "revision": "2",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "legacy_canonical_json",
+      "path": "spec/workloads/flash-kmeans-assign-public-v1.json",
+      "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
+      "sha256": "f0528da2eda9cdbb23129a0b89bfe779a5e052596cc84c7186e3880fe8880015"
+    },
+    {
+      "kind": "legacy_canonical_json",
+      "path": "spec/inputs/flash-kmeans-input-plan-v1.json",
+      "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
+      "sha256": "ce94503d91cb2ab9d1159be77c10cd7dc342fecb0228881b6bae481740ae6035"
+    },
+    {
+      "kind": "supersedes_workload",
+      "workload_id": "flash-kmeans-assign-independent-v1",
+      "canonical_sha256": "686451ad594dec223094256003c4738ed2a77e47de7389a4d2741786c7277dc2"
+    }
+  ],
+  "operator": "flash_kmeans_assign",
+  "cases": [
+    {
+      "case_id": "tail_nk",
+      "shape": {
+        "B": 1,
+        "N": 257,
+        "K": 257,
+        "D": 128
+      },
+      "seed": 1001,
+      "mode": "random_standard_normal"
+    },
+    {
+      "case_id": "batched_tail",
+      "shape": {
+        "B": 2,
+        "N": 129,
+        "K": 257,
+        "D": 128
+      },
+      "seed": 1002,
+      "mode": "random_standard_normal"
+    },
+    {
+      "case_id": "b32_smoke",
+      "shape": {
+        "B": 32,
+        "N": 512,
+        "K": 1024,
+        "D": 128
+      },
+      "seed": 1003,
+      "mode": "random_standard_normal",
+      "materialized": {
+        "tokens": {
+          "sha256": "0d091f41cb1b58bc7182fdb41f1a91710067987744483f1736ced50df26e8949",
+          "size_bytes": 4194304
+        },
+        "centroids": {
+          "sha256": "f643ecc32ff550fbe09f9e07f0692dd27605160f6eaffc76de585c8557efcadf",
+          "size_bytes": 8388608
+        },
+        "oracle_assignments": {
+          "sha256": "e815184d69e3356185156fb651049a0e4c48d33875d3ce2bb33d49ce3a41b492",
+          "size_bytes": 65536
+        }
+      }
+    },
+    {
+      "case_id": "duplicate_tie",
+      "shape": {
+        "B": 1,
+        "N": 4,
+        "K": 4,
+        "D": 128
+      },
+      "seed": null,
+      "mode": "constructed_duplicate_centroids"
+    },
+    {
+      "case_id": "public_b1",
+      "shape": {
+        "B": 1,
+        "N": 65536,
+        "K": 1024,
+        "D": 128
+      },
+      "seed": 0,
+      "mode": "random_standard_normal"
+    },
+    {
+      "case_id": "headline_b32",
+      "shape": {
+        "B": 32,
+        "N": 65536,
+        "K": 1024,
+        "D": 128
+      },
+      "seed": 0,
+      "mode": "random_standard_normal",
+      "materialized": {
+        "tokens": {
+          "sha256": "6d29794800c6131b72c6031b9307143003c02d9cdf4aa1c9e788b3300e7708ca",
+          "size_bytes": 536870912
+        },
+        "centroids": {
+          "sha256": "cb08de709a3dcf29fb8e6b7008945f1ab77a3e7e60c151a564d17c71bdaa43b4",
+          "size_bytes": 8388608
+        },
+        "oracle_assignments": {
+          "sha256": "ae2474e2e93392bfec441f284231712b88bc60fbbf3ba8bceeddce21275c4b2f",
+          "size_bytes": 8388608
+        }
+      }
+    }
+  ],
+  "tensors": {
+    "tokens": {
+      "shape": [
+        "B",
+        "N",
+        "D"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "finite_only": true
+    },
+    "centroids": {
+      "shape": [
+        "B",
+        "K",
+        "D"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "finite_only": true
+    },
+    "assignments": {
+      "shape": [
+        "B",
+        "N"
+      ],
+      "dtype": "int32",
+      "layout": "contiguous_row_major"
+    }
+  },
+  "semantics": {
+    "definition": "argmin_k sum_d (tokens[b,n,d] - centroids[b,k,d])^2",
+    "accumulator_dtype": "fp32",
+    "tie_break": "lowest_index_for_equal_fp32_score",
+    "nonfinite": "reject_before_oracle"
+  },
+  "oracle": {
+    "kind": "fp32_full_k_chunked",
+    "source_sha256": "a74090ca7e5575f5fd6a027600d3330b5fa098078944c089e47c3077af3114d2",
+    "chunk_n": 8192,
+    "tf32": false
+  },
+  "validation": {
+    "canonical": "exact_int32_ids_with_lowest_index_ties",
+    "tie_diagnostic_atol": 0.01,
+    "tie_diagnostic_rtol": 0.01,
+    "paper_acceptance_rule": "unknown"
+  }
+}

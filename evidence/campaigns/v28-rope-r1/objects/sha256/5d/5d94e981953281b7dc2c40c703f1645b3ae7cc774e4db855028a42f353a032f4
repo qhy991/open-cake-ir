@@ -1,0 +1,211 @@
+// CAKE_REPRO_LAUNCH_V1 {"abi":"flash_kmeans_assign_v1","block":[64,1,1],"dynamic_shared_memory_bytes":0,"grid":[512,32,1],"kernel_name":"cake_flash_kmeans_assign","schema_version":1,"target":"sm_100a"}
+#include <cuda_bf16.h>
+#include <mma.h>
+#include <stdint.h>
+
+using CakeAccumulator =
+    nvcuda::wmma::fragment<nvcuda::wmma::accumulator,
+                           16, 16, 16, float>;
+
+__device__ __forceinline__ void cake_take_min(
+    float candidate,
+    int candidate_k,
+    float& best,
+    int& best_k) {
+  if (candidate < best ||
+      (candidate == best && candidate_k < best_k)) {
+    best = candidate;
+    best_k = candidate_k;
+  }
+}
+
+template <int Slot>
+__device__ __forceinline__ void cake_reduce_fragment(
+    const CakeAccumulator& acc,
+    float norm0,
+    float norm1,
+    int key0,
+    int key1,
+    int lane,
+    float (&best)[16],
+    int (&best_k)[16]) {
+  float value0 = norm0 - 2.0F * acc.x[0];
+  float value1 = norm0 - 2.0F * acc.x[1];
+  float value2 = norm0 - 2.0F * acc.x[4];
+  float value3 = norm0 - 2.0F * acc.x[5];
+  int value_key0 = key0;
+  int value_key1 = key0;
+  int value_key2 = key0;
+  int value_key3 = key0;
+
+  cake_take_min(
+      norm1 - 2.0F * acc.x[2], key1, value0, value_key0);
+  cake_take_min(
+      norm1 - 2.0F * acc.x[3], key1, value1, value_key1);
+  cake_take_min(
+      norm1 - 2.0F * acc.x[6], key1, value2, value_key2);
+  cake_take_min(
+      norm1 - 2.0F * acc.x[7], key1, value3, value_key3);
+
+  #pragma unroll
+  for (int delta = 4; delta <= 16; delta <<= 1) {
+    const float other0 =
+        __shfl_xor_sync(0xffffffffU, value0, delta);
+    const float other1 =
+        __shfl_xor_sync(0xffffffffU, value1, delta);
+    const float other2 =
+        __shfl_xor_sync(0xffffffffU, value2, delta);
+    const float other3 =
+        __shfl_xor_sync(0xffffffffU, value3, delta);
+    const int other_key0 =
+        __shfl_xor_sync(0xffffffffU, value_key0, delta);
+    const int other_key1 =
+        __shfl_xor_sync(0xffffffffU, value_key1, delta);
+    const int other_key2 =
+        __shfl_xor_sync(0xffffffffU, value_key2, delta);
+    const int other_key3 =
+        __shfl_xor_sync(0xffffffffU, value_key3, delta);
+    cake_take_min(other0, other_key0, value0, value_key0);
+    cake_take_min(other1, other_key1, value1, value_key1);
+    cake_take_min(other2, other_key2, value2, value_key2);
+    cake_take_min(other3, other_key3, value3, value_key3);
+  }
+
+  if (lane < 4) {
+    cake_take_min(value0, value_key0, best[Slot + 0],
+                  best_k[Slot + 0]);
+    cake_take_min(value1, value_key1, best[Slot + 1],
+                  best_k[Slot + 1]);
+    cake_take_min(value2, value_key2, best[Slot + 2],
+                  best_k[Slot + 2]);
+    cake_take_min(value3, value_key3, best[Slot + 3],
+                  best_k[Slot + 3]);
+  }
+}
+
+extern "C" __global__ void cake_flash_kmeans_assign(
+    const __nv_bfloat16* __restrict__ tokens,
+    const __nv_bfloat16* __restrict__ centroids,
+    const float* __restrict__ centroid_sq,
+    int32_t* __restrict__ assignments) {
+  using namespace nvcuda;
+
+  constexpr int kN = 65536;
+  constexpr int kD = 128;
+  constexpr int kK = 1024;
+  constexpr int kTokensPerBlock = 128;
+  constexpr int kTokensPerWarp = 64;
+  constexpr int kTokenStride = 136;
+  constexpr int kVectorsPerToken = 16;
+  constexpr int kSharedVectorStride = 17;
+
+  __shared__ __align__(32)
+      __nv_bfloat16 token_tile[kTokensPerBlock * kTokenStride];
+
+  const int b = static_cast<int>(blockIdx.y);
+  const int block_token = static_cast<int>(blockIdx.x) * kTokensPerBlock;
+  const long long token_base =
+      (static_cast<long long>(b) * kN + block_token) * kD;
+
+  const uint4* token_vectors =
+      reinterpret_cast<const uint4*>(tokens + token_base);
+  uint4* shared_vectors = reinterpret_cast<uint4*>(token_tile);
+  #pragma unroll
+  for (int v = static_cast<int>(threadIdx.x);
+       v < kTokensPerBlock * kVectorsPerToken;
+       v += static_cast<int>(blockDim.x)) {
+    const int row = v >> 4;
+    const int column_vector = v & 15;
+    shared_vectors[row * kSharedVectorStride + column_vector] =
+        token_vectors[v];
+  }
+  __syncthreads();
+
+  const int warp = static_cast<int>(threadIdx.x) >> 5;
+  const int lane = static_cast<int>(threadIdx.x) & 31;
+  const int warp_token = warp * kTokensPerWarp;
+  const long long norm_base = static_cast<long long>(b) * kK;
+
+  float best[16];
+  int best_k[16];
+  #pragma unroll
+  for (int i = 0; i < 16; ++i) {
+    best[i] = 3.402823466e+38F;
+    best_k[i] = 0;
+  }
+
+  #pragma unroll 1
+  for (int k0 = 0; k0 < kK; k0 += 16) {
+    CakeAccumulator acc0;
+    CakeAccumulator acc1;
+    CakeAccumulator acc2;
+    CakeAccumulator acc3;
+    wmma::fill_fragment(acc0, 0.0F);
+    wmma::fill_fragment(acc1, 0.0F);
+    wmma::fill_fragment(acc2, 0.0F);
+    wmma::fill_fragment(acc3, 0.0F);
+
+    #pragma unroll
+    for (int d0 = 0; d0 < kD; d0 += 16) {
+      wmma::fragment<wmma::matrix_a, 16, 16, 16,
+                     __nv_bfloat16, wmma::row_major> a;
+      wmma::fragment<wmma::matrix_b, 16, 16, 16,
+                     __nv_bfloat16, wmma::col_major> x;
+
+      const __nv_bfloat16* a_ptr =
+          centroids +
+          (static_cast<long long>(b) * kK + k0) * kD + d0;
+      wmma::load_matrix_sync(a, a_ptr, kD);
+
+      wmma::load_matrix_sync(
+          x, token_tile + (warp_token + 0) * kTokenStride + d0,
+          kTokenStride);
+      wmma::mma_sync(acc0, a, x, acc0);
+      wmma::load_matrix_sync(
+          x, token_tile + (warp_token + 16) * kTokenStride + d0,
+          kTokenStride);
+      wmma::mma_sync(acc1, a, x, acc1);
+      wmma::load_matrix_sync(
+          x, token_tile + (warp_token + 32) * kTokenStride + d0,
+          kTokenStride);
+      wmma::mma_sync(acc2, a, x, acc2);
+      wmma::load_matrix_sync(
+          x, token_tile + (warp_token + 48) * kTokenStride + d0,
+          kTokenStride);
+      wmma::mma_sync(acc3, a, x, acc3);
+    }
+
+    const int row = lane >> 2;
+    const float norm0 = centroid_sq[norm_base + k0 + row];
+    const float norm1 = centroid_sq[norm_base + k0 + row + 8];
+    cake_reduce_fragment<0>(
+        acc0, norm0, norm1, k0 + row, k0 + row + 8,
+        lane, best, best_k);
+    cake_reduce_fragment<4>(
+        acc1, norm0, norm1, k0 + row, k0 + row + 8,
+        lane, best, best_k);
+    cake_reduce_fragment<8>(
+        acc2, norm0, norm1, k0 + row, k0 + row + 8,
+        lane, best, best_k);
+    cake_reduce_fragment<12>(
+        acc3, norm0, norm1, k0 + row, k0 + row + 8,
+        lane, best, best_k);
+  }
+
+  if (lane < 4) {
+    const long long output_base =
+        static_cast<long long>(b) * kN + block_token + warp_token;
+    #pragma unroll
+    for (int tile = 0; tile < 4; ++tile) {
+      const int token = tile * 16 + lane * 2;
+      assignments[output_base + token + 0] =
+          best_k[tile * 4 + 0];
+      assignments[output_base + token + 1] =
+          best_k[tile * 4 + 1];
+      assignments[output_base + token + 8] =
+          best_k[tile * 4 + 2];
+      assignments[output_base + token + 9] =
+          best_k[tile * 4 + 3];
+    }
+  }
+}

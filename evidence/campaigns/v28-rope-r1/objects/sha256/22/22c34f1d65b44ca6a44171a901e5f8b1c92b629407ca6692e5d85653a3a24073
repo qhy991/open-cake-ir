@@ -1,0 +1,1 @@
+{"abi":"flash_kmeans_assign_v1","block":[256,1,1],"dynamic_shared_memory_bytes":49416,"grid":[512,32,1],"hidden_null_pointer_parameters":2,"kernel_name":"_cake_flash_kmeans_assign_kernel","schema_version":1,"target":"sm_100a"}

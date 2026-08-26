@@ -1,0 +1,5 @@
+[gpu-run] accepted job gpuq-3c06aa248a7a label=open-cake-campaign-v28-rope-r1 mode=exclusive gpus=1
+[gpu-run] queued position=2/2 eta=3m48s
+[gpu-run] queued position=1/1 eta=0s
+[gpu-run] running on physical GPUs 0 (run limit 40m00s)
+[gpu-run] finished state=completed exit=0
