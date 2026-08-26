@@ -13,6 +13,7 @@ from typing import Mapping
 
 _REVISION_ID = re.compile(r"open-cake-ir-(?:sm100a-)?v([1-9][0-9]*)")
 _REVISION_LABEL = re.compile(r"v([1-9][0-9]*)")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 _FROZEN_GLOBS = (
     "compiler/releases/*/revision.lock.json",
     "contracts/studies/*.json",
@@ -70,6 +71,57 @@ class CompilerRevisionCyclePlan:
     next_label: str
     archive_label: str | None
     stale_labels: tuple[str, ...]
+    collision_incident: str | None = None
+
+
+def _registered_archive_collision(
+    root: Path,
+    *,
+    revision_id: str,
+    current: Mapping[str, object],
+    archived: Mapping[str, object],
+) -> str | None:
+    """Return the incident that exactly retires two colliding frozen variants."""
+
+    if (
+        current.get("revision_id") != revision_id
+        or archived.get("revision_id") != revision_id
+    ):
+        return None
+    required = {_canonical_sha256(current), _canonical_sha256(archived)}
+    if len(required) != 2:
+        return None
+    for path in sorted((root / "inventory").glob("*.json")):
+        document = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(document, Mapping)
+            or document.get("kind") != "compiler_revision_identity_incident"
+            or document.get("affected_revision_id") != revision_id
+            or document.get("status")
+            != "identity_collision_historical_records_immutable"
+        ):
+            continue
+        variants = document.get("known_variants")
+        resolution = document.get("resolution")
+        if not isinstance(variants, list) or not isinstance(resolution, Mapping):
+            continue
+        registered = {
+            value.get("canonical_sha256")
+            for value in variants
+            if isinstance(value, Mapping)
+            and value.get("revision_id") == revision_id
+            and isinstance(value.get("canonical_sha256"), str)
+            and _SHA256.fullmatch(str(value["canonical_sha256"])) is not None
+        }
+        retired = resolution.get("ambiguous_ids_retired")
+        if (
+            required <= registered
+            and resolution.get("historical_records_changed") is False
+            and isinstance(retired, list)
+            and revision_id in retired
+        ):
+            return path.relative_to(root).as_posix()
+    return None
 
 
 def _walk_references(
@@ -263,7 +315,23 @@ def plan_compiler_revision_cycle(
     history = max(witnessed_ordinals, default=0)
     next_label = f"v{history + 1}"
     if current_ordinal in witnessed_ordinals:
-        return CompilerRevisionCyclePlan(next_label, f"v{current_ordinal}", ())
+        archive_label = f"v{current_ordinal}"
+        current_path = root / "compiler/revision.lock.json"
+        archived_path = root / "compiler/releases" / archive_label / "revision.lock.json"
+        incident = None
+        if current_path.is_file() and archived_path.is_file():
+            current = json.loads(current_path.read_text(encoding="utf-8"))
+            archived = json.loads(archived_path.read_text(encoding="utf-8"))
+            if isinstance(current, Mapping) and isinstance(archived, Mapping):
+                incident = _registered_archive_collision(
+                    root,
+                    revision_id=str(current_revision_id),
+                    current=current,
+                    archived=archived,
+                )
+        return CompilerRevisionCyclePlan(
+            next_label, archive_label, (), incident
+        )
 
     root = root.resolve(strict=True)
     stale = tuple(

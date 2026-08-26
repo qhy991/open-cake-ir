@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "kind": "compiler_revision_identity_incident",
+  "observed_at": "2026-08-26T00:00:00Z",
+  "affected_revision_id": "open-cake-ir-sm100a-v28",
+  "status": "identity_collision_historical_records_immutable",
+  "summary": "The reservation-owned and RoPE mainline releases independently used the v28 identity before the AMD branch was rebased onto main.",
+  "known_variants": [
+    {
+      "revision_id": "open-cake-ir-sm100a-v28",
+      "canonical_sha256": "46c6bd0fbc6c7043092c766d1d262126c1e24ec77cb7eb9c0376c0c45a6e4331",
+      "git_commit": "f02320b17ee1f6ed12d1d858e3439bc16b9da4ed",
+      "case_count": 35,
+      "source_count": 51,
+      "path": "compiler/releases/v28/revision.lock.json",
+      "witnesses": [
+        "compiler/releases/v28/revision.lock.json",
+        "inventory/AMD_BRANCH_BASE_20260825.json"
+      ]
+    },
+    {
+      "revision_id": "open-cake-ir-sm100a-v28",
+      "canonical_sha256": "142635bab6d66a435eaf8435141f67c1623bed9b22c1d8c7e6356c580add370d",
+      "git_commit": "fc09346dc8010f0fee969273329b310f853a0745",
+      "case_count": 37,
+      "source_count": 53,
+      "path": "compiler/revision.lock.json",
+      "witnesses": [
+        "evidence/campaigns/v28-rope-r1/runs/direct_cuda-1/authority.json",
+        "evidence/campaigns/v28-rope-r1/runs/direct_cuda-2/authority.json",
+        "evidence/campaigns/v28-rope-r1/runs/direct_cuda-3/authority.json",
+        "evidence/campaigns/v28-rope-r1/runs/open_cake-1/authority.json",
+        "evidence/campaigns/v28-rope-r1/runs/open_cake-2/authority.json",
+        "evidence/campaigns/v28-rope-r1/runs/open_cake-3/authority.json"
+      ]
+    }
+  ],
+  "resolution": {
+    "historical_records_changed": false,
+    "ambiguous_ids_retired": [
+      "open-cake-ir-sm100a-v28"
+    ],
+    "successor_policy": "The next reviewed release uses the generic open-cake-ir-v29 identity.",
+    "archive_collision_policy": "Keep the reservation-owned v28 archive unchanged. The release cycle may advance past the RoPE v28 without overwriting that archive only when both exact variants still match this incident."
+  }
+}

@@ -44,6 +44,7 @@ plan = plan_compiler_revision_cycle(pathlib.Path("."), current)
 
 print(f"NEXT={plan.next_label}")
 print(f"ARCHIVE={plan.archive_label or ''}")
+print(f"COLLISION={plan.collision_incident or ''}")
 print(f"STALE='{' '.join(plan.stale_labels)}'")
 PY
 )"
@@ -51,14 +52,26 @@ PY
 if [ -n "$ARCHIVE" ]; then
   echo "--- ${ARCHIVE} is witnessed by sealed evidence; archiving and bumping to ${NEXT} ---"
   if [ -e "compiler/releases/${ARCHIVE}" ]; then
-    python3 - "$ARCHIVE" <<'PY'
+    python3 - "$ARCHIVE" "$COLLISION" <<'PY'
 import hashlib, json, pathlib, sys
 
+from tools.compiler_revision_witnesses import _registered_archive_collision
+
 archive = pathlib.Path("compiler/releases") / sys.argv[1]
+collision = sys.argv[2]
 lock_path = archive / "revision.lock.json"
-if lock_path.read_bytes() != pathlib.Path("compiler/revision.lock.json").read_bytes():
-    raise SystemExit(f"refusing non-identical frozen {lock_path}")
+current_path = pathlib.Path("compiler/revision.lock.json")
 lock = json.loads(lock_path.read_text())
+current = json.loads(current_path.read_text())
+if lock_path.read_bytes() != current_path.read_bytes():
+    registered = _registered_archive_collision(
+        pathlib.Path("."),
+        revision_id=current.get("revision_id"),
+        current=current,
+        archived=lock,
+    )
+    if not collision or registered != collision:
+        raise SystemExit(f"refusing non-identical frozen {lock_path}")
 
 
 def canonical(path):
@@ -77,7 +90,11 @@ source_paths = json.loads((archive / "source_set.json").read_text())["paths"]
 if source_paths != [source["path"] for source in lock["sources"]]:
     raise SystemExit(f"refusing non-identical frozen {archive / 'source_set.json'}")
 PY
-    echo "    complete archive already exists; resuming the interrupted release"
+    if [ -n "$COLLISION" ]; then
+      echo "    registered identity collision preserved by ${COLLISION}; existing archive unchanged"
+    else
+      echo "    complete archive already exists; resuming the interrupted release"
+    fi
   else
     mkdir "compiler/releases/${ARCHIVE}"
     cp compiler/revision.lock.json compiler/corpus-gate-report.json \

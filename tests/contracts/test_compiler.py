@@ -448,6 +448,35 @@ class CompilerContractTests(unittest.TestCase):
                 ).hexdigest(),
             )
 
+    def test_release_cycle_refuses_an_unregistered_archive_collision(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "open-cake-ir"
+
+            def ignored(path: str, names: list[str]) -> set[str]:
+                omitted = {".git", "__pycache__", ".pytest_cache"}
+                if Path(path).resolve() == ROOT:
+                    omitted |= {"evidence", "migration", "runtime", "tests"}
+                return omitted & set(names)
+
+            shutil.copytree(ROOT, project, ignore=ignored)
+            (
+                project
+                / "inventory/COMPILER_V28_IDENTITY_INCIDENT_20260826.json"
+            ).unlink()
+
+            completed = subprocess.run(
+                ["bash", "tools/release_compiler_cycle.sh"],
+                cwd=project,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(completed.returncode, 1)
+            self.assertIn(
+                "refusing non-identical frozen compiler/releases/v28/revision.lock.json",
+                completed.stdout + completed.stderr,
+            )
+
     def test_the_architecture_map_names_the_lowering_mechanisms(self) -> None:
         """The architecture documents mechanisms, not a growing use-case registry."""
 
