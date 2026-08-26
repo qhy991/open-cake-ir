@@ -1,6 +1,7 @@
 # AMD gfx1151 development path
 
-This branch retains the earlier gfx1151/Q4 lineage and is merged through GitHub
+`codex/amd-gfx1151-consolidated` is the sole active AMD development branch. It retains
+the earlier gfx1151/Q4 lineage and is rebased onto GitHub
 `main@415a1f0f4d090e7f97292adcf3a539be67269550`. It adds exact gfx1151 Target support,
 standalone FP32 SwiGLU, llama.cpp FP32 RMSNorm+Mul, a true-one-row hypothesis, a
 generated live-Q8_1 producer and the source-pinned AITER RMSNorm baseline below. The
