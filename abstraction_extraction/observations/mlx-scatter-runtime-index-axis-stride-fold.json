@@ -1,0 +1,48 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "mlx-metal-scatter.runtime-index-axis-stride-fold",
+  "pattern_signature": "runtime-index-location.axis-stride-offset-fold",
+  "implementation_id": "mlx.metal-scatter",
+  "operator_id": "indexing.scatter",
+  "source_id": "mlx-main-1f8e74e",
+  "source_locator": {
+    "path": "mlx/backend/metal/kernels/indexing/scatter.h",
+    "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+    "git_object": "3604f20f6188fbdef735a5e8641b43757f8d04c2",
+    "symbol": "scatter_impl"
+  },
+  "source_span": {
+    "start_line": 31,
+    "end_line": 57,
+    "sha256": "b7b395100c1a53ca779b4903d3880eecb25c7c6f6816f9a457706a6ca16eede1",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "The function derives an unindexed destination-slice base from gid.x, update shape, output strides, and output rank when the update slice has more than one element.",
+    "Each thread visits up to NWORK index positions while ind_idx remains below idx_size.",
+    "For each selected axis, a row-contiguous path uses ind_idx directly while the general path uses elem_to_loc over runtime index shape and stride metadata.",
+    "The function passes the loaded index value and out_shape[axis] to offset_neg_idx, multiplies the returned value by out_strides[axis], and adds it to the destination offset.",
+    "The update element uses a separate linear or elem_to_loc address before the function terminates in op.atomic_update."
+  ],
+  "observed_primitives": [
+    "atomic_update_terminal",
+    "axis_stride_fold",
+    "index_element_location",
+    "index_work_bound_guard",
+    "multiwork_index_iteration",
+    "negative_index_offset",
+    "noncontiguous_update_location",
+    "row_contiguous_index_path",
+    "runtime_axis_lookup",
+    "strided_index_location",
+    "unindexed_slice_base"
+  ],
+  "variant_notes": [
+    "NWORK is a template specialization, and ind_idx < idx_size bounds the work iteration rather than validating a loaded index value.",
+    "The update layout and terminal op.atomic_update call are scatter-specific; overwrite, reduction, conflict, ordering, and determinism semantics remain outside this observation.",
+    "The cited span contains no explicit upper- or lower-bound branch for the loaded index value after offset_neg_idx and therefore establishes no in-bounds or memory-safety result."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

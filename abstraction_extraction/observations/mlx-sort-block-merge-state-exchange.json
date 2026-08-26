@@ -1,0 +1,49 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "mlx-metal-sort.block-merge-state-exchange",
+  "pattern_signature": "thread-register-sort.doubling-threadgroup-publish.partitioned-merge-repeat",
+  "implementation_id": "mlx.metal-sort",
+  "operator_id": "selection.sort",
+  "source_id": "mlx-main-1f8e74e",
+  "source_locator": {
+    "path": "mlx/backend/metal/kernels/sort.h",
+    "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+    "git_object": "ea2640bace0ade86f39ea7a04784657765475a44",
+    "symbol": "BlockMergeSort::sort"
+  },
+  "source_span": {
+    "start_line": 158,
+    "end_line": 243,
+    "sha256": "5a18bdbea690a7bbbc21e4d771d59013d98b83e60a8e14f823d96bc0e6e4bcfe",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "BlockMergeSort::sort loads one fixed-size value chunk per thread from threadgroup storage into registers, conditionally carries a matching index chunk, and invokes the configured thread-local sort.",
+    "The merge-stage loop doubles merge_threads from two through the configured thread count while keeping the current value and optional index chunks in thread-local registers between stages.",
+    "Each stage executes a barrier, has every thread publish its current register chunk to reused threadgroup storage, executes a second barrier, derives the thread's merge group and lane, and addresses two sorted runs.",
+    "The stage calls merge_partition and merge_step to replace the thread-local chunks from those runs; after the final stage, another barrier precedes terminal publication of the register chunks to threadgroup storage for the enclosing caller."
+  ],
+  "observed_primitives": [
+    "all_thread_multiitem_publication",
+    "iteration_carried_thread_state",
+    "merge_path_partition",
+    "merge_width_doubling",
+    "optional_index_carry",
+    "partitioned_two_run_merge",
+    "postpublication_threadgroup_barrier",
+    "prepublication_threadgroup_barrier",
+    "reused_threadgroup_storage",
+    "terminal_threadgroup_publication",
+    "thread_local_initial_sort",
+    "thread_state_to_threadgroup_publication",
+    "threadgroup_state_to_thread_state_update"
+  ],
+  "variant_notes": [
+    "Value-only sort and index-carrying argsort share this helper, while block width, values per thread, comparator, dtype initialization, tie and NaN handling, and ordering properties remain outside the observed recurrence.",
+    "Single-block versus multi-block dispatch, contiguous versus non-contiguous addressing, initial device-to-threadgroup fill, post-helper synchronization, global output, and host ping-pong are owned by enclosing paths.",
+    "Barrier placement and threadgroup reuse do not establish visibility sufficiency, uniform participation, race or deadlock freedom, bounds, memory safety, stability, deterministic ordering, correctness, or performance."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

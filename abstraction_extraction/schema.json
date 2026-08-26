@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-cake-ir.local/abstraction-extraction/schema-v1.json",
+  "oneOf": [
+    {"$ref": "#/$defs/manifest"},
+    {"$ref": "#/$defs/observation"},
+    {"$ref": "#/$defs/candidate"}
+  ],
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "extraction_id",
+        "state",
+        "paper_source_path",
+        "input_library",
+        "selection_policy",
+        "observations",
+        "candidates",
+        "counts"
+      ],
+      "properties": {
+        "$schema": {"const": "schema.json#/$defs/manifest"},
+        "schema_version": {"const": 1},
+        "extraction_id": {"$ref": "#/$defs/id"},
+        "state": {"const": "in_progress"},
+        "paper_source_path": {"const": "operator_library/sources/cake-paper-v1.json"},
+        "input_library": {"$ref": "#/$defs/input_library"},
+        "selection_policy": {"$ref": "#/$defs/selection_policy"},
+        "observations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/safe_path"}
+        },
+        "candidates": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/safe_path"}
+        },
+        "counts": {"$ref": "#/$defs/counts"}
+      }
+    },
+    "input_library": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_path", "library_id", "canonical_sha256"],
+      "properties": {
+        "manifest_path": {"const": "operator_library/manifest.json"},
+        "library_id": {"$ref": "#/$defs/id"},
+        "canonical_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "selection_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "minimum_distinct_observations",
+        "threshold_authority",
+        "inclusions",
+        "exclusions",
+        "deviations",
+        "non_claims"
+      ],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "minimum_distinct_observations": {"const": 2},
+        "threshold_authority": {"const": "local_repository_policy_not_paper_requirement"},
+        "inclusions": {"$ref": "#/$defs/nonempty_strings"},
+        "exclusions": {"$ref": "#/$defs/nonempty_strings"},
+        "deviations": {"$ref": "#/$defs/nonempty_strings"},
+        "non_claims": {"$ref": "#/$defs/nonempty_strings"}
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation_count",
+        "candidate_count",
+        "implementation_count",
+        "source_count"
+      ],
+      "properties": {
+        "observation_count": {"type": "integer", "minimum": 1},
+        "candidate_count": {"type": "integer", "minimum": 0},
+        "implementation_count": {"type": "integer", "minimum": 1},
+        "source_count": {"type": "integer", "minimum": 1}
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "observation_id",
+        "pattern_signature",
+        "implementation_id",
+        "operator_id",
+        "source_id",
+        "source_locator",
+        "source_span",
+        "observed_structure",
+        "observed_primitives",
+        "variant_notes",
+        "review_status",
+        "claim_scope"
+      ],
+      "properties": {
+        "$schema": {"const": "../schema.json#/$defs/observation"},
+        "schema_version": {"const": 1},
+        "observation_id": {"$ref": "#/$defs/id"},
+        "pattern_signature": {"$ref": "#/$defs/id"},
+        "implementation_id": {"$ref": "#/$defs/id"},
+        "operator_id": {"$ref": "#/$defs/id"},
+        "source_id": {"$ref": "#/$defs/id"},
+        "source_locator": {"$ref": "#/$defs/source_locator"},
+        "source_span": {"$ref": "#/$defs/source_span"},
+        "observed_structure": {"$ref": "#/$defs/nonempty_strings"},
+        "observed_primitives": {"$ref": "#/$defs/nonempty_ids"},
+        "variant_notes": {"$ref": "#/$defs/nonempty_strings"},
+        "review_status": {"const": "semantics_reviewed"},
+        "claim_scope": {"const": "source_structure_only"}
+      }
+    },
+    "source_locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "revision", "git_object", "symbol"],
+      "properties": {
+        "path": {"$ref": "#/$defs/safe_path"},
+        "revision": {"$ref": "#/$defs/hex40"},
+        "git_object": {"$ref": "#/$defs/hex40"},
+        "symbol": {"type": "string", "minLength": 1}
+      }
+    },
+    "source_span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_line", "end_line", "sha256", "hash_contract"],
+      "properties": {
+        "start_line": {"type": "integer", "minimum": 1},
+        "end_line": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "hash_contract": {"const": "sha256-utf8-lf-inclusive-lines-v1"}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "candidate_id",
+        "pattern_signature",
+        "summary",
+        "normalized_steps",
+        "observed_variants",
+        "observation_ids",
+        "evidence_breadth",
+        "state",
+        "claim_scope",
+        "next_gate"
+      ],
+      "properties": {
+        "$schema": {"const": "../schema.json#/$defs/candidate"},
+        "schema_version": {"const": 1},
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "pattern_signature": {"$ref": "#/$defs/id"},
+        "summary": {"type": "string", "minLength": 1},
+        "normalized_steps": {"$ref": "#/$defs/nonempty_strings"},
+        "observed_variants": {"$ref": "#/$defs/nonempty_strings"},
+        "observation_ids": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "evidence_breadth": {"$ref": "#/$defs/evidence_breadth"},
+        "state": {"const": "extracted_unreviewed"},
+        "claim_scope": {"const": "source_pattern_only"},
+        "next_gate": {"const": "hardware_informed_design"}
+      }
+    },
+    "evidence_breadth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation_count",
+        "implementation_ids",
+        "operator_ids",
+        "source_ids",
+        "source_revisions",
+        "git_objects",
+        "families",
+        "hardware_targets"
+      ],
+      "properties": {
+        "observation_count": {"type": "integer", "minimum": 2},
+        "implementation_ids": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "operator_ids": {"$ref": "#/$defs/nonempty_ids"},
+        "source_ids": {"$ref": "#/$defs/nonempty_ids"},
+        "source_revisions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/hex40"}
+        },
+        "git_objects": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/hex40"}
+        },
+        "families": {"$ref": "#/$defs/nonempty_ids"},
+        "hardware_targets": {"$ref": "#/$defs/nonempty_ids"}
+      }
+    },
+    "safe_path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$"},
+    "hex40": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonempty_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "nonempty_strings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

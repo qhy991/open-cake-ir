@@ -1,0 +1,50 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "mlx-metal-scaled-dot-product-attention.vector-max-rebased-summary",
+  "pattern_signature": "max-rebased.exponential-denominator.partial-summary-merge",
+  "implementation_id": "mlx.metal-scaled-dot-product-attention",
+  "operator_id": "attention.scaled_dot_product",
+  "source_id": "mlx-main-1f8e74e",
+  "source_locator": {
+    "path": "mlx/backend/metal/kernels/sdpa_vector.h",
+    "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+    "git_object": "3f40dbd7c0ce363b54b84762a51dac30c2d4b628",
+    "symbol": "sdpa_vector"
+  },
+  "source_span": {
+    "start_line": 87,
+    "end_line": 169,
+    "sha256": "44d79f38906bbdf8cab0da5271605ab3b1cb2de2ae8592184e0d294002bdd73a",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "Each lane first zeroes its value-weighted payload accumulator; the exponential summary starts with a finite-minimum maximum reference and a zero denominator.",
+    "An optional sink seeds the maximum reference and denominator only in SIMDgroup zero while the payload remains zero.",
+    "Each admitted key produces a SIMD-reduced score after causal, boolean-mask, or float-mask handling.",
+    "For each score, the code selects a new maximum, rescales the prior denominator by exp(old_max-new_max), and adds exp(score-new_max).",
+    "The value-weighted payload is updated with the same old-summary and new-score factors used by the denominator.",
+    "Lane zero publishes each SIMDgroup maximum and denominator before a threadgroup barrier; the partial denominators are then aligned to the merged maximum and summed.",
+    "Each payload component is transposed through the outputs array, aligned with the same partial-summary factor, summed, and divided by the merged denominator unless that denominator is zero."
+  ],
+  "observed_primitives": [
+    "exponential_rebase",
+    "masked_score_update",
+    "max_reference_update",
+    "partial_summary_merge",
+    "simd_max",
+    "simd_sum",
+    "sink_seed",
+    "threadgroup_barrier",
+    "weighted_payload_rebase",
+    "zero_denominator_guard"
+  ],
+  "variant_notes": [
+    "Causal, boolean, and float masks are mutually exclusive branches in the cited score-admission path; the float mask also adds a score bias.",
+    "The sink is a denominator-only pseudo-logit seeded once by SIMDgroup zero, not a value contribution repeated by every SIMDgroup.",
+    "The zero-denominator branch leaves the carried payload unnormalized instead of dividing by zero.",
+    "This observation is limited to the cited sdpa_vector symbol and does not normalize the other two-pass symbols in the same file."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

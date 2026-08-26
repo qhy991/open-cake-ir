@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "attention.distributed_speculative_decode",
+  "implementation_id": "flashinfer.fmha-dcp-spec-decode",
+  "source_id": "flashinfer-cake-tracker-20260826",
+  "family": "attention",
+  "variant": "Incubating distributed-context-parallel speculative decode with FP8 paged KV",
+  "scope": "kernel_family",
+  "semantic_role": "Compute causal speculative attention over rank-owned paged KV partitions and merge split-KV partials with a stable normalization state.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32", "fp8_e4m3", "int32"],
+    "extent_class": "ragged",
+    "shape_constraints": ["Context parallel size includes 1 and 4", "Paged KV length is runtime data", "Query length includes speculative rows"]
+  },
+  "hardware_targets": ["sm_100a"],
+  "mechanisms": ["causal_mask", "collective_all_reduce", "online_softmax", "paged_indexing", "split_kv"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4518",
+      "revision": "d2bcf155046d315cbcce6504cc9293a9247d4753",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://github.com/flashinfer-ai/flashinfer/blob/d2bcf155046d315cbcce6504cc9293a9247d4753/csrc/dcp/cake_fmha_dcp_spec_bf16_fp8_d256_split8_retain0.cu",
+      "revision": "d2bcf155046d315cbcce6504cc9293a9247d4753",
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "collected",
+  "claim_scope": "source_fact_only"
+}

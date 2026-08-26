@@ -107,6 +107,7 @@ class LoweringBackend(str, Enum):
 
     TRITON = "triton"
     CUTLASS_CUTE_DSL = "cutlass_cute_dsl"
+    METAL = "metal"
     CHECKED_CUDA_ASSET = "checked_cuda_asset"
 
 

@@ -1,0 +1,52 @@
+{
+  "$schema": "../schema.json#/$defs/candidate",
+  "schema_version": 1,
+  "candidate_id": "hierarchical-simdgroup-threadgroup-reduction",
+  "pattern_signature": "simdgroup-partial.threadgroup-publish.simdgroup-final",
+  "summary": "Two pinned MLX Metal implementations expose the same source-level choreography: SIMDgroup-local reduction, lane-zero partial publication through threadgroup memory, and a second SIMDgroup reduction over those partials.",
+  "normalized_steps": [
+    "Form or receive one or more per-thread FP32 values.",
+    "Reduce each value within its SIMDgroup.",
+    "Have one lane per SIMDgroup publish a partial into threadgroup storage.",
+    "Synchronize the threadgroup so the partials are visible before consumption.",
+    "Load the partial slots into SIMDgroup lanes and perform the final SIMDgroup reduction."
+  ],
+  "observed_variants": [
+    "RMS normalization has SIMDgroup zero perform the final reduction, then lane zero publishes one precise inverse-root-mean scalar into threadgroup memory.",
+    "Layer normalization has every SIMDgroup perform the final reduction, templates the helper over multiple accumulators, and returns reduced values through per-thread state."
+  ],
+  "observation_ids": [
+    "mlx-metal-layer-norm.threadgroup-sum",
+    "mlx-metal-rms-norm.rms-single-row"
+  ],
+  "evidence_breadth": {
+    "observation_count": 2,
+    "implementation_ids": [
+      "mlx.metal-layer-norm",
+      "mlx.metal-rms-norm"
+    ],
+    "operator_ids": [
+      "normalization.layer_norm",
+      "normalization.rms_norm"
+    ],
+    "source_ids": [
+      "mlx-main-1f8e74e"
+    ],
+    "source_revisions": [
+      "1f8e74e3f12f31365464a6867c6579f0e9b29d85"
+    ],
+    "git_objects": [
+      "ea77b53dcaa1c64e72c50f5917e64b5b7b93817e",
+      "eb9b5c0af1cde571570ea749c95969d963262882"
+    ],
+    "families": [
+      "normalization"
+    ],
+    "hardware_targets": [
+      "apple_silicon_metal"
+    ]
+  },
+  "state": "extracted_unreviewed",
+  "claim_scope": "source_pattern_only",
+  "next_gate": "hardware_informed_design"
+}

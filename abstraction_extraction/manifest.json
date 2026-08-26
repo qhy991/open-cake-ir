@@ -1,0 +1,78 @@
+{
+  "$schema": "schema.json#/$defs/manifest",
+  "schema_version": 1,
+  "extraction_id": "source-grounded-abstraction-extraction-v1",
+  "state": "in_progress",
+  "paper_source_path": "operator_library/sources/cake-paper-v1.json",
+  "input_library": {
+    "manifest_path": "operator_library/manifest.json",
+    "library_id": "open-cake-operator-library-v1",
+    "canonical_sha256": "1d93ccef930b49a3e4d8b4e9c167799c4af9708d2ed53da6030966c299040b57"
+  },
+  "selection_policy": {
+    "name": "source-grounded-recurrence-tracer-v1",
+    "minimum_distinct_observations": 2,
+    "threshold_authority": "local_repository_policy_not_paper_requirement",
+    "inclusions": [
+      "Exact source spans reviewed for repeated implementation structure and bound to collected operator occurrences.",
+      "Only normalized structure directly supported by at least two distinct implementation IDs and Git blobs."
+    ],
+    "exclusions": [
+      "No semantic observation is inferred solely from pre-tagged operator-library mechanism labels.",
+      "No upstream source, generated artifact, benchmark output, or tuning result is copied into this extraction."
+    ],
+    "deviations": [
+      "Native Metal structure is retained instead of normalizing every implementation to CUDA, preserving Apple-target facts for this local study."
+    ],
+    "non_claims": [
+      "This in-progress tracer is not an exhaustive abstraction extraction over the collected corpus.",
+      "A source pattern is not an admitted compiler IR operation or Target contract.",
+      "No Schedule expressibility, correctness, calibration, or performance result follows from extraction.",
+      "Passing an index and accessed-buffer extent to the observed offset_neg_idx helper is not a bounds check; no in-bounds or memory-safety result follows.",
+      "No race freedom, destination ownership, atomic conflict policy, determinism, overwrite or reduction semantics, or update ordering follows from the runtime-index address-fold recurrence.",
+      "The runtime-index address-fold recurrence does not establish equivalence to Compiler AccessIndexKind.BUFFER, mask_tiled_axes zero-fill behavior, accessed-buffer boundary analysis, or any admitted lowering subset.",
+      "The two-pass row RMS recurrence does not establish a common thread or SIMDgroup ownership model, reduction order, floating-point reproducibility, launch topology, synchronization contract, physical row residency, or memory-traffic and performance result.",
+      "The recurrence does not normalize fixed versus runtime row extents, layer-slot addressing, zero-centered versus direct normalization-weight factors, the GDN projected SiLU gate, bounds handling, output layout, aliasing, or memory safety.",
+      "The recurrence is independent of hierarchical-simdgroup-threadgroup-reduction and does not admit a Compiler RMS operation, Target capability, Schedule form, or lowering subset.",
+      "The paired threadgroup-tile MMA recurrence records source call order only; barrier and safe or unsafe helper names do not establish visibility, uniform participation, bounds, zero fill, scratch lifetime, race or deadlock freedom, or memory safety.",
+      "The matrix-loop recurrence does not normalize physical layout, transpose meaning, quantization, scales or biases, convolution window, grouping or spatial addressing, edge or tail handling, result storage, accumulator behavior, or numerical equivalence.",
+      "The matrix-loop recurrence establishes no asynchronous overlap, double buffering, resource, occupancy, throughput, instruction mapping, Compiler or Target contract, Schedule or lowering result, and does not alter the frozen Stage 3 candidate closure.",
+      "The scan and sort observations share only a generic thread-state and threadgroup-scratch handoff; they have no common state algebra, participant topology, scratch shape, consumption transform, or advancement rule, so no candidate is admitted from that intersection.",
+      "The contiguous-scan observation does not widen hierarchical-simdgroup-threadgroup-reduction: its last-lane publication and first-SIMDgroup exclusive prefix scan are not lane-zero partial publication followed by a second reduction. The sort observation supplies no SIMDgroup reduction, and neither observation is evidence for an existing candidate.",
+      "The standalone scan and sort observations establish no barrier safety, bounds, memory safety, stability, deterministic or numerical equivalence, correctness, performance, resource, instruction-mapping, Compiler, Target, Schedule, lowering, or Stage 3 result."
+    ]
+  },
+  "observations": [
+    "observations/apxinf-full-attention-input-rms-modulation.json",
+    "observations/apxinf-full-attention-qgkv-row-projection.json",
+    "observations/apxinf-w8-gdn-input-row-projection.json",
+    "observations/apxinf-w8-gdn-norm-gate-rms-modulation.json",
+    "observations/apxinf-w8-lm-head-row-projection.json",
+    "observations/apxinf-w8-mlp-gate-up-row-projection.json",
+    "observations/mlx-convolution-implicit-gemm-threadgroup-mma-k-loop.json",
+    "observations/mlx-gather-runtime-index-axis-stride-fold.json",
+    "observations/mlx-layer-norm-hierarchical-reduction.json",
+    "observations/mlx-quantized-qmm-n-threadgroup-mma-k-loop.json",
+    "observations/mlx-rms-norm-hierarchical-reduction.json",
+    "observations/mlx-scaled-dot-product-attention-max-rebased-summary.json",
+    "observations/mlx-scan-contiguous-block-prefix-handoff.json",
+    "observations/mlx-scatter-runtime-index-axis-stride-fold.json",
+    "observations/mlx-softmax-looped-max-rebased-summary.json",
+    "observations/mlx-sort-block-merge-state-exchange.json",
+    "observations/mlx-steel-gemm-paired-threadgroup-mma-k-loop.json"
+  ],
+  "candidates": [
+    "candidates/hierarchical-simdgroup-threadgroup-reduction.json",
+    "candidates/max-rebased-exponential-summary.json",
+    "candidates/paired-threadgroup-tile-mma-k-loop.json",
+    "candidates/row-per-simdgroup-groupwise-w8-projection.json",
+    "candidates/runtime-index-axis-stride-offset-fold.json",
+    "candidates/two-pass-row-rms-modulation.json"
+  ],
+  "counts": {
+    "observation_count": 17,
+    "candidate_count": 6,
+    "implementation_count": 15,
+    "source_count": 2
+  }
+}

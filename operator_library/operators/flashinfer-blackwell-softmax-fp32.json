@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "normalization.softmax",
+  "implementation_id": "flashinfer.blackwell-softmax-fp32",
+  "source_id": "flashinfer-cake-tracker-20260826",
+  "family": "normalization",
+  "variant": "Incubating Blackwell FP32 vocabulary softmax",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Normalize rows of FP32 logits with optional scalar or per-row temperature across large vocabulary widths.",
+  "input_regime": {
+    "dtypes": ["fp32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Rows range from 1 to 1024", "Temperature may be absent, scalar, or per-row", "Vocabulary widths include 32K through 256K"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["dynamic_dispatch", "online_softmax", "programmatic_launch", "reduction"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4282",
+      "revision": "f0edac69e1c4d299c14fa95b7a0073a172203cf9",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://github.com/flashinfer-ai/flashinfer/blob/f0edac69e1c4d299c14fa95b7a0073a172203cf9/csrc/blackwell_softmax.cu",
+      "revision": "f0edac69e1c4d299c14fa95b7a0073a172203cf9",
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "collected",
+  "claim_scope": "source_fact_only"
+}

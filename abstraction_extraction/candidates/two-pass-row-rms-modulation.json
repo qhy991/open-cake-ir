@@ -1,0 +1,56 @@
+{
+  "$schema": "../schema.json#/$defs/candidate",
+  "schema_version": 1,
+  "candidate_id": "two-pass-row-rms-modulation",
+  "pattern_signature": "row-square-sum.inverse-rms.second-pass-weight-modulation",
+  "summary": "Two pinned ApxInf Metal implementations expose the same source-level two-pass row RMS data flow: form a float sum of squares, derive an epsilon-stabilized inverse RMS from the row extent, then read the row again and apply that scalar with an implementation-specific factor from a normalization-weight buffer.",
+  "normalized_steps": [
+    "Traverse one logical source row and accumulate source-level float squared-value contributions, leaving their combination topology to the enclosing implementation.",
+    "Divide the resulting row square sum by the logical row extent, add the implementation-provided epsilon, and apply rsqrt.",
+    "Traverse the same logical source row a second time and read each source element again.",
+    "Multiply each reread source value by the inverse-RMS scalar and a per-element factor obtained from a normalization-weight buffer.",
+    "Leave additional fused factors, normalization-weight parameterization, row addressing and ownership, bounds behavior, and destination semantics to the enclosing implementation."
+  ],
+  "observed_variants": [
+    "The full-attention kernel uses a fixed hidden extent, lane-strided passes, simd_sum, a layer-slot normalization-weight base, a zero-centered weight factor, and a standalone normalized output buffer.",
+    "The GDN kernel uses a runtime value extent, one serial invocation per admitted value head, a direct normalization-weight factor, and an additional projected-Z SiLU factor in its gated output expression.",
+    "Thread or SIMDgroup ownership, reduction order, floating-point reproducibility, launch topology, synchronization, bounds, addressing, output layout, and physical memory traffic are outside the normalized recurrence.",
+    "The shared source data flow does not establish numerical equivalence between the two weight conventions or reduction orders, a Compiler or Target abstraction, Schedule expressibility, correctness, or performance."
+  ],
+  "observation_ids": [
+    "apxinf-metal-full-attention.input-rms-modulation",
+    "apxinf-metal-w8-gdn.norm-gate-rms-modulation"
+  ],
+  "evidence_breadth": {
+    "observation_count": 2,
+    "implementation_ids": [
+      "apxinf.metal-full-attention-decode-v1",
+      "apxinf.metal-w8-gdn-decode"
+    ],
+    "operator_ids": [
+      "attention.full_decode_block",
+      "recurrent.gated_delta_net_decode"
+    ],
+    "source_ids": [
+      "apxinf-qhy-main-df5c55a"
+    ],
+    "source_revisions": [
+      "df5c55a06140107b24964d9e4abbefd9fa2a4733"
+    ],
+    "git_objects": [
+      "b920a5f648a7046930c5f6ed139c05d3b8906fab",
+      "f70334c822dcc73d59551098ef8ad53eb0984210"
+    ],
+    "families": [
+      "attention",
+      "recurrent"
+    ],
+    "hardware_targets": [
+      "apple_gpu_family9",
+      "apple_m4"
+    ]
+  },
+  "state": "extracted_unreviewed",
+  "claim_scope": "source_pattern_only",
+  "next_gate": "hardware_informed_design"
+}

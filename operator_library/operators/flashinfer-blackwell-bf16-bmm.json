@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "contraction.batched_gemm",
+  "implementation_id": "flashinfer.blackwell-bf16-bmm",
+  "source_id": "flashinfer-cake-tracker-20260826",
+  "family": "contraction",
+  "variant": "Incubating Blackwell BF16 BMM with multiple output dtypes",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Compute batched BF16 matrix products while selecting exact-target tensor-core or narrow-tail schedules and producing BF16, FP16, or FP32 output.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["K includes 64, 256, and 1024", "Narrow M tails are included", "Output dtype is a dispatch dimension"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["dynamic_dispatch", "matrix_multiply", "tensor_memory", "tma"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4370",
+      "revision": "8ea11f17c2c2337aa8c16ca4fe8486b0c33b9294",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://github.com/flashinfer-ai/flashinfer/blob/8ea11f17c2c2337aa8c16ca4fe8486b0c33b9294/csrc/blackwell_bf16_bmm_kernels.cu",
+      "revision": "8ea11f17c2c2337aa8c16ca4fe8486b0c33b9294",
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "collected",
+  "claim_scope": "source_fact_only"
+}

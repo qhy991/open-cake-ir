@@ -1,0 +1,30 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "contraction.dense_gemm",
+  "implementation_id": "mlx.metal-steel-gemm",
+  "source_id": "mlx-main-1f8e74e",
+  "family": "contraction",
+  "variant": "MLX Steel dense GEMM kernel family",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Compute dense matrix products using tiled SIMDgroup matrix operations with production layout and shape dispatch.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Batching and transpose modes are dispatch dimensions", "Matrix tails are supported by guarded tiles"]
+  },
+  "hardware_targets": ["apple_silicon_metal"],
+  "mechanisms": ["dynamic_dispatch", "matrix_multiply", "simdgroup_matrix", "threadgroup_barrier", "threadgroup_memory"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/steel/gemm/gemm.h",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "bbe1d96cc0a657e729b2be8a0808382886866ba0",
+      "symbol": "mlx::steel::GEMMKernel::gemm_loop"
+    }
+  ],
+  "upstream_state": "repository_main",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

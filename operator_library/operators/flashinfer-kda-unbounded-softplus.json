@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "recurrent.kimi_delta_attention_unbounded_gate",
+  "implementation_id": "flashinfer.kda-unbounded-softplus",
+  "source_id": "flashinfer-cake-tracker-20260826",
+  "family": "recurrent",
+  "variant": "Incubating Kimi-Linear unbounded-softplus prefill and decode",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Apply the unbounded softplus decay gate while supporting indexed or strided recurrent state across prefill and decode.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32", "int32"],
+    "extent_class": "ragged",
+    "shape_constraints": ["D=128", "Head counts include 4, 8, 16, and 32", "Prefill and decode share a state contract"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["checkpoint_state", "gather", "piecewise_activation", "recurrence", "scatter"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4535",
+      "revision": "90518330862c24c441bd4283473e1acb261a4d06",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://github.com/flashinfer-ai/flashinfer/blob/90518330862c24c441bd4283473e1acb261a4d06/csrc/kda/cake_kda_bf16_fused_m128_unbounded_softplus.cu",
+      "revision": "90518330862c24c441bd4283473e1acb261a4d06",
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "collected",
+  "claim_scope": "source_fact_only"
+}

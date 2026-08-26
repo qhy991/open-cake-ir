@@ -82,7 +82,7 @@ def evaluate(root: Path, plan_path: Path) -> dict[str, object]:
     revision_authority = authority["compiler_revision"]
     revision_id = revision_authority["revision_id"]
     revision_paths = [root / revision_authority["path"]]
-    match = re.fullmatch(r"open-cake-ir-sm100a-(v\d+)", revision_id)
+    match = re.fullmatch(r"open-cake-ir-(?:sm100a-)?(v[1-9]\d*)", revision_id)
     if match is not None:
         # Early frozen plans named the then-current lock path. Once that exact release
         # advances into immutable history, id and digest remain the authorities and the

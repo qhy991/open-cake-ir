@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "contraction.quantized_matmul",
+  "implementation_id": "mlx.metal-quantized-matmul",
+  "source_id": "mlx-main-1f8e74e",
+  "family": "contraction",
+  "variant": "MLX Metal quantized matrix and matrix-vector dispatch",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Multiply dense activations by grouped or floating-point quantized weights while decoding scale and packing metadata inside the selected Metal path.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp32", "fp4_e2m1", "fp8_e4m3", "int4", "int8"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Bit width, group size, transpose mode, and small-M status select the implementation", "Quantized scale and bias metadata are explicit inputs"]
+  },
+  "hardware_targets": ["apple_silicon_metal"],
+  "mechanisms": ["block_scales", "dynamic_dispatch", "matrix_multiply", "quantized_arithmetic", "simdgroup_matrix"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/quantized.h",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "42855e14d880cab5f9d194edb1a6ca7c9e28b1c7",
+      "symbol": "qmm_n_impl"
+    },
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/quantized.metal",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "069482cbaf0b67c24411afd3f80d7498a9a4d301",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "repository_main",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

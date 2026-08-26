@@ -44,10 +44,19 @@ silently strengthen, weaken or relocate the operation.
 storage for another operation does not widen that semantic contract.
 
 `lowering` owns only the materialization mechanism and executable symbol. Its `backend` is
-one of `triton`, `cutlass_cute_dsl`, or `checked_cuda_asset`; `entry_point` is an identifier.
+one of `triton`, `cutlass_cute_dsl`, `metal`, or `checked_cuda_asset`; `entry_point` is an
+identifier.
 The executable argument signature is derived from global Buffers and is never restated as
 an ABI label. Metadata may bind a Workload digest, but the Compiler does not infer a
 Workload from a route or hard-code its tensor shapes.
+
+The first `metal` Adapter targets `apple_gpu_family9` and admits two exact primitive
+compositions: a BF16 load indexed by two runtime INT32 Buffer coordinates, and that load
+followed by FP32 route weighting and a route-axis sum. Invalid expert or row coordinates
+produce zero, as required by `mask_tiled_axes`. The indexed gather uses four contiguous
+32-wide SIMDgroups; weighted combine uses one. Other roles, access maps, operation graphs,
+load-reuse commitments, or Target architectures are lowering-blocking backend Findings,
+never a fallback to Triton or a reinterpretation of the Schedule.
 
 For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics, tie handling and oracle. A Study
 narrows the public Compiler to one exact lowering route and supplies a complete `schedule-skeleton.json`; start from

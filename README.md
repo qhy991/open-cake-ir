@@ -205,6 +205,24 @@ Open Cake Compiler -X-> Lab / Provider / Workload / Evidence
   lifecycle, so v4 validates feedback and single-writer/judge separation—not multi-agent use. It remains
   non-scientific artifact optimization; no cross-arm estimate or paper claim is available.
 
+## Apple Metal operator smoke
+
+The successor Compiler draft adds the exact `apple_gpu_family9` Target and a finite
+`metal` generated-backend Adapter. It lowers two existing primitive graphs to MSL:
+runtime-indexed BF16 gather and KDA weighted combine. On an Apple GPU family 9 Mac with
+the Xcode Metal toolchain, run the end-to-end engineering smoke with:
+
+```bash
+python3 tools/probe_metal_operators.py
+```
+
+The probe loads the live draft, lowers both Schedules, compiles two AIR objects, links one
+metallib, and dispatches each kernel once. It checks gather output bit-for-bit and checks
+weighted combine against an independent fixed-order FP32/BF16 oracle, including negative
+and upper-bound runtime indices. The JSON result explicitly records that no performance
+was measured and no scientific claim is authorized. Compiler v28 remains the current
+released Revision until the successor's external Gate approval is supplied.
+
 ## Read order by role
 
 ### New user

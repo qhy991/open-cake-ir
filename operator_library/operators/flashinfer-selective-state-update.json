@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "state_space.selective_state_update",
+  "implementation_id": "flashinfer.selective-state-update",
+  "source_id": "flashinfer-main-857bc3a",
+  "family": "state_space",
+  "variant": "Blackwell BF16 multi-token checkpointed state update",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Mutate selective state for single-token or speculative multi-token decoding while retaining the requested checkpoint history.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32", "int32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Checkpoint count is dynamic within a bounded set", "Single-token and multi-token routes coexist", "State remains FP32"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["checkpoint_state", "dynamic_dispatch", "in_place_state", "persistent_work", "recurrence"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4616",
+      "revision": "46fc99b9773bc98832a8610b5d789d3bcdafde85",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "csrc/cake_selective_state_update/cuda/cake_selective_state_update_mtp_cache_bf16_c4_t6.cu",
+      "revision": "857bc3a11494aaa0b7142a65c4a956ad68066f69",
+      "git_object": "5f23d6b78d972f78c2030bd884b6568e9499a70e",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "merged",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

@@ -23,11 +23,15 @@ import json
 from enum import Enum
 from pathlib import Path
 
-from open_cake_ir.compiler import emit_cutedsl, emit_triton, ir
+from open_cake_ir.compiler import emit_cutedsl, emit_metal, emit_triton, ir
 
 ROOT = Path(__file__).resolve().parents[1]
 
-_BACKENDS = {"triton": emit_triton, "cute-dsl": emit_cutedsl}
+_BACKENDS = {
+    "triton": emit_triton,
+    "cute-dsl": emit_cutedsl,
+    "metal": emit_metal,
+}
 
 
 def _used_members() -> set[Enum]:

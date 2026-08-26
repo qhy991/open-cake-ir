@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "attention.sparse_multi_latent",
+  "implementation_id": "flashinfer.dsv4-sparse-mla",
+  "source_id": "flashinfer-cake-tracker-20260826",
+  "family": "attention",
+  "variant": "Incubating DSV4 sparse MLA",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Compute sparse multi-latent attention over runtime top-k indices with compressed or reduction-oriented specialists.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32", "fp8_e4m3", "int32"],
+    "extent_class": "ragged",
+    "shape_constraints": ["Head counts include 64 and 128", "Sparse top-k indices are runtime inputs", "The cited DSV4 lane uses 512-wide QK and V dimensions"]
+  },
+  "hardware_targets": ["sm_103a"],
+  "mechanisms": ["online_softmax", "sparse_attention", "tensor_memory", "tma", "top_k"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4573",
+      "revision": "441334ef9fbb70bae575d60893b20f1b86d6c06a",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://github.com/flashinfer-ai/flashinfer/blob/441334ef9fbb70bae575d60893b20f1b86d6c06a/csrc/cake_dsv4/cake_dsv4_bf16_h128_topk128x.cu",
+      "revision": "441334ef9fbb70bae575d60893b20f1b86d6c06a",
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "collected",
+  "claim_scope": "source_fact_only"
+}

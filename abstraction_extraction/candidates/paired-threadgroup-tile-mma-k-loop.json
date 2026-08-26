@@ -1,0 +1,62 @@
+{
+  "$schema": "../schema.json#/$defs/candidate",
+  "schema_version": 1,
+  "candidate_id": "paired-threadgroup-tile-mma-k-loop",
+  "pattern_signature": "k-tile-loop.preload-barrier.paired-threadgroup-load.postload-barrier.tile-mma.paired-advance",
+  "summary": "Three pinned MLX Metal implementations expose the same narrow source-level full-K choreography: two operand loaders stage paired threadgroup tiles between two barriers, a block-MMA object consumes the staged pair, and both loaders advance before the next iteration.",
+  "normalized_steps": [
+    "Maintain two threadgroup operand tiles, their corresponding loader objects, and one block-MMA object.",
+    "Iterate the full K-tile count supplied or derived by the enclosing implementation.",
+    "Execute a threadgroup-memory barrier, then invoke one load method through each operand loader to populate the paired tiles.",
+    "Execute a second threadgroup-memory barrier, then invoke the block-MMA object on the staged tile pair.",
+    "Advance both operand loaders before the next full K-tile iteration.",
+    "End the recurrence after the paired advance; all enclosing behavior remains outside this source pattern."
+  ],
+  "observed_variants": [
+    "Dense GEMM parameterizes operand transposes, tile alignment, accumulator and epilogue types, selects safe or unsafe M/N loads, handles a separate K remainder, and leaves result storage to its caller.",
+    "QMM-N fixes the non-transposed matrix mode, pairs a dense activation loader with a packed quantized-weight loader bound to scales, biases, group size and bit width, branches for partial M and K remainder, and selects safe or full result storage.",
+    "Implicit-GEMM convolution fixes the matrix modes to non-transposed input and transposed weights, specializes input and weight loaders by channel and filter shape, retains group, spatial-window and grid-swizzle addressing, has no explicit generic K-remainder branch in the cited kernel, and ends with a safe result store.",
+    "Physical tile layout, transpose meaning, quantization and dequantization, convolution stride, padding, dilation, filter window and grouping, edge and tail behavior, zero fill, output storage, epilogue, accumulator type, and numerical equivalence remain implementation-specific.",
+    "Barrier names and safe or unsafe helper names do not establish uniform participation, visibility sufficiency, bounds, scratch lifetime, race or deadlock freedom, memory safety, or correctness.",
+    "The recurrence establishes no asynchronous overlap, double buffering, resource or occupancy bound, throughput or latency result, hardware-instruction mapping, Compiler operation, Target capability, Schedule form, lowering route, or relationship to the hierarchical SIMDgroup reduction candidate."
+  ],
+  "observation_ids": [
+    "mlx-metal-convolution.implicit-gemm-threadgroup-mma-k-loop",
+    "mlx-metal-quantized-matmul.qmm-n-threadgroup-mma-k-loop",
+    "mlx-metal-steel-gemm.paired-threadgroup-mma-k-loop"
+  ],
+  "evidence_breadth": {
+    "observation_count": 3,
+    "implementation_ids": [
+      "mlx.metal-convolution",
+      "mlx.metal-quantized-matmul",
+      "mlx.metal-steel-gemm"
+    ],
+    "operator_ids": [
+      "contraction.dense_gemm",
+      "contraction.quantized_matmul",
+      "convolution.nd"
+    ],
+    "source_ids": [
+      "mlx-main-1f8e74e"
+    ],
+    "source_revisions": [
+      "1f8e74e3f12f31365464a6867c6579f0e9b29d85"
+    ],
+    "git_objects": [
+      "42855e14d880cab5f9d194edb1a6ca7c9e28b1c7",
+      "bbe1d96cc0a657e729b2be8a0808382886866ba0",
+      "f559596b732b399783e151bc43bb838d3fb3b3cd"
+    ],
+    "families": [
+      "contraction",
+      "convolution"
+    ],
+    "hardware_targets": [
+      "apple_silicon_metal"
+    ]
+  },
+  "state": "extracted_unreviewed",
+  "claim_scope": "source_pattern_only",
+  "next_gate": "hardware_informed_design"
+}

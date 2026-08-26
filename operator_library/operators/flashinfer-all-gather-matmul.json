@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "collective.all_gather_matmul",
+  "implementation_id": "flashinfer.all-gather-matmul",
+  "source_id": "flashinfer-cake-tracker-20260826",
+  "family": "collective",
+  "variant": "Incubating Blackwell fused all-gather and matrix multiply",
+  "scope": "multi_kernel_program",
+  "semantic_role": "Gather row shards across ranks while consuming them in a matrix multiplication and preserving fresh output ownership.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["K=8192 and N=2048 in the cited lane", "Non-power-of-two M is a correctness case", "World size is 2 or 4"]
+  },
+  "hardware_targets": ["sm_100a", "sm_103a"],
+  "mechanisms": ["collective_all_gather", "matrix_multiply", "multi_kernel_program", "programmatic_launch"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4722",
+      "revision": "ec26a8d16a997fa60e0979e64dc66a1bf9e7a35d",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://github.com/flashinfer-ai/flashinfer/blob/ec26a8d16a997fa60e0979e64dc66a1bf9e7a35d/csrc/cake_all_gather_matmul/sm100a/cake_all_gather_matmul_kernels.cu",
+      "revision": "ec26a8d16a997fa60e0979e64dc66a1bf9e7a35d",
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "collected",
+  "claim_scope": "source_fact_only"
+}

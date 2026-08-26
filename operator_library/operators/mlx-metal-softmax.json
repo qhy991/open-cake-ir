@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "normalization.softmax",
+  "implementation_id": "mlx.metal-softmax",
+  "source_id": "mlx-main-1f8e74e",
+  "family": "normalization",
+  "variant": "MLX Metal row-wise softmax family",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Normalize rows using maximum-referenced exponentiation and sum reduction across single-row and looped Metal kernel variants.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Row width selects the workgroup configuration", "FP16 and BF16 have both default-accumulator and FP32-accumulator instantiations"]
+  },
+  "hardware_targets": ["apple_silicon_metal"],
+  "mechanisms": ["dynamic_dispatch", "online_softmax", "reduction", "simdgroup_reduction", "threadgroup_barrier", "threadgroup_memory"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/softmax.h",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "6ea4ac7329cf14b0df61b288c31d2711608d14e0",
+      "symbol": "softmax_looped"
+    },
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/softmax.metal",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "79d5d3fca15fa0136649ea62bfd883ebfb21ef64",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "repository_main",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

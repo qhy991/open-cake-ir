@@ -28,6 +28,12 @@ from open_cake_ir.compiler.verifier import (
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
+TARGETS = {
+    "sm_100a": TARGET,
+    "apple_gpu_family9": Target.load(
+        ROOT / "compiler" / "targets" / "apple_gpu_family9.json"
+    ),
+}
 # The manifest is what the Corpus is; the directory also holds schedules
 # retained as history that the current Revision no longer admits.
 CORPUS = sorted(
@@ -95,7 +101,10 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         ]
         for path in paths:
             with self.subTest(schedule=path.name):
-                self.assertEqual(_blocking(verify(Schedule.load(path), TARGET)), ())
+                schedule = Schedule.load(path)
+                self.assertEqual(
+                    _blocking(verify(schedule, TARGETS[schedule.target])), ()
+                )
 
     def test_a_broadcast_axis_no_shape_rule_could_infer_is_checked(self) -> None:
         """The one arithmetic fact shapes cannot settle.
@@ -838,6 +847,23 @@ class RoleRegisterSplitTest(unittest.TestCase):
 
         codes = self._codes(self._split(warps=([0, 1], [2, 3, 4, 5, 6, 7])))
         self.assertIn("ROLE_REGISTERS_NOT_WARPGROUP_ALIGNED", codes)
+
+    def test_a_target_without_a_register_issue_group_refuses_a_role_budget(self) -> None:
+        document = json.loads(
+            (
+                ROOT
+                / "corpus/schedules/kda-weighted-combine-b8-metal-family9.json"
+            ).read_text(encoding="utf-8")
+        )
+        document["roles"][0]["registers_per_thread"] = 64
+
+        codes = _codes(
+            _blocking(
+                verify(Schedule.from_dict(document), TARGETS["apple_gpu_family9"])
+            )
+        )
+
+        self.assertIn("ROLE_REGISTER_BUDGET_UNSUPPORTED", codes)
 
     def test_a_partial_split_is_refused(self) -> None:
         self.assertIn("ROLE_REGISTERS_PARTIAL", self._codes(self._split(budgets=(64, None))))

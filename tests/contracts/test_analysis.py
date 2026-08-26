@@ -23,6 +23,12 @@ from open_cake_ir.compiler.verifier import FindingSeverity, verify
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
+TARGETS = {
+    "sm_100a": TARGET,
+    "apple_gpu_family9": Target.load(
+        ROOT / "compiler" / "targets" / "apple_gpu_family9.json"
+    ),
+}
 B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 ASSIGNMENT_FULL = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
 TOP_K = ROOT / "corpus" / "schedules" / "top-k-b8-smoke.json"
@@ -110,9 +116,10 @@ class ResidencyTest(unittest.TestCase):
 
 class ReportTest(unittest.TestCase):
     def _reports(self, path: Path) -> dict[str, str]:
+        schedule = Schedule.load(path)
         return {
             finding.code: finding.message
-            for finding in verify(Schedule.load(path), TARGET)
+            for finding in verify(schedule, TARGETS[schedule.target])
             if finding.severity is FindingSeverity.REPORT
         }
 
@@ -124,7 +131,12 @@ class ReportTest(unittest.TestCase):
             )["cases"]
         ):
             with self.subTest(schedule=path.name):
-                self.assertIn("RESIDENCY_BOUND", self._reports(path))
+                schedule = Schedule.load(path)
+                reports = self._reports(path)
+                if TARGETS[schedule.target].occupancy is None:
+                    self.assertNotIn("RESIDENCY_BOUND", reports)
+                else:
+                    self.assertIn("RESIDENCY_BOUND", reports)
 
     def test_a_report_does_not_block(self) -> None:
         findings = verify(Schedule.load(B32), TARGET)

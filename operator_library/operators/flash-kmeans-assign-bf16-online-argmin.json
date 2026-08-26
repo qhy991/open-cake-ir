@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "clustering.kmeans_assignment",
+  "implementation_id": "flash-kmeans.assign-bf16-online-argmin",
+  "source_id": "flash-kmeans-a44c93f",
+  "family": "clustering",
+  "variant": "BF16 squared-distance assignment with FP32 accumulation and online argmin",
+  "scope": "single_kernel",
+  "semantic_role": "Assign each input row to the lowest-index centroid with minimum squared Euclidean distance without materializing the full distance matrix.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32", "int32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Paper seed B=32, N=65536, K=1024, D=128", "Tail handling is required on N, K, and D"]
+  },
+  "hardware_targets": ["cuda_gpu"],
+  "mechanisms": ["matrix_multiply", "online_argmin", "reduction", "streaming_tiles"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "flash_kmeans/assign_euclid_triton.py",
+      "revision": "a44c93f2e7ae45a227803e0325a53e645cef6ce4",
+      "git_object": "33b879fbef7bfc5b43fcf302d9ff85b1a5431080",
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://arxiv.org/html/2608.12629v1#S5",
+      "revision": null,
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "repository_main",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

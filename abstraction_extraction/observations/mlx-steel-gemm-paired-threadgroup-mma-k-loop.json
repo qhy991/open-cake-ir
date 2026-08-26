@@ -1,0 +1,48 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "mlx-metal-steel-gemm.paired-threadgroup-mma-k-loop",
+  "pattern_signature": "k-tile-loop.preload-barrier.paired-threadgroup-load.postload-barrier.tile-mma.paired-advance",
+  "implementation_id": "mlx.metal-steel-gemm",
+  "operator_id": "contraction.dense_gemm",
+  "source_id": "mlx-main-1f8e74e",
+  "source_locator": {
+    "path": "mlx/backend/metal/kernels/steel/gemm/gemm.h",
+    "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+    "git_object": "bbe1d96cc0a657e729b2be8a0808382886866ba0",
+    "symbol": "mlx::steel::GEMMKernel::gemm_loop"
+  },
+  "source_span": {
+    "start_line": 48,
+    "end_line": 137,
+    "sha256": "55520e468f22def406186537532b9a18234f8b05fa395ace648a693939a9b098",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "The enclosing GEMMKernel aliases two transpose-aware BlockLoader types and one BlockMMA type parameterized by tile dimensions, accumulator type, and epilogue.",
+    "gemm_loop receives separate threadgroup operand tiles, the two loader objects, the BlockMMA object, the full K-tile iteration count, edge-tile dimensions, and the remaining-K extent from its caller.",
+    "Each full K-tile iteration executes a threadgroup-memory barrier, selects the aligned or edge-aware load for each operand, executes a second threadgroup-memory barrier, calls mma on the staged tiles, and advances both loaders.",
+    "When K is not aligned, a separate terminal path computes transpose-aware remaining tile dimensions, safely loads both operands between the same two barriers, and performs one final mma without advancing the loaders."
+  ],
+  "observed_primitives": [
+    "block_mma_accumulate",
+    "compile_time_alignment_specialization",
+    "k_tile_iteration",
+    "mn_edge_load_specialization",
+    "paired_loader_advance",
+    "paired_operand_block_loaders",
+    "paired_threadgroup_operand_tiles",
+    "parameterized_accumulator_epilogue",
+    "postload_threadgroup_barrier",
+    "preload_threadgroup_barrier",
+    "safe_k_remainder_load",
+    "transpose_aware_edge_tile_shape"
+  ],
+  "variant_notes": [
+    "Compile-time M, N, and K alignment flags and transpose parameters determine loader shapes and safe-versus-unsafe load calls; these choices are not normalized into the common recurrence.",
+    "The cited helper includes a separate K-remainder path but does not own the result store; output layout, epilogue application, and publication remain caller behavior.",
+    "BlockLoader safe and unsafe method names are recorded as source branch choices and do not prove bounds, zero-fill, synchronization, or memory safety."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

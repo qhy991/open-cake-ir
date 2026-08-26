@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "routing.moe_topk_plan",
+  "implementation_id": "flashinfer.alphamoe-fused-router",
+  "source_id": "flashinfer-cake-tracker-20260826",
+  "family": "routing",
+  "variant": "Incubating fused AlphaMoE router frontend",
+  "scope": "kernel_family",
+  "semantic_role": "Select and normalize experts from FP32 logits, count expert assignments, and build an aligned padded routing plan on the device.",
+  "input_regime": {
+    "dtypes": ["fp32", "int32"],
+    "extent_class": "device_runtime",
+    "shape_constraints": ["Expert count includes 257 and 512", "Top-k is at most 16", "Token blocks are at most 16"]
+  },
+  "hardware_targets": ["sm_100a"],
+  "mechanisms": ["atomic_rmw", "dynamic_extent", "scan", "scatter", "top_k"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4339",
+      "revision": "0725744e58a9e338e8d315d82891878b07decd8f",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "web_document",
+      "value": "https://github.com/flashinfer-ai/flashinfer/blob/0725744e58a9e338e8d315d82891878b07decd8f/csrc/alphamoe_fused_router.cu",
+      "revision": "0725744e58a9e338e8d315d82891878b07decd8f",
+      "git_object": null,
+      "symbol": null
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "collected",
+  "claim_scope": "source_fact_only"
+}

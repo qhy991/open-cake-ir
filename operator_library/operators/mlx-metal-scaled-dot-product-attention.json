@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "attention.scaled_dot_product",
+  "implementation_id": "mlx.metal-scaled-dot-product-attention",
+  "source_id": "mlx-main-1f8e74e",
+  "family": "attention",
+  "variant": "MLX Metal scaled dot-product attention family",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Compute scaled query-key scores, apply optional masks and row normalization, and contract the probabilities with values.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp16", "fp32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["Decode and longer-query paths use distinct implementations", "Grouped-query and multi-query head mappings are supported", "Masking may be causal or explicit"]
+  },
+  "hardware_targets": ["apple_silicon_metal"],
+  "mechanisms": ["causal_mask", "dynamic_dispatch", "matrix_multiply", "online_softmax", "simdgroup_matrix", "threadgroup_barrier", "threadgroup_memory"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/scaled_dot_product_attention.metal",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "187e6fffca39b3339bd67dbbf9fe1e5e9f2a4afe",
+      "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/sdpa_vector.h",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "3f40dbd7c0ce363b54b84762a51dac30c2d4b628",
+      "symbol": "sdpa_vector"
+    }
+  ],
+  "upstream_state": "repository_main",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

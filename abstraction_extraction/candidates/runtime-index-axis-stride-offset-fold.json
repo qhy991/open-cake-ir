@@ -1,0 +1,53 @@
+{
+  "$schema": "../schema.json#/$defs/candidate",
+  "schema_version": 1,
+  "candidate_id": "runtime-index-axis-stride-offset-fold",
+  "pattern_signature": "runtime-index-location.axis-stride-offset-fold",
+  "summary": "Two pinned MLX Metal implementations expose the same source-level linear element-offset construction: locate each runtime index-tensor element, pass it with the selected accessed-buffer axis extent to offset_neg_idx, scale the returned value by that buffer's axis stride, and fold the contribution into an operator-specific unindexed slice base.",
+  "normalized_steps": [
+    "Keep the current slice or update contribution to the accessed-buffer linear element offset separate from the runtime-index contribution.",
+    "For each selected axis, derive the physical element location within that index tensor from runtime shape and stride metadata according to the implementation's rank and contiguity path.",
+    "Read the index-tensor element and pass it, together with the accessed buffer's extent for the selected axis, to the source's offset_neg_idx helper.",
+    "Multiply the returned value by the accessed buffer's stride for that axis and add it to the indexed contribution.",
+    "Combine the unindexed and folded indexed contributions into the linear element offset consumed by the enclosing memory action, leaving that action and all other operand addresses outside the normalized pattern."
+  ],
+  "observed_variants": [
+    "The gather implementation specializes scalar, one-dimensional, and higher-rank index locations, derives a source-slice base, linearizes a three-dimensional output coordinate, and terminates in a direct indexed read and output write.",
+    "The scatter implementation batches up to NWORK index positions, derives destination-slice and update addresses separately, and terminates in op.atomic_update; its update layout and conflict policy are not normalized.",
+    "The offset_neg_idx call is recorded only as a source transformation. The candidate does not claim axis validation, index bounds validation, clamping, masking, overflow safety, memory safety, destination ownership, race freedom, or equivalence to a Compiler access form."
+  ],
+  "observation_ids": [
+    "mlx-metal-gather.runtime-index-axis-stride-fold",
+    "mlx-metal-scatter.runtime-index-axis-stride-fold"
+  ],
+  "evidence_breadth": {
+    "observation_count": 2,
+    "implementation_ids": [
+      "mlx.metal-gather",
+      "mlx.metal-scatter"
+    ],
+    "operator_ids": [
+      "indexing.gather",
+      "indexing.scatter"
+    ],
+    "source_ids": [
+      "mlx-main-1f8e74e"
+    ],
+    "source_revisions": [
+      "1f8e74e3f12f31365464a6867c6579f0e9b29d85"
+    ],
+    "git_objects": [
+      "3604f20f6188fbdef735a5e8641b43757f8d04c2",
+      "8b93c01679c13707479907a0285213e36334d749"
+    ],
+    "families": [
+      "indexing"
+    ],
+    "hardware_targets": [
+      "apple_silicon_metal"
+    ]
+  },
+  "state": "extracted_unreviewed",
+  "claim_scope": "source_pattern_only",
+  "next_gate": "hardware_informed_design"
+}

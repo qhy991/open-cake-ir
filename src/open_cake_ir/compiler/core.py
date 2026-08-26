@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence, cast
 
-from . import emit_cutedsl, emit_triton
+from . import emit_cutedsl, emit_metal, emit_triton
 from .emit_cutedsl import EmitError
 from .ir import (
     _SCHEDULE_OPTIONAL,
@@ -96,14 +96,14 @@ class TargetDefinition:
     target_id: str
     canonical_sha256: str
     device_names: tuple[str, ...]
-    compute_capability: tuple[int, int]
+    compute_capability: tuple[int, int] | None
     memory_spaces: frozenset[str]
     operation_kinds: frozenset[str]
     maximum_threads_per_cta: int
     maximum_warps_per_cta: int
     maximum_shared_memory_bytes: int
-    maximum_tensor_memory_bytes: int
-    maximum_grid: tuple[int, int, int]
+    maximum_tensor_memory_bytes: int | None
+    maximum_grid: tuple[int, int, int] | None
     instruction_contracts: frozenset[str]
     synchronization_contracts: frozenset[str]
     citations: tuple[Mapping[str, object], ...]
@@ -251,6 +251,7 @@ _GENERATED_BACKENDS: Mapping[LoweringBackend, _GeneratedBackend] = {
     LoweringBackend.CUTLASS_CUTE_DSL: _GeneratedBackend(
         emit_cutedsl, "python", "cutlass_cute_dsl"
     ),
+    LoweringBackend.METAL: _GeneratedBackend(emit_metal, "metal", "metal"),
 }
 _SOURCE_ASSETS: Mapping[str, _SourceAsset] = {
     "cake_tinygemm2_stage4_split_k": _SourceAsset(
@@ -340,97 +341,33 @@ def _load_target_definition(
         json.loads(path.read_text(encoding="utf-8")),
         f"target_definition.{target_id}",
     )
-    expected_fields = {
-        "schema_version",
-        "target_id",
-        "architecture",
-        "device_names",
-        "compute_capability",
-        "memory_spaces",
-        "operation_kinds",
-        "resource_limits",
-        "instruction_contracts",
-        "synchronization_contracts",
-        "citations",
-    }
-    optional_fields = {"occupancy"}
-    if (
-        not expected_fields <= set(document) <= expected_fields | optional_fields
-        or document.get("schema_version") != 1
-    ):
-        raise CompilerError(f"target definition {target_id!r} fields differ")
-    if document.get("target_id") != target_id:
-        raise CompilerError(f"target definition {target_id!r} identity differs")
     canonical_sha256 = sha256(_canonical_json_bytes(document)).hexdigest()
     if reference.get("canonical_sha256") != canonical_sha256:
         raise CompilerError(f"target definition {target_id!r} bytes differ")
-    capability = document.get("compute_capability")
-    if (
-        not isinstance(capability, list)
-        or len(capability) != 2
-        or any(not isinstance(item, int) or isinstance(item, bool) or item < 0 for item in capability)
-    ):
-        raise CompilerError(f"target definition {target_id!r} compute capability differs")
-    limits = _object(document.get("resource_limits"), f"target_definition.{target_id}.resource_limits")
-    if set(limits) != {
-        "maximum_threads_per_cta",
-        "maximum_warps_per_cta",
-        "maximum_shared_memory_bytes",
-        "maximum_tensor_memory_bytes",
-        "grid",
-    }:
-        raise CompilerError(f"target definition {target_id!r} resource limits differ")
-    grid = _object(limits.get("grid"), f"target_definition.{target_id}.resource_limits.grid")
-    if set(grid) != {"x", "y", "z"}:
-        raise CompilerError(f"target definition {target_id!r} grid limits differ")
-    citations = _objects(document.get("citations"), f"target_definition.{target_id}.citations")
-    if not citations:
-        raise CompilerError(f"target definition {target_id!r} requires citations")
+    try:
+        target = Target.from_dict(document)
+    except TargetParseError as error:
+        raise CompilerError(
+            f"target definition {target_id!r} is invalid: {error}"
+        ) from error
+    if target.target_id != target_id:
+        raise CompilerError(f"target definition {target_id!r} identity differs")
+    limits = target.resource_limits
     return TargetDefinition(
         target_id=target_id,
         canonical_sha256=canonical_sha256,
-        device_names=_strings(document.get("device_names"), f"target_definition.{target_id}.device_names"),
-        compute_capability=(cast(list[int], capability)[0], cast(list[int], capability)[1]),
-        memory_spaces=frozenset(
-            _strings(document.get("memory_spaces"), f"target_definition.{target_id}.memory_spaces")
-        ),
-        operation_kinds=frozenset(
-            _strings(document.get("operation_kinds"), f"target_definition.{target_id}.operation_kinds")
-        ),
-        maximum_threads_per_cta=_positive_int(
-            limits.get("maximum_threads_per_cta"),
-            f"target_definition.{target_id}.maximum_threads_per_cta",
-        ),
-        maximum_warps_per_cta=_positive_int(
-            limits.get("maximum_warps_per_cta"),
-            f"target_definition.{target_id}.maximum_warps_per_cta",
-        ),
-        maximum_shared_memory_bytes=_positive_int(
-            limits.get("maximum_shared_memory_bytes"),
-            f"target_definition.{target_id}.maximum_shared_memory_bytes",
-        ),
-        maximum_tensor_memory_bytes=_positive_int(
-            limits.get("maximum_tensor_memory_bytes"),
-            f"target_definition.{target_id}.maximum_tensor_memory_bytes",
-        ),
-        maximum_grid=(
-            _positive_int(grid.get("x"), f"target_definition.{target_id}.grid.x"),
-            _positive_int(grid.get("y"), f"target_definition.{target_id}.grid.y"),
-            _positive_int(grid.get("z"), f"target_definition.{target_id}.grid.z"),
-        ),
-        instruction_contracts=frozenset(
-            _strings(
-                document.get("instruction_contracts"),
-                f"target_definition.{target_id}.instruction_contracts",
-            )
-        ),
-        synchronization_contracts=frozenset(
-            _strings(
-                document.get("synchronization_contracts"),
-                f"target_definition.{target_id}.synchronization_contracts",
-            )
-        ),
-        citations=tuple(MappingProxyType(dict(item)) for item in citations),
+        device_names=target.device_names,
+        compute_capability=target.compute_capability,
+        memory_spaces=frozenset(item.value for item in target.memory_spaces),
+        operation_kinds=frozenset(item.value for item in target.operation_kinds),
+        maximum_threads_per_cta=limits.maximum_threads_per_cta,
+        maximum_warps_per_cta=limits.maximum_warps_per_cta,
+        maximum_shared_memory_bytes=limits.maximum_shared_memory_bytes,
+        maximum_tensor_memory_bytes=limits.maximum_tensor_memory_bytes,
+        maximum_grid=limits.maximum_grid,
+        instruction_contracts=target.instruction_contracts,
+        synchronization_contracts=target.synchronization_contracts,
+        citations=target.citations,
         document=MappingProxyType(dict(document)),
     )
 
@@ -818,8 +755,13 @@ class Compiler:
             warp for role in typed_schedule.roles for warp in role.warps
         }
 
-        if target_definition is not None:
-            for axis, (observed, maximum) in enumerate(zip(parsed_grid, target_definition.maximum_grid)):
+        if (
+            target_definition is not None
+            and target_definition.maximum_grid is not None
+        ):
+            for axis, (observed, maximum) in enumerate(
+                zip(parsed_grid, target_definition.maximum_grid)
+            ):
                 if observed > maximum:
                     findings.append(
                         Finding(
@@ -854,7 +796,11 @@ class Compiler:
                         "Schedule exceeds the Target shared-memory limit",
                     )
                 )
-            if allocation_spaces["tensor"] > target_definition.maximum_tensor_memory_bytes:
+            if (
+                target_definition.maximum_tensor_memory_bytes is not None
+                and allocation_spaces["tensor"]
+                > target_definition.maximum_tensor_memory_bytes
+            ):
                 findings.append(
                     Finding(
                         "TARGET_TENSOR_MEMORY_LIMIT",
@@ -1282,6 +1228,10 @@ class Compiler:
         `compiler/ranking.py` defines the dormant structural primitive and
         `docs/ANALYSIS_CALIBRATION.md` records the measurements required to activate it.
         """
+
+        targets = {assessment.target for assessment in assessments}
+        if len(targets) > 1:
+            raise CompilerError("ranking candidates must share one Target")
 
         eligible: list[Schedule] = []
         withheld: list[str] = []

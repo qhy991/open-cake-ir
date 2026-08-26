@@ -1,0 +1,455 @@
+{
+  "$schema": "../schema.json#/$defs/review_request",
+  "schema_version": 1,
+  "review_request_id": "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1",
+  "state": "awaiting_human_review",
+  "authority": "external_human_hardware_reviewer_only",
+  "stage_binding": {
+    "manifest": {
+      "design_stage_id": "apple-metal-hardware-informed-design-v1",
+      "path": "hardware_informed_design/manifest.json"
+    },
+    "evidence": {
+      "evidence_id": "apple-metal-hierarchical-reduction-v1",
+      "path": "hardware_informed_design/evidence/apple-metal-hierarchical-reduction-v1.json"
+    },
+    "proposal": {
+      "proposal_id": "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1",
+      "path": "hardware_informed_design/proposals/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+    }
+  },
+  "closure": {
+    "fact_ids": [
+      "apple-m4-is-gpu-family9",
+      "apple-family9-supports-simdgroup-reductions",
+      "apple-family9-thread-ceiling-1024",
+      "apple-family9-threadgroup-memory-ceiling-32768",
+      "apple-family9-threadgroup-memory-alignment-16",
+      "metal-threadgroup-memory-scope",
+      "metal-simd-sum-active-thread-scope",
+      "metal-simd-sum-excludes-bfloat-input",
+      "metal-threadgroup-publication-barrier",
+      "metal-simd-width-must-be-queried",
+      "metal-pipeline-thread-limit-must-be-queried",
+      "metal-device-threadgroup-dimension-limits-must-be-queried",
+      "metal-total-threadgroup-memory-runtime-gate",
+      "metal-family-query-is-lower-bound",
+      "observed-m4-supports-apple9-or-newer",
+      "observed-m4-threadgroup-memory-32768",
+      "observed-m4-pipeline-width-32",
+      "observed-m4-pipeline-thread-limit-1024",
+      "observed-m4-hierarchical-width32-case-matrix",
+      "observed-m4-hierarchical-exact-owner-and-broadcast",
+      "observed-m4-hierarchical-two-epoch-scratch-reuse",
+      "observed-m4-hierarchical-runtime-resource-gates"
+    ],
+    "decision_ids": [
+      "preserve-width-neutral-candidate",
+      "refine-width32-fail-closed-specialization",
+      "refine-metal-two-level-reduction-sequence",
+      "split-final-reducer-ownership",
+      "refine-explicit-resource-accounting"
+    ],
+    "hypothesis_ids": [
+      "width32-specialization-covers-intended-devices",
+      "one-partial-per-simdgroup-is-expressible",
+      "resource-accounting-fits-selected-pipelines",
+      "floating-reassociation-meets-workload-tolerances",
+      "specialization-is-performance-competitive"
+    ],
+    "observed_scope_finding_ids": [
+      "observed-width32-case-matrix",
+      "observed-exact-owner-and-broadcast",
+      "observed-two-epoch-scratch-reuse",
+      "observed-runtime-resource-gates"
+    ],
+    "falsifier_ids": [
+      "runtime-width-not-32",
+      "threadgroup-shape-or-dimension-limit-unsupported",
+      "pipeline-thread-limit-exceeded",
+      "partial-final-simdgroup-outside-v1",
+      "partial-set-exceeds-final-simdgroup",
+      "threadgroup-memory-budget-exceeded",
+      "barrier-not-uniform",
+      "scratch-read-before-publication",
+      "scratch-reuse-race",
+      "bfloat-simd-sum-input",
+      "ambiguous-final-reducer-owner",
+      "bitwise-order-required",
+      "current-lowering-capability-missing"
+    ],
+    "counts": {
+      "fact_count": 22,
+      "decision_count": 5,
+      "hypothesis_count": 5,
+      "observed_scope_finding_count": 4,
+      "falsifier_count": 13
+    }
+  },
+  "review_items": [
+    {
+      "review_item_id": "vendor-fact-applicability",
+      "question": "Do the cited vendor facts and their locators apply to the intended Metal language, Apple GPU family, and later toolchain without promoting lower-bound family queries or one-device observations into exact family-wide guarantees?",
+      "fact_ids": [
+        "apple-m4-is-gpu-family9",
+        "apple-family9-supports-simdgroup-reductions",
+        "apple-family9-thread-ceiling-1024",
+        "apple-family9-threadgroup-memory-ceiling-32768",
+        "apple-family9-threadgroup-memory-alignment-16",
+        "metal-threadgroup-memory-scope",
+        "metal-simd-sum-active-thread-scope",
+        "metal-simd-sum-excludes-bfloat-input",
+        "metal-threadgroup-publication-barrier",
+        "metal-simd-width-must-be-queried",
+        "metal-pipeline-thread-limit-must-be-queried",
+        "metal-device-threadgroup-dimension-limits-must-be-queried",
+        "metal-total-threadgroup-memory-runtime-gate",
+        "metal-family-query-is-lower-bound",
+        "observed-m4-supports-apple9-or-newer"
+      ],
+      "decision_ids": [
+        "preserve-width-neutral-candidate",
+        "refine-width32-fail-closed-specialization"
+      ],
+      "hypothesis_ids": [
+        "width32-specialization-covers-intended-devices"
+      ],
+      "observed_scope_finding_ids": [
+        "observed-width32-case-matrix"
+      ],
+      "falsifier_ids": [
+        "runtime-width-not-32"
+      ],
+      "required_human_judgment": "Confirm each cited fact's interpretation and applicability, and localize every unsupported extrapolation or requested source correction."
+    },
+    {
+      "review_item_id": "width-policy-and-fail-closed-selection",
+      "question": "Does the width-neutral candidate plus queried width-32 specialization preserve the generic abstraction while admitting only MTLSize(width=N,height=1,depth=1) and independently enforcing device component limits and the selected pipeline's total-thread limit before dispatch?",
+      "fact_ids": [
+        "apple-family9-thread-ceiling-1024",
+        "metal-device-threadgroup-dimension-limits-must-be-queried",
+        "metal-simd-width-must-be-queried",
+        "metal-pipeline-thread-limit-must-be-queried",
+        "observed-m4-pipeline-width-32",
+        "observed-m4-pipeline-thread-limit-1024",
+        "observed-m4-hierarchical-width32-case-matrix"
+      ],
+      "decision_ids": [
+        "preserve-width-neutral-candidate",
+        "refine-width32-fail-closed-specialization"
+      ],
+      "hypothesis_ids": [
+        "width32-specialization-covers-intended-devices"
+      ],
+      "observed_scope_finding_ids": [
+        "observed-width32-case-matrix"
+      ],
+      "falsifier_ids": [
+        "runtime-width-not-32",
+        "threadgroup-shape-or-dimension-limit-unsupported",
+        "pipeline-thread-limit-exceeded",
+        "partial-final-simdgroup-outside-v1",
+        "partial-set-exceeds-final-simdgroup"
+      ],
+      "required_human_judgment": "Approve, request changes to, or reject the width, exact one-dimensional shape, componentwise device gate, and pipeline-total fail-closed conditions with a localized reason."
+    },
+    {
+      "review_item_id": "partial-cardinality-and-final-reduction",
+      "question": "Is exactly one FP32 partial per live SIMDgroup and accumulator, followed by one final SIMDgroup reduction over valid partials and zero-filled unused lanes, the correct and statically representable design shape?",
+      "fact_ids": [
+        "apple-family9-supports-simdgroup-reductions",
+        "metal-simd-sum-active-thread-scope",
+        "observed-m4-hierarchical-exact-owner-and-broadcast"
+      ],
+      "decision_ids": [
+        "refine-metal-two-level-reduction-sequence",
+        "split-final-reducer-ownership"
+      ],
+      "hypothesis_ids": [
+        "one-partial-per-simdgroup-is-expressible"
+      ],
+      "observed_scope_finding_ids": [
+        "observed-exact-owner-and-broadcast"
+      ],
+      "falsifier_ids": [
+        "partial-set-exceeds-final-simdgroup",
+        "scratch-read-before-publication",
+        "ambiguous-final-reducer-owner"
+      ],
+      "required_human_judgment": "Identify whether cardinality, zero-fill, ownership, and accumulator effects are complete enough for the later P1-P8 review without hidden lowering inference."
+    },
+    {
+      "review_item_id": "barrier-participation-and-publication",
+      "question": "Are the publication and consumer barriers, memory scope, uniform participation rule, and no-divergent-early-return policy sufficient and correctly placed for every live thread?",
+      "fact_ids": [
+        "metal-threadgroup-memory-scope",
+        "metal-threadgroup-publication-barrier",
+        "observed-m4-hierarchical-exact-owner-and-broadcast",
+        "observed-m4-hierarchical-two-epoch-scratch-reuse"
+      ],
+      "decision_ids": [
+        "refine-metal-two-level-reduction-sequence",
+        "split-final-reducer-ownership"
+      ],
+      "hypothesis_ids": [
+        "one-partial-per-simdgroup-is-expressible"
+      ],
+      "observed_scope_finding_ids": [
+        "observed-exact-owner-and-broadcast",
+        "observed-two-epoch-scratch-reuse"
+      ],
+      "falsifier_ids": [
+        "barrier-not-uniform",
+        "scratch-read-before-publication",
+        "scratch-reuse-race"
+      ],
+      "required_human_judgment": "Review source choreography rather than inferring safety from matching finite outputs, and localize any missing barrier or participation invariant."
+    },
+    {
+      "review_item_id": "scratch-initialization-lifetime-and-reuse",
+      "question": "Does the scratch lifecycle cover initialization, publication, every prior reader, final-scalar visibility, and reuse without reading unwritten storage or overwriting live data?",
+      "fact_ids": [
+        "metal-threadgroup-memory-scope",
+        "metal-threadgroup-publication-barrier",
+        "observed-m4-hierarchical-two-epoch-scratch-reuse"
+      ],
+      "decision_ids": [
+        "refine-metal-two-level-reduction-sequence",
+        "refine-explicit-resource-accounting"
+      ],
+      "hypothesis_ids": [
+        "one-partial-per-simdgroup-is-expressible"
+      ],
+      "observed_scope_finding_ids": [
+        "observed-two-epoch-scratch-reuse"
+      ],
+      "falsifier_ids": [
+        "scratch-read-before-publication",
+        "scratch-reuse-race"
+      ],
+      "required_human_judgment": "Approve or reject the explicit lifecycle and identify any lifetime effect the future verifier and analyses would otherwise be unable to represent."
+    },
+    {
+      "review_item_id": "variant-owner-split",
+      "question": "Should RMS single-owner publication and Layer all-SIMDgroup recomputation remain two explicit variants rather than one policy inferred by lowering from consumers?",
+      "fact_ids": [
+        "metal-simd-sum-active-thread-scope",
+        "metal-threadgroup-memory-scope",
+        "metal-threadgroup-publication-barrier",
+        "observed-m4-hierarchical-exact-owner-and-broadcast"
+      ],
+      "decision_ids": [
+        "split-final-reducer-ownership"
+      ],
+      "hypothesis_ids": [
+        "one-partial-per-simdgroup-is-expressible"
+      ],
+      "observed_scope_finding_ids": [
+        "observed-exact-owner-and-broadcast"
+      ],
+      "falsifier_ids": [
+        "ambiguous-final-reducer-owner"
+      ],
+      "required_human_judgment": "Choose whether the split is explicit and analyzable enough, while noting that the retained probe covers only the RMS single-owner variant."
+    },
+    {
+      "review_item_id": "resource-accounting-and-runtime-gates",
+      "question": "Are the exact one-dimensional MTLSize, componentwise device gate, pipeline total-thread gate, per-variant combined allocations, alignment, static-plus-dynamic memory checks, and refusal behavior complete, and how must the unresolved resource-accounting phase-order ambiguity be resolved?",
+      "fact_ids": [
+        "apple-family9-thread-ceiling-1024",
+        "apple-family9-threadgroup-memory-ceiling-32768",
+        "apple-family9-threadgroup-memory-alignment-16",
+        "metal-device-threadgroup-dimension-limits-must-be-queried",
+        "metal-pipeline-thread-limit-must-be-queried",
+        "metal-total-threadgroup-memory-runtime-gate",
+        "observed-m4-threadgroup-memory-32768",
+        "observed-m4-pipeline-thread-limit-1024",
+        "observed-m4-hierarchical-runtime-resource-gates"
+      ],
+      "decision_ids": [
+        "refine-explicit-resource-accounting"
+      ],
+      "hypothesis_ids": [
+        "resource-accounting-fits-selected-pipelines",
+        "specialization-is-performance-competitive"
+      ],
+      "observed_scope_finding_ids": [
+        "observed-runtime-resource-gates"
+      ],
+      "falsifier_ids": [
+        "threadgroup-shape-or-dimension-limit-unsupported",
+        "pipeline-thread-limit-exceeded",
+        "threadgroup-memory-budget-exceeded",
+        "current-lowering-capability-missing"
+      ],
+      "required_human_judgment": "Review the arithmetic and select exactly one recorded resolution option for resource-accounting-phase-order; automation cannot choose or rewrite the gate."
+    },
+    {
+      "review_item_id": "numeric-scope-and-oracle-boundary",
+      "question": "Is FP32 accumulation with explicit BF16-to-FP32 conversion and no bitwise-order promise an acceptable hardware mapping boundary pending a later external Workload Contract oracle?",
+      "fact_ids": [
+        "metal-simd-sum-active-thread-scope",
+        "metal-simd-sum-excludes-bfloat-input",
+        "observed-m4-hierarchical-exact-owner-and-broadcast"
+      ],
+      "decision_ids": [
+        "refine-metal-two-level-reduction-sequence"
+      ],
+      "hypothesis_ids": [
+        "floating-reassociation-meets-workload-tolerances"
+      ],
+      "observed_scope_finding_ids": [
+        "observed-exact-owner-and-broadcast"
+      ],
+      "falsifier_ids": [
+        "bfloat-simd-sum-input",
+        "bitwise-order-required"
+      ],
+      "required_human_judgment": "Confirm the numeric non-claim and keep tolerance acceptance outside Stage 3; request changes if the intended workload requires a deterministic association."
+    },
+    {
+      "review_item_id": "observed-scope-and-authority-boundary",
+      "question": "Do all local observations remain finite Apple M4 FP32 RMS-style reports that resolve no hypothesis and grant no readiness, implementation, Evaluation, performance, scientific, or promotion authority?",
+      "fact_ids": [
+        "observed-m4-supports-apple9-or-newer",
+        "observed-m4-threadgroup-memory-32768",
+        "observed-m4-pipeline-width-32",
+        "observed-m4-pipeline-thread-limit-1024",
+        "observed-m4-hierarchical-width32-case-matrix",
+        "observed-m4-hierarchical-exact-owner-and-broadcast",
+        "observed-m4-hierarchical-two-epoch-scratch-reuse",
+        "observed-m4-hierarchical-runtime-resource-gates"
+      ],
+      "decision_ids": [
+        "preserve-width-neutral-candidate",
+        "refine-width32-fail-closed-specialization",
+        "refine-metal-two-level-reduction-sequence",
+        "split-final-reducer-ownership",
+        "refine-explicit-resource-accounting"
+      ],
+      "hypothesis_ids": [
+        "width32-specialization-covers-intended-devices",
+        "one-partial-per-simdgroup-is-expressible",
+        "resource-accounting-fits-selected-pipelines",
+        "floating-reassociation-meets-workload-tolerances",
+        "specialization-is-performance-competitive"
+      ],
+      "observed_scope_finding_ids": [
+        "observed-width32-case-matrix",
+        "observed-exact-owner-and-broadcast",
+        "observed-two-epoch-scratch-reuse",
+        "observed-runtime-resource-gates"
+      ],
+      "falsifier_ids": [
+        "runtime-width-not-32",
+        "threadgroup-shape-or-dimension-limit-unsupported",
+        "pipeline-thread-limit-exceeded",
+        "partial-final-simdgroup-outside-v1",
+        "partial-set-exceeds-final-simdgroup",
+        "threadgroup-memory-budget-exceeded",
+        "barrier-not-uniform",
+        "scratch-read-before-publication",
+        "scratch-reuse-race",
+        "bfloat-simd-sum-input",
+        "ambiguous-final-reducer-owner",
+        "bitwise-order-required",
+        "current-lowering-capability-missing"
+      ],
+      "required_human_judgment": "Confirm the complete closure and its non-claim boundary; an approved verdict still advances only to the separate P1-P8 principle review."
+    }
+  ],
+  "phase_order_ambiguity": {
+    "ambiguity_id": "resource-accounting-phase-order",
+    "status": "unresolved_requires_human_choice",
+    "contradiction": "The resource-accounting-fits-selected-pipelines hypothesis is marked required_before=implementation, but its falsifier requires compiling every retained future variant and inspecting pipeline-created static threadgroup memory. The current finite Compiler lowering cannot create the required scratch allocation or barriers, so the word implementation cannot simultaneously mean both any materialization code and the accepted Compiler port.",
+    "resolution_options": [
+      {
+        "option_id": "preimplementation-standalone-metal-prototypes",
+        "action": "Keep required_before=implementation literal by compiling separately reviewed standalone Metal prototype pipelines for every retained RMS and Layer variant before any Compiler implementation.",
+        "consequence": "Append-only resource observations may resolve the hypothesis without granting Compiler-change, correctness, performance, or promotion authority; the later P1-P8 review still governs the compiler design."
+      },
+      {
+        "option_id": "amend-gate-to-port-acceptance-after-bounded-implementation",
+        "action": "Require a human-requested successor proposal that moves the resource hypothesis to port acceptance and authorizes only the bounded implementation needed to materialize retained pipelines after P1-P8 acceptance.",
+        "consequence": "The first implementation cannot be accepted, released, evaluated, or used for a claim until every retained variant's resource observation passes; automation may not silently reinterpret the existing required_before field."
+      }
+    ],
+    "selection_required": true,
+    "automation_may_select": false
+  },
+  "decision_artifact": {
+    "status": "absent",
+    "path": null,
+    "decision_id": null
+  },
+  "external_human_decision_contract": {
+    "decision_authority": "external_human_hardware_reviewer_only",
+    "global_dispositions": [
+      "approved",
+      "changes_requested",
+      "rejected"
+    ],
+    "required_review_item_ids": [
+      "vendor-fact-applicability",
+      "width-policy-and-fail-closed-selection",
+      "partial-cardinality-and-final-reduction",
+      "barrier-participation-and-publication",
+      "scratch-initialization-lifetime-and-reuse",
+      "variant-owner-split",
+      "resource-accounting-and-runtime-gates",
+      "numeric-scope-and-oracle-boundary",
+      "observed-scope-and-authority-boundary"
+    ],
+    "per_item_verdict_contract": {
+      "per_item_verdict_required": true,
+      "verdict_values": [
+        "approved",
+        "changes_requested",
+        "rejected"
+      ],
+      "global_disposition_aggregation": "maximum_review_item_verdict_severity",
+      "verdict_severity_order": [
+        "approved",
+        "changes_requested",
+        "rejected"
+      ],
+      "localized_reason_required": true,
+      "stage_clear_requires_all_item_verdicts_approved": true,
+      "non_approved_item_blocks_stage_transition": true
+    },
+    "reviewed_git_revision_required": true,
+    "ambiguity_resolution_contract": {
+      "required_ambiguity_id": "resource-accounting-phase-order",
+      "allowed_option_ids": [
+        "preimplementation-standalone-metal-prototypes",
+        "amend-gate-to-port-acceptance-after-bounded-implementation"
+      ],
+      "localized_reason_required": true,
+      "approval_compatible_option_id": "preimplementation-standalone-metal-prototypes",
+      "successor_required_option_id": "amend-gate-to-port-acceptance-after-bounded-implementation",
+      "successor_required_option_allowed_global_dispositions": [
+        "changes_requested",
+        "rejected"
+      ],
+      "successor_required_option_required_non_approved_review_item_id": "resource-accounting-and-runtime-gates"
+    },
+    "stage_transition_rule": "Stage 3 clears only when an external human decision is bound to the reviewed Git revision, covers every review item with a localized reason, has global_disposition=approved equal to the maximum review-item verdict severity, has every review-item verdict approved, and selects preimplementation-standalone-metal-prototypes. Selecting amend-gate-to-port-acceptance-after-bounded-implementation requires a non-approved resource-accounting-and-runtime-gates item, permits only changes_requested or rejected globally, and requires a successor Stage-3 proposal and review request; it cannot clear the current Stage-3 closure.",
+    "automation_may_write_decision": false
+  },
+  "authorizations": {
+    "human_hardware_review_cleared": false,
+    "principle_driven_iteration_authorized": false,
+    "compiler_change_authorized": false,
+    "implementation_authorized": false,
+    "evaluation_authorized": false,
+    "performance_claim_authorized": false,
+    "scientific_claim_authorized": false,
+    "promotion_authorized": false
+  },
+  "non_claims": [
+    "This request is not a human decision, approval, readiness transition, primitive admission, Target change, or lowering implementation.",
+    "Closure listing and schema validation do not establish source interpretation, hardware safety, compiler expressibility, correctness, resource fit, performance, Evaluation evidence, or scientific evidence.",
+    "The request cannot choose the resource-accounting phase order or write the external decision that resolves it.",
+    "Even an approved human hardware decision advances only to the separate P1-P8 principle-driven iteration."
+  ]
+}

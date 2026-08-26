@@ -111,7 +111,7 @@ def _expected_ids(domain: dict[str, object]) -> list[str]:
 def _revision_document(authority: dict[str, object]) -> dict[str, object] | None:
     revision_id = str(authority["revision_id"])
     candidates = [_resolve_owned(str(authority["path"]))]
-    match = re.fullmatch(r"open-cake-ir-sm100a-(v\d+)", revision_id)
+    match = re.fullmatch(r"open-cake-ir-(?:sm100a-)?(v[1-9]\d*)", revision_id)
     if match is not None:
         archive = ROOT / "compiler" / "releases" / match.group(1) / "revision.lock.json"
         if archive.is_file():

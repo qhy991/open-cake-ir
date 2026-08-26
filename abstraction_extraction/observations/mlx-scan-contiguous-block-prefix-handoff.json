@@ -1,0 +1,55 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "mlx-metal-scan.contiguous-block-prefix-handoff",
+  "pattern_signature": "contiguous-block-scan.simdgroup-prefix.last-lane-block-prefix-carry",
+  "implementation_id": "mlx.metal-scan",
+  "operator_id": "tensor_transform.scan",
+  "source_id": "mlx-main-1f8e74e",
+  "source_locator": {
+    "path": "mlx/backend/metal/kernels/scan.h",
+    "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+    "git_object": "2e5493961b7790b03bbe13ec5fa3effc80eb4fc9",
+    "symbol": "contiguous_scan"
+  },
+  "source_span": {
+    "start_line": 247,
+    "end_line": 401,
+    "sha256": "09c9d344f6eb15f53d0fb21c68d64772e68e4cdac3b87c80de2b50cf9416efdb",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "contiguous_scan parameterizes the element types, source operator, values per thread, inclusive or exclusive output mode, and forward or reverse traversal, then keeps a thread-local prefix alongside a threadgroup SIMDgroup-summary array.",
+    "For each contiguous axis block, each thread selects a full or tail load, forms a serial prefix over its register values, and applies the operator's SIMDgroup-exclusive scan to its terminal value.",
+    "A barrier precedes last-lane publication of each SIMDgroup summary, a second barrier precedes SIMDgroup zero's exclusive scan of those summaries, and a third barrier precedes use of the resulting per-SIMDgroup prefix.",
+    "Each register value is updated from the carried block prefix, the per-SIMDgroup prefix, and the per-thread prefix before an inclusive or exclusive forward or reverse output branch writes it.",
+    "At the end of each axis block, a barrier precedes publication of the terminal value by the last lane of the last active SIMDgroup into slot zero, a second barrier precedes all threads reading that slot into the thread-local prefix, and the next block iteration consumes that carried value."
+  ],
+  "observed_primitives": [
+    "block_prefix_carry",
+    "contiguous_axis_block_iteration",
+    "first_simdgroup_summary_scan",
+    "forward_or_reverse_scan",
+    "inclusive_or_exclusive_output",
+    "iteration_carried_thread_state",
+    "last_lane_simdgroup_summary_publish",
+    "operator_parameterized_scan",
+    "per_thread_serial_prefix",
+    "postpublication_threadgroup_barrier",
+    "prepublication_threadgroup_barrier",
+    "reused_threadgroup_storage",
+    "safe_or_unsafe_tail_io",
+    "simd_exclusive_prefix_scan",
+    "single_thread_block_prefix_publish",
+    "thread_state_to_threadgroup_publication",
+    "threadgroup_state_to_thread_state_update"
+  ],
+  "variant_notes": [
+    "This observation covers contiguous_scan only; the collected kernel family also instantiates a distinct strided_scan path selected by host stride metadata.",
+    "Operator kind, dtype, values per thread, inclusive or exclusive output, forward or reverse traversal, tail branches, and their numerical ordering remain implementation parameters rather than normalized semantics.",
+    "Safe and unsafe helper names and barrier placement do not establish bounds, zero fill, visibility sufficiency, uniform participation, race or deadlock freedom, or memory safety.",
+    "The last-lane summary publication and first-SIMDgroup exclusive prefix scan do not satisfy the existing lane-zero partial plus second-reduction candidate and do not widen its frozen Stage 3 closure."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

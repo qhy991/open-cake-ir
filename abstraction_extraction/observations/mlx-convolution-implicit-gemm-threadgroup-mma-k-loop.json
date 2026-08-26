@@ -1,0 +1,50 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "mlx-metal-convolution.implicit-gemm-threadgroup-mma-k-loop",
+  "pattern_signature": "k-tile-loop.preload-barrier.paired-threadgroup-load.postload-barrier.tile-mma.paired-advance",
+  "implementation_id": "mlx.metal-convolution",
+  "operator_id": "convolution.nd",
+  "source_id": "mlx-main-1f8e74e",
+  "source_locator": {
+    "path": "mlx/backend/metal/kernels/steel/conv/kernels/steel_conv.h",
+    "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+    "git_object": "f559596b732b399783e151bc43bb838d3fb3b3cd",
+    "symbol": "implicit_gemm_conv_2d"
+  },
+  "source_span": {
+    "start_line": 7,
+    "end_line": 176,
+    "sha256": "939cbafe74cca7ba6cc54211c9f1f5c9626fe03b64d50c3a704f86b1c64dc72f",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "implicit_gemm_conv_2d selects convolution-specific input and weight loader types, fixes the BlockMMA transpose configuration, and allocates separate threadgroup operand tiles.",
+    "The kernel swizzles the threadgroup grid, guards the resulting output tile, applies group and convolution-specific address offsets, and constructs both loaders and the BlockMMA object.",
+    "Each gemm_k_iterations step executes a threadgroup-memory barrier, calls load_unsafe once on each loader, executes a second threadgroup-memory barrier, and calls mma on the staged tiles.",
+    "After each mma the kernel advances both loaders; after the loop it executes a mem_none barrier and stores the edge-shaped result through store_result_safe."
+  ],
+  "observed_primitives": [
+    "block_mma_accumulate",
+    "conditional_convolution_input_loader",
+    "conditional_convolution_weight_loader",
+    "fixed_nt_transpose_mode",
+    "grid_swizzle_tile_guard",
+    "grouped_convolution_addressing",
+    "k_tile_iteration",
+    "paired_loader_advance",
+    "paired_operand_block_loaders",
+    "paired_threadgroup_operand_tiles",
+    "postload_threadgroup_barrier",
+    "preload_threadgroup_barrier",
+    "safe_result_store_terminal",
+    "spatial_filter_loader_specialization"
+  ],
+  "variant_notes": [
+    "Input and weight loader selection retains small-channel and filter-size specializations together with grouped, spatial-window, and swizzled-grid addressing; none is normalized into the common recurrence.",
+    "The cited kernel has no explicit generic K-remainder branch and calls load_unsafe in every full iteration before a terminal safe result store.",
+    "The load_unsafe and store_result_safe names do not prove convolution-window bounds, zero fill, barrier participation, race or deadlock freedom, or memory safety."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

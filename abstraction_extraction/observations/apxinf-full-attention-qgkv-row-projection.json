@@ -1,0 +1,46 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "apxinf-metal-full-attention.qgkv-row-projection",
+  "pattern_signature": "row-owned-simdgroup.groupwise-w8-dot.lane-zero-publish",
+  "implementation_id": "apxinf.metal-full-attention-decode-v1",
+  "operator_id": "attention.full_decode_block",
+  "source_id": "apxinf-qhy-main-df5c55a",
+  "source_locator": {
+    "path": "crates/apxinf-metal/src/metal_full_attention_decode_v1.metal",
+    "revision": "df5c55a06140107b24964d9e4abbefd9fa2a4733",
+    "git_object": "b920a5f648a7046930c5f6ed139c05d3b8906fab",
+    "symbol": "full_attention_qgkv_v1"
+  },
+  "source_span": {
+    "start_line": 53,
+    "end_line": 83,
+    "sha256": "c5f070c164b75eaef893f1b7daa108f6408719e552661d475012b596839f5bcf",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "Each SIMDgroup owns one logical Q, gate, K, or V projection row, with eight row owners sharing a threadgroup.",
+    "SIMDgroup lanes walk packed char4 columns with a literal stride of 32.",
+    "A layer-slot-adjusted global row selects the packed weight row and its FP32 group-scale row.",
+    "Each lane converts one char4 weight vector to FP32, takes its dot product with the corresponding normalized float4 input, and applies the row-local group scale.",
+    "An FP32 register accumulates the scaled vector dot products before simd_sum reduces them across the SIMDgroup.",
+    "Lane zero publishes the reduced row value directly into the device Q/Gate/K/V projection buffer."
+  ],
+  "observed_primitives": [
+    "direct_device_row_publish",
+    "early_row_return",
+    "groupwise_int8_scale",
+    "lane_zero_row_publish",
+    "layer_slot_weight_scale_offset",
+    "row_per_simdgroup",
+    "simd_sum",
+    "vectorized_char4_dot"
+  ],
+  "variant_notes": [
+    "The cited kernel uses fixed model dimensions and the file-level packed group constant, while layer_slot selects the resident layer's weight and scale rows.",
+    "An out-of-range Q/Gate/K/V row returns the entire SIMDgroup before the lane-strided dot product.",
+    "The cited kernel reads float4 values from its normalized input buffer and writes concatenated Q, gate, K, and V projection rows."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

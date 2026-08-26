@@ -1,0 +1,20 @@
+{
+  "$schema": "../schema.json#/$defs/source_snapshot",
+  "schema_version": 1,
+  "source_id": "cake-paper-v1",
+  "kind": "paper_artifact",
+  "title": "CAKE: Compiler-Agent Co-Design for Frontier Kernel Evolution",
+  "url": "https://arxiv.org/html/2608.12629v1",
+  "revision_kind": "arxiv_version",
+  "revision": "arxiv:2608.12629v1",
+  "tree": null,
+  "observed_at": "2026-08-26",
+  "license_spdx": "NOASSERTION",
+  "visibility": "public",
+  "code_copied": false,
+  "authoring_access": {
+    "known_kernel_reproduction": true,
+    "clean_start": false
+  },
+  "catalog_entries": []
+}

@@ -1,0 +1,1691 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-cake-ir.local/hardware-informed-design/schema-v1.json",
+  "oneOf": [
+    {"$ref": "#/$defs/manifest"},
+    {"$ref": "#/$defs/evidence"},
+    {"$ref": "#/$defs/proposal"},
+    {"$ref": "#/$defs/review_request"},
+    {"$ref": "#/$defs/hardware_review_decision"}
+  ],
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "design_stage_id",
+        "paper_stage",
+        "paper_source_path",
+        "state",
+        "claim_scope",
+        "disposition",
+        "next_gate",
+        "input_candidate_closure",
+        "evidence",
+        "proposals",
+        "review_requests",
+        "gate_separation",
+        "counts",
+        "non_claims"
+      ],
+      "properties": {
+        "$schema": {"const": "schema.json#/$defs/manifest"},
+        "schema_version": {"const": 1},
+        "design_stage_id": {"const": "apple-metal-hardware-informed-design-v1"},
+        "paper_stage": {"$ref": "#/$defs/paper_stage"},
+        "paper_source_path": {"const": "operator_library/sources/cake-paper-v1.json"},
+        "state": {"$ref": "#/$defs/state"},
+        "claim_scope": {"$ref": "#/$defs/claim_scope"},
+        "disposition": {"$ref": "#/$defs/disposition"},
+        "next_gate": {"$ref": "#/$defs/next_gate"},
+        "input_candidate_closure": {"$ref": "#/$defs/input_candidate_closure"},
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/safe_path"}
+        },
+        "proposals": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/safe_path"}
+        },
+        "review_requests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {"const": "review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"}
+        },
+        "gate_separation": {"$ref": "#/$defs/gate_separation"},
+        "counts": {"$ref": "#/$defs/counts"},
+        "non_claims": {"$ref": "#/$defs/nonempty_strings"}
+      }
+    },
+    "paper_stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paper_revision", "ordinal", "name", "predecessor", "successor"],
+      "properties": {
+        "paper_revision": {"const": "arxiv:2608.12629v1"},
+        "ordinal": {"const": 3},
+        "name": {"const": "hardware_informed_design"},
+        "predecessor": {"const": "abstraction_extraction"},
+        "successor": {"const": "principle_driven_iteration"}
+      }
+    },
+    "input_candidate_closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "candidate_path",
+        "observation_paths",
+        "canonicalization_contract",
+        "candidate_closure_sha256"
+      ],
+      "properties": {
+        "candidate_id": {"const": "hierarchical-simdgroup-threadgroup-reduction"},
+        "candidate_path": {
+          "const": "abstraction_extraction/candidates/hierarchical-simdgroup-threadgroup-reduction.json"
+        },
+        "observation_paths": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/safe_path"}
+        },
+        "canonicalization_contract": {
+          "const": "candidate-plus-sorted-observation-documents.canonical-json-v1"
+        },
+        "candidate_closure_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_count", "proposal_count", "review_request_count", "candidate_count", "observation_count"],
+      "properties": {
+        "evidence_count": {"const": 1},
+        "proposal_count": {"const": 1},
+        "review_request_count": {"const": 1},
+        "candidate_count": {"const": 1},
+        "observation_count": {"const": 2}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "evidence_id",
+        "state",
+        "claim_scope",
+        "disposition",
+        "next_gate",
+        "sources",
+        "facts",
+        "local_probe_observation",
+        "hierarchical_reduction_probe_observation",
+        "non_evidentiary_context",
+        "assumptions",
+        "gate_separation",
+        "non_claims"
+      ],
+      "properties": {
+        "$schema": {"const": "../schema.json#/$defs/evidence"},
+        "schema_version": {"const": 1},
+        "evidence_id": {"const": "apple-metal-hierarchical-reduction-v1"},
+        "state": {"$ref": "#/$defs/state"},
+        "claim_scope": {"const": "hardware_evidence_only"},
+        "disposition": {"$ref": "#/$defs/disposition"},
+        "next_gate": {"$ref": "#/$defs/next_gate"},
+        "sources": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "oneOf": [
+              {"$ref": "#/$defs/pinned_pdf_source"},
+              {"$ref": "#/$defs/unverified_web_source"}
+            ]
+          }
+        },
+        "facts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/fact"}
+        },
+        "local_probe_observation": {"$ref": "#/$defs/local_probe_observation"},
+        "hierarchical_reduction_probe_observation": {
+          "$ref": "#/$defs/hierarchical_reduction_probe_observation"
+        },
+        "non_evidentiary_context": {"$ref": "#/$defs/non_evidentiary_context"},
+        "assumptions": {"$ref": "#/$defs/nonempty_strings"},
+        "gate_separation": {"$ref": "#/$defs/gate_separation"},
+        "non_claims": {"$ref": "#/$defs/nonempty_strings"}
+      }
+    },
+    "pinned_pdf_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "kind",
+        "title",
+        "url",
+        "revision",
+        "locators",
+        "content_sha256",
+        "content_verification"
+      ],
+      "properties": {
+        "source_id": {"$ref": "#/$defs/id"},
+        "kind": {"const": "vendor_pdf"},
+        "title": {"type": "string", "minLength": 1},
+        "url": {"$ref": "#/$defs/https_url"},
+        "revision": {"type": "string", "minLength": 1},
+        "locators": {"$ref": "#/$defs/nonempty_strings"},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "content_verification": {"const": "downloaded_content_identity_verified_once"}
+      }
+    },
+    "unverified_web_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "kind",
+        "title",
+        "url",
+        "locators",
+        "offline_content_verification"
+      ],
+      "properties": {
+        "source_id": {"$ref": "#/$defs/id"},
+        "kind": {"const": "vendor_web_documentation"},
+        "title": {"type": "string", "minLength": 1},
+        "url": {"$ref": "#/$defs/https_url"},
+        "locators": {"$ref": "#/$defs/nonempty_strings"},
+        "offline_content_verification": {"const": "not_performed"}
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "statement", "scope", "authority", "source_ids"],
+      "properties": {
+        "fact_id": {"$ref": "#/$defs/id"},
+        "statement": {"type": "string", "minLength": 1},
+        "scope": {
+          "enum": ["language_semantics", "gpu_family", "observed_device_pipeline"]
+        },
+        "authority": {
+          "enum": ["apple_vendor_documentation", "local_engineering_observation"]
+        },
+        "source_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        }
+      }
+    },
+    "local_probe_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation_id",
+        "observed_at",
+        "repository_snapshot",
+        "device_class",
+        "supports_apple9_or_newer",
+        "maximum_threadgroup_memory_bytes",
+        "pipelines",
+        "raw_output_retained",
+        "performance_measured",
+        "scientific_claim_authorized",
+        "scope"
+      ],
+      "properties": {
+        "observation_id": {"const": "local-apple-m4-metal-operator-probe-2026-08-26"},
+        "observed_at": {"const": "2026-08-26"},
+        "repository_snapshot": {"$ref": "#/$defs/local_probe_repository_snapshot"},
+        "device_class": {"const": "Apple M4"},
+        "supports_apple9_or_newer": {"const": true},
+        "maximum_threadgroup_memory_bytes": {"const": 32768},
+        "pipelines": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/pipeline_observation"}
+        },
+        "raw_output_retained": {"const": false},
+        "performance_measured": {"const": false},
+        "scientific_claim_authorized": {"const": false},
+        "scope": {"const": "local_engineering_observation_only"}
+      }
+    },
+    "local_probe_repository_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "git_parent_revision",
+        "probe_path",
+        "binding_scope",
+        "reproducibility_note"
+      ],
+      "properties": {
+        "git_parent_revision": {
+          "const": "2238610a4e8923330d73d125e79fd374fc7d2397"
+        },
+        "probe_path": {"const": "tools/probe_metal_operators.py"},
+        "binding_scope": {"const": "captured_source_identity_only"},
+        "reproducibility_note": {"type": "string", "minLength": 1}
+      }
+    },
+    "pipeline_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "thread_execution_width", "max_total_threads_per_threadgroup"],
+      "properties": {
+        "kind": {"enum": ["indexed_gather", "weighted_combine"]},
+        "thread_execution_width": {"const": 32},
+        "max_total_threads_per_threadgroup": {"const": 1024}
+      }
+    },
+    "hierarchical_reduction_probe_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation_id",
+        "observed_at",
+        "repository_snapshot",
+        "retained_artifact",
+        "probe_scope",
+        "normalized_output",
+        "falsifier_outcomes",
+        "normalized_probe_output_retained",
+        "raw_runner_output_retained",
+        "stable_device_identifiers_retained",
+        "external_workload_oracle_used",
+        "performance_measured",
+        "evaluation_evidence",
+        "scientific_claim_authorized",
+        "compiler_change_authorized",
+        "human_hardware_review_cleared",
+        "promotion_authorized",
+        "scope"
+      ],
+      "properties": {
+        "observation_id": {
+          "const": "local-apple-m4-hierarchical-reduction-probe-2026-08-26"
+        },
+        "observed_at": {"const": "2026-08-26"},
+        "repository_snapshot": {
+          "$ref": "#/$defs/hierarchical_probe_repository_snapshot"
+        },
+        "retained_artifact": {
+          "$ref": "#/$defs/hierarchical_probe_retained_artifact"
+        },
+        "probe_scope": {
+          "const": "fp32_rms_style_single_owner_hierarchical_reduction_only"
+        },
+        "normalized_output": {
+          "$ref": "#/$defs/hierarchical_probe_normalized_output"
+        },
+        "falsifier_outcomes": {
+          "type": "array",
+          "minItems": 13,
+          "maxItems": 13,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/local_falsifier_outcome"}
+        },
+        "normalized_probe_output_retained": {"const": true},
+        "raw_runner_output_retained": {"const": false},
+        "stable_device_identifiers_retained": {"const": false},
+        "external_workload_oracle_used": {"const": false},
+        "performance_measured": {"const": false},
+        "evaluation_evidence": {"const": false},
+        "scientific_claim_authorized": {"const": false},
+        "compiler_change_authorized": {"const": false},
+        "human_hardware_review_cleared": {"const": false},
+        "promotion_authorized": {"const": false},
+        "scope": {"const": "local_engineering_observation_only"}
+      }
+    },
+    "hierarchical_probe_repository_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_revision",
+        "worktree_clean_at_observation",
+        "source_paths",
+        "binding_scope"
+      ],
+      "properties": {
+        "repository_revision": {
+          "const": "f858612c7ee695b57d72115c76723c7bacc22a9b"
+        },
+        "worktree_clean_at_observation": {"const": true},
+        "source_paths": {
+          "const": [
+            "tools/probe_metal_hierarchical_reduction.py",
+            "tools/metal_hierarchical_reduction_probe/hierarchical_reduction.metal",
+            "tools/metal_hierarchical_reduction_probe/run_hierarchical_reduction.swift"
+          ]
+        },
+        "binding_scope": {"const": "complete_tracked_probe_source_closure"}
+      }
+    },
+    "hierarchical_probe_retained_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storage_scope",
+        "relative_path",
+        "artifact_kind",
+        "reference_status",
+        "offline_validator_access"
+      ],
+      "properties": {
+        "storage_scope": {"const": "external_generated_artifact_outside_checkout"},
+        "relative_path": {
+          "const": "f858612c7ee695b57d72115c76723c7bacc22a9b/metal-hierarchical-reduction.json"
+        },
+        "artifact_kind": {
+          "const": "open_cake_metal_hierarchical_reduction_probe_v1"
+        },
+        "reference_status": {
+          "const": "unverified_external_artifact_reference"
+        },
+        "offline_validator_access": {"const": "not_available"}
+      }
+    },
+    "hierarchical_probe_normalized_output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "device",
+        "pipeline",
+        "coverage",
+        "oracle",
+        "case_results",
+        "aggregate"
+      ],
+      "properties": {
+        "status": {"const": "passed"},
+        "device": {"$ref": "#/$defs/hierarchical_probe_device"},
+        "pipeline": {"$ref": "#/$defs/hierarchical_probe_pipeline"},
+        "coverage": {"$ref": "#/$defs/hierarchical_probe_coverage"},
+        "oracle": {"$ref": "#/$defs/hierarchical_probe_oracle"},
+        "case_results": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/hierarchical_probe_case_result"}
+        },
+        "aggregate": {"$ref": "#/$defs/hierarchical_probe_aggregate"}
+      }
+    },
+    "hierarchical_probe_device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device_class",
+        "supports_apple9_or_newer",
+        "max_threadgroup_memory_bytes"
+      ],
+      "properties": {
+        "device_class": {"const": "Apple M4"},
+        "supports_apple9_or_newer": {"const": true},
+        "max_threadgroup_memory_bytes": {"const": 32768}
+      }
+    },
+    "hierarchical_probe_pipeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_point",
+        "thread_execution_width",
+        "max_total_threads_per_threadgroup",
+        "static_threadgroup_memory_bytes",
+        "dynamic_threadgroup_memory_bytes"
+      ],
+      "properties": {
+        "entry_point": {"const": "hierarchical_reduction_w32_probe"},
+        "thread_execution_width": {"const": 32},
+        "max_total_threads_per_threadgroup": {"const": 1024},
+        "static_threadgroup_memory_bytes": {"const": 0},
+        "dynamic_threadgroup_memory_bytes": {"const": 144}
+      }
+    },
+    "hierarchical_probe_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "simdgroup_counts",
+        "threads_per_threadgroup",
+        "epochs_per_dispatch",
+        "input_patterns",
+        "dirty_sentinels",
+        "single_owner_final_scalar_broadcast",
+        "scratch_reused_within_dispatch",
+        "uniform_reuse_barrier",
+        "layer_all_simdgroups_tested",
+        "bfloat_input_conversion_tested"
+      ],
+      "properties": {
+        "simdgroup_counts": {"const": [1, 2, 4, 8, 16, 32]},
+        "threads_per_threadgroup": {"const": [32, 64, 128, 256, 512, 1024]},
+        "epochs_per_dispatch": {"const": 2},
+        "input_patterns": {
+          "const": [
+            "((thread_mod_13)-6)*0.125+0.5",
+            "((thread_mod_11)-5)*0.25-0.75"
+          ]
+        },
+        "dirty_sentinels": {"const": [-12345.25, 9876.5]},
+        "single_owner_final_scalar_broadcast": {"const": true},
+        "scratch_reused_within_dispatch": {"const": true},
+        "uniform_reuse_barrier": {
+          "const": "threadgroup_barrier(mem_threadgroup)"
+        },
+        "layer_all_simdgroups_tested": {"const": false},
+        "bfloat_input_conversion_tested": {"const": false}
+      }
+    },
+    "hierarchical_probe_oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dtype", "tolerance_rule", "kind"],
+      "properties": {
+        "dtype": {"const": "float32"},
+        "tolerance_rule": {"const": "exact_fp32_bits_for_dyadic_fixture"},
+        "kind": {"const": "internal_finite_probe_oracle_not_workload_oracle"}
+      }
+    },
+    "hierarchical_probe_case_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "simdgroup_count",
+        "threads_per_threadgroup",
+        "expected_owner_sums",
+        "observed_owner_sums",
+        "broadcast_thread_counts",
+        "dirty_sentinel_preserved",
+        "owner_mismatch_count",
+        "broadcast_mismatch_count",
+        "dirty_snapshot_mismatch_count",
+        "command_buffer_status",
+        "passed"
+      ],
+      "properties": {
+        "simdgroup_count": {"enum": [1, 2, 4, 8, 16, 32]},
+        "threads_per_threadgroup": {"enum": [32, 64, 128, 256, 512, 1024]},
+        "expected_owner_sums": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "number"}
+        },
+        "observed_owner_sums": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "number"}
+        },
+        "broadcast_thread_counts": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "dirty_sentinel_preserved": {"const": [true, true]},
+        "owner_mismatch_count": {"const": 0},
+        "broadcast_mismatch_count": {"const": 0},
+        "dirty_snapshot_mismatch_count": {"const": 0},
+        "command_buffer_status": {"const": "completed"},
+        "passed": {"const": true}
+      }
+    },
+    "hierarchical_probe_aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_count",
+        "epoch_result_count",
+        "broadcast_consumer_check_count",
+        "owner_mismatch_count",
+        "broadcast_mismatch_count",
+        "dirty_snapshot_mismatch_count",
+        "all_command_buffers_completed",
+        "all_cases_passed"
+      ],
+      "properties": {
+        "case_count": {"const": 6},
+        "epoch_result_count": {"const": 12},
+        "broadcast_consumer_check_count": {"const": 4032},
+        "owner_mismatch_count": {"const": 0},
+        "broadcast_mismatch_count": {"const": 0},
+        "dirty_snapshot_mismatch_count": {"const": 0},
+        "all_command_buffers_completed": {"const": true},
+        "all_cases_passed": {"const": true}
+      }
+    },
+    "local_falsifier_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["falsifier_id", "outcome", "basis"],
+      "properties": {
+        "falsifier_id": {"$ref": "#/$defs/id"},
+        "outcome": {
+          "enum": [
+            "not_triggered_in_observed_cases",
+            "precondition_satisfied_in_observed_cases",
+            "not_observed_in_tested_outputs",
+            "outside_probe_scope",
+            "not_triggered_for_single_owner_probe_only",
+            "requires_source_review",
+            "condition_still_present"
+          ]
+        },
+        "basis": {"type": "string", "minLength": 1}
+      }
+    },
+    "non_evidentiary_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "repository_snapshot",
+        "target_id",
+        "target_execution_group_width",
+        "target_maximum_threads_per_workgroup",
+        "target_maximum_threadgroup_memory_bytes",
+        "current_lowering_supports_threadgroup_allocation",
+        "current_lowering_supports_threadgroup_barrier",
+        "context_note"
+      ],
+      "properties": {
+        "role": {"const": "non_evidentiary_context_only"},
+        "repository_snapshot": {"$ref": "#/$defs/non_evidentiary_repository_snapshot"},
+        "target_id": {"const": "apple_gpu_family9"},
+        "target_execution_group_width": {"const": 32},
+        "target_maximum_threads_per_workgroup": {"const": 1024},
+        "target_maximum_threadgroup_memory_bytes": {"const": 32768},
+        "current_lowering_supports_threadgroup_allocation": {"const": false},
+        "current_lowering_supports_threadgroup_barrier": {"const": false},
+        "context_note": {"type": "string", "minLength": 1}
+      }
+    },
+    "non_evidentiary_repository_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "git_parent_revision",
+        "target_path",
+        "lowering_path",
+        "binding_scope"
+      ],
+      "properties": {
+        "git_parent_revision": {
+          "const": "2238610a4e8923330d73d125e79fd374fc7d2397"
+        },
+        "target_path": {"const": "compiler/targets/apple_gpu_family9.json"},
+        "lowering_path": {"const": "src/open_cake_ir/compiler/emit_metal.py"},
+        "binding_scope": {"const": "non_evidentiary_implementation_context_only"}
+      }
+    },
+    "review_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "review_request_id",
+        "state",
+        "authority",
+        "stage_binding",
+        "closure",
+        "review_items",
+        "phase_order_ambiguity",
+        "decision_artifact",
+        "external_human_decision_contract",
+        "authorizations",
+        "non_claims"
+      ],
+      "properties": {
+        "$schema": {"const": "../schema.json#/$defs/review_request"},
+        "schema_version": {"const": 1},
+        "review_request_id": {
+          "const": "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1"
+        },
+        "state": {"const": "awaiting_human_review"},
+        "authority": {"const": "external_human_hardware_reviewer_only"},
+        "stage_binding": {"$ref": "#/$defs/review_stage_binding"},
+        "closure": {"$ref": "#/$defs/review_closure"},
+        "review_items": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/review_item"}
+        },
+        "phase_order_ambiguity": {"$ref": "#/$defs/phase_order_ambiguity"},
+        "decision_artifact": {"$ref": "#/$defs/absent_decision_artifact"},
+        "external_human_decision_contract": {
+          "$ref": "#/$defs/external_human_decision_contract"
+        },
+        "authorizations": {"$ref": "#/$defs/review_authorizations"},
+        "non_claims": {"$ref": "#/$defs/nonempty_strings"}
+      }
+    },
+    "review_stage_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest", "evidence", "proposal"],
+      "properties": {
+        "manifest": {"$ref": "#/$defs/review_manifest_binding"},
+        "evidence": {"$ref": "#/$defs/review_evidence_binding"},
+        "proposal": {"$ref": "#/$defs/review_proposal_binding"}
+      }
+    },
+    "review_manifest_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["design_stage_id", "path"],
+      "properties": {
+        "design_stage_id": {"const": "apple-metal-hardware-informed-design-v1"},
+        "path": {"const": "hardware_informed_design/manifest.json"}
+      }
+    },
+    "review_evidence_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "path"],
+      "properties": {
+        "evidence_id": {"const": "apple-metal-hierarchical-reduction-v1"},
+        "path": {
+          "const": "hardware_informed_design/evidence/apple-metal-hierarchical-reduction-v1.json"
+        }
+      }
+    },
+    "review_proposal_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposal_id", "path"],
+      "properties": {
+        "proposal_id": {
+          "const": "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1"
+        },
+        "path": {
+          "const": "hardware_informed_design/proposals/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+        }
+      }
+    },
+    "review_closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact_ids",
+        "decision_ids",
+        "hypothesis_ids",
+        "observed_scope_finding_ids",
+        "falsifier_ids",
+        "counts"
+      ],
+      "properties": {
+        "fact_ids": {
+          "type": "array",
+          "minItems": 22,
+          "maxItems": 22,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "decision_ids": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "hypothesis_ids": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "observed_scope_finding_ids": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "falsifier_ids": {
+          "type": "array",
+          "minItems": 13,
+          "maxItems": 13,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "counts": {"$ref": "#/$defs/review_closure_counts"}
+      }
+    },
+    "review_closure_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact_count",
+        "decision_count",
+        "hypothesis_count",
+        "observed_scope_finding_count",
+        "falsifier_count"
+      ],
+      "properties": {
+        "fact_count": {"const": 22},
+        "decision_count": {"const": 5},
+        "hypothesis_count": {"const": 5},
+        "observed_scope_finding_count": {"const": 4},
+        "falsifier_count": {"const": 13}
+      }
+    },
+    "review_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "review_item_id",
+        "question",
+        "fact_ids",
+        "decision_ids",
+        "hypothesis_ids",
+        "observed_scope_finding_ids",
+        "falsifier_ids",
+        "required_human_judgment"
+      ],
+      "properties": {
+        "review_item_id": {"$ref": "#/$defs/id"},
+        "question": {"type": "string", "minLength": 1},
+        "fact_ids": {"$ref": "#/$defs/id_list"},
+        "decision_ids": {"$ref": "#/$defs/id_list"},
+        "hypothesis_ids": {"$ref": "#/$defs/id_list"},
+        "observed_scope_finding_ids": {"$ref": "#/$defs/id_list"},
+        "falsifier_ids": {"$ref": "#/$defs/id_list"},
+        "required_human_judgment": {"type": "string", "minLength": 1}
+      }
+    },
+    "phase_order_ambiguity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ambiguity_id",
+        "status",
+        "contradiction",
+        "resolution_options",
+        "selection_required",
+        "automation_may_select"
+      ],
+      "properties": {
+        "ambiguity_id": {"const": "resource-accounting-phase-order"},
+        "status": {"const": "unresolved_requires_human_choice"},
+        "contradiction": {
+          "const": "The resource-accounting-fits-selected-pipelines hypothesis is marked required_before=implementation, but its falsifier requires compiling every retained future variant and inspecting pipeline-created static threadgroup memory. The current finite Compiler lowering cannot create the required scratch allocation or barriers, so the word implementation cannot simultaneously mean both any materialization code and the accepted Compiler port."
+        },
+        "resolution_options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {"$ref": "#/$defs/preimplementation_standalone_metal_prototypes_option"},
+            {"$ref": "#/$defs/amend_gate_after_bounded_implementation_option"}
+          ],
+          "items": false
+        },
+        "selection_required": {"const": true},
+        "automation_may_select": {"const": false}
+      }
+    },
+    "preimplementation_standalone_metal_prototypes_option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["option_id", "action", "consequence"],
+      "properties": {
+        "option_id": {"const": "preimplementation-standalone-metal-prototypes"},
+        "action": {
+          "const": "Keep required_before=implementation literal by compiling separately reviewed standalone Metal prototype pipelines for every retained RMS and Layer variant before any Compiler implementation."
+        },
+        "consequence": {
+          "const": "Append-only resource observations may resolve the hypothesis without granting Compiler-change, correctness, performance, or promotion authority; the later P1-P8 review still governs the compiler design."
+        }
+      }
+    },
+    "amend_gate_after_bounded_implementation_option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["option_id", "action", "consequence"],
+      "properties": {
+        "option_id": {
+          "const": "amend-gate-to-port-acceptance-after-bounded-implementation"
+        },
+        "action": {
+          "const": "Require a human-requested successor proposal that moves the resource hypothesis to port acceptance and authorizes only the bounded implementation needed to materialize retained pipelines after P1-P8 acceptance."
+        },
+        "consequence": {
+          "const": "The first implementation cannot be accepted, released, evaluated, or used for a claim until every retained variant's resource observation passes; automation may not silently reinterpret the existing required_before field."
+        }
+      }
+    },
+    "absent_decision_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "path", "decision_id"],
+      "properties": {
+        "status": {"const": "absent"},
+        "path": {"type": "null"},
+        "decision_id": {"type": "null"}
+      }
+    },
+    "external_human_decision_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_authority",
+        "global_dispositions",
+        "required_review_item_ids",
+        "per_item_verdict_contract",
+        "reviewed_git_revision_required",
+        "ambiguity_resolution_contract",
+        "stage_transition_rule",
+        "automation_may_write_decision"
+      ],
+      "properties": {
+        "decision_authority": {"const": "external_human_hardware_reviewer_only"},
+        "global_dispositions": {
+          "const": ["approved", "changes_requested", "rejected"]
+        },
+        "required_review_item_ids": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "per_item_verdict_contract": {
+          "$ref": "#/$defs/per_item_verdict_contract"
+        },
+        "reviewed_git_revision_required": {"const": true},
+        "ambiguity_resolution_contract": {
+          "$ref": "#/$defs/ambiguity_resolution_contract"
+        },
+        "stage_transition_rule": {
+          "const": "Stage 3 clears only when an external human decision is bound to the reviewed Git revision, covers every review item with a localized reason, has global_disposition=approved equal to the maximum review-item verdict severity, has every review-item verdict approved, and selects preimplementation-standalone-metal-prototypes. Selecting amend-gate-to-port-acceptance-after-bounded-implementation requires a non-approved resource-accounting-and-runtime-gates item, permits only changes_requested or rejected globally, and requires a successor Stage-3 proposal and review request; it cannot clear the current Stage-3 closure."
+        },
+        "automation_may_write_decision": {"const": false}
+      }
+    },
+    "per_item_verdict_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "per_item_verdict_required",
+        "verdict_values",
+        "global_disposition_aggregation",
+        "verdict_severity_order",
+        "localized_reason_required",
+        "stage_clear_requires_all_item_verdicts_approved",
+        "non_approved_item_blocks_stage_transition"
+      ],
+      "properties": {
+        "per_item_verdict_required": {"const": true},
+        "verdict_values": {
+          "const": ["approved", "changes_requested", "rejected"]
+        },
+        "global_disposition_aggregation": {
+          "const": "maximum_review_item_verdict_severity"
+        },
+        "verdict_severity_order": {
+          "const": ["approved", "changes_requested", "rejected"]
+        },
+        "localized_reason_required": {"const": true},
+        "stage_clear_requires_all_item_verdicts_approved": {"const": true},
+        "non_approved_item_blocks_stage_transition": {"const": true}
+      }
+    },
+    "ambiguity_resolution_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_ambiguity_id",
+        "allowed_option_ids",
+        "localized_reason_required",
+        "approval_compatible_option_id",
+        "successor_required_option_id",
+        "successor_required_option_allowed_global_dispositions",
+        "successor_required_option_required_non_approved_review_item_id"
+      ],
+      "properties": {
+        "required_ambiguity_id": {"const": "resource-accounting-phase-order"},
+        "allowed_option_ids": {
+          "const": [
+            "preimplementation-standalone-metal-prototypes",
+            "amend-gate-to-port-acceptance-after-bounded-implementation"
+          ]
+        },
+        "localized_reason_required": {"const": true},
+        "approval_compatible_option_id": {
+          "const": "preimplementation-standalone-metal-prototypes"
+        },
+        "successor_required_option_id": {
+          "const": "amend-gate-to-port-acceptance-after-bounded-implementation"
+        },
+        "successor_required_option_allowed_global_dispositions": {
+          "const": ["changes_requested", "rejected"]
+        },
+        "successor_required_option_required_non_approved_review_item_id": {
+          "const": "resource-accounting-and-runtime-gates"
+        }
+      }
+    },
+    "review_authorizations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "human_hardware_review_cleared",
+        "principle_driven_iteration_authorized",
+        "compiler_change_authorized",
+        "implementation_authorized",
+        "evaluation_authorized",
+        "performance_claim_authorized",
+        "scientific_claim_authorized",
+        "promotion_authorized"
+      ],
+      "properties": {
+        "human_hardware_review_cleared": {"const": false},
+        "principle_driven_iteration_authorized": {"const": false},
+        "compiler_change_authorized": {"const": false},
+        "implementation_authorized": {"const": false},
+        "evaluation_authorized": {"const": false},
+        "performance_claim_authorized": {"const": false},
+        "scientific_claim_authorized": {"const": false},
+        "promotion_authorized": {"const": false}
+      }
+    },
+    "hardware_review_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "decision_id",
+        "kind",
+        "authority",
+        "binding",
+        "reviewer_attestation",
+        "global_disposition",
+        "item_verdicts",
+        "ambiguity_resolution",
+        "scope_acknowledgements"
+      ],
+      "properties": {
+        "$schema": {
+          "const": "https://open-cake-ir.local/hardware-informed-design/schema-v1.json#/$defs/hardware_review_decision"
+        },
+        "schema_version": {"const": 1},
+        "decision_id": {"$ref": "#/$defs/id"},
+        "kind": {"const": "external_human_hardware_review_decision"},
+        "authority": {"const": "external_human_hardware_reviewer_only"},
+        "binding": {"$ref": "#/$defs/review_decision_request_binding"},
+        "reviewer_attestation": {"$ref": "#/$defs/reviewer_attestation"},
+        "global_disposition": {
+          "enum": ["approved", "changes_requested", "rejected"]
+        },
+        "item_verdicts": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/review_item_verdict"}
+        },
+        "ambiguity_resolution": {
+          "$ref": "#/$defs/review_ambiguity_resolution"
+        },
+        "scope_acknowledgements": {
+          "$ref": "#/$defs/review_scope_acknowledgements"
+        }
+      }
+    },
+    "review_decision_request_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "design_stage_id",
+        "request_id",
+        "path",
+        "reviewed_git_revision",
+        "reviewed_artifact_paths"
+      ],
+      "properties": {
+        "design_stage_id": {"const": "apple-metal-hardware-informed-design-v1"},
+        "request_id": {
+          "const": "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1"
+        },
+        "path": {
+          "const": "hardware_informed_design/review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+        },
+        "reviewed_git_revision": {"$ref": "#/$defs/git_commit"},
+        "reviewed_artifact_paths": {
+          "const": [
+            "hardware_informed_design/schema.json",
+            "hardware_informed_design/manifest.json",
+            "hardware_informed_design/evidence/apple-metal-hierarchical-reduction-v1.json",
+            "hardware_informed_design/proposals/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json",
+            "hardware_informed_design/review_requests/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+          ]
+        }
+      }
+    },
+    "reviewer_attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewer_identity",
+        "authorship_attestation",
+        "decision_basis"
+      ],
+      "properties": {
+        "reviewer_identity": {"$ref": "#/$defs/human_review_text"},
+        "authorship_attestation": {
+          "const": "external-human-outside-automation"
+        },
+        "decision_basis": {"$ref": "#/$defs/human_review_text"}
+      }
+    },
+    "review_item_verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["review_item_id", "verdict", "localized_reason"],
+      "properties": {
+        "review_item_id": {
+          "enum": [
+            "vendor-fact-applicability",
+            "width-policy-and-fail-closed-selection",
+            "partial-cardinality-and-final-reduction",
+            "barrier-participation-and-publication",
+            "scratch-initialization-lifetime-and-reuse",
+            "variant-owner-split",
+            "resource-accounting-and-runtime-gates",
+            "numeric-scope-and-oracle-boundary",
+            "observed-scope-and-authority-boundary"
+          ]
+        },
+        "verdict": {
+          "enum": ["approved", "changes_requested", "rejected"]
+        },
+        "localized_reason": {"$ref": "#/$defs/human_review_text"}
+      }
+    },
+    "review_ambiguity_resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ambiguity_id", "selected_option_id", "localized_reason"],
+      "properties": {
+        "ambiguity_id": {"const": "resource-accounting-phase-order"},
+        "selected_option_id": {
+          "enum": [
+            "preimplementation-standalone-metal-prototypes",
+            "amend-gate-to-port-acceptance-after-bounded-implementation"
+          ]
+        },
+        "localized_reason": {"$ref": "#/$defs/human_review_text"}
+      }
+    },
+    "review_scope_acknowledgements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approval_scope",
+        "principle_driven_iteration_required",
+        "resource_accounting_hypothesis_resolved",
+        "compiler_change_authorized",
+        "implementation_authorized",
+        "evaluation_authorized",
+        "performance_claim_authorized",
+        "scientific_claim_authorized",
+        "promotion_authorized"
+      ],
+      "properties": {
+        "approval_scope": {"const": "stage3_hardware_review_only"},
+        "principle_driven_iteration_required": {"const": true},
+        "resource_accounting_hypothesis_resolved": {"const": false},
+        "compiler_change_authorized": {"const": false},
+        "implementation_authorized": {"const": false},
+        "evaluation_authorized": {"const": false},
+        "performance_claim_authorized": {"const": false},
+        "scientific_claim_authorized": {"const": false},
+        "promotion_authorized": {"const": false}
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "schema_version",
+        "proposal_id",
+        "state",
+        "claim_scope",
+        "disposition",
+        "next_gate",
+        "candidate_binding",
+        "evidence_binding",
+        "design",
+        "decisions",
+        "assumptions",
+        "hypotheses",
+        "observed_scope_findings",
+        "falsifiers",
+        "open_questions",
+        "gate_separation",
+        "non_claims"
+      ],
+      "properties": {
+        "$schema": {"const": "../schema.json#/$defs/proposal"},
+        "schema_version": {"const": 1},
+        "proposal_id": {
+          "const": "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1"
+        },
+        "state": {"$ref": "#/$defs/state"},
+        "claim_scope": {"$ref": "#/$defs/claim_scope"},
+        "disposition": {"$ref": "#/$defs/disposition"},
+        "next_gate": {"$ref": "#/$defs/next_gate"},
+        "candidate_binding": {"$ref": "#/$defs/candidate_binding"},
+        "evidence_binding": {"$ref": "#/$defs/evidence_binding"},
+        "design": {"$ref": "#/$defs/design"},
+        "decisions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/decision"}
+        },
+        "assumptions": {"$ref": "#/$defs/nonempty_strings"},
+        "hypotheses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/hypothesis"}
+        },
+        "observed_scope_findings": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/observed_scope_finding"}
+        },
+        "falsifiers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/falsifier"}
+        },
+        "open_questions": {"$ref": "#/$defs/nonempty_strings"},
+        "gate_separation": {"$ref": "#/$defs/gate_separation"},
+        "non_claims": {"$ref": "#/$defs/nonempty_strings"}
+      }
+    },
+    "candidate_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "pattern_signature",
+        "observation_ids",
+        "expected_state",
+        "expected_next_gate",
+        "candidate_width_contract"
+      ],
+      "properties": {
+        "candidate_id": {"const": "hierarchical-simdgroup-threadgroup-reduction"},
+        "pattern_signature": {"const": "simdgroup-partial.threadgroup-publish.simdgroup-final"},
+        "observation_ids": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "expected_state": {"const": "extracted_unreviewed"},
+        "expected_next_gate": {"const": "hardware_informed_design"},
+        "candidate_width_contract": {"const": "width_neutral"}
+      }
+    },
+    "evidence_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "fact_ids"],
+      "properties": {
+        "evidence_id": {"const": "apple-metal-hierarchical-reduction-v1"},
+        "fact_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        }
+      }
+    },
+    "design": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width_policy",
+        "resource_derivation",
+        "reduction_sequence",
+        "scratch_lifecycle",
+        "final_reducer_variants",
+        "numeric_contract"
+      ],
+      "properties": {
+        "width_policy": {"$ref": "#/$defs/width_policy"},
+        "resource_derivation": {"$ref": "#/$defs/resource_derivation"},
+        "reduction_sequence": {"$ref": "#/$defs/reduction_sequence"},
+        "scratch_lifecycle": {"$ref": "#/$defs/scratch_lifecycle"},
+        "final_reducer_variants": {"$ref": "#/$defs/final_reducer_variants"},
+        "numeric_contract": {"$ref": "#/$defs/numeric_contract"}
+      }
+    },
+    "width_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_contract",
+        "specialization",
+        "required_runtime_width",
+        "runtime_query",
+        "mismatch_action",
+        "threadgroup_shape_contract",
+        "shape_mismatch_action",
+        "threadgroup_multiple_requirement",
+        "partial_capacity_formula"
+      ],
+      "properties": {
+        "candidate_contract": {"const": "width_neutral"},
+        "specialization": {"const": "apple-family9-w32-guarded"},
+        "required_runtime_width": {"const": 32},
+        "runtime_query": {"const": "MTLComputePipelineState.threadExecutionWidth"},
+        "mismatch_action": {"const": "fail_closed_before_dispatch"},
+        "threadgroup_shape_contract": {"const": "MTLSize(width=N,height=1,depth=1)"},
+        "shape_mismatch_action": {"const": "fail_closed_before_dispatch"},
+        "threadgroup_multiple_requirement": {"const": "threads_per_threadgroup_width_mod_runtime_width_equals_zero"},
+        "partial_capacity_formula": {"const": "ceil(threads_per_threadgroup_width/runtime_width)<=runtime_width"}
+      }
+    },
+    "resource_derivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family_thread_ceiling",
+        "specialized_width",
+        "maximum_simdgroups_at_family_ceiling",
+        "calculation",
+        "partial_dtype",
+        "partial_bytes",
+        "scratch_bytes_per_accumulator",
+        "scratch_calculation",
+        "dynamic_allocation_formula",
+        "variant_resource_requirements",
+        "variant_input_scope",
+        "threadgroup_allocation_alignment_bytes",
+        "total_threadgroup_memory_ceiling_bytes",
+        "runtime_dimension_limit_query",
+        "runtime_dimension_limit_gate",
+        "runtime_thread_limit_gate"
+      ],
+      "properties": {
+        "family_thread_ceiling": {"const": 1024},
+        "specialized_width": {"const": 32},
+        "maximum_simdgroups_at_family_ceiling": {"const": 32},
+        "calculation": {"const": "1024/32=32"},
+        "partial_dtype": {"const": "float32"},
+        "partial_bytes": {"const": 4},
+        "scratch_bytes_per_accumulator": {"const": 128},
+        "scratch_calculation": {"const": "32*4=128"},
+        "dynamic_allocation_formula": {"$ref": "#/$defs/dynamic_allocation_formula"},
+        "variant_resource_requirements": {
+          "$ref": "#/$defs/variant_resource_requirements"
+        },
+        "variant_input_scope": {
+          "const": "accumulator_count_is_current_variant_input_not_candidate_invariant"
+        },
+        "threadgroup_allocation_alignment_bytes": {"const": 16},
+        "total_threadgroup_memory_ceiling_bytes": {"const": 32768},
+        "runtime_dimension_limit_query": {
+          "const": "MTLDevice.maxThreadsPerThreadgroup"
+        },
+        "runtime_dimension_limit_gate": {
+          "const": "threadsPerThreadgroup.width<=device.maxThreadsPerThreadgroup.width_and_threadsPerThreadgroup.height<=device.maxThreadsPerThreadgroup.height_and_threadsPerThreadgroup.depth<=device.maxThreadsPerThreadgroup.depth"
+        },
+        "runtime_thread_limit_gate": {
+          "const": "threadsPerThreadgroup.width*threadsPerThreadgroup.height*threadsPerThreadgroup.depth<=pipeline.maxTotalThreadsPerThreadgroup"
+        }
+      }
+    },
+    "dynamic_allocation_formula": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_dynamic_bytes", "aligned_dynamic_bytes", "allocation_strategy"],
+      "properties": {
+        "raw_dynamic_bytes": {
+          "const": "raw_dynamic_bytes=accumulator_count*128+broadcast_scalar_bytes"
+        },
+        "aligned_dynamic_bytes": {
+          "const": "aligned_dynamic_bytes=align_up(raw_dynamic_bytes,16)"
+        },
+        "allocation_strategy": {
+          "const": "one_combined_threadgroup_region_per_variant"
+        }
+      }
+    },
+    "variant_resource_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rms_norm", "layer_norm"],
+      "properties": {
+        "rms_norm": {"$ref": "#/$defs/rms_norm_resource_requirement"},
+        "layer_norm": {"$ref": "#/$defs/layer_norm_resource_requirement"}
+      }
+    },
+    "rms_norm_resource_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accumulator_count",
+        "broadcast_scalar_bytes",
+        "raw_dynamic_bytes",
+        "aligned_dynamic_bytes",
+        "layout",
+        "total_memory_gate"
+      ],
+      "properties": {
+        "accumulator_count": {"const": 1},
+        "broadcast_scalar_bytes": {"const": 4},
+        "raw_dynamic_bytes": {"const": 132},
+        "aligned_dynamic_bytes": {"const": 144},
+        "layout": {
+          "const": "partial[0]=bytes[0,128);broadcast_scalar=bytes[128,132);padding=bytes[132,144)"
+        },
+        "total_memory_gate": {
+          "const": "pipeline.staticThreadgroupMemoryLength+144<=device.maxThreadgroupMemoryLength_and<=32768_family_ceiling"
+        }
+      }
+    },
+    "layer_norm_resource_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accumulator_count",
+        "broadcast_scalar_bytes",
+        "raw_dynamic_bytes",
+        "aligned_dynamic_bytes",
+        "layout",
+        "total_memory_gate"
+      ],
+      "properties": {
+        "accumulator_count": {"const": 2},
+        "broadcast_scalar_bytes": {"const": 0},
+        "raw_dynamic_bytes": {"const": 256},
+        "aligned_dynamic_bytes": {"const": 256},
+        "layout": {
+          "const": "partial[0]=bytes[0,128);partial[1]=bytes[128,256);broadcast_scalar=none;padding=none"
+        },
+        "total_memory_gate": {
+          "const": "pipeline.staticThreadgroupMemoryLength+256<=device.maxThreadgroupMemoryLength_and<=32768_family_ceiling"
+        }
+      }
+    },
+    "reduction_sequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps", "publication_barrier", "barrier_participation", "early_return_policy"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 5,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "publication_barrier": {"const": "threadgroup_barrier(mem_flags::mem_threadgroup)"},
+        "barrier_participation": {"const": "uniform_across_all_live_threads"},
+        "early_return_policy": {"const": "no_early_return_or_divergent_control_around_threadgroup_barriers"}
+      }
+    },
+    "scratch_lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "initialization",
+        "initialization_barrier",
+        "unused_final_lanes",
+        "reuse_rule",
+        "final_scalar_visibility_rule"
+      ],
+      "properties": {
+        "initialization": {"type": "string", "minLength": 1},
+        "initialization_barrier": {"type": "string", "minLength": 1},
+        "unused_final_lanes": {"const": "load_float32_zero_instead_of_unwritten_scratch"},
+        "reuse_rule": {"type": "string", "minLength": 1},
+        "final_scalar_visibility_rule": {"type": "string", "minLength": 1}
+      }
+    },
+    "final_reducer_variants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rms_norm", "layer_norm"],
+      "properties": {
+        "rms_norm": {"$ref": "#/$defs/reducer_variant"},
+        "layer_norm": {"$ref": "#/$defs/reducer_variant"}
+      }
+    },
+    "reducer_variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ownership", "publication", "consumer_barrier"],
+      "properties": {
+        "ownership": {"type": "string", "minLength": 1},
+        "publication": {"type": "string", "minLength": 1},
+        "consumer_barrier": {"type": "string", "minLength": 1}
+      }
+    },
+    "numeric_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accumulator_dtype",
+        "bfloat_input_policy",
+        "bitwise_reduction_order_guaranteed",
+        "correctness_requirement"
+      ],
+      "properties": {
+        "accumulator_dtype": {"const": "float32"},
+        "bfloat_input_policy": {"const": "convert_to_float32_before_simd_sum"},
+        "bitwise_reduction_order_guaranteed": {"const": false},
+        "correctness_requirement": {"const": "external_oracle_with_explicit_tolerances_required_later"}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_id",
+        "statement",
+        "candidate_effect",
+        "fact_ids",
+        "rationale",
+        "alternatives"
+      ],
+      "properties": {
+        "decision_id": {"$ref": "#/$defs/id"},
+        "statement": {"type": "string", "minLength": 1},
+        "candidate_effect": {"enum": ["preserve", "refine", "split", "reject"]},
+        "fact_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "rationale": {"type": "string", "minLength": 1},
+        "alternatives": {"$ref": "#/$defs/nonempty_strings"}
+      }
+    },
+    "hypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hypothesis_id",
+        "statement",
+        "related_decision_ids",
+        "status",
+        "required_before",
+        "falsifier",
+        "result_binding"
+      ],
+      "properties": {
+        "hypothesis_id": {"$ref": "#/$defs/id"},
+        "statement": {"type": "string", "minLength": 1},
+        "related_decision_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "status": {"const": "unresolved"},
+        "required_before": {
+          "enum": ["principle_review", "implementation", "port_acceptance", "performance_claim"]
+        },
+        "falsifier": {"$ref": "#/$defs/hypothesis_falsifier"},
+        "result_binding": {"type": "null"}
+      }
+    },
+    "hypothesis_falsifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "observable", "reject_when", "retained_result_contract"],
+      "properties": {
+        "method": {"type": "string", "minLength": 1},
+        "observable": {"type": "string", "minLength": 1},
+        "reject_when": {"type": "string", "minLength": 1},
+        "retained_result_contract": {"type": "string", "minLength": 1}
+      }
+    },
+    "observed_scope_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "fact_ids",
+        "status",
+        "scope",
+        "reported_outcome",
+        "does_not_resolve_hypothesis_ids",
+        "scope_limit"
+      ],
+      "properties": {
+        "finding_id": {"$ref": "#/$defs/id"},
+        "fact_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "status": {"const": "reported_in_observed_scope"},
+        "scope": {"const": "observed_apple_m4_fp32_rms_probe_pipeline_only"},
+        "reported_outcome": {"type": "string", "minLength": 1},
+        "does_not_resolve_hypothesis_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "scope_limit": {"type": "string", "minLength": 1}
+      }
+    },
+    "falsifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["falsifier_id", "condition", "required_action"],
+      "properties": {
+        "falsifier_id": {"$ref": "#/$defs/id"},
+        "condition": {"type": "string", "minLength": 1},
+        "required_action": {"type": "string", "minLength": 1}
+      }
+    },
+    "gate_separation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validation", "readiness"],
+      "properties": {
+        "validation": {"$ref": "#/$defs/validation_gate"},
+        "readiness": {"$ref": "#/$defs/readiness_gate"}
+      }
+    },
+    "validation_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "checks", "can_set_readiness"],
+      "properties": {
+        "kind": {"const": "offline_metadata_and_derivation_validation"},
+        "checks": {"$ref": "#/$defs/nonempty_strings"},
+        "can_set_readiness": {"const": false}
+      }
+    },
+    "readiness_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ready", "authority", "blocking_reviews"],
+      "properties": {
+        "ready": {"const": false},
+        "authority": {"const": "human_hardware_review"},
+        "blocking_reviews": {"$ref": "#/$defs/nonempty_strings"}
+      }
+    },
+    "state": {"const": "review_pending"},
+    "claim_scope": {"const": "hardware_mapping_only"},
+    "disposition": {"const": "await_human_hardware_review"},
+    "next_gate": {"const": "principle_driven_iteration"},
+    "safe_path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "https_url": {"type": "string", "pattern": "^https://[^ ]+$"},
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$"},
+    "id_list": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "git_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "human_review_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*[^\\s\\u0000-\\u001F\\u007F-\\u009F][^\\u0000-\\u001F\\u007F-\\u009F]*$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonempty_strings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

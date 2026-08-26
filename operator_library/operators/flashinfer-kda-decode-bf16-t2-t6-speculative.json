@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "recurrent.kimi_delta_attention_speculative_decode",
+  "implementation_id": "flashinfer.kda-decode-bf16-t2-t6-speculative",
+  "source_id": "flashinfer-main-857bc3a",
+  "family": "recurrent",
+  "variant": "SM100 BF16 D128 speculative decode through T=6",
+  "scope": "runtime_dispatch",
+  "semantic_role": "Evaluate several speculative recurrent steps while retaining intermediate checkpoint state needed to accept a prefix.",
+  "input_regime": {
+    "dtypes": ["bf16", "fp32", "int32"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": ["D=128", "T is between 2 and 6", "Variant selection depends on batch, head, and speculative length"]
+  },
+  "hardware_targets": ["sm_100a"],
+  "mechanisms": ["checkpoint_state", "dynamic_dispatch", "matrix_multiply", "recurrence", "reduction"],
+  "locators": [
+    {
+      "kind": "pull_request",
+      "value": "https://github.com/flashinfer-ai/flashinfer/pull/4279",
+      "revision": "4433996e45def64146c3aaf71341c4090a00c4fa",
+      "git_object": null,
+      "symbol": null
+    },
+    {
+      "kind": "repository_path",
+      "value": "csrc/kda/flashkda_decode_d128_t6_precomputed_gram_split1.cu",
+      "revision": "857bc3a11494aaa0b7142a65c4a956ad68066f69",
+      "git_object": "f0138dd15edbc90ad4f52840a43d5180df71786c",
+      "symbol": null
+    }
+  ],
+  "upstream_state": "merged",
+  "review_status": "source_verified",
+  "claim_scope": "source_fact_only"
+}

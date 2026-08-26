@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Mapping
 
-_PREFIX = "open-cake-ir-sm100a-v"
+_REVISION_ID = re.compile(r"open-cake-ir-(?:sm100a-)?v([1-9][0-9]*)")
 _FROZEN_GLOBS = (
     "compiler/releases/*/revision.lock.json",
     "contracts/studies/*.json",
@@ -38,6 +39,26 @@ class CompilerRevisionWitness:
     revision_sha256: str | None = None
 
 
+@dataclass(frozen=True)
+class CompilerRevisionCyclePlan:
+    """The one successor label implied by frozen history and the working lock."""
+
+    next_label: str
+    archive_label: str | None
+    stale_labels: tuple[str, ...]
+
+
+def _revision_ordinal(value: object) -> int | None:
+    if not isinstance(value, str):
+        return None
+    match = _REVISION_ID.fullmatch(value)
+    return int(match.group(1)) if match is not None else None
+
+
+def _revision_id(value: object) -> str | None:
+    return value if _revision_ordinal(value) is not None else None
+
+
 def _walk_references(
     value: object,
     *,
@@ -49,10 +70,10 @@ def _walk_references(
     found: list[CompilerRevisionWitness] = []
     if isinstance(value, Mapping):
         identity = value.get("compiler_revision_id")
-        if isinstance(identity, str) and identity.startswith(_PREFIX):
+        if _revision_id(identity) is not None:
             found.append(CompilerRevisionWitness(identity, path))
         identity = value.get("revision_id")
-        if isinstance(identity, str) and identity.startswith(_PREFIX):
+        if _revision_id(identity) is not None:
             digest = value.get("revision_sha256", value.get("canonical_sha256"))
             found.append(
                 CompilerRevisionWitness(
@@ -62,7 +83,9 @@ def _walk_references(
                 )
             )
         reference = value.get("compiler_revision")
-        if isinstance(reference, Mapping):
+        if _revision_id(reference) is not None:
+            found.append(CompilerRevisionWitness(reference, path))
+        elif isinstance(reference, Mapping):
             identity = reference.get("revision_id")
             digest = reference.get(
                 "revision_sha256", reference.get("canonical_sha256")
@@ -79,7 +102,7 @@ def _walk_references(
                     if digest == current_sha256
                     else known_revision_by_sha256.get(digest)
                 )
-            if isinstance(identity, str) and identity.startswith(_PREFIX):
+            if _revision_id(identity) is not None:
                 found.append(
                     CompilerRevisionWitness(
                         identity,
@@ -121,7 +144,7 @@ def compiler_revision_witnesses(root: Path) -> tuple[CompilerRevisionWitness, ..
     if lock_path.exists():
         lock = json.loads(lock_path.read_text(encoding="utf-8"))
         identity = lock.get("revision_id") if isinstance(lock, Mapping) else None
-        if isinstance(identity, str) and identity.startswith(_PREFIX):
+        if _revision_id(identity) is not None:
             current_id = identity
             current_sha256 = _canonical_sha256(lock)
     paths = {
@@ -156,7 +179,7 @@ def compiler_revision_witnesses(root: Path) -> tuple[CompilerRevisionWitness, ..
         )
         if relative.startswith("compiler/releases/") and isinstance(document, Mapping):
             identity = document.get("revision_id")
-            if isinstance(identity, str) and identity.startswith(_PREFIX):
+            if _revision_id(identity) is not None:
                 witnesses.add(
                     CompilerRevisionWitness(
                         identity,
@@ -209,10 +232,63 @@ def compiler_revision_witnesses(root: Path) -> tuple[CompilerRevisionWitness, ..
     )
 
 
+def plan_compiler_revision_cycle(
+    root: Path, current_revision_id: str
+) -> CompilerRevisionCyclePlan:
+    """Plan one successor without treating architecture lineage as a second ordinal."""
+
+    current_ordinal = _revision_ordinal(current_revision_id)
+    if current_ordinal is None:
+        raise ValueError(f"unsupported Compiler Revision id {current_revision_id!r}")
+    witnessed_ordinals = {
+        ordinal
+        for item in compiler_revision_witnesses(root)
+        if (ordinal := _revision_ordinal(item.revision_id)) is not None
+    }
+    history = max(witnessed_ordinals, default=0)
+    archived = current_ordinal in witnessed_ordinals
+    stale: list[tuple[int, str]] = []
+    if not archived:
+        for path in (root / "compiler/releases").glob("v*"):
+            match = re.fullmatch(r"v([1-9][0-9]*)", path.name)
+            if match is not None and int(match.group(1)) > history:
+                stale.append((int(match.group(1)), path.name))
+    return CompilerRevisionCyclePlan(
+        next_label=f"v{history + 1}",
+        archive_label=f"v{current_ordinal}" if archived else None,
+        stale_labels=tuple(name for _, name in sorted(stale)),
+    )
+
+
+def plan_current_compiler_revision_cycle(root: Path) -> CompilerRevisionCyclePlan:
+    """Read the current lock (or interrupted draft) and plan its release cycle."""
+
+    lock = root / "compiler/revision.lock.json"
+    source = lock if lock.exists() else root / "compiler/revision.json"
+    document = json.loads(source.read_text(encoding="utf-8"))
+    identity = document.get("revision_id") if isinstance(document, Mapping) else None
+    if not isinstance(identity, str):
+        raise ValueError(f"{source.relative_to(root)} has no Compiler Revision id")
+    return plan_compiler_revision_cycle(root, identity.removesuffix("-draft"))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, required=True)
+    parser.add_argument(
+        "--plan-cycle-shell",
+        action="store_true",
+        help="emit shell assignments for the current Compiler release cycle",
+    )
     arguments = parser.parse_args()
+    if arguments.plan_cycle_shell:
+        plan = plan_current_compiler_revision_cycle(
+            arguments.project_root.resolve(strict=True)
+        )
+        print(f"NEXT={plan.next_label}")
+        print(f"ARCHIVE={plan.archive_label or ''}")
+        print(f"STALE={' '.join(plan.stale_labels)}")
+        return 0
     print(
         json.dumps(
             [asdict(item) for item in compiler_revision_witnesses(arguments.project_root)],

@@ -243,10 +243,14 @@ class BackendCoverageTest(unittest.TestCase):
                 self.assertEqual(module.SUPPORTED_DTYPES, first)
 
     def test_every_dtype_the_ir_admits_has_a_backend(self) -> None:
-        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+        from open_cake_ir.compiler import emit_cutedsl, emit_metal, emit_triton
         from open_cake_ir.compiler.ir import DType
 
-        covered = emit_cutedsl.SUPPORTED_DTYPES | emit_triton.SUPPORTED_DTYPES
+        covered = (
+            emit_cutedsl.SUPPORTED_DTYPES
+            | emit_metal.SUPPORTED_DTYPES
+            | emit_triton.SUPPORTED_DTYPES
+        )
         # Same rule the operation kinds live under: a word the vocabulary offers and no
         # backend can keep is a promise, not a capability.
         self.assertEqual(set(DType) - covered, set())
@@ -295,8 +299,8 @@ class BackendCoverageTest(unittest.TestCase):
             frozenset(emit_triton.OUTSIDE_LOOP_EMITTERS)
             | frozenset(emit_triton.INSIDE_LOOP_EMITTERS),
         )
-        # The two backends genuinely differ, which is the reason a profile has to be
-        # asked rather than the Target: both of these lower for sm_100a.
+        # The two table-driven backends genuinely differ, which is why the Schedule's
+        # route has to choose one rather than asking the Target: both lower for sm_100a.
         self.assertNotEqual(
             emit_cutedsl.SUPPORTED_OPERATION_KINDS, emit_triton.SUPPORTED_OPERATION_KINDS
         )
