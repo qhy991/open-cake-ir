@@ -43,7 +43,7 @@ upstream bytes are intentionally not vendored, it does not fetch a repository or
 recompute a source-span hash. `semantics_reviewed` is therefore a reviewer
 attestation, not an automated source-content proof. The authoring/review workflow
 must independently recompute each Git blob and span hash from the pinned checkout;
-the fifteen observations in this tracer were checked that way before admission.
+the seventeen observations in this tracer were checked that way before admission.
 Free-text semantics likewise remain reviewer-attested: the validator enforces the
 closed `source_structure_only` and `source_pattern_only` claim scopes, but does
 not pretend that a lexical filter can prove the meaning of prose.
@@ -79,6 +79,22 @@ not pretend that a lexical filter can prove the meaning of prose.
   source-row pass with a normalization-weight factor. SIMDgroup versus serial
   reduction, fixed versus runtime extent, weight parameterization, and the GDN
   projected-SiLU fusion remain explicit variants.
+
+## Below-threshold observations
+
+The MLX contiguous-scan and block-merge-sort observations are intentionally not
+promoted to a candidate. Both carry thread-local state through a barrier,
+threadgroup publication, a second barrier, and threadgroup consumption, but
+that generic scratch handoff is their entire intersection. Scan publishes one
+block-prefix slot from the last lane of the last active SIMDgroup and advances
+by fixed axis blocks; sort publishes chunks from every thread and advances by
+doubling a partitioned merge width. They share no state algebra, participant
+topology, scratch shape, consumption transform, or advancement rule.
+
+Shared threadgroup-storage and barrier spellings alone are therefore below the
+local abstraction-admission bar. The scan observation does not widen the
+frozen hierarchical-reduction candidate, and neither observation changes the
+six-candidate set or its Stage 3 closure.
 
 ## Scope boundary
 

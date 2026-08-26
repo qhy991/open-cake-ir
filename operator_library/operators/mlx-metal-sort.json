@@ -18,6 +18,13 @@
   "locators": [
     {
       "kind": "repository_path",
+      "value": "mlx/backend/metal/kernels/sort.h",
+      "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "git_object": "ea2640bace0ade86f39ea7a04784657765475a44",
+      "symbol": "BlockMergeSort::sort"
+    },
+    {
+      "kind": "repository_path",
       "value": "mlx/backend/metal/kernels/sort.metal",
       "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
       "git_object": "d9bf20476f527c62c2f3a2cdaeb56840f54ffb13",

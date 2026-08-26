@@ -7,7 +7,7 @@
   "input_library": {
     "manifest_path": "operator_library/manifest.json",
     "library_id": "open-cake-operator-library-v1",
-    "canonical_sha256": "c4b28aa34c488c1d614b22f630a09fbd74d9e8894ee2d3970d8207604c7e562f"
+    "canonical_sha256": "5cf19ca9e8e2ee3945a9b577b521f3d02e2029b15bd84d8c2bedc59f0b079613"
   },
   "selection_policy": {
     "name": "source-grounded-recurrence-tracer-v1",
@@ -36,7 +36,10 @@
       "The recurrence is independent of hierarchical-simdgroup-threadgroup-reduction and does not admit a Compiler RMS operation, Target capability, Schedule form, or lowering subset.",
       "The paired threadgroup-tile MMA recurrence records source call order only; barrier and safe or unsafe helper names do not establish visibility, uniform participation, bounds, zero fill, scratch lifetime, race or deadlock freedom, or memory safety.",
       "The matrix-loop recurrence does not normalize physical layout, transpose meaning, quantization, scales or biases, convolution window, grouping or spatial addressing, edge or tail handling, result storage, accumulator behavior, or numerical equivalence.",
-      "The matrix-loop recurrence establishes no asynchronous overlap, double buffering, resource, occupancy, throughput, instruction mapping, Compiler or Target contract, Schedule or lowering result, and does not alter the frozen Stage 3 candidate closure."
+      "The matrix-loop recurrence establishes no asynchronous overlap, double buffering, resource, occupancy, throughput, instruction mapping, Compiler or Target contract, Schedule or lowering result, and does not alter the frozen Stage 3 candidate closure.",
+      "The scan and sort observations share only a generic thread-state and threadgroup-scratch handoff; they have no common state algebra, participant topology, scratch shape, consumption transform, or advancement rule, so no candidate is admitted from that intersection.",
+      "The contiguous-scan observation does not widen hierarchical-simdgroup-threadgroup-reduction: its last-lane publication and first-SIMDgroup exclusive prefix scan are not lane-zero partial publication followed by a second reduction. The sort observation supplies no SIMDgroup reduction, and neither observation is evidence for an existing candidate.",
+      "The standalone scan and sort observations establish no barrier safety, bounds, memory safety, stability, deterministic or numerical equivalence, correctness, performance, resource, instruction-mapping, Compiler, Target, Schedule, lowering, or Stage 3 result."
     ]
   },
   "observations": [
@@ -52,8 +55,10 @@
     "observations/mlx-quantized-qmm-n-threadgroup-mma-k-loop.json",
     "observations/mlx-rms-norm-hierarchical-reduction.json",
     "observations/mlx-scaled-dot-product-attention-max-rebased-summary.json",
+    "observations/mlx-scan-contiguous-block-prefix-handoff.json",
     "observations/mlx-scatter-runtime-index-axis-stride-fold.json",
     "observations/mlx-softmax-looped-max-rebased-summary.json",
+    "observations/mlx-sort-block-merge-state-exchange.json",
     "observations/mlx-steel-gemm-paired-threadgroup-mma-k-loop.json"
   ],
   "candidates": [
@@ -65,9 +70,9 @@
     "candidates/two-pass-row-rms-modulation.json"
   ],
   "counts": {
-    "observation_count": 15,
+    "observation_count": 17,
     "candidate_count": 6,
-    "implementation_count": 13,
+    "implementation_count": 15,
     "source_count": 2
   }
 }

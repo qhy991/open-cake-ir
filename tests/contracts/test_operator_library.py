@@ -246,6 +246,39 @@ class OperatorLibrarySchemaTests(unittest.TestCase):
                     },
                 )
 
+    def test_mlx_scan_and_sort_bind_algorithm_symbols_and_wrappers(self) -> None:
+        manifest = _read(LIBRARY / "manifest.json")
+        occurrences = {
+            occurrence["implementation_id"]: occurrence
+            for relative in manifest["operators"]
+            for occurrence in [_read(_catalog_path(LIBRARY, relative))]
+        }
+        expected_locators = {
+            "mlx.metal-scan": {
+                (
+                    "mlx/backend/metal/kernels/scan.h",
+                    "contiguous_scan",
+                ),
+                ("mlx/backend/metal/kernels/scan.metal", None),
+            },
+            "mlx.metal-sort": {
+                (
+                    "mlx/backend/metal/kernels/sort.h",
+                    "BlockMergeSort::sort",
+                ),
+                ("mlx/backend/metal/kernels/sort.metal", None),
+            },
+        }
+
+        for implementation_id, locator_pairs in expected_locators.items():
+            with self.subTest(implementation_id=implementation_id):
+                actual = {
+                    (locator["value"], locator["symbol"])
+                    for locator in occurrences[implementation_id]["locators"]
+                    if locator["kind"] == "repository_path"
+                }
+                self.assertTrue(locator_pairs.issubset(actual))
+
 
 class OperatorLibraryValidatorTests(unittest.TestCase):
     def test_cli_validates_and_reports_each_required_count(self) -> None:

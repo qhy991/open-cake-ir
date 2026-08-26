@@ -445,7 +445,7 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
             with self.subTest(boundary=boundary):
                 self.assertIn(boundary, variants)
         manifest = _read(EXTRACTION / "manifest.json")
-        self.assertEqual(manifest["counts"]["implementation_count"], 13)
+        self.assertEqual(manifest["counts"]["implementation_count"], 15)
         non_claims = " ".join(manifest["selection_policy"]["non_claims"])
         for boundary in (
             "does not establish a common thread or SIMDgroup ownership model",
@@ -633,9 +633,9 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
         self.assertEqual(
             manifest["counts"],
             {
-                "observation_count": 15,
+                "observation_count": 17,
                 "candidate_count": 6,
-                "implementation_count": 13,
+                "implementation_count": 15,
                 "source_count": 2,
             },
         )
@@ -645,6 +645,136 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
             "does not normalize physical layout",
             "establishes no asynchronous overlap",
             "does not alter the frozen Stage 3 candidate closure",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, non_claims)
+
+    def test_scan_and_sort_handoff_remain_below_candidate_threshold(self) -> None:
+        observation_paths = (
+            "observations/mlx-scan-contiguous-block-prefix-handoff.json",
+            "observations/mlx-sort-block-merge-state-exchange.json",
+        )
+        observations = [_read(EXTRACTION / path) for path in observation_paths]
+        by_id = {
+            observation["observation_id"]: observation for observation in observations
+        }
+
+        self.assertEqual(
+            {
+                (
+                    observation["source_locator"]["path"],
+                    observation["source_locator"]["symbol"],
+                    observation["source_span"]["start_line"],
+                    observation["source_span"]["end_line"],
+                )
+                for observation in observations
+            },
+            {
+                (
+                    "mlx/backend/metal/kernels/scan.h",
+                    "contiguous_scan",
+                    247,
+                    401,
+                ),
+                (
+                    "mlx/backend/metal/kernels/sort.h",
+                    "BlockMergeSort::sort",
+                    158,
+                    243,
+                ),
+            },
+        )
+        self.assertEqual(
+            len({observation["pattern_signature"] for observation in observations}),
+            2,
+        )
+
+        scan = by_id["mlx-metal-scan.contiguous-block-prefix-handoff"]
+        sort = by_id["mlx-metal-sort.block-merge-state-exchange"]
+        common_primitives = set(scan["observed_primitives"]).intersection(
+            sort["observed_primitives"]
+        )
+        self.assertEqual(
+            common_primitives,
+            {
+                "iteration_carried_thread_state",
+                "postpublication_threadgroup_barrier",
+                "prepublication_threadgroup_barrier",
+                "reused_threadgroup_storage",
+                "thread_state_to_threadgroup_publication",
+                "threadgroup_state_to_thread_state_update",
+            },
+        )
+        exclusive_primitives = {
+            scan["observation_id"]: {
+                "block_prefix_carry",
+                "contiguous_axis_block_iteration",
+                "first_simdgroup_summary_scan",
+                "forward_or_reverse_scan",
+                "inclusive_or_exclusive_output",
+                "last_lane_simdgroup_summary_publish",
+                "operator_parameterized_scan",
+                "per_thread_serial_prefix",
+                "safe_or_unsafe_tail_io",
+                "simd_exclusive_prefix_scan",
+                "single_thread_block_prefix_publish",
+            },
+            sort["observation_id"]: {
+                "all_thread_multiitem_publication",
+                "merge_path_partition",
+                "merge_width_doubling",
+                "optional_index_carry",
+                "partitioned_two_run_merge",
+                "terminal_threadgroup_publication",
+                "thread_local_initial_sort",
+            },
+        }
+        for observation in observations:
+            other = sort if observation is scan else scan
+            for primitive in exclusive_primitives[observation["observation_id"]]:
+                with self.subTest(
+                    observation=observation["observation_id"], primitive=primitive
+                ):
+                    self.assertIn(primitive, observation["observed_primitives"])
+                    self.assertNotIn(primitive, other["observed_primitives"])
+
+        manifest = _read(EXTRACTION / "manifest.json")
+        candidates = [_read(EXTRACTION / path) for path in manifest["candidates"]]
+        standalone_ids = set(by_id)
+        self.assertTrue(
+            all(
+                standalone_ids.isdisjoint(candidate["observation_ids"])
+                for candidate in candidates
+            )
+        )
+        self.assertTrue(
+            all(
+                candidate["pattern_signature"]
+                not in {
+                    scan["pattern_signature"],
+                    sort["pattern_signature"],
+                }
+                for candidate in candidates
+            )
+        )
+        self.assertEqual(
+            manifest["counts"],
+            {
+                "observation_count": 17,
+                "candidate_count": 6,
+                "implementation_count": 15,
+                "source_count": 2,
+            },
+        )
+        non_claims = " ".join(manifest["selection_policy"]["non_claims"])
+        for boundary in (
+            "share only a generic thread-state and threadgroup-scratch handoff",
+            "no common state algebra, participant topology, scratch shape",
+            "so no candidate is admitted",
+            "does not widen hierarchical-simdgroup-threadgroup-reduction",
+            "neither observation is evidence for an existing candidate",
+            "no barrier safety",
+            "or Stage 3 result",
         ):
             with self.subTest(boundary=boundary):
                 self.assertIn(boundary, non_claims)
