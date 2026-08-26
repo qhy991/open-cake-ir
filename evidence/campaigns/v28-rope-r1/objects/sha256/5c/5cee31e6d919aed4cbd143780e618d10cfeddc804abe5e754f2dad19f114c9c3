@@ -1,0 +1,5 @@
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'cake_flash_kmeans_assign' for 'sm_100a'
+ptxas info    : Function properties for cake_flash_kmeans_assign
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 96 registers, used 1 barriers, 43008 bytes smem

@@ -1,0 +1,114 @@
+// CAKE_REPRO_LAUNCH_V1 {"abi":"flash_kmeans_assign_v1","block":[256,1,1],"dynamic_shared_memory_bytes":0,"grid":[512,32,1],"kernel_name":"cake_flash_kmeans_assign","schema_version":1,"target":"sm_100a"}
+#include <cuda_bf16.h>
+#include <mma.h>
+#include <stdint.h>
+
+extern "C" __global__ __launch_bounds__(256, 4)
+void cake_flash_kmeans_assign(
+    const __nv_bfloat16* tokens,
+    const __nv_bfloat16* centroids,
+    const float* centroid_sq,
+    int32_t* assignments) {
+  using namespace nvcuda;
+
+  constexpr int kN = 65536;
+  constexpr int kD = 128;
+  constexpr int kK = 1024;
+  constexpr int kTokensPerBlock = 128;
+  constexpr int kTokensPerWarp = 16;
+  constexpr int kTokenTileVectors = 2048;
+
+  __shared__ __align__(16) __nv_bfloat16
+      token_tile[kTokensPerBlock * kD];
+  __shared__ float score_tile[8][16 * 16];
+
+  const int b = static_cast<int>(blockIdx.y);
+  const int block_token =
+      static_cast<int>(blockIdx.x) * kTokensPerBlock;
+  const long long token_base =
+      (static_cast<long long>(b) * kN + block_token) * kD;
+
+  const int4* token_vectors =
+      reinterpret_cast<const int4*>(tokens + token_base);
+  int4* tile_vectors = reinterpret_cast<int4*>(token_tile);
+  for (int i = static_cast<int>(threadIdx.x);
+       i < kTokenTileVectors;
+       i += static_cast<int>(blockDim.x)) {
+    tile_vectors[i] = token_vectors[i];
+  }
+  __syncthreads();
+
+  const int warp = static_cast<int>(threadIdx.x) >> 5;
+  const int lane = static_cast<int>(threadIdx.x) & 31;
+  const int warp_token = warp * kTokensPerWarp;
+  const int column = lane & 15;
+  const int row_begin = (lane >> 4) * 8;
+  const __nv_bfloat16* centroid_batch =
+      centroids + static_cast<long long>(b) * kK * kD;
+  const long long norm_base = static_cast<long long>(b) * kK;
+
+  float best = 3.402823466e+38F;
+  int best_k = 0;
+
+  #pragma unroll 1
+  for (int k0 = 0; k0 < kK; k0 += 16) {
+    wmma::fragment<wmma::accumulator, 16, 16, 16, float> acc;
+    wmma::fill_fragment(acc, 0.0F);
+
+    #pragma unroll
+    for (int d0 = 0; d0 < kD; d0 += 16) {
+      wmma::fragment<wmma::matrix_a, 16, 16, 16,
+                     __nv_bfloat16, wmma::row_major> a;
+      wmma::fragment<wmma::matrix_b, 16, 16, 16,
+                     __nv_bfloat16, wmma::col_major> x;
+      wmma::load_matrix_sync(
+          a,
+          centroid_batch + static_cast<long long>(k0) * kD + d0,
+          kD);
+      wmma::load_matrix_sync(
+          x, token_tile + warp_token * kD + d0, kD);
+      wmma::mma_sync(acc, a, x, acc);
+    }
+
+    wmma::store_matrix_sync(
+        &score_tile[warp][0], acc, 16, wmma::mem_row_major);
+    __syncwarp();
+
+    float tile_best = 3.402823466e+38F;
+    int tile_best_k = k0 + row_begin;
+    #pragma unroll
+    for (int r = 0; r < 8; ++r) {
+      const int row = row_begin + r;
+      const int k = k0 + row;
+      const float norm = centroid_sq[norm_base + k];
+      const float dot = score_tile[warp][row * 16 + column];
+      const float candidate = norm - 2.0F * dot;
+      if (candidate < tile_best) {
+        tile_best = candidate;
+        tile_best_k = k;
+      }
+    }
+
+    const float high_best =
+        __shfl_down_sync(0xffffffffU, tile_best, 16);
+    const int high_best_k =
+        __shfl_down_sync(0xffffffffU, tile_best_k, 16);
+    if (lane < 16) {
+      if (high_best < tile_best) {
+        tile_best = high_best;
+        tile_best_k = high_best_k;
+      }
+      if (tile_best < best) {
+        best = tile_best;
+        best_k = tile_best_k;
+      }
+    }
+    __syncwarp();
+  }
+
+  if (lane < 16) {
+    const long long output_base =
+        static_cast<long long>(b) * kN + block_token;
+    assignments[output_base + warp_token + lane] = best_k;
+  }
+}
