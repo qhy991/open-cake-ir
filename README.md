@@ -14,9 +14,9 @@ Schedule、Assessment、Lowering、CUBIN 和正确性检查，并提供可直接
 
 **AMD `gfx1151` 独立优化分支请看
 [`docs/GETTING_STARTED_AMD.md`](docs/GETTING_STARTED_AMD.md)。** 当前分支已对齐含 RoPE 的最新
-`main`，并加入 AITER v0.1.20 RMSNorm 的 source-pinned prepare/live correctness 路径；历史 AMD
-45-case Gate 不再作为当前 Gate。gfx1151 Executor、AITER 实机正确性和 Q8_1 576-byte 验证仍未完成，
-因此没有新的正式 GPU 性能结论。
+`main`，并加入 AITER v0.1.20 RMSNorm 的 source-pinned prepare/live correctness 路径。AITER 在
+gfx1151 上的两个冻结 case 已通过；post-main AMD Compiler Gate 为 47/47，但仍等待独立审批。
+CAKE 对照计时和 Q8_1 576-byte 验证尚未完成，因此没有新的正式 GPU 性能结论。
 
 In plain language: you describe *how* a GPU should divide and order work in a typed JSON Schedule; the Compiler
 checks that plan and lowers it to inspectable target source. The optional Research Lab then lets agents improve

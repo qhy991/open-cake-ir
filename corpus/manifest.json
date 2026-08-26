@@ -528,6 +528,59 @@
       }
     },
     {
+      "case_id": "swiglu-gfx1151-accepted",
+      "schedule": "corpus/schedules/swiglu-b8-smoke-gfx1151.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_TARGET_UNMODELED"
+        ],
+        "schedule_sha256": "dc4597ea970377acf5d27aafc6653307ca89bfe5647f5e703a116a9d178d6196",
+        "lowering_source_sha256": "364d08ed8424afc686b25d4b05bff3090a10c51b8f99d0cae9c9782a040dd5f8"
+      }
+    },
+    {
+      "case_id": "swiglu-gfx1151-instruction-unsupported",
+      "schedule": "corpus/schedules/swiglu-b8-smoke-gfx1151-instruction-unsupported.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TARGET_INSTRUCTION_UNSUPPORTED",
+          "RESIDENCY_TARGET_UNMODELED"
+        ],
+        "schedule_sha256": "594c74beaa4419955f62832701d12a9ff80365bba130efb3660d6b6f7277998b",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "llama-rmsnorm-mul-gfx1151-r64-w4-accepted",
+      "schedule": "corpus/schedules/llama-rmsnorm-mul-b8-gfx1151-r64-w4.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_TARGET_UNMODELED"
+        ],
+        "schedule_sha256": "d152273599a51bcad31be3acb7baebb57eb4b7ca1d0842560e8413cc277674c8",
+        "lowering_source_sha256": "66c723e91d5ccd488117359edd5172f8569e49c7aaca2c668a612e6f3a185d35"
+      }
+    },
+    {
+      "case_id": "llama-rmsnorm-mul-gfx1151-r1-w8-accepted",
+      "schedule": "corpus/schedules/llama-rmsnorm-mul-b8-gfx1151-r1-w8.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_TARGET_UNMODELED"
+        ],
+        "schedule_sha256": "755da93f847eebf1769587be539037d4297a2044d1fb8f08a5cc6cf0bda97386",
+        "lowering_source_sha256": "14475c87a0c82f43321517813e5b9bf20c6dafd69c7876a3125e8a149d3cb6ac"
+      }
+    },
+    {
       "case_id": "packed-q4_0-record-copy-gfx1151-accepted",
       "schedule": "corpus/schedules/packed-q4_0-record-copy-gfx1151.json",
       "expected": {

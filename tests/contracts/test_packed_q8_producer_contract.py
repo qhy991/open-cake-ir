@@ -279,7 +279,7 @@ class PackedQ8ProducerContractTests(unittest.TestCase):
                 mutate(document)
                 self.assertEqual(_conformance_codes(document), (expected,))
 
-    def test_schedules_use_current_parser_syntax_and_close_the_45_case_gate(self) -> None:
+    def test_schedules_use_current_parser_syntax_and_close_the_47_case_gate(self) -> None:
         schedule = Schedule.from_dict(_document())
         self.assertIs(schedule.operation("reshape_blocks").kind, OperationKind.RESHAPE)
         self.assertEqual(
@@ -294,7 +294,7 @@ class PackedQ8ProducerContractTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "corpus/manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(len(manifest["cases"]), 45)
+        self.assertEqual(len(manifest["cases"]), 47)
         self.assertEqual(
             [case["case_id"] for case in manifest["cases"][-2:]],
             [
@@ -311,7 +311,7 @@ class PackedQ8ProducerContractTests(unittest.TestCase):
         )
         gate = Compiler.load(ROOT, ROOT / "compiler/revision.json").check_corpus()
         self.assertTrue(gate.passed)
-        self.assertEqual(gate.case_count, 45)
+        self.assertEqual(gate.case_count, 47)
 
 
 if __name__ == "__main__":

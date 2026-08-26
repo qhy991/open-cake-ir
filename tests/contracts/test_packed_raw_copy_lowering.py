@@ -165,13 +165,13 @@ class PackedRawCopyLoweringTests(unittest.TestCase):
             [(ARANGE_FINDING, "tile_loops[0].tile")],
         )
 
-    def test_manifest_adds_only_the_four_reviewed_packed_storage_cases(self) -> None:
+    def test_manifest_retains_the_four_reviewed_packed_storage_cases(self) -> None:
         report = self.compiler.check_corpus()
 
         self.assertTrue(report.passed, report.cases)
-        self.assertEqual(report.case_count, 45)
-        self.assertEqual(report.accepted_case_count, 31)
-        self.assertEqual(report.lowerable_case_count, 25)
+        self.assertEqual(report.case_count, 47)
+        self.assertEqual(report.accepted_case_count, 33)
+        self.assertEqual(report.lowerable_case_count, 27)
         self.assertEqual(
             tuple(case.case_id for case in report.cases[-6:-2]),
             NEW_CASE_IDS,
