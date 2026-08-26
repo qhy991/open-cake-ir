@@ -141,6 +141,17 @@ class ContractFixture:
                 "materiality_ratio": 1.05,
                 "required_pair_wins": 3,
             },
+            "attribution": {
+                "tool_kind": "rocprofv3",
+                "trace": "kernel",
+                "stats": True,
+                "output_formats": ["csv", "json"],
+                "arm_order": ["candidate", "baseline"],
+                "profile_case_id": "seeded_random",
+                "profile_launches": 1,
+                "trigger_status": LEAF_TIMING_WIN,
+                "timing": "none",
+            },
         }
         self.path = self.root / "search.json"
         self.write()
@@ -254,6 +265,13 @@ class AmdRmsNormSearchContractTests(unittest.TestCase):
         self.assertEqual(contract.screening.launches_per_sample, 50)
         self.assertEqual(contract.confirmatory.launches_per_sample, 50)
         self.assertEqual(
+            contract.attribution.arm_order, ("candidate", "baseline")
+        )
+        self.assertEqual(contract.attribution.profile_launches, 1)
+        self.assertTrue(contract.attribution.stats)
+        self.assertEqual(contract.attribution.output_formats, ("csv", "json"))
+        self.assertEqual(contract.attribution.timing, "none")
+        self.assertEqual(
             contract.confirmatory.timing.route_calls_per_cohort,
             5 + 25 * 50,
         )
@@ -275,6 +293,9 @@ class AmdRmsNormSearchContractTests(unittest.TestCase):
             "screening": lambda fixture: fixture.document["screening"].__setitem__(
                 "rounds_per_candidate", 6
             ),
+            "attribution": lambda fixture: fixture.document[
+                "attribution"
+            ].__setitem__("timing", "rank_candidates"),
             "compiler_identity": lambda fixture: fixture.document["compiler"].__setitem__(
                 "revision_id", "changed"
             ),

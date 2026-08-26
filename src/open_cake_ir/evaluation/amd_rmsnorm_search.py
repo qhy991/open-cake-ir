@@ -44,6 +44,7 @@ _TOP_LEVEL_FIELDS = {
     "geometry",
     "screening",
     "confirmatory",
+    "attribution",
 }
 _REFERENCE_FIELDS = {"path", "canonical_sha256"}
 _COMPILER_REFERENCE_FIELDS = {*_REFERENCE_FIELDS, "revision_id"}
@@ -83,6 +84,17 @@ _CONFIRMATORY = {
     "maximum_cv": 0.05,
     "materiality_ratio": 1.05,
     "required_pair_wins": 3,
+}
+_ATTRIBUTION = {
+    "tool_kind": "rocprofv3",
+    "trace": "kernel",
+    "stats": True,
+    "output_formats": ["csv", "json"],
+    "arm_order": ["candidate", "baseline"],
+    "profile_case_id": "seeded_random",
+    "profile_launches": 1,
+    "trigger_status": LEAF_TIMING_WIN,
+    "timing": "none",
 }
 _ROW_MATRIX_BUFFERS = frozenset({"x_tile", "sq", "normed", "y_tile"})
 _ROW_SCALAR_BUFFERS = frozenset({"sumsq", "meansq", "shifted", "inv_rms"})
@@ -261,6 +273,21 @@ class AmdRmsNormConfirmatoryProtocol:
 
 
 @dataclass(frozen=True)
+class AmdRmsNormAttributionProtocol:
+    """Profiler-only replay performed after the no-profiler decision is fixed."""
+
+    tool_kind: str
+    trace: str
+    stats: bool
+    output_formats: tuple[str, str]
+    arm_order: tuple[str, str]
+    profile_case_id: str
+    profile_launches: int
+    trigger_status: str
+    timing: str
+
+
+@dataclass(frozen=True)
 class AmdRmsNormCandidate:
     """One immutable materialized Schedule in the closed geometry domain."""
 
@@ -302,6 +329,7 @@ class AmdRmsNormSearchContract:
     workload_sha256: str
     screening: AmdRmsNormScreeningProtocol
     confirmatory: AmdRmsNormConfirmatoryProtocol
+    attribution: AmdRmsNormAttributionProtocol
     _template_bytes: bytes
 
     @classmethod
@@ -335,6 +363,8 @@ class AmdRmsNormSearchContract:
             raise ValueError("search contract screening protocol differs")
         if document.get("confirmatory") != _CONFIRMATORY:
             raise ValueError("search contract confirmatory protocol differs")
+        if document.get("attribution") != _ATTRIBUTION:
+            raise ValueError("search contract attribution protocol differs")
 
         compiler_ref, compiler_path, compiler, _ = _load_reference(
             root,
@@ -399,6 +429,7 @@ class AmdRmsNormSearchContract:
             raise ValueError("confirmatory route_calls_per_cohort differs")
 
         screening = cast(Mapping[str, object], document["screening"])
+        attribution = cast(Mapping[str, object], document["attribution"])
         return cls(
             project_root=root,
             path=contract_path,
@@ -427,6 +458,19 @@ class AmdRmsNormSearchContract:
                 timing=timing,
                 warmup_launches_per_cohort=warmups,
                 launches_per_sample=launches_per_sample,
+            ),
+            attribution=AmdRmsNormAttributionProtocol(
+                tool_kind=cast(str, attribution["tool_kind"]),
+                trace=cast(str, attribution["trace"]),
+                stats=cast(bool, attribution["stats"]),
+                output_formats=cast(
+                    tuple[str, str], tuple(attribution["output_formats"])
+                ),
+                arm_order=cast(tuple[str, str], tuple(attribution["arm_order"])),
+                profile_case_id=cast(str, attribution["profile_case_id"]),
+                profile_launches=cast(int, attribution["profile_launches"]),
+                trigger_status=cast(str, attribution["trigger_status"]),
+                timing=cast(str, attribution["timing"]),
             ),
             _template_bytes=template_bytes,
         )
@@ -594,8 +638,87 @@ def diagnose_terminal_decision(
     raise ValueError("terminal RMSNorm status is unsupported")
 
 
+def derive_profiled_diagnosis(
+    contract: AmdRmsNormSearchContract,
+    *,
+    no_profiler_status: str,
+    arm_receipts: object,
+    checked_projections: object,
+) -> AmdRmsNormDiagnosis:
+    """Admit the profiled diagnosis only from a complete two-arm checked pair."""
+
+    if (
+        no_profiler_status != contract.attribution.trigger_status
+        or no_profiler_status != LEAF_TIMING_WIN
+    ):
+        raise ValueError("profiler attribution requires the frozen leaf timing win")
+    receipts = _object(arm_receipts, "profile arm receipts")
+    projections = _object(checked_projections, "profile checked projections")
+    arms = set(contract.attribution.arm_order)
+    if set(receipts) != arms or set(projections) != arms:
+        raise ValueError("profile attribution requires both frozen arms")
+    for arm in contract.attribution.arm_order:
+        receipt = _object(receipts[arm], f"profile receipt {arm}")
+        correctness = _object(
+            receipt.get("profiled_launch_correctness"),
+            f"profile receipt {arm}.correctness",
+        )
+        identity = _object(
+            receipt.get("artifact_identity"), f"profile receipt {arm}.identity"
+        )
+        if (
+            receipt.get("kind")
+            != "open_cake_gfx1151_rmsnorm_profile_replay_v1"
+            or receipt.get("status") != "PROFILE_REPLAY_COMPLETE"
+            or receipt.get("arm") != arm
+            or receipt.get("search_contract_sha256") != contract.canonical_sha256
+            or receipt.get("target_dispatch_count")
+            != contract.attribution.profile_launches
+            or receipt.get("performance_measured") is not False
+            or receipt.get("timing_samples") != 0
+            or receipt.get("timing_used_for_decision") is not False
+            or receipt.get("performance_decision") is not None
+            or receipt.get("promotion_authorized") is not False
+            or receipt.get("fallback_calls") != 0
+            or correctness.get("passed") is not True
+            or correctness.get("inputs_unchanged") is not True
+            or correctness.get("fallback_calls") != 0
+            or not isinstance(identity.get("kernel_name"), str)
+            or not identity["kernel_name"]
+        ):
+            raise ValueError(f"profile receipt {arm} differs")
+        checked = _object(projections[arm], f"profile projection {arm}")
+        if checked.get("cross_output_agreement") is not True:
+            raise ValueError(f"profile projection {arm} lacks cross-output agreement")
+        for name, count_field in (
+            ("kernel_trace", "dispatch_count"),
+            ("kernel_stats", "calls"),
+            ("results_json", "dispatch_count"),
+        ):
+            projection = _object(
+                checked.get(name), f"profile projection {arm}.{name}"
+            )
+            if (
+                projection.get("kernel_name") != identity["kernel_name"]
+                or projection.get(count_field)
+                != contract.attribution.profile_launches
+                or projection.get("duration_used_for_timing_or_promotion")
+                is not False
+            ):
+                raise ValueError(f"profile projection {arm}.{name} differs")
+        stats = _object(
+            checked.get("kernel_stats"), f"profile projection {arm}.kernel_stats"
+        )
+        if stats.get("duration_values_projected") is not False:
+            raise ValueError(f"profile projection {arm} exposes profiler duration")
+    return diagnose_terminal_decision(
+        no_profiler_status, profiler_evidence_collected=True
+    )
+
+
 __all__ = [
     "AmdRmsNormCandidate",
+    "AmdRmsNormAttributionProtocol",
     "AmdRmsNormConfirmatoryProtocol",
     "AmdRmsNormScreeningProtocol",
     "AmdRmsNormSearchContract",
@@ -613,6 +736,7 @@ __all__ = [
     "TARGET",
     "candidate_id",
     "derive_confirmatory_decision",
+    "derive_profiled_diagnosis",
     "diagnose_terminal_decision",
     "materialize_candidates",
 ]

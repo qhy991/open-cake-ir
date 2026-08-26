@@ -100,10 +100,18 @@ class _RuntimeCandidate:
 
 
 class _Evidence:
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        manifest_kind: str = "open_cake_gfx1151_rmsnorm_search_manifest_v2",
+    ) -> None:
+        if not manifest_kind:
+            raise ValueError("evidence manifest kind must be non-empty")
         root.mkdir(mode=0o700)
         self.root = root
         self.events = root / "events.jsonl"
+        self.manifest_kind = manifest_kind
 
     def json(self, relative: str, value: object) -> Path:
         path = self.root / relative
@@ -138,7 +146,7 @@ class _Evidence:
             )
         document = {
             "schema_version": 1,
-            "kind": "open_cake_gfx1151_rmsnorm_search_manifest_v2",
+            "kind": self.manifest_kind,
             "files": records,
         }
         self.json("manifest.json", document)
@@ -233,6 +241,13 @@ def _admit_search_host(
     return admission, process_initial
 
 
+def _profiler_record(
+    profilers: tuple[Mapping[str, object], ...], kind: str
+) -> dict[str, object] | None:
+    matches = [value for value in profilers if value.get("kind") == kind]
+    return dict(matches[0]) if len(matches) == 1 else None
+
+
 def _runtime_document(torch: object, triton: object, properties: object) -> dict[str, object]:
     return {
         "python": platform.python_version(),
@@ -280,6 +295,7 @@ def _compile_candidate(
     torch: object,
     evidence: _Evidence,
     relative_root: str,
+    compile_only: bool = False,
 ) -> _RuntimeCandidate:
     root = f"{relative_root}/{candidate_id}"
     evidence.json(f"{root}/schedule.json", schedule)
@@ -324,7 +340,7 @@ def _compile_candidate(
             **constants,
             **options,
             grid=grid,
-            warmup=False,
+            warmup=compile_only,
         )
         torch.cuda.synchronize()
         if compiled is None:
@@ -365,7 +381,7 @@ def _compile_candidate(
             compiled=compiled,
             artifacts=artifacts,
             outputs=outputs,
-            launch_calls=1,
+            launch_calls=0 if compile_only else 1,
         )
     except BaseException:
         generated_directory.cleanup()
@@ -860,9 +876,7 @@ def _run(
             flush=flush,
             evidence=evidence,
         )
-        profiler_record = (
-            dict(host_admission.profilers[0]) if host_admission.profilers else None
-        )
+        profiler_record = _profiler_record(host_admission.profilers, "rocprofv3")
         profiler = (
             str(profiler_record["path"]) if profiler_record is not None else None
         )

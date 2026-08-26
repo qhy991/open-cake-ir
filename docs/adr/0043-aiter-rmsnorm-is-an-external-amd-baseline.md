@@ -67,3 +67,15 @@ Torch custom-op guard is part of its correctness call path and is not automatica
 matched timing boundary. A later performance study must declare a common direct-C-ABI
 or wrapper-inclusive boundary, use the common paired protocol and retain profiler path
 evidence before any Open Cake candidate can claim a library-relative improvement.
+
+The Open Cake profiler path is deliberately a post-decision assay. Its input is a sealed
+no-profiler `LEAF_TIMING_WIN` root, and its output is a new root; it never edits or
+reclassifies the parent result. Candidate and baseline run in separate exact-rocprofv3
+children because different Schedule variants can share one physical Triton symbol. Each
+child performs one correctness-checked target launch after compile-only artifact replay.
+The validator parses the full trace itself (rocprofv3 1.1.0 does not apply
+`--kernel-include-regex` to ordinary kernel trace) and requires trace CSV, kernel-stats
+CSV and JSON dispatches to agree on exact symbol, count, launch geometry and resources.
+Profiler timestamps remain raw diagnostic context; they cannot contribute samples,
+speedup, promotion or an end-to-end claim. No gfx1151 occupancy is derived from these
+fields without a separately approved target calibration.

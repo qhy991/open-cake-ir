@@ -189,6 +189,28 @@ kernel name, wave size, VGPR/SGPR counts, LDS, per-workitem scratch, kernarg siz
 dynamic-stack bit from the retained AMDGCN. The record deliberately says
 `occupancy_derived=false` until independently calibrated gfx1151 residency facts exist.
 
+Profiling is a separate second command and a separate append-only evidence root. Run it
+only after the first command has sealed a `LEAF_TIMING_WIN` result:
+
+```bash
+PYTHONPATH=src /path/to/executor/python \
+  examples/gpu/rmsnorm_amd_rocprofv3.py \
+  --project-root /path/to/clean/open-cake-ir \
+  --contract contracts/calibrations/llama-rmsnorm-mul-gfx1151-one-row-search-v2.json \
+  --profile-from /existing/external/path/rmsnorm-no-profiler-win \
+  --artifact-dir /new/external/path/rmsnorm-rocprofv3-attribution
+```
+
+The profiler command verifies the complete parent manifest, replays the raw AB/BA
+decision, requires the same clean Git revision and exact Compiler/Executor/Workload, and
+then launches candidate and baseline in two independent profiler child processes. Each
+child compile-loads the same schedule/source/HSACO, profiles exactly one
+correctness-checked Workload launch and records zero fallback. The checked projection
+cross-validates exact-symbol dispatch count, workgroup/grid and runtime resource fields
+across rocprofv3 kernel-trace CSV, kernel-stats CSV and JSON. Raw timestamps remain in
+the profiler files, but no duration is projected, compared or used for timing or
+promotion. The original no-profiler result and manifest are never modified.
+
 ## Boundary
 
 This is a generated leaf-kernel path. It is not a completed llama.cpp build, model layer,
