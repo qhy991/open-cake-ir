@@ -21,7 +21,7 @@
       "value": "mlx/backend/metal/kernels/indexing/gather.h",
       "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
       "git_object": "8b93c01679c13707479907a0285213e36334d749",
-      "symbol": null
+      "symbol": "gather_impl"
     }
   ],
   "upstream_state": "repository_main",

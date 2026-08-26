@@ -162,6 +162,35 @@ class OperatorLibrarySchemaTests(unittest.TestCase):
                     locators,
                 )
 
+    def test_mlx_runtime_index_occurrences_bind_algorithm_symbols(self) -> None:
+        manifest = _read(LIBRARY / "manifest.json")
+        occurrences = {
+            occurrence["implementation_id"]: occurrence
+            for relative in manifest["operators"]
+            for occurrence in [_read(_catalog_path(LIBRARY, relative))]
+        }
+        expected = {
+            "mlx.metal-gather": (
+                "mlx/backend/metal/kernels/indexing/gather.h",
+                "gather_impl",
+            ),
+            "mlx.metal-scatter": (
+                "mlx/backend/metal/kernels/indexing/scatter.h",
+                "scatter_impl",
+            ),
+        }
+
+        for implementation_id, locator_pair in expected.items():
+            with self.subTest(implementation_id=implementation_id):
+                self.assertEqual(
+                    {
+                        (locator["value"], locator["symbol"])
+                        for locator in occurrences[implementation_id]["locators"]
+                        if locator["kind"] == "repository_path"
+                    },
+                    {locator_pair},
+                )
+
 
 class OperatorLibraryValidatorTests(unittest.TestCase):
     def test_cli_validates_and_reports_each_required_count(self) -> None:

@@ -1,0 +1,47 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "mlx-metal-gather.runtime-index-axis-stride-fold",
+  "pattern_signature": "runtime-index-location.axis-stride-offset-fold",
+  "implementation_id": "mlx.metal-gather",
+  "operator_id": "indexing.gather",
+  "source_id": "mlx-main-1f8e74e",
+  "source_locator": {
+    "path": "mlx/backend/metal/kernels/indexing/gather.h",
+    "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+    "git_object": "8b93c01679c13707479907a0285213e36334d749",
+    "symbol": "gather_impl"
+  },
+  "source_span": {
+    "start_line": 19,
+    "end_line": 50,
+    "sha256": "846b149f5cdc04af75542e03cf27683d316a263e245768ff11c2ebdcd51899c1",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "The function starts a separate indexed source-offset contribution at zero and visits each selected axis.",
+    "Scalar, one-dimensional, and higher-rank index tensors use distinct element-location paths; the higher-rank path selects a row-contiguous coordinate or elem_to_loc over runtime shape and stride metadata.",
+    "For each selected axis, the function passes the loaded index value and src_shape[axis] to offset_neg_idx, multiplies the returned value by src_strides[axis], and adds it to the indexed contribution.",
+    "A separate elem_to_loc call derives the unindexed source-slice base from index.z, slice sizes, source strides, and source rank.",
+    "The function linearizes the output grid coordinates and completes a direct source read into the output using the sum of source-slice and indexed contributions."
+  ],
+  "observed_primitives": [
+    "axis_stride_fold",
+    "direct_indexed_read_terminal",
+    "gather_output_linearization",
+    "index_element_location",
+    "index_rank_specialization",
+    "negative_index_offset",
+    "row_contiguous_index_path",
+    "runtime_axis_lookup",
+    "strided_index_location",
+    "unindexed_slice_base"
+  ],
+  "variant_notes": [
+    "NIDX and IDX_NDIM are template specializations; the cited runtime inputs are index values, shapes, strides, axes, and grid coordinates rather than a fully dynamic index count or rank.",
+    "The scalar, one-dimensional, and higher-rank index-location branches and the three-dimensional output linearization are gather-specific.",
+    "The cited span contains no explicit upper- or lower-bound branch for the loaded index value after offset_neg_idx and therefore establishes no in-bounds or memory-safety result."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

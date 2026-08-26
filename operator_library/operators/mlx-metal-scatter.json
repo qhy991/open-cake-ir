@@ -21,7 +21,7 @@
       "value": "mlx/backend/metal/kernels/indexing/scatter.h",
       "revision": "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
       "git_object": "3604f20f6188fbdef735a5e8641b43757f8d04c2",
-      "symbol": null
+      "symbol": "scatter_impl"
     }
   ],
   "upstream_state": "repository_main",

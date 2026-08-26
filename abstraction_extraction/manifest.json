@@ -7,7 +7,7 @@
   "input_library": {
     "manifest_path": "operator_library/manifest.json",
     "library_id": "open-cake-operator-library-v1",
-    "canonical_sha256": "7cfe1a59d4c87ad24e17bea0d9b8daaaa32d5fbdc2f01f124ef864af5d684247"
+    "canonical_sha256": "561c24c60187515602a157b95987efe32cffba6632ffb3ae08c78028880985da"
   },
   "selection_policy": {
     "name": "source-grounded-recurrence-tracer-v1",
@@ -27,7 +27,10 @@
     "non_claims": [
       "This in-progress tracer is not an exhaustive abstraction extraction over the collected corpus.",
       "A source pattern is not an admitted compiler IR operation or Target contract.",
-      "No Schedule expressibility, correctness, calibration, or performance result follows from extraction."
+      "No Schedule expressibility, correctness, calibration, or performance result follows from extraction.",
+      "Passing an index and accessed-buffer extent to the observed offset_neg_idx helper is not a bounds check; no in-bounds or memory-safety result follows.",
+      "No race freedom, destination ownership, atomic conflict policy, determinism, overwrite or reduction semantics, or update ordering follows from the runtime-index address-fold recurrence.",
+      "The runtime-index address-fold recurrence does not establish equivalence to Compiler AccessIndexKind.BUFFER, mask_tiled_axes zero-fill behavior, accessed-buffer boundary analysis, or any admitted lowering subset."
     ]
   },
   "observations": [
@@ -35,20 +38,23 @@
     "observations/apxinf-w8-gdn-input-row-projection.json",
     "observations/apxinf-w8-lm-head-row-projection.json",
     "observations/apxinf-w8-mlp-gate-up-row-projection.json",
+    "observations/mlx-gather-runtime-index-axis-stride-fold.json",
     "observations/mlx-layer-norm-hierarchical-reduction.json",
     "observations/mlx-rms-norm-hierarchical-reduction.json",
     "observations/mlx-scaled-dot-product-attention-max-rebased-summary.json",
+    "observations/mlx-scatter-runtime-index-axis-stride-fold.json",
     "observations/mlx-softmax-looped-max-rebased-summary.json"
   ],
   "candidates": [
     "candidates/hierarchical-simdgroup-threadgroup-reduction.json",
     "candidates/max-rebased-exponential-summary.json",
-    "candidates/row-per-simdgroup-groupwise-w8-projection.json"
+    "candidates/row-per-simdgroup-groupwise-w8-projection.json",
+    "candidates/runtime-index-axis-stride-offset-fold.json"
   ],
   "counts": {
-    "observation_count": 8,
-    "candidate_count": 3,
-    "implementation_count": 8,
+    "observation_count": 10,
+    "candidate_count": 4,
+    "implementation_count": 10,
     "source_count": 2
   }
 }

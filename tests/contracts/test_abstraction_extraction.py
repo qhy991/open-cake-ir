@@ -334,6 +334,121 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
         self.assertIn("two_pass_finalize", softmax["observed_primitives"])
         self.assertNotIn("two_pass_finalize", attention["observed_primitives"])
 
+    def test_runtime_index_fold_preserves_terminal_and_safety_boundaries(
+        self,
+    ) -> None:
+        candidate = _read(
+            EXTRACTION / "candidates" / "runtime-index-axis-stride-offset-fold.json"
+        )
+        observation_paths = (
+            "observations/mlx-gather-runtime-index-axis-stride-fold.json",
+            "observations/mlx-scatter-runtime-index-axis-stride-fold.json",
+        )
+        observations = [_read(EXTRACTION / path) for path in observation_paths]
+        by_id = {
+            observation["observation_id"]: observation for observation in observations
+        }
+
+        self.assertEqual(
+            candidate["observation_ids"],
+            [observation["observation_id"] for observation in observations],
+        )
+        self.assertEqual(
+            {observation["pattern_signature"] for observation in observations},
+            {candidate["pattern_signature"]},
+        )
+        self.assertEqual(
+            {
+                (
+                    observation["source_locator"]["path"],
+                    observation["source_locator"]["symbol"],
+                    observation["source_span"]["start_line"],
+                    observation["source_span"]["end_line"],
+                )
+                for observation in observations
+            },
+            {
+                (
+                    "mlx/backend/metal/kernels/indexing/gather.h",
+                    "gather_impl",
+                    19,
+                    50,
+                ),
+                (
+                    "mlx/backend/metal/kernels/indexing/scatter.h",
+                    "scatter_impl",
+                    31,
+                    57,
+                ),
+            },
+        )
+        common_primitives = set(observations[0]["observed_primitives"]).intersection(
+            observations[1]["observed_primitives"]
+        )
+        self.assertEqual(
+            common_primitives,
+            {
+                "axis_stride_fold",
+                "index_element_location",
+                "negative_index_offset",
+                "row_contiguous_index_path",
+                "runtime_axis_lookup",
+                "strided_index_location",
+                "unindexed_slice_base",
+            },
+        )
+        gather = by_id["mlx-metal-gather.runtime-index-axis-stride-fold"]
+        scatter = by_id["mlx-metal-scatter.runtime-index-axis-stride-fold"]
+        for primitive in (
+            "direct_indexed_read_terminal",
+            "gather_output_linearization",
+            "index_rank_specialization",
+        ):
+            with self.subTest(primitive=primitive):
+                self.assertIn(primitive, gather["observed_primitives"])
+                self.assertNotIn(primitive, scatter["observed_primitives"])
+        for primitive in (
+            "atomic_update_terminal",
+            "index_work_bound_guard",
+            "multiwork_index_iteration",
+            "noncontiguous_update_location",
+        ):
+            with self.subTest(primitive=primitive):
+                self.assertIn(primitive, scatter["observed_primitives"])
+                self.assertNotIn(primitive, gather["observed_primitives"])
+        normalized = " ".join(candidate["normalized_steps"])
+        for variant_only in (
+            "IDX_NDIM",
+            "three-dimensional",
+            "NWORK",
+            "atomic_update",
+            "conflict policy",
+        ):
+            with self.subTest(variant_only=variant_only):
+                self.assertNotIn(variant_only, normalized)
+        variants = " ".join(candidate["observed_variants"])
+        for boundary in (
+            "does not claim axis validation",
+            "index bounds validation",
+            "memory safety",
+            "destination ownership",
+            "race freedom",
+            "equivalence to a Compiler access form",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, variants)
+        manifest = _read(EXTRACTION / "manifest.json")
+        non_claims = " ".join(manifest["selection_policy"]["non_claims"])
+        for boundary in (
+            "is not a bounds check",
+            "no in-bounds or memory-safety result follows",
+            "No race freedom, destination ownership, atomic conflict policy",
+            "does not establish equivalence to Compiler AccessIndexKind.BUFFER",
+            "mask_tiled_axes zero-fill behavior",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, non_claims)
+
 
 class AbstractionExtractionValidatorTests(unittest.TestCase):
     def test_cli_validates_the_source_grounded_extraction(self) -> None:
