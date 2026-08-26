@@ -72,6 +72,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             )
             for path in directory.glob("*.py")
         } | {
+            "examples/gpu/aiter_rmsnorm_amd_baseline.py",
             "examples/gpu/amd_triton_quickstart.py",
             "examples/gpu/flash_kmeans_quickstart.py",
             "examples/gpu/llama_q8_1_amd_quickstart.py",

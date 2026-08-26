@@ -31,13 +31,40 @@ def _host() -> dict[str, object]:
             "version": "3.12.0",
             "resolved_sha256": "a" * 64,
         },
-        "packages": {"torch": "2.9.1", "triton": "3.5.1"},
+        "packages": {
+            "packaging": "25.0",
+            "pybind11": "3.0.4",
+            "psutil": "7.2.2",
+            "setuptools": "80.0.0",
+            "torch": "2.9.1",
+            "triton": "3.5.1",
+        },
         "runtime": {
             "backend": "hip",
             "torch_hip_version": "7.2.1",
             "visible_device_count": 1,
         },
         "tools": {
+            "build_tools": [
+                {
+                    "kind": kind,
+                    "path": f"/qualified/{kind}",
+                    "version": "fixture",
+                    "sha256": "cdef012"[index] * 64,
+                    "size_bytes": 1,
+                }
+                for index, kind in enumerate(
+                    (
+                        "cxx",
+                        "git",
+                        "hipcc",
+                        "hipconfig",
+                        "ninja",
+                        "rocminfo",
+                        "sh",
+                    )
+                )
+            ],
             "device_monitor": {
                 "kind": "amd-smi",
                 "path": "/qualified/amd-smi",
@@ -51,15 +78,58 @@ def _host() -> dict[str, object]:
 
 
 class Gfx1151HostCaptureTests(unittest.TestCase):
+    def test_rocm_aliases_are_normalized_to_one_canonical_tool_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            rocm_bin = root / "rocm/bin"
+            aliases = root / "aliases"
+            rocm_bin.mkdir(parents=True)
+            aliases.mkdir()
+            for name in ("hipcc", "hipconfig", "rocminfo"):
+                path = rocm_bin / name
+                path.write_text(f"#!/bin/sh\n# {name}\n", encoding="utf-8")
+                path.chmod(0o755)
+            alias = aliases / "hipcc"
+            alias.symlink_to(rocm_bin / "hipcc")
+
+            with (
+                patch.object(release.shutil, "which", return_value=str(alias)),
+                patch.dict(
+                    release.os.environ,
+                    {"ROCM_HOME": "", "ROCM_PATH": ""},
+                ),
+            ):
+                observed = release._rocm_build_tool_paths()
+
+        self.assertEqual(observed["hipcc"], rocm_bin / "hipcc")
+        self.assertEqual(observed["hipconfig"], rocm_bin / "hipconfig")
+        self.assertEqual(observed["rocminfo"], rocm_bin / "rocminfo")
+
     def test_captures_only_consumed_hip_host_facts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            monitor = Path(directory).resolve() / "amd-smi"
-            monitor.write_text("#!/bin/sh\necho 'AMD-SMI fixture'\n", encoding="utf-8")
-            monitor.chmod(0o755)
+            root = Path(directory).resolve()
+            rocm_bin = root / "rocm/bin"
+            rocm_bin.mkdir(parents=True)
+            commands = {
+                "amd-smi": root / "amd-smi",
+                "c++": root / "c++",
+                "git": root / "git",
+                "hipcc": rocm_bin / "hipcc",
+                "hipconfig": rocm_bin / "hipconfig",
+                "ninja": root / "ninja",
+                "rocminfo": rocm_bin / "rocminfo",
+                "sh": root / "sh",
+            }
+            for name, path in commands.items():
+                path.write_text(
+                    f"#!/bin/sh\necho '{name} fixture'\n", encoding="utf-8"
+                )
+                path.chmod(0o755)
             torch = SimpleNamespace(version=SimpleNamespace(hip="7.2.1"))
 
             def which(name: str) -> str | None:
-                return str(monitor) if name == "amd-smi" else None
+                key = "sh" if name == "/bin/sh" else name
+                return str(commands[key]) if key in commands else None
 
             with (
                 patch.object(release.platform, "system", return_value="Linux"),
@@ -70,7 +140,14 @@ class Gfx1151HostCaptureTests(unittest.TestCase):
                 patch.object(
                     release.importlib.metadata,
                     "version",
-                    side_effect=lambda name: {"torch": "2.9.1", "triton": "3.5.1"}[name],
+                    side_effect=lambda name: {
+                        "packaging": "25.0",
+                        "pybind11": "3.0.4",
+                        "psutil": "7.2.2",
+                        "setuptools": "80.0.0",
+                        "torch": "2.9.1",
+                        "triton": "3.5.1",
+                    }[name],
                 ),
             ):
                 observed = release.collect_gfx1151_host_environment()
@@ -80,7 +157,21 @@ class Gfx1151HostCaptureTests(unittest.TestCase):
         self.assertEqual(observed["runtime"]["visible_device_count"], 1)
         self.assertEqual(observed["tools"]["device_monitor"]["kind"], "amd-smi")
         self.assertEqual(observed["tools"]["profilers"], [])
-        self.assertEqual(set(observed["packages"]), {"torch", "triton"})
+        self.assertEqual(
+            {value["kind"] for value in observed["tools"]["build_tools"]},
+            {"cxx", "git", "hipcc", "hipconfig", "ninja", "rocminfo", "sh"},
+        )
+        self.assertEqual(
+            set(observed["packages"]),
+            {
+                "packaging",
+                "pybind11",
+                "psutil",
+                "setuptools",
+                "torch",
+                "triton",
+            },
+        )
         self.assertNotIn("gfx1151", json.dumps(observed))
 
     def test_refuses_to_capture_on_another_platform(self) -> None:

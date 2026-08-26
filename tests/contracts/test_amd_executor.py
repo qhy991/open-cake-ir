@@ -29,6 +29,20 @@ class HipExecutorFixture:
         tool = self.root / "amd-smi"
         tool.write_bytes(b"#!/bin/sh\nexit 0\n")
         tool.chmod(0o755)
+        build_tools = []
+        for kind in (
+            "cxx",
+            "git",
+            "hipcc",
+            "hipconfig",
+            "ninja",
+            "rocminfo",
+            "sh",
+        ):
+            path = self.root / kind
+            path.write_bytes(f"#!/bin/sh\n# {kind}\nexit 0\n".encode())
+            path.chmod(0o755)
+            build_tools.append(self.tool_record(kind, path))
         python = Path(sys.executable).absolute()
         self.document: dict[str, object] = {
             "schema_version": 2,
@@ -55,13 +69,21 @@ class HipExecutorFixture:
                         python.resolve(strict=True).read_bytes()
                     ).hexdigest(),
                 },
-                "packages": {"torch": "2.9.1", "triton": "3.5.1"},
+                "packages": {
+                    "packaging": "25.0",
+                    "pybind11": "3.0.4",
+                    "psutil": "7.2.2",
+                    "setuptools": "80.0.0",
+                    "torch": "2.9.1",
+                    "triton": "3.5.1",
+                },
                 "runtime": {
                     "backend": "hip",
                     "torch_hip_version": "7.2.1",
                     "visible_device_count": 1,
                 },
                 "tools": {
+                    "build_tools": build_tools,
                     "device_monitor": self.tool_record("amd-smi", tool),
                     "profilers": [],
                 },
@@ -112,6 +134,9 @@ class HipExecutorSchemaTests(unittest.TestCase):
             "missing_monitor": lambda fixture: fixture.host["tools"].__delitem__(
                 "device_monitor"
             ),
+            "missing_build_tool": lambda fixture: fixture.host["tools"][
+                "build_tools"
+            ].pop(),
             "cuda_backend": lambda fixture: fixture.host["runtime"].__setitem__(
                 "backend", "cuda"
             ),
@@ -158,7 +183,14 @@ class HipExecutorAdmissionTests(unittest.TestCase):
         )
 
     def _admit(self, executor: ExecutorRevision, torch: object) -> object:
-        versions = {"torch": "2.9.1", "triton": "3.5.1"}
+        versions = {
+            "packaging": "25.0",
+            "pybind11": "3.0.4",
+            "psutil": "7.2.2",
+            "setuptools": "80.0.0",
+            "torch": "2.9.1",
+            "triton": "3.5.1",
+        }
         with (
             patch(
                 "open_cake_ir.lab.executor.importlib.metadata.version",
@@ -181,6 +213,10 @@ class HipExecutorAdmissionTests(unittest.TestCase):
         self.assertEqual(admission.visible_device_count, 1)
         self.assertEqual(admission.device_monitor["kind"], "amd-smi")
         self.assertEqual(admission.profilers, ())
+        self.assertEqual(
+            set(admission.build_tools),
+            {"cxx", "git", "hipcc", "hipconfig", "ninja", "rocminfo", "sh"},
+        )
 
     def test_rejects_cuda_torch_before_any_device_query(self) -> None:
         fixture = HipExecutorFixture(self)
@@ -213,6 +249,18 @@ class HipExecutorAdmissionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "device monitor"):
                     self._admit(fixture.load(), self._torch())
 
+    def test_rejects_changed_aiter_build_tool_before_runtime_use(self) -> None:
+        fixture = HipExecutorFixture(self)
+        git_record = next(
+            value
+            for value in fixture.host["tools"]["build_tools"]
+            if value["kind"] == "git"
+        )
+        Path(git_record["path"]).write_bytes(b"#!/bin/sh\nexit 7\n")
+
+        with self.assertRaisesRegex(ValueError, "build_tools"):
+            self._admit(fixture.load(), self._torch())
+
 
 class HipSearchHostAdmissionTests(unittest.TestCase):
     def test_formal_search_uses_only_the_executor_admitted_monitor(self) -> None:
@@ -222,6 +270,7 @@ class HipSearchHostAdmissionTests(unittest.TestCase):
             visible_device_count=1,
             device_monitor={"path": "/qualified/amd-smi"},
             profilers=(),
+            build_tools={},
         )
         executor = Mock()
         executor.admit_hip_host.return_value = admission
@@ -252,6 +301,7 @@ class HipSearchHostAdmissionTests(unittest.TestCase):
             visible_device_count=1,
             device_monitor={"path": "/qualified/amd-smi"},
             profilers=(),
+            build_tools={},
         )
         executor = Mock()
         executor.admit_hip_host.return_value = admission
@@ -331,6 +381,7 @@ class HipSearchFailureEvidenceTests(unittest.TestCase):
                 visible_device_count=1,
                 device_monitor={"path": "/qualified/amd-smi"},
                 profilers=(),
+                build_tools={},
             )
             candidate = SimpleNamespace(
                 candidate_id="r1-w1",
@@ -415,6 +466,7 @@ class HipSearchFailureEvidenceTests(unittest.TestCase):
             visible_device_count=1,
             device_monitor={"path": "/qualified/amd-smi"},
             profilers=(),
+            build_tools={},
         )
         executor = Mock()
         executor.admit_hip_host.return_value = admission

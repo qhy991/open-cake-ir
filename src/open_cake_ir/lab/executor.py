@@ -149,11 +149,9 @@ def _admit_executable(
 ) -> Mapping[str, object]:
     record = _executable_record(value, context)
     unresolved = Path(str(record["path"]))
-    if unresolved.is_symlink() or not unresolved.is_file() or not os.access(unresolved, os.X_OK):
+    if not unresolved.is_file() or not os.access(unresolved, os.X_OK):
         raise ValueError(f"{context} custody differs")
     path = unresolved.resolve(strict=True)
-    if path != unresolved:
-        raise ValueError(f"{context} custody differs")
     payload = path.read_bytes()
     if (
         sha256(payload).hexdigest() != record["sha256"]
@@ -172,6 +170,7 @@ class HipHostAdmission:
     visible_device_count: int
     device_monitor: Mapping[str, object]
     profilers: tuple[Mapping[str, object], ...]
+    build_tools: Mapping[str, Mapping[str, object]]
 
 
 @dataclass(frozen=True)
@@ -350,7 +349,14 @@ class ExecutorRevision:
             raise ValueError("Executor HIP platform authority differs")
         _python_authority(host["python"], "Executor HIP Python")
         packages = _package_authority(host["packages"], "Executor HIP package")
-        if set(packages) != {"torch", "triton"}:
+        if set(packages) != {
+            "packaging",
+            "pybind11",
+            "psutil",
+            "setuptools",
+            "torch",
+            "triton",
+        }:
             raise ValueError("Executor HIP package set differs")
         runtime = host["runtime"]
         if (
@@ -368,6 +374,7 @@ class ExecutorRevision:
             raise ValueError("Executor HIP runtime authority differs")
         tools = host["tools"]
         if not isinstance(tools, Mapping) or set(tools) != {
+            "build_tools",
             "device_monitor",
             "profilers",
         }:
@@ -389,6 +396,28 @@ class ExecutorRevision:
             if kind not in {"rocprofv3", "rocprof", "omniperf"} or kind in seen:
                 raise ValueError("Executor HIP profiler kind differs")
             seen.add(kind)
+        build_tools = tools["build_tools"]
+        if not isinstance(build_tools, list):
+            raise ValueError("Executor HIP build-tool authority differs")
+        seen_build_tools: set[str] = set()
+        for index, value in enumerate(build_tools):
+            tool = _executable_record(
+                value, f"Executor HIP build_tools[{index}]"
+            )
+            kind = cast(str, tool["kind"])
+            if kind in seen_build_tools:
+                raise ValueError("Executor HIP build-tool kind differs")
+            seen_build_tools.add(kind)
+        if seen_build_tools != {
+            "cxx",
+            "git",
+            "hipcc",
+            "hipconfig",
+            "ninja",
+            "rocminfo",
+            "sh",
+        }:
+            raise ValueError("Executor HIP build-tool set differs")
 
     @property
     def reference(self) -> Mapping[str, str]:
@@ -513,12 +542,22 @@ class ExecutorRevision:
             _admit_executable(value, f"Executor HIP profilers[{index}]")
             for index, value in enumerate(cast(tuple[object, ...], tools["profilers"]))
         )
+        admitted_build_tools = tuple(
+            _admit_executable(value, f"Executor HIP build_tools[{index}]")
+            for index, value in enumerate(
+                cast(tuple[object, ...], tools["build_tools"])
+            )
+        )
+        build_tools = MappingProxyType(
+            {cast(str, value["kind"]): value for value in admitted_build_tools}
+        )
         return HipHostAdmission(
             executor_id=self.executor_id,
             torch_hip_version=cast(str, runtime["torch_hip_version"]),
             visible_device_count=cast(int, runtime["visible_device_count"]),
             device_monitor=monitor,
             profilers=profilers,
+            build_tools=build_tools,
         )
 
     def admit_profiler(self) -> Mapping[str, object]:

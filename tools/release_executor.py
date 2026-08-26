@@ -16,6 +16,7 @@ _SOURCE_ROOTS = (
     "src/open_cake_ir/evidence",
 )
 _SOURCE_FILES = (
+    "examples/gpu/aiter_rmsnorm_amd_baseline.py",
     "examples/gpu/amd_triton_quickstart.py",
     "examples/gpu/flash_kmeans_quickstart.py",
     "examples/gpu/llama_q8_1_amd_quickstart.py",

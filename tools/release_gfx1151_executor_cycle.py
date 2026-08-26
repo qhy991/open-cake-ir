@@ -36,6 +36,25 @@ from tools.executor_revision_witnesses import (  # noqa: E402
 
 
 _PROFILERS = ("rocprofv3", "rocprof", "omniperf")
+_BUILD_TOOLS = (
+    ("git", "git", ["--version"]),
+    ("cxx", "c++", ["--version"]),
+    ("ninja", "ninja", ["--version"]),
+    ("sh", "/bin/sh", ["-c", "printf POSIX-sh"]),
+)
+_ROCM_BUILD_TOOLS = (
+    ("hipcc", ["--version"]),
+    ("hipconfig", ["--version"]),
+    ("rocminfo", []),
+)
+_HIP_PACKAGES = (
+    "packaging",
+    "pybind11",
+    "psutil",
+    "setuptools",
+    "torch",
+    "triton",
+)
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -49,12 +68,12 @@ def _canonical_json_bytes(value: object) -> bytes:
 
 
 def _tool_record(kind: str, executable: str | Path, version_args: list[str]) -> dict[str, object]:
-    unresolved = Path(executable)
+    unresolved = Path(executable).absolute()
     path = unresolved.resolve(strict=True)
     if not path.is_file() or not os.access(path, os.X_OK):
         raise ValueError(f"{kind} executable custody differs")
     completed = subprocess.run(
-        [str(path), *version_args],
+        [str(unresolved), *version_args],
         check=True,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
@@ -72,11 +91,34 @@ def _tool_record(kind: str, executable: str | Path, version_args: list[str]) -> 
     payload = path.read_bytes()
     return {
         "kind": kind,
-        "path": str(path),
+        "path": str(unresolved),
         "version": version_lines[0],
         "sha256": sha256(payload).hexdigest(),
         "size_bytes": len(payload),
     }
+
+
+def _rocm_build_tool_paths() -> dict[str, Path]:
+    discovered = shutil.which("hipcc")
+    if discovered is None:
+        raise RuntimeError("gfx1151 Executor requires hipcc")
+    discovered_target = Path(discovered).resolve(strict=True)
+    candidates = []
+    for value in (os.environ.get("ROCM_HOME"), os.environ.get("ROCM_PATH")):
+        if value:
+            candidates.append(Path(value).absolute())
+    derived = discovered_target.parent.parent
+    if derived.name == "hip":
+        derived = derived.parent
+    candidates.extend((derived, Path("/opt/rocm")))
+    for root in dict.fromkeys(candidates):
+        paths = {kind: root / f"bin/{kind}" for kind, _ in _ROCM_BUILD_TOOLS}
+        if (
+            all(path.is_file() and os.access(path, os.X_OK) for path in paths.values())
+            and paths["hipcc"].resolve(strict=True) == discovered_target
+        ):
+            return paths
+    raise RuntimeError("gfx1151 Executor requires one canonical ROCm tool root")
 
 
 def collect_gfx1151_host_environment() -> dict[str, object]:
@@ -100,6 +142,16 @@ def collect_gfx1151_host_environment() -> dict[str, object]:
         executable = shutil.which(kind)
         if executable is not None:
             profilers.append(_tool_record(kind, executable, ["--version"]))
+    rocm_tools = _rocm_build_tool_paths()
+    build_tools = [
+        _tool_record(kind, rocm_tools[kind], version_args)
+        for kind, version_args in _ROCM_BUILD_TOOLS
+    ]
+    for kind, command, version_args in _BUILD_TOOLS:
+        executable = shutil.which(command)
+        if executable is None:
+            raise RuntimeError(f"gfx1151 Executor requires {kind}")
+        build_tools.append(_tool_record(kind, executable, version_args))
 
     python = Path(sys.executable).absolute()
     return {
@@ -117,8 +169,7 @@ def collect_gfx1151_host_environment() -> dict[str, object]:
             ).hexdigest(),
         },
         "packages": {
-            "torch": importlib.metadata.version("torch"),
-            "triton": importlib.metadata.version("triton"),
+            name: importlib.metadata.version(name) for name in _HIP_PACKAGES
         },
         "runtime": {
             "backend": "hip",
@@ -126,6 +177,7 @@ def collect_gfx1151_host_environment() -> dict[str, object]:
             "visible_device_count": 1,
         },
         "tools": {
+            "build_tools": build_tools,
             "device_monitor": _tool_record("amd-smi", monitor, ["version"]),
             "profilers": profilers,
         },

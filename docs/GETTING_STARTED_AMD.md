@@ -26,10 +26,11 @@ PYTHONPATH=src /path/to/rocm/python \
 ```
 
 The release command derives the independent `open-cake-ir-gfx1151-vN` identity, captures
-the exact Linux/Python/Torch/Triton/HIP and `amd-smi` facts, includes only actually
-available AMD profilers, builds and live-admits a temporary descriptor, and only then
-installs it. A failed capture or validation leaves the previous descriptor untouched.
-It does not compile a kernel, freeze a search contract or authorize a performance claim.
+the exact Linux/Python/Torch/Triton/HIP facts, AITER JIT Python dependencies,
+`git`/ROCm/C++/Ninja commands and `amd-smi`, includes only actually available AMD
+profilers, builds and live-admits a temporary descriptor, and only then installs it. A
+failed capture or validation leaves the previous descriptor untouched. It does not
+compile a kernel, freeze a search contract or authorize a performance claim.
 
 ## Prepare the two correctness paths
 
@@ -83,6 +84,46 @@ non-finite counts, launch counts and zero-fallback custody. A draft Compiler rem
 available only to `--prepare-only`; GPU execution requires the externally released
 Compiler and its passing Gate. Each requested live attempt creates an authority receipt
 first and retains either `result.json` or a stage-typed `failure.json`, plus a manifest.
+
+## Source-pinned AITER RMSNorm baseline
+
+The first matched AMD library comparison is AITER RMSNorm, not SwiGLU or Q4 MMVQ.
+Prepare it from the official `v0.1.20` source checkout at
+`fc2e5d57fb5b8ad8e7e23f7103071dde798ea618`:
+
+```bash
+PYTHONPATH=src python3 examples/gpu/aiter_rmsnorm_amd_baseline.py \
+  --aiter-checkout /path/to/aiter-v0.1.20 \
+  --prepare-only
+```
+
+Preparation checks the exact clean AITER repository/tag, its Opus FP32 source chain and
+the unchanged `llama-rmsnorm-mul-fp32-v2` Workload. It imports neither Torch nor AITER,
+does no JIT work and submits no GPU operation. Published AITER wheels are not accepted
+for this cell because the release wheel does not own a gfx1151 device closure.
+
+After a successor gfx1151 Executor has been released from a clean checkout that includes
+this runner and captures its Git/ROCm/C++/Ninja build tools and Python JIT dependencies,
+run correctness with two new, disjoint directories outside both source checkouts:
+
+```bash
+PYTHONPATH=src /path/to/rocm/python \
+  examples/gpu/aiter_rmsnorm_amd_baseline.py \
+  --aiter-checkout /path/to/aiter-v0.1.20 \
+  --executor runtime/executors/open-cake-ir-gfx1151-vN.json \
+  --jit-dir /new/external/path/aiter-rmsnorm-jit \
+  --evidence-root /new/external/path/aiter-rmsnorm-correctness
+```
+
+The live path calls `aiter.ops.rmsnorm.rms_norm_opus` directly with caller-owned output,
+fixes `GPU_ARCHS=gfx1151`, rejects source-tree import shadows, a wheel or dynamic
+dispatch, then builds, validates and retains the JIT ELF before submitting the first
+operator call. The ELF must export `rms_norm_opus`, contain only a gfx1151 code object
+and remain unchanged across both cases. Both cases must pass the existing CPU-FP64
+tolerance without mutating inputs. The result remains an external-baseline candidate:
+it performs no timing and authorizes no speedup, promotion, llama.cpp end-to-end or
+serving claim. AITER SwiGLU is deliberately excluded because its packed `[gate,up]`
+input would change the frozen two-input Workload boundary; see ADR 0043.
 
 After both Compiler v29 and `open-cake-ir-gfx1151-v1` are independently released, run
 the Q8 producer from a clean checkout with a new evidence root outside it:
