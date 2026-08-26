@@ -36,6 +36,38 @@ def _descriptor(root: Path, executor_id: str) -> str:
 
 
 class ExecutorRevisionWitnessTests(unittest.TestCase):
+    def test_registered_external_gfx1151_evidence_forces_v2(self) -> None:
+        registration = (
+            "inventory/AMD_GFX1151_EXECUTOR_V1_BINDINGS_20260826.json"
+        )
+
+        witnesses = tuple(
+            item
+            for item in executor_revision_witnesses(ROOT)
+            if item.revision_id == "open-cake-ir-gfx1151-v1"
+            and item.path == registration
+        )
+        plan = plan_executor_revision_cycle(
+            ROOT, "open-cake-ir-gfx1151-v1"
+        )
+
+        self.assertEqual(len(witnesses), 4)
+        self.assertEqual(
+            {
+                dict(item.digests)["canonical_sha256"]
+                for item in witnesses
+            },
+            {
+                "8c6c10cedbe0eb3a7e88a10a6fa80c20316d4249d75ed3f0c0a1a181974b4f45",
+                "fcb57b4e1404e3145e5f9929b805e23bd766019d92eefa559c68dbc09e168de8",
+                "2ae412eb92c324a4ea46d19f4299b5205ea771bba6db1f9732e84976f02d3012",
+                "6a081a224d7626a812861c25f5798b1243090eef19c07e8d0afe3d20157e8817",
+            },
+        )
+        self.assertTrue(plan.current_witnessed)
+        self.assertEqual(plan.next_revision_id, "open-cake-ir-gfx1151-v2")
+        self.assertEqual(plan.reclaimable_descriptors, ())
+
     def test_revision_identity_has_two_independent_released_families(self) -> None:
         self.assertTrue(_is_executor_revision_id("open-cake-ir-b200-v1"))
         self.assertTrue(_is_executor_revision_id("open-cake-ir-gfx1151-v29"))
