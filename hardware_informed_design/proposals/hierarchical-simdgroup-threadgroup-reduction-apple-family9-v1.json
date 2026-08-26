@@ -1,0 +1,382 @@
+{
+  "$schema": "../schema.json#/$defs/proposal",
+  "schema_version": 1,
+  "proposal_id": "hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1",
+  "state": "review_pending",
+  "claim_scope": "hardware_mapping_only",
+  "disposition": "await_human_hardware_review",
+  "next_gate": "principle_driven_iteration",
+  "candidate_binding": {
+    "candidate_id": "hierarchical-simdgroup-threadgroup-reduction",
+    "pattern_signature": "simdgroup-partial.threadgroup-publish.simdgroup-final",
+    "observation_ids": [
+      "mlx-metal-layer-norm.threadgroup-sum",
+      "mlx-metal-rms-norm.rms-single-row"
+    ],
+    "expected_state": "extracted_unreviewed",
+    "expected_next_gate": "hardware_informed_design",
+    "candidate_width_contract": "width_neutral"
+  },
+  "evidence_binding": {
+    "evidence_id": "apple-metal-hierarchical-reduction-v1",
+    "fact_ids": [
+      "apple-family9-supports-simdgroup-reductions",
+      "apple-family9-thread-ceiling-1024",
+      "apple-family9-threadgroup-memory-alignment-16",
+      "apple-family9-threadgroup-memory-ceiling-32768",
+      "metal-pipeline-thread-limit-must-be-queried",
+      "metal-simd-sum-active-thread-scope",
+      "metal-simd-sum-excludes-bfloat-input",
+      "metal-simd-width-must-be-queried",
+      "metal-threadgroup-memory-scope",
+      "metal-threadgroup-publication-barrier",
+      "metal-total-threadgroup-memory-runtime-gate",
+      "observed-m4-pipeline-thread-limit-1024",
+      "observed-m4-pipeline-width-32",
+      "observed-m4-threadgroup-memory-32768"
+    ]
+  },
+  "design": {
+    "width_policy": {
+      "candidate_contract": "width_neutral",
+      "specialization": "apple-family9-w32-guarded",
+      "required_runtime_width": 32,
+      "runtime_query": "MTLComputePipelineState.threadExecutionWidth",
+      "mismatch_action": "fail_closed_before_dispatch",
+      "threadgroup_multiple_requirement": "threads_per_threadgroup_mod_runtime_width_equals_zero",
+      "partial_capacity_formula": "ceil(threads_per_threadgroup/runtime_width)<=runtime_width"
+    },
+    "resource_derivation": {
+      "family_thread_ceiling": 1024,
+      "specialized_width": 32,
+      "maximum_simdgroups_at_family_ceiling": 32,
+      "calculation": "1024/32=32",
+      "partial_dtype": "float32",
+      "partial_bytes": 4,
+      "scratch_bytes_per_accumulator": 128,
+      "scratch_calculation": "32*4=128",
+      "dynamic_allocation_formula": {
+        "raw_dynamic_bytes": "raw_dynamic_bytes=accumulator_count*128+broadcast_scalar_bytes",
+        "aligned_dynamic_bytes": "aligned_dynamic_bytes=align_up(raw_dynamic_bytes,16)",
+        "allocation_strategy": "one_combined_threadgroup_region_per_variant"
+      },
+      "variant_resource_requirements": {
+        "rms_norm": {
+          "accumulator_count": 1,
+          "broadcast_scalar_bytes": 4,
+          "raw_dynamic_bytes": 132,
+          "aligned_dynamic_bytes": 144,
+          "layout": "partial[0]=bytes[0,128);broadcast_scalar=bytes[128,132);padding=bytes[132,144)",
+          "total_memory_gate": "pipeline.staticThreadgroupMemoryLength+144<=device.maxThreadgroupMemoryLength_and<=32768_family_ceiling"
+        },
+        "layer_norm": {
+          "accumulator_count": 2,
+          "broadcast_scalar_bytes": 0,
+          "raw_dynamic_bytes": 256,
+          "aligned_dynamic_bytes": 256,
+          "layout": "partial[0]=bytes[0,128);partial[1]=bytes[128,256);broadcast_scalar=none;padding=none",
+          "total_memory_gate": "pipeline.staticThreadgroupMemoryLength+256<=device.maxThreadgroupMemoryLength_and<=32768_family_ceiling"
+        }
+      },
+      "variant_input_scope": "accumulator_count_is_current_variant_input_not_candidate_invariant",
+      "threadgroup_allocation_alignment_bytes": 16,
+      "total_threadgroup_memory_ceiling_bytes": 32768,
+      "runtime_thread_limit_gate": "threads_per_threadgroup<=pipeline.maxTotalThreadsPerThreadgroup"
+    },
+    "reduction_sequence": {
+      "steps": [
+        "Convert any bfloat input contribution to float32 and form one float32 per-thread accumulator value.",
+        "Reduce each accumulator with simd_sum over the active threads of its SIMDgroup.",
+        "Have SIMDgroup lane zero write exactly one float32 partial per accumulator to that SIMDgroup's threadgroup-memory slot.",
+        "Execute threadgroup_barrier(mem_threadgroup) uniformly across all live threads after partial publication.",
+        "Have the selected final reducer load written partials and float32 zero for lanes beyond the live SIMDgroup count, then apply simd_sum.",
+        "If a final scalar is published for other SIMDgroups, have one owner lane store it and execute a second uniform threadgroup barrier before any cross-SIMDgroup consumer reads it."
+      ],
+      "publication_barrier": "threadgroup_barrier(mem_threadgroup)",
+      "barrier_participation": "uniform_across_all_live_threads",
+      "early_return_policy": "no_early_return_or_divergent_control_around_threadgroup_barriers"
+    },
+    "scratch_lifecycle": {
+      "initialization": "Every scratch slot that can be read must either receive its lane-zero partial before the publication barrier or be initialized to float32 zero before that barrier.",
+      "initialization_barrier": "When initialization is performed by threads other than the subsequent writer or reader, complete it with a uniform threadgroup_barrier(mem_threadgroup) before partial stores begin.",
+      "unused_final_lanes": "load_float32_zero_instead_of_unwritten_scratch",
+      "reuse_rule": "Do not reuse partial or final-scalar scratch until all prior readers have crossed a uniform threadgroup_barrier(mem_threadgroup) separating the last read from the next write.",
+      "final_scalar_visibility_rule": "A final scalar consumed outside its producing SIMDgroup must be published by an explicit owner and followed by a uniform threadgroup_barrier(mem_threadgroup) before consumption."
+    },
+    "final_reducer_variants": {
+      "rms_norm": {
+        "ownership": "Only SIMDgroup zero performs the final reduction; one explicit lane-zero owner computes and publishes the scalar normalization factor.",
+        "publication": "The owner stores one float32 final scalar in threadgroup memory.",
+        "consumer_barrier": "Required when any other SIMDgroup consumes the published scalar."
+      },
+      "layer_norm": {
+        "ownership": "Every SIMDgroup may load the same valid partial set and independently perform the same final simd_sum for each accumulator.",
+        "publication": "No shared final scalar is required when each SIMDgroup retains its reduced float32 values in thread-local state.",
+        "consumer_barrier": "Not required after the final reduction unless a later variant publishes shared output through reusable threadgroup scratch."
+      }
+    },
+    "numeric_contract": {
+      "accumulator_dtype": "float32",
+      "bfloat_input_policy": "convert_to_float32_before_simd_sum",
+      "bitwise_reduction_order_guaranteed": false,
+      "correctness_requirement": "external_oracle_with_explicit_tolerances_required_later"
+    }
+  },
+  "decisions": [
+    {
+      "decision_id": "preserve-width-neutral-candidate",
+      "statement": "Preserve the extracted candidate as width-neutral; do not promote the locally observed width of 32 into the candidate contract.",
+      "candidate_effect": "preserve",
+      "fact_ids": [
+        "metal-simd-width-must-be-queried",
+        "observed-m4-pipeline-width-32"
+      ],
+      "rationale": "Apple explicitly forbids assuming SIMDgroup size, while the local observation covers only two pipelines on one M4 device.",
+      "alternatives": [
+        "Make width 32 a family-wide candidate invariant.",
+        "Leave width behavior implicit in lowering."
+      ]
+    },
+    {
+      "decision_id": "refine-width32-fail-closed-specialization",
+      "statement": "Refine one Apple-family specialization around width 32, selectable only after querying the selected pipeline and failing closed before dispatch on mismatch.",
+      "candidate_effect": "refine",
+      "fact_ids": [
+        "apple-family9-thread-ceiling-1024",
+        "metal-pipeline-thread-limit-must-be-queried",
+        "metal-simd-width-must-be-queried",
+        "observed-m4-pipeline-thread-limit-1024",
+        "observed-m4-pipeline-width-32"
+      ],
+      "rationale": "The guard preserves the hardware-neutral abstraction while enabling exact 1024/32 capacity arithmetic for the first locally observed specialization.",
+      "alternatives": [
+        "Generate a width-polymorphic final reduction in the first implementation.",
+        "Silently fall back to another width or target when the query differs."
+      ]
+    },
+    {
+      "decision_id": "refine-metal-two-level-reduction-sequence",
+      "statement": "Refine the candidate to simd_sum, lane-zero FP32 partial publication, a uniform threadgroup_barrier(mem_threadgroup), and a final simd_sum over valid partials and zero-filled unused lanes.",
+      "candidate_effect": "refine",
+      "fact_ids": [
+        "apple-family9-supports-simdgroup-reductions",
+        "metal-simd-sum-active-thread-scope",
+        "metal-simd-sum-excludes-bfloat-input",
+        "metal-threadgroup-memory-scope",
+        "metal-threadgroup-publication-barrier"
+      ],
+      "rationale": "These Metal primitives directly realize the observed two-level source choreography while keeping publication and synchronization explicit.",
+      "alternatives": [
+        "Use threadgroup memory for a full scalar reduction tree without simd_sum.",
+        "Use only SIMDgroup-local reduction and leave cross-SIMDgroup aggregation to another kernel."
+      ]
+    },
+    {
+      "decision_id": "split-final-reducer-ownership",
+      "statement": "Split final-reducer ownership into RMS-style single-SIMDgroup publication and Layer-style all-SIMDgroup recomputation variants.",
+      "candidate_effect": "split",
+      "fact_ids": [
+        "metal-simd-sum-active-thread-scope",
+        "metal-threadgroup-memory-scope",
+        "metal-threadgroup-publication-barrier"
+      ],
+      "rationale": "The two extracted observations differ materially in ownership and publication; hiding that difference would make synchronization and scratch lifetime unanalyzable.",
+      "alternatives": [
+        "Force every operator to publish one final scalar.",
+        "Let lowering infer final-reducer ownership from use sites."
+      ]
+    },
+    {
+      "decision_id": "refine-explicit-resource-accounting",
+      "statement": "Refine the specialization with a 32-partial FP32 ceiling of 128 bytes per accumulator, one combined aligned dynamic region per current operator variant, and a variant-specific total static-plus-dynamic memory gate.",
+      "candidate_effect": "refine",
+      "fact_ids": [
+        "apple-family9-thread-ceiling-1024",
+        "apple-family9-threadgroup-memory-alignment-16",
+        "apple-family9-threadgroup-memory-ceiling-32768",
+        "metal-total-threadgroup-memory-runtime-gate",
+        "observed-m4-threadgroup-memory-32768"
+      ],
+      "rationale": "Explicit arithmetic and layout keep both accumulator partials and broadcast scratch in the legality decision. RMS currently supplies one accumulator and one 4-byte scalar (132 raw, 144 aligned); Layer currently supplies two accumulators and no scalar (256 raw and aligned). These counts are variant inputs, not invariants of the generic candidate.",
+      "alternatives": [
+        "Model only the partial array and omit the broadcast scalar.",
+        "Treat the family memory ceiling as sufficient without inspecting pipeline static allocation."
+      ]
+    }
+  ],
+  "assumptions": [
+    "The Stage-2 reviewer attestations correctly summarize the two bound source spans; this stage does not re-fetch or reinterpret their upstream code.",
+    "The cited vendor language revision and family tables are applicable to the later toolchain selected for human review.",
+    "The proposed mapping is confined to one Metal threadgroup; no cross-threadgroup communication is implied."
+  ],
+  "hypotheses": [
+    {
+      "hypothesis_id": "width32-specialization-covers-intended-devices",
+      "statement": "The fail-closed width-32 specialization is available on the intended Apple-device and pipeline matrix often enough to be a useful retained specialization.",
+      "related_decision_ids": ["refine-width32-fail-closed-specialization"],
+      "status": "unresolved",
+      "required_before": "port_acceptance",
+      "falsifier": {
+        "method": "Compile the future reduction pipeline on every intended device class and record threadExecutionWidth before dispatch.",
+        "observable": "Per-device and per-pipeline threadExecutionWidth plus whether guarded selection accepted or refused the specialization.",
+        "reject_when": "The intended deployment set materially requires a non-32 width and no separately reviewed specialization covers it.",
+        "retained_result_contract": "Append-only device-class and pipeline observation records that exclude stable device identifiers and preserve every refusal."
+      },
+      "result_binding": null
+    },
+    {
+      "hypothesis_id": "one-partial-per-simdgroup-is-expressible",
+      "statement": "A later analyzable compiler design can express exactly one FP32 partial per live SIMDgroup and accumulator together with explicit owner, initialization, barrier, and reuse effects.",
+      "related_decision_ids": [
+        "refine-metal-two-level-reduction-sequence",
+        "split-final-reducer-ownership"
+      ],
+      "status": "unresolved",
+      "required_before": "implementation",
+      "falsifier": {
+        "method": "Run the P1-P8 principle review over a complete proposed primitive, typing rule, effects, verifier rules, analyses, and corpus cases.",
+        "observable": "Whether ownership, scratch lifetime, barrier participation, and one-partial cardinality are statically represented without hidden lowering inference.",
+        "reject_when": "The design requires implicit layout or ownership inference, unmodeled effects, or syntax whose analyses are deferred.",
+        "retained_result_contract": "A human-authored principle-review decision retaining each accepted and refused primitive shape with localized reasons."
+      },
+      "result_binding": null
+    },
+    {
+      "hypothesis_id": "resource-accounting-fits-selected-pipelines",
+      "statement": "Representative future pipelines leave enough threadgroup memory and thread capacity for each variant's aligned combined allocation and all compiler-created static allocation.",
+      "related_decision_ids": ["refine-explicit-resource-accounting"],
+      "status": "unresolved",
+      "required_before": "implementation",
+      "falsifier": {
+        "method": "Compile every retained variant and inspect pipeline.staticThreadgroupMemoryLength, that variant's aligned dynamic allocation, device.maxThreadgroupMemoryLength, and maxTotalThreadsPerThreadgroup.",
+        "observable": "Total static-plus-dynamic bytes, alignment padding, requested threads, and both runtime ceilings for each pipeline variant.",
+        "reject_when": "Any retained configuration exceeds either runtime limit or the 32768-byte family ceiling.",
+        "retained_result_contract": "Append-only per-variant resource observations including refused configurations; no regenerated expectation may erase an overflow."
+      },
+      "result_binding": null
+    },
+    {
+      "hypothesis_id": "floating-reassociation-meets-workload-tolerances",
+      "statement": "The hierarchical FP32 reduction and its unspecified bitwise association satisfy the later Workload Contract's explicit numerical tolerances across required shapes and input distributions.",
+      "related_decision_ids": ["refine-metal-two-level-reduction-sequence"],
+      "status": "unresolved",
+      "required_before": "port_acceptance",
+      "falsifier": {
+        "method": "Compare compiled end-to-end framework outputs with the external oracle across contract shapes, boundaries, tails, and adversarial input distributions.",
+        "observable": "Per-case absolute and relative error, non-finite behavior, and localized mismatch diagnostics.",
+        "reject_when": "Any required case violates its Workload Contract tolerance or demands bitwise-identical association.",
+        "retained_result_contract": "Append-only correctness-assay records bound to the Workload Contract, compiler revision, pipeline artifact, inputs, oracle, and all failed cases."
+      },
+      "result_binding": null
+    },
+    {
+      "hypothesis_id": "specialization-is-performance-competitive",
+      "statement": "At least one reviewed threadgroup size and per-thread work variant is performance-competitive for each intended workload shape without invalid resource pressure.",
+      "related_decision_ids": [
+        "refine-metal-two-level-reduction-sequence",
+        "refine-width32-fail-closed-specialization"
+      ],
+      "status": "unresolved",
+      "required_before": "performance_claim",
+      "falsifier": {
+        "method": "After correctness, benchmark structurally distinct retained variants and collect profiler evidence under a fixed Workload Contract.",
+        "observable": "Latency distribution, throughput, occupancy or residency limits, register pressure, memory traffic, and diagnosed stalls relative to declared baselines.",
+        "reject_when": "No correct retained variant meets the predeclared performance criterion or profiling shows the mapping's resource structure is the limiting cause.",
+        "retained_result_contract": "Append-only correctness, timing, and profiler artifacts for every measured survivor, including negative and inconclusive outcomes."
+      },
+      "result_binding": null
+    }
+  ],
+  "falsifiers": [
+    {
+      "falsifier_id": "runtime-width-not-32",
+      "condition": "The selected MTLComputePipelineState reports threadExecutionWidth other than 32.",
+      "required_action": "Reject this width-32 specialization before dispatch; do not rewrite the width-neutral candidate or silently fall back."
+    },
+    {
+      "falsifier_id": "pipeline-thread-limit-exceeded",
+      "condition": "Requested threads per threadgroup exceed the selected pipeline's maxTotalThreadsPerThreadgroup or the 1024 family ceiling.",
+      "required_action": "Reject the launch configuration."
+    },
+    {
+      "falsifier_id": "partial-final-simdgroup-outside-v1",
+      "condition": "threads_per_threadgroup is not an exact multiple of the queried runtime width.",
+      "required_action": "Reject this v1 specialization; partial final SIMDgroups require a separately reviewed design even though Metal defines active-thread SIMDgroup semantics."
+    },
+    {
+      "falsifier_id": "partial-set-exceeds-final-simdgroup",
+      "condition": "ceil(threads_per_threadgroup/runtime_width) exceeds runtime_width, so one final SIMDgroup cannot hold all partials.",
+      "required_action": "Reject this one-pass final-reduction design and return to hardware design for another hierarchy."
+    },
+    {
+      "falsifier_id": "threadgroup-memory-budget-exceeded",
+      "condition": "Pipeline static threadgroup memory plus the selected variant's aligned combined dynamic region exceeds device.maxThreadgroupMemoryLength or the 32768-byte family ceiling.",
+      "required_action": "Reject the design for that configuration rather than omit unmodeled memory."
+    },
+    {
+      "falsifier_id": "barrier-not-uniform",
+      "condition": "Any live thread can take an early return or divergent path around a required threadgroup barrier.",
+      "required_action": "Reject the schedule or lowering as unsafe."
+    },
+    {
+      "falsifier_id": "scratch-read-before-publication",
+      "condition": "A final reducer can read an unwritten partial or cross-SIMDgroup publication occurs without threadgroup_barrier(mem_threadgroup).",
+      "required_action": "Reject the mapping as a data-consistency violation."
+    },
+    {
+      "falsifier_id": "scratch-reuse-race",
+      "condition": "Partial or final-scalar scratch can be overwritten before all prior readers cross the required reuse barrier.",
+      "required_action": "Reject the lifetime plan or allocate distinct scratch."
+    },
+    {
+      "falsifier_id": "bfloat-simd-sum-input",
+      "condition": "A lowering supplies bfloat directly to simd_sum instead of converting the contribution to float32.",
+      "required_action": "Reject the lowering as outside the documented reduction-input contract."
+    },
+    {
+      "falsifier_id": "ambiguous-final-reducer-owner",
+      "condition": "The RMS-style single owner versus Layer-style all-SIMDgroup final-reduction policy is absent or inferred implicitly.",
+      "required_action": "Reject the design instance until ownership and publication are explicit."
+    },
+    {
+      "falsifier_id": "bitwise-order-required",
+      "condition": "The eventual Workload Contract requires bitwise-identical reduction association or order.",
+      "required_action": "Reject this mapping for that workload unless a separately reviewed deterministic numeric design satisfies the requirement."
+    },
+    {
+      "falsifier_id": "current-lowering-capability-missing",
+      "condition": "The implementation attempt still uses the current finite Metal lowering, which cannot allocate threadgroup scratch or emit the required barrier.",
+      "required_action": "Stop before implementation; principle review and compiler-evolution design are required first."
+    }
+  ],
+  "open_questions": [
+    "Which threadgroup size and per-thread work portfolio is performant across the intended M-series devices?",
+    "What register pressure and occupancy result from one versus multiple float32 accumulators?",
+    "Should a later general form admit partial final SIMDgroups, or preserve the whole-SIMDgroup restriction as a canonical legality rule?",
+    "Which explicit IR effects and verifier rules would represent threadgroup allocation, publication barriers, ownership, initialization, and reuse without introducing a layout algebra?"
+  ],
+  "gate_separation": {
+    "validation": {
+      "kind": "offline_metadata_and_derivation_validation",
+      "checks": [
+        "Candidate and evidence bindings, exact resource formulas, width guard, barrier requirements, falsifier presence, and review-boundary fields are structurally consistent.",
+        "Validation does not decide that the mapping is safe, useful, canonical, correct, or performant."
+      ],
+      "can_set_readiness": false
+    },
+    "readiness": {
+      "ready": false,
+      "authority": "human_hardware_review",
+      "blocking_reviews": [
+        "Confirm vendor-fact interpretation, runtime width handling, resource accounting, barrier participation, scratch lifetime, and numeric scope.",
+        "Keep implementation unauthorized until the subsequent P1-P8 principle-driven iteration accepts an analyzable compiler-evolution design."
+      ]
+    }
+  },
+  "non_claims": [
+    "This proposal is not an IR admission, Target mutation, lowering implementation, or assertion of current Schedule expressibility.",
+    "This proposal does not establish Metal correctness, race freedom, numerical tolerance, performance, occupancy, calibration, Evaluation evidence, or scientific results.",
+    "The 1024-thread and 32768-byte family limits are ceilings, not a launch authorization; the concrete pipeline and total allocation remain runtime and implementation gates.",
+    "Passing offline validation cannot set readiness=true or replace human hardware and principle review."
+  ]
+}

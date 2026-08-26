@@ -1,0 +1,62 @@
+{
+  "$schema": "schema.json#/$defs/manifest",
+  "schema_version": 1,
+  "design_stage_id": "apple-metal-hardware-informed-design-v1",
+  "paper_stage": {
+    "paper_revision": "arxiv:2608.12629v1",
+    "ordinal": 3,
+    "name": "hardware_informed_design",
+    "predecessor": "abstraction_extraction",
+    "successor": "principle_driven_iteration"
+  },
+  "paper_source_path": "operator_library/sources/cake-paper-v1.json",
+  "state": "review_pending",
+  "claim_scope": "hardware_mapping_only",
+  "disposition": "await_human_hardware_review",
+  "next_gate": "principle_driven_iteration",
+  "input_candidate_closure": {
+    "candidate_id": "hierarchical-simdgroup-threadgroup-reduction",
+    "candidate_path": "abstraction_extraction/candidates/hierarchical-simdgroup-threadgroup-reduction.json",
+    "observation_paths": [
+      "abstraction_extraction/observations/mlx-layer-norm-hierarchical-reduction.json",
+      "abstraction_extraction/observations/mlx-rms-norm-hierarchical-reduction.json"
+    ],
+    "canonicalization_contract": "candidate-plus-sorted-observation-documents.canonical-json-v1",
+    "candidate_closure_sha256": "0b3205d52db01e308576dbac5900a7d5e595f9fc5f41a60dfb5a7afc8cf338db"
+  },
+  "evidence": [
+    "evidence/apple-metal-hierarchical-reduction-v1.json"
+  ],
+  "proposals": [
+    "proposals/hierarchical-simdgroup-threadgroup-reduction-apple-family9-v1.json"
+  ],
+  "gate_separation": {
+    "validation": {
+      "kind": "offline_metadata_and_derivation_validation",
+      "checks": [
+        "Artifact closure, schema shape, candidate closure identity, source references, historical repository-snapshot paths, per-variant resource arithmetic, and fixed review boundaries are internally consistent.",
+        "The validator does not fetch vendor webpages, prove free-text hardware semantics, compile Metal, dispatch a kernel, or evaluate performance."
+      ],
+      "can_set_readiness": false
+    },
+    "readiness": {
+      "ready": false,
+      "authority": "human_hardware_review",
+      "blocking_reviews": [
+        "A human hardware reviewer must confirm the vendor-document interpretation and the width-32 fail-closed specialization.",
+        "A later, separate principle-driven iteration must evaluate P1-P8 before any compiler change is authorized."
+      ]
+    }
+  },
+  "counts": {
+    "evidence_count": 1,
+    "proposal_count": 1,
+    "candidate_count": 1,
+    "observation_count": 2
+  },
+  "non_claims": [
+    "Structural validation is not a readiness decision and cannot advance this review-pending proposal.",
+    "This stage does not admit an IR primitive, modify a Target, establish lowering support, or authorize implementation.",
+    "No correctness, bitwise reproducibility, performance, calibration, evaluation, or scientific claim follows from this hardware mapping."
+  ]
+}

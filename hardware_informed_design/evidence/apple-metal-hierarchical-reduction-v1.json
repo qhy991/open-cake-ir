@@ -1,0 +1,320 @@
+{
+  "$schema": "../schema.json#/$defs/evidence",
+  "schema_version": 1,
+  "evidence_id": "apple-metal-hierarchical-reduction-v1",
+  "state": "review_pending",
+  "claim_scope": "hardware_evidence_only",
+  "disposition": "await_human_hardware_review",
+  "next_gate": "principle_driven_iteration",
+  "sources": [
+    {
+      "source_id": "apple-metal-shading-language-specification-2026-06-04",
+      "kind": "vendor_pdf",
+      "title": "Metal Shading Language Specification",
+      "url": "https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf",
+      "revision": "2026-06-04",
+      "locators": [
+        "Sections 4.4 and 4.4.1, pages 120-121: threadgroup address space and SIMDgroup organization.",
+        "Section 5.2.3.6, pages 153-158: thread and SIMDgroup built-in inputs.",
+        "Sections 6.10.1 and 6.10.2, pages 215-225: barriers, simd_sum, active threads, and the hierarchical reduction example."
+      ],
+      "content_sha256": "41538b30d2f1140a5b2a0c84ce0a9f7b67bf0c707e224cfea0bfe5a44aa26cf5",
+      "content_verification": "downloaded_content_identity_verified_once"
+    },
+    {
+      "source_id": "apple-metal-feature-set-tables-2026-05-21",
+      "kind": "vendor_pdf",
+      "title": "Metal feature set tables",
+      "url": "https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf",
+      "revision": "2026-05-21",
+      "locators": [
+        "Page 2: Apple M3 and M4 map to Apple GPU family 9.",
+        "Page 4: SIMD-scoped reduction availability includes Apple GPU family 9.",
+        "Page 7: Apple GPU family 9 threadgroup limits and threadgroup-memory alignment.",
+        "Page 10 footnote: 1024 threads is a theoretical maximum and the pipeline limit must be inspected at runtime."
+      ],
+      "content_sha256": "9f31df15dd6827545702c5a0845f6e36e1889878cd0e534123bd70211e5c00a8",
+      "content_verification": "downloaded_content_identity_verified_once"
+    },
+    {
+      "source_id": "apple-silicon-porting-guide-simd-width",
+      "kind": "vendor_web_documentation",
+      "title": "Porting your Metal code to Apple silicon",
+      "url": "https://developer.apple.com/documentation/apple-silicon/porting-your-metal-code-to-apple-silicon",
+      "locators": [
+        "Do not assume SIMDgroup size; query threadExecutionWidth on the host and use threads_per_simdgroup in a shader.",
+        "Use threadgroup synchronization when data crosses SIMDgroups in a threadgroup.",
+        "GPU-family support checks are capability lower bounds: requesting a family also accepts newer supported families."
+      ],
+      "offline_content_verification": "not_performed"
+    },
+    {
+      "source_id": "apple-api-threadexecutionwidth",
+      "kind": "vendor_web_documentation",
+      "title": "MTLComputePipelineState threadExecutionWidth",
+      "url": "https://developer.apple.com/documentation/metal/mtlcomputepipelinestate/threadexecutionwidth",
+      "locators": [
+        "Runtime pipeline property used to select or reject a SIMD-width specialization."
+      ],
+      "offline_content_verification": "not_performed"
+    },
+    {
+      "source_id": "apple-api-maxtotalthreadsperthreadgroup",
+      "kind": "vendor_web_documentation",
+      "title": "MTLComputePipelineState maxTotalThreadsPerThreadgroup",
+      "url": "https://developer.apple.com/documentation/metal/mtlcomputepipelinestate/maxtotalthreadsperthreadgroup",
+      "locators": [
+        "Runtime per-pipeline threadgroup limit used as a dispatch gate."
+      ],
+      "offline_content_verification": "not_performed"
+    },
+    {
+      "source_id": "apple-api-staticthreadgroupmemorylength",
+      "kind": "vendor_web_documentation",
+      "title": "MTLComputePipelineState staticThreadgroupMemoryLength",
+      "url": "https://developer.apple.com/documentation/metal/mtlcomputepipelinestate/staticthreadgroupmemorylength",
+      "locators": [
+        "Runtime per-pipeline static threadgroup-memory allocation used in total-memory accounting."
+      ],
+      "offline_content_verification": "not_performed"
+    },
+    {
+      "source_id": "apple-api-maxthreadgroupmemorylength",
+      "kind": "vendor_web_documentation",
+      "title": "MTLDevice maxThreadgroupMemoryLength",
+      "url": "https://developer.apple.com/documentation/metal/mtldevice/maxthreadgroupmemorylength",
+      "locators": [
+        "Runtime device maximum used to gate total static and dynamic threadgroup-memory allocation."
+      ],
+      "offline_content_verification": "not_performed"
+    },
+    {
+      "source_id": "apple-api-supportsfamily",
+      "kind": "vendor_web_documentation",
+      "title": "MTLDevice supportsFamily",
+      "url": "https://developer.apple.com/documentation/metal/mtldevice/supportsfamily(_:)",
+      "locators": [
+        "Capability query whose positive result covers the requested GPU family or a later family."
+      ],
+      "offline_content_verification": "not_performed"
+    },
+    {
+      "source_id": "apple-a14-gpu-tech-talk-hierarchical-reduction",
+      "kind": "vendor_web_documentation",
+      "title": "Explore the new system architecture of Apple silicon Macs",
+      "url": "https://developer.apple.com/videos/play/tech-talks/10858/",
+      "locators": [
+        "Around 20:45: SIMD reduce_sum followed by threadgroup partial publication, a threadgroup barrier, and a final SIMD reduction."
+      ],
+      "offline_content_verification": "not_performed"
+    }
+  ],
+  "facts": [
+    {
+      "fact_id": "apple-m4-is-gpu-family9",
+      "statement": "Apple classifies M4 as Apple GPU family 9.",
+      "scope": "gpu_family",
+      "authority": "apple_vendor_documentation",
+      "source_ids": ["apple-metal-feature-set-tables-2026-05-21"]
+    },
+    {
+      "fact_id": "apple-family9-supports-simdgroup-reductions",
+      "statement": "Apple GPU family 9 supports SIMD-scoped reduction operations.",
+      "scope": "gpu_family",
+      "authority": "apple_vendor_documentation",
+      "source_ids": ["apple-metal-feature-set-tables-2026-05-21"]
+    },
+    {
+      "fact_id": "apple-family9-thread-ceiling-1024",
+      "statement": "Apple GPU family 9 has a theoretical maximum of 1024 threads per threadgroup; the selected pipeline may expose a lower maximum.",
+      "scope": "gpu_family",
+      "authority": "apple_vendor_documentation",
+      "source_ids": ["apple-metal-feature-set-tables-2026-05-21"]
+    },
+    {
+      "fact_id": "apple-family9-threadgroup-memory-ceiling-32768",
+      "statement": "Apple GPU family 9 exposes a 32768-byte maximum threadgroup-memory allocation.",
+      "scope": "gpu_family",
+      "authority": "apple_vendor_documentation",
+      "source_ids": ["apple-metal-feature-set-tables-2026-05-21"]
+    },
+    {
+      "fact_id": "apple-family9-threadgroup-memory-alignment-16",
+      "statement": "Apple GPU family 9 requires 16-byte threadgroup-memory allocation alignment.",
+      "scope": "gpu_family",
+      "authority": "apple_vendor_documentation",
+      "source_ids": ["apple-metal-feature-set-tables-2026-05-21"]
+    },
+    {
+      "fact_id": "metal-threadgroup-memory-scope",
+      "statement": "Metal threadgroup memory is shared by threads in one threadgroup for that threadgroup's execution lifetime.",
+      "scope": "language_semantics",
+      "authority": "apple_vendor_documentation",
+      "source_ids": ["apple-metal-shading-language-specification-2026-06-04"]
+    },
+    {
+      "fact_id": "metal-simd-sum-active-thread-scope",
+      "statement": "Metal simd_sum reduces across the active threads of one SIMDgroup and makes the result available to active threads in that SIMDgroup.",
+      "scope": "language_semantics",
+      "authority": "apple_vendor_documentation",
+      "source_ids": ["apple-metal-shading-language-specification-2026-06-04"]
+    },
+    {
+      "fact_id": "metal-simd-sum-excludes-bfloat-input",
+      "statement": "The documented simd_sum input types do not include bfloat, so BF16 contributions must be converted before the proposed FP32 reduction.",
+      "scope": "language_semantics",
+      "authority": "apple_vendor_documentation",
+      "source_ids": ["apple-metal-shading-language-specification-2026-06-04"]
+    },
+    {
+      "fact_id": "metal-threadgroup-publication-barrier",
+      "statement": "Cross-SIMDgroup publication through threadgroup memory requires a threadgroup barrier executed by all live threads with mem_threadgroup ordering; a SIMDgroup-only barrier is insufficient.",
+      "scope": "language_semantics",
+      "authority": "apple_vendor_documentation",
+      "source_ids": [
+        "apple-a14-gpu-tech-talk-hierarchical-reduction",
+        "apple-metal-shading-language-specification-2026-06-04"
+      ]
+    },
+    {
+      "fact_id": "metal-simd-width-must-be-queried",
+      "statement": "Apple instructs Metal programs not to assume SIMDgroup size; the host queries MTLComputePipelineState.threadExecutionWidth and a shader can use threads_per_simdgroup.",
+      "scope": "language_semantics",
+      "authority": "apple_vendor_documentation",
+      "source_ids": [
+        "apple-api-threadexecutionwidth",
+        "apple-silicon-porting-guide-simd-width"
+      ]
+    },
+    {
+      "fact_id": "metal-pipeline-thread-limit-must-be-queried",
+      "statement": "The selected MTLComputePipelineState.maxTotalThreadsPerThreadgroup is the runtime per-pipeline dispatch limit and may be below the family ceiling.",
+      "scope": "language_semantics",
+      "authority": "apple_vendor_documentation",
+      "source_ids": [
+        "apple-api-maxtotalthreadsperthreadgroup",
+        "apple-metal-feature-set-tables-2026-05-21"
+      ]
+    },
+    {
+      "fact_id": "metal-total-threadgroup-memory-runtime-gate",
+      "statement": "A dispatch must account for the selected pipeline's staticThreadgroupMemoryLength plus aligned dynamic threadgroup allocation and keep the total within device.maxThreadgroupMemoryLength as well as the family ceiling.",
+      "scope": "language_semantics",
+      "authority": "apple_vendor_documentation",
+      "source_ids": [
+        "apple-api-maxthreadgroupmemorylength",
+        "apple-api-staticthreadgroupmemorylength",
+        "apple-metal-feature-set-tables-2026-05-21"
+      ]
+    },
+    {
+      "fact_id": "metal-family-query-is-lower-bound",
+      "statement": "A positive supportsFamily query means the requested Apple GPU family or a newer family is supported; it does not assert exact family identity.",
+      "scope": "language_semantics",
+      "authority": "apple_vendor_documentation",
+      "source_ids": ["apple-api-supportsfamily"]
+    },
+    {
+      "fact_id": "observed-m4-supports-apple9-or-newer",
+      "statement": "The sanitized local Apple M4 engineering probe observed supports Apple GPU family 9 or newer as true.",
+      "scope": "observed_device_pipeline",
+      "authority": "local_engineering_observation",
+      "source_ids": ["local-apple-m4-metal-operator-probe-2026-08-26"]
+    },
+    {
+      "fact_id": "observed-m4-threadgroup-memory-32768",
+      "statement": "The sanitized local Apple M4 engineering probe observed maxThreadgroupMemoryLength equal to 32768 bytes.",
+      "scope": "observed_device_pipeline",
+      "authority": "local_engineering_observation",
+      "source_ids": ["local-apple-m4-metal-operator-probe-2026-08-26"]
+    },
+    {
+      "fact_id": "observed-m4-pipeline-width-32",
+      "statement": "Both probed local Apple M4 compute pipelines reported threadExecutionWidth equal to 32.",
+      "scope": "observed_device_pipeline",
+      "authority": "local_engineering_observation",
+      "source_ids": ["local-apple-m4-metal-operator-probe-2026-08-26"]
+    },
+    {
+      "fact_id": "observed-m4-pipeline-thread-limit-1024",
+      "statement": "Both probed local Apple M4 compute pipelines reported maxTotalThreadsPerThreadgroup equal to 1024.",
+      "scope": "observed_device_pipeline",
+      "authority": "local_engineering_observation",
+      "source_ids": ["local-apple-m4-metal-operator-probe-2026-08-26"]
+    }
+  ],
+  "local_probe_observation": {
+    "observation_id": "local-apple-m4-metal-operator-probe-2026-08-26",
+    "observed_at": "2026-08-26",
+    "repository_snapshot": {
+      "git_parent_revision": "2238610a4e8923330d73d125e79fd374fc7d2397",
+      "probe_path": "tools/probe_metal_operators.py",
+      "binding_scope": "captured_source_identity_only",
+      "reproducibility_note": "Raw probe output was not retained. The Git parent revision binds only the probe source used at observation time; it does not preserve the device state or make the observation automatically reproducible."
+    },
+    "device_class": "Apple M4",
+    "supports_apple9_or_newer": true,
+    "maximum_threadgroup_memory_bytes": 32768,
+    "pipelines": [
+      {
+        "kind": "indexed_gather",
+        "thread_execution_width": 32,
+        "max_total_threads_per_threadgroup": 1024
+      },
+      {
+        "kind": "weighted_combine",
+        "thread_execution_width": 32,
+        "max_total_threads_per_threadgroup": 1024
+      }
+    ],
+    "raw_output_retained": false,
+    "performance_measured": false,
+    "scientific_claim_authorized": false,
+    "scope": "local_engineering_observation_only"
+  },
+  "non_evidentiary_context": {
+    "role": "non_evidentiary_context_only",
+    "repository_snapshot": {
+      "git_parent_revision": "2238610a4e8923330d73d125e79fd374fc7d2397",
+      "target_path": "compiler/targets/apple_gpu_family9.json",
+      "lowering_path": "src/open_cake_ir/compiler/emit_metal.py",
+      "binding_scope": "non_evidentiary_implementation_context_only"
+    },
+    "target_id": "apple_gpu_family9",
+    "target_execution_group_width": 32,
+    "target_maximum_threads_per_workgroup": 1024,
+    "target_maximum_threadgroup_memory_bytes": 32768,
+    "current_lowering_supports_threadgroup_allocation": false,
+    "current_lowering_supports_threadgroup_barrier": false,
+    "context_note": "The Target and finite graph-specific Metal lowering at the bound Git parent revision are inspected only to locate the implementation gap. The revision identifies those historical repository inputs; it is not hardware evidence, does not reproduce the discarded probe output, is not modified by this stage, and cannot presently materialize the proposed scratch allocation or cross-SIMDgroup barrier."
+  },
+  "assumptions": [
+    "The cited 2026 vendor PDFs apply to the Metal language and Apple GPU family exposed by the local macOS toolchain used for later review.",
+    "The vendor webpage statements recorded here match the pages inspected online; their content was not captured or content-hash-verified for offline replay.",
+    "The sanitized local probe fields faithfully preserve the relevant pipeline observations while intentionally discarding raw output and device identifiers; the Git parent revision binds the historical probe source but cannot make the observation automatically reproducible."
+  ],
+  "gate_separation": {
+    "validation": {
+      "kind": "offline_metadata_and_derivation_validation",
+      "checks": [
+        "Source and fact identifiers, fact scope and authority, local-observation sanitization, and fixed evidence boundaries are structurally consistent.",
+        "Validation does not fetch unpinned webpages, interpret vendor prose, or promote a fact record into a mapping decision."
+      ],
+      "can_set_readiness": false
+    },
+    "readiness": {
+      "ready": false,
+      "authority": "human_hardware_review",
+      "blocking_reviews": [
+        "Confirm every vendor-document locator and the applicability of each atomic fact to the proposed Metal specialization.",
+        "Confirm that sanitized local observations remain scoped to the two probed pipelines and make no family-wide, performance, or scientific claim."
+      ]
+    }
+  },
+  "non_claims": [
+    "The two observed width-32 pipelines do not establish a fixed SIMDgroup width for every Apple GPU, every Apple GPU family 9 device, or every future pipeline.",
+    "supports_apple9_or_newer is a lower-bound capability observation, not proof that the local device is exactly and only Apple GPU family 9.",
+    "The local probe is engineering verification only: it contains no timing, occupancy, calibration, evaluation, or scientific evidence.",
+    "Vendor support for the ingredients does not establish that the proposed mapping is correct, performant, expressible in the current IR, or supported by the current lowering."
+  ]
+}

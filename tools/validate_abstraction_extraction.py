@@ -201,7 +201,12 @@ class _Validator:
                 )
 
     def read(self, path: Path, display: str) -> dict[str, object] | None:
-        if path.is_symlink() or not path.is_file():
+        try:
+            valid_file = not path.is_symlink() and path.is_file()
+        except OSError as error:
+            self.error(display, f"could not enumerate directory ({error})")
+            return None
+        if not valid_file:
             self.error(display, "must be a regular non-symlink file")
             return None
         try:
@@ -329,14 +334,24 @@ class _Validator:
                 self.error(f"{base}[{index}]", f"must name one {directory}/*.json file")
                 continue
             candidate = self.root / relative
-            if candidate.is_symlink() or not candidate.is_file():
+            try:
+                valid_file = not candidate.is_symlink() and candidate.is_file()
+            except OSError as error:
+                self.error(base, f"could not enumerate directory ({error})")
+                valid_file = False
+            if not valid_file:
                 self.error(
                     f"{base}[{index}]",
                     f"must reference a regular non-symlink file: {relative}",
                 )
             result.append(relative)
         location = self.root / directory
-        if location.is_dir() and not location.is_symlink():
+        try:
+            valid_directory = location.is_dir() and not location.is_symlink()
+        except OSError as error:
+            self.error(base, f"could not enumerate directory ({error})")
+            valid_directory = False
+        if valid_directory:
             try:
                 actual = sorted(
                     child.relative_to(self.root).as_posix()
