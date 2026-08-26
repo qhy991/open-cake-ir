@@ -1,10 +1,15 @@
 # AMD optimization branch policy
 
-`codex/amd-gfx1151-optimization` is the sole active AMD optimization branch. Its initial
-base was advanced without feature changes to GitHub
-`main@f02320b17ee1f6ed12d1d858e3439bc16b9da4ed`; the earlier
-`codex/amd-gfx1151-tuning` branch and its `STOP_CLOSE_NULL` evidence are immutable
-historical inputs, not a parallel current implementation.
+`codex/amd-gfx1151-aiter-rmsnorm-baseline` is the active integration branch for the
+source-pinned AMD library comparison. It retains the earlier gfx1151/Q4 lineage and has
+merged GitHub `main@415a1f0f4d090e7f97292adcf3a539be67269550`. The earlier
+`codex/amd-gfx1151-optimization`, tuning and Q4 conformance refs remain historical
+lineage inputs, not parallel places to publish this slice.
+
+This integration branch is exploratory until the exact gfx1151 Executor and required
+correctness runs exist. Merging `main` into it keeps development current; it does not
+advance a protected/formal AMD candidate, release a Compiler or qualify GPU evidence.
+The formal advancement gate below remains unchanged.
 
 The GitHub refs are the branch-state source of truth. Every alignment fixes both ref SHAs
 before acting and uses a unique temporary branch. GitHub performs the merge of the fixed

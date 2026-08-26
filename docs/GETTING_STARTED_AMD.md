@@ -1,11 +1,14 @@
 # AMD gfx1151 development path
 
-This branch is based directly on GitHub `main@f02320b17ee1f6ed12d1d858e3439bc16b9da4ed`.
-It adds exact gfx1151 Target support, standalone FP32 SwiGLU, llama.cpp FP32
-RMSNorm+Mul, a true-one-row optimization hypothesis and a generated live-Q8_1 producer.
-The proposed Compiler v29 has a passing 45-case Gate but is not released until an
-external reviewer writes the exact approval required by ADR 0030. Commands below that
-use the draft submit no GPU work.
+This branch retains the earlier gfx1151/Q4 lineage and is merged through GitHub
+`main@415a1f0f4d090e7f97292adcf3a539be67269550`. It adds exact gfx1151 Target support,
+standalone FP32 SwiGLU, llama.cpp FP32 RMSNorm+Mul, a true-one-row hypothesis, a
+generated live-Q8_1 producer and the source-pinned AITER RMSNorm baseline below. The
+historical 45-case AMD Gate was prepared against the pre-RoPE Compiler and is no longer
+the current Gate after this alignment; it is not carried forward or rewritten. The
+current 37-case main manifest remains canonical. Any future AMD Compiler promotion must
+prepare a new combined Gate and receive the independent approval required by ADR 0030.
+Prepare-only commands below submit no GPU work.
 
 ## Environment
 
@@ -34,7 +37,7 @@ compile a kernel, freeze a search contract or authorize a performance claim.
 
 ## Prepare the two correctness paths
 
-While v29 approval is pending, explicitly use the draft:
+For source construction only, explicitly use the unreleased v29 draft:
 
 ```bash
 PYTHONPATH=src python3 examples/gpu/swiglu_amd_quickstart.py \
@@ -63,8 +66,9 @@ Preparation must report the seven frozen Workload cases, one `grid=[1,1,1]` Trit
 kernel, `num_warps=8`, HIP `gfx1151/wave32`, a UINT8 `[16,36]` output and zero submitted
 GPU work. It proves source construction only.
 
-After an external approval releases v29 and the exact gfx1151 Executor is released, use
-the qualified ROCm Python and new evidence directories outside the checkout:
+After a new combined AMD Compiler Gate is independently approved and the exact gfx1151
+Executor is released, use the qualified ROCm Python and new evidence directories outside
+the checkout:
 
 ```bash
 PYTHONPATH=src /path/to/rocm/python \
@@ -125,8 +129,9 @@ it performs no timing and authorizes no speedup, promotion, llama.cpp end-to-end
 serving claim. AITER SwiGLU is deliberately excluded because its packed `[gate,up]`
 input would change the frozen two-input Workload boundary; see ADR 0043.
 
-After both Compiler v29 and `open-cake-ir-gfx1151-v1` are independently released, run
-the Q8 producer from a clean checkout with a new evidence root outside it:
+After a new combined AMD Compiler successor and `open-cake-ir-gfx1151-v1` are
+independently released, run the Q8 producer from a clean checkout with a new evidence
+root outside it:
 
 ```bash
 PYTHONPATH=src /path/to/rocm/python \
@@ -160,10 +165,11 @@ baseline = row_tile 64, num_warps 4
 ```
 
 The llama-faithful point is one row and eight wave32 groups. The search contract is not
-frozen until Compiler v29 is externally approved; therefore no GPU timing command or
-performance result is claimed yet. Once frozen, the runner will retain correctness for
-both Workload cases, L2-flushed HIP-event screening, four ABBA confirmation cohorts,
-raw samples, a 0.05 CV gate and the unchanged 1.05x materiality rule.
+frozen until the post-alignment AMD Compiler successor is externally approved; therefore
+no GPU timing command or performance result is claimed yet. Once frozen, the runner will
+retain correctness for both Workload cases, L2-flushed HIP-event screening, four ABBA
+confirmation cohorts, raw samples, a 0.05 CV gate and the unchanged 1.05x materiality
+rule.
 
 ## Boundary
 
@@ -180,8 +186,9 @@ two-part stored-s correction oracle. ADR 0040 adds raw UINT8/INT8 storage and ex
 record custody. ADR 0041 adds the first composed Q8 producer: masked 512-value padding,
 explicit wave32 XOR reductions, precise FP32 division, half-away rounding, typed casts
 and relation-derived little-endian Q8_1 stores. It passes deterministic source lowering,
-but the v29 approval, exact gfx1151 Executor and on-device 576-byte comparison are still
-pending. The Q4 consumer, dot4 contract, HSACO evidence, timing and promotion claims do
-not yet exist. ADR 0042 records the gated consumer design as typed packed Load plus one
+but the new combined AMD Gate and approval, exact gfx1151 Executor and on-device
+576-byte comparison are still pending. The Q4 consumer, dot4 contract, HSACO evidence,
+timing and promotion claims do not yet exist. ADR 0042 records the gated consumer design
+as typed packed Load plus one
 instruction-bound generic Dot and two widening casts; it is not implemented before the
 producer passes real gfx1151 correctness.
