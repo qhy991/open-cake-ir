@@ -27,9 +27,12 @@
   ],
   "observed_primitives": [
     "groupwise_int8_scale",
+    "invalid_row_sentinel",
     "lane_zero_row_publish",
+    "nan_score_guard",
     "row_per_simdgroup",
     "simd_sum",
+    "threadgroup_score_token_staging",
     "vectorized_char4_dot"
   ],
   "variant_notes": [

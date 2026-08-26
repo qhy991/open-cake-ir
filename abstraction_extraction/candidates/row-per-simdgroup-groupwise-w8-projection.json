@@ -3,7 +3,7 @@
   "schema_version": 1,
   "candidate_id": "row-per-simdgroup-groupwise-w8-projection",
   "pattern_signature": "row-owned-simdgroup.groupwise-w8-dot.lane-zero-publish",
-  "summary": "Two pinned ApxInf Metal implementations expose the same source-level row projection: one SIMDgroup owns a row, its lanes accumulate group-scaled packed-W8 vector dots, simd_sum combines the lane values, and lane zero publishes the result.",
+  "summary": "Four pinned ApxInf Metal implementations expose the same source-level row projection: one SIMDgroup owns a row, its lanes accumulate group-scaled packed-W8 vector dots, simd_sum combines the lane values, and lane zero publishes the result.",
   "normalized_steps": [
     "Assign one logical output row to each SIMDgroup, with multiple row owners sharing a threadgroup.",
     "Partition packed char4 columns across SIMDgroup lanes with the observed lane-strided traversal.",
@@ -13,21 +13,28 @@
     "Have lane zero publish the row result while leaving destination storage, bounds handling, NaN policy, and downstream synchronization to the enclosing operator."
   ],
   "observed_variants": [
-    "The MLP projection permits a whole-SIMDgroup early return for an invalid row and writes a valid result directly to a device gate-up buffer.",
+    "The full-attention projection uses fixed dimensions and applies layer_slot to both packed-weight and scale row bases, while the GDN projection obtains output-row count, hidden-column extent, and scale-row stride from runtime GdnParams; both return an invalid row before reduction and publish a valid result directly to a device projection buffer.",
+    "The MLP projection permits a whole-SIMDgroup early return for an invalid row and writes a valid result directly to one concatenated gate/up device buffer.",
     "The LM-head projection runs invalid rows through the reduction and publishes negative-infinity and maximum-token sentinels into threadgroup score-token arrays; it also maps a valid row's NaN sum to negative infinity while retaining that row's token."
   ],
   "observation_ids": [
+    "apxinf-metal-full-attention.qgkv-row-projection",
+    "apxinf-metal-w8-gdn.input-row-projection",
     "apxinf-metal-w8-lm-head.row-projection",
     "apxinf-metal-w8-mlp.gate-up-projection"
   ],
   "evidence_breadth": {
-    "observation_count": 2,
+    "observation_count": 4,
     "implementation_ids": [
+      "apxinf.metal-full-attention-decode-v1",
+      "apxinf.metal-w8-gdn-decode",
       "apxinf.metal-w8-lm-head-top4",
       "apxinf.metal-w8-mlp-block"
     ],
     "operator_ids": [
+      "attention.full_decode_block",
       "fused_graph.quantized_mlp",
+      "recurrent.gated_delta_net_decode",
       "selection.quantized_projection_topk"
     ],
     "source_ids": [
@@ -38,10 +45,14 @@
     ],
     "git_objects": [
       "a1d1aa02c80b167bd2b63bffe94c808d945dd1fa",
-      "a5420f5b4d222b05a947bbbe2b92f99136ef4450"
+      "a5420f5b4d222b05a947bbbe2b92f99136ef4450",
+      "b920a5f648a7046930c5f6ed139c05d3b8906fab",
+      "f70334c822dcc73d59551098ef8ad53eb0984210"
     ],
     "families": [
+      "attention",
       "fused_graph",
+      "recurrent",
       "selection"
     ],
     "hardware_targets": [

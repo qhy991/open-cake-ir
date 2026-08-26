@@ -26,6 +26,9 @@
     "Lane zero publishes the reduced row value directly into the device gate-up buffer."
   ],
   "observed_primitives": [
+    "concatenated_gate_up_output",
+    "direct_device_row_publish",
+    "early_row_return",
     "groupwise_int8_scale",
     "lane_zero_row_publish",
     "row_per_simdgroup",

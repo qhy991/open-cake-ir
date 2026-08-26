@@ -31,6 +31,8 @@
     ]
   },
   "observations": [
+    "observations/apxinf-full-attention-qgkv-row-projection.json",
+    "observations/apxinf-w8-gdn-input-row-projection.json",
     "observations/apxinf-w8-lm-head-row-projection.json",
     "observations/apxinf-w8-mlp-gate-up-row-projection.json",
     "observations/mlx-layer-norm-hierarchical-reduction.json",
@@ -44,9 +46,9 @@
     "candidates/row-per-simdgroup-groupwise-w8-projection.json"
   ],
   "counts": {
-    "observation_count": 6,
+    "observation_count": 8,
     "candidate_count": 3,
-    "implementation_count": 6,
+    "implementation_count": 8,
     "source_count": 2
   }
 }

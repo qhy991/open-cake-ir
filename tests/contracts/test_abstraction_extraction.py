@@ -135,15 +135,20 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
                             ),
                         )
 
-    def test_w8_candidate_binds_both_reviewed_projection_spans(self) -> None:
+    def test_w8_candidate_binds_four_reviewed_projection_spans(self) -> None:
         candidate = _read(
             EXTRACTION / "candidates" / "row-per-simdgroup-groupwise-w8-projection.json"
         )
         observation_paths = (
+            "observations/apxinf-full-attention-qgkv-row-projection.json",
+            "observations/apxinf-w8-gdn-input-row-projection.json",
             "observations/apxinf-w8-lm-head-row-projection.json",
             "observations/apxinf-w8-mlp-gate-up-row-projection.json",
         )
         observations = [_read(EXTRACTION / path) for path in observation_paths]
+        by_id = {
+            observation["observation_id"]: observation for observation in observations
+        }
 
         self.assertEqual(
             candidate["observation_ids"],
@@ -153,21 +158,26 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
             {observation["pattern_signature"] for observation in observations},
             {candidate["pattern_signature"]},
         )
+        common_primitives = set(observations[0]["observed_primitives"]).intersection(
+            *(
+                set(observation["observed_primitives"])
+                for observation in observations[1:]
+            )
+        )
         self.assertEqual(
-            {tuple(observation["observed_primitives"]) for observation in observations},
+            common_primitives,
             {
-                (
-                    "groupwise_int8_scale",
-                    "lane_zero_row_publish",
-                    "row_per_simdgroup",
-                    "simd_sum",
-                    "vectorized_char4_dot",
-                )
+                "groupwise_int8_scale",
+                "lane_zero_row_publish",
+                "row_per_simdgroup",
+                "simd_sum",
+                "vectorized_char4_dot",
             },
         )
         self.assertEqual(
             {
                 (
+                    observation["source_locator"]["symbol"],
                     observation["source_locator"]["path"],
                     observation["source_span"]["start_line"],
                     observation["source_span"]["end_line"],
@@ -176,17 +186,88 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
             },
             {
                 (
+                    "full_attention_qgkv_v1",
+                    "crates/apxinf-metal/src/metal_full_attention_decode_v1.metal",
+                    53,
+                    83,
+                ),
+                (
+                    "gdn_w8_input_projection",
+                    "crates/apxinf-metal/src/metal_w8_gdn.metal",
+                    20,
+                    47,
+                ),
+                (
+                    "w8_rows_topk4",
                     "crates/apxinf-metal/src/metal_w8.metal",
                     39,
                     73,
                 ),
                 (
+                    "w8_mlp_gate_up",
                     "crates/apxinf-metal/src/metal_w8_mlp.metal",
                     11,
                     42,
                 ),
             },
         )
+        direct_observations = (
+            by_id["apxinf-metal-full-attention.qgkv-row-projection"],
+            by_id["apxinf-metal-w8-gdn.input-row-projection"],
+            by_id["apxinf-metal-w8-mlp.gate-up-projection"],
+        )
+        for observation in direct_observations:
+            with self.subTest(observation=observation["observation_id"]):
+                self.assertIn(
+                    "direct_device_row_publish", observation["observed_primitives"]
+                )
+                self.assertIn("early_row_return", observation["observed_primitives"])
+        lm_head = by_id["apxinf-metal-w8-lm-head.row-projection"]
+        self.assertNotIn("direct_device_row_publish", lm_head["observed_primitives"])
+        self.assertNotIn("early_row_return", lm_head["observed_primitives"])
+        for primitive in (
+            "invalid_row_sentinel",
+            "nan_score_guard",
+            "threadgroup_score_token_staging",
+        ):
+            with self.subTest(primitive=primitive):
+                self.assertIn(primitive, lm_head["observed_primitives"])
+                self.assertTrue(
+                    all(
+                        primitive not in observation["observed_primitives"]
+                        for observation in direct_observations
+                    )
+                )
+        full_attention = by_id["apxinf-metal-full-attention.qgkv-row-projection"]
+        gdn = by_id["apxinf-metal-w8-gdn.input-row-projection"]
+        mlp = by_id["apxinf-metal-w8-mlp.gate-up-projection"]
+        self.assertIn(
+            "layer_slot_weight_scale_offset",
+            full_attention["observed_primitives"],
+        )
+        self.assertIn("runtime_projection_extents", gdn["observed_primitives"])
+        self.assertIn("concatenated_gate_up_output", mlp["observed_primitives"])
+        variants = " ".join(candidate["observed_variants"])
+        for detail in (
+            "layer_slot to both packed-weight and scale row bases",
+            "output-row count, hidden-column extent, and scale-row stride",
+            "one concatenated gate/up device buffer",
+            "negative-infinity and maximum-token sentinels",
+            "NaN sum",
+        ):
+            with self.subTest(detail=detail):
+                self.assertIn(detail, variants)
+        normalized = " ".join(candidate["normalized_steps"])
+        for variant_only in (
+            "layer_slot",
+            "GdnParams",
+            "concatenated gate/up",
+            "negative-infinity",
+            "maximum-token",
+            "threadgroup score-token",
+        ):
+            with self.subTest(variant_only=variant_only):
+                self.assertNotIn(variant_only, normalized)
 
     def test_max_rebased_candidate_preserves_finalize_and_payload_variants(
         self,

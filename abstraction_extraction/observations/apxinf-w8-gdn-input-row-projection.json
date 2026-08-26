@@ -1,0 +1,46 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "apxinf-metal-w8-gdn.input-row-projection",
+  "pattern_signature": "row-owned-simdgroup.groupwise-w8-dot.lane-zero-publish",
+  "implementation_id": "apxinf.metal-w8-gdn-decode",
+  "operator_id": "recurrent.gated_delta_net_decode",
+  "source_id": "apxinf-qhy-main-df5c55a",
+  "source_locator": {
+    "path": "crates/apxinf-metal/src/metal_w8_gdn.metal",
+    "revision": "df5c55a06140107b24964d9e4abbefd9fa2a4733",
+    "git_object": "f70334c822dcc73d59551098ef8ad53eb0984210",
+    "symbol": "gdn_w8_input_projection"
+  },
+  "source_span": {
+    "start_line": 20,
+    "end_line": 47,
+    "sha256": "3e7193f79c86724154ce3fca011d49b3e7d188c66fd595bf7b11759fe1911c21",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "Each SIMDgroup owns one logical GDN input-projection row, with eight row owners sharing a threadgroup.",
+    "SIMDgroup lanes walk packed char4 columns with a literal stride of 32.",
+    "Runtime input_rows bounds output rows, hidden_size determines the packed column count, and input_groups_per_row selects the FP32 scale-row stride, with 16 char4 values per scale.",
+    "Each lane converts one char4 weight vector to FP32, takes its dot product with the corresponding float4 input, and applies the row-local group scale.",
+    "An FP32 register accumulates the scaled vector dot products before simd_sum reduces them across the SIMDgroup.",
+    "Lane zero publishes the reduced row value directly into the device GDN projection buffer."
+  ],
+  "observed_primitives": [
+    "direct_device_row_publish",
+    "early_row_return",
+    "groupwise_int8_scale",
+    "lane_zero_row_publish",
+    "row_per_simdgroup",
+    "runtime_projection_extents",
+    "simd_sum",
+    "vectorized_char4_dot"
+  ],
+  "variant_notes": [
+    "The row count, hidden width, and scale-row stride come from GdnParams rather than file-level model constants.",
+    "An out-of-range input-projection row returns the entire SIMDgroup before the lane-strided dot product.",
+    "The cited span writes every valid row into one device projection buffer; downstream interpretation remains with the enclosing multi-kernel occurrence."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}
