@@ -1,17 +1,17 @@
 # ADR 0038: gfx1151 needs an exact Executor
 
-Status: proposed; schema/runner implementation is prepared, while the exact infplane
-release and formal search contract are pending.
+Status: accepted for the Executor boundary. The exact infplane release exists; the
+formal search contract remains pending on Compiler approval.
 
 ## Context
 
 Compiler Revision v29 can describe and lower an exact gfx1151 Schedule, but that is only
-the Compiler half of a formal experiment. The current Executor descriptor is
+the Compiler half of a formal experiment. At proposal time the current descriptor was
 `open-cake-ir-b200-v30`. Its host closure pins a CUDA PyTorch build, CUPTI Python,
 FlashInfer and Nsight Compute, and `ExecutorRevision.admit_host()` admits that B200
 environment.
 
-The AMD search runner currently loads v30 to verify repository source bytes and then
+The earlier AMD search runner loaded v30 to verify repository source bytes and then
 discards its host authority. The live path calls the HIP-specific runtime admission
 directly and discovers `amd-smi` and a profiler through `PATH`. This can prove that the
 source closure matches v30 or that the live device looks like gfx1151, but it cannot
@@ -83,9 +83,14 @@ descriptor until its own B200 release cycle is rerun on a qualified B200 host.
 - Candidate runtime faults terminate the whole search. Only an observed numerical
   mismatch becomes `CORRECTNESS_REJECTED`; an unclassified launch, HIP or oracle fault is
   never relabeled as a candidate compile result and cannot lead to a timing WIN.
-- The exact infplane release receipt records the new descriptor identity and source
-  closure. Only after Compiler approval do two-case SwiGLU and RMSNorm correctness runs,
-  followed by the frozen four-candidate one-row search, become authorized.
+- The exact infplane v3 release records the 47-source descriptor and admits the pinned
+  ROCm host, `amd-smi`, build tools, compatibility library and rocprofv3. The frozen v1
+  and v2 identities remain unchanged.
+- The v3 RMSNorm runner requires unchanged input storage and bytes, then passes a
+  same-artifact baseline-to-baseline ABBA control before any candidate screening. A
+  material false winner or unstable cohort is measurement-quality inconclusive.
+- Only after Compiler approval do two-case SwiGLU and RMSNorm correctness runs, followed
+  by the frozen four-candidate one-row search, become authorized.
 
 ## Consequences
 

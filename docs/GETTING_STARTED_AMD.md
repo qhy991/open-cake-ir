@@ -11,7 +11,9 @@ carried forward or rewritten. The post-alignment draft now combines the released
 sources. It remains `awaiting_human_review`; the existing approval binds only the main
 37-case report and is deliberately stale for this proposal. Any AMD Compiler promotion
 therefore still requires the independent approval required by ADR 0030. Prepare-only
-commands below submit no GPU work.
+commands below submit no GPU work. The exact 37-to-47 case review map is
+[`AMD_COMPILER_V29_REVIEW_PACKET.md`](AMD_COMPILER_V29_REVIEW_PACKET.md); it is not an
+approval artifact.
 
 ## Environment
 
@@ -19,9 +21,10 @@ The previously qualified runtime combination is one visible gfx1151 wave32 devic
 ROCm 7.2.1, Python 3.12, ROCm PyTorch 2.9.1 and Triton 3.5.1. PyTorch intentionally uses
 the `torch.cuda` namespace for ROCm. Runtime admission checks `torch.version.hip`, the
 active Triton target, `gcnArchName=gfx1151` and wave width; another device or a CUDA
-build fails before compilation. These facts and the AITER JIT closure are now released
-as `open-cake-ir-gfx1151-v1`; the B200 v30 descriptor still cannot authorize this path.
-ADR 0038 keeps the two Executor lineages independent.
+build fails before compilation. These facts, the AITER JIT closure and the formal
+RMSNorm noise/correctness runner are now released as `open-cake-ir-gfx1151-v3`. The v1
+and v2 identities are immutable history; the B200 v30 descriptor still cannot authorize
+this path. ADR 0038 keeps the two Executor lineages independent.
 
 On the admitted infplane host, with exactly one gfx1151 device visible, release that
 authority from the final clean candidate checkout:
@@ -139,14 +142,14 @@ it performs no timing and authorizes no speedup, promotion, llama.cpp end-to-end
 serving claim. AITER SwiGLU is deliberately excluded because its packed `[gate,up]`
 input would change the frozen two-input Workload boundary; see ADR 0043.
 
-After a new combined AMD Compiler successor and `open-cake-ir-gfx1151-v1` are
+After a new combined AMD Compiler successor and `open-cake-ir-gfx1151-v3` are
 independently released, run the Q8 producer from a clean checkout with a new evidence
 root outside it:
 
 ```bash
 PYTHONPATH=src /path/to/rocm/python \
   examples/gpu/llama_q8_1_amd_quickstart.py \
-  --executor runtime/executors/open-cake-ir-gfx1151-v1.json \
+  --executor runtime/executors/open-cake-ir-gfx1151-v3.json \
   --evidence-root /new/external/path/gfx1151-q8-producer-v1
 ```
 
@@ -177,9 +180,13 @@ baseline = row_tile 64, num_warps 4
 The llama-faithful point is one row and eight wave32 groups. The search contract is not
 frozen until the post-alignment AMD Compiler successor is externally approved; therefore
 no GPU timing command or performance result is claimed yet. Once frozen, the runner will
-retain correctness for both Workload cases, L2-flushed HIP-event screening, four ABBA
-confirmation cohorts, raw samples, a 0.05 CV gate and the unchanged 1.05x materiality
-rule. Because gfx1151 has no calibrated ranking coverage, preparation now records all
+retain correctness for both Workload cases, including unchanged input storage and
+bytes. Before candidate screening it runs a same-artifact baseline-to-baseline ABBA
+control; any high-CV cohort or material directional false win ends the attempt as
+measurement-quality inconclusive. Only a passing control reaches L2-flushed HIP-event
+screening and four candidate/baseline ABBA confirmation cohorts, with raw samples, a
+0.05 CV gate and the unchanged 1.05x materiality rule. Because gfx1151 has no calibrated
+ranking coverage, preparation now records all
 four candidates as explicitly withheld, `ranking_applied=false`, and sends every
 Verifier survivor to the first empirical calibration sweep. This is an honest ranking
 abstention, not a cost-model filter. Terminal timing records carry a typed candidate

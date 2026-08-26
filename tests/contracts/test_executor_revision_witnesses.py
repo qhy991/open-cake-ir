@@ -70,7 +70,7 @@ class ExecutorRevisionWitnessTests(unittest.TestCase):
             plan.reclaimable_descriptors,
         )
 
-    def test_registered_gfx1151_v2_release_forces_v3(self) -> None:
+    def test_registered_gfx1151_v2_release_remains_immutable(self) -> None:
         registration = "inventory/AMD_GFX1151_EXECUTOR_V2_RELEASE_20260826.json"
 
         witnesses = tuple(
@@ -79,9 +79,7 @@ class ExecutorRevisionWitnessTests(unittest.TestCase):
             if item.revision_id == "open-cake-ir-gfx1151-v2"
             and item.path == registration
         )
-        plan = plan_executor_revision_cycle(
-            ROOT, "open-cake-ir-gfx1151-v2"
-        )
+        plan = plan_executor_revision_cycle(ROOT, "open-cake-ir-gfx1151-v3")
 
         self.assertEqual(len(witnesses), 1)
         self.assertEqual(
@@ -91,8 +89,32 @@ class ExecutorRevisionWitnessTests(unittest.TestCase):
                 "descriptor_raw_sha256": "6f3ea53939643d85118ea2249ef3fbb7d039852c3e5588ec87fc3488de97ae5b",
             },
         )
+        self.assertNotIn(
+            "runtime/executors/open-cake-ir-gfx1151-v2.json",
+            plan.reclaimable_descriptors,
+        )
+
+    def test_registered_gfx1151_v3_release_forces_v4(self) -> None:
+        registration = "inventory/AMD_GFX1151_EXECUTOR_V3_RELEASE_20260826.json"
+
+        witnesses = tuple(
+            item
+            for item in executor_revision_witnesses(ROOT)
+            if item.revision_id == "open-cake-ir-gfx1151-v3"
+            and item.path == registration
+        )
+        plan = plan_executor_revision_cycle(ROOT, "open-cake-ir-gfx1151-v3")
+
+        self.assertEqual(len(witnesses), 1)
+        self.assertEqual(
+            dict(witnesses[0].digests),
+            {
+                "canonical_sha256": "d21be95c32b3b19661797c74e00da98e2b5652e2fb09244d3e6caf60773a0963",
+                "descriptor_raw_sha256": "b2ebea53a28907cb3747b2bad01568af07b87249f382ffe6161272c1d7f01668",
+            },
+        )
         self.assertTrue(plan.current_witnessed)
-        self.assertEqual(plan.next_revision_id, "open-cake-ir-gfx1151-v3")
+        self.assertEqual(plan.next_revision_id, "open-cake-ir-gfx1151-v4")
         self.assertEqual(plan.reclaimable_descriptors, ())
 
     def test_revision_identity_has_two_independent_released_families(self) -> None:
