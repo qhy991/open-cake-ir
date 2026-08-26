@@ -36,12 +36,16 @@ copy or hide producer work outside timing, so it is not a matched baseline.
    the exact source checkout, disables unused CK/HipKittens inputs and permits no
    fallback. The Executor also owns the exact `git`, `rocminfo`, `hipconfig`, `hipcc`,
    C++ compiler, Ninja and POSIX shell commands plus the Packaging, PyBind11, psutil and
-   Setuptools Python dependencies that AITER actually imports or executes.
+   Setuptools Python dependencies that AITER actually imports or executes. It owns the
+   explicit `libxml2.so.2` compatibility library required by ROCm 7.2.1 `lld` on hosts
+   whose system libxml2 has a newer SONAME.
 5. The retained module must be ELF, export `rms_norm_opus`, contain only a gfx1151 code
    object and have a build plan naming only `--offload-arch=gfx1151`. A
-   `module_rmsnorm_quant` artifact is a path violation. The runner explicitly builds,
-   validates and retains this module before it materializes a Workload case or calls the
-   operator, then rechecks the module and build plan after correctness.
+   `module_rmsnorm_quant` artifact is a path violation. AITER import also builds
+   `module_aiter_core`; the runner validates and retains that exact gfx1151 dependency
+   before explicitly building RMSNorm. Both modules and build plans are admitted before
+   it materializes a Workload case or calls the operator, then rechecked after
+   correctness.
 6. Each Workload case calls the operator once, synchronizes, verifies input immutability,
    output shape/dtype/layout and the existing oracle tolerance. The receipt records the
    source-derived expectation of one launch per call but does not claim an observed

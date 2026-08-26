@@ -354,6 +354,7 @@ def _prepare(
             "CXX": "<executor-admitted-cxx>",
             "HIP_KITTENS_DIR": "<disabled-nonexistent-directory>",
             "ROCM_HOME": "<executor-admitted-hipcc-root>",
+            "LD_LIBRARY_PATH": "<executor-admitted-libxml2-directory>",
             "executor_build_tools": [
                 "cxx",
                 "git",
@@ -385,11 +386,13 @@ def _admit_executor_contract(executor: object) -> None:
     host = _object(document.get("host_environment"), "Executor host")
     tools = _object(host.get("tools"), "Executor tools")
     build_tools = tools.get("build_tools")
+    runtime_libraries = host.get("runtime_libraries")
     if (
         document.get("schema_version") != 2
         or _EXECUTOR_ID.fullmatch(executor.executor_id) is None
         or host.get("runtime_kind") != "hip"
         or not isinstance(build_tools, (list, tuple))
+        or not isinstance(runtime_libraries, (list, tuple))
     ):
         raise ValueError("AITER baseline requires an exact released gfx1151 Executor")
     tool_kinds = {
@@ -406,6 +409,12 @@ def _admit_executor_contract(executor: object) -> None:
         "sh",
     }:
         raise ValueError("gfx1151 Executor does not own the AITER JIT toolchain")
+    sonames = {
+        str(_object(value, "Executor runtime library").get("soname"))
+        for value in runtime_libraries
+    }
+    if sonames != {"libxml2.so.2"}:
+        raise ValueError("gfx1151 Executor does not own the AITER runtime libraries")
     source_paths = {
         str(_object(value, "Executor source").get("path"))
         for value in cast(tuple[object, ...], document["sources"])
@@ -467,6 +476,7 @@ def _failure_class(stage: str) -> str:
         "source_custody",
         "jit_environment",
         "artifact_validation",
+        "import_artifact_validation",
         "post_artifact_validation",
         "post_source_custody",
     }:
@@ -510,6 +520,18 @@ def _tool_path(
     return path
 
 
+def _library_path(
+    runtime_libraries: Mapping[str, Mapping[str, object]], soname: str
+) -> Path:
+    record = runtime_libraries.get(soname)
+    if record is None:
+        raise ValueError(f"gfx1151 Executor is missing runtime library {soname!r}")
+    path = Path(str(record["path"]))
+    if path.name != soname or not path.is_absolute() or not path.is_file():
+        raise ValueError(f"gfx1151 Executor runtime library {soname!r} differs")
+    return path
+
+
 def _rocm_home(build_tools: Mapping[str, Mapping[str, object]]) -> Path:
     hipcc = _tool_path(build_tools, "hipcc")
     home = hipcc.parent.parent
@@ -549,6 +571,7 @@ def _aiter_environment(
     aiter_root: Path,
     jit_dir: Path,
     build_tools: Mapping[str, Mapping[str, object]],
+    runtime_libraries: Mapping[str, Mapping[str, object]],
 ) -> Iterator[dict[str, object]]:
     if any(name == "aiter" or name.startswith("aiter.") for name in sys.modules):
         raise RuntimeError("AITER was imported before exact source admission")
@@ -561,6 +584,11 @@ def _aiter_environment(
     )
     original_path = os.environ.get("PATH", "")
     path_value = os.pathsep.join((*tool_directories, original_path))
+    libxml2 = _library_path(runtime_libraries, "libxml2.so.2")
+    original_library_path = os.environ.get("LD_LIBRARY_PATH", "")
+    library_path = os.pathsep.join(
+        value for value in (str(libxml2.parent), original_library_path) if value
+    )
     values = {
         **_JIT_ENVIRONMENT,
         "AITER_META_DIR": str(aiter_root),
@@ -568,6 +596,7 @@ def _aiter_environment(
         "CK_DIR": str(jit_dir / "disabled-composable-kernel"),
         "CXX": str(_tool_path(build_tools, "cxx")),
         "HIP_KITTENS_DIR": str(jit_dir / "disabled-hip-kittens"),
+        "LD_LIBRARY_PATH": library_path,
         "PATH": path_value,
         "ROCM_HOME": str(rocm_home),
         "ROCM_PATH": str(rocm_home),
@@ -601,12 +630,14 @@ def _aiter_environment(
             "CK_DIR": values["CK_DIR"],
             "CXX": values["CXX"],
             "HIP_KITTENS_DIR": values["HIP_KITTENS_DIR"],
+            "LD_LIBRARY_PATH": str(libxml2.parent),
             "ROCM_HOME": str(rocm_home),
             "build_tools": {
                 kind: str(_tool_path(build_tools, kind))
                 for kind in sorted(build_tools)
             },
             "path_precedence": list(tool_directories),
+            "runtime_libraries": {"libxml2.so.2": str(libxml2)},
         }
     finally:
         sys.path[:] = old_path
@@ -684,12 +715,13 @@ def _admit_aiter_runtime_architecture() -> str:
 
 def _build_aiter_rmsnorm_module(jit_dir: Path) -> None:
     module_path = jit_dir / "module_rmsnorm.so"
+    core_path = jit_dir / "module_aiter_core.so"
     if (
         module_path.exists()
         or module_path.is_symlink()
-        or tuple(jit_dir.glob("*.so"))
+        or set(jit_dir.glob("*.so")) != {core_path}
     ):
-        raise RuntimeError("AITER JIT directory was not empty before build")
+        raise RuntimeError("AITER JIT import dependency set differs before RMSNorm build")
     core = importlib.import_module("aiter.jit.core")
     arguments = core.get_args_of_build("module_rmsnorm")
     arguments["torch_exclude"] = True
@@ -711,7 +743,7 @@ def _build_aiter_rmsnorm_module(jit_dir: Path) -> None:
             "flags_extra_hip_per_source", {}
         ),
     )
-    if set(jit_dir.glob("*.so")) != {module_path}:
+    if set(jit_dir.glob("*.so")) != {core_path, module_path}:
         raise RuntimeError("AITER JIT built an unexpected shared module")
 
 
@@ -764,28 +796,38 @@ def _evaluate_cases(
     return cases
 
 
-def _validate_module_artifact(path: Path) -> dict[str, object]:
+def _validate_elf_artifact(
+    path: Path, exported_symbol: str
+) -> dict[str, object]:
     if path.is_symlink() or not path.is_file():
-        raise RuntimeError("AITER module_rmsnorm artifact is missing")
+        raise RuntimeError(f"AITER {path.name} artifact is missing")
     payload = path.read_bytes()
     if not payload.startswith(b"\x7fELF"):
-        raise RuntimeError("AITER module_rmsnorm is not an ELF shared object")
+        raise RuntimeError(f"AITER {path.name} is not an ELF shared object")
     code_objects = sorted(
         {match.group(1).decode() for match in _CODE_OBJECT.finditer(payload)}
     )
     if code_objects != ["gfx1151"]:
-        raise RuntimeError("AITER module_rmsnorm code object differs from gfx1151")
+        raise RuntimeError(f"AITER {path.name} code object differs from gfx1151")
     library = ctypes.CDLL(str(path))
-    if getattr(library, "rms_norm_opus", None) is None:
-        raise RuntimeError("AITER module_rmsnorm does not export rms_norm_opus")
+    if getattr(library, exported_symbol, None) is None:
+        raise RuntimeError(f"AITER {path.name} does not export {exported_symbol}")
     return {
         "path": str(path),
         "sha256": sha256(payload).hexdigest(),
         "size_bytes": len(payload),
         "elf": True,
         "code_objects": code_objects,
-        "exported_symbol": "rms_norm_opus",
+        "exported_symbol": exported_symbol,
     }
+
+
+def _validate_module_artifact(path: Path) -> dict[str, object]:
+    return _validate_elf_artifact(path, "rms_norm_opus")
+
+
+def _validate_core_artifact(path: Path) -> dict[str, object]:
+    return _validate_elf_artifact(path, "PyInit_module_aiter_core")
 
 
 def _validate_build_plan(
@@ -836,6 +878,7 @@ def _run_live_impl(
     attempt["stage"] = "executor_host_admission"
     host = executor.admit_hip_host()
     build_tools = host.build_tools
+    runtime_libraries = host.runtime_libraries
     git_executable = str(_tool_path(build_tools, "git"))
     attempt["stage"] = "source_custody"
     project_source = _project_git_state(project_root, git_executable)
@@ -851,12 +894,21 @@ def _run_live_impl(
 
     attempt["stage"] = "aiter_import"
     with _aiter_environment(
-        aiter_root, jit_dir, build_tools
+        aiter_root, jit_dir, build_tools, runtime_libraries
     ) as jit_environment:
         _, entry_point, loaded_sources = _import_aiter_operator(
             aiter_root, git_executable
         )
         aiter_runtime_arch = _admit_aiter_runtime_architecture()
+        attempt["stage"] = "import_artifact_validation"
+        core_path = jit_dir / "module_aiter_core.so"
+        core_record = _validate_core_artifact(core_path)
+        core_plan_path = jit_dir / "build/module_aiter_core/build/build.ninja"
+        core_plan_record = _validate_build_plan(core_plan_path, build_tools)
+        retained_core = evidence_root / "module_aiter_core.so"
+        retained_core_plan = evidence_root / "module_aiter_core.build.ninja"
+        _copy_new(core_path, retained_core)
+        _copy_new(core_plan_path, retained_core_plan)
         attempt["stage"] = "jit_build"
         _build_aiter_rmsnorm_module(jit_dir)
         attempt["stage"] = "artifact_validation"
@@ -879,9 +931,13 @@ def _run_live_impl(
         attempt["stage"] = "post_artifact_validation"
         final_module_record = _validate_module_artifact(module_path)
         final_build_plan_record = _validate_build_plan(build_plan_path, build_tools)
+        final_core_record = _validate_core_artifact(core_path)
+        final_core_plan_record = _validate_build_plan(core_plan_path, build_tools)
         if (
             module_record != final_module_record
             or build_plan_record != final_build_plan_record
+            or core_record != final_core_record
+            or core_plan_record != final_core_plan_record
             or forbidden_module.exists()
             or forbidden_module.is_symlink()
         ):
@@ -916,6 +972,16 @@ def _run_live_impl(
         "jit_environment": jit_environment,
         "loaded_aiter_sources": loaded_sources,
         "aiter_runtime_architecture": aiter_runtime_arch,
+        "import_dependency": {
+            "module": {
+                **core_record,
+                "retained_path": retained_core.name,
+            },
+            "build_plan": {
+                **core_plan_record,
+                "retained_path": retained_core_plan.name,
+            },
+        },
         "module": {
             **module_record,
             "retained_path": retained_module.name,

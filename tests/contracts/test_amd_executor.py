@@ -43,6 +43,8 @@ class HipExecutorFixture:
             path.write_bytes(f"#!/bin/sh\n# {kind}\nexit 0\n".encode())
             path.chmod(0o755)
             build_tools.append(self.tool_record(kind, path))
+        libxml2 = self.root / "libxml2.so.2"
+        libxml2.write_bytes(b"ELF libxml2 fixture\n")
         python = Path(sys.executable).absolute()
         self.document: dict[str, object] = {
             "schema_version": 2,
@@ -82,6 +84,9 @@ class HipExecutorFixture:
                     "torch_hip_version": "7.2.1",
                     "visible_device_count": 1,
                 },
+                "runtime_libraries": [
+                    self.library_record("libxml2.so.2", libxml2)
+                ],
                 "tools": {
                     "build_tools": build_tools,
                     "device_monitor": self.tool_record("amd-smi", tool),
@@ -100,6 +105,16 @@ class HipExecutorFixture:
             "kind": kind,
             "path": str(resolved),
             "version": "fixture-v1",
+            "sha256": sha256(payload).hexdigest(),
+            "size_bytes": len(payload),
+        }
+
+    @staticmethod
+    def library_record(soname: str, path: Path) -> dict[str, object]:
+        payload = path.resolve(strict=True).read_bytes()
+        return {
+            "soname": soname,
+            "path": str(path.absolute()),
             "sha256": sha256(payload).hexdigest(),
             "size_bytes": len(payload),
         }
@@ -217,6 +232,7 @@ class HipExecutorAdmissionTests(unittest.TestCase):
             set(admission.build_tools),
             {"cxx", "git", "hipcc", "hipconfig", "ninja", "rocminfo", "sh"},
         )
+        self.assertEqual(set(admission.runtime_libraries), {"libxml2.so.2"})
 
     def test_rejects_cuda_torch_before_any_device_query(self) -> None:
         fixture = HipExecutorFixture(self)
@@ -261,6 +277,14 @@ class HipExecutorAdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "build_tools"):
             self._admit(fixture.load(), self._torch())
 
+    def test_rejects_changed_aiter_runtime_library_before_jit(self) -> None:
+        fixture = HipExecutorFixture(self)
+        library = fixture.host["runtime_libraries"][0]
+        Path(library["path"]).write_bytes(b"changed libxml2 fixture\n")
+
+        with self.assertRaisesRegex(ValueError, "runtime_libraries"):
+            self._admit(fixture.load(), self._torch())
+
 
 class HipSearchHostAdmissionTests(unittest.TestCase):
     def test_formal_search_uses_only_the_executor_admitted_monitor(self) -> None:
@@ -271,6 +295,7 @@ class HipSearchHostAdmissionTests(unittest.TestCase):
             device_monitor={"path": "/qualified/amd-smi"},
             profilers=(),
             build_tools={},
+            runtime_libraries={},
         )
         executor = Mock()
         executor.admit_hip_host.return_value = admission
@@ -302,6 +327,7 @@ class HipSearchHostAdmissionTests(unittest.TestCase):
             device_monitor={"path": "/qualified/amd-smi"},
             profilers=(),
             build_tools={},
+            runtime_libraries={},
         )
         executor = Mock()
         executor.admit_hip_host.return_value = admission
@@ -382,6 +408,7 @@ class HipSearchFailureEvidenceTests(unittest.TestCase):
                 device_monitor={"path": "/qualified/amd-smi"},
                 profilers=(),
                 build_tools={},
+                runtime_libraries={},
             )
             candidate = SimpleNamespace(
                 candidate_id="r1-w1",
@@ -467,6 +494,7 @@ class HipSearchFailureEvidenceTests(unittest.TestCase):
             device_monitor={"path": "/qualified/amd-smi"},
             profilers=(),
             build_tools={},
+            runtime_libraries={},
         )
         executor = Mock()
         executor.admit_hip_host.return_value = admission

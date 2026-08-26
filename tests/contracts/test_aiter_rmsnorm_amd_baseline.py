@@ -42,11 +42,25 @@ def _build_tools(root: Path) -> dict[str, dict[str, object]]:
     return {kind: {"kind": kind, "path": str(path)} for kind, path in paths.items()}
 
 
+def _runtime_libraries(root: Path) -> dict[str, dict[str, object]]:
+    path = root / "libxml2.so.2"
+    path.write_bytes(b"libxml2 fixture\n")
+    return {
+        "libxml2.so.2": {
+            "soname": "libxml2.so.2",
+            "path": str(path),
+        }
+    }
+
+
 def _executor(*, owns_runner: bool) -> SimpleNamespace:
     path = baseline.RUNNER_SOURCE if owns_runner else "other.py"
     build_tools = tuple(
         {"kind": kind, "path": f"/qualified/{kind}"}
         for kind in ("cxx", "git", "hipcc", "hipconfig", "ninja", "rocminfo", "sh")
+    )
+    runtime_libraries = (
+        {"soname": "libxml2.so.2", "path": "/qualified/libxml2.so.2"},
     )
     return SimpleNamespace(
         executor_id="open-cake-ir-gfx1151-v1",
@@ -60,6 +74,7 @@ def _executor(*, owns_runner: bool) -> SimpleNamespace:
             "sources": ({"path": path},),
             "host_environment": {
                 "runtime_kind": "hip",
+                "runtime_libraries": runtime_libraries,
                 "tools": {"build_tools": build_tools},
             },
         },
@@ -263,6 +278,7 @@ class AiterRmsnormAuthorityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             tools = _build_tools(root)
+            runtime_libraries = _runtime_libraries(root)
             old_cxx = baseline.os.environ.get("CXX")
             inherited = {
                 "PREBUILD_THREAD_NUM": "99",
@@ -270,7 +286,7 @@ class AiterRmsnormAuthorityTests(unittest.TestCase):
             }
             with patch.dict(baseline.os.environ, inherited):
                 with baseline._aiter_environment(
-                    root, root / "jit", tools
+                    root, root / "jit", tools, runtime_libraries
                 ) as authority:
                     self.assertEqual(
                         baseline.os.environ["CXX"], tools["cxx"]["path"]
@@ -285,6 +301,16 @@ class AiterRmsnormAuthorityTests(unittest.TestCase):
                     self.assertEqual(baseline.os.environ["GPU_ARCHS"], "gfx1151")
                     self.assertEqual(
                         baseline.os.environ["AITER_SYMBOL_VISIBLE"], "0"
+                    )
+                    self.assertEqual(
+                        authority["runtime_libraries"]["libxml2.so.2"],
+                        runtime_libraries["libxml2.so.2"]["path"],
+                    )
+                    self.assertEqual(
+                        baseline.os.environ["LD_LIBRARY_PATH"].split(
+                            baseline.os.pathsep
+                        )[0],
+                        str(root),
                     )
                     self.assertNotIn("PREBUILD_THREAD_NUM", baseline.os.environ)
                     self.assertNotIn(
@@ -340,6 +366,9 @@ class AiterRmsnormAuthorityTests(unittest.TestCase):
         executor.admit_hip_host = Mock(
             return_value=SimpleNamespace(
                 build_tools={"git": {"path": "/qualified/git"}},
+                runtime_libraries={
+                    "libxml2.so.2": {"path": "/qualified/libxml2.so.2"}
+                },
                 torch_hip_version="7.2.1",
             )
         )
@@ -406,6 +435,11 @@ class AiterRmsnormAuthorityTests(unittest.TestCase):
                     baseline,
                     "_validate_module_artifact",
                     side_effect=validate_module,
+                ),
+                patch.object(
+                    baseline,
+                    "_validate_core_artifact",
+                    return_value={"sha256": "d" * 64},
                 ),
                 patch.object(
                     baseline, "_validate_build_plan", side_effect=validate_plan

@@ -161,6 +161,37 @@ def _admit_executable(
     return MappingProxyType(dict(record))
 
 
+def _shared_library_record(value: object, context: str) -> Mapping[str, object]:
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != {"soname", "path", "sha256", "size_bytes"}
+        or not isinstance(value["soname"], str)
+        or not value["soname"]
+        or not isinstance(value["path"], str)
+        or not Path(value["path"]).is_absolute()
+        or not isinstance(value["size_bytes"], int)
+        or isinstance(value["size_bytes"], bool)
+        or value["size_bytes"] <= 0
+    ):
+        raise ValueError(f"{context} authority differs")
+    _digest(value["sha256"], f"{context}.sha256")
+    return cast(Mapping[str, object], value)
+
+
+def _admit_shared_library(value: object, context: str) -> Mapping[str, object]:
+    record = _shared_library_record(value, context)
+    unresolved = Path(str(record["path"]))
+    if not unresolved.is_file():
+        raise ValueError(f"{context} custody differs")
+    payload = unresolved.resolve(strict=True).read_bytes()
+    if (
+        sha256(payload).hexdigest() != record["sha256"]
+        or len(payload) != record["size_bytes"]
+    ):
+        raise ValueError(f"{context} bytes differ")
+    return MappingProxyType(dict(record))
+
+
 @dataclass(frozen=True)
 class HipHostAdmission:
     """Exact static ROCm host facts admitted before device-specific execution."""
@@ -171,6 +202,7 @@ class HipHostAdmission:
     device_monitor: Mapping[str, object]
     profilers: tuple[Mapping[str, object], ...]
     build_tools: Mapping[str, Mapping[str, object]]
+    runtime_libraries: Mapping[str, Mapping[str, object]]
 
 
 @dataclass(frozen=True)
@@ -333,6 +365,7 @@ class ExecutorRevision:
             "python",
             "packages",
             "runtime",
+            "runtime_libraries",
             "tools",
         } or host.get("runtime_kind") != "hip":
             raise ValueError("Executor HIP host environment fields differ")
@@ -418,6 +451,20 @@ class ExecutorRevision:
             "sh",
         }:
             raise ValueError("Executor HIP build-tool set differs")
+        runtime_libraries = host["runtime_libraries"]
+        if not isinstance(runtime_libraries, list):
+            raise ValueError("Executor HIP runtime-library authority differs")
+        seen_libraries: set[str] = set()
+        for index, value in enumerate(runtime_libraries):
+            library = _shared_library_record(
+                value, f"Executor HIP runtime_libraries[{index}]"
+            )
+            soname = cast(str, library["soname"])
+            if soname in seen_libraries:
+                raise ValueError("Executor HIP runtime-library soname differs")
+            seen_libraries.add(soname)
+        if seen_libraries != {"libxml2.so.2"}:
+            raise ValueError("Executor HIP runtime-library set differs")
 
     @property
     def reference(self) -> Mapping[str, str]:
@@ -551,6 +598,17 @@ class ExecutorRevision:
         build_tools = MappingProxyType(
             {cast(str, value["kind"]): value for value in admitted_build_tools}
         )
+        admitted_libraries = tuple(
+            _admit_shared_library(
+                value, f"Executor HIP runtime_libraries[{index}]"
+            )
+            for index, value in enumerate(
+                cast(tuple[object, ...], host["runtime_libraries"])
+            )
+        )
+        runtime_libraries = MappingProxyType(
+            {cast(str, value["soname"]): value for value in admitted_libraries}
+        )
         return HipHostAdmission(
             executor_id=self.executor_id,
             torch_hip_version=cast(str, runtime["torch_hip_version"]),
@@ -558,6 +616,7 @@ class ExecutorRevision:
             device_monitor=monitor,
             profilers=profilers,
             build_tools=build_tools,
+            runtime_libraries=runtime_libraries,
         )
 
     def admit_profiler(self) -> Mapping[str, object]:

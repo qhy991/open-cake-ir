@@ -44,6 +44,14 @@ def _host() -> dict[str, object]:
             "torch_hip_version": "7.2.1",
             "visible_device_count": 1,
         },
+        "runtime_libraries": [
+            {
+                "soname": "libxml2.so.2",
+                "path": "/qualified/libxml2.so.2",
+                "sha256": "a" * 64,
+                "size_bytes": 1,
+            }
+        ],
         "tools": {
             "build_tools": [
                 {
@@ -125,6 +133,8 @@ class Gfx1151HostCaptureTests(unittest.TestCase):
                     f"#!/bin/sh\necho '{name} fixture'\n", encoding="utf-8"
                 )
                 path.chmod(0o755)
+            libxml2 = root / "libxml2.so.2"
+            libxml2.write_bytes(b"libxml2 fixture\n")
             torch = SimpleNamespace(version=SimpleNamespace(hip="7.2.1"))
 
             def which(name: str) -> str | None:
@@ -149,6 +159,10 @@ class Gfx1151HostCaptureTests(unittest.TestCase):
                         "triton": "3.5.1",
                     }[name],
                 ),
+                patch.dict(
+                    release.os.environ,
+                    {release._AITER_LIBXML2_ENV: str(libxml2)},
+                ),
             ):
                 observed = release.collect_gfx1151_host_environment()
 
@@ -171,6 +185,9 @@ class Gfx1151HostCaptureTests(unittest.TestCase):
                 "torch",
                 "triton",
             },
+        )
+        self.assertEqual(
+            observed["runtime_libraries"][0]["soname"], "libxml2.so.2"
         )
         self.assertNotIn("gfx1151", json.dumps(observed))
 

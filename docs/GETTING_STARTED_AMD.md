@@ -24,16 +24,20 @@ On the admitted infplane host, with exactly one gfx1151 device visible, release 
 authority from the final clean candidate checkout:
 
 ```bash
+OPEN_CAKE_AITER_LIBXML2=/path/to/compat/libxml2.so.2 \
 PYTHONPATH=src /path/to/rocm/python \
   tools/release_gfx1151_executor_cycle.py
 ```
 
 The release command derives the independent `open-cake-ir-gfx1151-vN` identity, captures
 the exact Linux/Python/Torch/Triton/HIP facts, AITER JIT Python dependencies,
-`git`/ROCm/C++/Ninja commands and `amd-smi`, includes only actually available AMD
-profilers, builds and live-admits a temporary descriptor, and only then installs it. A
-failed capture or validation leaves the previous descriptor untouched. It does not
-compile a kernel, freeze a search contract or authorize a performance claim.
+`git`/ROCm/C++/Ninja commands, the explicit `libxml2.so.2` linker dependency and
+`amd-smi`, includes only actually available AMD profilers, builds and live-admits a
+temporary descriptor, and only then installs it. Ubuntu 26.04 provides a newer libxml2
+SONAME while ROCm 7.2.1 `lld` still requires `.so.2`; use a separately extracted,
+versioned compatibility library rather than a global or unrecorded symlink. A failed
+capture or validation leaves the previous descriptor untouched. It does not compile a
+kernel, freeze a search contract or authorize a performance claim.
 
 ## Prepare the two correctness paths
 
@@ -122,8 +126,10 @@ PYTHONPATH=src /path/to/rocm/python \
 The live path calls `aiter.ops.rmsnorm.rms_norm_opus` directly with caller-owned output,
 fixes `GPU_ARCHS=gfx1151`, rejects source-tree import shadows, a wheel or dynamic
 dispatch, then builds, validates and retains the JIT ELF before submitting the first
-operator call. The ELF must export `rms_norm_opus`, contain only a gfx1151 code object
-and remain unchanged across both cases. Both cases must pass the existing CPU-FP64
+operator call. AITER's import-time `module_aiter_core` ELF and its build plan are also
+validated and retained before the RMSNorm module is built. Both ELFs must contain only a
+gfx1151 code object, the RMSNorm ELF must export `rms_norm_opus`, and neither artifact
+may change across the two cases. Both cases must pass the existing CPU-FP64
 tolerance without mutating inputs. The result remains an external-baseline candidate:
 it performs no timing and authorizes no speedup, promotion, llama.cpp end-to-end or
 serving claim. AITER SwiGLU is deliberately excluded because its packed `[gate,up]`

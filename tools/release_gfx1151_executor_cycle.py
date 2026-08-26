@@ -55,6 +55,7 @@ _HIP_PACKAGES = (
     "torch",
     "triton",
 )
+_AITER_LIBXML2_ENV = "OPEN_CAKE_AITER_LIBXML2"
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -93,6 +94,19 @@ def _tool_record(kind: str, executable: str | Path, version_args: list[str]) -> 
         "kind": kind,
         "path": str(unresolved),
         "version": version_lines[0],
+        "sha256": sha256(payload).hexdigest(),
+        "size_bytes": len(payload),
+    }
+
+
+def _library_record(soname: str, value: str | Path) -> dict[str, object]:
+    unresolved = Path(value).absolute()
+    if unresolved.name != soname or not unresolved.is_file():
+        raise ValueError(f"{soname} library custody differs")
+    payload = unresolved.resolve(strict=True).read_bytes()
+    return {
+        "soname": soname,
+        "path": str(unresolved),
         "sha256": sha256(payload).hexdigest(),
         "size_bytes": len(payload),
     }
@@ -152,6 +166,11 @@ def collect_gfx1151_host_environment() -> dict[str, object]:
         if executable is None:
             raise RuntimeError(f"gfx1151 Executor requires {kind}")
         build_tools.append(_tool_record(kind, executable, version_args))
+    libxml2 = os.environ.get(_AITER_LIBXML2_ENV)
+    if not libxml2:
+        raise RuntimeError(
+            f"gfx1151 Executor requires {_AITER_LIBXML2_ENV}"
+        )
 
     python = Path(sys.executable).absolute()
     return {
@@ -176,6 +195,9 @@ def collect_gfx1151_host_environment() -> dict[str, object]:
             "torch_hip_version": hip_version,
             "visible_device_count": 1,
         },
+        "runtime_libraries": [
+            _library_record("libxml2.so.2", libxml2)
+        ],
         "tools": {
             "build_tools": build_tools,
             "device_monitor": _tool_record("amd-smi", monitor, ["version"]),
