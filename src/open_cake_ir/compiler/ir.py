@@ -99,6 +99,7 @@ class OperationKind(str, Enum):
     TOP_K = "top_k"
     ATOMIC_RMW = "atomic_rmw"
     ELEMENTWISE = "elementwise"
+    SCAN = "scan"
     STORE = "store"
 
 
@@ -108,6 +109,29 @@ class LoweringBackend(str, Enum):
     TRITON = "triton"
     CUTLASS_CUTE_DSL = "cutlass_cute_dsl"
     CHECKED_CUDA_ASSET = "checked_cuda_asset"
+
+
+class ScanOp(str, Enum):
+    """The associative operator a prefix scan accumulates with.
+
+    Only the operators a backend has a body for appear here, rather than reusing
+    `ReduceOp` and refusing half of it at emission. A word the Schedule may say and the
+    Compiler cannot answer is the gap this vocabulary exists to prevent.
+    """
+
+    SUM = "sum"
+
+
+class ScanDirection(str, Enum):
+    """Which end of the scanned axis the prefix accumulates from.
+
+    Both directions reach a backend: the forward prefix is what a chunk-local gate cumsum
+    needs, and the reverse one is what its backward pass needs. Deriving the direction
+    from context would make the Schedule silent about a fact that changes every output.
+    """
+
+    FORWARD = "forward"
+    REVERSE = "reverse"
 
 
 class ReduceOp(str, Enum):
@@ -1082,6 +1106,21 @@ class ReduceParameters:
 
 
 @dataclass(frozen=True)
+class ScanParameters:
+    """A running prefix along one declared axis, which the result keeps.
+
+    There is no `inclusive` flag. An exclusive prefix is this operation followed by an
+    elementwise `sub` against the same input, which the Schedule can already write, and a
+    second spelling of a composition the vocabulary covers is what this IR refuses to
+    add.
+    """
+
+    op: ScanOp
+    axis: int
+    direction: ScanDirection
+
+
+@dataclass(frozen=True)
 class TopKParameters:
     """Greatest values and source positions from one resident rank-one tile.
 
@@ -1170,6 +1209,7 @@ OperationParameters = Union[
     TopKParameters,
     AtomicRmwParameters,
     ElementwiseParameters,
+    ScanParameters,
     StoreParameters,
     FenceProxyParameters,
 ]
@@ -1280,6 +1320,20 @@ def _operation_parameters(
             _enum(ReduceOp, obj["op"], f"{context}.op"),
             _nonnegative_int(obj["axis"], f"{context}.axis"),
             _enum(ReductionScope, obj["scope"], f"{context}.scope"),
+        )
+
+    if kind is OperationKind.SCAN:
+        obj = _strict_object(
+            value, required={"op", "axis"}, optional={"direction"}, context=context
+        )
+        return ScanParameters(
+            _enum(ScanOp, obj["op"], f"{context}.op"),
+            _nonnegative_int(obj["axis"], f"{context}.axis"),
+            _enum(
+                ScanDirection,
+                obj.get("direction", ScanDirection.FORWARD.value),
+                f"{context}.direction",
+            ),
         )
 
     if kind is OperationKind.TOP_K:

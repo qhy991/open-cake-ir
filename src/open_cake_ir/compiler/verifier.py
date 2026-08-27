@@ -917,6 +917,7 @@ _ARITY = {
     OperationKind.EPILOGUE: (1, 1, "epilogue"),
     OperationKind.REDUCE_ARGMIN: (1, 1, "reduce_argmin"),
     OperationKind.REDUCE: (1, 1, "reduce"),
+    OperationKind.SCAN: (1, 1, "scan"),
     OperationKind.STORE: (1, 1, "store"),
 }
 
@@ -1944,6 +1945,45 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                         f"{list(result.shape)}",
                         category,
                     )
+
+
+    # A prefix scan keeps the axis it walks, which is the whole of what separates it
+    # from a fold. Deriving the invariant from the buffers rather than trusting the kind
+    # name is what turns "someone wrote this like a reduction" into a Finding instead of
+    # a kernel that silently returns one row where a Schedule declared sixty-four.
+    if operation.kind is OperationKind.SCAN and operation.reads and operation.writes:
+        source = buffers.get(operation.reads[0])
+        result = buffers.get(operation.writes[0])
+        axis = operation.parameters.axis
+        if source is not None and result is not None:
+            if (
+                source.dtype not in _ELEMENTWISE_FLOAT_DTYPES
+                or result.dtype is not DType.FP32
+            ):
+                out.add(
+                    "SCAN_DTYPE_MISMATCH",
+                    f"{path}.writes",
+                    f"a {operation.parameters.op.value} scan accumulates bf16/fp16/fp32 "
+                    f"into fp32, but {source.name!r} is {source.dtype.value} and "
+                    f"{result.name!r} is {result.dtype.value}",
+                    category,
+                )
+            if axis >= len(source.shape):
+                out.add(
+                    "SCAN_AXIS_OUT_OF_RANGE",
+                    f"{path}.parameters.axis",
+                    f"axis {axis} is outside {source.name!r}, which has "
+                    f"{len(source.shape)} dimension(s)",
+                    category,
+                )
+            elif tuple(result.shape) != tuple(source.shape):
+                out.add(
+                    "SCAN_SHAPE_MISMATCH",
+                    f"{path}.writes",
+                    f"scanning axis {axis} of {source.name!r} {list(source.shape)} "
+                    f"keeps that shape, but {result.name!r} is {list(result.shape)}",
+                    category,
+                )
 
 
 def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:

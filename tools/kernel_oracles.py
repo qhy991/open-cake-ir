@@ -11,6 +11,20 @@ from __future__ import annotations
 from kernel_cases import ORACLES as _RETAINED_ORACLES
 
 
+def _chunk_cumsum_oracle(inputs, torch):
+    """The chunk-local inclusive prefix sum along the token axis.
+
+    This is the scan half of KDA's gate stage, checked against the definition rather
+    than against the lowering's `tl.cumsum`. The gate arithmetic that produces these
+    values is a separate question: it needs a per-head runtime scalar operand, which
+    this vocabulary does not yet have, so what is proven here is the prefix and only
+    the prefix.
+    """
+
+    gate, _ = inputs
+    return gate.float().cumsum(dim=1), None
+
+
 def _swiglu_oracle(inputs, torch):
     """The tanh identity used by the KDA v12 SwiGLU delta.
 
@@ -233,6 +247,7 @@ def _masked_gemm_bias_oracle(inputs, torch):
 
 ORACLES = {
     **_RETAINED_ORACLES,
+    "chunk_cumsum_b8_smoke": _chunk_cumsum_oracle,
     "gemm_bias_b1_smoke": _masked_gemm_bias_oracle,
     "swiglu_b8_smoke": _swiglu_oracle,
     "top_k_b8_smoke": _top_k_oracle,
@@ -249,6 +264,7 @@ ORACLES = {
 # The retained registry remains keyed by its historical calibration vocabulary because
 # its bytes are frozen evidence; this is the sole current projection from lowering routes.
 _WORKLOAD_BY_ENTRY_POINT = {
+    "cake_chunk_cumsum_b8_smoke": "chunk_cumsum_b8_smoke",
     "cake_flash_kmeans_assign": "flash_kmeans_b32_smoke",
     "cake_flash_kmeans_assignment_full": "flash_kmeans_assignment_full",
     "cake_softmax_b8_smoke": "softmax_b8_smoke",

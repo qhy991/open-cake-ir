@@ -31,6 +31,8 @@ from .ir import (
     OperationKind,
     ProgramAxis,
     ReduceOp,
+    ScanDirection,
+    ScanOp,
     Schedule,
     TileLoop,
 )
@@ -85,6 +87,11 @@ REDUCTIONS: dict[ReduceOp, _Reduction] = {
 }
 
 
+SCANS: dict[ScanOp, str] = {
+    ScanOp.SUM: "{out} = tl.cumsum({src}.to(tl.float32), axis={axis}, reverse={reverse})",
+}
+
+
 # What this backend has a body for, and where. The two sets differ: an mma or a reduction
 # is only emitted inside the tile loop, and a store only outside it. Keeping them as
 # tables the dispatch reads means the coverage cannot drift from the code, and it makes
@@ -94,6 +101,7 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.MMA: "_emit_mma",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
     OperationKind.REDUCE: "_emit_reduce",
+    OperationKind.SCAN: "_emit_scan",
     OperationKind.TOP_K: "_emit_top_k",
     OperationKind.ATOMIC_RMW: "_emit_atomic_rmw",
     OperationKind.STORE: "_emit_store",
@@ -970,6 +978,32 @@ class _TritonEmitter:
             pad
             + template.format(
                 out=operation.writes[0], src=operation.reads[0], axis=axis
+            )
+        )
+
+    def _emit_scan(self, operation, pad: str) -> None:
+        """Accumulate a running prefix along the declared axis, keeping it.
+
+        Deliberately absent from the inside-loop table. A fold carries an accumulator
+        across iterations and its identity makes that well defined; a prefix scan across
+        iterations would need the running total of every earlier tile carried in, which
+        is a construction this backend does not have. Placing one inside a tile loop is
+        refused rather than emitted as a per-tile scan that silently restarts.
+        """
+
+        source = self.schedule.buffer(operation.reads[0])
+        _require(source is not None, f"scan reads unknown buffer {operation.reads[0]!r}")
+        axis = operation.parameters.axis
+        _require(axis < len(source.shape), f"scan axis {axis} is outside {source.name!r}")
+        reverse = operation.parameters.direction is ScanDirection.REVERSE
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(
+            pad
+            + SCANS[operation.parameters.op].format(
+                out=operation.writes[0],
+                src=operation.reads[0],
+                axis=axis,
+                reverse=reverse,
             )
         )
 

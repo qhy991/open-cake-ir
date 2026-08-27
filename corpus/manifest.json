@@ -526,6 +526,35 @@
         "schedule_sha256": "f00f3164e5bc1c469eb97ba152381dc99c59b7ac26b45b0f6a4a6238af2903c0",
         "lowering_source_sha256": "ebef90d87902a554081204f6097a865ea62863f693ecd917a7c81696257eb79c"
       }
+    },
+    {
+      "case_id": "chunk-cumsum-accepted",
+      "schedule": "corpus/schedules/chunk-cumsum-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "34b747aa2b26cf9e0269121bbe82ad7402402ec120c0701aa8d7cb5fe13f2cfb",
+        "lowering_source_sha256": "4f2760c7a2dda554aed397cef208fd28cda5a408de96de87c0a299013086a177"
+      }
+    },
+    {
+      "case_id": "chunk-cumsum-shape-drift",
+      "schedule": "corpus/schedules/chunk-cumsum-b8-smoke-shape-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "SCAN_SHAPE_MISMATCH",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "12e0c1e2ff2541cd60cf2c04aaa0f82a05b5a604eaf32def1ad0c65375bf7021",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

@@ -35,6 +35,8 @@ from .ir import (
     OperandSource,
     OperationKind,
     ReduceOp,
+    ScanDirection,
+    ScanOp,
     ReductionScope,
     Swizzle,
 )
@@ -188,6 +190,13 @@ _PARAMETERS = {
             "axis": _NONNEGATIVE,
             "scope": _enum(ReductionScope),
         }
+    ),
+    OperationKind.SCAN: _object(
+        {
+            "op": _enum(ScanOp),
+            "axis": _NONNEGATIVE,
+        },
+        {"direction": _enum(ScanDirection)},
     ),
     OperationKind.TOP_K: _object(
         {
