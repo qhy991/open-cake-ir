@@ -183,11 +183,13 @@ def _install_remote_source(ssh: str, remote_root: str, commit: str) -> None:
     quoted_root = shlex.quote(remote_root)
     _run(["ssh", "-o", "BatchMode=yes", ssh, f"mkdir {quoted_root}"])
     archive = subprocess.Popen(
-        ["git", "archive", "--format=tar", commit], cwd=ROOT, stdout=subprocess.PIPE
+        ["git", "archive", "--format=tar.gz", commit],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
     )
     assert archive.stdout is not None
     receiver = subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", ssh, f"tar -x -C {quoted_root}"],
+        ["ssh", "-o", "BatchMode=yes", ssh, f"tar -xz -C {quoted_root}"],
         stdin=archive.stdout,
         check=False,
     )
@@ -207,6 +209,7 @@ def _start_daemon(
 ) -> None:
     daemon = runtime["daemon"]
     assert isinstance(daemon, dict)
+    service_group = str(daemon["service_group"])
     quoted = {name: shlex.quote(value) for name, value in {
         "kernelctl": kernelctl,
         "socket": socket,
@@ -215,12 +218,20 @@ def _start_daemon(
         "gpu_run": str(daemon["gpu_run"]),
         "log": f"{state_root}/daemon.log",
     }.items()}
-    command = (
-        f"mkdir -p {quoted['state']}; "
+    launch = (
+        "umask 0007; "
+        "export KERNELINFRA_RUN_DIR_MODE=2770; "
+        "export KERNELINFRA_RUN_FILE_MODE=660; "
         f"setsid nohup {quoted['kernelctl']} serve --socket {quoted['socket']} "
         f"--state-dir {quoted['state']} --broker-socket {quoted['broker']} "
         f"--gpu-run {quoted['gpu_run']} --local-capacity {int(daemon['local_capacity'])} "
         f">>{quoted['log']} 2>&1 </dev/null &"
+    )
+    command = (
+        f"mkdir -p {quoted['state']} && "
+        f"chgrp {shlex.quote(service_group)} {quoted['state']} && "
+        f"chmod 2770 {quoted['state']} && "
+        f"sg {shlex.quote(service_group)} -c {shlex.quote(launch)}"
     )
     _run(["ssh", "-o", "BatchMode=yes", ssh, command])
     for _ in range(20):
@@ -260,6 +271,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--remote-state-root", required=True)
     parser.add_argument("--remote-socket", required=True)
     parser.add_argument("--remote-inbox", required=True)
+    parser.add_argument(
+        "--arm",
+        choices=("both", "open_cake", "direct_cuda"),
+        default="both",
+        help="submit both matched seeds or one explicitly diagnostic arm",
+    )
     return parser
 
 
@@ -316,6 +333,11 @@ def main(argv: list[str] | None = None) -> int:
         runtime=runtime,
     )
     routes = run_root / "routes"
+    selected_candidates = {
+        "both": [cake, direct],
+        "open_cake": [cake],
+        "direct_cuda": [direct],
+    }[arguments.arm]
     _run(
         [
             str(kernelctl),
@@ -329,8 +351,7 @@ def main(argv: list[str] | None = None) -> int:
             "--route-dir",
             str(routes),
             str(task_path),
-            str(cake),
-            str(direct),
+            *(str(candidate) for candidate in selected_candidates),
         ]
     )
     print(
@@ -338,6 +359,7 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "commit": commit,
                 "executor_revision": executor.executor_id,
+                "arm": arguments.arm,
                 "run_root": str(run_root),
                 "routes": str(routes),
             },

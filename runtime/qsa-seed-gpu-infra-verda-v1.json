@@ -14,6 +14,7 @@
   "daemon": {
     "broker_socket": "/tmp/agent-gpu-broker.sock",
     "gpu_run": "/opt/agent-gpu-broker/.venv/bin/gpu-run",
+    "service_group": "gpuq-users",
     "local_capacity": 2
   }
 }

@@ -423,16 +423,22 @@ def _compile_stage(
 def _admit_gpu() -> object:
     import torch
 
-    from open_cake_ir.evaluation import observe_exclusive_b200
-
-    admission = observe_exclusive_b200()
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
     if (
-        torch.cuda.device_count() != 1
+        os.environ.get("KERNELINFRA_STAGE_KIND") not in {"correctness", "benchmark"}
+        or not os.environ.get("KERNELINFRA_RUN_ID")
+        or not visible
+        or "," in visible
+        or torch.cuda.device_count() != 1
         or torch.cuda.get_device_name(0) != "NVIDIA B200"
         or torch.cuda.get_device_capability(0) != (10, 0)
     ):
         raise ValueError("broker-visible QSA device differs")
-    return admission
+    return {
+        "device_name": "NVIDIA B200",
+        "compute_capability": [10, 0],
+        "visible_device": visible,
+    }
 
 
 def _load_program(build_root: Path, name: str) -> LoadedQsaProgram:
