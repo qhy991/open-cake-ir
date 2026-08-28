@@ -150,6 +150,20 @@ print(json.dumps({'type': 'turn.completed', 'argv': arguments}))
         self.assertIn('model_reasoning_effort="max"', argv)
         self.assertIn("multi_agent", argv)
         self.assertIn("--ephemeral", argv)
+        output_schema = json.loads(
+            (
+                self.work_root
+                / "runs/case-000001/review.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        source_properties = output_schema["properties"]["source_ref"]["properties"]
+        template_source = json.loads(
+            (case_root / "review.template.json").read_text(encoding="utf-8")
+        )["source_ref"]
+        self.assertEqual(
+            {field: schema["const"] for field, schema in source_properties.items()},
+            template_source,
+        )
 
     def test_runner_refuses_to_adopt_a_preexisting_review_queue(self) -> None:
         self.run_campaign(limit=1)

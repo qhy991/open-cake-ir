@@ -11,6 +11,7 @@ first non-terminal case.
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -31,6 +32,7 @@ from tools.review_aka_expressibility import (  # noqa: E402
     ReviewError,
     initialize,
     materialize,
+    review_schema,
     status,
     verify_review,
 )
@@ -187,6 +189,41 @@ def _runner_contract(
     return expected
 
 
+def _const_schema(value: object) -> dict[str, object]:
+    if value is None:
+        return {"type": "null", "const": None}
+    if isinstance(value, bool):
+        return {"type": "boolean", "const": value}
+    if isinstance(value, int):
+        return {"type": "integer", "const": value}
+    if isinstance(value, str):
+        return {"type": "string", "const": value}
+    raise RunnerError(f"unsupported immutable review value: {value!r}")
+
+
+def _case_review_schema(case_root: Path) -> dict[str, object]:
+    """Bind model-visible authority fields to the materialized case exactly."""
+
+    template = _load_object(case_root / "review.template.json", "review template")
+    source_ref = template.get("source_ref")
+    if not isinstance(source_ref, Mapping):
+        raise RunnerError("review template source_ref is invalid")
+    schema = deepcopy(review_schema())
+    properties = schema["properties"]
+    if not isinstance(properties, dict):
+        raise RunnerError("review schema properties are invalid")
+    source_schema = properties.get("source_ref")
+    if not isinstance(source_schema, dict):
+        raise RunnerError("review schema source_ref is invalid")
+    source_properties = source_schema.get("properties")
+    if not isinstance(source_properties, dict) or set(source_properties) != set(source_ref):
+        raise RunnerError("review schema/template source_ref fields differ")
+    source_schema["properties"] = {
+        field: _const_schema(source_ref[field]) for field in source_properties
+    }
+    return schema
+
+
 def _validate_checked_receipts(work_root: Path, record_count: int) -> None:
     """Refuse checked cases that were not produced by this fixed Codex treatment."""
 
@@ -210,8 +247,22 @@ def _validate_checked_receipts(work_root: Path, record_count: int) -> None:
 
 
 def _command(
-    *, codex_bin: Path, case_root: Path, reference_root: Path, review_path: Path
+    *,
+    codex_bin: Path,
+    case_root: Path,
+    reference_root: Path,
+    output_schema_path: Path,
+    review_path: Path,
+    parent_completion: Path | None,
 ) -> list[str]:
+    prompt = PROMPT
+    if parent_completion is not None:
+        prompt += (
+            "\nA canonical parent completion is available at the exact absolute path "
+            f"{parent_completion}. Set parent_contract.status=completion, "
+            "parent_contract.completion_path to that exact path, and missing_facts=[]; "
+            "do not modify the completion or its sibling evidence.\n"
+        )
     command = [
         str(codex_bin),
         "exec",
@@ -230,7 +281,7 @@ def _command(
         "--add-dir",
         str(reference_root),
         "--output-schema",
-        str(reference_root / "review.schema.json"),
+        str(output_schema_path),
         "--output-last-message",
         str(review_path),
         "--color",
@@ -239,7 +290,7 @@ def _command(
     ]
     for feature in DISABLED_FEATURES:
         command.extend(("--disable", feature))
-    command.append(PROMPT)
+    command.append(prompt)
     return command
 
 
@@ -261,6 +312,7 @@ def _run_one(
     case_id: str,
     codex_bin: Path,
     timeout_seconds: int,
+    parent_completion: Path | None,
 ) -> dict[str, object]:
     case_root = _directory(work_root / "cases" / case_id, f"case {case_id}")
     reference_root = _directory(work_root / "reference", "reference root")
@@ -280,6 +332,8 @@ def _run_one(
 
     events_path = run_root / "codex.events.jsonl"
     stderr_path = run_root / "codex.stderr.log"
+    output_schema_path = run_root / "review.schema.json"
+    _write_new(output_schema_path, _json_bytes(_case_review_schema(case_root)))
     started_at = datetime.now(timezone.utc).isoformat()
     timed_out = False
     exit_code: int | None = None
@@ -290,7 +344,9 @@ def _run_one(
         codex_bin=codex_bin,
         case_root=case_root,
         reference_root=reference_root,
+        output_schema_path=output_schema_path,
         review_path=review_path,
+        parent_completion=parent_completion,
     )
     with events_path.open("xb") as events, stderr_path.open("xb") as stderr:
         try:
@@ -320,6 +376,7 @@ def _run_one(
         "exit_code": exit_code,
         "events": str(events_path.relative_to(work_root)),
         "stderr": str(stderr_path.relative_to(work_root)),
+        "output_schema": str(output_schema_path.relative_to(work_root)),
         "review": str(review_path.relative_to(work_root)),
     }
     _write_new(run_root / "receipt.json", _json_bytes(receipt))
@@ -352,6 +409,8 @@ def run_queue(
     limit: int,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     codex_bin: Path | None = None,
+    case_ids: Sequence[str] | None = None,
+    parent_completions: Mapping[str, Path] | None = None,
 ) -> dict[str, object]:
     if limit <= 0:
         raise RunnerError("limit must be a positive sequential case count")
@@ -400,11 +459,34 @@ def run_queue(
     if runner_existed:
         _validate_checked_receipts(work_root, record_count)
 
+    if case_ids is None:
+        selected_case_ids = [
+            f"case-{index:06d}" for index in range(1, record_count + 1)
+        ]
+    else:
+        selected_case_ids = list(case_ids)
+        if len(selected_case_ids) != len(set(selected_case_ids)):
+            raise RunnerError("selected case ids contain duplicates")
+        allowed = {
+            f"case-{index:06d}" for index in range(1, record_count + 1)
+        }
+        if not selected_case_ids or any(
+            case_id not in allowed for case_id in selected_case_ids
+        ):
+            raise RunnerError("selected case ids are empty or outside the source queue")
+    completion_map = dict(parent_completions or {})
+    if set(completion_map) - set(selected_case_ids):
+        raise RunnerError("parent completion map contains an unselected case")
+    for case_id, completion in completion_map.items():
+        resolved = completion.resolve(strict=True)
+        if completion.is_symlink() or resolved.name != "parent_completion.json":
+            raise RunnerError(f"invalid parent completion path for {case_id}")
+        completion_map[case_id] = resolved
+
     processed: list[dict[str, object]] = []
-    for index in range(1, record_count + 1):
+    for case_id in selected_case_ids:
         if len(processed) >= limit:
             break
-        case_id = f"case-{index:06d}"
         case_root = work_root / "cases" / case_id
         checked_path = case_root / "checked.json"
         if checked_path.is_file() and not checked_path.is_symlink():
@@ -422,6 +504,7 @@ def run_queue(
                 case_id=case_id,
                 codex_bin=command_path,
                 timeout_seconds=timeout_seconds,
+                parent_completion=completion_map.get(case_id),
             )
         )
     return {

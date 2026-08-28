@@ -975,6 +975,8 @@ def _validate_parent_completion(
         "verified_by": "complete-kernel-parent-validator",
         "completion": completion_path.name,
         "counts_as_executable_parent": completion.get("outcome") == "qualified",
+        "counts_as_runnable_bundle": completion.get("outcome")
+        in {"qualified", "runnable_unqualified", "qualification_unknown"},
         "training_eligibility": False,
     }
     for field, expected in expected_marker.items():

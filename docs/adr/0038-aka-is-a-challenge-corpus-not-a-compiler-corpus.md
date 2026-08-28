@@ -181,6 +181,38 @@ It cannot write a derived class directly: the deterministic reviewer still recom
 parent, owner, Schedule, Finding and lowering result. A Codex completion therefore changes no
 claim boundary and never authorizes GPU work.
 
+`tools/plan_aka_expressibility_queue.py` reconciles the admitted 1,362-row source snapshot
+with one explicit mechanism-augmentation ledger without importing that ledger as Cake
+authority. In the observed B200 campaign, 1,182 rows have invalid parents and 180 have
+historically qualified parents. Of those 180, only 15 also have terminal valid augmentation
+results; 14 are syntactic single-kernel cases and one is multi-kernel. These are priority
+facts, not IR acceptance. The strongest direct-Schedule queue is therefore the 14 terminal
+valid single-kernel rows; the multi-kernel row enters program ownership review instead.
+
+`tools/run_aka_qualified_ir_codex.py` is the create-only executable front door for that
+strongest queue. For each row, in order, it copies the preserved parent/evaluator artifacts
+into an external case, asks the same fixed Sol/max treatment only to normalize them into the
+canonical complete-kernel-parent record, runs the independent parent validator, and invokes
+the ordinary expressibility runner only if that gate passes. It is CPU-only, performs no GPU
+rerun, never retries or skips a failure, and leaves the remaining 1,348 rows untouched. A
+historical `parent_status=qualified` is thus not silently upgraded into a current IR claim.
+
+The intended invocation is:
+
+```bash
+python3 tools/run_aka_qualified_ir_codex.py \
+  --dataset-root /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --source-revision becde652253d0ce287555097b632149f621cad4e \
+  --campaign-root /absolute/terra-high-b200-10-20260827 \
+  --completion-root /new/external/aka-parent-bridges \
+  --review-root /new/external/aka-ir-reviews \
+  --limit 1
+```
+
+Both output roots are create-only. Continue with a larger limit only in a fresh pair of roots
+after the one-case bridge and review pass deterministically; an existing failed root is
+evidence to inspect, not a queue to overwrite.
+
 ## Initial IR assessment
 
 The current vocabulary is plausible but not broad enough to call complete. The useful
