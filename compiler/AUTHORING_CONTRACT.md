@@ -42,6 +42,11 @@ one register result, adds its declared signed INT32 scalar with `order: relaxed`
 `scope: device`, and returns the old value. A masked coordinate has no memory effect and
 returns zero. The Triton route requires the exact Target atomic contract; no backend may
 silently strengthen, weaken or relocate the operation.
+Resident `top_k` accepts rank-one FP32 scores or signed INT32 values. Both return values
+in descending order and INT32 source positions, with the lowest source position winning
+equal-value ties. INT32 ordering uses the ordinary signed order; its `nan_policy` field is
+vacuous. Loop-carried INT32 top-k is explicitly unlowerable until a real carried-state use
+case justifies its initialization and finalization contract.
 `reduce_argmin` compares FP32 values and returns INT32 source positions; admitting FP8
 storage for another operation does not widen that semantic contract.
 

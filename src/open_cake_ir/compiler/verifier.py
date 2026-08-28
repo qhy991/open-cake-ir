@@ -2045,13 +2045,24 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                         f"is in {source.space.value}",
                         FindingCategory.HARDWARE_CONFORMANCE,
                     )
-                if source.dtype is not DType.FP32:
+                if source.dtype not in {DType.FP32, DType.INT32}:
                     out.add(
                         "TOP_K_VALUE_DTYPE",
                         f"{path}.reads",
-                        f"the admitted top_k lowering reduces fp32 scores, but "
+                        f"the admitted top_k lowering orders fp32 or int32 values, but "
                         f"{source.name!r} is {source.dtype.value}",
                         category,
+                    )
+                if (
+                    source.dtype is DType.INT32
+                    and operation.parameters.across_loop
+                ):
+                    out.add(
+                        "TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE",
+                        f"{path}.parameters.across_loop",
+                        "the admitted signed-int32 top_k lowering orders one resident "
+                        "tile; loop-carried int32 state is not implemented",
+                        FindingCategory.HARDWARE_CONFORMANCE,
                     )
             if values is not None:
                 if values.shape != (k,):

@@ -1142,11 +1142,13 @@ class ScanParameters:
 
 @dataclass(frozen=True)
 class TopKParameters:
-    """Greatest values and source positions from resident rank-one tiles.
+    """Greatest FP32 or signed-INT32 values and positions from rank-one tiles.
 
     Descending result order is part of the operation rather than an optional spelling.
     ``across_loop`` carries the same values/indices state across tiles of one declared
-    loop; group formation and batched routing remain separate operations.
+    loop for FP32 scores; resident INT32 ordering is admitted while carried INT32 state
+    remains an explicit backend exclusion. Group formation and batched routing remain
+    separate operations.
     """
 
     k: int

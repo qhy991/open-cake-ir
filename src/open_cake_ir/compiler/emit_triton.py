@@ -1274,11 +1274,11 @@ class _TritonEmitter:
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}{positions} = tl.arange(0, {source.shape[0]})")
         keys = self._emit_top_k_keys(
-            operation.reads[0], positions, "True", prefix, pad
+            operation.reads[0], positions, "True", prefix, pad, source.dtype
         )
         ranked = f"{prefix}_ranked_keys"
         self.line(f"{pad}{ranked} = tl.topk({keys}, {k})")
-        self._emit_top_k_decode(ranked, values, indices, prefix, pad)
+        self._emit_top_k_decode(ranked, values, indices, prefix, pad, source.dtype)
 
     def _emit_loop_carried_top_k(self, operation, source, pad: str) -> None:
         """Merge one score tile into deterministic loop-carried top-k state."""
@@ -1308,10 +1308,12 @@ class _TritonEmitter:
             )
         self.line(f"{pad}{state_valid} = {previous_indices} != 2147483647")
         source_keys = self._emit_top_k_keys(
-            operation.reads[0], source_positions, source_valid, f"{prefix}_source", pad
+            operation.reads[0], source_positions, source_valid, f"{prefix}_source", pad,
+            source.dtype,
         )
         state_keys = self._emit_top_k_keys(
-            previous_values, previous_indices, state_valid, f"{prefix}_state", pad
+            previous_values, previous_indices, state_valid, f"{prefix}_state", pad,
+            source.dtype,
         )
         width = max(source.shape[0], k)
         source_keys = self._emit_top_k_key_padding(
@@ -1324,7 +1326,7 @@ class _TritonEmitter:
         ranked = f"{prefix}_ranked_keys"
         self.line(f"{pad}{combined} = tl.cat({state_keys}, {source_keys})")
         self.line(f"{pad}{ranked} = tl.topk({combined}, {k})")
-        self._emit_top_k_decode(ranked, values, indices, prefix, pad)
+        self._emit_top_k_decode(ranked, values, indices, prefix, pad, source.dtype)
 
     def _emit_top_k_keys(
         self,
@@ -1333,20 +1335,26 @@ class _TritonEmitter:
         valid: str,
         prefix: str,
         pad: str,
+        dtype: DType,
     ) -> str:
-        """Pack FP32 order plus the lowest-index tie break into one uint64."""
+        """Pack value order plus the lowest-index tie break into one uint64."""
 
-        canonical = f"{prefix}_canonical_scores"
         bits = f"{prefix}_score_bits"
         ordered = f"{prefix}_ordered_scores"
         ties = f"{prefix}_tie_keys"
         keys = f"{prefix}_keys"
-        self.line(f"{pad}{canonical} = tl.where({values} == 0.0, 0.0, {values})")
-        self.line(f"{pad}{bits} = {canonical}.to(tl.uint32, bitcast=True)")
-        self.line(
-            f"{pad}{ordered} = tl.where(({bits} & 0x80000000) != 0, "
-            f"{bits} ^ 0xffffffff, {bits} ^ 0x80000000)"
-        )
+        if dtype is DType.FP32:
+            canonical = f"{prefix}_canonical_scores"
+            self.line(f"{pad}{canonical} = tl.where({values} == 0.0, 0.0, {values})")
+            self.line(f"{pad}{bits} = {canonical}.to(tl.uint32, bitcast=True)")
+            self.line(
+                f"{pad}{ordered} = tl.where(({bits} & 0x80000000) != 0, "
+                f"{bits} ^ 0xffffffff, {bits} ^ 0x80000000)"
+            )
+        else:
+            _require(dtype is DType.INT32, "top_k value dtype is unsupported")
+            self.line(f"{pad}{bits} = {values}.to(tl.uint32, bitcast=True)")
+            self.line(f"{pad}{ordered} = {bits} ^ 0x80000000")
         self.line(f"{pad}{ties} = 0xffffffff - {indices}.to(tl.uint32)")
         self.line(
             f"{pad}{keys} = tl.where({valid}, "
@@ -1381,8 +1389,9 @@ class _TritonEmitter:
         indices: str,
         prefix: str,
         pad: str,
+        dtype: DType,
     ) -> None:
-        """Recover canonical FP32 values and int32 indices from ranked keys."""
+        """Recover source-typed values and int32 indices from ranked keys."""
 
         ordered = f"{prefix}_ranked_ordered_scores"
         bits = f"{prefix}_ranked_score_bits"
@@ -1392,16 +1401,21 @@ class _TritonEmitter:
         valid = f"{prefix}_ranked_valid"
         self.line(f"{pad}{valid} = {keys} != 0")
         self.line(f"{pad}{ordered} = ({keys} >> 32).to(tl.uint32)")
-        self.line(
-            f"{pad}{bits} = tl.where(({ordered} & 0x80000000) != 0, "
-            f"{ordered} ^ 0x80000000, {ordered} ^ 0xffffffff)"
-        )
-        self.line(f"{pad}{decoded} = {bits}.to(tl.float32, bitcast=True)")
+        if dtype is DType.FP32:
+            self.line(
+                f"{pad}{bits} = tl.where(({ordered} & 0x80000000) != 0, "
+                f"{ordered} ^ 0x80000000, {ordered} ^ 0xffffffff)"
+            )
+            self.line(f"{pad}{decoded} = {bits}.to(tl.float32, bitcast=True)")
+            invalid_value = 'float("-inf")'
+        else:
+            _require(dtype is DType.INT32, "top_k value dtype is unsupported")
+            self.line(f"{pad}{bits} = {ordered} ^ 0x80000000")
+            self.line(f"{pad}{decoded} = {bits}.to(tl.int32, bitcast=True)")
+            invalid_value = "-2147483648"
         self.line(f"{pad}{low} = ({keys} & 0xffffffff).to(tl.uint32)")
         self.line(f"{pad}{decoded_indices} = (0xffffffff - {low}).to(tl.int32)")
-        self.line(
-            f'{pad}{values} = tl.where({valid}, {decoded}, float("-inf"))'
-        )
+        self.line(f"{pad}{values} = tl.where({valid}, {decoded}, {invalid_value})")
         self.line(
             f"{pad}{indices} = tl.where({valid}, {decoded_indices}, 2147483647)"
         )

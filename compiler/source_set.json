@@ -54,6 +54,8 @@
     "corpus/schedules/top-k-b8-smoke-shape-drift.json",
     "corpus/schedules/top-k-b8-smoke-across-loop-drift.json",
     "corpus/schedules/top-k-b8-smoke.json",
+    "corpus/schedules/top-k-int32-b8-smoke.json",
+    "corpus/schedules/top-k-int32-streaming-b8-drift.json",
     "corpus/schedules/top-k-streaming-b8-smoke.json",
     "corpus/schedules/tinygemm2-stage4-split-k-reduction-drift.json",
     "corpus/schedules/tinygemm2-stage4-split-k.json",
