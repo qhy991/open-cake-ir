@@ -690,6 +690,33 @@
       }
     },
     {
+      "case_id": "top-k-int32-resident-accepted",
+      "schedule": "corpus/schedules/top-k-int32-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "4b960c6a81eda6db1994a58c6e8a9cc4b9312383aedbb581b30c1a0cdac5b09d",
+        "lowering_source_sha256": "81b3a9adf23dc3822af4844513da1a3de828fa52aef4171e68cff52f2f525f44"
+      }
+    },
+    {
+      "case_id": "top-k-int32-across-loop-drift",
+      "schedule": "corpus/schedules/top-k-int32-streaming-b8-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "f963b3e1ed0e6bd772a3a5a65614bcd0780a695f15d0ae2d5dffe17223fd4773",
+        "lowering_source_sha256": null
+      }
+    },
+    {
       "case_id": "qsa-pool-t32768-accepted",
       "schedule": "corpus/schedules/qsa-pool-t32768.json",
       "expected": {
