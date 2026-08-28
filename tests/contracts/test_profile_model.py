@@ -44,12 +44,15 @@ class ProfileModelTest(unittest.TestCase):
 
         self.assertEqual(profile["lowering"]["generated_source_bytes"], 7310)
         self.assertEqual(profile["lowering"]["top_k"][0]["merge_width"], 1024)
-        self.assertEqual(profile["residency"]["registers_per_thread_lower_bound"], 72)
-        self.assertEqual(profile["residency"]["ctas_per_sm_upper_bound"], 3)
+        self.assertEqual(profile["residency"]["logical_register_pressure_per_thread"], 72)
+        self.assertEqual(profile["residency"]["ctas_per_sm_upper_bound"], 8)
+        registers = _metric(profile, "launch__registers_per_thread")
+        self.assertEqual((registers["estimate_kind"], registers["value"]), ("unknown", None))
+        self.assertEqual(registers["reasons"], ["logical register pressure proxy=72"])
         active = _metric(
             profile, "sm__warps_active.avg.pct_of_peak_sustained_elapsed"
         )
-        self.assertEqual((active["estimate_kind"], active["value"]), ("upper_bound", 37.5))
+        self.assertEqual((active["estimate_kind"], active["value"]), ("upper_bound", 100.0))
         barrier = _metric(
             profile,
             "smsp__warp_issue_stalled_barrier_per_warp_active.pct",
@@ -124,7 +127,7 @@ class ProfileModelTest(unittest.TestCase):
                     sys.executable,
                     str(ROOT / "tools/report_schedule_profile.py"),
                     "--revision",
-                    str(ROOT / "compiler/revision.lock.json"),
+                    str(ROOT / "compiler/revision.json"),
                     "--json",
                     str(external),
                 ],

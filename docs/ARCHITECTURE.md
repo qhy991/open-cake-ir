@@ -355,10 +355,9 @@ why a Study that searches more than one candidate has to declare how much faster
 wrong: on a loss surface where 24 of 37 candidates sit within 6% of the best, routing every
 inversion would report mostly measurement error.
 
-**What the analysis supplies.** Residency upper bounds and the resource that binds them,
-which is the report the harness owes the agent. Both bounds held in the direction claimed
-on five kernels across both backends, and the predicted binding resource was always among
-the measured binders. Only three measurements identified one resource uniquely; registers
-and shared memory tied on Flash-KMeans and GEMM, so naming either discriminated nothing.
-Logical register storage is an optimistic lower bound and not ptxas allocation; no time is
-estimated, because the Target declares no clock and no bandwidth.
+**What the analysis supplies.** Residency upper bounds from exact CTA threads and explicit
+shared/TMEM allocations, plus a separate logical register-pressure feature. The original
+five-kernel calibration placed that feature below physical allocation, but QSA tile256
+placed it above (`140` versus `116`) and refuted a general lower-bound interpretation.
+Physical register allocation and its residency limit therefore remain compiled evidence;
+no time is estimated because the Target declares no clock and no bandwidth.

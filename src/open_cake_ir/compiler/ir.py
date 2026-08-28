@@ -1594,32 +1594,30 @@ _SCHEDULE_OPTIONAL = {"grid", "program_map", "residency", "tile_loops", "access_
 class Residency:
     """What a Schedule commits to holding, rather than what it happens to need.
 
-    The analysis derives an upper bound on resident CTAs and an optimistic lower bound on
-    logical register storage, and reports both. It does not claim ptxas's eventual register
-    allocation. The surveyed kernel work writes resource bounds -- at most forty-eight
-    registers with no spill, two CTAs resident, sixty-four TMEM columns so both fit -- in
-    task prose and template assertions because the Schedule otherwise has nowhere to put
-    them.
+    The analysis derives an upper bound on resident CTAs from exact threads and explicit
+    shared/tensor allocations. Logical register-Buffer pressure is reported separately;
+    it is not ptxas's eventual allocation and has no sound direction against it. The
+    surveyed kernel work writes resource choices -- a ``maxnreg`` cap, two CTAs resident,
+    sixty-four TMEM columns so both fit -- in task prose and template assertions because
+    the Schedule otherwise has nowhere to put them.
 
     Declaring one turns the same derivation into a gate: the Schedule states the residency
     it needs and the verifier holds it to it.
 
-    `registers_per_thread` is a cap the backend enforces, which is a real choice -- capping
-    below the logical storage lower bound cannot hold the declared values without a spill.
-    `allow_spill` says whether that trade was intended. Actual allocation and spill counts
-    remain toolchain evidence rather than facts inferred by the Schedule verifier.
+    `registers_per_thread` is a cap the backend receives, which is a real compilation
+    choice. Actual allocation and spill counts remain toolchain evidence rather than facts
+    inferred by the Schedule verifier.
     """
 
     ctas_per_multiprocessor: int | None
     registers_per_thread: int | None
-    allow_spill: bool
 
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "Residency":
         obj = _strict_object(
             value,
             required=set(),
-            optional={"ctas_per_multiprocessor", "registers_per_thread", "allow_spill"},
+            optional={"ctas_per_multiprocessor", "registers_per_thread"},
             context=context,
         )
         ctas = obj.get("ctas_per_multiprocessor")
@@ -1629,7 +1627,6 @@ class Residency:
         return cls(
             None if ctas is None else _positive_int(ctas, f"{context}.ctas_per_multiprocessor"),
             None if registers is None else _positive_int(registers, f"{context}.registers_per_thread"),
-            _boolean(obj.get("allow_spill", False), f"{context}.allow_spill"),
         )
 
 

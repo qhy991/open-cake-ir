@@ -331,11 +331,10 @@ class CalibrationIndexTest(unittest.TestCase):
     def test_the_calibration_prose_agrees_with_the_measurements(self) -> None:
         """The doc's summary claims are about the records, so they are checkable.
 
-        `docs/ANALYSIS_CALIBRATION.md` says both bounds held in the direction claimed on
-        four kernels, and that on Flash-KMeans the binding resource was a tie while the
-        Triton kernels singled one out. Each of those is a field in a stored record. A doc
-        that misquotes its own evidence is the worst drift there is -- everything else in
-        this repository is checkable, and that would be the one claim taken on trust.
+        `docs/ANALYSIS_CALIBRATION.md` says the original records lay in the then-claimed
+        directions and that some binding-resource observations were ties. Each is a field
+        in the stored historical records. The later QSA counterexample changes the model,
+        not those bytes.
         """
 
         directory = ROOT / "evidence" / "calibration"

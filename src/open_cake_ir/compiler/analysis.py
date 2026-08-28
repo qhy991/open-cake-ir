@@ -5,11 +5,11 @@ plus bottleneck attribution. This module supplies the attribution half. It does 
 estimate time, because a Target declares no clock and no bandwidth, and a number derived
 from neither would be invented rather than analysed.
 
-What it derives is an upper bound on residency from declared storage and Target facts.
-Threads and explicit allocations are exact Schedule quantities. Register storage is an
-optimistic logical lower bound: it assumes same-shaped elementwise values can alias and
-does not claim to be ptxas's eventual allocation. Dividing Target capacity by those
-per-CTA quantities therefore gives a safe upper bound, not measured occupancy.
+What it derives is an upper bound on residency from exact Schedule quantities and Target
+facts. Threads and explicit shared/tensor allocations are in that domain. Register
+Buffers are different: a backend may distribute, alias, recompute, spill, or place their
+logical values elsewhere, so their live logical extent is only a pressure proxy. It is
+reported separately and never used as a physical-register bound or legality gate.
 """
 
 from __future__ import annotations
@@ -35,7 +35,6 @@ class ResidencyBound:
     def unit(self) -> str:
         return {
             "threads": "threads",
-            "logical_register_storage": "registers",
         }.get(self.resource, "bytes")
 
 
@@ -57,14 +56,14 @@ class ResidencyUpperBound:
 
 
 def _storage_classes(schedule: Schedule, registers) -> dict[str, str]:
-    """Group register buffers that share one physical set of registers.
+    """Group same-shaped elementwise Buffers in the logical pressure proxy.
 
     An elementwise primitive reads a tile and writes a tile of the same shape, which a
-    backend performs in place -- there is no reason to hold both. Charging for each is
-    what made composing arithmetic from primitives cost registers the kernel never uses,
-    and it charged exactly the schedules that follow the canonical form (P3). A dot or a
-    reduction is different: it genuinely needs its operands and its result at once, so
-    only the elementwise chain is unioned.
+    backend can often perform in place. Charging for each made composing arithmetic from
+    primitives inflate the feature purely because the canonical form names each step
+    (P3). A dot or reduction has a distinct result shape/lifetime, so only same-shaped
+    elementwise chains are unioned. This is still a heuristic feature, not physical
+    liveness analysis.
     """
 
     parent = {name: name for name in registers}
@@ -92,8 +91,8 @@ def _storage_classes(schedule: Schedule, registers) -> dict[str, str]:
     return {name: find(name) for name in registers}
 
 
-def _logical_register_bytes_lower_bound(schedule: Schedule) -> int:
-    """Optimistic lower bound on peak live logical register storage.
+def _logical_register_pressure_bytes(schedule: Schedule) -> int:
+    """Peak live bytes named by logical register Buffers after simple aliasing.
 
     Summing them charges a Schedule for every temporary it ever names, which reads the
     same whether two tiles overlap or one is dead before the other is written. That was
@@ -103,9 +102,10 @@ def _logical_register_bytes_lower_bound(schedule: Schedule) -> int:
 
     A storage class is live from its first write to its last read in declared order.
     Anything the Schedule declares but never writes is charged for the whole program,
-    since nothing here can say when it dies. Backend temporaries, allocation granularity,
-    and failed aliasing can only increase the physical register allocation; ptxas remains
-    the authority for that eventual number.
+    since nothing here can say when it dies. This quantity has no sound direction against
+    physical registers: a backend can add temporaries, but it can also distribute values
+    across lanes, recompute them, alias them more aggressively, or realize them in another
+    storage class. The compiled artifact remains the authority for physical allocation.
     """
 
     registers = {
@@ -178,17 +178,6 @@ def residency_upper_bound(
             )
         )
 
-    registers = _logical_register_bytes_lower_bound(schedule) // REGISTER_BYTES
-    if registers:
-        bounds.append(
-            ResidencyBound(
-                "logical_register_storage",
-                registers,
-                facts.registers_per_multiprocessor,
-                facts.registers_per_multiprocessor // registers,
-            )
-        )
-
     shared = _allocation_bytes(schedule, MemorySpace.SHARED)
     if shared:
         bounds.append(
@@ -212,18 +201,18 @@ def residency_upper_bound(
     return ResidencyUpperBound(tuple(bounds))
 
 
-def logical_registers_per_thread_lower_bound(
+def logical_register_pressure_per_thread(
     schedule: Schedule, target: Target
 ) -> int | None:
-    """Optimistic lower bound on registers needed by at least one CTA thread.
+    """Normalize live logical register-Buffer bytes across the CTA threads.
 
-    This divides declared logical storage across every CTA thread and rounds up. It is a
-    safe gate only when even that optimistic distribution exceeds a declared ``maxnreg``
-    cap. It is not an estimate of ptxas's physical allocation.
+    This is a deterministic structural feature for diagnostics and future calibration,
+    not a lower bound or estimate of ptxas's physical register allocation. B200 QSA
+    evidence includes both proxy-below-measurement and proxy-above-measurement cases.
     """
 
     threads = schedule.total_warp_extent * target.warp_size
     if not threads:
         return None
-    registers = _logical_register_bytes_lower_bound(schedule) // REGISTER_BYTES
+    registers = _logical_register_pressure_bytes(schedule) // REGISTER_BYTES
     return (registers + threads - 1) // threads if registers else 0

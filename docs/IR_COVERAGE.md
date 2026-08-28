@@ -24,7 +24,7 @@ Ordered by how often the surveyed work exercised each axis.
 | 2 | CTA-to-tile rasterization / scheduler order | YES | `ProgramMap.traversal`, meaningful only under persistence |
 | 3 | CTAs per SM, persistent grid size | YES | `residency.ctas_per_multiprocessor`, and `ProgramMap.persistent` sized from it |
 | 4 | Software-pipeline depth | ~ | one `Pipeline.stages`; real work tunes mainloop, accumulator and scheduler pipelines separately |
-| 5 | Register / TMEM / shared budget | YES | `residency.registers_per_thread` with `allow_spill`; reaches ptxas as `maxnreg`, while the verifier uses only the declared logical-storage lower bound |
+| 5 | Register / TMEM / shared budget | YES | `residency.registers_per_thread` reaches the backend as `maxnreg`; physical allocation/spill is compiled evidence, while explicit TMEM/shared declarations retain static capacity gates |
 | 6 | Tile geometry, thread-to-output mapping | YES | `MmaInstruction.shape`, `cta_group`, `tile`, `Role.warps` |
 | 7 | Global load width and cache policy | ~ | `LoadParameters.reuse` states the intent; width left out, Triton derives it |
 | 8 | Buffer ownership, intermediate-copy elision | NO | buffers are input/output/scratch; no caller-provided destination |
@@ -48,9 +48,9 @@ the backend rather than stopping at the verifier:
   there are CTAs. Persistence had to come first, and the persistent CTA count is derived
   from the residency commitment rather than declared again.
 * Axis 5's register half. `maxnreg` appears in the compiled kernel's metadata where
-  declared and nowhere else. `RESIDENCY_UNMET` is a static proof only when the optimistic
-  logical-storage lower bound already makes the commitment impossible; actual register
-  allocation and spill counts remain ptxas evidence.
+  declared and nowhere else. A later QSA profile showed logical pressure 140 against 116
+  physical registers, refuting its former lower-bound use. It is now a non-blocking
+  structural feature; actual allocation and spills remain compiled-artifact evidence.
 * Axis 7's cache half. The first emission did not compile -- ptxas rejects `.cg` combined
   with `.evict_first` -- which only surfaced on hardware.
 

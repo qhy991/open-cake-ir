@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from .analysis import logical_registers_per_thread_lower_bound, residency_upper_bound
+from .analysis import logical_register_pressure_per_thread, residency_upper_bound
 from .ir import (
     AccessIndexKind,
     MemorySpace,
@@ -126,7 +126,7 @@ def _residency_document(schedule: Schedule, target: Target) -> Mapping[str, obje
     return {
         "ctas_per_sm_upper_bound": envelope.ctas_per_multiprocessor,
         "binding_resource": envelope.binding.resource if envelope.binding else None,
-        "registers_per_thread_lower_bound": logical_registers_per_thread_lower_bound(
+        "logical_register_pressure_per_thread": logical_register_pressure_per_thread(
             schedule, target
         ),
         "bounds": [
@@ -271,8 +271,7 @@ def profile_envelope(
 
     work = work_bound(schedule)
     residency = residency_upper_bound(schedule, target)
-    register_floor = logical_registers_per_thread_lower_bound(schedule, target)
-    register_ctas = _bound_ctas(schedule, target, "logical_register_storage")
+    register_pressure = logical_register_pressure_per_thread(schedule, target)
     shared_bytes = _explicit_allocation_bytes(schedule, MemorySpace.SHARED)
     shared_ctas = _bound_ctas(schedule, target, "shared_memory")
     warp_ctas = _bound_ctas(schedule, target, "threads")
@@ -314,21 +313,29 @@ def profile_envelope(
     metrics = (
         MetricEstimate(
             "launch__registers_per_thread",
-            "lower_bound",
-            register_floor,
+            "unknown",
+            None,
             "register/thread",
-            "IR-declared logical register storage",
-            missing=("backend temporaries", "allocation granularity", "spills"),
+            "compiled backend allocation",
+            reasons=(
+                (f"logical register pressure proxy={register_pressure}",)
+                if register_pressure
+                else ()
+            ),
+            missing=("compiled-kernel register allocation",),
         ),
         MetricEstimate(
             "launch__occupancy_limit_registers",
-            "upper_bound" if register_ctas is not None else "unknown",
-            register_ctas,
+            "unknown",
+            None,
             "CTA/SM",
-            "IR logical-register residency",
-            missing=("ptxas register allocation",) if register_ctas is not None else (
-                "no declared register storage bound",
+            "compiled backend allocation",
+            reasons=(
+                (f"logical register pressure proxy={register_pressure}",)
+                if register_pressure
+                else ()
             ),
+            missing=("ptxas register allocation",),
         ),
         MetricEstimate(
             "launch__occupancy_limit_shared_mem",
@@ -418,6 +425,7 @@ def profile_envelope(
     )
 
     abstentions = [
+        "physical register allocation requires a compiled artifact",
         "throughput percentages require a measured or calibrated duration and target rate",
         "L2 behavior requires a cache/transaction calibration",
         "stall percentages remain qualitative until B200 NCU coverage exists",

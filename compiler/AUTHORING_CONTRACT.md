@@ -15,7 +15,9 @@ Emitter-only program-shape requirements have one owner in that backend's `prefli
 Assessment projects them into lowering-blocking Findings before `lower`; a backend must
 not silently reinterpret an unsupported epilogue formula or wait for emission to reject
 its role, loop, pipeline, operation-count, load-movement or descriptor requirements.
-Register findings are static bounds over declared logical storage, never a claim about ptxas's physical allocation.
+Logical register-Buffer pressure is an uncalibrated structural feature, never a physical
+register bound or legality gate. `residency.registers_per_thread` reaches the backend as
+`maxnreg`; compiled-artifact evidence owns actual allocation and spills.
 A block scale is an FP32 Buffer with one `scale_of` relation. `granularity` is written in
 the FP8 data buffer's axis order; `axis_order` is the full permutation that gives the
 scale buffer's physical grouped-axis order. The Compiler derives the scale shape and

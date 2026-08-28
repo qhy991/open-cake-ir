@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 
 from open_cake_ir.compiler.analysis import (
-    logical_registers_per_thread_lower_bound,
+    logical_register_pressure_per_thread,
     residency_upper_bound,
 )
 from open_cake_ir.compiler.ir import Schedule
@@ -65,24 +65,23 @@ class ResidencyTest(unittest.TestCase):
         self.assertEqual(bound.binding.resource, "shared_memory")
         self.assertEqual(bound.binding.ctas, 2)
 
-    def test_registers_bind_the_triton_profile(self) -> None:
-        """Declared register buffers, not shared memory, are what limits this one."""
+    def test_logical_register_pressure_is_separate_from_exact_residency(self) -> None:
+        """Logical Buffers remain visible without impersonating physical registers."""
 
         schedule = Schedule.load(B32)
         bound = residency_upper_bound(schedule, TARGET)
         assert bound is not None and bound.binding is not None
-        self.assertEqual(bound.binding.resource, "logical_register_storage")
-        self.assertEqual(bound.binding.ctas, 1)
-        self.assertEqual(logical_registers_per_thread_lower_bound(schedule, TARGET), 289)
+        self.assertEqual(bound.binding.resource, "threads")
+        self.assertEqual(bound.binding.ctas, 16)
+        self.assertEqual(logical_register_pressure_per_thread(schedule, TARGET), 289)
 
     def test_top_k_charges_source_values_and_indices_while_they_are_live(self) -> None:
         # At selection the 256 score values and both eight-element results coexist. The
-        # logical lower bound therefore sees 272 registers across 128 CTA threads.
+        # The logical pressure proxy sees 272 values across 128 CTA threads.
         schedule = Schedule.load(TOP_K)
-        self.assertEqual(logical_registers_per_thread_lower_bound(schedule, TARGET), 3)
+        self.assertEqual(logical_register_pressure_per_thread(schedule, TARGET), 3)
 
-    def test_a_smaller_tile_relaxes_the_bound(self) -> None:
-        """Halving the token tile halves the register buffers and doubles residency."""
+    def test_a_smaller_tile_reduces_pressure_without_changing_exact_bounds(self) -> None:
 
         document = json.loads(B32.read_text(encoding="utf-8"))
         document = copy.deepcopy(document)
@@ -92,9 +91,14 @@ class ResidencyTest(unittest.TestCase):
         for buffer in document["buffers"]:
             if buffer["name"] in ("token_tile", "distance_tile", "best_index_tile"):
                 buffer["shape"][0] = 128
-        bound = residency_upper_bound(Schedule.from_dict(document), TARGET)
+        smaller = Schedule.from_dict(document)
+        bound = residency_upper_bound(smaller, TARGET)
         assert bound is not None and bound.binding is not None
-        self.assertEqual(bound.binding.ctas, 2)
+        self.assertEqual(bound.binding.ctas, 16)
+        self.assertLess(
+            logical_register_pressure_per_thread(smaller, TARGET),
+            logical_register_pressure_per_thread(Schedule.load(B32), TARGET),
+        )
 
     def test_no_occupancy_facts_means_no_analysis(self) -> None:
         """A Target that declares nothing gets no invented answer."""
@@ -106,6 +110,16 @@ class ResidencyTest(unittest.TestCase):
         self.assertIsNone(
             residency_upper_bound(Schedule.load(B32), Target.from_dict(document))
         )
+
+    def test_an_exact_shared_memory_bound_still_enforces_a_cta_commitment(self) -> None:
+        document = json.loads(ASSIGNMENT_FULL.read_text(encoding="utf-8"))
+        document["residency"] = {"ctas_per_multiprocessor": 3}
+        blocking = {
+            finding.code
+            for finding in verify(Schedule.from_dict(document), TARGET)
+            if finding.blocks_lowering
+        }
+        self.assertIn("RESIDENCY_UNMET", blocking)
 
 
 class ReportTest(unittest.TestCase):
@@ -132,13 +146,14 @@ class ReportTest(unittest.TestCase):
         self.assertTrue(reports)
         self.assertFalse(any(f.blocks_lowering for f in reports))
 
-    def test_register_pressure_is_reported_where_it_binds(self) -> None:
+    def test_register_pressure_is_reported_as_a_nonblocking_proxy(self) -> None:
         self.assertIn("REGISTER_PRESSURE", self._reports(B32))
         message = self._reports(B32)["REGISTER_PRESSURE"]
-        self.assertIn("optimistic lower bound of 289 registers per thread", message)
-        self.assertIn("not ptxas-measured allocation", message)
+        self.assertIn("logical pressure 289 per CTA thread", message)
+        self.assertIn("not a bound or gate", message)
         self.assertIn(
-            "36928 of 65536 registers", self._reports(B32)["RESIDENCY_BOUND"]
+            "physical register allocation is backend evidence",
+            self._reports(B32)["RESIDENCY_BOUND"],
         )
         self.assertNotIn("REGISTER_PRESSURE", self._reports(ASSIGNMENT_FULL))
 

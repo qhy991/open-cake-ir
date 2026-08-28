@@ -7,6 +7,13 @@ the measurement, so nothing established whether the bounds it prints are true.
 Measured with Nsight Compute on a B200, exclusive, by `tools/profile_lowered_kernel.py`.
 The raw records are in `evidence/calibration/residency-b200-*.json`.
 
+These rows are the original v10 calibration measured on five kernels, not a universal
+validation. A later QSA tile256 profile measured 116 physical registers per thread against
+logical pressure 140, refuting the claimed lower-bound direction. The retained table still
+records what was observed, while Compiler v32 removes logical register pressure from
+physical residency and hard gates. The QSA observation is indexed by
+`inventory/QSA_TILE_SEARCH_R8_20260828.json`.
+
 | | predicted | measured | |
 | --- | --- | --- | --- |
 | **rmsnorm**, Triton | | | |
@@ -32,16 +39,17 @@ The raw records are in `evidence/calibration/residency-b200-*.json`.
 
 ## What this establishes
 
-**Both bounds are sound in the direction claimed, on five kernels across both backends.**
-The register figure is a lower bound on storage and was below the measured allocation every
-time; the residency figure is an upper bound on resident CTAs and was at or above the
-measured limit every time. Nothing here contradicts the analysis, which is not a given --
-the analysis was renamed to say "bound" only after it was written.
+**Within the original five-kernel pilot, both figures lay in the claimed direction.** The
+register figure was below measured allocation every time, and the residency figure was at
+or above the measured limit. The QSA tile256 counterexample later showed that the first
+relationship was sample-specific rather than a bound; only residency derived from exact
+threads and explicit allocations retains a proof direction.
 
-**The exact quantities are exact and the estimated one is loose, as claimed.** Shared memory
-is an explicit allocation the Schedule declares, and its bound came out equal to the
-measurement. Registers are inferred from declared buffers with liveness and aliasing, and
-that bound runs 21% to 31% low on the four Triton kernels and is vacuous on the fifth.
+**The exact quantities remain exact and the register feature is uncalibrated.** Shared
+memory is an explicit allocation the Schedule declares, and its bound came out equal to
+the measurement. Registers inferred from declared Buffers with liveness and aliasing ran
+21% to 31% below allocation on four original Triton kernels, were vacuous on the fifth,
+and exceeded allocation on QSA tile256.
 
 **The attribution is weaker than it looked.** This is the half the paper calls attribution
 and the half an author can act on -- being told that registers rather than shared memory

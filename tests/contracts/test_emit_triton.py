@@ -179,15 +179,15 @@ class OpenSpaceTest(unittest.TestCase):
         assessment = self.compiler.assess(_variant(disable_licm=True))
         self.assertIn("disable_licm=True", self.compiler.lower(assessment).source)
 
-    def test_a_schedule_no_multiprocessor_can_hold_is_refused(self) -> None:
-        """An open space needs a real gate, and this is one it can derive."""
+    def test_a_large_logical_tile_reaches_the_backend(self) -> None:
+        """Logical Buffer pressure cannot prove physical residency impossible."""
 
         assessment = self.compiler.assess(_variant(block_n=512))
-        self.assertFalse(assessment.lowering_eligible)
-        finding = next(
-            f for f in assessment.findings if f.code == "RESIDENCY_IMPOSSIBLE"
+        self.assertTrue(assessment.lowering_eligible)
+        self.assertNotIn(
+            "RESIDENCY_IMPOSSIBLE", {finding.code for finding in assessment.findings}
         )
-        self.assertIn("no CTA is resident", finding.message)
+        self.assertTrue(self.compiler.lower(assessment).source)
 
 
 class UnderSpecificationTest(unittest.TestCase):

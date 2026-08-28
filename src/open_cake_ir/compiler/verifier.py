@@ -39,7 +39,7 @@ from .ir import (
     Schedule,
 )
 from .analysis import (
-    logical_registers_per_thread_lower_bound,
+    logical_register_pressure_per_thread,
     residency_upper_bound,
 )
 from .target import Target
@@ -3304,21 +3304,6 @@ def _verify_residency_commitment(
                 category,
             )
 
-    budget = commitment.registers_per_thread
-    if budget is not None:
-        needed = logical_registers_per_thread_lower_bound(schedule, target)
-        if needed is not None and needed > budget and not commitment.allow_spill:
-            out.add(
-                "REGISTER_BUDGET_EXCEEDED",
-                "residency.registers_per_thread",
-                f"even with optimistic same-shape aliasing, declared logical register "
-                f"storage needs at least {needed} registers per thread against a cap of "
-                f"{budget}; it cannot fit without spill, which this Schedule did not "
-                "admit",
-                category,
-            )
-
-
 def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> None:
     """Which declared resource bounds residency, and at what cost.
 
@@ -3335,17 +3320,6 @@ def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> No
         return
     _verify_residency_commitment(schedule, target, upper_bound, out)
     binding = upper_bound.binding
-    if binding.ctas == 0:
-        # A resource that admits no CTA at all is not a performance report. The Schedule
-        # asks a multiprocessor for more than it has, so it cannot run as declared.
-        out.add(
-            "RESIDENCY_IMPOSSIBLE",
-            "allocations" if binding.resource.endswith("memory") else "buffers",
-            f"declared {binding.resource} need {binding.per_cta} {binding.unit} per CTA "
-            f"but a multiprocessor has {binding.per_multiprocessor}; no CTA is resident",
-            category,
-        )
-        return
     others = ", ".join(
         f"{b.resource} {b.ctas}"
         for b in sorted(upper_bound.bounds, key=lambda b: b.ctas)
@@ -3375,20 +3349,28 @@ def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> No
             "backend may still allocate some"
             if unmodelled
             else ""
-        ),
+        )
+        + "; physical register allocation is backend evidence and is not part of this bound",
         category,
         FindingSeverity.REPORT,
     )
 
-    per_thread = logical_registers_per_thread_lower_bound(schedule, target)
-    if per_thread and binding.resource == "logical_register_storage":
+    per_thread = logical_register_pressure_per_thread(schedule, target)
+    facts = target.occupancy
+    proxy_ctas = (
+        facts.registers_per_multiprocessor
+        // (per_thread * schedule.total_warp_extent * target.warp_size)
+        if per_thread and facts is not None
+        else None
+    )
+    if proxy_ctas is not None and proxy_ctas <= binding.ctas:
         out.add(
             "REGISTER_PRESSURE",
             "buffers",
-            f"declared logical register storage has an optimistic lower bound of "
-            f"{per_thread} registers per thread across "
-            f"{schedule.total_warp_extent * target.warp_size} threads; this bounds "
-            "maximum possible residency but is not ptxas-measured allocation",
+            f"declared register Buffers have logical pressure {per_thread} per CTA "
+            f"thread; if physical allocation tracked that proxy it would imply "
+            f"{proxy_ctas} CTA per multiprocessor, but B200 evidence shows the proxy "
+            "can lie on either side of ptxas allocation, so it is not a bound or gate",
             category,
             FindingSeverity.REPORT,
         )

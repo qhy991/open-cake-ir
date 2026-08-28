@@ -114,6 +114,20 @@ class RetainedScheduleTest(unittest.TestCase):
                     ),
                 )
 
+    def test_allow_spill_is_not_an_unenforced_schedule_claim(self) -> None:
+        document = _document(B32)
+        document["residency"] = {
+            "registers_per_thread": 128,
+            "allow_spill": True,
+        }
+        with self.assertRaisesRegex(
+            ScheduleParseError, "schedule.residency unknown fields.*allow_spill"
+        ):
+            Schedule.from_dict(document)
+
+        errors = list(Draft202012Validator(schedule_schema()).iter_errors(document))
+        self.assertTrue(any("allow_spill" in error.message for error in errors))
+
     def test_schema_refuses_operand_placement_the_contract_cannot_honour(self) -> None:
         """The authoring surface may not admit what the Verifier fatally refuses.
 
