@@ -329,6 +329,12 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
         )
         self.assertEqual(manifest["checker"], self.checker_identity)
         self.assertEqual(compiler_reference["checker"], self.checker_identity)
+        structured_schema = json.loads(
+            (self.work_root / "reference/review.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertNotIn("oneOf", json.dumps(structured_schema, sort_keys=True))
         review = self.materialized_review()
         case_input = json.loads(
             (self.work_root / "cases/case-000001/input.json").read_text(

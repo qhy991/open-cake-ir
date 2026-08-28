@@ -358,6 +358,10 @@ def _gap_schema() -> dict[str, object]:
 
 
 def _aspect_schema() -> dict[str, object]:
+    missing_ir = _gap_schema()
+    # OpenAI structured outputs admit a nullable object type but not this schema's former
+    # oneOf(null, object) spelling. Object-only constraints remain inactive for null.
+    missing_ir["type"] = ["object", "null"]
     return {
         "type": "object",
         "additionalProperties": False,
@@ -374,7 +378,7 @@ def _aspect_schema() -> dict[str, object]:
             "owner_relation": {"type": ["string", "null"]},
             "disposition": {"enum": sorted(DISPOSITIONS)},
             "schedule": {"type": ["string", "null"]},
-            "missing_ir": {"oneOf": [{"type": "null"}, _gap_schema()]},
+            "missing_ir": missing_ir,
             "reason": {"type": "string", "minLength": 1},
         },
     }
