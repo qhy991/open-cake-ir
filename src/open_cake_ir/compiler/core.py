@@ -14,8 +14,6 @@ from typing import Any, Callable, Mapping, Sequence, cast
 from . import emit_cutedsl, emit_triton
 from .emit_cutedsl import EmitError
 from .ir import (
-    _SCHEDULE_OPTIONAL,
-    _SCHEDULE_REQUIRED,
     DType,
     EpilogueParameters,
     EpilogueFormula,
@@ -162,10 +160,6 @@ class CorpusGateReport:
         return self.case_count - self.lowerable_case_count
 
 
-# The IR owns the Schedule's field set. Restating it here meant a new top-level field
-# parsed cleanly and was then rejected as an unknown root field by this check.
-_REQUIRED_TOP_LEVEL_FIELDS = set(_SCHEDULE_REQUIRED)
-_OPTIONAL_TOP_LEVEL_FIELDS = set(_SCHEDULE_OPTIONAL)
 # Derived, not restated. The byte width of a dtype is the IR's fact; a second table here
 # is how a new dtype gets a size in one place and not the other.
 _DTYPE_BYTES = {member.value: member.itemsize for member in DType}
@@ -767,13 +761,6 @@ class Compiler:
     def assess(self, schedule: Mapping[str, object]) -> Assessment:
         """Assess one parsed Schedule document."""
 
-        missing = _REQUIRED_TOP_LEVEL_FIELDS - schedule.keys()
-        extra = schedule.keys() - _REQUIRED_TOP_LEVEL_FIELDS - _OPTIONAL_TOP_LEVEL_FIELDS
-        if missing or extra or schedule.get("schema_version") != 1:
-            raise CompilerError("schedule root fields or schema_version differ")
-        if ("grid" in schedule) == ("program_map" in schedule):
-            raise CompilerError("schedule must define exactly one of grid or program_map")
-
         # Structural admissibility has one owner: the typed IR. It is stricter than the
         # checks below -- closed vocabularies are enums and unknown fields are refused --
         # so a document that reaches the rest of this method is known to be well formed.
@@ -785,8 +772,8 @@ class Compiler:
             typed_schedule = Schedule.from_dict(schedule)
         except ScheduleParseError as error:
             return self._structural_rejection(schedule, error)
-        schedule_id = _name(schedule.get("schedule_id"), "schedule.schedule_id")
-        target = _name(schedule.get("target"), "schedule.target")
+        schedule_id = typed_schedule.schedule_id
+        target = typed_schedule.target
         findings: list[Finding] = []
         target_definition = self._target_definitions.get(target)
         if target_definition is None:

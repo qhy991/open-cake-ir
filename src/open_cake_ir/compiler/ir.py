@@ -312,6 +312,12 @@ class BoundaryPolicy(str, Enum):
 # ----------------------------------------------------------------------- primitives
 
 
+# Schedule declarations are emitted as names in both Python lowering backends.  The
+# authoring Schema projects this exact pattern; keeping it here makes construction, not
+# emission, the authority for whether a declared name can be materialized.
+_IDENTIFIER_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
+
+
 def _strict_object(
     value: Any,
     *,
@@ -336,6 +342,13 @@ def _string(value: Any, context: str) -> str:
     return value
 
 
+def _identifier(value: Any, context: str) -> str:
+    name = _string(value, context)
+    if re.fullmatch(_IDENTIFIER_PATTERN, name) is None:
+        raise ScheduleParseError(f"{context} must be an identifier")
+    return name
+
+
 def _positive_int(value: Any, context: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise ScheduleParseError(f"{context} must be a positive integer")
@@ -354,10 +367,12 @@ def _boolean(value: Any, context: str) -> bool:
     return value
 
 
-def _string_tuple(value: Any, context: str) -> tuple[str, ...]:
+def _identifier_tuple(value: Any, context: str) -> tuple[str, ...]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        raise ScheduleParseError(f"{context} must be a list of strings")
-    return tuple(_string(item, f"{context}[{index}]") for index, item in enumerate(value))
+        raise ScheduleParseError(f"{context} must be a list of identifiers")
+    return tuple(
+        _identifier(item, f"{context}[{index}]") for index, item in enumerate(value)
+    )
 
 
 def _enum(enum_type: type[Enum], value: Any, context: str) -> Any:
@@ -440,7 +455,7 @@ class Role:
                 raise ScheduleParseError(
                     f"{context}.registers_per_thread must be a multiple of 8 in [24, 256]"
                 )
-        return cls(_string(obj["name"], f"{context}.name"), parsed, registers)
+        return cls(_identifier(obj["name"], f"{context}.name"), parsed, registers)
 
 
 @dataclass(frozen=True)
@@ -491,11 +506,11 @@ class Allocation:
                 f"{context}.allocating_role names a space with no allocation protocol"
             )
         return cls(
-            _string(obj["name"], f"{context}.name"),
+            _identifier(obj["name"], f"{context}.name"),
             space,
             _positive_int(obj["size_bytes"], f"{context}.size_bytes"),
             None if columns is None else _positive_int(columns, f"{context}.tensor_columns"),
-            None if role is None else _string(role, f"{context}.allocating_role"),
+            None if role is None else _identifier(role, f"{context}.allocating_role"),
         )
 
 
@@ -532,7 +547,7 @@ class ScaleRelation:
         if len(set(parsed_order)) != len(parsed_order):
             raise ScheduleParseError(f"{context}.axis_order repeats a data axis")
         return cls(
-            _string(obj["buffer"], f"{context}.buffer"),
+            _identifier(obj["buffer"], f"{context}.buffer"),
             tuple(
                 _positive_int(extent, f"{context}.granularity[{index}]")
                 for index, extent in enumerate(granularity)
@@ -569,7 +584,7 @@ class ValidExtentRelation:
             raise ScheduleParseError(f"{context}.indexed_by repeats a data axis")
         return cls(
             _nonnegative_int(obj["dimension"], f"{context}.dimension"),
-            _string(obj["buffer"], f"{context}.buffer"),
+            _identifier(obj["buffer"], f"{context}.buffer"),
             indexed_by,
         )
 
@@ -626,7 +641,7 @@ class Buffer:
         scale_of = obj.get("scale_of")
         valid_extent = obj.get("valid_extent")
         return cls(
-            _string(obj["name"], f"{context}.name"),
+            _identifier(obj["name"], f"{context}.name"),
             _enum(MemorySpace, obj["space"], f"{context}.space"),
             _enum(DType, obj["dtype"], f"{context}.dtype"),
             tuple(
@@ -634,7 +649,9 @@ class Buffer:
                 for index, dimension in enumerate(shape)
             ),
             _enum(BufferMode, obj["mode"], f"{context}.mode"),
-            None if allocation is None else _string(allocation, f"{context}.allocation"),
+            None
+            if allocation is None
+            else _identifier(allocation, f"{context}.allocation"),
             _nonnegative_int(obj.get("byte_offset", 0), f"{context}.byte_offset"),
             _positive_int(obj.get("stages", 1), f"{context}.stages"),
             None if swizzle is None else _enum(Swizzle, swizzle, f"{context}.swizzle"),
@@ -658,7 +675,7 @@ class Pipeline:
     def from_dict(cls, value: Any, context: str) -> "Pipeline":
         obj = _strict_object(value, required={"name", "stages"}, context=context)
         return cls(
-            _string(obj["name"], f"{context}.name"),
+            _identifier(obj["name"], f"{context}.name"),
             _positive_int(obj["stages"], f"{context}.stages"),
         )
 
@@ -683,11 +700,11 @@ class Barrier:
         pipeline = obj.get("pipeline")
         mechanism = obj.get("mechanism")
         return cls(
-            _string(obj["name"], f"{context}.name"),
+            _identifier(obj["name"], f"{context}.name"),
             _positive_int(obj["count"], f"{context}.count"),
-            _string_tuple(obj["producers"], f"{context}.producers"),
-            _string_tuple(obj["consumers"], f"{context}.consumers"),
-            None if pipeline is None else _string(pipeline, f"{context}.pipeline"),
+            _identifier_tuple(obj["producers"], f"{context}.producers"),
+            _identifier_tuple(obj["consumers"], f"{context}.consumers"),
+            None if pipeline is None else _identifier(pipeline, f"{context}.pipeline"),
             None
             if mechanism is None
             else _enum(BarrierMechanism, mechanism, f"{context}.mechanism"),
@@ -724,9 +741,9 @@ class ProgramAxis:
             context=context,
         )
         return cls(
-            _string(obj["name"], f"{context}.name"),
+            _identifier(obj["name"], f"{context}.name"),
             _nonnegative_int(obj["axis"], f"{context}.axis"),
-            _string(obj["buffer"], f"{context}.buffer"),
+            _identifier(obj["buffer"], f"{context}.buffer"),
             _nonnegative_int(obj["dimension"], f"{context}.dimension"),
             _positive_int(obj["tile"], f"{context}.tile"),
         )
@@ -783,7 +800,7 @@ class ProgramMap:
         persistent = _boolean(obj.get("persistent", False), f"{context}.persistent")
         traversal = obj.get("traversal")
         if traversal is not None:
-            traversal = _string_tuple(traversal, f"{context}.traversal")
+            traversal = _identifier_tuple(traversal, f"{context}.traversal")
             if not persistent:
                 raise ScheduleParseError(
                     f"{context}.traversal orders a persistent walk; without persistence "
@@ -852,13 +869,13 @@ class TileLoop:
             },
             context=context,
         )
-        body = _string_tuple(obj["body"], f"{context}.body")
+        body = _identifier_tuple(obj["body"], f"{context}.body")
         if not body:
             raise ScheduleParseError(f"{context}.body must not be empty")
         return cls(
-            _string(obj["name"], f"{context}.name"),
-            _string(obj["iterator"], f"{context}.iterator"),
-            _string(obj["buffer"], f"{context}.buffer"),
+            _identifier(obj["name"], f"{context}.name"),
+            _identifier(obj["iterator"], f"{context}.iterator"),
+            _identifier(obj["buffer"], f"{context}.buffer"),
             _nonnegative_int(obj["dimension"], f"{context}.dimension"),
             _positive_int(obj["tile"], f"{context}.tile"),
             body,
@@ -917,7 +934,7 @@ class AccessIndex:
                 _positive_int(obj["extent"], f"{context}.extent") if "extent" in obj else None,
             )
         obj = _strict_object(value, required={"source", "name"}, context=context)
-        return cls(source, _string(obj["name"], f"{context}.name"), None)
+        return cls(source, _identifier(obj["name"], f"{context}.name"), None)
 
 
 @dataclass(frozen=True)
@@ -936,8 +953,8 @@ class AccessMap:
         )
         indices = _object_list(obj["indices"], f"{context}.indices", allow_empty=False)
         return cls(
-            _string(obj["operation"], f"{context}.operation"),
-            _string(obj["buffer"], f"{context}.buffer"),
+            _identifier(obj["operation"], f"{context}.operation"),
+            _identifier(obj["buffer"], f"{context}.buffer"),
             tuple(
                 AccessIndex.from_dict(item, f"{context}.indices[{index}]")
                 for index, item in enumerate(indices)
@@ -1195,11 +1212,6 @@ class StoreParameters:
     coalesced: bool
 
 
-@dataclass(frozen=True)
-class FenceProxyParameters:
-    pass
-
-
 OperationParameters = Union[
     LoadParameters,
     MmaParameters,
@@ -1211,7 +1223,6 @@ OperationParameters = Union[
     ElementwiseParameters,
     ScanParameters,
     StoreParameters,
-    FenceProxyParameters,
 ]
 
 
@@ -1403,8 +1414,7 @@ def _operation_parameters(
         obj = _strict_object(value, required={"coalesced"}, context=context)
         return StoreParameters(_boolean(obj["coalesced"], f"{context}.coalesced"))
 
-    _strict_object(value, required=set(), context=context)
-    return FenceProxyParameters()
+    raise AssertionError(f"unhandled OperationKind {kind.value!r}")
 
 
 @dataclass(frozen=True)
@@ -1445,15 +1455,15 @@ class Operation:
         kind = _enum(OperationKind, obj["kind"], f"{context}.kind")
         pipeline = obj.get("pipeline")
         return cls(
-            _string(obj["id"], f"{context}.id"),
+            _identifier(obj["id"], f"{context}.id"),
             kind,
-            _string(obj["role"], f"{context}.role"),
-            _string_tuple(obj["reads"], f"{context}.reads"),
-            _string_tuple(obj["writes"], f"{context}.writes"),
-            _string_tuple(obj.get("waits", []), f"{context}.waits"),
-            _string_tuple(obj.get("signals", []), f"{context}.signals"),
-            _string_tuple(obj.get("depends_on", []), f"{context}.depends_on"),
-            None if pipeline is None else _string(pipeline, f"{context}.pipeline"),
+            _identifier(obj["role"], f"{context}.role"),
+            _identifier_tuple(obj["reads"], f"{context}.reads"),
+            _identifier_tuple(obj["writes"], f"{context}.writes"),
+            _identifier_tuple(obj.get("waits", []), f"{context}.waits"),
+            _identifier_tuple(obj.get("signals", []), f"{context}.signals"),
+            _identifier_tuple(obj.get("depends_on", []), f"{context}.depends_on"),
+            None if pipeline is None else _identifier(pipeline, f"{context}.pipeline"),
             _operation_parameters(kind, obj["parameters"], f"{context}.parameters"),
         )
 
@@ -1540,9 +1550,7 @@ class LoweringRoute:
             required={"backend", "entry_point"},
             context=context,
         )
-        entry_point = _string(obj["entry_point"], f"{context}.entry_point")
-        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", entry_point) is None:
-            raise ScheduleParseError(f"{context}.entry_point must be an identifier")
+        entry_point = _identifier(obj["entry_point"], f"{context}.entry_point")
         return cls(
             backend=_enum(LoweringBackend, obj["backend"], f"{context}.backend"),
             entry_point=entry_point,
@@ -1792,6 +1800,6 @@ class Schedule:
             tile_loops=parse_list("tile_loops", TileLoop.from_dict),
             access_maps=parse_list("access_maps", AccessMap.from_dict),
             operations=parse_list("operations", Operation.from_dict),
-            outputs=_string_tuple(obj["outputs"], "schedule.outputs"),
+            outputs=_identifier_tuple(obj["outputs"], "schedule.outputs"),
             metadata=_metadata(obj["metadata"]),
         )

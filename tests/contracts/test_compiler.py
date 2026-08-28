@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REVISION_PATH = ROOT / "compiler/revision.lock.json"
+DRAFT_REVISION_PATH = ROOT / "compiler/revision.json"
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler, CompilerError  # noqa: E402
@@ -208,6 +209,50 @@ class CompilerContractTests(unittest.TestCase):
         self.assertFalse(assessment.lowering_eligible)
         self.assertIn("SCHEDULE_OPERATIONS_EMPTY", [finding.code for finding in assessment.findings])
         self.assertIn("OUTPUT_UNWRITTEN", [finding.code for finding in assessment.findings])
+
+    def test_root_structure_errors_are_assessment_findings(self) -> None:
+        compiler = Compiler.load(ROOT, DRAFT_REVISION_PATH)
+        original = json.loads(
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
+        )
+        cases = (
+            (lambda schedule: schedule.update(unknown_root=True), "schedule"),
+            (
+                lambda schedule: schedule.update(schema_version=2),
+                "schedule.schema_version",
+            ),
+            (lambda schedule: schedule.update(grid=[1, 1, 1]), "schedule"),
+            (lambda schedule: schedule.pop("program_map"), "schedule"),
+        )
+
+        for mutate, path in cases:
+            with self.subTest(path=path):
+                schedule = json.loads(json.dumps(original))
+                mutate(schedule)
+                assessment = compiler.assess(schedule)
+
+                self.assertFalse(assessment.accepted)
+                self.assertFalse(assessment.lowering_eligible)
+                self.assertEqual(
+                    [(finding.code, finding.path) for finding in assessment.findings],
+                    [("SCHEDULE_STRUCTURE", path)],
+                )
+
+    def test_invalid_declared_name_is_structural_feedback(self) -> None:
+        compiler = Compiler.load(ROOT, DRAFT_REVISION_PATH)
+        schedule = json.loads(
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
+        )
+        schedule["buffers"][0]["name"] = "tokens-with-invalid-source-name"
+
+        assessment = compiler.assess(schedule)
+
+        self.assertFalse(assessment.accepted)
+        self.assertFalse(assessment.lowering_eligible)
+        self.assertEqual(
+            [(finding.code, finding.path) for finding in assessment.findings],
+            [("SCHEDULE_STRUCTURE", "schedule.buffers[0].name")],
+        )
 
     def test_program_tile_drift_without_its_buffers_is_refused(self) -> None:
         """There is no static template left to reuse, so the reason changed.

@@ -22,8 +22,9 @@ boolean, which is the shape of declaration this IR exists to refuse.
 
 Nor is it a composition. The admitted elementwise operators — `square`, `rsqrt`, `exp`,
 `tanh`, `add`, `sub`, `mul`, `div` — are each pointwise, and no arrangement of pointwise
-operations produces a running prefix. `TileLoop.carries` gives the between-chunk half of
-a different construction, not this one.
+operations produces a running prefix. A `TileLoop` orders operations over tiles but has no
+general carried-value relation; the accumulator semantics derived for reductions and MMA
+do not turn pointwise operations into a prefix recurrence.
 
 ## What the vocabulary admits
 

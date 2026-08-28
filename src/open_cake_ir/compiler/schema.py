@@ -13,6 +13,7 @@ import json
 from typing import Any
 
 from .ir import (
+    _IDENTIFIER_PATTERN,
     PLACED_CONTRACT_PREFIXES,
     PLACEMENT_FIELDS,
     AccessIndexKind,
@@ -41,7 +42,7 @@ from .ir import (
     Swizzle,
 )
 
-_NAME = {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+_NAME = {"type": "string", "pattern": _IDENTIFIER_PATTERN}
 _NAMES = {"type": "array", "items": _NAME}
 _POSITIVE = {"type": "integer", "minimum": 1}
 _NONNEGATIVE = {"type": "integer", "minimum": 0}
@@ -285,6 +286,21 @@ def schedule_schema() -> dict[str, Any]:
             },
         ],
     }
+    residency = _object(
+        {},
+        {
+            "ctas_per_multiprocessor": _POSITIVE,
+            "registers_per_thread": _POSITIVE,
+            "allow_spill": {"type": "boolean"},
+        },
+    )
+    # `allow_spill` qualifies a register commitment; it is not a commitment by itself.
+    # This mirrors Residency.from_dict instead of making `{}` a second spelling of no
+    # residency declaration.
+    residency["anyOf"] = [
+        {"required": ["ctas_per_multiprocessor"]},
+        {"required": ["registers_per_thread"]},
+    ]
 
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -330,14 +346,7 @@ def schedule_schema() -> dict[str, Any]:
                 "maxItems": 3,
                 "items": _POSITIVE,
             },
-            "residency": _object(
-                {},
-                {
-                    "ctas_per_multiprocessor": _POSITIVE,
-                    "registers_per_thread": _POSITIVE,
-                    "allow_spill": {"type": "boolean"},
-                },
-            ),
+            "residency": residency,
             "program_map": _object(
                 {
                     "axes": {
@@ -370,6 +379,15 @@ def schedule_schema() -> dict[str, Any]:
                             "minItems": 1,
                             "uniqueItems": True,
                             "items": _NONNEGATIVE,
+                            "description": (
+                                "One ascending contiguous warp interval. The canonical "
+                                "parser enforces adjacency."
+                            ),
+                            # Draft 2020-12 cannot relate each arbitrary-length item to
+                            # its predecessor. The canonical parser owns ascending
+                            # contiguity; enumerating one Target's intervals here would
+                            # turn a target-independent authoring Schema into a second
+                            # hardware grammar.
                         },
                     },
                     {

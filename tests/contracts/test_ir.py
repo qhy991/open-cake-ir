@@ -378,6 +378,50 @@ class StrictStructureTest(unittest.TestCase):
                 )
                 self.assertIn("must be one ascending contiguous interval", message)
 
+    def test_declared_names_and_references_are_identifiers(self) -> None:
+        validator = Draft202012Validator(schedule_schema())
+        cases = {
+            "schedule.buffers[0].name": lambda d: d["buffers"][0].update(
+                name="token-values"
+            ),
+            "schedule.operations[0].reads[0]": lambda d: _op(
+                d, "load_tokens"
+            ).update(reads=["token-values"]),
+            "schedule.lowering.entry_point": lambda d: d["lowering"].update(
+                entry_point="cake-kernel"
+            ),
+        }
+        for path, mutate in cases.items():
+            with self.subTest(path=path):
+                document = _mutated(B32, mutate)
+                message = self._reject(document)
+                self.assertIn(path, message)
+                self.assertIn("identifier", message)
+                self.assertTrue(list(validator.iter_errors(document)))
+
+        # These identify the Schedule and its external Target contract; neither is a
+        # generated symbol, so applying the declaration-name grammar here would narrow a
+        # different fact merely because both facts are strings.
+        document = _mutated(
+            B32,
+            lambda d: d.update(
+                schedule_id="schedule-id/with-revision",
+                target="target-family/revision",
+            ),
+        )
+        schedule = Schedule.from_dict(document)
+        self.assertEqual(schedule.schedule_id, "schedule-id/with-revision")
+        self.assertEqual(schedule.target, "target-family/revision")
+        self.assertEqual(list(validator.iter_errors(document)), [])
+
+    def test_residency_must_declare_a_commitment_in_parser_and_schema(self) -> None:
+        validator = Draft202012Validator(schedule_schema())
+        for residency in ({}, {"allow_spill": True}):
+            with self.subTest(residency=residency):
+                document = _mutated(B32, lambda d: d.update(residency=residency))
+                self.assertIn("declares no commitment", self._reject(document))
+                self.assertTrue(list(validator.iter_errors(document)))
+
     def test_unknown_fields_are_rejected_at_every_level(self) -> None:
         cases = {
             "schedule": lambda d: d.update(bogus=1),
@@ -452,7 +496,7 @@ class LocalizedDiagnosticTest(unittest.TestCase):
                 B32,
                 lambda d: _op(d, "load_centroids").update(kind="tma_load"),
                 "schedule.operations[1].kind",
-                "elementwise, epilogue, load, mma, reduce, reduce_argmin, store, top_k",
+                "atomic_rmw, elementwise, epilogue, load, mma, reduce, reduce_argmin, scan, store, top_k",
             ),
             (
                 B32,

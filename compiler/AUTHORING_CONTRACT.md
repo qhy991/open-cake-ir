@@ -4,6 +4,8 @@ Submit one complete JSON document conforming to `schedule.schema.json`. The Comp
 acceptance. Names are unique within each declaration list; operation dependencies refer only backward; every output
 must be written; buffer allocation extents and role warps must fit the exact Target. `program_map` and `grid` are
 mutually exclusive. Each role owns one ascending contiguous warp interval, and no warp belongs to two roles.
+Declared names and every reference to them use the identifier form projected by the Schema; `schedule_id`, Target ids,
+instruction contracts and provenance paths remain ordinary non-empty strings because none is a generated symbol.
 Findings carry a stable code and path. A blocking Finding is a reason an Assessment is not
 lowering-eligible and no candidate reaches the toolchain; a non-blocking Finding accompanies an Assessment that is,
 and reports what the declared Schedule implies — such as which declared resource bounds its residency. Unsupported
