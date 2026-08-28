@@ -80,7 +80,7 @@ python tools/review_aka_expressibility.py init \
 python tools/review_aka_expressibility.py next \
   --work-root /new/external/aka-expressibility-review                    # one case
 python tools/review_aka_expressibility.py verify \
-  --work-root /new/external/aka-expressibility-review --case-id case-000001
+  --work-root /new/external/aka-expressibility-review --case-id case-000001 --finalize
 python tools/review_aka_expressibility.py status \
   --work-root /new/external/aka-expressibility-review
 python tools/report_schedule_work.py --target compiler/targets/sm_100a.json   # no GPU
@@ -110,6 +110,7 @@ complete-kernel-parent completion. Output classes are deliberately provisional
 (`schedule_candidate_*`, `schedule_gap_candidate`, or owner redirects), retain
 `semantic_binding=reviewer_claimed`, and always report `gpu_test=not_run`. They are a review
 queue, not IR coverage, semantic equivalence, a Corpus Gate, or an optimization result.
+Omit `--finalize` to preview the deterministic check without creating `checked.json`.
 
 Read-only Evidence audit does not normalize clone-time modes. It reports archive content
 integrity and `filesystem_custody_verified` separately; weak modes leave intact bytes
