@@ -167,16 +167,14 @@
       "case_id": "rmsnorm-residency-unmet",
       "schedule": "corpus/schedules/rmsnorm-b8-smoke-residency-unmet.json",
       "expected": {
-        "accepted": false,
-        "lowering_eligible": false,
+        "accepted": true,
+        "lowering_eligible": true,
         "finding_codes": [
-          "REGISTER_BUDGET_EXCEEDED",
-          "RESIDENCY_UNMET",
           "REGISTER_PRESSURE",
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "2fdfe186f84c6d567b6d75c486942493568e24ff799fdb6e9f18ac448ba328a0",
-        "lowering_source_sha256": null
+        "lowering_source_sha256": "e116c2bb95a471e68a06b3f0ea693b7d1b9fc90882be5efe1d119b7bad44a04b"
       }
     },
     {
