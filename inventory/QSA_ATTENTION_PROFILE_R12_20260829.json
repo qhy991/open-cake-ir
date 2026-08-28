@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_attention_ncu_attribution_and_register_cap_probe",
+  "scientific_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "adf0bc4aa05ca6306005ce3658a177ad0446e87b",
+  "compiler_revision": "open-cake-ir-sm100a-v32",
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v39",
+    "canonical_sha256": "d83a9ea37b2b69cd54996a124e7ea53c49e823795a684eceda771bfa21dd3339",
+    "executor_descriptor": "runtime/executors/open-cake-ir-b200-v39.json",
+    "executor_descriptor_raw_sha256": "0b2f3f7fc690a60d9a1bf9df4ee2f6e6ad037d6b74b850b5cbdd13abbb4f25e8"
+  },
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "external_evidence_roots": {
+    "profile": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v39-r12-attention-profile-20260829",
+    "seed": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v39-r12-maxnreg-20260829"
+  },
+  "canonical_attention_tile32_profile": {
+    "run_id": "open-cake-qsa-prefill-t32768-profile-attention-v1-4c8a8ba5dec5",
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "registers_per_thread": 138.0,
+    "resident_ctas_per_sm": 1.0,
+    "binding_resources": [
+      "registers",
+      "shared_memory"
+    ],
+    "active_warps_pct": 12.48,
+    "barrier_stall_pct": 18.32,
+    "long_scoreboard_stall_pct": 11.26,
+    "sm_throughput_pct": 26.04,
+    "dram_throughput_pct": 0.11,
+    "l2_throughput_pct": 3.03
+  },
+  "frontier_attention_tile256_profile": {
+    "run_id": "open-cake-qsa-prefill-t32768-profile-attention-v1-cd48b89d3881",
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "registers_per_thread": 224.0,
+    "resident_ctas_per_sm": 1.0,
+    "binding_resources": [
+      "registers",
+      "shared_memory"
+    ],
+    "active_warps_pct": 12.46,
+    "barrier_stall_pct": 3.61,
+    "long_scoreboard_stall_pct": 13.03,
+    "sm_throughput_pct": 41.87,
+    "dram_throughput_pct": 0.32,
+    "l2_throughput_pct": 9.7,
+    "artifact_mirror": "frontier-attention-mirror",
+    "artifact_mirror_validation": "passed"
+  },
+  "maxnreg128_probe": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-9bc94db6d71b",
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "candidate_ms": 200.121603,
+    "attention_ms": 115.00857543945312,
+    "fixed_direct_baseline_ms": 676.660408,
+    "dynamic_shared_memory_bytes": 68608,
+    "disposition": "negative_register_cap_cost_exceeds_occupancy_benefit"
+  },
+  "warps16_probe": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-147de33f52ae",
+    "outcome": "infra_error",
+    "validity": "unknown",
+    "reason": "QSA evaluator error: RuntimeError: CUDA Driver cuLaunchKernel failed",
+    "performance_interpretation": "forbidden",
+    "automatic_retry": false
+  },
+  "diagnosis": {
+    "tile256_mechanism": "larger selected-token tile reduces online-softmax barrier overhead and raises SM throughput while preserving one CTA per SM",
+    "remaining_limits": [
+      "one CTA per SM jointly limited by registers and shared memory",
+      "13.03 percent long-scoreboard stall from runtime-indexed K/V gathers",
+      "224 registers per thread at the declared maxnreg cap"
+    ],
+    "next_mechanism": "position-order selected block ids before expansion to improve K/V gather locality without changing the selected set"
+  },
+  "cleanup": {
+    "profile_daemon_pid": 2385348,
+    "seed_daemon_pid": 2404585,
+    "isolated_daemons_stopped": true,
+    "isolated_sockets_removed": true,
+    "broker_jobs_running_after_cleanup": 0,
+    "broker_queue_after_cleanup": 0,
+    "foreign_gpu_processes_untouched": true
+  },
+  "disposition": {
+    "decision": "continue",
+    "frontier_replaced": false,
+    "frontier_candidate_ms": 154.267102,
+    "program_roofline_efficiency": 0.05707017629480294,
+    "next_action": "release the pending resident signed-int32 top_k Compiler successor and test sorted block-id expansion"
+  }
+}
