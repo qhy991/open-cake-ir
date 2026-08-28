@@ -70,9 +70,17 @@ python tools/check_ranking_calibration.py                               # no GPU
 python tools/observe_lowered_kernel.py --out inventory/<NEW>.json
 python tools/profile_lowered_kernel.py --schedule <path> --out <NEW>.json
 python tools/ir_vocabulary.py                                           # no GPU
+python tools/audit_aka_corpus.py /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --source-revision <AKA_COMMIT>                                        # no GPU; read-only
 python tools/report_schedule_work.py --target compiler/targets/sm_100a.json   # no GPU
 python tools/observe_target_peak.py --out evidence/calibration/<NEW>.json    # exclusive: timing
 ```
+
+The AKA audit is an external challenge-corpus projection, not a Compiler Corpus Gate. Its
+summary reports storage, syntactic scope and lexical incidence; `--emit cases` produces a
+reference-only human review queue. Both leave complete-parent and delta expressibility
+unknown, ignore `excluded/`, copy no model-visible fields or evidence, and never authorize a
+Schedule or vocabulary change. Use the exact Git revision that owns the selected shards.
 
 Read-only Evidence audit does not normalize clone-time modes. It reports archive content
 integrity and `filesystem_custody_verified` separately; weak modes leave intact bytes
