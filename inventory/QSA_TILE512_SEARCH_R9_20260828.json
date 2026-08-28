@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_tile512_bounded_search_after_register_pressure_repair",
+  "scientific_claim_authorized": false,
+  "matched_agent_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "125e23e3df050bc738ff1e0de69f3f92f21908af",
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v32",
+    "canonical_sha256": "9191b5ba9e3731196ee5b64d0b192843a78aa891223a95ae554c34c5e8925415"
+  },
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v37",
+    "canonical_sha256": "ce61b233d62ea4e66eafce2c8b97614490e6662382aa6ab3925099f196afb5c4",
+    "executor_descriptor": "runtime/executors/open-cake-ir-b200-v37.json",
+    "executor_descriptor_raw_sha256": "9b28e0dd0b8966a6dfca2179e49482ea1c729884a904249c4816e50e1fd17d03"
+  },
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "external_evidence_roots": {
+    "seed": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v32-r9-tile512-20260828",
+    "profile": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v32-r9-profile-20260828"
+  },
+  "controls": {
+    "tile128": {
+      "run_id": "open-cake-qsa-prefill-t32768-seed-v1-d7b5755b1d51",
+      "candidate_sha256": "db41b0690a2f999509648c9f2c66de0587b5a5a379dc37178c5bdc88a657ac02",
+      "outcome": "completed",
+      "validity": "valid",
+      "correctness_match_fraction": 1.0,
+      "candidate_median_ms": 399.128042,
+      "fixed_direct_baseline_median_ms": 676.737454,
+      "speedup": 1.6955397335875488,
+      "candidate_cv": 0.0008237909173473091,
+      "baseline_cv": 0.000498720276502659
+    },
+    "tile256": {
+      "run_id": "open-cake-qsa-prefill-t32768-seed-v1-2ca24f716448",
+      "candidate_sha256": "d525166315d0a8852ad0d86e309d87cb291b2190924a259acea6b85489a41002",
+      "outcome": "completed",
+      "validity": "valid",
+      "frontier_eligible": true,
+      "correctness_match_fraction": 1.0,
+      "correctness_max_abs_diff": 0.01848996803164482,
+      "candidate_median_ms": 288.141631,
+      "fixed_direct_baseline_median_ms": 676.861726,
+      "speedup": 2.3490591194717014,
+      "candidate_cv": 0.000573889930156975,
+      "baseline_cv": 0.00035454610534804584,
+      "artifact_mirror": "tile256-mirror",
+      "artifact_mirror_validation": "passed"
+    }
+  },
+  "tile512_search": [
+    {
+      "mechanism": "tile512_num_stages2_warps8",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-v1-505e595f9525",
+      "candidate_sha256": "d5a61301eed2904177e876895eae32314ded8d62f15e81b4d9d35d6835376ff2",
+      "outcome": "rejected",
+      "validity": "invalid",
+      "gpu_started": false
+    },
+    {
+      "mechanism": "tile512_num_stages1_warps8",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-v1-5e1fd6003ced",
+      "candidate_sha256": "470d8d588d218efae79b3ba2cb6596adcc4ad33f57d3d66eea1babbd9e4e9d6c",
+      "outcome": "rejected",
+      "validity": "invalid",
+      "gpu_started": false
+    },
+    {
+      "mechanism": "tile512_num_stages1_warps4",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-v1-b94d2ba6f77e",
+      "candidate_sha256": "062dd245e57bbf8c3c1137dead2a6ca30a1aa0856b9f4050691795789e349a79",
+      "outcome": "rejected",
+      "validity": "invalid",
+      "gpu_started": false
+    }
+  ],
+  "tile512_common_rejection": {
+    "stage": "compile",
+    "routed_to": "verifier",
+    "reason": "Open Cake node 'score_topk' toolchain rejected the lowering: manifest.dynamic_shared_memory_bytes must be an integer in [0, 232448]",
+    "interpretation": "Changing pipeline depth and CTA warp count did not admit tile512; backend implicit shared memory is the binding compile-time boundary.",
+    "feedback_gap": "The diagnostic states the limit but omits the observed dynamic_shared_memory_bytes value."
+  },
+  "fresh_confirmation": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-v1-06e875c3005b",
+    "candidate_sha256": "d525166315d0a8852ad0d86e309d87cb291b2190924a259acea6b85489a41002",
+    "outcome": "completed",
+    "validity": "valid",
+    "frontier_eligible": true,
+    "frontier_decision": "dominated",
+    "correctness_match_fraction": 1.0,
+    "correctness_max_abs_diff": 0.01848996803164482,
+    "candidate_median_ms": 288.228363,
+    "fixed_direct_baseline_median_ms": 676.416034,
+    "speedup": 2.3468059387340725,
+    "candidate_cv": 0.00099380073037833,
+    "baseline_cv": 0.0006158830398918508,
+    "search_over_confirm_ratio": 0.9996990858252213,
+    "artifact_mirror": null,
+    "artifact_mirror_status": "fetch_timeout_after_600_seconds",
+    "result_fields_observed_from_node_owner": true
+  },
+  "winner_profile": {
+    "run_id": "open-cake-qsa-prefill-t32768-profile-v1-8ffc9964d462",
+    "candidate_sha256": "d525166315d0a8852ad0d86e309d87cb291b2190924a259acea6b85489a41002",
+    "outcome": "completed",
+    "validity": "valid",
+    "frontier_eligible": false,
+    "correctness_match_fraction": 1.0,
+    "registers_per_thread": 116.0,
+    "resident_ctas_per_sm": 1.0,
+    "binding_resources": [
+      "shared_memory"
+    ],
+    "active_warps_pct": 12.44,
+    "barrier_stall_pct": 1.87,
+    "long_scoreboard_stall_pct": 2.29,
+    "sm_throughput_pct": 18.85,
+    "dram_throughput_pct": 0.01,
+    "l2_throughput_pct": 3.18,
+    "artifact_mirror": "tile256-profile-mirror",
+    "artifact_mirror_validation": "passed"
+  },
+  "comparative_observation": {
+    "tile256_over_tile128": 1.3851800609818856,
+    "new_candidate_improved_tile256": false,
+    "interpretation": "Compiler v32 correctly admitted the new structural candidates to backend compilation, but tile512 exceeded the backend implicit shared-memory launch boundary. Tile256 remains the measured frontier."
+  },
+  "collection_observations": {
+    "collection_001": "two fetch timeouts and one nonterminal route",
+    "collection_002": "four fetch timeouts",
+    "collection_003": "four fetch timeouts after the explicit 600-second limit",
+    "successful_individual_mirrors": [
+      "tile256-mirror",
+      "tile256-profile-mirror"
+    ]
+  },
+  "cleanup": {
+    "seed_daemon_pid": 999032,
+    "profile_daemon_pid": 1268399,
+    "isolated_daemons_stopped": true,
+    "isolated_sockets_removed": true,
+    "broker_jobs_running_after_cleanup": 0,
+    "broker_queue_after_cleanup": 0,
+    "foreign_gpu_processes_untouched": true
+  },
+  "disposition": {
+    "winner": "tile256",
+    "tile512_branch": "stop_at_repeated_backend_shared_memory_rejection",
+    "canonical_program_promotion": "withheld_pending_explicit_promotion_decision",
+    "next_action": "include the observed dynamic shared-memory allocation in compile feedback before another structural search"
+  }
+}
