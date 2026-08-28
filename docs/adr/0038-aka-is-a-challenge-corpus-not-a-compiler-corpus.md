@@ -48,21 +48,32 @@ sample/parent identifiers prove the claimed preservation. A successor review may
 after it owns that transformation and lineage explicitly; silently widening this snapshot
 would make the denominator unknowable.
 
+The adapter may inspect that tree under the required `aka_v2_review_projection` record
+format without admitting it here. That format treats v2 `optimization_neutral` and
+`optimization_negative` rows as `review_context=input` and `review=output`, and deliberately
+derives no CUDA scope or lexical signal from either field. The admitted v1 snapshot instead
+uses `aka_v1_operator_sft`; a format is an explicit review contract, not an inference from a
+directory name.
+
 ## What the v1 rows can and cannot test
 
-The source breadth is useful. A bounded lexical audit reports these primary-source scope
-signals:
+The source breadth is useful. A bounded lexical audit reports these primary-artifact scope
+signals; these are the analysis source, generated implementation, broken implementation and
+optimization baseline respectively:
 
 | Syntactic scope signal | Rows | Consequence |
 | --- | ---: | --- |
-| one `__global__` definition and at most one launch marker | 951 | candidate for single-Schedule review, not proof of a complete translation unit |
-| multiple kernel definitions or launch markers | 398 | route first to program/composition review |
-| no visible `__global__` definition | 13 | fragment, wrapper or opaque-library review |
+| one `__global__` definition and at most one launch marker | 951 | primary artifact may enter single-Schedule review; inspect its paired artifact independently |
+| multiple kernel definitions or launch markers | 398 | route the primary artifact first to program/composition review |
+| no visible `__global__` definition | 13 | primary fragment, wrapper or opaque-library review |
 
-The rows stress thread mapping, shared memory, barriers, warp collectives, atomics,
-vectorized access, inline PTX, library wrappers and collectives. That is enough to discover
-missing concepts. It is not enough to calculate an IR success rate because the records do
-not structurally own:
+Signals are retained separately for every code-artifact role. In particular, the 304
+optimization candidates split into 223 single-kernel, 80 multi-kernel-or-launch and one
+fragment-or-library artifact, rather than inheriting the 238/65/1 baseline split. The 36
+repaired artifacts retain their own 25/11/0 split. The rows stress thread mapping, shared
+memory, barriers, warp collectives, atomics, vectorized access, inline PTX, library wrappers
+and collectives. That is enough to discover missing concepts. It is not enough to calculate
+an IR success rate because the records do not structurally own:
 
 - source repository, revision, path, licence, stable sample id or split group;
 - concrete API, dtype/index specializations, launch geometry, stream and valid domain;
@@ -100,28 +111,41 @@ kernel semantics and supported boundary are independently materialized.
 
 ## Read-only projection
 
-`tools/audit_aka_corpus.py` is the only adapter introduced by this decision. It:
+`tools/audit_aka_corpus.py` is the only adapter introduced by this decision. The
+commit-addressed, role-scoped summary and case projections are schema v2; the singular
+primary-field signals and caller-asserted source identity from v1 are not retained. It:
 
-1. reads only `categories/<category>/<operator>/<task>.jsonl`;
-2. fails closed unless every row has the exact four-string schema and the task's parent
-   field is non-empty;
-3. preserves `(dataset id, Git revision, relative path, line, primary field)` as a locator
-   and references the task's source/generated, broken/repaired or baseline/candidate fields;
-4. refuses a non-commit revision, tracked shard drift or untracked dataset files, so that
-   the locator actually names the bytes being reviewed;
-5. reports syntactic scope and overlapping lexical incidence as signals, never gold labels;
-6. leaves owner scope, whole-parent expressibility and delta expressibility `unknown`;
-7. emits no model-visible content, timing, verdict or copied evidence;
-8. never writes a Compiler manifest or mutates AKA.
+1. requires one declared record format, `aka_v1_operator_sft` or
+   `aka_v2_review_projection`, and emits it in every summary and case;
+2. enumerates only regular Git blobs at
+   `<dataset>/categories/<category>/<operator>/<task>.jsonl` in the exact selected commit,
+   rejecting symlinks, non-blobs and malformed or nested shard paths;
+3. reads those commit blobs directly with Git replacement objects disabled, never mutable
+   worktree shard bytes, then fails closed
+   unless every row has the exact four-string schema and the task's parent field is non-empty;
+4. preserves `(credential-stripped observed origin hint, Git revision, full
+   repository-relative dataset/path, line, primary field)` as a locator and references the task's source/generated,
+   broken/repaired, baseline/candidate or review-context/review fields according to the
+   declared format; the user-supplied dataset label is reported metadata, not source authority;
+5. refuses a non-commit revision and makes replacement refs plus ignored, untracked,
+   filtered or modified worktree
+   shard bytes irrelevant to the projection;
+6. reports syntactic scope and overlapping lexical incidence separately for every declared
+   code-artifact role, never as gold labels or for v2 neutral/negative review fields;
+7. leaves owner scope, whole-parent expressibility and delta expressibility `unknown`;
+8. emits no model-visible content, timing, verdict or copied evidence;
+9. never writes a Compiler manifest or mutates AKA.
 
 The projection is a review queue. A reviewer must resolve at least:
 
 ```text
-source_ref
+source_ref: sanitized observed remote hint, revision, repository-relative dataset/path, line and field
+reported dataset label
+record format
 reported category / operator / task
 relation: analyze | generate | repair | optimize
 artifact field roles
-scope signal and lexical signals
+scope and lexical signals per code-artifact role
 owner_scope
 complete_parent_expressibility
 delta_expressibility
@@ -184,11 +208,14 @@ otherwise.
 
 ## Acceptance evidence
 
-Against the admitted v1 revision, the adapter loads 1,362/1,362 active records and reports
-the 951/398/13 scope split, zero duplicate full-record groups, two repeated primary-source
+Against the admitted v1 revision, the adapter reads 1,362/1,362 active records directly from
+the commit and reports the 951/398/13 primary-artifact scope split, the separate 223/80/1
+optimization-candidate split, zero duplicate full-record groups, two repeated primary-source
 groups and one cross-category source group. Focused contract tests cover reference-only
-projection, source-field selection, scope routing, duplicate reporting, exclusion of
-`excluded/`, exact Git snapshot admission and fail-closed malformed input. Separate focused Compiler tests cover
+projection, role-scoped source/candidate signals, duplicate reporting, exclusion of
+`excluded/`, ignored and modified worktree isolation, replacement-ref isolation, symlink and
+nested-path refusal, v2 review-role suppression, exact Git snapshot admission and fail-closed
+malformed input. Separate focused Compiler tests cover
 identifier rejection, root structural Assessments and residency Schema/parser agreement;
 the draft Compiler replays all 39 retained Corpus cases without a disposition, Finding or
 lowering mismatch.

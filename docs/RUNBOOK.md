@@ -71,16 +71,26 @@ python tools/observe_lowered_kernel.py --out inventory/<NEW>.json
 python tools/profile_lowered_kernel.py --schedule <path> --out <NEW>.json
 python tools/ir_vocabulary.py                                           # no GPU
 python tools/audit_aka_corpus.py /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
-  --source-revision <AKA_COMMIT>                                        # no GPU; read-only
+  --source-revision <AKA_COMMIT> --record-format aka_v1_operator_sft \
+  --dataset-label cuda_kernel_dataset_v1                                # no GPU; read-only
 python tools/report_schedule_work.py --target compiler/targets/sm_100a.json   # no GPU
 python tools/observe_target_peak.py --out evidence/calibration/<NEW>.json    # exclusive: timing
 ```
 
-The AKA audit is an external challenge-corpus projection, not a Compiler Corpus Gate. Its
-summary reports storage, syntactic scope and lexical incidence; `--emit cases` produces a
-reference-only human review queue. Both leave complete-parent and delta expressibility
-unknown, ignore `excluded/`, copy no model-visible fields or evidence, and never authorize a
-Schedule or vocabulary change. Use the exact Git revision that owns the selected shards.
+The AKA audit is an external challenge-corpus projection, not a Compiler Corpus Gate. It
+enumerates and reads regular JSONL blobs directly from the exact selected Git commit, rejects
+symlinks and malformed or nested shard paths, and never consumes mutable worktree shard
+bytes. Its source reference retains a credential-stripped observed origin hint and the full
+repository-relative dataset/path; `--dataset-label` is reported metadata, not authority.
+`--record-format` is mandatory: use `aka_v1_operator_sft` for v1, and
+`aka_v2_review_projection` only when projecting v2. Under the v2 contract,
+`optimization_neutral` and `optimization_negative` are review-context/review pairs and emit
+no code signals; positive rows retain baseline/candidate roles. Choosing that format does not
+admit v2 into the IR assessment. The summary reports storage plus separate syntactic scope
+and lexical incidence for each code-artifact role; `--emit cases` produces the same
+reference-only human review queue. Both leave
+complete-parent and delta expressibility unknown, ignore `excluded/`, copy no model-visible
+fields or evidence, and never authorize a Schedule or vocabulary change.
 
 Read-only Evidence audit does not normalize clone-time modes. It reports archive content
 integrity and `filesystem_custody_verified` separately; weak modes leave intact bytes
