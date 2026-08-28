@@ -90,6 +90,59 @@ class QsaFeedbackTest(unittest.TestCase):
         self.assertEqual(feedback["profile"]["kernel_name"], "score_topk")
         self.assertNotIn("candidate_samples_ms", feedback["timing"])
 
+    def test_static_profile_keeps_bounds_and_names_numeric_abstentions(self) -> None:
+        result = _completed()
+        result["metrics"]["compile"] = {
+            "kind": "open_cake_program_static_profile",
+            "nodes": {
+                "score_topk": {
+                    "work": {"flops": 100, "compulsory_read_bytes": 20},
+                    "residency": {
+                        "ctas_per_sm_upper_bound": 3,
+                        "binding_resource": "logical_register_storage",
+                        "registers_per_thread_lower_bound": 72,
+                        "bounds": [],
+                    },
+                    "lowering": {
+                        "generated_source_bytes": 7310,
+                        "top_k": [{"k": 512, "merge_width": 1024}],
+                        "explicit_barrier_count": 0,
+                        "tile_loop_count": 1,
+                        "runtime_indexed_buffers": [],
+                    },
+                    "ncu_metrics": [
+                        {
+                            "metric": "launch__registers_per_thread",
+                            "estimate_kind": "lower_bound",
+                            "value": 72,
+                            "unit": "register/thread",
+                            "coverage": "IR",
+                            "reasons": [],
+                            "missing": ["backend temporaries"],
+                        },
+                        {
+                            "metric": "sm__throughput.avg.pct_of_peak_sustained_elapsed",
+                            "estimate_kind": "unknown",
+                            "value": None,
+                            "unit": "%",
+                            "coverage": "uncalibrated",
+                            "reasons": [],
+                            "missing": ["B200 calibration"],
+                        },
+                    ],
+                }
+            },
+        }
+        feedback = qsa_evaluation_feedback(result, arm="open_cake")
+        node = feedback["compiler"]["nodes"]["score_topk"]
+
+        self.assertEqual(node["residency"]["registers_per_thread_lower_bound"], 72)
+        self.assertEqual(node["ncu_estimates"][0]["value"], 72)
+        self.assertEqual(
+            node["ncu_abstentions"],
+            ["sm__throughput.avg.pct_of_peak_sustained_elapsed"],
+        )
+
     def test_infrastructure_fault_never_tells_the_agent_to_edit(self) -> None:
         result = _completed()
         result.update(

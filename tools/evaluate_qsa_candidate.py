@@ -15,7 +15,12 @@ from typing import Mapping, cast
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler import Compiler, Schedule  # noqa: E402
+from open_cake_ir.compiler import (  # noqa: E402
+    Compiler,
+    Schedule,
+    Target,
+    profile_envelope,
+)
 from open_cake_ir.evaluation import (  # noqa: E402
     NCU_ATTRIBUTION_METRICS,
     ProgramContract,
@@ -189,7 +194,7 @@ def _compile_open_cake(
     candidate_root: Path,
     candidate: Mapping[str, object],
     output: Path,
-) -> None:
+) -> Mapping[str, object]:
     compiler = Compiler.load(root, root / "compiler/revision.lock.json")
     if not compiler.check_corpus().passed:
         raise RuntimeError("released Compiler Corpus Gate no longer passes")
@@ -211,7 +216,9 @@ def _compile_open_cake(
         raise ValueError("Open Cake candidate node order differs")
     output.mkdir(parents=True, exist_ok=False)
     manifest_kernels: list[dict[str, object]] = []
+    node_profiles: dict[str, object] = {}
     toolchain = TritonToolchainBuilder()
+    target = Target.load(root / "compiler/targets/sm_100a.json")
     canonical_nodes = {node.node_id: node for node in program.nodes}
     for node_id in _OPEN_CAKE_ORDER:
         schedule_path = by_id[node_id]
@@ -222,12 +229,24 @@ def _compile_open_cake(
         assessment = compiler.assess_file(schedule_path)
         if not assessment.accepted or not assessment.lowering_eligible:
             codes = ",".join(finding.code for finding in assessment.findings)
-            feedback = dict(qsa_compiler_feedback(assessment))
+            feedback = dict(
+                qsa_compiler_feedback(
+                    assessment,
+                    static_profile=profile_envelope(
+                        candidate_schedule, target
+                    ).as_dict(),
+                )
+            )
             feedback["program_node"] = node_id
             raise _CandidateRejected(
                 f"Open Cake node {node_id!r} rejected: {codes}", feedback
             )
         lowering = compiler.lower(assessment)
+        node_profiles[node_id] = profile_envelope(
+            candidate_schedule,
+            target,
+            lowered_source=lowering.source,
+        ).as_dict()
         request = BuildRequest(
             candidate_sha256=lowering.schedule_sha256,
             source=lowering.source.encode("utf-8"),
@@ -280,6 +299,18 @@ def _compile_open_cake(
             "kernels": manifest_kernels,
         },
     )
+    _write_json(
+        output / "static-profile.json",
+        {
+            "schema_version": 1,
+            "kind": "open_cake_program_static_profile",
+            "nodes": node_profiles,
+        },
+    )
+    return {
+        "kind": "open_cake_program_static_profile",
+        "nodes": node_profiles,
+    }
 
 
 def _checked_direct_manifest(path: Path) -> list[Mapping[str, object]]:
@@ -402,7 +433,7 @@ def _compile_stage(
     *,
     nvcc: Path,
     cuobjdump: Path,
-) -> tuple[str, Mapping[str, object]]:
+) -> tuple[str, Mapping[str, object], Mapping[str, object]]:
     candidate = _candidate_document(candidate_root)
     baseline = build_root / "baseline"
     try:
@@ -424,7 +455,9 @@ def _compile_stage(
     arm = str(candidate["arm"])
     candidate_output = build_root / "candidate"
     if arm == "open_cake":
-        _compile_open_cake(root, candidate_root, candidate, candidate_output)
+        compile_metrics = _compile_open_cake(
+            root, candidate_root, candidate, candidate_output
+        )
     elif arm == "direct_cuda":
         try:
             _compile_direct(
@@ -454,10 +487,25 @@ def _compile_stage(
             ) from error
     else:
         raise ValueError("QSA candidate arm differs")
-    return arm, {
-        "candidate_program": "qsa-build/candidate/program.json",
-        "baseline_program": "qsa-build/baseline/program.json",
-    }
+    if arm == "direct_cuda":
+        compile_metrics = {
+            "kind": "direct_cuda_toolchain",
+            "static_profile": None,
+            "reason": "direct CUDA has no Open Cake Schedule authority",
+        }
+    return (
+        arm,
+        {
+            "candidate_program": "qsa-build/candidate/program.json",
+            "baseline_program": "qsa-build/baseline/program.json",
+            **(
+                {"static_profile": "qsa-build/candidate/static-profile.json"}
+                if arm == "open_cake"
+                else {}
+            ),
+        },
+        compile_metrics,
+    )
 
 
 def _admit_gpu() -> object:
@@ -790,7 +838,7 @@ def main(argv: list[str] | None = None) -> int:
         if stage_kind == "compile":
             build_root.mkdir(parents=True, exist_ok=False)
             try:
-                arm, artifacts = _compile_stage(
+                arm, artifacts, compile_metrics = _compile_stage(
                     root,
                     candidate_root,
                     build_root,
@@ -825,6 +873,7 @@ def main(argv: list[str] | None = None) -> int:
                 validity="unknown",
                 summary=f"QSA {arm} candidate and fixed CUDA baseline compiled",
                 artifacts=artifacts,
+                metrics=compile_metrics,
             )
         if not (build_root / "candidate/program.json").is_file() or not (
             build_root / "baseline/program.json"

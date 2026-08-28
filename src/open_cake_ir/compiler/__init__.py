@@ -23,6 +23,7 @@ from .core import (
 )
 from .emit_cutedsl import EmitError, Emission, emit
 from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
+from .profile_model import MetricEstimate, ProfileEnvelope, profile_envelope
 from .target import Target, TargetParseError
 from .verifier import FindingCategory, FindingSeverity, verify
 
@@ -40,10 +41,13 @@ __all__ = [
     "Lowering",
     "LoweringBackend",
     "LoweringRoute",
+    "MetricEstimate",
+    "ProfileEnvelope",
     "Schedule",
     "ScheduleParseError",
     "Target",
     "TargetParseError",
     "emit",
+    "profile_envelope",
     "verify",
 ]

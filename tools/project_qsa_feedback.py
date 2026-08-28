@@ -11,7 +11,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler import Compiler  # noqa: E402
+from open_cake_ir.compiler import (  # noqa: E402
+    Compiler,
+    Schedule,
+    Target,
+    profile_envelope,
+)
 from open_cake_ir.lab import (  # noqa: E402
     qsa_compiler_feedback,
     qsa_evaluation_feedback,
@@ -57,8 +62,17 @@ def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     if arguments.command == "compiler":
         compiler = Compiler.load(ROOT, arguments.revision.resolve(strict=True))
-        assessment = compiler.assess_file(arguments.schedule.resolve(strict=True))
-        _emit(qsa_compiler_feedback(assessment))
+        schedule_path = arguments.schedule.resolve(strict=True)
+        assessment = compiler.assess_file(schedule_path)
+        schedule = Schedule.load(schedule_path)
+        target = Target.load(ROOT / f"compiler/targets/{schedule.target}.json")
+        lowering = compiler.lower(assessment) if assessment.lowering_eligible else None
+        profile = profile_envelope(
+            schedule,
+            target,
+            lowered_source=lowering.source if lowering is not None else None,
+        ).as_dict()
+        _emit(qsa_compiler_feedback(assessment, static_profile=profile))
         return 0
     result = json.loads(arguments.result.resolve(strict=True).read_text(encoding="utf-8"))
     if arguments.command == "evaluation":

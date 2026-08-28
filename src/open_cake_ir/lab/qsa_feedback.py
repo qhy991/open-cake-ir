@@ -31,7 +31,11 @@ def _freeze(document: Mapping[str, object]) -> Mapping[str, object]:
     return MappingProxyType(cast(dict[str, object], _plain(document)))
 
 
-def qsa_compiler_feedback(assessment: Assessment) -> Mapping[str, object]:
+def qsa_compiler_feedback(
+    assessment: Assessment,
+    *,
+    static_profile: Mapping[str, object] | None = None,
+) -> Mapping[str, object]:
     """Project one Compiler Assessment without collapsing localized findings."""
 
     findings = [
@@ -51,6 +55,7 @@ def qsa_compiler_feedback(assessment: Assessment) -> Mapping[str, object]:
         "accepted": assessment.accepted,
         "lowering_eligible": assessment.lowering_eligible,
         "findings": findings,
+        "static_profile": None if static_profile is None else dict(static_profile),
         "actionable": not assessment.lowering_eligible,
     }
     if not assessment.lowering_eligible:
@@ -92,6 +97,71 @@ def _bounded_workload(document: Mapping[str, object]) -> Mapping[str, object] | 
             "notes",
         )
         if key in row
+    }
+
+
+def _bounded_profile(profile: Mapping[str, object]) -> Mapping[str, object]:
+    work = profile.get("work")
+    residency = profile.get("residency")
+    lowering = profile.get("lowering")
+    metrics = profile.get("ncu_metrics")
+    if (
+        work is not None
+        and not isinstance(work, Mapping)
+        or residency is not None
+        and not isinstance(residency, Mapping)
+        or not isinstance(lowering, Mapping)
+        or not isinstance(metrics, list)
+    ):
+        raise ValueError("QSA static profile projection differs")
+    retained_metrics = []
+    abstained_metrics = []
+    for metric in metrics:
+        if not isinstance(metric, Mapping) or not isinstance(metric.get("metric"), str):
+            raise ValueError("QSA static profile metric differs")
+        if metric.get("estimate_kind") == "unknown":
+            abstained_metrics.append(metric["metric"])
+        else:
+            retained_metrics.append(dict(metric))
+    return {
+        "work": None if work is None else dict(work),
+        "residency": None if residency is None else {
+            key: residency.get(key)
+            for key in (
+                "ctas_per_sm_upper_bound",
+                "binding_resource",
+                "registers_per_thread_lower_bound",
+            )
+        },
+        "lowering": {
+            key: lowering.get(key)
+            for key in (
+                "generated_source_bytes",
+                "top_k",
+                "explicit_barrier_count",
+                "tile_loop_count",
+                "runtime_indexed_buffers",
+            )
+        },
+        "ncu_estimates": retained_metrics,
+        "ncu_abstentions": abstained_metrics,
+    }
+
+
+def _bounded_compiler_feedback(compiler: Mapping[str, object]) -> Mapping[str, object]:
+    if compiler.get("kind") != "open_cake_program_static_profile":
+        return dict(compiler)
+    nodes = compiler.get("nodes")
+    if not isinstance(nodes, Mapping):
+        raise ValueError("QSA Program static profile nodes differ")
+    if any(not isinstance(profile, Mapping) for profile in nodes.values()):
+        raise ValueError("QSA Program static profile node differs")
+    return {
+        "kind": compiler["kind"],
+        "nodes": {
+            str(name): _bounded_profile(profile)
+            for name, profile in nodes.items()
+        },
     }
 
 
@@ -152,7 +222,9 @@ def qsa_evaluation_feedback(
         "actionable": True,
         "outcome": outcome,
         "validity": validity,
-        "compiler": dict(compiler) if compiler is not None else None,
+        "compiler": (
+            _bounded_compiler_feedback(compiler) if compiler is not None else None
+        ),
         "correctness": dict(correctness) if correctness is not None else None,
         "timing": dict(workload) if workload is not None else None,
         "profile": dict(profile) if profile is not None else None,
