@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_gpu_infra_seed_path_qualification_final_observation",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "source_commit": "9da954799eb1e0ac60de34474f1472793f4bdd88",
+  "executor_binding": {
+    "executor_id": "open-cake-ir-b200-v32",
+    "executor_descriptor": "runtime/executors/open-cake-ir-b200-v32.json",
+    "executor_canonical_sha256": "a2682f96738bf2100643bda327f3d859d7f0ff4dd3181270442e06e137f1799f",
+    "executor_descriptor_raw_sha256": "5e56b0761740cb58d4d215e7e48c7f7896d435983882e546e88aa8f8c13790ac"
+  },
+  "execution": {
+    "external_evidence_root": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-seed-r3-20260828",
+    "open_cake_locator": "b200:open-cake-qsa-prefill-t32768-seed-v1-1d5d6281b5bd",
+    "direct_cuda_locator": "b200:open-cake-qsa-prefill-t32768-seed-v1-22f44004359e"
+  },
+  "observed_result": {
+    "both_arms": {
+      "outcome": "infra_error",
+      "validity": "unknown",
+      "compile_passed": true,
+      "gpu_allocated": true,
+      "candidate_kernel_calls": 0,
+      "earliest_divergence": "the v32 daemon run tree was not writable by gpuq and the evaluator reused Lab-specific GPUQ_JOB_ID admission"
+    },
+    "open_cake_compile": {
+      "completed_nodes": ["pool", "layernorm", "score_topk", "expand", "attention"],
+      "elapsed_class": "long_but_completed",
+      "correctness_or_performance_conclusion": false
+    }
+  },
+  "disposition": {
+    "candidate_comparison_valid": false,
+    "compiler_revision_change_justified": false,
+    "superseded_by_executor": "open-cake-ir-b200-v33"
+  }
+}

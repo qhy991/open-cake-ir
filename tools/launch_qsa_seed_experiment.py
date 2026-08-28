@@ -116,6 +116,7 @@ def _task(
     remote_root: str,
     runtime: dict[str, object],
     executor: ExecutorRevision,
+    protocol: str,
 ) -> dict[str, object]:
     judge = runtime["judge"]
     assert isinstance(judge, dict)
@@ -149,22 +150,50 @@ def _task(
                 "run_timeout_s": 1800,
             },
         },
-        {
-            "id": "benchmark",
-            "kind": "benchmark",
-            "judge": {"identity": identity, "cwd": remote_root, "command": command},
-            "resources": {
-                "mode": "exclusive",
-                "gpu_count": 1,
-                "estimate_s": 900,
-                "queue_timeout_s": 1800,
-                "run_timeout_s": 3600,
-            },
-        },
     ]
+    if protocol == "seed":
+        stages.append(
+            {
+                "id": "benchmark",
+                "kind": "benchmark",
+                "judge": {
+                    "identity": identity,
+                    "cwd": remote_root,
+                    "command": command,
+                },
+                "resources": {
+                    "mode": "exclusive",
+                    "gpu_count": 1,
+                    "estimate_s": 900,
+                    "queue_timeout_s": 1800,
+                    "run_timeout_s": 3600,
+                },
+            }
+        )
+    elif protocol == "profile":
+        stages.append(
+            {
+                "id": "profile",
+                "kind": "profile",
+                "judge": {
+                    "identity": identity,
+                    "cwd": remote_root,
+                    "command": command,
+                },
+                "resources": {
+                    "mode": "exclusive",
+                    "gpu_count": 1,
+                    "estimate_s": 900,
+                    "queue_timeout_s": 1800,
+                    "run_timeout_s": 1800,
+                },
+            }
+        )
+    else:
+        raise ValueError("QSA execution protocol differs")
     return {
         "schema": "kernelinfra.task.v1",
-        "task_id": "open-cake-qsa-prefill-t32768-seed-v1",
+        "task_id": f"open-cake-qsa-prefill-t32768-{protocol}-v1",
         "description": (
             "QSA target_t32768 seed-path qualification; candidate versus one hidden "
             "fixed direct-CUDA reference with external FP32 oracle and CUPTI cold-L2 timing."
@@ -266,6 +295,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=ROOT.parent.parent / "gpu-infra",
     )
+    parser.add_argument(
+        "--protocol",
+        choices=("seed", "profile"),
+        default="seed",
+        help="run seed timing or score_topk attribution after common correctness",
+    )
     parser.add_argument("--runtime", type=Path, default=_RUNTIME_PATH)
     parser.add_argument("--remote-project-root", required=True)
     parser.add_argument("--remote-state-root", required=True)
@@ -300,6 +335,7 @@ def main(argv: list[str] | None = None) -> int:
             remote_root=arguments.remote_project_root,
             runtime=runtime,
             executor=executor,
+            protocol=arguments.protocol,
         ),
     )
     catalog_path = run_root / "catalog.json"
@@ -308,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
         {
             "schema": "kernelinfra.fleet.v1",
             "connect_timeout_s": 8,
-            "command_timeout_s": 30,
+            "command_timeout_s": 120,
             "nodes": [
                 {
                     "id": node["id"],
@@ -360,6 +396,7 @@ def main(argv: list[str] | None = None) -> int:
                 "commit": commit,
                 "executor_revision": executor.executor_id,
                 "arm": arguments.arm,
+                "protocol": arguments.protocol,
                 "run_root": str(run_root),
                 "routes": str(routes),
             },

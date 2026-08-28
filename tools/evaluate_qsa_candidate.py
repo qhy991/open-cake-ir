@@ -17,10 +17,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler, Schedule  # noqa: E402
 from open_cake_ir.evaluation import (  # noqa: E402
+    NCU_ATTRIBUTION_METRICS,
     ProgramContract,
     WorkloadContract,
     audit_qsa_output,
+    build_ncu_attribution_profile,
     materialize_qsa_case,
+    ncu_attribution_feedback,
     reference_qsa_output,
 )
 from open_cake_ir.evaluation.portfolio_runtime import (  # noqa: E402
@@ -425,7 +428,8 @@ def _admit_gpu() -> object:
 
     visible = os.environ.get("CUDA_VISIBLE_DEVICES")
     if (
-        os.environ.get("KERNELINFRA_STAGE_KIND") not in {"correctness", "benchmark"}
+        os.environ.get("KERNELINFRA_STAGE_KIND")
+        not in {"correctness", "benchmark", "profile"}
         or not os.environ.get("KERNELINFRA_RUN_ID")
         or not visible
         or "," in visible
@@ -550,11 +554,100 @@ def _benchmark_stage(
         baseline.close(synchronize=torch.cuda.synchronize)
 
 
+def _profile_child(root: Path, build_root: Path) -> int:
+    import torch
+
+    _admit_gpu()
+    _, inputs = _case(root)
+    output = torch.empty(
+        (1, 32768, 32, 128), dtype=torch.bfloat16, device="cuda"
+    )
+    tensors = qsa_program_tensors(inputs, output[0])
+    program = _load_program(build_root, "candidate")
+    try:
+        program.launch(tensors, stream=torch.cuda.current_stream().cuda_stream)
+        torch.cuda.synchronize()
+        return 0
+    finally:
+        program.close(synchronize=torch.cuda.synchronize)
+
+
+def _profile_stage(
+    root: Path,
+    run_dir: Path,
+    build_root: Path,
+    stage_dir: Path,
+    executor: ExecutorRevision,
+    *,
+    nvcc: Path,
+    cuobjdump: Path,
+) -> Mapping[str, object]:
+    artifact_root = build_root / "candidate"
+    artifact = QsaProgramArtifact.load(build_root, artifact_root / "program.json")
+    score = next(
+        (kernel for kernel in artifact.kernels if kernel.kernel_id == "score_topk"),
+        None,
+    )
+    if score is None:
+        raise ValueError("QSA Program has no score_topk attribution target")
+    profiler = executor.admit_profiler()
+    command = [
+        str(profiler["path"]),
+        "--csv",
+        "--metrics",
+        ",".join(NCU_ATTRIBUTION_METRICS),
+        "--target-processes",
+        "all",
+        "--kernel-name-base",
+        "function",
+        "--kernel-name",
+        score.kernel_name,
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--project-root",
+        str(root),
+        "--nvcc",
+        str(nvcc),
+        "--cuobjdump",
+        str(cuobjdump),
+        "--profile-child",
+        "--build-root",
+        str(build_root),
+    ]
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        timeout=1800,
+        env=os.environ.copy(),
+    )
+    (stage_dir / "ncu.stdout.log").write_bytes(completed.stdout)
+    (stage_dir / "ncu.stderr.log").write_bytes(completed.stderr)
+    if completed.returncode != 0:
+        diagnostic = completed.stderr.decode("utf-8", errors="replace")[-4096:]
+        raise RuntimeError(f"NCU attribution failed: {diagnostic}")
+    request = json.loads((run_dir / "request.json").read_text(encoding="utf-8"))
+    profile = build_ncu_attribution_profile(
+        candidate_sha256=str(request["candidate_sha256"]),
+        case_id="target_t32768",
+        kernel_name=score.kernel_name,
+        ncu_version=str(profiler["version"]),
+        ncu_executable_sha256=str(profiler["sha256"]),
+        stdout=completed.stdout,
+        stderr=completed.stderr,
+    )
+    (stage_dir / "ncu-profile.json").write_bytes(profile)
+    loaded = json.loads(profile)
+    return ncu_attribution_feedback(loaded)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, required=True)
     parser.add_argument("--nvcc", type=Path, required=True)
     parser.add_argument("--cuobjdump", type=Path, required=True)
+    parser.add_argument("--profile-child", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--build-root", type=Path, help=argparse.SUPPRESS)
     return parser
 
 
@@ -563,6 +656,10 @@ def main(argv: list[str] | None = None) -> int:
     root = arguments.project_root.resolve(strict=True)
     if root != ROOT:
         raise ValueError("QSA evaluator project root differs from its source root")
+    if arguments.profile_child:
+        if arguments.build_root is None:
+            raise ValueError("QSA profile child build root is missing")
+        return _profile_child(root, arguments.build_root.resolve(strict=True))
     result_path = _required_output_path("KERNELINFRA_RESULT")
     stage_dir = _required_environment_path("KERNELINFRA_STAGE_DIR")
     run_dir = _required_environment_path("KERNELINFRA_RUN_DIR")
@@ -654,6 +751,28 @@ def main(argv: list[str] | None = None) -> int:
                     }
                 ],
                 artifacts={"cupti_samples": "cupti-samples.json"},
+            )
+        if stage_kind == "profile":
+            feedback = _profile_stage(
+                root,
+                run_dir,
+                build_root,
+                stage_dir,
+                executor,
+                nvcc=arguments.nvcc.resolve(strict=True),
+                cuobjdump=arguments.cuobjdump.resolve(strict=True),
+            )
+            return _stage_result(
+                result_path,
+                status="passed",
+                validity="valid",
+                summary="QSA score_topk NCU attribution completed",
+                artifacts={
+                    "profile": "ncu-profile.json",
+                    "ncu_stdout": "ncu.stdout.log",
+                    "ncu_stderr": "ncu.stderr.log",
+                },
+                metrics=feedback,
             )
         return _stage_result(
             result_path,

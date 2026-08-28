@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_gpu_infra_seed_path_qualification",
+  "scientific_claim_authorized": false,
+  "matched_arm_claim_authorized": false,
+  "source_commit": "8d9fb8ed0d8bf2927a87f55536a4a124e063614e",
+  "executor_binding": {
+    "executor_id": "open-cake-ir-b200-v33",
+    "executor_descriptor": "runtime/executors/open-cake-ir-b200-v33.json",
+    "executor_canonical_sha256": "b4677c5cc42f049b2c8eea2e8979c6064a8f910cd2ccd7b0a91231faa1f262ce",
+    "executor_descriptor_raw_sha256": "2c87f084107dc0fbd143e0404889399d301c7dd9c87f755bb1ac58ad9dfc4b21"
+  },
+  "execution": {
+    "external_evidence_root": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-seed-r4-direct-20260828",
+    "direct_cuda": {
+      "locator": "b200:open-cake-qsa-prefill-t32768-seed-v1-7bda59cf6b78",
+      "gpu_id": 0,
+      "correctness_job_id": "gpuq-0ce6ebacd430",
+      "benchmark_job_id": "gpuq-208c4222ec2f",
+      "collection": "collection-direct-001",
+      "collection_status": "mirrored"
+    },
+    "open_cake": {
+      "locator": "b200:open-cake-qsa-prefill-t32768-seed-v1-995f003dd14e",
+      "gpu_id": 1,
+      "benchmark_job_id": "gpuq-583966d7599a",
+      "collection_attempts": ["collection-cake-001", "collection-cake-002"],
+      "collection_status": "fetch_failed_catalog_command_timeout",
+      "authority": "node_owned_run"
+    }
+  },
+  "observed_result": {
+    "direct_cuda": {
+      "outcome": "completed",
+      "validity": "valid",
+      "correctness_match_fraction": 1.0,
+      "correctness_max_abs_diff": 0.022527579218149185,
+      "candidate_median_ms": 676.875957,
+      "fixed_baseline_median_ms": 676.902253,
+      "speedup": 1.0000388490678802,
+      "baseline_cv": 0.0026455306873289573
+    },
+    "open_cake": {
+      "outcome": "completed",
+      "validity": "valid",
+      "correctness_match_fraction": 1.0,
+      "correctness_max_abs_diff": 0.01848996803164482,
+      "candidate_median_ms": 7001.504528,
+      "fixed_baseline_median_ms": 676.396468,
+      "speedup": 0.09660730280113303,
+      "baseline_cv": 0.000111391441
+    },
+    "static_signal": {
+      "node": "score_topk",
+      "lowered_source_size_bytes": 1120587,
+      "ptx_size_bytes": 7985672,
+      "cubin_size_bytes": 5095256
+    }
+  },
+  "interpretation": {
+    "direct_negative_control_passed": true,
+    "open_cake_seed_is_correct_but_slower_than_its_fixed_baseline": true,
+    "qwen_checkpoint_or_serving_claim": false,
+    "matched_agent_arm_estimate": false,
+    "reason": "the arms ran concurrently on different physical B200s and were hand-authored seed qualifications"
+  },
+  "disposition": {
+    "compiler_revision_change_justified": false,
+    "profile_required_before_optimization": true,
+    "next_action": "profile the score_topk survivor and route the diagnosis to candidate, verifier, cost model, or IR vocabulary"
+  }
+}
