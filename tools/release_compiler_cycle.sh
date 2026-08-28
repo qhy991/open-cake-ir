@@ -26,8 +26,8 @@ COMPILER_RELEASE_TMP=$(mktemp -d compiler/.release-cycle.XXXXXX)
 export COMPILER_RELEASE_TMP
 trap 'rm -r -- "$COMPILER_RELEASE_TMP"' EXIT
 
-eval "$(python3 - <<'PY'
-import json, pathlib, re
+REVISION_ASSIGNMENTS=$(python3 - <<'PY'
+import json, pathlib, re, shlex
 
 from tools.compiler_revision_witnesses import compiler_revision_witnesses
 
@@ -60,9 +60,10 @@ else:
                    if ordinal(p.name) > history)
     print(f"NEXT=v{history + 1}")
     print("ARCHIVE=")
-    print(f"STALE='{' '.join(stale)}'")
+    print(f"STALE={shlex.quote(chr(32).join(stale))}")
 PY
-)"
+)
+eval "$REVISION_ASSIGNMENTS"
 
 if [ -n "$ARCHIVE" ]; then
   echo "--- ${ARCHIVE} is witnessed by sealed evidence; archiving and bumping to ${NEXT} ---"

@@ -9,8 +9,11 @@ verifier may use, so an unsupported capability is reported rather than silently 
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from .ir import MemorySpace, OperationKind, ScheduleParseError, _enum, _string
@@ -24,6 +27,130 @@ def _int_field(value: Any, context: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise TargetParseError(f"{context} must be a positive integer")
     return value
+
+
+def _rate_field(value: Any, context: str) -> float:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise TargetParseError(f"{context} must be a positive finite rate")
+    return float(value)
+
+
+class PeakSource(str, Enum):
+    """Where a declared peak rate came from, which decides what a ratio against it means.
+
+    A `device_specification` rate is the architecture's ceiling, so a utilisation against
+    it is the number everyone else reports and a value above one refutes something. A
+    `microbenchmark` rate is the best this repository has measured, so a utilisation
+    against it says how far a Schedule is from the best known kernel and can legitimately
+    exceed one when a better kernel turns up. They are not interchangeable and a peak
+    that did not say which it is would be read as whichever the reader assumed.
+    """
+
+    DEVICE_SPECIFICATION = "device_specification"
+    MICROBENCHMARK = "microbenchmark"
+
+
+@dataclass(frozen=True)
+class PeakRate:
+    """One peak rate and the provenance that makes it quotable.
+
+    `observed_at` is required even for a specification rate, because a Target is content
+    bound to a Compiler Revision and a rate that changed silently would change every
+    utilisation ever derived from that Revision without changing its identity.
+    """
+
+    value: float
+    source: PeakSource
+    observed_at: str
+
+    @classmethod
+    def from_dict(cls, value: Any, field: str, context: str) -> "PeakRate":
+        if not isinstance(value, Mapping):
+            raise TargetParseError(f"{context} must be an object")
+        if set(value) != {field, "source", "observed_at"}:
+            raise TargetParseError(
+                f"{context} must declare exactly {field}, source and observed_at"
+            )
+        try:
+            source = PeakSource(value["source"])
+        except ValueError as error:
+            raise TargetParseError(
+                f"{context}.source must be one of "
+                + ", ".join(sorted(item.value for item in PeakSource))
+            ) from error
+        return cls(
+            _rate_field(value[field], f"{context}.{field}"),
+            source,
+            _string(value["observed_at"], f"{context}.observed_at"),
+        )
+
+
+@dataclass(frozen=True)
+class Peak:
+    """The rates a measured time can be divided by, and nothing else.
+
+    These are the only hardware facts on a Target that are not structural: everything
+    else here decides whether a Schedule is admissible, and these decide nothing. They
+    exist so that a *measured* time can be turned into a utilisation, which is why the
+    verifier never reads them and the Target stays admissible without them.
+
+    Arithmetic is keyed by instruction contract rather than by dtype. The contract is
+    already the closed vocabulary a Schedule names and the verifier gates on, and it
+    settles by construction what a dtype leaves open -- dense against sparse, which
+    accumulator, which of two admitted spellings of one primitive. A key that is not a
+    declared contract is refused rather than carried, so a peak cannot outlive the
+    instruction it was measured for.
+    """
+
+    memory_bandwidth: PeakRate | None
+    arithmetic: Mapping[str, PeakRate]
+
+    def for_contract(self, contract: str) -> PeakRate | None:
+        return self.arithmetic.get(contract)
+
+    @classmethod
+    def from_dict(cls, value: Any, contracts: frozenset[str], context: str) -> "Peak":
+        if not isinstance(value, Mapping):
+            raise TargetParseError(f"{context} must be an object")
+        if not set(value) <= {"memory_bandwidth", "arithmetic"}:
+            raise TargetParseError(
+                f"{context} may declare memory_bandwidth and arithmetic only"
+            )
+        # Presence, not value, and the same reason `AccessIndex` reads its optional
+        # fields that way: `get` would read an explicit null as an absent key, so
+        # `{"memory_bandwidth": null}` would be a second spelling of omitting it.
+        bandwidth = (
+            PeakRate.from_dict(
+                value["memory_bandwidth"],
+                "bytes_per_second",
+                f"{context}.memory_bandwidth",
+            )
+            if "memory_bandwidth" in value
+            else None
+        )
+        raw = value["arithmetic"] if "arithmetic" in value else {}
+        if not isinstance(raw, Mapping):
+            raise TargetParseError(f"{context}.arithmetic must be an object")
+        arithmetic: dict[str, PeakRate] = {}
+        for contract, entry in raw.items():
+            if contract not in contracts:
+                raise TargetParseError(
+                    f"{context}.arithmetic names {contract!r}, which is not a declared "
+                    "instruction contract"
+                )
+            arithmetic[contract] = PeakRate.from_dict(
+                entry, "flops_per_second", f"{context}.arithmetic.{contract}"
+            )
+        if bandwidth is None and not arithmetic:
+            # A block declaring no rate is a second spelling of an absent block, and two
+            # spellings of one fact are two Target byte strings for one Target.
+            raise TargetParseError(f"{context} must declare at least one rate")
+        return cls(bandwidth, MappingProxyType(arithmetic))
 
 
 @dataclass(frozen=True)
@@ -114,6 +241,7 @@ class Target:
     instruction_contracts: frozenset[str]
     synchronization_contracts: frozenset[str]
     occupancy: Occupancy | None
+    peak: Peak | None
 
     @property
     def warp_size(self) -> int:
@@ -164,6 +292,7 @@ class Target:
         except ScheduleParseError as error:
             raise TargetParseError(str(error)) from error
 
+        instruction_contracts = frozenset(string_tuple("instruction_contracts"))
         return cls(
             target_id=_string(value.get("target_id"), "target.target_id"),
             architecture=_string(value.get("architecture"), "target.architecture"),
@@ -174,11 +303,16 @@ class Target:
             resource_limits=ResourceLimits.from_dict(
                 value.get("resource_limits"), "target.resource_limits"
             ),
-            instruction_contracts=frozenset(string_tuple("instruction_contracts")),
+            instruction_contracts=instruction_contracts,
             synchronization_contracts=frozenset(string_tuple("synchronization_contracts")),
             occupancy=(
                 Occupancy.from_dict(value["occupancy"], "target.occupancy")
                 if "occupancy" in value
+                else None
+            ),
+            peak=(
+                Peak.from_dict(value["peak"], instruction_contracts, "target.peak")
+                if "peak" in value
                 else None
             ),
         )

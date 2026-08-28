@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "schedule_id": "qsa-pool-t32768-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "index_k", "space": "global", "dtype": "bf16", "shape": [32768, 128], "mode": "input"},
+    {"name": "pooled", "space": "global", "dtype": "fp32", "shape": [8192, 128], "mode": "output"},
+    {"name": "key_group", "space": "register", "dtype": "bf16", "shape": [4, 128], "mode": "scratch"},
+    {"name": "key_sum", "space": "register", "dtype": "fp32", "shape": [128], "mode": "scratch"},
+    {"name": "key_mean", "space": "register", "dtype": "fp32", "shape": [128], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_group", "kind": "load", "role": "compute", "reads": ["index_k"], "writes": ["key_group"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "sum_group", "kind": "reduce", "role": "compute", "reads": ["key_group"], "writes": ["key_sum"], "depends_on": ["load_group"], "parameters": {"op": "sum", "axis": 0, "scope": "cta"}},
+    {"id": "mean_group", "kind": "elementwise", "role": "compute", "reads": ["key_sum"], "writes": ["key_mean"], "depends_on": ["sum_group"], "parameters": {"op": "mul", "scalar": 0.25}},
+    {"id": "store_pooled", "kind": "store", "role": "compute", "reads": ["key_mean"], "writes": ["pooled"], "depends_on": ["mean_group"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["pooled"],
+  "program_map": {"axes": [{"name": "block", "axis": 0, "buffer": "index_k", "dimension": 0, "tile": 4}]},
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_group", "buffer": "index_k", "indices": [{"source": "program_tile", "name": "block"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_pooled", "buffer": "pooled", "indices": [{"source": "program", "name": "block"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "7aa909104a8b03d6c64a36ded10f293375022b00a94ae40b182bb961a84ba3bf"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {"backend": "triton", "entry_point": "cake_qsa_pool_t32768"}
+}

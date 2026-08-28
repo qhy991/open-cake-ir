@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "schedule_id": "top-k-b8-smoke-across-loop-drift-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "scores", "space": "global", "dtype": "fp32", "shape": [8, 256], "mode": "input"},
+    {"name": "indices", "space": "global", "dtype": "int32", "shape": [8, 8], "mode": "output"},
+    {"name": "score_row", "space": "register", "dtype": "fp32", "shape": [256], "mode": "scratch"},
+    {"name": "top_values", "space": "register", "dtype": "fp32", "shape": [8], "mode": "scratch"},
+    {"name": "top_indices", "space": "register", "dtype": "int32", "shape": [8], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_scores", "kind": "load", "role": "compute", "reads": ["scores"], "writes": ["score_row"], "parameters": {"movement": "global", "reuse": "reused"}},
+    {"id": "select_experts", "kind": "top_k", "role": "compute", "reads": ["score_row"], "writes": ["top_values", "top_indices"], "depends_on": ["load_scores"], "parameters": {"k": 8, "tie_break": "lowest_index", "nan_policy": "reject_input", "across_loop": true}},
+    {"id": "store_indices", "kind": "store", "role": "compute", "reads": ["top_indices"], "writes": ["indices"], "depends_on": ["select_experts"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["indices"],
+  "program_map": {"axes": [{"name": "batch", "axis": 0, "buffer": "scores", "dimension": 0, "tile": 1}]},
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_scores", "buffer": "scores", "indices": [{"source": "program", "name": "batch"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_indices", "buffer": "indices", "indices": [{"source": "program", "name": "batch"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {"backend": "triton", "entry_point": "cake_top_k_b8_smoke"}
+}

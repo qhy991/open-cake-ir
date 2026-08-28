@@ -11,6 +11,51 @@ from __future__ import annotations
 from kernel_cases import ORACLES as _RETAINED_ORACLES
 
 
+def _chunk_cumsum_oracle(inputs, torch):
+    """The chunk-local inclusive prefix sum along the token axis."""
+
+    gate, _ = inputs
+    return gate.float().cumsum(dim=1), None
+
+
+def _relu_oracle(inputs, torch):
+    """Elementwise one-sided agreement used by the QSA score reduction."""
+
+    x, _ = inputs
+    return torch.relu(x), None
+
+
+def _online_softmax_oracle(inputs, torch):
+    """Dense FP32 softmax-weighted reduction, independent of the tiled recurrence."""
+
+    logits, values, _ = inputs
+    return torch.einsum(
+        "bn,nd->bd",
+        torch.softmax(logits, dim=-1),
+        values.float(),
+    ), None
+
+
+def _index_expand_oracle(inputs, torch):
+    """Expand each valid block id into its four consecutive token ids."""
+
+    block_indices, _ = inputs
+    offsets = torch.arange(4, dtype=torch.int32, device=block_indices.device)
+    expanded = torch.where(
+        block_indices[:, :, None] >= 0,
+        block_indices[:, :, None] * 4 + offsets,
+        -1,
+    )
+    return expanded.reshape(block_indices.shape[0], -1), None
+
+
+def _cast_oracle(inputs, torch):
+    """The explicit BF16-to-FP32 value-preserving conversion."""
+
+    x, _ = inputs
+    return x.float(), None
+
+
 def _swiglu_oracle(inputs, torch):
     """The tanh identity used by the KDA v12 SwiGLU delta.
 
@@ -233,6 +278,11 @@ def _masked_gemm_bias_oracle(inputs, torch):
 
 ORACLES = {
     **_RETAINED_ORACLES,
+    "chunk_cumsum_b8_smoke": _chunk_cumsum_oracle,
+    "relu_b8_smoke": _relu_oracle,
+    "online_softmax_b8_smoke": _online_softmax_oracle,
+    "index_expand_b8_smoke": _index_expand_oracle,
+    "cast_b8_smoke": _cast_oracle,
     "gemm_bias_b1_smoke": _masked_gemm_bias_oracle,
     "swiglu_b8_smoke": _swiglu_oracle,
     "top_k_b8_smoke": _top_k_oracle,
@@ -249,6 +299,11 @@ ORACLES = {
 # The retained registry remains keyed by its historical calibration vocabulary because
 # its bytes are frozen evidence; this is the sole current projection from lowering routes.
 _WORKLOAD_BY_ENTRY_POINT = {
+    "cake_chunk_cumsum_b8_smoke": "chunk_cumsum_b8_smoke",
+    "cake_relu_b8_smoke": "relu_b8_smoke",
+    "cake_online_softmax_b8_smoke": "online_softmax_b8_smoke",
+    "cake_index_expand_b8_smoke": "index_expand_b8_smoke",
+    "cake_cast_b8_smoke": "cast_b8_smoke",
     "cake_flash_kmeans_assign": "flash_kmeans_b32_smoke",
     "cake_flash_kmeans_assignment_full": "flash_kmeans_assignment_full",
     "cake_softmax_b8_smoke": "softmax_b8_smoke",

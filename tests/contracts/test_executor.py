@@ -75,7 +75,10 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             "examples/gpu/flash_kmeans_quickstart.py",
             "src/open_cake_ir/__init__.py",
             "src/open_cake_ir/cli.py",
+            "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.cu",
+            "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.json",
             "tools/evaluate_flash_candidate.py",
+            "tools/evaluate_qsa_candidate.py",
         }
 
         self.assertEqual(observed, expected)

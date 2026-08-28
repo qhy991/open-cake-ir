@@ -97,8 +97,12 @@ class OperationKind(str, Enum):
     REDUCE_ARGMIN = "reduce_argmin"
     REDUCE = "reduce"
     TOP_K = "top_k"
+    INDEX_EXPAND = "index_expand"
+    ONLINE_SOFTMAX = "online_softmax"
     ATOMIC_RMW = "atomic_rmw"
+    CAST = "cast"
     ELEMENTWISE = "elementwise"
+    SCAN = "scan"
     STORE = "store"
 
 
@@ -108,6 +112,19 @@ class LoweringBackend(str, Enum):
     TRITON = "triton"
     CUTLASS_CUTE_DSL = "cutlass_cute_dsl"
     CHECKED_CUDA_ASSET = "checked_cuda_asset"
+
+
+class ScanOp(str, Enum):
+    """The associative operator a prefix scan accumulates with."""
+
+    SUM = "sum"
+
+
+class ScanDirection(str, Enum):
+    """Which end of the scanned axis the prefix accumulates from."""
+
+    FORWARD = "forward"
+    REVERSE = "reverse"
 
 
 class ReduceOp(str, Enum):
@@ -185,6 +202,7 @@ class ElementwiseOp(str, Enum):
     SQUARE = "square"
     RSQRT = "rsqrt"
     EXP = "exp"
+    RELU = "relu"
     TANH = "tanh"
     ADD = "add"
     SUB = "sub"
@@ -200,6 +218,7 @@ class ElementwiseOp(str, Enum):
                 ElementwiseOp.SQUARE,
                 ElementwiseOp.RSQRT,
                 ElementwiseOp.EXP,
+                ElementwiseOp.RELU,
                 ElementwiseOp.TANH,
             )
             else 2
@@ -804,6 +823,31 @@ class RangeOptions:
 
 
 @dataclass(frozen=True)
+class LoopStop:
+    """A query-derived exclusive loop bound in the loop buffer's coordinate space."""
+
+    program: str
+    add: int
+    floor_div: int
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "LoopStop":
+        obj = _strict_object(
+            value,
+            required={"program", "add", "floor_div"},
+            context=context,
+        )
+        add = obj["add"]
+        if not isinstance(add, int) or isinstance(add, bool):
+            raise ScheduleParseError(f"{context}.add must be an integer")
+        return cls(
+            _string(obj["program"], f"{context}.program"),
+            add,
+            _positive_int(obj["floor_div"], f"{context}.floor_div"),
+        )
+
+
+@dataclass(frozen=True)
 class TileLoop:
     name: str
     iterator: str
@@ -812,6 +856,7 @@ class TileLoop:
     tile: int
     body: tuple[str, ...]
     range_options: RangeOptions
+    stop: LoopStop | None = None
 
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "TileLoop":
@@ -826,6 +871,7 @@ class TileLoop:
                 "body",
                 "range_options",
             },
+            optional={"stop"},
             context=context,
         )
         body = _string_tuple(obj["body"], f"{context}.body")
@@ -839,6 +885,9 @@ class TileLoop:
             _positive_int(obj["tile"], f"{context}.tile"),
             body,
             RangeOptions.from_dict(obj["range_options"], f"{context}.range_options"),
+            None
+            if obj.get("stop") is None
+            else LoopStop.from_dict(obj["stop"], f"{context}.stop"),
         )
 
 
@@ -1079,19 +1128,62 @@ class ReduceParameters:
     op: ReduceOp
     axis: int
     scope: ReductionScope
+    across_loop: bool = True
+
+
+@dataclass(frozen=True)
+class ScanParameters:
+    """An inclusive running prefix along one declared axis."""
+
+    op: ScanOp
+    axis: int
+    direction: ScanDirection
 
 
 @dataclass(frozen=True)
 class TopKParameters:
-    """Greatest values and source positions from one resident rank-one tile.
+    """Greatest values and source positions from resident rank-one tiles.
 
     Descending result order is part of the operation rather than an optional spelling.
-    Group formation and batched routing remain separate operations.
+    ``across_loop`` carries the same values/indices state across tiles of one declared
+    loop; group formation and batched routing remain separate operations.
     """
 
     k: int
     tie_break: IndexTieBreak
     nan_policy: NaNPolicy
+    across_loop: bool = False
+
+
+@dataclass(frozen=True)
+class OnlineSoftmaxParameters:
+    """Stable weighted softmax reduction carried across one tile loop.
+
+    The operation consumes one FP32 logits tile and one value tile.  Its four outputs
+    are running maximum, normalizer, FP32 weighted accumulator, and the final normalized
+    accumulator.  Making the state explicit lets verification reason about dtype,
+    lifetime, and placement while lowering owns only the recurrence mechanics.
+    """
+
+    axis: int
+    scope: ReductionScope
+    sentinel: int | None = None
+
+
+@dataclass(frozen=True)
+class IndexExpandParameters:
+    """Expand each selected source group into a flat run of source positions."""
+
+    scale: int
+    extent: int
+    sentinel: int
+
+
+@dataclass(frozen=True)
+class CastParameters:
+    """One explicit numeric representation conversion."""
+
+    to: DType
 
 
 @dataclass(frozen=True)
@@ -1167,8 +1259,12 @@ OperationParameters = Union[
     EpilogueParameters,
     ReduceArgminParameters,
     ReduceParameters,
+    ScanParameters,
     TopKParameters,
+    IndexExpandParameters,
+    OnlineSoftmaxParameters,
     AtomicRmwParameters,
+    CastParameters,
     ElementwiseParameters,
     StoreParameters,
     FenceProxyParameters,
@@ -1275,24 +1371,94 @@ def _operation_parameters(
         )
 
     if kind is OperationKind.REDUCE:
-        obj = _strict_object(value, required={"op", "axis", "scope"}, context=context)
+        obj = _strict_object(
+            value,
+            required={"op", "axis", "scope"},
+            optional={"across_loop"},
+            context=context,
+        )
+        if obj.get("across_loop") is True:
+            raise ScheduleParseError(
+                f"{context}.across_loop=true is the historical omitted spelling"
+            )
         return ReduceParameters(
             _enum(ReduceOp, obj["op"], f"{context}.op"),
             _nonnegative_int(obj["axis"], f"{context}.axis"),
             _enum(ReductionScope, obj["scope"], f"{context}.scope"),
+            (
+                _boolean(obj["across_loop"], f"{context}.across_loop")
+                if "across_loop" in obj
+                else True
+            ),
+        )
+
+    if kind is OperationKind.SCAN:
+        obj = _strict_object(
+            value,
+            required={"op", "axis"},
+            optional={"direction"},
+            context=context,
+        )
+        return ScanParameters(
+            _enum(ScanOp, obj["op"], f"{context}.op"),
+            _nonnegative_int(obj["axis"], f"{context}.axis"),
+            _enum(
+                ScanDirection,
+                obj.get("direction", ScanDirection.FORWARD.value),
+                f"{context}.direction",
+            ),
         )
 
     if kind is OperationKind.TOP_K:
         obj = _strict_object(
             value,
             required={"k", "tie_break", "nan_policy"},
+            optional={"across_loop"},
             context=context,
         )
         return TopKParameters(
             _positive_int(obj["k"], f"{context}.k"),
             _enum(IndexTieBreak, obj["tie_break"], f"{context}.tie_break"),
             _enum(NaNPolicy, obj["nan_policy"], f"{context}.nan_policy"),
+            _boolean(obj.get("across_loop", False), f"{context}.across_loop"),
         )
+
+    if kind is OperationKind.ONLINE_SOFTMAX:
+        obj = _strict_object(
+            value,
+            required={"axis", "scope"},
+            optional={"sentinel"},
+            context=context,
+        )
+        sentinel = obj.get("sentinel")
+        if sentinel is not None and (
+            not isinstance(sentinel, int) or isinstance(sentinel, bool)
+        ):
+            raise ScheduleParseError(f"{context}.sentinel must be an integer")
+        return OnlineSoftmaxParameters(
+            _nonnegative_int(obj["axis"], f"{context}.axis"),
+            _enum(ReductionScope, obj["scope"], f"{context}.scope"),
+            sentinel,
+        )
+
+    if kind is OperationKind.INDEX_EXPAND:
+        obj = _strict_object(
+            value,
+            required={"scale", "extent", "sentinel"},
+            context=context,
+        )
+        sentinel = obj["sentinel"]
+        if not isinstance(sentinel, int) or isinstance(sentinel, bool):
+            raise ScheduleParseError(f"{context}.sentinel must be an integer")
+        return IndexExpandParameters(
+            _positive_int(obj["scale"], f"{context}.scale"),
+            _positive_int(obj["extent"], f"{context}.extent"),
+            sentinel,
+        )
+
+    if kind is OperationKind.CAST:
+        obj = _strict_object(value, required={"to"}, context=context)
+        return CastParameters(_enum(DType, obj["to"], f"{context}.to"))
 
     if kind is OperationKind.ATOMIC_RMW:
         obj = _strict_object(

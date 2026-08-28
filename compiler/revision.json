@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "revision_id": "open-cake-ir-sm100a-v28-draft",
+  "revision_id": "open-cake-ir-sm100a-v29-draft",
   "state": "draft",
   "target_definitions": {
     "sm_100a": {
       "path": "compiler/targets/sm_100a.json",
-      "canonical_sha256": "c7428b203489d4790f9c65a96fbc031f396fd3273716781c525a75b5b55bc816"
+      "canonical_sha256": "a11d8fbf34ed7942257eca2e09b69416bbd864dd3e249fda6c4a4506d4849636"
     }
   },
   "corpus_manifest": "corpus/manifest.json",

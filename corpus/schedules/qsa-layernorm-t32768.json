@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "schedule_id": "qsa-layernorm-t32768-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "pooled", "space": "global", "dtype": "fp32", "shape": [8192, 128], "mode": "input"},
+    {"name": "k_norm_weight", "space": "global", "dtype": "fp32", "shape": [128], "mode": "input"},
+    {"name": "normalized_keys", "space": "global", "dtype": "fp32", "shape": [8192, 128], "mode": "output"},
+    {"name": "x_tile", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"},
+    {"name": "rowsum", "space": "register", "dtype": "fp32", "shape": [64], "mode": "scratch"},
+    {"name": "mean", "space": "register", "dtype": "fp32", "shape": [64], "mode": "scratch"},
+    {"name": "centered", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"},
+    {"name": "square", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"},
+    {"name": "square_sum", "space": "register", "dtype": "fp32", "shape": [64], "mode": "scratch"},
+    {"name": "variance", "space": "register", "dtype": "fp32", "shape": [64], "mode": "scratch"},
+    {"name": "shifted", "space": "register", "dtype": "fp32", "shape": [64], "mode": "scratch"},
+    {"name": "inverse_std", "space": "register", "dtype": "fp32", "shape": [64], "mode": "scratch"},
+    {"name": "normed", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"},
+    {"name": "weight_tile", "space": "register", "dtype": "fp32", "shape": [128], "mode": "scratch"},
+    {"name": "output_tile", "space": "register", "dtype": "fp32", "shape": [64, 128], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_pooled", "kind": "load", "role": "compute", "reads": ["pooled"], "writes": ["x_tile"], "parameters": {"movement": "global", "reuse": "reused"}},
+    {"id": "sum_x", "kind": "reduce", "role": "compute", "reads": ["x_tile"], "writes": ["rowsum"], "depends_on": ["load_pooled"], "parameters": {"op": "sum", "axis": 1, "scope": "cta"}},
+    {"id": "mean_x", "kind": "elementwise", "role": "compute", "reads": ["rowsum"], "writes": ["mean"], "depends_on": ["sum_x"], "parameters": {"op": "mul", "scalar": 0.0078125}},
+    {"id": "center_x", "kind": "elementwise", "role": "compute", "reads": ["x_tile", "mean"], "writes": ["centered"], "depends_on": ["mean_x"], "parameters": {"op": "sub", "broadcast_axis": 0}},
+    {"id": "square_x", "kind": "elementwise", "role": "compute", "reads": ["centered"], "writes": ["square"], "depends_on": ["center_x"], "parameters": {"op": "square"}},
+    {"id": "sum_square", "kind": "reduce", "role": "compute", "reads": ["square"], "writes": ["square_sum"], "depends_on": ["square_x"], "parameters": {"op": "sum", "axis": 1, "scope": "cta"}},
+    {"id": "variance_x", "kind": "elementwise", "role": "compute", "reads": ["square_sum"], "writes": ["variance"], "depends_on": ["sum_square"], "parameters": {"op": "mul", "scalar": 0.0078125}},
+    {"id": "add_epsilon", "kind": "elementwise", "role": "compute", "reads": ["variance"], "writes": ["shifted"], "depends_on": ["variance_x"], "parameters": {"op": "add", "scalar": 1e-06}},
+    {"id": "inverse_std", "kind": "elementwise", "role": "compute", "reads": ["shifted"], "writes": ["inverse_std"], "depends_on": ["add_epsilon"], "parameters": {"op": "rsqrt"}},
+    {"id": "normalize_x", "kind": "elementwise", "role": "compute", "reads": ["centered", "inverse_std"], "writes": ["normed"], "depends_on": ["inverse_std"], "parameters": {"op": "mul", "broadcast_axis": 0}},
+    {"id": "load_weight", "kind": "load", "role": "compute", "reads": ["k_norm_weight"], "writes": ["weight_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "apply_weight", "kind": "elementwise", "role": "compute", "reads": ["normed", "weight_tile"], "writes": ["output_tile"], "depends_on": ["normalize_x", "load_weight"], "parameters": {"op": "mul", "broadcast_axis": 1}},
+    {"id": "store_normalized", "kind": "store", "role": "compute", "reads": ["output_tile"], "writes": ["normalized_keys"], "depends_on": ["apply_weight"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["normalized_keys"],
+  "program_map": {"axes": [{"name": "row_block", "axis": 0, "buffer": "pooled", "dimension": 0, "tile": 64}]},
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_pooled", "buffer": "pooled", "indices": [{"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_weight", "buffer": "k_norm_weight", "indices": [{"source": "dimension", "dimension": 0}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_normalized", "buffer": "normalized_keys", "indices": [{"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "7aa909104a8b03d6c64a36ded10f293375022b00a94ae40b182bb961a84ba3bf"},
+  "residency": {"ctas_per_multiprocessor": 2, "registers_per_thread": 128},
+  "lowering": {"backend": "triton", "entry_point": "cake_qsa_layernorm_t32768"}
+}

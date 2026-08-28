@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "schedule_id": "online-softmax-b8-smoke-axis-drift-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "logits", "space": "global", "dtype": "fp32", "shape": [8, 64], "mode": "input"},
+    {"name": "values", "space": "global", "dtype": "bf16", "shape": [64, 16], "mode": "input"},
+    {"name": "output", "space": "global", "dtype": "fp32", "shape": [8, 16], "mode": "output"},
+    {"name": "logits_tile", "space": "register", "dtype": "fp32", "shape": [2, 16], "mode": "scratch"},
+    {"name": "values_tile", "space": "register", "dtype": "bf16", "shape": [16, 16], "mode": "scratch"},
+    {"name": "running_max", "space": "register", "dtype": "fp32", "shape": [2], "mode": "scratch"},
+    {"name": "running_sum", "space": "register", "dtype": "fp32", "shape": [2], "mode": "scratch"},
+    {"name": "weighted_accumulator", "space": "register", "dtype": "fp32", "shape": [2, 16], "mode": "scratch"},
+    {"name": "normalized_output", "space": "register", "dtype": "fp32", "shape": [2, 16], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_logits", "kind": "load", "role": "compute", "reads": ["logits"], "writes": ["logits_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_values", "kind": "load", "role": "compute", "reads": ["values"], "writes": ["values_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "softmax_update", "kind": "online_softmax", "role": "compute", "reads": ["logits_tile", "values_tile"], "writes": ["running_max", "running_sum", "weighted_accumulator", "normalized_output"], "depends_on": ["load_logits", "load_values"], "parameters": {"axis": 0, "scope": "cta"}},
+    {"id": "store_output", "kind": "store", "role": "compute", "reads": ["normalized_output"], "writes": ["output"], "depends_on": ["softmax_update"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["output"],
+  "program_map": {"axes": [{"name": "row_block", "axis": 0, "buffer": "logits", "dimension": 0, "tile": 2}]},
+  "tile_loops": [
+    {"name": "selected_loop", "iterator": "selected_start", "buffer": "logits", "dimension": 1, "tile": 16, "body": ["load_logits", "load_values", "softmax_update"], "range_options": {"num_stages": 1, "warp_specialize": false, "flatten": false, "disallow_acc_multi_buffer": false, "disable_licm": false, "loop_unroll_factor": 1}}
+  ],
+  "access_maps": [
+    {"operation": "load_logits", "buffer": "logits", "indices": [{"source": "program_tile", "name": "row_block"}, {"source": "loop_tile", "name": "selected_start"}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_values", "buffer": "values", "indices": [{"source": "loop_tile", "name": "selected_start"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_output", "buffer": "output", "indices": [{"source": "program_tile", "name": "row_block"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 96},
+  "lowering": {"backend": "triton", "entry_point": "cake_online_softmax_b8_smoke"}
+}

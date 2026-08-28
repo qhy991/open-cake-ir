@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "schedule_id": "cast-b8-smoke-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "x", "space": "global", "dtype": "bf16", "shape": [8, 128], "mode": "input"},
+    {"name": "y", "space": "global", "dtype": "fp32", "shape": [8, 128], "mode": "output"},
+    {"name": "x_tile", "space": "register", "dtype": "bf16", "shape": [128], "mode": "scratch"},
+    {"name": "y_tile", "space": "register", "dtype": "fp32", "shape": [128], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_x", "kind": "load", "role": "compute", "reads": ["x"], "writes": ["x_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "cast_x", "kind": "cast", "role": "compute", "reads": ["x_tile"], "writes": ["y_tile"], "depends_on": ["load_x"], "parameters": {"to": "fp32"}},
+    {"id": "store_y", "kind": "store", "role": "compute", "reads": ["y_tile"], "writes": ["y"], "depends_on": ["cast_x"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["y"],
+  "program_map": {"axes": [{"name": "batch", "axis": 0, "buffer": "x", "dimension": 0, "tile": 1}]},
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_x", "buffer": "x", "indices": [{"source": "program", "name": "batch"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_y", "buffer": "y", "indices": [{"source": "program", "name": "batch"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {"backend": "triton", "entry_point": "cake_cast_b8_smoke"}
+}

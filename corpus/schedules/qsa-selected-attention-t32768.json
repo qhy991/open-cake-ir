@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "schedule_id": "qsa-selected-attention-t32768-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3, 4, 5, 6, 7]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "q", "space": "global", "dtype": "bf16", "shape": [32768, 32, 128], "mode": "input"},
+    {"name": "k", "space": "global", "dtype": "bf16", "shape": [32768, 4, 128], "mode": "input"},
+    {"name": "v", "space": "global", "dtype": "bf16", "shape": [32768, 4, 128], "mode": "input"},
+    {"name": "token_indices", "space": "global", "dtype": "int32", "shape": [32768, 2048], "mode": "input"},
+    {"name": "output", "space": "global", "dtype": "bf16", "shape": [32768, 32, 128], "mode": "output"},
+    {"name": "query_tile", "space": "register", "dtype": "bf16", "shape": [8, 128], "mode": "scratch"},
+    {"name": "selected_ids", "space": "register", "dtype": "int32", "shape": [32], "mode": "scratch"},
+    {"name": "key_tile", "space": "register", "dtype": "bf16", "shape": [32, 128], "mode": "scratch"},
+    {"name": "value_tile", "space": "register", "dtype": "bf16", "shape": [32, 128], "mode": "scratch"},
+    {"name": "logits", "space": "register", "dtype": "fp32", "shape": [8, 32], "mode": "scratch"},
+    {"name": "scaled_logits", "space": "register", "dtype": "fp32", "shape": [8, 32], "mode": "scratch"},
+    {"name": "running_max", "space": "register", "dtype": "fp32", "shape": [8], "mode": "scratch"},
+    {"name": "running_sum", "space": "register", "dtype": "fp32", "shape": [8], "mode": "scratch"},
+    {"name": "weighted_accumulator", "space": "register", "dtype": "fp32", "shape": [8, 128], "mode": "scratch"},
+    {"name": "normalized_output", "space": "register", "dtype": "fp32", "shape": [8, 128], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_query", "kind": "load", "role": "compute", "reads": ["q"], "writes": ["query_tile"], "parameters": {"movement": "global", "reuse": "reused"}},
+    {"id": "load_selected", "kind": "load", "role": "compute", "reads": ["token_indices"], "writes": ["selected_ids"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_keys", "kind": "load", "role": "compute", "reads": ["k", "selected_ids"], "writes": ["key_tile"], "depends_on": ["load_selected"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_values", "kind": "load", "role": "compute", "reads": ["v", "selected_ids"], "writes": ["value_tile"], "depends_on": ["load_selected"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "attention_scores", "kind": "mma", "role": "compute", "reads": ["query_tile", "key_tile"], "writes": ["logits"], "depends_on": ["load_query", "load_keys"], "parameters": {"accumulator": "fp32", "instruction": {"contract": "triton.dot.bf16_fp32"}, "tile_shape": [8, 32, 128]}},
+    {"id": "scale_logits", "kind": "elementwise", "role": "compute", "reads": ["logits"], "writes": ["scaled_logits"], "depends_on": ["attention_scores"], "parameters": {"op": "mul", "scalar": 0.08838834764831843}},
+    {"id": "softmax_update", "kind": "online_softmax", "role": "compute", "reads": ["scaled_logits", "value_tile", "selected_ids"], "writes": ["running_max", "running_sum", "weighted_accumulator", "normalized_output"], "depends_on": ["scale_logits", "load_values", "load_selected"], "parameters": {"axis": 1, "scope": "cta", "sentinel": -1}},
+    {"id": "store_output", "kind": "store", "role": "compute", "reads": ["normalized_output"], "writes": ["output"], "depends_on": ["softmax_update"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["output"],
+  "program_map": {
+    "axes": [
+      {"name": "query", "axis": 0, "buffer": "q", "dimension": 0, "tile": 1},
+      {"name": "head_group", "axis": 1, "buffer": "q", "dimension": 1, "tile": 8}
+    ]
+  },
+  "tile_loops": [
+    {"name": "selected_loop", "iterator": "selected_start", "buffer": "token_indices", "dimension": 1, "tile": 32, "body": ["load_selected", "load_keys", "load_values", "attention_scores", "scale_logits", "softmax_update"], "range_options": {"num_stages": 2, "warp_specialize": false, "flatten": false, "disallow_acc_multi_buffer": false, "disable_licm": false, "loop_unroll_factor": 1}}
+  ],
+  "access_maps": [
+    {"operation": "load_query", "buffer": "q", "indices": [{"source": "program", "name": "query"}, {"source": "program_tile", "name": "head_group"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_selected", "buffer": "token_indices", "indices": [{"source": "program", "name": "query"}, {"source": "loop_tile", "name": "selected_start"}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_keys", "buffer": "k", "indices": [{"source": "buffer", "name": "selected_ids"}, {"source": "program", "name": "head_group"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_values", "buffer": "v", "indices": [{"source": "buffer", "name": "selected_ids"}, {"source": "program", "name": "head_group"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_output", "buffer": "output", "indices": [{"source": "program", "name": "query"}, {"source": "program_tile", "name": "head_group"}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "7aa909104a8b03d6c64a36ded10f293375022b00a94ae40b182bb961a84ba3bf"},
+  "residency": {"ctas_per_multiprocessor": 1, "registers_per_thread": 224},
+  "lowering": {"backend": "triton", "entry_point": "cake_qsa_selected_attention_t32768"}
+}

@@ -526,6 +526,237 @@
         "schedule_sha256": "f00f3164e5bc1c469eb97ba152381dc99c59b7ac26b45b0f6a4a6238af2903c0",
         "lowering_source_sha256": "ebef90d87902a554081204f6097a865ea62863f693ecd917a7c81696257eb79c"
       }
+    },
+    {
+      "case_id": "cast-b8-accepted",
+      "schedule": "corpus/schedules/cast-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "d7f01dd46d769e5f6520bbfde68af61c907e8b9357ff2dcaba09c7b59b25b310",
+        "lowering_source_sha256": "92e6357cedf5b463a19f0dc857a881b65b2d6ccfaed12b6a5c31ae1ae044b9bb"
+      }
+    },
+    {
+      "case_id": "chunk-cumsum-accepted",
+      "schedule": "corpus/schedules/chunk-cumsum-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "34b747aa2b26cf9e0269121bbe82ad7402402ec120c0701aa8d7cb5fe13f2cfb",
+        "lowering_source_sha256": "4f2760c7a2dda554aed397cef208fd28cda5a408de96de87c0a299013086a177"
+      }
+    },
+    {
+      "case_id": "chunk-cumsum-shape-drift",
+      "schedule": "corpus/schedules/chunk-cumsum-b8-smoke-shape-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "SCAN_SHAPE_MISMATCH",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "12e0c1e2ff2541cd60cf2c04aaa0f82a05b5a604eaf32def1ad0c65375bf7021",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "cast-b8-result-drift",
+      "schedule": "corpus/schedules/cast-b8-smoke-result-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "CAST_RESULT_DTYPE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "d6ca6c932a4a9cf0ace53c5755defe20fc4ed974602a433380d399a524008352",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "index-expand-b8-accepted",
+      "schedule": "corpus/schedules/index-expand-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "3c2336cdc5ccbc6c82729386739c34be51a20c61a5d759de3d7acf40b70119bb",
+        "lowering_source_sha256": "6952190501a6b100380d168287d26d1e8a8d90192f40937380067b661c44f799"
+      }
+    },
+    {
+      "case_id": "index-expand-b8-dtype-drift",
+      "schedule": "corpus/schedules/index-expand-b8-smoke-dtype-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "INDEX_EXPAND_DTYPE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "2fc3cbf83da0cfdbc026625bdbfd5b1c507f3207aba782001dc237bcbaa64e37",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "online-softmax-b8-accepted",
+      "schedule": "corpus/schedules/online-softmax-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "545933e0082334dc77023afe10fb1477eefb981b97a737add4aafe3742ca73b3",
+        "lowering_source_sha256": "c6d776da06ffdd71ad60deb380d7004db418735a46d8aa598aa47e705c7c8a42"
+      }
+    },
+    {
+      "case_id": "online-softmax-b8-axis-drift",
+      "schedule": "corpus/schedules/online-softmax-b8-smoke-axis-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "ONLINE_SOFTMAX_LOGITS_SHAPE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "7b19b5ce317ea75ce31d6d20eb34ed71bc75cdb7da4fb62afb5fc99e34ac35bd",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "relu-b8-accepted",
+      "schedule": "corpus/schedules/relu-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "802e112ae024d8e008cf0c5530ca4dbd77f998e3568d1f4cc37f436f7d2a7b97",
+        "lowering_source_sha256": "e69aac8c680b214c6719a8665eb1b6b89a20f5d5e2b5a0b1224b877cd9192857"
+      }
+    },
+    {
+      "case_id": "relu-b8-dtype-drift",
+      "schedule": "corpus/schedules/relu-b8-smoke-dtype-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "ELEMENTWISE_RESULT_DTYPE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "7c9d19cab0b5cbec0d08ecbcd03223a52fecaa5d74ebdb9c91c1899705a24f26",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "top-k-streaming-b8-accepted",
+      "schedule": "corpus/schedules/top-k-streaming-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "a0bc7853e45e9ae9a3efbbd9050160f8cddac4c51ce5a5b2442b7533aa35c79b",
+        "lowering_source_sha256": "458531f5b64ea3164f4232b1947833050186b6e2392b2412ce85cfbe202e41fc"
+      }
+    },
+    {
+      "case_id": "top-k-across-loop-drift",
+      "schedule": "corpus/schedules/top-k-b8-smoke-across-loop-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TOP_K_LOOP_REQUIRED",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "32ff0d5119c46d8892372d7ae17925d1a5aa33cb1a344eef01d8970636867942",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "qsa-pool-t32768-accepted",
+      "schedule": "corpus/schedules/qsa-pool-t32768.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "c495766e9a6782c696aad3ebb6ec9f8ac11c335031bf20fa7f285be64a6156a8",
+        "lowering_source_sha256": "fd7fcba4cab7dfb6cd519d5f711828ed4995e911f44a92150a9409136c6aaf1c"
+      }
+    },
+    {
+      "case_id": "qsa-layernorm-t32768-accepted",
+      "schedule": "corpus/schedules/qsa-layernorm-t32768.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "67d14dfbda6db65d899e4644e1cbe6a5222d4e6ce90aba9ea67d17230affa5ae",
+        "lowering_source_sha256": "ad131955e434fe9f4a20b4ea3b62902653d3ffcd2372205210199f1b178ee201"
+      }
+    },
+    {
+      "case_id": "qsa-score-topk-t32768-accepted",
+      "schedule": "corpus/schedules/qsa-score-topk-t32768.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "28d3ebaa73aeb4ca2e9b9af090c8b2d19c13cc16dbaf76b0855acbb8592597f1",
+        "lowering_source_sha256": "e56b97f5b8449479283b0c11381ee4f202035f5d29d57b605c13ddfa5740ae0c"
+      }
+    },
+    {
+      "case_id": "qsa-expand-t32768-accepted",
+      "schedule": "corpus/schedules/qsa-expand-t32768.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "089b8deac1883ad526dd842b1a28b1f5d4b900b6fc43f46b33da329089466a71",
+        "lowering_source_sha256": "567a97620b6eaa1e9a20def4bc3bedc67e6bcca180bbd3ee5dd3bb387744664e"
+      }
+    },
+    {
+      "case_id": "qsa-selected-attention-t32768-accepted",
+      "schedule": "corpus/schedules/qsa-selected-attention-t32768.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "cb23592cb95e5e7e212a9421540c8100a7ea977f77e34218221e35f2332c9b00",
+        "lowering_source_sha256": "ab9047a4f5e3352d23a0d5eefafcda82255d2ce0ff68271c8d67e65edd28ba3a"
+      }
     }
   ]
 }

@@ -53,6 +53,15 @@ from .profiler import (
     load_ncu_attribution_profile,
     ncu_attribution_feedback,
 )
+from .program import ProgramContract, ProgramNode
+from .qsa import (
+    QsaCorrectnessObservation,
+    audit_qsa_output,
+    materialize_qsa_case,
+    qsa_block_scores,
+    qsa_selection_mask,
+    reference_qsa_output,
+)
 from .timing import (
     PairedTimingObservation,
     PairedTimingProtocol,
@@ -84,6 +93,14 @@ __all__ = [
     "CudaTensorContract",
     "LoadedCudaCandidate",
     "WorkloadContract",
+    "ProgramContract",
+    "ProgramNode",
+    "QsaCorrectnessObservation",
+    "audit_qsa_output",
+    "materialize_qsa_case",
+    "qsa_block_scores",
+    "qsa_selection_mask",
+    "reference_qsa_output",
     "TinyGemmLauncher",
     "evaluate_tinygemm",
     "generate_tinygemm_case",

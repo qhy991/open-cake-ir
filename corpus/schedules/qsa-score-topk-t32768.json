@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "schedule_id": "qsa-score-topk-t32768-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3, 4, 5, 6, 7]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "index_q", "space": "global", "dtype": "bf16", "shape": [32768, 8, 128], "mode": "input"},
+    {"name": "normalized_keys", "space": "global", "dtype": "fp32", "shape": [8192, 128], "mode": "input"},
+    {"name": "block_indices", "space": "global", "dtype": "int32", "shape": [32768, 512], "mode": "output"},
+    {"name": "query_bf16", "space": "register", "dtype": "bf16", "shape": [8, 128], "mode": "scratch"},
+    {"name": "query_fp32", "space": "register", "dtype": "fp32", "shape": [8, 128], "mode": "scratch"},
+    {"name": "key_tile", "space": "register", "dtype": "fp32", "shape": [128, 128], "mode": "scratch"},
+    {"name": "head_scores", "space": "register", "dtype": "fp32", "shape": [8, 128], "mode": "scratch"},
+    {"name": "positive_scores", "space": "register", "dtype": "fp32", "shape": [8, 128], "mode": "scratch"},
+    {"name": "score_sum", "space": "register", "dtype": "fp32", "shape": [128], "mode": "scratch"},
+    {"name": "score_tile", "space": "register", "dtype": "fp32", "shape": [128], "mode": "scratch"},
+    {"name": "top_values", "space": "register", "dtype": "fp32", "shape": [512], "mode": "scratch"},
+    {"name": "top_indices", "space": "register", "dtype": "int32", "shape": [512], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_query", "kind": "load", "role": "compute", "reads": ["index_q"], "writes": ["query_bf16"], "parameters": {"movement": "global", "reuse": "reused"}},
+    {"id": "cast_query", "kind": "cast", "role": "compute", "reads": ["query_bf16"], "writes": ["query_fp32"], "depends_on": ["load_query"], "parameters": {"to": "fp32"}},
+    {"id": "load_keys", "kind": "load", "role": "compute", "reads": ["normalized_keys"], "writes": ["key_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "score_heads", "kind": "mma", "role": "compute", "reads": ["query_fp32", "key_tile"], "writes": ["head_scores"], "depends_on": ["cast_query", "load_keys"], "parameters": {"accumulator": "fp32", "instruction": {"contract": "triton.dot.fp32_ieee"}, "tile_shape": [8, 128, 128]}},
+    {"id": "relu_heads", "kind": "elementwise", "role": "compute", "reads": ["head_scores"], "writes": ["positive_scores"], "depends_on": ["score_heads"], "parameters": {"op": "relu"}},
+    {"id": "sum_heads", "kind": "reduce", "role": "compute", "reads": ["positive_scores"], "writes": ["score_sum"], "depends_on": ["relu_heads"], "parameters": {"op": "sum", "axis": 0, "scope": "cta", "across_loop": false}},
+    {"id": "scale_scores", "kind": "elementwise", "role": "compute", "reads": ["score_sum"], "writes": ["score_tile"], "depends_on": ["sum_heads"], "parameters": {"op": "mul", "scalar": 0.08838834764831843}},
+    {"id": "select_blocks", "kind": "top_k", "role": "compute", "reads": ["score_tile"], "writes": ["top_values", "top_indices"], "depends_on": ["scale_scores"], "parameters": {"k": 512, "tie_break": "lowest_index", "nan_policy": "reject_input", "across_loop": true}},
+    {"id": "store_blocks", "kind": "store", "role": "compute", "reads": ["top_indices"], "writes": ["block_indices"], "depends_on": ["select_blocks"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["block_indices"],
+  "program_map": {"axes": [{"name": "query", "axis": 0, "buffer": "index_q", "dimension": 0, "tile": 1}]},
+  "tile_loops": [
+    {"name": "block_loop", "iterator": "block_start", "buffer": "normalized_keys", "dimension": 0, "tile": 128, "body": ["load_keys", "score_heads", "relu_heads", "sum_heads", "scale_scores", "select_blocks"], "range_options": {"num_stages": 2, "warp_specialize": false, "flatten": false, "disallow_acc_multi_buffer": false, "disable_licm": false, "loop_unroll_factor": 1}, "stop": {"program": "query", "add": 1, "floor_div": 4}}
+  ],
+  "access_maps": [
+    {"operation": "load_query", "buffer": "index_q", "indices": [{"source": "program", "name": "query"}, {"source": "dimension", "dimension": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_keys", "buffer": "normalized_keys", "indices": [{"source": "loop_tile", "name": "block_start"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_blocks", "buffer": "block_indices", "indices": [{"source": "program", "name": "query"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "7aa909104a8b03d6c64a36ded10f293375022b00a94ae40b182bb961a84ba3bf"},
+  "residency": {"ctas_per_multiprocessor": 1, "registers_per_thread": 224},
+  "lowering": {"backend": "triton", "entry_point": "cake_qsa_score_topk_t32768"}
+}

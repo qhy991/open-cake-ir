@@ -305,6 +305,29 @@ def _verify_loop_nest(schedule: Schedule, out: _Collector) -> None:
                     f"one trip; a Schedule that does not iterate declares no tile loop",
                     category,
                 )
+        if loop.stop is not None:
+            program_map = schedule.program_map
+            axis = (
+                None
+                if program_map is None
+                else program_map.axis(loop.stop.program)
+            )
+            if axis is None:
+                out.add(
+                    "LOOP_STOP_PROGRAM_UNKNOWN",
+                    f"tile_loops[{index}].stop.program",
+                    f"query-derived loop stop names unknown program axis "
+                    f"{loop.stop.program!r}",
+                    category,
+                )
+            elif axis.tile != 1:
+                out.add(
+                    "LOOP_STOP_PROGRAM_TILED",
+                    f"tile_loops[{index}].stop.program",
+                    f"query-derived loop stop requires one scalar program coordinate, "
+                    f"but {axis.name!r} has tile {axis.tile}",
+                    category,
+                )
         path = f"tile_loops[{index}].body"
         positions: list[int] = []
         for entry in loop.body:
@@ -901,6 +924,7 @@ _CONTRACT_DTYPES = {
     "tcgen05.mma.cta_group::1.kind::f16": ({DType.BF16, DType.FP16}, DType.FP32),
     "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32": ({DType.BF16}, DType.FP32),
     "triton.dot.bf16_fp32": ({DType.BF16}, DType.FP32),
+    "triton.dot.fp32_ieee": ({DType.FP32}, DType.FP32),
     "triton.dot.fp8e4m3_block_scale_fp32": ({DType.FP8_E4M3}, DType.FP32),
 }
 
@@ -917,6 +941,7 @@ _ARITY = {
     OperationKind.EPILOGUE: (1, 1, "epilogue"),
     OperationKind.REDUCE_ARGMIN: (1, 1, "reduce_argmin"),
     OperationKind.REDUCE: (1, 1, "reduce"),
+    OperationKind.SCAN: (1, 1, "scan"),
     OperationKind.STORE: (1, 1, "store"),
 }
 
@@ -1299,12 +1324,74 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     # carries by construction.
     for loop in schedule.tile_loops:
         body = set(loop.body)
+        for op_id in loop.body:
+            operation = schedule.operation(op_id)
+            if (
+                operation is None
+                or operation.kind is not OperationKind.TOP_K
+                or not operation.parameters.across_loop
+                or not operation.reads
+            ):
+                continue
+            source = buffers.get(operation.reads[0])
+            if source is not None and source.shape != (loop.tile,):
+                out.add(
+                    "TOP_K_LOOP_TILE_MISMATCH",
+                    f"operations[{schedule.operations.index(operation)}].reads",
+                    f"loop-carried top_k consumes one score per {loop.name!r} position, "
+                    f"so {source.name!r} must have shape [{loop.tile}], got "
+                    f"{list(source.shape)}",
+                    category,
+                )
+        for op_id in loop.body:
+            operation = schedule.operation(op_id)
+            if operation is None or operation.kind is not OperationKind.ONLINE_SOFTMAX:
+                continue
+            if operation.reads:
+                logits = buffers.get(operation.reads[0])
+                values = buffers.get(operation.reads[1]) if len(operation.reads) > 1 else None
+                if (
+                    logits is not None
+                    and len(logits.shape) == 2
+                    and logits.shape[1] != loop.tile
+                ) or (
+                    values is not None
+                    and len(values.shape) == 2
+                    and values.shape[0] != loop.tile
+                ):
+                    out.add(
+                        "ONLINE_SOFTMAX_LOOP_TILE_MISMATCH",
+                        f"operations[{schedule.operations.index(operation)}].reads",
+                        f"online_softmax selected extent must equal {loop.name!r} tile "
+                        f"{loop.tile}",
+                        category,
+                    )
+            if len(operation.writes) == 4:
+                normalized = operation.writes[3]
+                in_loop_readers = sorted(set(readers.get(normalized, ())) & body)
+                if in_loop_readers:
+                    out.add(
+                        "ONLINE_SOFTMAX_FINAL_READ_IN_LOOP",
+                        f"operations[{schedule.operations.index(operation)}].writes",
+                        f"normalized output is finalized after {loop.name!r}, but is read "
+                        f"inside it by {', '.join(in_loop_readers)}",
+                        category,
+                    )
         carried = {
             name
             for op_id in loop.body
             if (op := schedule.operation(op_id)) is not None
             and (
-                op.kind in (OperationKind.REDUCE, OperationKind.REDUCE_ARGMIN)
+                (
+                    op.kind is OperationKind.REDUCE
+                    and op.parameters.across_loop
+                )
+                or op.kind is OperationKind.REDUCE_ARGMIN
+                or (
+                    op.kind is OperationKind.TOP_K
+                    and op.parameters.across_loop
+                )
+                or op.kind is OperationKind.ONLINE_SOFTMAX
                 # A contraction whose loop walks K is a reduction too, and its result is
                 # carried by the same construction. Which loops do that is derived from
                 # the operands rather than declared, so a Schedule that tiles the output
@@ -1347,6 +1434,30 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
                     f"{', '.join(escaping)} outside it; {reason}",
                     category,
                 )
+
+    loop_bodies = {op_id for loop in schedule.tile_loops for op_id in loop.body}
+    for operation in schedule.operations:
+        if (
+            operation.kind is OperationKind.TOP_K
+            and operation.parameters.across_loop
+            and operation.op_id not in loop_bodies
+        ):
+            out.add(
+                "TOP_K_LOOP_REQUIRED",
+                f"operations[{schedule.operations.index(operation)}].parameters.across_loop",
+                "loop-carried top_k must be declared inside one tile loop",
+                category,
+            )
+        if (
+            operation.kind is OperationKind.ONLINE_SOFTMAX
+            and operation.op_id not in loop_bodies
+        ):
+            out.add(
+                "ONLINE_SOFTMAX_LOOP_REQUIRED",
+                f"operations[{schedule.operations.index(operation)}]",
+                "online_softmax must be declared inside one selected-token tile loop",
+                category,
+            )
 
     # ---- buffer roles ------------------------------------------------------
     # An input buffer that is written is the static form of the candidate mutating its
@@ -1584,6 +1695,307 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     f"{indices.name!r} is {indices.dtype.value}",
                     category,
                 )
+    if operation.kind is OperationKind.CAST:
+        if len(operation.reads) != 1 or len(operation.writes) != 1:
+            out.add(
+                "CAST_ARITY",
+                path,
+                "cast reads one numeric tile and writes one converted tile",
+                category,
+            )
+        else:
+            source = buffers.get(operation.reads[0])
+            output = buffers.get(operation.writes[0])
+            if source is not None and output is not None:
+                if source.shape != output.shape:
+                    out.add(
+                        "CAST_SHAPE_MISMATCH",
+                        f"{path}.writes",
+                        f"cast preserves shape {list(source.shape)}, got "
+                        f"{list(output.shape)}",
+                        category,
+                    )
+                allowed = {DType.BF16, DType.FP16, DType.FP32}
+                if source.dtype not in allowed or output.dtype not in allowed:
+                    out.add(
+                        "CAST_DTYPE_UNSUPPORTED",
+                        path,
+                        "the admitted cast converts among bf16, fp16, and fp32",
+                        category,
+                    )
+                if output.dtype is not operation.parameters.to:
+                    out.add(
+                        "CAST_RESULT_DTYPE",
+                        f"{path}.writes",
+                        f"cast(to={operation.parameters.to.value}) writes "
+                        f"{output.dtype.value}",
+                        category,
+                    )
+                if source.dtype is operation.parameters.to:
+                    out.add(
+                        "CAST_IDENTITY",
+                        f"{path}.parameters.to",
+                        "an identity cast is a second spelling of the unchanged tile",
+                        category,
+                    )
+                if (
+                    source.space is not MemorySpace.REGISTER
+                    or output.space is not MemorySpace.REGISTER
+                ):
+                    out.add(
+                        "CAST_SPACE",
+                        path,
+                        "cast operands must be resident in registers",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+    if operation.kind is OperationKind.INDEX_EXPAND:
+        if len(operation.reads) != 1 or len(operation.writes) != 1:
+            out.add(
+                "INDEX_EXPAND_ARITY",
+                path,
+                "index_expand reads selected int32 indices and writes one flat int32 run",
+                category,
+            )
+        else:
+            source = buffers.get(operation.reads[0])
+            output = buffers.get(operation.writes[0])
+            if source is not None:
+                if len(source.shape) != 1:
+                    out.add(
+                        "INDEX_EXPAND_SOURCE_SHAPE",
+                        f"{path}.reads",
+                        "index_expand consumes one rank-one selected-index tile",
+                        category,
+                    )
+                if source.dtype is not DType.INT32:
+                    out.add(
+                        "INDEX_EXPAND_DTYPE",
+                        f"{path}.reads",
+                        f"index_expand input must be int32, got {source.dtype.value}",
+                        category,
+                    )
+                if source.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "INDEX_EXPAND_SPACE",
+                        f"{path}.reads",
+                        "index_expand input must be resident in registers",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+                if len(source.shape) == 1 and source.shape[0] & (source.shape[0] - 1):
+                    out.add(
+                        "INDEX_EXPAND_SOURCE_UNLOWERABLE",
+                        f"{path}.reads",
+                        "the Triton index_expand input extent must be a power of two",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+            if output is not None:
+                expected = (
+                    source.shape[0] * operation.parameters.extent
+                    if source is not None and len(source.shape) == 1
+                    else None
+                )
+                if expected is not None and output.shape != (expected,):
+                    out.add(
+                        "INDEX_EXPAND_RESULT_SHAPE",
+                        f"{path}.writes",
+                        f"index_expand must write [{expected}], got {list(output.shape)}",
+                        category,
+                    )
+                if output.dtype is not DType.INT32:
+                    out.add(
+                        "INDEX_EXPAND_DTYPE",
+                        f"{path}.writes",
+                        f"index_expand output must be int32, got {output.dtype.value}",
+                        category,
+                    )
+                if output.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "INDEX_EXPAND_SPACE",
+                        f"{path}.writes",
+                        "index_expand output must stay in registers before store",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+            extent = operation.parameters.extent
+            if extent & (extent - 1):
+                out.add(
+                    "INDEX_EXPAND_EXTENT_UNLOWERABLE",
+                    f"{path}.parameters.extent",
+                    "the Triton index_expand extent must be a power of two",
+                    FindingCategory.HARDWARE_CONFORMANCE,
+                )
+            if not -(1 << 31) <= operation.parameters.sentinel < (1 << 31):
+                out.add(
+                    "INDEX_EXPAND_SENTINEL_RANGE",
+                    f"{path}.parameters.sentinel",
+                    "index_expand sentinel must fit signed int32",
+                    category,
+                )
+    if operation.kind is OperationKind.ONLINE_SOFTMAX:
+        if len(operation.reads) not in {2, 3} or len(operation.writes) != 4:
+            out.add(
+                "ONLINE_SOFTMAX_ARITY",
+                path,
+                "online_softmax reads logits, values, optional validity indices and "
+                "writes running maximum, "
+                "normalizer, weighted accumulator, and normalized output",
+                category,
+            )
+        else:
+            logits = buffers.get(operation.reads[0])
+            values = buffers.get(operation.reads[1])
+            validity = (
+                buffers.get(operation.reads[2]) if len(operation.reads) == 3 else None
+            )
+            maximum = buffers.get(operation.writes[0])
+            normalizer = buffers.get(operation.writes[1])
+            accumulator = buffers.get(operation.writes[2])
+            normalized = buffers.get(operation.writes[3])
+            axis = operation.parameters.axis
+            if logits is not None:
+                if len(logits.shape) != 2 or axis != 1:
+                    out.add(
+                        "ONLINE_SOFTMAX_LOGITS_SHAPE",
+                        f"{path}.reads",
+                        "the admitted online_softmax lowering consumes rank-two "
+                        "[rows, selected] logits and reduces axis 1",
+                        category,
+                    )
+                if logits.dtype is not DType.FP32:
+                    out.add(
+                        "ONLINE_SOFTMAX_LOGITS_DTYPE",
+                        f"{path}.reads",
+                        f"online_softmax logits must be fp32, got {logits.dtype.value}",
+                        category,
+                    )
+                if logits.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "ONLINE_SOFTMAX_SPACE",
+                        f"{path}.reads",
+                        "online_softmax logits must be resident in registers",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+            if values is not None:
+                if len(values.shape) != 2:
+                    out.add(
+                        "ONLINE_SOFTMAX_VALUE_SHAPE",
+                        f"{path}.reads",
+                        "online_softmax values must have shape [selected, value_dim]",
+                        category,
+                    )
+                if values.dtype not in {DType.BF16, DType.FP16, DType.FP32}:
+                    out.add(
+                        "ONLINE_SOFTMAX_VALUE_DTYPE",
+                        f"{path}.reads",
+                        f"online_softmax values must be floating, got {values.dtype.value}",
+                        category,
+                    )
+                if values.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "ONLINE_SOFTMAX_SPACE",
+                        f"{path}.reads",
+                        "online_softmax values must be resident in registers",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+            if len(operation.reads) == 3:
+                if operation.parameters.sentinel is None:
+                    out.add(
+                        "ONLINE_SOFTMAX_SENTINEL_REQUIRED",
+                        f"{path}.parameters.sentinel",
+                        "validity indices require one explicit sentinel",
+                        category,
+                    )
+                if validity is not None:
+                    selected = (
+                        logits.shape[1]
+                        if logits is not None and len(logits.shape) == 2
+                        else None
+                    )
+                    if selected is not None and validity.shape != (selected,):
+                        out.add(
+                            "ONLINE_SOFTMAX_VALIDITY_SHAPE",
+                            f"{path}.reads",
+                            f"validity indices must have shape [{selected}], got "
+                            f"{list(validity.shape)}",
+                            category,
+                        )
+                    if validity.dtype is not DType.INT32:
+                        out.add(
+                            "ONLINE_SOFTMAX_VALIDITY_DTYPE",
+                            f"{path}.reads",
+                            f"validity indices must be int32, got {validity.dtype.value}",
+                            category,
+                        )
+                    if validity.space is not MemorySpace.REGISTER:
+                        out.add(
+                            "ONLINE_SOFTMAX_SPACE",
+                            f"{path}.reads",
+                            "validity indices must be resident in registers",
+                            FindingCategory.HARDWARE_CONFORMANCE,
+                        )
+            elif operation.parameters.sentinel is not None:
+                out.add(
+                    "ONLINE_SOFTMAX_SENTINEL_UNUSED",
+                    f"{path}.parameters.sentinel",
+                    "online_softmax sentinel has no validity-index input",
+                    category,
+                )
+            if operation.parameters.sentinel is not None and not (
+                -(1 << 31) <= operation.parameters.sentinel < (1 << 31)
+            ):
+                out.add(
+                    "ONLINE_SOFTMAX_SENTINEL_RANGE",
+                    f"{path}.parameters.sentinel",
+                    "online_softmax sentinel must fit signed int32",
+                    category,
+                )
+            if (
+                logits is not None
+                and values is not None
+                and len(logits.shape) == 2
+                and len(values.shape) == 2
+                and logits.shape[1] != values.shape[0]
+            ):
+                out.add(
+                    "ONLINE_SOFTMAX_SELECTED_MISMATCH",
+                    f"{path}.reads",
+                    f"logits select {logits.shape[1]} values but the value tile has "
+                    f"{values.shape[0]} rows",
+                    category,
+                )
+            rows = logits.shape[0] if logits is not None and len(logits.shape) == 2 else None
+            columns = (
+                values.shape[1] if values is not None and len(values.shape) == 2 else None
+            )
+            expected = ((rows,), (rows,), (rows, columns), (rows, columns))
+            for buffer, shape, label in zip(
+                (maximum, normalizer, accumulator, normalized),
+                expected,
+                ("maximum", "normalizer", "accumulator", "normalized output"),
+            ):
+                if buffer is None or rows is None or columns is None:
+                    continue
+                if buffer.shape != shape:
+                    out.add(
+                        "ONLINE_SOFTMAX_STATE_SHAPE",
+                        f"{path}.writes",
+                        f"online_softmax {label} must have shape {list(shape)}, got "
+                        f"{list(buffer.shape)}",
+                        category,
+                    )
+                if buffer.dtype is not DType.FP32:
+                    out.add(
+                        "ONLINE_SOFTMAX_STATE_DTYPE",
+                        f"{path}.writes",
+                        f"online_softmax {label} must be fp32, got {buffer.dtype.value}",
+                        category,
+                    )
+                if buffer.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "ONLINE_SOFTMAX_SPACE",
+                        f"{path}.writes",
+                        f"online_softmax {label} must stay in registers",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
     if operation.kind is OperationKind.TOP_K:
         if len(operation.reads) != 1 or len(operation.writes) != 2:
             out.add(
@@ -1608,7 +2020,7 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                         f"{source.name!r} has shape {list(source.shape)}",
                         category,
                     )
-                elif k > source.shape[0]:
+                elif k > source.shape[0] and not operation.parameters.across_loop:
                     out.add(
                         "TOP_K_K_OUT_OF_RANGE",
                         f"{path}.parameters.k",
@@ -1690,6 +2102,40 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     f"but k is {k}",
                     FindingCategory.HARDWARE_CONFORMANCE,
                 )
+    if operation.kind is OperationKind.SCAN and operation.reads and operation.writes:
+        source = buffers.get(operation.reads[0])
+        result = buffers.get(operation.writes[0])
+        axis = operation.parameters.axis
+        if source is not None and result is not None:
+            if (
+                source.dtype not in _ELEMENTWISE_FLOAT_DTYPES
+                or result.dtype is not DType.FP32
+            ):
+                out.add(
+                    "SCAN_DTYPE_MISMATCH",
+                    f"{path}.writes",
+                    f"a {operation.parameters.op.value} scan accumulates bf16/fp16/fp32 "
+                    f"into fp32, but {source.name!r} is {source.dtype.value} and "
+                    f"{result.name!r} is {result.dtype.value}",
+                    category,
+                )
+            if axis >= len(source.shape):
+                out.add(
+                    "SCAN_AXIS_OUT_OF_RANGE",
+                    f"{path}.parameters.axis",
+                    f"axis {axis} is outside {source.name!r}, which has "
+                    f"{len(source.shape)} dimension(s)",
+                    category,
+                )
+            elif tuple(result.shape) != tuple(source.shape):
+                out.add(
+                    "SCAN_SHAPE_MISMATCH",
+                    f"{path}.writes",
+                    f"scanning axis {axis} of {source.name!r} {list(source.shape)} "
+                    f"keeps that shape, but {result.name!r} is {list(result.shape)}",
+                    category,
+                )
+
     expected = _ARITY.get(operation.kind)
     if expected is not None:
         reads, writes, label = expected

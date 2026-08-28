@@ -43,7 +43,7 @@ class KDAWeightedCombineContractTest(unittest.TestCase):
 
         self.assertEqual(_codes(document), {"RESIDENCY_BOUND"})
         vocabulary = {kind.value for kind in OperationKind}
-        for forbidden in ("combine", "scatter", "cast"):
+        for forbidden in ("combine", "scatter"):
             self.assertNotIn(forbidden, vocabulary)
         self.assertEqual(
             [operation.kind for operation in schedule.operations[-3:]],

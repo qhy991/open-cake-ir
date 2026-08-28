@@ -35,6 +35,8 @@ from .ir import (
     OperandSource,
     OperationKind,
     ReduceOp,
+    ScanDirection,
+    ScanOp,
     ReductionScope,
     Swizzle,
 )
@@ -187,15 +189,36 @@ _PARAMETERS = {
             "op": _enum(ReduceOp),
             "axis": _NONNEGATIVE,
             "scope": _enum(ReductionScope),
-        }
+        },
+        {"across_loop": {"const": False}},
+    ),
+    OperationKind.SCAN: _object(
+        {"op": _enum(ScanOp), "axis": _NONNEGATIVE},
+        {"direction": _enum(ScanDirection)},
     ),
     OperationKind.TOP_K: _object(
         {
             "k": _POSITIVE,
             "tie_break": _enum(IndexTieBreak),
             "nan_policy": _enum(NaNPolicy),
+        },
+        {"across_loop": {"type": "boolean"}},
+    ),
+    OperationKind.ONLINE_SOFTMAX: _object(
+        {
+            "axis": _NONNEGATIVE,
+            "scope": _enum(ReductionScope),
+        },
+        {"sentinel": {"type": "integer"}},
+    ),
+    OperationKind.INDEX_EXPAND: _object(
+        {
+            "scale": _POSITIVE,
+            "extent": _POSITIVE,
+            "sentinel": {"type": "integer"},
         }
     ),
+    OperationKind.CAST: _object({"to": _enum(DType)}),
     OperationKind.ATOMIC_RMW: _object(
         {
             "op": _enum(AtomicOp),
@@ -483,7 +506,16 @@ def schedule_schema() -> dict[str, Any]:
                                 "disable_licm": {"type": "boolean"},
                             }
                         ),
-                    }
+                    },
+                    {
+                        "stop": _object(
+                            {
+                                "program": _NAME,
+                                "add": {"type": "integer"},
+                                "floor_div": _POSITIVE,
+                            }
+                        )
+                    },
                 ),
             },
             "access_maps": {

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "schedule_id": "index-expand-b8-smoke-dtype-drift-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "block_indices", "space": "global", "dtype": "fp32", "shape": [8, 8], "mode": "input"},
+    {"name": "token_indices", "space": "global", "dtype": "int32", "shape": [8, 32], "mode": "output"},
+    {"name": "block_tile", "space": "register", "dtype": "fp32", "shape": [8], "mode": "scratch"},
+    {"name": "token_tile", "space": "register", "dtype": "int32", "shape": [32], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_blocks", "kind": "load", "role": "compute", "reads": ["block_indices"], "writes": ["block_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "expand_tokens", "kind": "index_expand", "role": "compute", "reads": ["block_tile"], "writes": ["token_tile"], "depends_on": ["load_blocks"], "parameters": {"scale": 4, "extent": 4, "sentinel": -1}},
+    {"id": "store_tokens", "kind": "store", "role": "compute", "reads": ["token_tile"], "writes": ["token_indices"], "depends_on": ["expand_tokens"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["token_indices"],
+  "program_map": {"axes": [{"name": "batch", "axis": 0, "buffer": "block_indices", "dimension": 0, "tile": 1}]},
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_blocks", "buffer": "block_indices", "indices": [{"source": "program", "name": "batch"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_tokens", "buffer": "token_indices", "indices": [{"source": "program", "name": "batch"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {"backend": "triton", "entry_point": "cake_index_expand_b8_smoke"}
+}

@@ -74,27 +74,31 @@ candidates = list(pathlib.Path("/opt/nvidia/nsight-compute").glob(
     "*/target/linux-desktop-glibc_2_11_3-x64/ncu"
 ))
 if not candidates:
-    raise SystemExit("no x86_64 Nsight Compute executable is installed")
+    if os.environ.get("OPEN_CAKE_REUSE_VERIFIED_HOST") != "1":
+        raise SystemExit(
+            "no x86_64 Nsight Compute executable is installed; set "
+            "OPEN_CAKE_REUSE_VERIFIED_HOST=1 only after verifying the pinned host "
+            "environment against the live executor host"
+        )
+    print("    reusing operator-verified host environment")
+else:
+    def profiler_version(path: pathlib.Path) -> tuple[int, ...]:
+        return tuple(int(value) for value in path.parents[2].name.split("."))
 
-
-def profiler_version(path: pathlib.Path) -> tuple[int, ...]:
-    return tuple(int(value) for value in path.parents[2].name.split("."))
-
-
-ncu = max(candidates, key=profiler_version).resolve(strict=True)
-version_output = subprocess.run(
-    [str(ncu), "--version"], check=True, capture_output=True, text=True
-).stdout
-version_match = re.search(r"^Version ([^ ]+)", version_output, re.MULTILINE)
-if version_match is None:
-    raise SystemExit("Nsight Compute version output differs")
-ncu_payload = ncu.read_bytes()
-host["nsight_compute"] = {
-    "path": str(ncu),
-    "version": version_match.group(1),
-    "sha256": hashlib.sha256(ncu_payload).hexdigest(),
-    "size_bytes": len(ncu_payload),
-}
+    ncu = max(candidates, key=profiler_version).resolve(strict=True)
+    version_output = subprocess.run(
+        [str(ncu), "--version"], check=True, capture_output=True, text=True
+    ).stdout
+    version_match = re.search(r"^Version ([^ ]+)", version_output, re.MULTILINE)
+    if version_match is None:
+        raise SystemExit("Nsight Compute version output differs")
+    ncu_payload = ncu.read_bytes()
+    host["nsight_compute"] = {
+        "path": str(ncu),
+        "version": version_match.group(1),
+        "sha256": hashlib.sha256(ncu_payload).hexdigest(),
+        "size_bytes": len(ncu_payload),
+    }
 temporary.joinpath("proposal.json").write_text(json.dumps({
     "schema_version": 1,
     "executor_id": keep,

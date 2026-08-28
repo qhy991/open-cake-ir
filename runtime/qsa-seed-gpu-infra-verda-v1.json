@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "node": {
+    "id": "b200",
+    "ssh": "verda-b200x4",
+    "kernelctl": "/home/qinhaiyan/gpu-infra/bin/kernelctl",
+    "capabilities": ["b200", "cuda", "sm100a"]
+  },
+  "judge": {
+    "python": "/home/qinhaiyan/megakernel-exp/.venv-flashinfer/bin/python",
+    "nvcc": "/usr/local/cuda-13.0/bin/nvcc",
+    "cuobjdump": "/usr/local/cuda-13.0/bin/cuobjdump"
+  },
+  "daemon": {
+    "broker_socket": "/tmp/agent-gpu-broker.sock",
+    "gpu_run": "/opt/agent-gpu-broker/.venv/bin/gpu-run",
+    "local_capacity": 2
+  }
+}

@@ -31,6 +31,8 @@ from .ir import (
     OperationKind,
     ProgramAxis,
     ReduceOp,
+    ScanDirection,
+    ScanOp,
     Schedule,
     TileLoop,
 )
@@ -84,6 +86,10 @@ REDUCTIONS: dict[ReduceOp, _Reduction] = {
     ),
 }
 
+SCANS: dict[ScanOp, str] = {
+    ScanOp.SUM: "{out} = tl.cumsum({src}.to(tl.float32), axis={axis}, reverse={reverse})",
+}
+
 
 # What this backend has a body for, and where. The two sets differ: an mma or a reduction
 # is only emitted inside the tile loop, and a store only outside it. Keeping them as
@@ -94,8 +100,11 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.MMA: "_emit_mma",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
     OperationKind.REDUCE: "_emit_reduce",
+    OperationKind.SCAN: "_emit_scan",
     OperationKind.TOP_K: "_emit_top_k",
+    OperationKind.INDEX_EXPAND: "_emit_index_expand",
     OperationKind.ATOMIC_RMW: "_emit_atomic_rmw",
+    OperationKind.CAST: "_emit_cast",
     OperationKind.STORE: "_emit_store",
 }
 
@@ -105,7 +114,10 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.REDUCE_ARGMIN: "_emit_argmin",
     OperationKind.REDUCE: "_emit_reduce",
     OperationKind.TOP_K: "_emit_top_k",
+    OperationKind.INDEX_EXPAND: "_emit_index_expand",
+    OperationKind.ONLINE_SOFTMAX: "_emit_online_softmax",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
+    OperationKind.CAST: "_emit_cast",
 }
 
 # A kind outside this union can never be emitted, wherever it is placed, so the Compiler
@@ -812,7 +824,21 @@ class _TritonEmitter:
         operation rather than assuming the argmin the first profile happened to use.
         """
 
-        tile = self._tile(self._token_axis().name)
+        needs_tile = self.reduce is not None or any(
+            operation.op_id in self.loop.body
+            and (
+                (
+                    operation.kind is OperationKind.REDUCE
+                    and operation.parameters.across_loop
+                )
+                or (
+                    operation.kind is OperationKind.MMA
+                    and self._accumulating(operation)
+                )
+            )
+            for operation in self.schedule.operations
+        )
+        tile = self._tile(self._token_axis().name) if needs_tile else None
         if self.reduce is not None:
             _require(
                 self.reduce.parameters.across_loop,
@@ -825,10 +851,49 @@ class _TritonEmitter:
             if operation.op_id not in self.loop.body:
                 continue
             if operation.kind is OperationKind.REDUCE:
+                if not operation.parameters.across_loop:
+                    continue
+                _require(tile is not None, "a carried reduction has no tiled program axis")
                 identity = REDUCTIONS[operation.parameters.op].identity
                 self.line(f"{pad}{operation.writes[0]} = {identity.format(tile=tile)}")
                 self.line()
+            elif (
+                operation.kind is OperationKind.TOP_K
+                and operation.parameters.across_loop
+            ):
+                k = operation.parameters.k
+                values, indices = operation.writes
+                self.line(
+                    f'{pad}{values} = tl.full(({k},), float("-inf"), tl.float32)'
+                )
+                self.line(
+                    f"{pad}{indices} = tl.full(({k},), 2147483647, tl.int32)"
+                )
+                self.line()
+            elif operation.kind is OperationKind.ONLINE_SOFTMAX:
+                maximum, normalizer, accumulator, _ = (
+                    self.schedule.buffer(name) for name in operation.writes
+                )
+                _require(
+                    maximum is not None
+                    and normalizer is not None
+                    and accumulator is not None,
+                    "online_softmax state buffers are missing",
+                )
+                rows = maximum.shape[0]
+                columns = accumulator.shape[1]
+                self.line(
+                    f'{pad}{maximum.name} = tl.full(({rows},), float("-inf"), tl.float32)'
+                )
+                self.line(
+                    f"{pad}{normalizer.name} = tl.zeros(({rows},), tl.float32)"
+                )
+                self.line(
+                    f"{pad}{accumulator.name} = tl.zeros(({rows}, {columns}), tl.float32)"
+                )
+                self.line()
             elif operation.kind is OperationKind.MMA and self._accumulating(operation):
+                _require(tile is not None, "an accumulated contraction has no tiled program axis")
                 # A contraction summed across the loop needs its accumulator before the
                 # loop, for the same reason a fold does: the first iteration adds to it.
                 accumulator = self.schedule.buffer(operation.writes[0])
@@ -851,7 +916,7 @@ class _TritonEmitter:
 
     def _emit_loop(self) -> None:
         options = self.loop.range_options
-        extent = self._extent(self.loop.buffer, self.loop.dimension)
+        extent = self._loop_stop()
         tile = self._tile(self.loop.name)
         knobs = [f"num_stages={options.num_stages}"]
         if options.disallow_acc_multi_buffer:
@@ -882,12 +947,40 @@ class _TritonEmitter:
                     f"operation kind {operation.kind.value!r} has no Triton body emitter"
                 )
             getattr(self, method)(operation, self._body_pad() + "    ")
+        for op_id in self.loop.body:
+            operation = self.schedule.operation(op_id)
+            if operation is not None and operation.kind is OperationKind.ONLINE_SOFTMAX:
+                self._emit_online_softmax_finalize(operation, self._body_pad())
+            if (
+                operation is not None
+                and operation.kind is OperationKind.TOP_K
+                and operation.parameters.across_loop
+            ):
+                self._emit_top_k_finalize(operation, self._body_pad())
         self.line()
+
+    def _loop_stop(self) -> str:
+        """Return the loop's static or declared query-derived exclusive stop."""
+
+        static = self._extent(self.loop.buffer, self.loop.dimension)
+        relation = self.loop.stop
+        if relation is None:
+            return static
+        self._axis(relation.program)
+        expression = relation.program
+        if relation.add > 0:
+            expression = f"({expression} + {relation.add})"
+        elif relation.add < 0:
+            expression = f"({expression} - {-relation.add})"
+        if relation.floor_div != 1:
+            expression = f"({expression} // {relation.floor_div})"
+        return f"tl.minimum(tl.maximum({expression}, 0), {static})"
 
     _ELEMENTWISE_TEXT = {
         ElementwiseOp.SQUARE: "{a} * {a}",
         ElementwiseOp.RSQRT: "tl.rsqrt({a})",
         ElementwiseOp.EXP: "tl.exp({a})",
+        ElementwiseOp.RELU: "tl.maximum({a}, 0.0)",
         ElementwiseOp.ADD: "{a} + {b}",
         ElementwiseOp.SUB: "{a} - {b}",
         ElementwiseOp.MUL: "{a} * {b}",
@@ -963,7 +1056,11 @@ class _TritonEmitter:
             f"reduce axis {axis} is outside {source.name!r}",
         )
         reduction = REDUCTIONS[operation.parameters.op]
-        carried = self.loop is not None and operation.op_id in self.loop.body
+        carried = (
+            self.loop is not None
+            and operation.op_id in self.loop.body
+            and operation.parameters.across_loop
+        )
         template = reduction.accumulate if carried else reduction.once
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(
@@ -971,6 +1068,81 @@ class _TritonEmitter:
             + template.format(
                 out=operation.writes[0], src=operation.reads[0], axis=axis
             )
+        )
+
+    def _emit_scan(self, operation, pad: str) -> None:
+        """Accumulate one inclusive prefix along the declared resident axis."""
+
+        source = self.schedule.buffer(operation.reads[0])
+        _require(source is not None, f"scan reads unknown buffer {operation.reads[0]!r}")
+        axis = operation.parameters.axis
+        _require(axis < len(source.shape), f"scan axis {axis} is outside {source.name!r}")
+        reverse = operation.parameters.direction is ScanDirection.REVERSE
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(
+            pad
+            + SCANS[operation.parameters.op].format(
+                out=operation.writes[0],
+                src=operation.reads[0],
+                axis=axis,
+                reverse=reverse,
+            )
+        )
+
+    def _emit_online_softmax(self, operation, pad: str) -> None:
+        """Update explicit FP32 online-softmax state from one logits/value tile."""
+
+        logits, values = operation.reads[:2]
+        validity = operation.reads[2] if len(operation.reads) == 3 else None
+        maximum, normalizer, accumulator, _ = operation.writes
+        prefix = operation.op_id
+        tile_max = f"{prefix}_tile_max"
+        new_max = f"{prefix}_new_max"
+        empty = f"{prefix}_empty"
+        old_scale = f"{prefix}_old_scale"
+        weights = f"{prefix}_weights"
+        new_sum = f"{prefix}_new_sum"
+        new_accumulator = f"{prefix}_new_accumulator"
+
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        effective_logits = logits
+        if validity is not None:
+            effective_logits = f"{prefix}_effective_logits"
+            self.line(
+                f'{pad}{effective_logits} = tl.where({validity}[None, :] != '
+                f'{operation.parameters.sentinel}, {logits}, float("-inf"))'
+            )
+        self.line(f"{pad}{tile_max} = tl.max({effective_logits}, axis=1)")
+        self.line(f"{pad}{new_max} = tl.maximum({maximum}, {tile_max})")
+        self.line(f'{pad}{empty} = {new_max} == float("-inf")')
+        self.line(
+            f"{pad}{old_scale} = tl.where({empty}, 1.0, "
+            f"tl.exp({maximum} - {new_max}))"
+        )
+        self.line(
+            f'{pad}{weights} = tl.where({effective_logits} == float("-inf"), 0.0, '
+            f"tl.exp({effective_logits} - {new_max}[:, None]))"
+        )
+        self.line(
+            f"{pad}{new_sum} = {normalizer} * {old_scale} + "
+            f"tl.sum({weights}, axis=1)"
+        )
+        self.line(
+            f"{pad}{new_accumulator} = {accumulator} * {old_scale}[:, None] + "
+            f"tl.sum({weights}[:, :, None] * {values}[None, :, :].to(tl.float32), axis=1)"
+        )
+        self.line(f"{pad}{maximum} = {new_max}")
+        self.line(f"{pad}{normalizer} = {new_sum}")
+        self.line(f"{pad}{accumulator} = {new_accumulator}")
+
+    def _emit_online_softmax_finalize(self, operation, pad: str) -> None:
+        """Materialize the declared zero-if-empty normalized accumulator."""
+
+        _, normalizer, accumulator, normalized = operation.writes
+        self.line(f"{pad}# CAKE_FINALIZE:{operation.op_id}")
+        self.line(
+            f"{pad}{normalized} = tl.where({normalizer}[:, None] > 0.0, "
+            f"{accumulator} / {normalizer}[:, None], 0.0)"
         )
 
     def _emit_mma(self, operation, pad: str) -> None:
@@ -1045,8 +1217,10 @@ class _TritonEmitter:
             "the dot takes exactly two staged operands and reads nothing else",
         )
         assign = "+=" if self._accumulating(operation) else "="
+        precision = ', input_precision="ieee"' if contract == "triton.dot.fp32_ieee" else ""
         self.line(
-            f"{pad}{operation.writes[0]} {assign} tl.dot({tiles[0]}, tl.trans({tiles[1]}))"
+            f"{pad}{operation.writes[0]} {assign} tl.dot("
+            f"{tiles[0]}, tl.trans({tiles[1]}){precision})"
         )
 
     def _accumulating(self, operation) -> bool:
@@ -1090,6 +1264,9 @@ class _TritonEmitter:
 
         source = self.schedule.buffer(operation.reads[0])
         _require(source is not None, f"top_k reads unknown buffer {operation.reads[0]!r}")
+        if operation.parameters.across_loop:
+            self._emit_loop_carried_top_k(operation, source, pad)
+            return
         values, indices = operation.writes
         k = operation.parameters.k
         prefix = operation.op_id
@@ -1124,6 +1301,144 @@ class _TritonEmitter:
             self.line(f"{pad}{values} = tl.where({slots} == {slot}, {value}, {values})")
             self.line(f"{pad}{indices} = tl.where({slots} == {slot}, {index}, {indices})")
             self.line(f"{pad}{selected} |= {positions} == {index}")
+
+    def _emit_loop_carried_top_k(self, operation, source, pad: str) -> None:
+        """Merge one score tile into deterministic loop-carried top-k state."""
+
+        _require(self.loop is not None, "loop-carried top_k has no tile loop")
+        values, indices = operation.writes
+        k = operation.parameters.k
+        prefix = operation.op_id
+        source_positions = f"{prefix}_source_positions"
+        source_selected = f"{prefix}_source_selected"
+        state_slots = f"{prefix}_state_slots"
+        state_selected = f"{prefix}_state_selected"
+        previous_values = f"{prefix}_previous_values"
+        previous_indices = f"{prefix}_previous_indices"
+        output_slots = f"{prefix}_output_slots"
+
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{previous_values} = {values}")
+        self.line(f"{pad}{previous_indices} = {indices}")
+        self.line(f"{pad}{output_slots} = tl.arange(0, {k})")
+        self.line(f"{pad}{state_slots} = tl.arange(0, {k})")
+        self.line(
+            f"{pad}{source_positions} = {self.loop.iterator} + "
+            f"tl.arange(0, {source.shape[0]})"
+        )
+        if self.loop.stop is None:
+            self.line(
+                f"{pad}{source_selected} = tl.zeros(({source.shape[0]},), tl.int1)"
+            )
+        else:
+            self.line(
+                f"{pad}{source_selected} = {source_positions} >= {self._loop_stop()}"
+            )
+        self.line(f"{pad}{state_selected} = tl.zeros(({k},), tl.int1)")
+        self.line(f'{pad}{values} = tl.full(({k},), float("-inf"), tl.float32)')
+        self.line(f"{pad}{indices} = tl.full(({k},), 2147483647, tl.int32)")
+
+        for slot in range(k):
+            source_candidates = f"{prefix}_source_candidates_{slot}"
+            source_value = f"{prefix}_source_value_{slot}"
+            source_matching = f"{prefix}_source_matching_{slot}"
+            source_index = f"{prefix}_source_index_{slot}"
+            state_candidates = f"{prefix}_state_candidates_{slot}"
+            state_value = f"{prefix}_state_value_{slot}"
+            state_matching = f"{prefix}_state_matching_{slot}"
+            state_index = f"{prefix}_state_index_{slot}"
+            state_position = f"{prefix}_state_position_{slot}"
+            take_source = f"{prefix}_take_source_{slot}"
+            value = f"{prefix}_value_{slot}"
+            index = f"{prefix}_index_{slot}"
+
+            self.line(
+                f'{pad}{source_candidates} = tl.where(~{source_selected}, '
+                f'{operation.reads[0]}, float("-inf"))'
+            )
+            self.line(f"{pad}{source_value} = tl.max({source_candidates}, axis=0)")
+            self.line(
+                f"{pad}{source_matching} = (~{source_selected}) & "
+                f"({operation.reads[0]} == {source_value})"
+            )
+            self.line(
+                f"{pad}{source_index} = tl.min(tl.where({source_matching}, "
+                f"{source_positions}, 2147483647), axis=0)"
+            )
+            self.line(
+                f'{pad}{state_candidates} = tl.where(~{state_selected}, '
+                f'{previous_values}, float("-inf"))'
+            )
+            self.line(f"{pad}{state_value} = tl.max({state_candidates}, axis=0)")
+            self.line(
+                f"{pad}{state_matching} = (~{state_selected}) & "
+                f"({previous_values} == {state_value})"
+            )
+            self.line(
+                f"{pad}{state_index} = tl.min(tl.where({state_matching}, "
+                f"{previous_indices}, 2147483647), axis=0)"
+            )
+            self.line(
+                f"{pad}{state_position} = tl.min(tl.where({state_matching} & "
+                f"({previous_indices} == {state_index}), {state_slots}, {k}), axis=0)"
+            )
+            self.line(
+                f"{pad}{take_source} = ({source_value} > {state_value}) | "
+                f"(({source_value} == {state_value}) & "
+                f"({source_index} < {state_index}))"
+            )
+            self.line(f"{pad}{value} = tl.where({take_source}, {source_value}, {state_value})")
+            self.line(f"{pad}{index} = tl.where({take_source}, {source_index}, {state_index})")
+            self.line(
+                f"{pad}{values} = tl.where({output_slots} == {slot}, {value}, {values})"
+            )
+            self.line(
+                f"{pad}{indices} = tl.where({output_slots} == {slot}, {index}, {indices})"
+            )
+            self.line(
+                f"{pad}{source_selected} |= {take_source} & "
+                f"({source_positions} == {source_index})"
+            )
+            self.line(
+                f"{pad}{state_selected} |= (~{take_source}) & "
+                f"({state_slots} == {state_position})"
+            )
+
+    def _emit_top_k_finalize(self, operation, pad: str) -> None:
+        """Normalize unfilled loop-carried positions to the canonical -1 sentinel."""
+
+        indices = operation.writes[1]
+        self.line(f"{pad}# CAKE_FINALIZE:{operation.op_id}")
+        self.line(f"{pad}{indices} = tl.where({indices} == 2147483647, -1, {indices})")
+
+    def _emit_index_expand(self, operation, pad: str) -> None:
+        """Expand group indices into one flat affine run per selected group."""
+
+        source = self.schedule.buffer(operation.reads[0])
+        output = self.schedule.buffer(operation.writes[0])
+        _require(source is not None and output is not None, "index_expand buffers are missing")
+        extent = operation.parameters.extent
+        offsets = f"{operation.op_id}_offsets"
+        expanded = f"{operation.op_id}_matrix"
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{offsets} = tl.arange(0, {extent})")
+        self.line(
+            f"{pad}{expanded} = tl.where({operation.reads[0]}[:, None] >= 0, "
+            f"{operation.reads[0]}[:, None] * {operation.parameters.scale} + "
+            f"{offsets}[None, :], {operation.parameters.sentinel})"
+        )
+        self.line(
+            f"{pad}{operation.writes[0]} = tl.reshape({expanded}, ({output.shape[0]},))"
+        )
+
+    def _emit_cast(self, operation, pad: str) -> None:
+        """Emit the conversion named by the written buffer's declared dtype."""
+
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(
+            f"{pad}{operation.writes[0]} = "
+            f"{operation.reads[0]}.to({_TL_DTYPE[operation.parameters.to]})"
+        )
 
     def _emit_atomic_rmw(self, operation, pad: str) -> None:
         """Emit the one admitted state transition and its returned old values."""
