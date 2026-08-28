@@ -65,7 +65,6 @@
     "src/open_cake_ir/compiler/emit_cutedsl.py",
     "src/open_cake_ir/compiler/emit_triton.py",
     "src/open_cake_ir/compiler/ir.py",
-    "src/open_cake_ir/compiler/profile_model.py",
     "src/open_cake_ir/compiler/ranking.py",
     "src/open_cake_ir/compiler/release.py",
     "src/open_cake_ir/compiler/schema.py",
