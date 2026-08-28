@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_compact_top_k_compiler_validation",
+  "scientific_claim_authorized": false,
+  "matched_agent_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "5ae6b3a4f36d9ebaed591f5f60ce85dc4c90dc64",
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v30",
+    "canonical_sha256": "155cc4e6d89460e03004c5301ea089cc053e0ec05e28cae418e7dde768cbf205"
+  },
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v35",
+    "canonical_sha256": "44d49aa522767028ed90829c888b66dcf767630f88cbd373b69d69497a62341f",
+    "executor_descriptor": "runtime/executors/open-cake-ir-b200-v35.json",
+    "executor_descriptor_raw_sha256": "0d06bd51a2f21298ac74f68535c0d2a55707f08f2a68dd391e755ca240e6a46f"
+  },
+  "program_id": "qsa-prefill-t32768-cake-port-v2",
+  "execution": {
+    "locator": "b200:open-cake-qsa-prefill-t32768-seed-v1-dc1ed56eb0c6",
+    "gpu_id": 0,
+    "correctness_job_id": "gpuq-38a4c3ec17e7",
+    "benchmark_job_id": "gpuq-45cc43681761",
+    "external_evidence_root": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v30-r6-cake-20260828",
+    "collection": "collection-001",
+    "collection_status": "mirrored"
+  },
+  "observed_result": {
+    "outcome": "completed",
+    "validity": "valid",
+    "frontier_eligible": true,
+    "correctness_match_fraction": 1.0,
+    "correctness_max_abs_diff": 0.01848996803164482,
+    "candidate_median_ms": 399.120929,
+    "fixed_direct_cuda_baseline_median_ms": 676.870211,
+    "speedup": 1.6959025744300171,
+    "baseline_cv": 0.00097245942,
+    "score_topk_artifacts": {
+      "lowered_source_size_bytes": 7310,
+      "ptx_size_bytes": 348425,
+      "cubin_size_bytes": 472472
+    }
+  },
+  "cross_revision_diagnostic": {
+    "prior_compiler_revision": "open-cake-ir-sm100a-v29",
+    "prior_candidate_median_ms": 7001.504528,
+    "new_over_prior_ratio": 17.54231366804621,
+    "interpretation": "preliminary same-workload compiler-revision diagnostic, not a replicated arm estimand"
+  },
+  "feedback_projection": {
+    "kind": "evaluation",
+    "actionable": true,
+    "correctness_passed": true,
+    "timing_speedup": 1.6959025744300171,
+    "raw_samples_excluded_from_prompt": true
+  },
+  "disposition": {
+    "compiler_compile_gate_passed": true,
+    "compiler_correctness_gate_passed": true,
+    "compiler_performance_seed_gate_passed": true,
+    "next_action": "resume the same-thread local provider loop with bounded feedback and structurally distinct QSA candidates"
+  }
+}
