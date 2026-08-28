@@ -29,6 +29,7 @@ class QsaLauncherContractTest(unittest.TestCase):
             executor=SimpleNamespace(executor_id="executor-v1", canonical_sha256="a" * 64),
             protocol="seed",
             component_timing=True,
+            profile_kernel="score_topk",
         )
 
         self.assertEqual(
@@ -47,6 +48,40 @@ class QsaLauncherContractTest(unittest.TestCase):
                 ),
                 protocol="profile",
                 component_timing=True,
+                profile_kernel="score_topk",
+            )
+
+    def test_attention_profile_is_explicit_in_task_identity_and_command(self) -> None:
+        task = _task(
+            remote_root="/remote/open-cake",
+            runtime=self._runtime(),
+            executor=SimpleNamespace(executor_id="executor-v1", canonical_sha256="a" * 64),
+            protocol="profile",
+            component_timing=False,
+            profile_kernel="attention",
+        )
+
+        self.assertEqual(
+            task["task_id"],
+            "open-cake-qsa-prefill-t32768-profile-attention-v1",
+        )
+        for stage in task["stages"]:
+            self.assertEqual(
+                stage["judge"]["command"][-2:],
+                ["--profile-kernel", "attention"],
+            )
+
+    def test_nondefault_profile_target_requires_the_profile_protocol(self) -> None:
+        with self.assertRaisesRegex(ValueError, "selection requires the profile protocol"):
+            _task(
+                remote_root="/remote/open-cake",
+                runtime=self._runtime(),
+                executor=SimpleNamespace(
+                    executor_id="executor-v1", canonical_sha256="a" * 64
+                ),
+                protocol="seed",
+                component_timing=False,
+                profile_kernel="attention",
             )
 
 

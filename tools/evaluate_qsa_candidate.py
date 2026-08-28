@@ -887,6 +887,20 @@ def _profile_child(root: Path, build_root: Path) -> int:
         program.close(synchronize=torch.cuda.synchronize)
 
 
+def _profile_target(artifact: QsaProgramArtifact, kernel_id: str):
+    target = next(
+        (kernel for kernel in artifact.kernels if kernel.kernel_id == kernel_id),
+        None,
+    )
+    if target is None:
+        available = ", ".join(kernel.kernel_id for kernel in artifact.kernels)
+        raise ValueError(
+            f"QSA Program has no {kernel_id!r} attribution target; "
+            f"available kernels: {available}"
+        )
+    return target
+
+
 def _profile_stage(
     root: Path,
     run_dir: Path,
@@ -896,15 +910,11 @@ def _profile_stage(
     *,
     nvcc: Path,
     cuobjdump: Path,
+    profile_kernel: str,
 ) -> Mapping[str, object]:
     artifact_root = build_root / "candidate"
     artifact = QsaProgramArtifact.load(build_root, artifact_root / "program.json")
-    score = next(
-        (kernel for kernel in artifact.kernels if kernel.kernel_id == "score_topk"),
-        None,
-    )
-    if score is None:
-        raise ValueError("QSA Program has no score_topk attribution target")
+    target = _profile_target(artifact, profile_kernel)
     profiler = executor.admit_profiler()
     command = [
         str(profiler["path"]),
@@ -916,7 +926,7 @@ def _profile_stage(
         "--kernel-name-base",
         "function",
         "--kernel-name",
-        score.kernel_name,
+        target.kernel_name,
         sys.executable,
         str(Path(__file__).resolve()),
         "--project-root",
@@ -945,7 +955,7 @@ def _profile_stage(
     profile = build_ncu_attribution_profile(
         candidate_sha256=str(request["candidate_sha256"]),
         case_id="target_t32768",
-        kernel_name=score.kernel_name,
+        kernel_name=target.kernel_name,
         ncu_version=str(profiler["version"]),
         ncu_executable_sha256=str(profiler["sha256"]),
         stdout=completed.stdout,
@@ -967,6 +977,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--component-timing",
         action="store_true",
         help="retain diagnostic dependency-ordered CUDA-event node timing after benchmark",
+    )
+    parser.add_argument(
+        "--profile-kernel",
+        default="score_topk",
+        help="declared QSA Program kernel id selected by the profile stage",
     )
     return parser
 
@@ -1109,12 +1124,13 @@ def main(argv: list[str] | None = None) -> int:
                 executor,
                 nvcc=arguments.nvcc.resolve(strict=True),
                 cuobjdump=arguments.cuobjdump.resolve(strict=True),
+                profile_kernel=arguments.profile_kernel,
             )
             return _stage_result(
                 result_path,
                 status="passed",
                 validity="valid",
-                summary="QSA score_topk NCU attribution completed",
+                summary=f"QSA {arguments.profile_kernel} NCU attribution completed",
                 artifacts={
                     "profile": "ncu-profile.json",
                     "ncu_stdout": "ncu.stdout.log",

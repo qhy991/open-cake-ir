@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
-from evaluate_qsa_candidate import _component_timing  # noqa: E402
+from evaluate_qsa_candidate import _component_timing, _profile_target  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -97,6 +97,16 @@ class ComponentTimingContractTest(unittest.TestCase):
             for row in observed["programs"]["candidate"]["summary"]["kernels"].values()
         ]
         self.assertAlmostEqual(sum(fractions), 1.0)
+
+    def test_profile_target_is_one_declared_program_kernel(self) -> None:
+        artifact = _Artifact((_Kernel("score_topk"), _Kernel("attention")))
+
+        self.assertEqual(_profile_target(artifact, "attention").kernel_id, "attention")
+        with self.assertRaisesRegex(
+            ValueError,
+            "available kernels: score_topk, attention",
+        ):
+            _profile_target(artifact, "missing")
 
 
 if __name__ == "__main__":

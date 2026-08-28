@@ -118,6 +118,7 @@ def _task(
     executor: ExecutorRevision,
     protocol: str,
     component_timing: bool,
+    profile_kernel: str,
 ) -> dict[str, object]:
     judge = runtime["judge"]
     assert isinstance(judge, dict)
@@ -135,6 +136,10 @@ def _task(
         if protocol != "seed":
             raise ValueError("QSA component timing requires the seed protocol")
         command.append("--component-timing")
+    if profile_kernel != "score_topk":
+        if protocol != "profile":
+            raise ValueError("QSA profile-kernel selection requires the profile protocol")
+        command.extend(("--profile-kernel", profile_kernel))
     identity = f"{executor.executor_id}@{executor.canonical_sha256}"
     stages: list[dict[str, object]] = [
         {
@@ -201,7 +206,11 @@ def _task(
         "task_id": (
             "open-cake-qsa-prefill-t32768-seed-component-v1"
             if component_timing
-            else f"open-cake-qsa-prefill-t32768-{protocol}-v1"
+            else (
+                f"open-cake-qsa-prefill-t32768-profile-{profile_kernel}-v1"
+                if protocol == "profile" and profile_kernel != "score_topk"
+                else f"open-cake-qsa-prefill-t32768-{protocol}-v1"
+            )
         ),
         "description": (
             "QSA target_t32768 seed-path qualification; candidate versus one hidden "
@@ -315,6 +324,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="seed",
         help="run seed timing or score_topk attribution after common correctness",
     )
+    parser.add_argument(
+        "--profile-kernel",
+        default="score_topk",
+        help="candidate Program kernel id selected by an explicit profile task",
+    )
     parser.add_argument("--runtime", type=Path, default=_RUNTIME_PATH)
     parser.add_argument("--remote-project-root", required=True)
     parser.add_argument("--remote-state-root", required=True)
@@ -351,6 +365,7 @@ def main(argv: list[str] | None = None) -> int:
             executor=executor,
             protocol=arguments.protocol,
             component_timing=arguments.component_timing,
+            profile_kernel=arguments.profile_kernel,
         ),
     )
     catalog_path = run_root / "catalog.json"
@@ -413,6 +428,7 @@ def main(argv: list[str] | None = None) -> int:
                 "arm": arguments.arm,
                 "protocol": arguments.protocol,
                 "component_timing": arguments.component_timing,
+                "profile_kernel": arguments.profile_kernel,
                 "run_root": str(run_root),
                 "routes": str(routes),
             },
