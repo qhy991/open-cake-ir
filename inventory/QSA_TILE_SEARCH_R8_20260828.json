@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_score_topk_tile_search_and_confirmation",
+  "scientific_claim_authorized": false,
+  "matched_agent_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "compiler_revision": "open-cake-ir-sm100a-v31",
+  "executor_revision": "open-cake-ir-b200-v36",
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "mechanism": "change only score/top-k block_loop tile while holding Program ABI, warps, maxnreg, Workload, oracle, direct baseline, and CUPTI protocol fixed",
+  "external_evidence_root": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v31-r8-tile-search-20260828",
+  "search": [
+    {
+      "candidate": "tile64",
+      "locator": "b200:open-cake-qsa-prefill-t32768-seed-v1-18792a34c31e",
+      "candidate_sha256": "2b84f5ffee21098f0b52e6ba65374bbbaa4c66c6e0001e93bcc580c936e4e404",
+      "gpu_id": 1,
+      "correctness_match_fraction": 1.0,
+      "candidate_median_ms": 523.540744,
+      "fixed_direct_baseline_median_ms": 676.402811,
+      "speedup": 1.2919774033862015,
+      "candidate_cv": 0.0001305062454428923,
+      "baseline_cv": 0.00044077043417560616,
+      "static_register_pressure_per_thread": 38,
+      "static_ctas_per_sm_proxy": 6
+    },
+    {
+      "candidate": "tile128",
+      "locator": "b200:open-cake-qsa-prefill-t32768-seed-v1-01bc8f5380d9",
+      "candidate_sha256": "db41b0690a2f999509648c9f2c66de0587b5a5a379dc37178c5bdc88a657ac02",
+      "gpu_id": 1,
+      "correctness_match_fraction": 1.0,
+      "candidate_median_ms": 399.234581,
+      "fixed_direct_baseline_median_ms": 676.395184,
+      "speedup": 1.6942299494842608,
+      "candidate_cv": 0.0007251076207422829,
+      "baseline_cv": 0.00011015837180889347,
+      "static_register_pressure_per_thread": 72,
+      "static_ctas_per_sm_proxy": 3
+    },
+    {
+      "candidate": "tile256",
+      "locator": "b200:open-cake-qsa-prefill-t32768-seed-v1-6513186d6e81",
+      "candidate_sha256": "582658c23aa737930d2a97ecd8c833d76f3a9a3d179d86b1fe72d2616d802b09",
+      "gpu_id": 3,
+      "correctness_match_fraction": 1.0,
+      "candidate_median_ms": 288.292671,
+      "fixed_direct_baseline_median_ms": 676.670564,
+      "speedup": 2.3471653360206304,
+      "candidate_cv": 0.00018146935898053767,
+      "baseline_cv": 0.00035999091425974704,
+      "static_register_pressure_per_thread": 140,
+      "static_ctas_per_sm_proxy": 1
+    }
+  ],
+  "confirmation": {
+    "candidate": "tile256",
+    "locator": "b200:open-cake-qsa-prefill-t32768-seed-v1-8b9cc96b2e85",
+    "candidate_sha256": "582658c23aa737930d2a97ecd8c833d76f3a9a3d179d86b1fe72d2616d802b09",
+    "gpu_id": 1,
+    "correctness_match_fraction": 1.0,
+    "candidate_median_ms": 288.209971,
+    "fixed_direct_baseline_median_ms": 676.407137,
+    "speedup": 2.3469248293286844,
+    "candidate_cv": 0.00014770329482637328,
+    "baseline_cv": 0.00010907136695520671,
+    "search_over_confirm_candidate_ratio": 1.00028694357698
+  },
+  "winner_profile": {
+    "locator": "b200:open-cake-qsa-prefill-t32768-profile-v1-3aa2598f4e43",
+    "profile_job_id": "gpuq-803e86b9b2c6",
+    "gpu_id": 3,
+    "registers_per_thread": 116.0,
+    "resident_ctas_per_sm": 1.0,
+    "binding_resources": ["shared_memory"],
+    "active_warps_pct": 12.44,
+    "barrier_stall_pct": 1.88,
+    "long_scoreboard_stall_pct": 2.29,
+    "sm_throughput_pct": 18.85,
+    "dram_throughput_pct": 0.01,
+    "l2_throughput_pct": 3.2
+  },
+  "comparative_observation": {
+    "tile256_over_tile128": 1.3852212663384917,
+    "tile64_regressed": true,
+    "interpretation": "reducing loop trips dominated the tested occupancy proxy; static residency ordering would have selected the wrong candidate"
+  },
+  "analysis_refutation": {
+    "field": "logical_registers_per_thread_lower_bound",
+    "static_value": 140,
+    "measured_value": 116.0,
+    "refuted_as_hard_lower_bound": true,
+    "likely_cause": "backend may alias or realize IR register tensors through hidden shared-memory temporaries, so logical storage is not a physical register lower bound",
+    "required_action": "downgrade to an uncalibrated logical-pressure proxy and audit any verifier/ranking gate that treats it as a hard bound"
+  },
+  "environment_boundary": {
+    "foreign_gpu_processes_observed": true,
+    "broker_respected_foreign_ownership": true,
+    "comparison_uses_per-run_same-GPU fixed baseline": true,
+    "strict_same_physical_gpu_matched_estimand": false
+  },
+  "disposition": {
+    "winner": "tile256",
+    "search_and_fresh_confirmation_passed": true,
+    "canonical_program_promotion": "withheld_pending_analysis-bound repair and explicit promotion decision",
+    "next_action": "repair the refuted register-bound semantics, then consider a Program successor carrying tile256"
+  }
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -111,6 +112,29 @@ class ProfileModelTest(unittest.TestCase):
         self.assertEqual(len(document["rows"]), 1)
         self.assertEqual(document["rows"][0]["profile"]["kind"], "ncu_aligned_profile_envelope")
         self.assertEqual(document["skipped"], [])
+
+    def test_cli_accepts_an_external_agent_candidate_schedule(self) -> None:
+        source = ROOT / "corpus/schedules/qsa-score-topk-t32768.json"
+        with tempfile.TemporaryDirectory() as directory:
+            external = Path(directory) / "candidate.json"
+            external.write_bytes(source.read_bytes())
+            expected = str(external.resolve(strict=True))
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "tools/report_schedule_profile.py"),
+                    "--revision",
+                    str(ROOT / "compiler/revision.lock.json"),
+                    "--json",
+                    str(external),
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+            )
+            document = json.loads(completed.stdout)
+
+        self.assertEqual(document["rows"][0]["schedule"], expected)
 
 
 if __name__ == "__main__":

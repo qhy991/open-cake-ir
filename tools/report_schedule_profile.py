@@ -14,6 +14,13 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.compiler import Compiler, Schedule, Target, profile_envelope  # noqa: E402
 
 
+def _display_path(path: Path) -> str:
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def _paths(arguments: argparse.Namespace) -> list[Path]:
     if arguments.manifest is not None:
         manifest = json.loads(arguments.manifest.resolve(strict=True).read_text())
@@ -100,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         if not assessment.lowering_eligible:
             skipped.append(
                 {
-                    "schedule": path.relative_to(ROOT).as_posix(),
+                    "schedule": _display_path(path),
                     "findings": findings,
                 }
             )
@@ -113,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         lowering = compiler.lower(assessment)
         rows.append(
             {
-                "schedule": path.relative_to(ROOT).as_posix(),
+                "schedule": _display_path(path),
                 "schedule_id": schedule.schedule_id,
                 "findings": findings,
                 "profile": profile_envelope(
