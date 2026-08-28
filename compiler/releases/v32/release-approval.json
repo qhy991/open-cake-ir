@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "4600c2d27a0290cb4aff25079913229eb5af0532b68d4606124cee654ef7712b"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Repository-owner review of the v32 logical-register-pressure semantics Gate. The exact Gate 4600c2d27a0290cb4aff25079913229eb5af0532b68d4606124cee654ef7712b matches 54 of 54 Corpus cases across 73 bound Compiler sources. B200 QSA evidence measured 116 physical registers/thread against a static logical pressure of 140, refuting the former physical lower-bound interpretation. The Revision therefore retains logical register pressure only as a non-blocking structural proxy; removes it from register-budget, impossible-residency, and declared-CTA hard gates; retains exact thread, explicit shared-memory, tensor-memory, maxnreg, and role-register-conservation contracts; reports physical register metrics as unknown until compiled evidence exists; and removes the unconsumed allow_spill field. The one separately approved Corpus change makes the former register-only rmsnorm-residency-unmet rejection lowerable while retaining REGISTER_PRESSURE and RESIDENCY_BOUND diagnostics. Eighty-four directly affected contract tests and the Compiler Revision witness tests passed. This approval authorizes only the Compiler Revision; it does not authorize an Executor Revision, Candidate promotion, cost-model ranking coverage, provider run, GPU campaign, or serving claim."
+}
