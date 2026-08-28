@@ -287,10 +287,16 @@ def _checked_direct_manifest(path: Path) -> list[Mapping[str, object]]:
     return kernels
 
 
-def _run_tool(command: list[str], *, timeout: int = 900) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
+def _run_tool(
+    command: list[str],
+    *,
+    output: Path,
+    name: str,
+    timeout: int = 900,
+) -> subprocess.CompletedProcess[bytes]:
+    completed = subprocess.run(
         command,
-        check=True,
+        check=False,
         capture_output=True,
         timeout=timeout,
         env={
@@ -299,6 +305,16 @@ def _run_tool(command: list[str], *, timeout: int = 900) -> subprocess.Completed
             if key not in {"CUDA_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES"}
         },
     )
+    (output / f"{name}.stdout.log").write_bytes(completed.stdout)
+    (output / f"{name}.stderr.log").write_bytes(completed.stderr)
+    if completed.returncode != 0:
+        raise subprocess.CalledProcessError(
+            completed.returncode,
+            command,
+            output=completed.stdout,
+            stderr=completed.stderr,
+        )
+    return completed
 
 
 def _compile_direct(
@@ -315,9 +331,21 @@ def _compile_direct(
     cubin = output / "program.cubin"
     ptx = output / "program.ptx"
     common = [str(nvcc), "-std=c++17", "-O3", "-arch=sm_100a", "-lineinfo"]
-    cubin_run = _run_tool(common + ["--cubin", str(source), "-o", str(cubin)])
-    ptx_run = _run_tool(common + ["--ptx", str(source), "-o", str(ptx)])
-    sass_run = _run_tool([str(cuobjdump), "--dump-sass", str(cubin)])
+    cubin_run = _run_tool(
+        common + ["--cubin", str(source), "-o", str(cubin)],
+        output=output,
+        name="nvcc-cubin",
+    )
+    ptx_run = _run_tool(
+        common + ["--ptx", str(source), "-o", str(ptx)],
+        output=output,
+        name="nvcc-ptx",
+    )
+    sass_run = _run_tool(
+        [str(cuobjdump), "--dump-sass", str(cubin)],
+        output=output,
+        name="cuobjdump-sass",
+    )
     (output / "program.sass").write_bytes(sass_run.stdout)
     (output / "compile.stdout.log").write_bytes(cubin_run.stdout + ptx_run.stdout)
     (output / "compile.stderr.log").write_bytes(cubin_run.stderr + ptx_run.stderr)
@@ -361,7 +389,12 @@ def _compile_stage(
             arm="direct_cuda",
         )
     except Exception as error:
-        raise _BaselineCompileError(str(error)) from error
+        diagnostic = (
+            error.stderr.decode("utf-8", errors="replace")[-2048:]
+            if isinstance(error, subprocess.CalledProcessError) and error.stderr
+            else str(error)
+        )
+        raise _BaselineCompileError(diagnostic) from error
     arm = str(candidate["arm"])
     candidate_output = build_root / "candidate"
     if arm == "open_cake":

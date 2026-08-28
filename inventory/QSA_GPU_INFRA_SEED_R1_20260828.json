@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_gpu_infra_seed_path_qualification",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "source_commit": "6c6adafef391ff426c1e08f1024dabe5d77c3bf8",
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v29",
+    "canonical_sha256": "453b39e19892f795c0dae8f24e85e18b1d95392d5560bb339ef15bc9c6dd2900"
+  },
+  "executor_binding": {
+    "executor_id": "open-cake-ir-b200-v30",
+    "executor_descriptor": "runtime/executors/open-cake-ir-b200-v30.json",
+    "executor_canonical_sha256": "4f5adb2592be8f51d98e3bbed21a5f0fac9315e80725de9a7c7aea5e6c3bc260",
+    "executor_descriptor_raw_sha256": "c683a31d40fec459d5030cf2e2f192527062f316add60457d5e4445497a12054"
+  },
+  "execution": {
+    "kernelinfra_version": "0.16.0",
+    "daemon_instance_id": "warm-sun-begins-fin-03-pid2968510-start101488341",
+    "broker_version": "0.5.3",
+    "broker_instance_id": "warm-sun-begins-fin-03-pid1704179-start94630672",
+    "routes": [
+      {
+        "arm": "open_cake",
+        "locator": "b200:open-cake-qsa-prefill-t32768-seed-v1-5cfbdba70b36"
+      },
+      {
+        "arm": "direct_cuda",
+        "locator": "b200:open-cake-qsa-prefill-t32768-seed-v1-3cab97fe9f96"
+      }
+    ],
+    "external_evidence_root": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-seed-r1-20260828",
+    "collection": "collection-001"
+  },
+  "observed_result": {
+    "open_cake": {
+      "outcome": "infra_error",
+      "validity": "unknown",
+      "terminal_stage": "compile",
+      "gpu_allocated": false,
+      "kernel_calls": 0
+    },
+    "direct_cuda": {
+      "outcome": "infra_error",
+      "validity": "unknown",
+      "terminal_stage": "compile",
+      "gpu_allocated": false,
+      "kernel_calls": 0
+    },
+    "earliest_common_divergence": "fixed direct-CUDA reference NVCC compilation returned exit 1",
+    "missing_diagnostic": "the evaluator captured but did not retain NVCC stdout/stderr on failure"
+  },
+  "disposition": {
+    "candidate_comparison_valid": false,
+    "compiler_revision_change_justified": false,
+    "executor_successor_required": true,
+    "next_action": "retain failed compiler output before diagnosing or resubmitting"
+  }
+}
