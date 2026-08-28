@@ -271,7 +271,13 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         self.assertEqual(result.feedback["stage"], "built")
         findings = {item["code"]: item for item in result.feedback["findings"]}
         self.assertIn("RESIDENCY_BOUND", findings)
-        self.assertIn("registers", findings["RESIDENCY_BOUND"]["message"])
+        self.assertIn("threads bounds", findings["RESIDENCY_BOUND"]["message"])
+        self.assertIn(
+            "physical register allocation is backend evidence",
+            findings["RESIDENCY_BOUND"]["message"],
+        )
+        self.assertIn("REGISTER_PRESSURE", findings)
+        self.assertIn("not a bound or gate", findings["REGISTER_PRESSURE"]["message"])
         # Nothing blocking can reach this path; a blocking finding here would mean the
         # Environment accepted a candidate its own verifier refused.
         self.assertFalse(

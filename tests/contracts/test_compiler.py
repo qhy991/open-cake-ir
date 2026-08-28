@@ -921,19 +921,29 @@ class CandidateRankingTest(unittest.TestCase):
 
     def test_uncalibrated_and_refused_candidates_are_withheld(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
+        refused = self._variant(64, "unsupported-instruction")
+        next(
+            operation
+            for operation in refused["operations"]
+            if operation["kind"] == "mma"
+        )["parameters"]["instruction"]["contract"] = "triton.dot.fp8"
         assessments = [
             compiler.assess(self._variant(64, "fits-a")),
             compiler.assess(self._variant(128, "fits-b")),
-            compiler.assess(self._variant(512, "no-cta-is-resident")),
+            compiler.assess(refused),
         ]
         self.assertFalse(assessments[2].lowering_eligible)
+        self.assertIn(
+            "TARGET_INSTRUCTION_UNSUPPORTED",
+            {finding.code for finding in assessments[2].findings},
+        )
 
         scored, withheld = compiler.rank(assessments)
 
         self.assertEqual(scored, ())
         self.assertEqual(
             withheld,
-            ("fits-a", "fits-b", "no-cta-is-resident"),
+            ("fits-a", "fits-b", "unsupported-instruction"),
         )
 
     def test_ranking_rejects_forged_calibration_coverage(self) -> None:
