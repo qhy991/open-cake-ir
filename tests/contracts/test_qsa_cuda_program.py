@@ -9,7 +9,43 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.evaluation.qsa_cuda import QsaProgramArtifact  # noqa: E402
+from open_cake_ir.evaluation.qsa_cuda import (  # noqa: E402
+    LoadedQsaProgram,
+    QsaProgramArtifact,
+)
+
+
+class _Tensor:
+    def __init__(self, pointer: int) -> None:
+        self._pointer = pointer
+        self.is_cuda = True
+
+    def data_ptr(self) -> int:
+        return self._pointer
+
+    def is_contiguous(self) -> bool:
+        return True
+
+
+class _Driver:
+    def __init__(self) -> None:
+        self.launches: list[object] = []
+
+    def cuCtxGetCurrent(self):
+        return (0, 1)
+
+    def cuModuleLoadData(self, _payload):
+        return (0, 2)
+
+    def cuModuleGetFunction(self, _module, name):
+        return (0, name)
+
+    def cuLaunchKernel(self, function, *_arguments):
+        self.launches.append(function)
+        return (0,)
+
+    def cuModuleUnload(self, _module):
+        return (0,)
 
 
 class QsaCudaProgramContractTests(unittest.TestCase):
@@ -74,6 +110,41 @@ class QsaCudaProgramContractTests(unittest.TestCase):
             source.write_text(json.dumps(document), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "contract differs"):
                 QsaProgramArtifact.load(root, source)
+
+    def test_loaded_program_marks_boundaries_without_changing_launch_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifact = QsaProgramArtifact.load(root, self._program(root))
+            driver = _Driver()
+            loaded = LoadedQsaProgram(artifact, driver=driver)
+            names = {
+                name
+                for kernel in artifact.kernels
+                for name in kernel.arguments
+            }
+            tensors = {
+                name: _Tensor(index + 1)
+                for index, name in enumerate(sorted(names))
+            }
+            boundaries: list[tuple[str, str]] = []
+
+            loaded.launch(tensors, stream=0, boundary=lambda *row: boundaries.append(row))
+
+            order = [kernel.kernel_id for kernel in artifact.kernels]
+            self.assertEqual(
+                boundaries,
+                [
+                    (kernel_id, phase)
+                    for kernel_id in order
+                    for phase in ("before", "after")
+                ],
+            )
+            self.assertEqual(
+                [function.decode().removeprefix("qsa_") for function in driver.launches],
+                order,
+            )
+            self.assertEqual(loaded.launch_calls, len(order))
+            loaded.close(synchronize=lambda: None)
 
 
 if __name__ == "__main__":

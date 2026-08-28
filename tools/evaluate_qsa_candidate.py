@@ -652,11 +652,142 @@ def _cohort_cv(samples: list[float]) -> float:
     return statistics.pstdev(samples) / mean
 
 
+def _component_trace(program, tensors, *, stream: int, torch) -> dict[str, object]:
+    """Time one dependency-ordered Program without synchronizing between nodes."""
+
+    events: dict[str, dict[str, object]] = {}
+    whole_start = torch.cuda.Event(enable_timing=True)
+    whole_stop = torch.cuda.Event(enable_timing=True)
+
+    def boundary(kernel_id: str, phase: str) -> None:
+        if phase == "before":
+            start = torch.cuda.Event(enable_timing=True)
+            stop = torch.cuda.Event(enable_timing=True)
+            events[kernel_id] = {"start": start, "stop": stop}
+            start.record()
+        elif phase == "after":
+            events[kernel_id]["stop"].record()
+        else:
+            raise ValueError("QSA component boundary phase differs")
+
+    whole_start.record()
+    program.launch(tensors, stream=stream, boundary=boundary)
+    whole_stop.record()
+    torch.cuda.synchronize()
+    return {
+        "whole_ms": float(whole_start.elapsed_time(whole_stop)),
+        "kernels_ms": {
+            kernel.kernel_id: float(
+                events[kernel.kernel_id]["start"].elapsed_time(
+                    events[kernel.kernel_id]["stop"]
+                )
+            )
+            for kernel in program.artifact.kernels
+        },
+    }
+
+
+def _component_summary(samples: Mapping[str, object]) -> dict[str, object]:
+    whole = cast(list[float], samples["whole_samples_ms"])
+    kernels = cast(Mapping[str, list[float]], samples["kernel_samples_ms"])
+    kernel_medians = {
+        kernel_id: statistics.median(values)
+        for kernel_id, values in kernels.items()
+    }
+    summed = sum(kernel_medians.values())
+    return {
+        "whole_median_ms": statistics.median(whole),
+        "whole_cv": _cohort_cv(whole),
+        "summed_kernel_medians_ms": summed,
+        "kernels": {
+            kernel_id: {
+                "median_ms": median,
+                "cv": _cohort_cv(kernels[kernel_id]),
+                "fraction_of_summed_kernel_medians": median / summed,
+            }
+            for kernel_id, median in kernel_medians.items()
+        },
+    }
+
+
+def _component_timing(candidate, baseline, candidate_tensors, baseline_tensors, *, stream, torch):
+    """Balanced warm CUDA-event attribution, separate from primary cold-L2 timing."""
+
+    programs = {
+        "candidate": (candidate, candidate_tensors),
+        "baseline": (baseline, baseline_tensors),
+    }
+    for _ in range(3):
+        candidate.launch(candidate_tensors, stream=stream)
+        baseline.launch(baseline_tensors, stream=stream)
+    torch.cuda.synchronize()
+    samples: dict[str, dict[str, object]] = {
+        name: {
+            "whole_samples_ms": [],
+            "kernel_samples_ms": {
+                kernel.kernel_id: [] for kernel in program.artifact.kernels
+            },
+        }
+        for name, (program, _) in programs.items()
+    }
+    orders: list[list[str]] = []
+    for pair_index in range(5):
+        order = ["candidate", "baseline"] if pair_index % 2 == 0 else [
+            "baseline",
+            "candidate",
+        ]
+        orders.append(order)
+        for name in order:
+            program, tensors = programs[name]
+            for _ in range(5):
+                trace = _component_trace(
+                    program,
+                    tensors,
+                    stream=stream,
+                    torch=torch,
+                )
+                cast(list[float], samples[name]["whole_samples_ms"]).append(
+                    cast(float, trace["whole_ms"])
+                )
+                observed = cast(Mapping[str, float], trace["kernels_ms"])
+                retained = cast(
+                    dict[str, list[float]], samples[name]["kernel_samples_ms"]
+                )
+                for kernel_id, value in observed.items():
+                    retained[kernel_id].append(value)
+    return {
+        "schema_version": 1,
+        "kind": "qsa_program_component_timing",
+        "protocol": {
+            "timer": "cuda_event",
+            "cache": "no_explicit_flush",
+            "warmup_programs_per_arm": 3,
+            "balanced_pairs": 5,
+            "traces_per_pair_and_arm": 5,
+            "synchronization_between_nodes": False,
+            "diagnostic_only": True,
+            "orders": orders,
+        },
+        "programs": {
+            name: {
+                "launch_order": [
+                    kernel.kernel_id for kernel in programs[name][0].artifact.kernels
+                ],
+                **samples[name],
+                "summary": _component_summary(samples[name]),
+            }
+            for name in programs
+        },
+    }
+
+
 def _benchmark_stage(
     root: Path,
     build_root: Path,
     stage_dir: Path,
     executor: ExecutorRevision,
+    *,
+    component_timing: bool,
 ) -> dict[str, object]:
     import torch
 
@@ -709,13 +840,30 @@ def _benchmark_stage(
             cohorts.append(pair)
         document = {"cohorts": cohorts}
         _write_json(stage_dir / "cupti-samples.json", document)
-        return {
+        result = {
             "candidate_samples": samples["candidate"],
             "baseline_samples": samples["baseline"],
             "candidate_median": statistics.median(samples["candidate"]),
             "baseline_median": statistics.median(samples["baseline"]),
             "baseline_cv": _cohort_cv(samples["baseline"]),
         }
+        if component_timing:
+            component = _component_timing(
+                candidate,
+                baseline,
+                candidate_tensors,
+                baseline_tensors,
+                stream=stream,
+                torch=torch,
+            )
+            _write_json(stage_dir / "component-timing.json", component)
+            result["component_timing"] = {
+                name: document["summary"]
+                for name, document in cast(
+                    Mapping[str, Mapping[str, object]], component["programs"]
+                ).items()
+            }
+        return result
     finally:
         candidate.close(synchronize=torch.cuda.synchronize)
         baseline.close(synchronize=torch.cuda.synchronize)
@@ -815,6 +963,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cuobjdump", type=Path, required=True)
     parser.add_argument("--profile-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--build-root", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--component-timing",
+        action="store_true",
+        help="retain diagnostic dependency-ordered CUDA-event node timing after benchmark",
+    )
     return parser
 
 
@@ -904,10 +1057,17 @@ def main(argv: list[str] | None = None) -> int:
                 metrics=metrics,
             )
         if stage_kind == "benchmark":
-            timing = _benchmark_stage(root, build_root, stage_dir, executor)
+            timing = _benchmark_stage(
+                root,
+                build_root,
+                stage_dir,
+                executor,
+                component_timing=arguments.component_timing,
+            )
             candidate_ms = float(timing["candidate_median"])
             baseline_ms = float(timing["baseline_median"])
             stable = float(timing["baseline_cv"]) <= 0.05
+            component = timing.get("component_timing")
             return _stage_result(
                 result_path,
                 status="passed",
@@ -926,7 +1086,19 @@ def main(argv: list[str] | None = None) -> int:
                         "notes": f"baseline_cv={timing['baseline_cv']:.9g}",
                     }
                 ],
-                artifacts={"cupti_samples": "cupti-samples.json"},
+                artifacts={
+                    "cupti_samples": "cupti-samples.json",
+                    **(
+                        {"component_timing": "component-timing.json"}
+                        if component is not None
+                        else {}
+                    ),
+                },
+                metrics=(
+                    {"component_timing": component}
+                    if isinstance(component, Mapping)
+                    else None
+                ),
             )
         if stage_kind == "profile":
             feedback = _profile_stage(

@@ -237,6 +237,27 @@ class InstrumentOutputTest(unittest.TestCase):
             target.peak.for_contract(DOT).source, PeakSource.MICROBENCHMARK
         )
 
+    def test_one_peak_record_can_cover_bf16_and_ieee_fp32_contracts(self) -> None:
+        import sys
+
+        sys.path.insert(0, str(ROOT / "tools"))
+        from observe_target_peak import BF16_DOT, FP32_DOT, build_peak_block  # noqa: E402
+
+        block = build_peak_block(
+            observed_at=OBSERVED,
+            bandwidth_bytes_per_second=7.4e12,
+            arithmetic_flops_per_second={
+                BF16_DOT: 1.6e15,
+                FP32_DOT: 7.5e13,
+            },
+        )
+        document = _document()
+        document["peak"] = block
+        peak = Target.from_dict(document).peak
+        assert peak is not None
+        self.assertEqual(peak.for_contract(BF16_DOT).value, 1.6e15)
+        self.assertEqual(peak.for_contract(FP32_DOT).value, 7.5e13)
+
     def test_a_block_with_no_measured_contract_still_parses(self) -> None:
         """Every probe abstaining leaves a bandwidth-only peak, which is admissible."""
 

@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
 import sys
 from datetime import datetime, timezone
@@ -61,6 +62,7 @@ WARMUP = 5
 # Which vendor-library operation is admitted as an upper bound for which declared
 # contract. Absence is deliberate: a contract without a row here yields no rate.
 BF16_DOT = "triton.dot.bf16_fp32"
+FP32_DOT = "triton.dot.fp32_ieee"
 
 
 def derive_rate(quantity: float, samples_ms: list[float]) -> tuple[float, dict]:
@@ -129,7 +131,7 @@ def _cohort(callable_under_test, torch) -> list[float]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", default="compiler/targets/sm_100a.json")
-    parser.add_argument("--out", required=True)
+    parser.add_argument("--out")
     parser.add_argument("--observed-at")
     parser.add_argument(
         "--stream-elements",
@@ -140,7 +142,22 @@ def main() -> int:
     parser.add_argument("--matmul-size", type=int, default=8192)
     arguments = parser.parse_args()
 
-    out = Path(arguments.out)
+    kernelinfra_result = os.environ.get("KERNELINFRA_RESULT")
+    if kernelinfra_result:
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+        if (
+            os.environ.get("KERNELINFRA_STAGE_KIND") != "profile"
+            or not os.environ.get("KERNELINFRA_RUN_ID")
+            or not visible
+            or "," in visible
+            or not os.environ.get("KERNELINFRA_STAGE_DIR")
+        ):
+            raise SystemExit("broker-visible target peak environment differs")
+        out = Path(os.environ["KERNELINFRA_STAGE_DIR"]).resolve(strict=True) / "target-peak.json"
+    elif arguments.out:
+        out = Path(arguments.out)
+    else:
+        parser.error("--out is required outside a GPU Infra stage")
     if out.exists():
         raise SystemExit(f"{out} already exists; a new measurement gets a new file")
 
@@ -200,6 +217,29 @@ def main() -> int:
         del left, right
         torch.cuda.empty_cache()
 
+    if FP32_DOT in target.instruction_contracts:
+        size = arguments.matmul_size
+        left = torch.empty((size, size), dtype=torch.float32, device="cuda").normal_()
+        right = torch.empty((size, size), dtype=torch.float32, device="cuda").normal_()
+        flops = 2.0 * size * size * size
+        previous_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = False
+        try:
+            samples = _cohort(lambda: torch.matmul(left, right), torch)
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = previous_tf32
+        rate, summary = derive_rate(flops, samples)
+        arithmetic[FP32_DOT] = rate
+        measurements[FP32_DOT] = {
+            "probe": f"cuBLAS IEEE fp32 matmul, {size}x{size}x{size}, TF32 disabled",
+            "flops_per_sample": flops,
+            "samples_ms": samples,
+            "summary": summary,
+            "flops_per_second": rate,
+        }
+        del left, right
+        torch.cuda.empty_cache()
+
     unmeasured = sorted(
         contract
         for contract in target.instruction_contracts
@@ -243,6 +283,30 @@ def main() -> int:
         "bytes,\nwhich the Compiler Revision is content bound to -- it belongs in a "
         "release, not an edit."
     )
+    if kernelinfra_result:
+        result_path = Path(kernelinfra_result).absolute()
+        if result_path.exists() or result_path.is_symlink():
+            raise SystemExit("refusing to overwrite GPU Infra stage result")
+        result_path.write_text(
+            json.dumps(
+                {
+                    "schema": "kernelinfra.stage-result.v1",
+                    "status": "passed",
+                    "validity": "valid",
+                    "summary": "B200 target peak cohorts passed the stability gate",
+                    "workloads": [],
+                    "artifacts": {"target_peak": "target-peak.json"},
+                    "metrics": {
+                        "peak": block,
+                        "unmeasured_contracts": unmeasured,
+                    },
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     return 0
 
 

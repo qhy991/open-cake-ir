@@ -236,58 +236,81 @@ class LoadedQsaProgram:
         self.launch_calls = 0
         self.closed = False
 
-    def launch(self, tensors: Mapping[str, object], *, stream: object) -> None:
+    def _checked_stream(self, stream: object) -> object:
         if self.closed:
             raise ValueError("QSA Program is closed")
         (context,) = _driver_call(self._api, "cuCtxGetCurrent", outputs=1)
         if _handle(context) != self._context:
             raise ValueError("QSA Program CUDA context changed")
         stream_type = getattr(self._api, "CUstream", None)
-        launch_stream = (
+        return (
             stream_type(stream)
             if isinstance(stream, int) and callable(stream_type)
             else stream
         )
+
+    def _launch_artifact(
+        self,
+        kernel: QsaKernelArtifact,
+        tensors: Mapping[str, object],
+        launch_stream: object,
+    ) -> None:
+        pointers: list[int] = []
+        for name in kernel.arguments:
+            tensor = tensors.get(name)
+            pointer = getattr(tensor, "data_ptr", lambda: 0)()
+            if (
+                not isinstance(pointer, int)
+                or isinstance(pointer, bool)
+                or pointer <= 0
+                or not bool(getattr(tensor, "is_cuda", False))
+                or not bool(getattr(tensor, "is_contiguous", lambda: False)())
+            ):
+                raise ValueError(f"QSA Program tensor {name!r} differs")
+            pointers.append(pointer)
+        if len(set(pointers)) != len(pointers):
+            raise ValueError(f"QSA Program kernel {kernel.kernel_id!r} aliases tensors")
+        values = [ctypes.c_void_p(pointer) for pointer in pointers]
+        values.extend(
+            ctypes.c_void_p(0)
+            for _ in range(kernel.hidden_null_pointer_parameters)
+        )
+        parameters = (ctypes.c_void_p * len(values))(
+            *[
+                ctypes.cast(ctypes.pointer(value), ctypes.c_void_p)
+                for value in values
+            ]
+        )
+        _driver_call(
+            self._api,
+            "cuLaunchKernel",
+            self._functions[kernel.kernel_id],
+            *kernel.grid,
+            *kernel.block,
+            kernel.dynamic_shared_memory_bytes,
+            launch_stream,
+            parameters,
+            0,
+            outputs=0,
+        )
+        self.launch_calls += 1
+
+    def launch(
+        self,
+        tensors: Mapping[str, object],
+        *,
+        stream: object,
+        boundary: Callable[[str, str], None] | None = None,
+    ) -> None:
+        """Launch in contract order, optionally marking each queued node boundary."""
+
+        launch_stream = self._checked_stream(stream)
         for kernel in self.artifact.kernels:
-            pointers: list[int] = []
-            for name in kernel.arguments:
-                tensor = tensors.get(name)
-                pointer = getattr(tensor, "data_ptr", lambda: 0)()
-                if (
-                    not isinstance(pointer, int)
-                    or isinstance(pointer, bool)
-                    or pointer <= 0
-                    or not bool(getattr(tensor, "is_cuda", False))
-                    or not bool(getattr(tensor, "is_contiguous", lambda: False)())
-                ):
-                    raise ValueError(f"QSA Program tensor {name!r} differs")
-                pointers.append(pointer)
-            if len(set(pointers)) != len(pointers):
-                raise ValueError(f"QSA Program kernel {kernel.kernel_id!r} aliases tensors")
-            values = [ctypes.c_void_p(pointer) for pointer in pointers]
-            values.extend(
-                ctypes.c_void_p(0)
-                for _ in range(kernel.hidden_null_pointer_parameters)
-            )
-            parameters = (ctypes.c_void_p * len(values))(
-                *[
-                    ctypes.cast(ctypes.pointer(value), ctypes.c_void_p)
-                    for value in values
-                ]
-            )
-            _driver_call(
-                self._api,
-                "cuLaunchKernel",
-                self._functions[kernel.kernel_id],
-                *kernel.grid,
-                *kernel.block,
-                kernel.dynamic_shared_memory_bytes,
-                launch_stream,
-                parameters,
-                0,
-                outputs=0,
-            )
-            self.launch_calls += 1
+            if boundary is not None:
+                boundary(kernel.kernel_id, "before")
+            self._launch_artifact(kernel, tensors, launch_stream)
+            if boundary is not None:
+                boundary(kernel.kernel_id, "after")
 
     def close(self, *, synchronize: Callable[[], None]) -> None:
         if self.closed:
