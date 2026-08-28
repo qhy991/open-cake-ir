@@ -49,6 +49,11 @@ from .providers import (
     normalize_codex_turn,
     required_live_provider_qualification_scope,
 )
+from .qsa_feedback import (
+    qsa_compiler_feedback,
+    qsa_evaluation_feedback,
+    qsa_next_turn_request,
+)
 from .runtime import BoundedBrokerEvaluator, BrokerSubmitter, CommandBrokerSubmitter
 
 __all__ = [
@@ -90,6 +95,9 @@ __all__ = [
     "ProviderTurn",
     "normalize_codex_turn",
     "required_live_provider_qualification_scope",
+    "qsa_compiler_feedback",
+    "qsa_evaluation_feedback",
+    "qsa_next_turn_request",
     "ExactShape",
     "KernelSeed",
     "SpecialistLowering",

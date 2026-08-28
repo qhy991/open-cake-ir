@@ -21,6 +21,7 @@ _SOURCE_FILES = (
     "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.json",
     "tools/evaluate_flash_candidate.py",
     "tools/evaluate_qsa_candidate.py",
+    "tools/project_qsa_feedback.py",
 )
 
 

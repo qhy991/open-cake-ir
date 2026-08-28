@@ -24,6 +24,7 @@ from open_cake_ir.evaluation import (  # noqa: E402
     build_ncu_attribution_profile,
     materialize_qsa_case,
     ncu_attribution_feedback,
+    qsa_block_scores,
     reference_qsa_output,
 )
 from open_cake_ir.evaluation.portfolio_runtime import (  # noqa: E402
@@ -38,6 +39,7 @@ from open_cake_ir.lab import (  # noqa: E402
     BuildRequest,
     ExecutorRevision,
     TritonToolchainBuilder,
+    qsa_compiler_feedback,
 )
 
 _STAGE_SCHEMA = "kernelinfra.stage-result.v1"
@@ -52,6 +54,14 @@ _DIRECT_ORDER = ("pool_layernorm", "score_topk", "expand", "attention")
 
 class _BaselineCompileError(RuntimeError):
     """The task-owned fixed reference failed before candidate attribution."""
+
+
+class _CandidateRejected(ValueError):
+    """One candidate-local refusal and the bounded feedback it contributes."""
+
+    def __init__(self, message: str, feedback: Mapping[str, object]) -> None:
+        super().__init__(message)
+        self.feedback = dict(feedback)
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -212,7 +222,11 @@ def _compile_open_cake(
         assessment = compiler.assess_file(schedule_path)
         if not assessment.accepted or not assessment.lowering_eligible:
             codes = ",".join(finding.code for finding in assessment.findings)
-            raise ValueError(f"Open Cake node {node_id!r} rejected: {codes}")
+            feedback = dict(qsa_compiler_feedback(assessment))
+            feedback["program_node"] = node_id
+            raise _CandidateRejected(
+                f"Open Cake node {node_id!r} rejected: {codes}", feedback
+            )
         lowering = compiler.lower(assessment)
         request = BuildRequest(
             candidate_sha256=lowering.schedule_sha256,
@@ -226,8 +240,17 @@ def _compile_open_cake(
         try:
             launchable = toolchain.build(request)
         except Exception as error:
-            raise ValueError(
-                f"Open Cake node {node_id!r} toolchain rejected the lowering: {error}"
+            raise _CandidateRejected(
+                f"Open Cake node {node_id!r} toolchain rejected the lowering: {error}",
+                {
+                    "schema_version": 1,
+                    "kind": "compiler",
+                    "stage": "compile",
+                    "program_node": node_id,
+                    "actionable": True,
+                    "routed_to": "verifier",
+                    "diagnostic": str(error),
+                },
             ) from error
         node_root = output / node_id
         node_root.mkdir()
@@ -403,18 +426,32 @@ def _compile_stage(
     if arm == "open_cake":
         _compile_open_cake(root, candidate_root, candidate, candidate_output)
     elif arm == "direct_cuda":
-        _compile_direct(
-            _owned_file(candidate_root, candidate["source"], "direct candidate source"),
-            _owned_file(
-                candidate_root,
-                candidate["launch_manifest"],
-                "direct candidate launch manifest",
-            ),
-            candidate_output,
-            nvcc=nvcc,
-            cuobjdump=cuobjdump,
-            arm="direct_cuda",
-        )
+        try:
+            _compile_direct(
+                _owned_file(candidate_root, candidate["source"], "direct candidate source"),
+                _owned_file(
+                    candidate_root,
+                    candidate["launch_manifest"],
+                    "direct candidate launch manifest",
+                ),
+                candidate_output,
+                nvcc=nvcc,
+                cuobjdump=cuobjdump,
+                arm="direct_cuda",
+            )
+        except subprocess.CalledProcessError as error:
+            diagnostic = error.stderr.decode("utf-8", errors="replace")[-4096:]
+            raise _CandidateRejected(
+                f"direct CUDA candidate compile rejected: {diagnostic}",
+                {
+                    "schema_version": 1,
+                    "kind": "compiler",
+                    "stage": "compile",
+                    "actionable": True,
+                    "routed_to": "candidate",
+                    "diagnostic": diagnostic,
+                },
+            ) from error
     else:
         raise ValueError("QSA candidate arm differs")
     return arm, {
@@ -457,6 +494,78 @@ def _case(root: Path):
     return workload, inputs
 
 
+def _float_observation(actual, expected, *, atol: float, rtol: float) -> dict[str, object]:
+    import torch
+
+    close = torch.isclose(actual.float(), expected.float(), atol=atol, rtol=rtol)
+    difference = (actual.float() - expected.float()).abs()
+    return {
+        "passed": bool(close.all().item()),
+        "match_fraction": float(close.float().mean().item()),
+        "max_abs_diff": float(difference.max().item()),
+    }
+
+
+def _index_observation(actual, expected) -> dict[str, object]:
+    equal = actual == expected
+    return {
+        "passed": bool(equal.all().item()),
+        "match_fraction": float(equal.float().mean().item()),
+        "mismatch_count": int((~equal).sum().item()),
+    }
+
+
+def _qsa_failure_diagnostics(workload, inputs, tensors) -> dict[str, object]:
+    """Localize a failed final output at the first Program-owned boundary."""
+
+    import torch
+
+    index_key = inputs["index_k"][0, :, 0, :]
+    pooled = index_key.view(8192, 4, 128).float().mean(dim=1)
+    centered = pooled - pooled.mean(dim=-1, keepdim=True)
+    normalized = (
+        centered
+        * torch.rsqrt(centered.square().mean(dim=-1, keepdim=True) + 1.0e-6)
+        * inputs["k_norm_weight"]
+    )
+    observations: dict[str, dict[str, object]] = {
+        "pool": _float_observation(tensors["pooled"], pooled, atol=1.0e-5, rtol=1.0e-5),
+        "layernorm": _float_observation(
+            tensors["normalized_keys"], normalized, atol=1.0e-4, rtol=1.0e-4
+        ),
+    }
+
+    scores = qsa_block_scores(workload, inputs)
+    positions = torch.arange(32768, device=scores.device)
+    block_end = (torch.arange(8192, device=scores.device) + 1) * 4 - 1
+    admissible = block_end[None, :] <= positions[:, None]
+    masked = torch.where(admissible, scores, torch.finfo(scores.dtype).min)
+    selected_values, selected_blocks = masked.topk(512, dim=-1)
+    selected_blocks = torch.where(
+        selected_values == torch.finfo(scores.dtype).min,
+        -1,
+        selected_blocks,
+    ).to(torch.int32)
+    actual_blocks = torch.sort(tensors["block_indices"], dim=-1).values
+    expected_blocks = torch.sort(selected_blocks, dim=-1).values
+    observations["score_topk"] = _index_observation(actual_blocks, expected_blocks)
+
+    offsets = torch.arange(4, device=scores.device, dtype=torch.int32)
+    expected_tokens = torch.where(
+        selected_blocks[:, :, None] >= 0,
+        selected_blocks[:, :, None] * 4 + offsets,
+        -1,
+    ).reshape(32768, 2048)
+    actual_tokens = torch.sort(tensors["token_indices"], dim=-1).values
+    expected_tokens = torch.sort(expected_tokens, dim=-1).values
+    observations["expand"] = _index_observation(actual_tokens, expected_tokens)
+    first = next(
+        (name for name in ("pool", "layernorm", "score_topk", "expand") if not observations[name]["passed"]),
+        "attention",
+    )
+    return {"first_divergence": first, "boundaries": observations}
+
+
 def _correctness_stage(root: Path, build_root: Path, stage_dir: Path) -> tuple[bool, dict[str, object]]:
     import torch
 
@@ -474,6 +583,16 @@ def _correctness_stage(root: Path, build_root: Path, stage_dir: Path) -> tuple[b
             expected = reference_qsa_output(workload, inputs)
             observation = audit_qsa_output(workload, output, expected)
         metrics = observation.as_dict()
+        if not observation.passed:
+            try:
+                metrics["program_diagnostics"] = _qsa_failure_diagnostics(
+                    workload, inputs, tensors
+                )
+            except Exception as error:
+                metrics["program_diagnostics"] = {
+                    "first_divergence": "unknown",
+                    "diagnostic_error": f"{type(error).__name__}: {error}",
+                }
         _write_json(stage_dir / "correctness.json", metrics)
         return observation.passed, metrics
     finally:
@@ -684,6 +803,14 @@ def main(argv: list[str] | None = None) -> int:
                     status="failed",
                     validity="unknown",
                     summary=f"fixed QSA CUDA baseline compile failed: {error}",
+                )
+            except _CandidateRejected as error:
+                return _stage_result(
+                    result_path,
+                    status="failed",
+                    validity="invalid",
+                    summary=f"QSA candidate compile rejected: {error}",
+                    metrics=error.feedback,
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError) as error:
                 return _stage_result(
