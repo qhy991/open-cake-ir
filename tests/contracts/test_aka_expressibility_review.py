@@ -335,6 +335,28 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
             )
         )
         self.assertNotIn("oneOf", json.dumps(structured_schema, sort_keys=True))
+
+        def assert_strict_output_schema(node: object) -> None:
+            if not isinstance(node, dict):
+                return
+            if "const" in node or "enum" in node:
+                self.assertIn("type", node)
+            node_type = node.get("type")
+            if node_type == "object" or (
+                isinstance(node_type, list) and "object" in node_type
+            ):
+                self.assertFalse(node.get("additionalProperties", True))
+                properties = node.get("properties")
+                self.assertIsInstance(properties, dict)
+                self.assertEqual(set(node.get("required", [])), set(properties))
+            for value in node.values():
+                if isinstance(value, dict):
+                    assert_strict_output_schema(value)
+                elif isinstance(value, list):
+                    for item in value:
+                        assert_strict_output_schema(item)
+
+        assert_strict_output_schema(structured_schema)
         review = self.materialized_review()
         case_input = json.loads(
             (self.work_root / "cases/case-000001/input.json").read_text(

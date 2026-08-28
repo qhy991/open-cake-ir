@@ -374,9 +374,9 @@ def _aspect_schema() -> dict[str, object]:
             "reason",
         ],
         "properties": {
-            "owner_scope": {"enum": sorted(OWNER_SCOPES)},
+            "owner_scope": {"type": "string", "enum": sorted(OWNER_SCOPES)},
             "owner_relation": {"type": ["string", "null"]},
-            "disposition": {"enum": sorted(DISPOSITIONS)},
+            "disposition": {"type": "string", "enum": sorted(DISPOSITIONS)},
             "schedule": {"type": ["string", "null"]},
             "missing_ir": missing_ir,
             "reason": {"type": "string", "minLength": 1},
@@ -399,14 +399,40 @@ def review_schema() -> dict[str, object]:
             "delta",
         ],
         "properties": {
-            "schema": {"const": REVIEW_SCHEMA},
-            "source_ref": {"type": "object"},
+            "schema": {"type": "string", "const": REVIEW_SCHEMA},
+            "source_ref": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "repository_remote_observed_sanitized",
+                    "revision",
+                    "dataset_path",
+                    "reported_dataset_label",
+                    "path",
+                    "line",
+                    "primary_field",
+                ],
+                "properties": {
+                    "repository_remote_observed_sanitized": {
+                        "type": ["string", "null"]
+                    },
+                    "revision": {"type": "string", "minLength": 1},
+                    "dataset_path": {"type": "string", "minLength": 1},
+                    "reported_dataset_label": {"type": "string", "minLength": 1},
+                    "path": {"type": "string", "minLength": 1},
+                    "line": {"type": "integer", "minimum": 1},
+                    "primary_field": {"type": "string", "minLength": 1},
+                },
+            },
             "parent_contract": {
                 "type": "object",
                 "additionalProperties": False,
                 "required": ["status", "missing_facts", "completion_path"],
                 "properties": {
-                    "status": {"enum": sorted(PARENT_STATUSES)},
+                    "status": {
+                        "type": "string",
+                        "enum": sorted(PARENT_STATUSES),
+                    },
                     "missing_facts": {
                         "type": "array",
                         "items": {"type": "string", "minLength": 1},
