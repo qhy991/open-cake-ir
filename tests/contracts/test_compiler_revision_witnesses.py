@@ -29,6 +29,14 @@ class CompilerRevisionWitnessTests(unittest.TestCase):
         identities = {item.revision_id for item in witnesses}
 
         self.assertIn("open-cake-ir-sm100a-v4", identities)
+        self.assertTrue(
+            any(
+                item.revision_id == "open-cake-ir-sm100a-v31"
+                and item.path
+                == "inventory/QSA_TILE_SEARCH_R8_COMPILER_WITNESS_ERRATUM_20260828.json"
+                for item in witnesses
+            )
+        )
         # This unresolved historical name is still unavailable for reuse.
         self.assertIn("open-cake-ir-sm100a-v6", identities)
         self.assertTrue(

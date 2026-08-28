@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "kind": "inventory_erratum",
+  "corrects": "inventory/QSA_TILE_SEARCH_R8_20260828.json",
+  "correction": {
+    "compiler_revision_id": "open-cake-ir-sm100a-v31"
+  },
+  "reason": "The original inventory recorded the same identity in an unrecognized scalar compiler_revision field, so canonical witness discovery could incorrectly reuse a Revision already observed on B200."
+}
