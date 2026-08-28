@@ -83,6 +83,10 @@ python tools/review_aka_expressibility.py verify \
   --work-root /new/external/aka-expressibility-review --case-id case-000001 --finalize
 python tools/review_aka_expressibility.py status \
   --work-root /new/external/aka-expressibility-review
+python tools/run_aka_expressibility_codex.py \
+  --dataset-root /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --source-revision <AKA_COMMIT> --record-format aka_v1_operator_sft \
+  --work-root /new/external/aka-expressibility-sol-max --limit 1
 python tools/report_schedule_work.py --target compiler/targets/sm_100a.json   # no GPU
 python tools/observe_target_peak.py --out evidence/calibration/<NEW>.json    # exclusive: timing
 ```
@@ -111,6 +115,15 @@ complete-kernel-parent completion. Output classes are deliberately provisional
 `semantic_binding=reviewer_claimed`, and always report `gpu_test=not_run`. They are a review
 queue, not IR coverage, semantic equivalence, a Corpus Gate, or an optimization result.
 Omit `--finalize` to preview the deterministic check without creating `checked.json`.
+
+The sequential Codex runner fixes `gpt-5.6-sol` with `model_reasoning_effort=max`, disables
+plugins, apps, browser/computer use, memory, skills and multi-agent features, and uses one
+ephemeral workspace-write Turn per case. It preserves raw Codex JSONL and stderr outside the
+case, accepts only the fixed review and case-local Schedule filenames, runs the deterministic
+checker, and stops on the first model, schema or Compiler failure without retrying or
+skipping. Start with `--limit 1`; increase the positive limit only after the preceding case
+is checked. The model Turn is review generation only and never authorizes provider, remote or
+GPU work.
 
 Read-only Evidence audit does not normalize clone-time modes. It reports archive content
 integrity and `filesystem_custody_verified` separately; weak modes leave intact bytes

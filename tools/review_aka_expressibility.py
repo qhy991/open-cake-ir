@@ -257,7 +257,11 @@ def _git_closure_identity(
 def _checker_identity(root: Path = ROOT) -> dict[str, object]:
     return _git_closure_identity(
         root,
-        ("tools/review_aka_expressibility.py", "tools/audit_aka_corpus.py"),
+        (
+            "tools/review_aka_expressibility.py",
+            "tools/run_aka_expressibility_codex.py",
+            "tools/audit_aka_corpus.py",
+        ),
         "checker",
     )
 

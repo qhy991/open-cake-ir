@@ -58,6 +58,7 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
             "git_commit": checker_commit,
             "paths": [
                 "tools/review_aka_expressibility.py",
+                "tools/run_aka_expressibility_codex.py",
                 "tools/audit_aka_corpus.py",
             ],
         }

@@ -174,6 +174,13 @@ redirect candidates. They must not be aggregated as released IR coverage. A futu
 independent semantic adjudicator and workload-owned external evaluation are required before
 any row may become described/tested evidence or motivate a Compiler Corpus change.
 
+`tools/run_aka_expressibility_codex.py` is a transport-only sequential consumer of that
+review layer. It fixes GPT-5.6 Sol at max reasoning, disables unrelated tools and agent
+orchestration, retains raw Codex receipts, and stops at the first invalid or unchecked case.
+It cannot write a derived class directly: the deterministic reviewer still recomputes every
+parent, owner, Schedule, Finding and lowering result. A Codex completion therefore changes no
+claim boundary and never authorizes GPU work.
+
 ## Initial IR assessment
 
 The current vocabulary is plausible but not broad enough to call complete. The useful
