@@ -20,7 +20,7 @@ from open_cake_ir.evaluation import ProgramContract, WorkloadContract  # noqa: E
 from open_cake_ir.lab import ExecutorRevision  # noqa: E402
 
 _RUNTIME_PATH = ROOT / "runtime/qsa-seed-gpu-infra-verda-v1.json"
-_PROGRAM_PATH = ROOT / "contracts/programs/qsa-prefill-t32768-v1.json"
+_PROGRAM_PATH = ROOT / "contracts/programs/qsa-prefill-t32768-v2.json"
 _WORKLOAD_PATH = ROOT / "contracts/workloads/qsa-prefill-t32768-v1.json"
 _DIRECT_SOURCE = ROOT / "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.cu"
 _DIRECT_MANIFEST = ROOT / "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.json"

@@ -16,13 +16,14 @@ from open_cake_ir.evaluation import ProgramContract  # noqa: E402
 class ProgramContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
-        cls.path = ROOT / "contracts/programs/qsa-prefill-t32768-v1.json"
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        cls.path = ROOT / "contracts/programs/qsa-prefill-t32768-v2.json"
 
     def test_qsa_program_has_one_public_abi_and_five_ordered_schedules(self) -> None:
         program = ProgramContract.load(ROOT, self.path, self.compiler)
 
         self.assertEqual(program.public_outputs, ("output",))
+        self.assertEqual(program.program_id, "qsa-prefill-t32768-cake-port-v2")
         self.assertEqual(
             tuple(node.node_id for node in program.nodes),
             ("pool", "layernorm", "score_topk", "expand", "attention"),
