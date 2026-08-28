@@ -117,6 +117,7 @@ def _task(
     runtime: dict[str, object],
     executor: ExecutorRevision,
     protocol: str,
+    component_timing: bool,
 ) -> dict[str, object]:
     judge = runtime["judge"]
     assert isinstance(judge, dict)
@@ -130,6 +131,10 @@ def _task(
         "--cuobjdump",
         str(judge["cuobjdump"]),
     ]
+    if component_timing:
+        if protocol != "seed":
+            raise ValueError("QSA component timing requires the seed protocol")
+        command.append("--component-timing")
     identity = f"{executor.executor_id}@{executor.canonical_sha256}"
     stages: list[dict[str, object]] = [
         {
@@ -193,7 +198,11 @@ def _task(
         raise ValueError("QSA execution protocol differs")
     return {
         "schema": "kernelinfra.task.v1",
-        "task_id": f"open-cake-qsa-prefill-t32768-{protocol}-v1",
+        "task_id": (
+            "open-cake-qsa-prefill-t32768-seed-component-v1"
+            if component_timing
+            else f"open-cake-qsa-prefill-t32768-{protocol}-v1"
+        ),
         "description": (
             "QSA target_t32768 seed-path qualification; candidate versus one hidden "
             "fixed direct-CUDA reference with external FP32 oracle and CUPTI cold-L2 timing."
@@ -296,6 +305,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=ROOT.parent.parent / "gpu-infra",
     )
     parser.add_argument(
+        "--component-timing",
+        action="store_true",
+        help="append diagnostic ordered node timing after the primary seed benchmark",
+    )
+    parser.add_argument(
         "--protocol",
         choices=("seed", "profile"),
         default="seed",
@@ -336,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
             runtime=runtime,
             executor=executor,
             protocol=arguments.protocol,
+            component_timing=arguments.component_timing,
         ),
     )
     catalog_path = run_root / "catalog.json"
@@ -397,6 +412,7 @@ def main(argv: list[str] | None = None) -> int:
                 "executor_revision": executor.executor_id,
                 "arm": arguments.arm,
                 "protocol": arguments.protocol,
+                "component_timing": arguments.component_timing,
                 "run_root": str(run_root),
                 "routes": str(routes),
             },
