@@ -45,7 +45,9 @@ def _integer(value: object, context: str, minimum: int, maximum: int) -> int:
         or isinstance(value, bool)
         or not minimum <= value <= maximum
     ):
-        raise ValueError(f"{context} must be an integer in [{minimum}, {maximum}]")
+        raise ValueError(
+            f"{context} must be an integer in [{minimum}, {maximum}]; got {value!r}"
+        )
     return value
 
 
