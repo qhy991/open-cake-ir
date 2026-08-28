@@ -16,6 +16,7 @@ import copy
 import json
 import unittest
 from pathlib import Path
+from typing import get_args
 
 from jsonschema import Draft202012Validator
 
@@ -29,11 +30,13 @@ from open_cake_ir.compiler.ir import (
     ElementwiseParameters,
     EpilogueFormula,
     EpilogueParameters,
+    FenceProxyParameters,
     IndexTieBreak,
     LoadMovement,
     MemorySpace,
     NaNPolicy,
     OperationKind,
+    OperationParameters,
     ReduceOp,
     ReduceParameters,
     ReductionScope,
@@ -399,6 +402,19 @@ class StrictStructureTest(unittest.TestCase):
                 self.assertIn("identifier", message)
                 self.assertTrue(list(validator.iter_errors(document)))
 
+        for terminator in ("\n", "\r", "\r\n", "\u2028", "\u2029"):
+            with self.subTest(terminator=repr(terminator)):
+                document = _mutated(
+                    B32,
+                    lambda d, terminator=terminator: d["buffers"][0].update(
+                        name=f"token_values{terminator}"
+                    ),
+                )
+                message = self._reject(document)
+                self.assertIn("schedule.buffers[0].name", message)
+                self.assertIn("identifier", message)
+                self.assertTrue(list(validator.iter_errors(document)))
+
         # These identify the Schedule and its external Target contract; neither is a
         # generated symbol, so applying the declaration-name grammar here would narrow a
         # different fact merely because both facts are strings.
@@ -413,6 +429,11 @@ class StrictStructureTest(unittest.TestCase):
         self.assertEqual(schedule.schedule_id, "schedule-id/with-revision")
         self.assertEqual(schedule.target, "target-family/revision")
         self.assertEqual(list(validator.iter_errors(document)), [])
+
+    def test_fence_proxy_parameters_is_import_compatibility_only(self) -> None:
+        self.assertEqual(FenceProxyParameters(), FenceProxyParameters())
+        self.assertNotIn("fence_proxy", {kind.value for kind in OperationKind})
+        self.assertNotIn(FenceProxyParameters, get_args(OperationParameters))
 
     def test_residency_must_declare_a_commitment_in_parser_and_schema(self) -> None:
         validator = Draft202012Validator(schedule_schema())

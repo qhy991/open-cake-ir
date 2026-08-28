@@ -313,9 +313,11 @@ class BoundaryPolicy(str, Enum):
 
 
 # Schedule declarations are emitted as names in both Python lowering backends.  The
-# authoring Schema projects this exact pattern; keeping it here makes construction, not
-# emission, the authority for whether a declared name can be materialized.
-_IDENTIFIER_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
+# authoring Schema projects this exact body; keeping it here makes construction, not
+# emission, the authority for whether a declared name can be materialized.  Anchoring is
+# deliberately left to each validation API because Python fullmatch and JSON Schema
+# pattern search have different end-of-input semantics.
+_IDENTIFIER_BODY = r"[A-Za-z_][A-Za-z0-9_]*"
 
 
 def _strict_object(
@@ -344,7 +346,7 @@ def _string(value: Any, context: str) -> str:
 
 def _identifier(value: Any, context: str) -> str:
     name = _string(value, context)
-    if re.fullmatch(_IDENTIFIER_PATTERN, name) is None:
+    if re.fullmatch(_IDENTIFIER_BODY, name) is None:
         raise ScheduleParseError(f"{context} must be an identifier")
     return name
 
@@ -1210,6 +1212,17 @@ class ElementwiseParameters:
 @dataclass(frozen=True)
 class StoreParameters:
     coalesced: bool
+
+
+@dataclass(frozen=True)
+class FenceProxyParameters:
+    """Historical direct-import compatibility shell; not an active IR parameter.
+
+    Earlier revisions exposed this class through ``compiler.ir`` as the return type of an
+    unreachable operation-kind fallback.  No ``OperationKind`` ever named a fence-proxy
+    operation.  Retain the import for one successor without restoring that phantom syntax:
+    the active ``OperationParameters`` union and parser intentionally exclude this shell.
+    """
 
 
 OperationParameters = Union[

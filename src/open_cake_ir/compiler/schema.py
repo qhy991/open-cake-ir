@@ -13,7 +13,7 @@ import json
 from typing import Any
 
 from .ir import (
-    _IDENTIFIER_PATTERN,
+    _IDENTIFIER_BODY,
     PLACED_CONTRACT_PREFIXES,
     PLACEMENT_FIELDS,
     AccessIndexKind,
@@ -42,7 +42,15 @@ from .ir import (
     Swizzle,
 )
 
-_NAME = {"type": "string", "pattern": _IDENTIFIER_PATTERN}
+# JSON Schema `pattern` searches rather than matching the whole string, and `$` may match
+# immediately before a final line terminator.  The parser owns one unanchored identifier
+# body; the projection anchors it and separately forbids every ECMAScript line terminator
+# so schema implementations cannot admit a name that Python `fullmatch` rejects.
+_NAME = {
+    "type": "string",
+    "pattern": rf"^(?:{_IDENTIFIER_BODY})$",
+    "not": {"pattern": r"[\r\n\u2028\u2029]"},
+}
 _NAMES = {"type": "array", "items": _NAME}
 _POSITIVE = {"type": "integer", "minimum": 1}
 _NONNEGATIVE = {"type": "integer", "minimum": 0}

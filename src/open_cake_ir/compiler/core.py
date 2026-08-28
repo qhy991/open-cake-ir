@@ -267,6 +267,58 @@ def _canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
+_STRUCTURAL_DIAGNOSTIC_PREFIX = b"open-cake.structural-json-diagnostic.v1\0"
+
+
+def _diagnostic_json_value(value: object) -> object:
+    """Injectively tag every value type produced by ``json.loads``.
+
+    A tagged tree avoids conflating a problematic decoded value such as positive infinity
+    with an ordinary JSON object that happens to spell a diagnostic marker.  Float hex
+    binds the exact decoded binary value, and the final encoder escapes lone surrogates.
+    """
+
+    if value is None:
+        return ["null"]
+    if isinstance(value, bool):
+        return ["boolean", value]
+    if isinstance(value, int):
+        return ["integer", str(value)]
+    if isinstance(value, float):
+        return ["float", value.hex()]
+    if isinstance(value, str):
+        return ["string", value]
+    if isinstance(value, list):
+        return ["array", [_diagnostic_json_value(item) for item in value]]
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise TypeError("decoded JSON object keys must be strings")
+        return [
+            "object",
+            [
+                [key, _diagnostic_json_value(value[key])]
+                for key in sorted(cast(Mapping[str, object], value))
+            ],
+        ]
+    raise TypeError(f"{type(value).__name__} is not a decoded JSON value")
+
+
+def _structural_json_bytes(value: object) -> bytes:
+    """Return ordinary canonical JSON when possible, else domain-separated diagnostics."""
+
+    try:
+        return _canonical_json_bytes(value)
+    except (TypeError, ValueError, UnicodeEncodeError):
+        diagnostic = json.dumps(
+            _diagnostic_json_value(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+        return _STRUCTURAL_DIAGNOSTIC_PREFIX + diagnostic
+
+
 def _object(value: object, path: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise CompilerError(f"{path} must be an object")
@@ -756,10 +808,10 @@ class Compiler:
 
         schedule_path = Path(path).resolve(strict=True)
         value = json.loads(schedule_path.read_text(encoding="utf-8"))
-        return self.assess(_object(value, "schedule"))
+        return self.assess(value)
 
-    def assess(self, schedule: Mapping[str, object]) -> Assessment:
-        """Assess one parsed Schedule document."""
+    def assess(self, schedule: object) -> Assessment:
+        """Assess one decoded Schedule JSON value."""
 
         # Structural admissibility has one owner: the typed IR. It is stricter than the
         # checks below -- closed vocabularies are enums and unknown fields are refused --
@@ -772,6 +824,17 @@ class Compiler:
             typed_schedule = Schedule.from_dict(schedule)
         except ScheduleParseError as error:
             return self._structural_rejection(schedule, error)
+        # Successful canonical parsing proves this is a Mapping. Keep all remaining
+        # analysis on the caller's exact document so hashes and retained bytes continue
+        # to describe what was assessed, rather than a second typed serialization.
+        document = cast(Mapping[str, object], schedule)
+        try:
+            schedule_bytes = _canonical_json_bytes(document)
+        except (TypeError, ValueError, UnicodeEncodeError) as error:
+            return self._structural_rejection(
+                schedule,
+                ScheduleParseError(f"schedule cannot be canonical JSON: {error}"),
+            )
         schedule_id = typed_schedule.schedule_id
         target = typed_schedule.target
         findings: list[Finding] = []
@@ -785,21 +848,21 @@ class Compiler:
                 )
             )
 
-        roles = _objects(schedule.get("roles"), "roles")
-        allocations = _objects(schedule.get("allocations"), "allocations")
-        buffers = _objects(schedule.get("buffers"), "buffers")
-        pipelines = _objects(schedule.get("pipelines"), "pipelines")
-        barriers = _objects(schedule.get("barriers"), "barriers")
-        operations = _objects(schedule.get("operations"), "operations")
+        roles = _objects(document.get("roles"), "roles")
+        allocations = _objects(document.get("allocations"), "allocations")
+        buffers = _objects(document.get("buffers"), "buffers")
+        pipelines = _objects(document.get("pipelines"), "pipelines")
+        barriers = _objects(document.get("barriers"), "barriers")
+        operations = _objects(document.get("operations"), "operations")
         role_by_name = _named(roles, "roles")
         allocation_by_name = _named(allocations, "allocations")
         buffer_by_name = _named(buffers, "buffers")
         pipeline_by_name = _named(pipelines, "pipelines")
         barrier_by_name = _named(barriers, "barriers")
-        parsed_grid = _resolve_grid(schedule, buffer_by_name)
-        if "program_map" in schedule:
-            _objects(schedule.get("tile_loops", []), "tile_loops")
-            _objects(schedule.get("access_maps", []), "access_maps")
+        parsed_grid = _resolve_grid(document, buffer_by_name)
+        if "program_map" in document:
+            _objects(document.get("tile_loops", []), "tile_loops")
+            _objects(document.get("access_maps", []), "access_maps")
 
         used_warps = {
             warp for role in typed_schedule.roles for warp in role.warps
@@ -975,7 +1038,7 @@ class Compiler:
             operation_ids.add(op_id)
             operation_counts[kind] += 1
 
-        outputs = _strings(schedule.get("outputs"), "outputs")
+        outputs = _strings(document.get("outputs"), "outputs")
         for index, output in enumerate(outputs):
             buffer = buffer_by_name.get(output)
             if buffer is None or buffer.get("mode") != "output":
@@ -1013,7 +1076,7 @@ class Compiler:
             asset_findings = asset.preflight(typed_schedule)
             findings.extend(asset_findings)
             if (
-                _semantic_schedule_sha256(schedule) != asset.semantic_sha256
+                _semantic_schedule_sha256(document) != asset.semantic_sha256
                 and not asset_findings
             ):
                 findings.append(
@@ -1069,7 +1132,7 @@ class Compiler:
                     operation.get("id"): operation for operation in operations
                 }
                 for index, loop in enumerate(
-                    _objects(schedule.get("tile_loops", []), "tile_loops")
+                    _objects(document.get("tile_loops", []), "tile_loops")
                 ):
                     options = _object(
                         loop.get("range_options"),
@@ -1117,7 +1180,7 @@ class Compiler:
         lowering_eligible = accepted and not any(
             finding.blocks_lowering for finding in findings
         )
-        semantic_sha256 = _semantic_schedule_sha256(schedule)
+        semantic_sha256 = _semantic_schedule_sha256(document)
         analysis = MappingProxyType(
             {
                 "grid": parsed_grid,
@@ -1131,7 +1194,7 @@ class Compiler:
             compiler_revision_id=self._revision_id,
             compiler_revision_sha256=self._revision_sha256,
             schedule_id=schedule_id,
-            schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
+            schedule_sha256=sha256(schedule_bytes).hexdigest(),
             target=target,
             route=route,
             accepted=accepted,
@@ -1140,28 +1203,32 @@ class Compiler:
             analysis=analysis,
             lowering_parameters=MappingProxyType(dict(lowering_parameters)),
             calibration_available=semantic_sha256 in self._calibration_coverage,
-            schedule_bytes=_canonical_json_bytes(schedule),
+            schedule_bytes=schedule_bytes,
         )
 
     def _structural_rejection(
-        self, schedule: Mapping[str, object], error: ScheduleParseError
+        self, schedule: object, error: ScheduleParseError
     ) -> Assessment:
         """One Assessment carrying the localized reason a Schedule is not well formed."""
 
         message = str(error)
         path, _, detail = message.partition(" ")
         route = None
-        try:
-            route = LoweringRoute.from_dict(schedule.get("lowering"))
-        except ScheduleParseError:
-            pass
-        schedule_id = schedule.get("schedule_id")
-        target = schedule.get("target")
+        schedule_id: object = None
+        target: object = None
+        if isinstance(schedule, Mapping):
+            try:
+                route = LoweringRoute.from_dict(schedule.get("lowering"))
+            except ScheduleParseError:
+                pass
+            schedule_id = schedule.get("schedule_id")
+            target = schedule.get("target")
+        schedule_bytes = _structural_json_bytes(schedule)
         return Assessment(
             compiler_revision_id=self._revision_id,
             compiler_revision_sha256=self._revision_sha256,
             schedule_id=schedule_id if isinstance(schedule_id, str) else "",
-            schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
+            schedule_sha256=sha256(schedule_bytes).hexdigest(),
             target=target if isinstance(target, str) else "",
             route=route,
             accepted=False,
@@ -1172,7 +1239,7 @@ class Compiler:
             analysis=MappingProxyType({}),
             lowering_parameters=MappingProxyType({}),
             calibration_available=False,
-            schedule_bytes=_canonical_json_bytes(schedule),
+            schedule_bytes=schedule_bytes,
         )
 
     def _emit(self, assessment: Assessment, backend: _GeneratedBackend) -> Lowering:

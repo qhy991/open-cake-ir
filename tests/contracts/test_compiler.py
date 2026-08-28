@@ -238,6 +238,117 @@ class CompilerContractTests(unittest.TestCase):
                     [("SCHEDULE_STRUCTURE", path)],
                 )
 
+    def test_non_object_json_roots_are_structural_feedback(self) -> None:
+        compiler = Compiler.load(ROOT, DRAFT_REVISION_PATH)
+        roots = ([], "not a schedule", 7, False, None)
+
+        with tempfile.TemporaryDirectory() as directory:
+            for index, root in enumerate(roots):
+                with self.subTest(root=root):
+                    path = Path(directory) / f"root-{index}.json"
+                    path.write_text(json.dumps(root), encoding="utf-8")
+
+                    for assessment in (compiler.assess(root), compiler.assess_file(path)):
+                        self.assertFalse(assessment.accepted)
+                        self.assertFalse(assessment.lowering_eligible)
+                        self.assertEqual(assessment.schedule_id, "")
+                        self.assertEqual(assessment.target, "")
+                        self.assertIsNone(assessment.route)
+                        self.assertEqual(
+                            assessment.schedule_bytes,
+                            json.dumps(
+                                root,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                                ensure_ascii=False,
+                                allow_nan=False,
+                            ).encode("utf-8"),
+                        )
+                        self.assertEqual(
+                            [
+                                (finding.code, finding.path, finding.message)
+                                for finding in assessment.findings
+                            ],
+                            [("SCHEDULE_STRUCTURE", "schedule", "must be an object")],
+                        )
+
+    def test_unencodable_json_roots_have_deterministic_structural_evidence(self) -> None:
+        compiler = Compiler.load(ROOT, DRAFT_REVISION_PATH)
+        cases = {
+            "overflowing_number": "1e400",
+            "escaped_lone_surrogate": r'"\ud800"',
+        }
+        observed_bytes: set[bytes] = set()
+
+        with tempfile.TemporaryDirectory() as directory:
+            for name, source in cases.items():
+                with self.subTest(name=name):
+                    decoded = json.loads(source)
+                    path = Path(directory) / f"{name}.json"
+                    path.write_text(source, encoding="utf-8")
+
+                    direct = compiler.assess(decoded)
+                    repeated = compiler.assess(decoded)
+                    from_file = compiler.assess_file(path)
+                    for assessment in (direct, repeated, from_file):
+                        self.assertFalse(assessment.accepted)
+                        self.assertFalse(assessment.lowering_eligible)
+                        self.assertEqual(
+                            [(finding.code, finding.path) for finding in assessment.findings],
+                            [("SCHEDULE_STRUCTURE", "schedule")],
+                        )
+                        self.assertTrue(
+                            assessment.schedule_bytes.startswith(
+                                b"open-cake.structural-json-diagnostic.v1\0"
+                            )
+                        )
+                        self.assertEqual(
+                            assessment.schedule_sha256,
+                            sha256(assessment.schedule_bytes).hexdigest(),
+                        )
+
+                    self.assertEqual(direct.schedule_bytes, repeated.schedule_bytes)
+                    self.assertEqual(direct.schedule_bytes, from_file.schedule_bytes)
+                    observed_bytes.add(direct.schedule_bytes)
+
+        self.assertEqual(len(observed_bytes), len(cases))
+
+    def test_unencodable_values_inside_a_schedule_are_structural_feedback(self) -> None:
+        compiler = Compiler.load(ROOT, DRAFT_REVISION_PATH)
+        original = json.loads(
+            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
+        )
+        cases = {
+            "lone_surrogate_id": lambda schedule: schedule.update(schedule_id="\ud800"),
+            "nonfinite_scalar": lambda schedule: next(
+                operation
+                for operation in schedule["operations"]
+                if operation["kind"] == "elementwise"
+                and operation["parameters"].get("scalar") is not None
+            )["parameters"].update(scalar=float("inf")),
+        }
+
+        for name, mutate in cases.items():
+            with self.subTest(name=name):
+                schedule = json.loads(json.dumps(original))
+                mutate(schedule)
+                assessment = compiler.assess(schedule)
+                self.assertFalse(assessment.accepted)
+                self.assertFalse(assessment.lowering_eligible)
+                self.assertEqual(
+                    [(finding.code, finding.path) for finding in assessment.findings],
+                    [("SCHEDULE_STRUCTURE", "schedule")],
+                )
+                self.assertTrue(
+                    assessment.schedule_bytes.startswith(
+                        b"open-cake.structural-json-diagnostic.v1\0"
+                    )
+                )
+                self.assertEqual(
+                    assessment.schedule_sha256,
+                    sha256(assessment.schedule_bytes).hexdigest(),
+                )
+
     def test_invalid_declared_name_is_structural_feedback(self) -> None:
         compiler = Compiler.load(ROOT, DRAFT_REVISION_PATH)
         schedule = json.loads(
