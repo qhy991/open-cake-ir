@@ -130,7 +130,7 @@ def _bounded_profile(profile: Mapping[str, object]) -> Mapping[str, object]:
             for key in (
                 "ctas_per_sm_upper_bound",
                 "binding_resource",
-                "registers_per_thread_lower_bound",
+                "logical_register_pressure_per_thread",
             )
         },
         "lowering": {

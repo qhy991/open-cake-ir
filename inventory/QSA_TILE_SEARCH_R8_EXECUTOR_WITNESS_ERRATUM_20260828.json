@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "kind": "inventory_erratum",
+  "corrects": "inventory/QSA_TILE_SEARCH_R8_20260828.json",
+  "correction": {
+    "executor_id": "open-cake-ir-b200-v36",
+    "executor_descriptor": "runtime/executors/open-cake-ir-b200-v36.json",
+    "executor_descriptor_raw_sha256": "037225dc0c24b6cb9c140bc469ea7b107beffc127a532406c34a6c5490e18596"
+  },
+  "reason": "The original inventory recorded the Executor id without the immutable descriptor binding recognized by the Executor release cycle, even though the retained B200 routes ran under v36."
+}

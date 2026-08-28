@@ -98,9 +98,9 @@ class QsaFeedbackTest(unittest.TestCase):
                 "score_topk": {
                     "work": {"flops": 100, "compulsory_read_bytes": 20},
                     "residency": {
-                        "ctas_per_sm_upper_bound": 3,
-                        "binding_resource": "logical_register_storage",
-                        "registers_per_thread_lower_bound": 72,
+                        "ctas_per_sm_upper_bound": 8,
+                        "binding_resource": "threads",
+                        "logical_register_pressure_per_thread": 72,
                         "bounds": [],
                     },
                     "lowering": {
@@ -113,12 +113,12 @@ class QsaFeedbackTest(unittest.TestCase):
                     "ncu_metrics": [
                         {
                             "metric": "launch__registers_per_thread",
-                            "estimate_kind": "lower_bound",
-                            "value": 72,
+                            "estimate_kind": "unknown",
+                            "value": None,
                             "unit": "register/thread",
-                            "coverage": "IR",
-                            "reasons": [],
-                            "missing": ["backend temporaries"],
+                            "coverage": "compiled backend allocation",
+                            "reasons": ["logical register pressure proxy=72"],
+                            "missing": ["compiled-kernel register allocation"],
                         },
                         {
                             "metric": "sm__throughput.avg.pct_of_peak_sustained_elapsed",
@@ -136,11 +136,14 @@ class QsaFeedbackTest(unittest.TestCase):
         feedback = qsa_evaluation_feedback(result, arm="open_cake")
         node = feedback["compiler"]["nodes"]["score_topk"]
 
-        self.assertEqual(node["residency"]["registers_per_thread_lower_bound"], 72)
-        self.assertEqual(node["ncu_estimates"][0]["value"], 72)
+        self.assertEqual(node["residency"]["logical_register_pressure_per_thread"], 72)
+        self.assertEqual(node["ncu_estimates"], [])
         self.assertEqual(
             node["ncu_abstentions"],
-            ["sm__throughput.avg.pct_of_peak_sustained_elapsed"],
+            [
+                "launch__registers_per_thread",
+                "sm__throughput.avg.pct_of_peak_sustained_elapsed",
+            ],
         )
 
     def test_infrastructure_fault_never_tells_the_agent_to_edit(self) -> None:
