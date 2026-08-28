@@ -1,0 +1,268 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_t32768_component_attribution_peak_calibration_and_bounded_frontier_search",
+  "scientific_claim_authorized": false,
+  "matched_agent_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "b7edc29ec4eaba8074995c16b8d5097990ab618b",
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v32",
+    "canonical_sha256": "9191b5ba9e3731196ee5b64d0b192843a78aa891223a95ae554c34c5e8925415"
+  },
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v38",
+    "canonical_sha256": "f8ad3c22cf93e1f38432da5a29812510a13b2781ee3fb4ae7390898ba58245d6",
+    "executor_descriptor": "runtime/executors/open-cake-ir-b200-v38.json",
+    "executor_descriptor_raw_sha256": "54b25cc101c1bf8e9b426a47323543b47aae047e9fba03fdd074f4e2b0f2291b"
+  },
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "contract": "docs/adr/0040-qsa-utilization-and-component-attribution.md",
+  "external_evidence_roots": {
+    "components": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v38-r10-components-20260828",
+    "profile": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v38-r10-profile-20260828"
+  },
+  "subcuda_analogs": {
+    "accepted": {
+      "case_id": "omoe-qwen35-tp2-r37-batched-paged-prefill",
+      "mechanism": "replace repeated request-local attention launches with one batched owner while preserving zero-copy state ownership",
+      "replay": "blocked_missing_tp2_root"
+    },
+    "rejected": {
+      "case_id": "omoe-qwen35-tp2-r02-r04-batch-attention-rejects",
+      "lesson": "3.75x-3.92x local attention gains remain invalid when the production semantic gate fails",
+      "replay": "passed"
+    },
+    "attribution": {
+      "case_id": "day3-sglang-amdahl-path-attribution",
+      "lesson": "component fractions choose the next experiment but do not establish full wall-time gain",
+      "replay": "passed"
+    }
+  },
+  "target_peak": {
+    "run_id": "open-cake-b200-target-peak-v1-5865c334b2d8",
+    "candidate_sha256": "b34223589c40d7a2ae29e204e9f972bf180f23dd68ad98aff9e05ff800546fde",
+    "outcome": "completed",
+    "validity": "valid",
+    "observed_at": "2026-08-28T15:02:23Z",
+    "memory_bandwidth_bytes_per_second": 6695709285187.448,
+    "bf16_flops_per_second": 1577582173074937.0,
+    "ieee_fp32_flops_per_second": 65950857866101.77,
+    "maximum_cv": 0.009030433083264,
+    "artifact_mirror": "target-peak-mirror",
+    "artifact_mirror_validation": "passed"
+  },
+  "initial_frontier_attribution": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-1eb5b711d251",
+    "candidate_sha256": "d525166315d0a8852ad0d86e309d87cb291b2190924a259acea6b85489a41002",
+    "candidate_median_ms": 288.212153,
+    "fixed_direct_baseline_median_ms": 676.428284,
+    "speedup": 2.346980434235887,
+    "correctness_match_fraction": 1.0,
+    "component_medians_ms": {
+      "pool": 0.09747199714183807,
+      "layernorm": 0.03699199855327606,
+      "score_topk": 94.02496337890625,
+      "expand": 0.05475199967622757,
+      "attention": 194.01571655273438
+    },
+    "program_roofline_efficiency": 0.030547118211314103,
+    "artifact_mirror": "tile256-component-mirror",
+    "artifact_mirror_validation": "passed"
+  },
+  "attention_tile_search": [
+    {
+      "tile": 64,
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-28e0fa4401e3",
+      "candidate_ms": 185.591184,
+      "attention_ms": 91.4224624633789,
+      "validity": "valid",
+      "correctness_match_fraction": 1.0
+    },
+    {
+      "tile": 128,
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-1c6115424190",
+      "candidate_ms": 176.535035,
+      "attention_ms": 82.29638671875,
+      "validity": "valid",
+      "correctness_match_fraction": 1.0
+    },
+    {
+      "tile": 256,
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-4d03185bd537",
+      "candidate_ms": 163.629164,
+      "attention_ms": 69.20572662353516,
+      "validity": "valid",
+      "correctness_match_fraction": 1.0
+    },
+    {
+      "tile": 512,
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-c93609c0fff7",
+      "candidate_ms": 351.303134,
+      "attention_ms": 256.9396057128906,
+      "validity": "valid",
+      "correctness_match_fraction": 1.0,
+      "disposition": "negative_resource_cliff"
+    },
+    {
+      "tile": 1024,
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-f448d83bb563",
+      "candidate_ms": 1412.218365,
+      "attention_ms": 1317.87890625,
+      "validity": "valid",
+      "correctness_match_fraction": 1.0,
+      "disposition": "negative_resource_cliff"
+    }
+  ],
+  "score_search": [
+    {
+      "mechanism": "bf16_dot_after_fp32_layernorm",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-bc65c02adc0e",
+      "candidate_ms": 243.36211,
+      "score_topk_ms": 173.96707153320312,
+      "validity": "valid",
+      "correctness_match_fraction": 0.9999955147504807,
+      "disposition": "negative"
+    },
+    {
+      "mechanism": "warps8_stage1",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-6c0a6979835b",
+      "candidate_ms": 179.115015,
+      "score_topk_ms": 109.78688049316406,
+      "validity": "valid",
+      "disposition": "negative"
+    },
+    {
+      "mechanism": "warps8_stage3",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-9294545705f3",
+      "outcome": "rejected",
+      "validity": "invalid",
+      "reason": "dynamic_shared_memory_bytes 274432 exceeds 232448"
+    },
+    {
+      "mechanism": "warps4_stage2",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-008960724329",
+      "candidate_sha256": "d02d36679690f208631bd2c35c868457a32f77f6bb73a78d26a2d02553aac89d",
+      "candidate_ms": 154.267102,
+      "score_topk_ms": 84.9467544555664,
+      "validity": "valid",
+      "correctness_match_fraction": 1.0,
+      "disposition": "frontier"
+    },
+    {
+      "mechanism": "warps16_stage2",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-af703b2e97a7",
+      "candidate_ms": 224.447356,
+      "score_topk_ms": 155.1700439453125,
+      "validity": "valid",
+      "disposition": "negative"
+    },
+    {
+      "mechanism": "warps2_stage2",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-1605bbcddb70",
+      "candidate_ms": 189.259593,
+      "score_topk_ms": 119.96403503417969,
+      "validity": "valid",
+      "disposition": "negative"
+    },
+    {
+      "mechanism": "warps4_stage3",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-6b3f29a2dec8",
+      "outcome": "rejected",
+      "validity": "invalid",
+      "reason": "dynamic_shared_memory_bytes 274432 exceeds 232448"
+    },
+    {
+      "mechanism": "warps4_stage1",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-4c4a739fb6c1",
+      "candidate_ms": 200.587405,
+      "score_topk_ms": 131.2657928466797,
+      "dynamic_shared_memory_bytes": 135168,
+      "validity": "valid",
+      "disposition": "negative"
+    }
+  ],
+  "attention_warps4_negative": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-75364aee9443",
+    "candidate_ms": 456.937866,
+    "attention_ms": 371.6992492675781,
+    "validity": "valid",
+    "correctness_match_fraction": 1.0
+  },
+  "frontier": {
+    "candidate": "score_tile256_warps4_stage2_attention_tile256_warps8_stage2",
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-008960724329",
+    "candidate_sha256": "d02d36679690f208631bd2c35c868457a32f77f6bb73a78d26a2d02553aac89d",
+    "candidate_median_ms": 154.267102,
+    "fixed_direct_baseline_median_ms": 676.676349,
+    "speedup": 4.386394378498145,
+    "correctness_match_fraction": 1.0,
+    "component_medians_ms": {
+      "pool": 0.07417599856853485,
+      "layernorm": 0.03296000137925148,
+      "score_topk": 84.9467544555664,
+      "expand": 0.05478399991989136,
+      "attention": 69.08419036865234
+    },
+    "score_dynamic_shared_memory_bytes": 143360,
+    "program_roofline_floor_ms": 8.804050707628347,
+    "program_roofline_efficiency": 0.05707017629480294,
+    "score_mfu_lower_bound": 0.0988968210830656,
+    "attention_mfu_lower_bound": 0.005063984021090849,
+    "time_required_for_70_percent_at_current_declared_work_ms": 12.577215296611925,
+    "prior_frontier_over_new_frontier": 1.8682671111563371,
+    "artifact_mirror": "frontier-score-w4-mirror",
+    "artifact_mirror_validation": "passed"
+  },
+  "fresh_confirmation": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-8d55d75a3e82",
+    "candidate_sha256": "d02d36679690f208631bd2c35c868457a32f77f6bb73a78d26a2d02553aac89d",
+    "candidate_median_ms": 154.292362,
+    "fixed_direct_baseline_median_ms": 676.420041,
+    "speedup": 4.384015075224527,
+    "candidate_cv": 0.01484710197782397,
+    "baseline_cv": 0.00027864063116733327,
+    "correctness_match_fraction": 1.0,
+    "search_over_confirm_ratio": 0.9998362848317792,
+    "artifact_mirror": "frontier-confirm-mirror",
+    "artifact_mirror_validation": "passed"
+  },
+  "frontier_profile": {
+    "run_id": "open-cake-qsa-prefill-t32768-profile-v1-6caf7b00325c",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "registers_per_thread": 224.0,
+    "resident_ctas_per_sm": 1.0,
+    "binding_resources": [
+      "shared_memory"
+    ],
+    "active_warps_pct": 6.22,
+    "barrier_stall_pct": 0.6,
+    "long_scoreboard_stall_pct": 1.18,
+    "sm_throughput_pct": 17.17,
+    "dram_throughput_pct": 0.02,
+    "l2_throughput_pct": 3.58,
+    "artifact_mirror": "frontier-profile-mirror",
+    "artifact_mirror_validation": "passed"
+  },
+  "next_compiler_proposal": {
+    "commit": "0d06f7c",
+    "adr": "docs/adr/0041-resident-top-k-supports-signed-int32.md",
+    "mechanism": "resident signed-int32 top_k for deterministic block-id ordering before token expansion",
+    "status": "awaiting_corpus_expectation_adoption_and_compiler_release_review"
+  },
+  "cleanup": {
+    "component_daemon_pid": 1617744,
+    "profile_daemon_pid": 1969066,
+    "isolated_daemons_stopped": true,
+    "isolated_sockets_removed": true,
+    "broker_jobs_running_after_cleanup": 0,
+    "broker_queue_after_cleanup": 0,
+    "foreign_gpu_processes_untouched": true
+  },
+  "disposition": {
+    "decision": "continue",
+    "goal_70_percent_achieved": false,
+    "current_program_roofline_efficiency": 0.05707017629480294,
+    "next_bounded_action": "release the signed-int32 resident top_k Compiler successor, sort selected block ids in the expand node, and measure attention locality without changing the selected set"
+  }
+}
