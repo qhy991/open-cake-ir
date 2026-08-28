@@ -158,6 +158,22 @@ contract and verifier-owned terminal record, then retain Cake's Assessment, Sche
 ids and missing primitive paths. It must reference external evidence rather than copying
 its facts.
 
+## Iterative review layer
+
+`tools/review_aka_expressibility.py` consumes the immutable projection without changing its
+authority. It creates one external case at a time, keeps parent readiness independent from
+whole-parent and delta review, and derives classifications instead of accepting a reviewer
+verdict. Any non-unknown proposal requires a canonical complete-kernel-parent completion;
+case-local Schedule candidates are checked with the exact frozen Compiler `assess/lower`
+path. Compiler acceptance and lowering are not semantic equivalence: the result remains
+`semantic_binding=reviewer_claimed`, `review_state=checked`, and `gpu_test=not_run`.
+
+The admitted outputs are therefore provisional `schedule_candidate_lowerable`,
+`schedule_candidate_backend_blocked`, `schedule_gap_candidate`, or program/portfolio
+redirect candidates. They must not be aggregated as released IR coverage. A future
+independent semantic adjudicator and workload-owned external evaluation are required before
+any row may become described/tested evidence or motivate a Compiler Corpus change.
+
 ## Initial IR assessment
 
 The current vocabulary is plausible but not broad enough to call complete. The useful

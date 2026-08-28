@@ -73,6 +73,16 @@ python tools/ir_vocabulary.py                                           # no GPU
 python tools/audit_aka_corpus.py /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
   --source-revision <AKA_COMMIT> --record-format aka_v1_operator_sft \
   --dataset-label cuda_kernel_dataset_v1                                # no GPU; read-only
+python tools/review_aka_expressibility.py init \
+  --dataset-root /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --source-revision <AKA_COMMIT> --record-format aka_v1_operator_sft \
+  --work-root /new/external/aka-expressibility-review                    # no GPU; create-only
+python tools/review_aka_expressibility.py next \
+  --work-root /new/external/aka-expressibility-review                    # one case
+python tools/review_aka_expressibility.py verify \
+  --work-root /new/external/aka-expressibility-review --case-id case-000001
+python tools/review_aka_expressibility.py status \
+  --work-root /new/external/aka-expressibility-review
 python tools/report_schedule_work.py --target compiler/targets/sm_100a.json   # no GPU
 python tools/observe_target_peak.py --out evidence/calibration/<NEW>.json    # exclusive: timing
 ```
@@ -91,6 +101,15 @@ and lexical incidence for each code-artifact role; `--emit cases` produces the s
 reference-only human review queue. Both leave
 complete-parent and delta expressibility unknown, ignore `excluded/`, copy no model-visible
 fields or evidence, and never authorize a Schedule or vocabulary change.
+
+The expressibility reviewer consumes that immutable projection one row at a time. `next`
+atomically creates a case outside both repositories; an agent writes `review.json` using the
+work-level contract and Schema; `verify` then runs any case-local Schedule through the exact
+frozen Compiler `assess/lower` path. A non-unknown proposal requires a canonical
+complete-kernel-parent completion. Output classes are deliberately provisional
+(`schedule_candidate_*`, `schedule_gap_candidate`, or owner redirects), retain
+`semantic_binding=reviewer_claimed`, and always report `gpu_test=not_run`. They are a review
+queue, not IR coverage, semantic equivalence, a Corpus Gate, or an optimization result.
 
 Read-only Evidence audit does not normalize clone-time modes. It reports archive content
 integrity and `filesystem_custody_verified` separately; weak modes leave intact bytes
