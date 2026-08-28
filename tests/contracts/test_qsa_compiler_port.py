@@ -41,7 +41,10 @@ class QsaCompilerPortTest(unittest.TestCase):
         self.assertLess(relu, head_sum)
         self.assertLess(head_sum, top_k)
         self.assertIn("((query + 1) // 4)", source)
-        self.assertIn("select_blocks_source_selected =", source)
+        self.assertIn("select_blocks_source_valid =", source)
+        self.assertIn("select_blocks_ranked_keys = tl.topk(", source)
+        self.assertNotIn("select_blocks_source_candidates_", source)
+        self.assertLess(len(source.encode()), 10_000)
         self.assertIn("# CAKE_FINALIZE:select_blocks", source)
         self.assertIn("== 2147483647, -1", source)
 

@@ -1256,10 +1256,9 @@ class _TritonEmitter:
     def _emit_top_k(self, operation, pad: str) -> None:
         """Select a deterministic descending prefix from one resident score tile.
 
-        The current SM100 Triton path has one physical implementation: repeated maximum
-        value and minimum matching-index reductions. An explicit selected-position mask
-        keeps legal negative-infinity values distinct; replacing a winner with negative
-        infinity alone would select it again when every remaining value is also -inf.
+        One sortable uint64 carries both the IEEE-754 total order used here and the
+        lowest-index tie break.  This lets Triton's bitonic top-k select values and
+        indices together instead of emitting k serial max/min reduction chains.
         """
 
         source = self.schedule.buffer(operation.reads[0])
@@ -1270,37 +1269,16 @@ class _TritonEmitter:
         values, indices = operation.writes
         k = operation.parameters.k
         prefix = operation.op_id
-        selected = f"{prefix}_selected"
-        slots = f"{prefix}_slots"
         positions = f"{prefix}_source_positions"
 
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
-        self.line(f'{pad}{values} = tl.full(({k},), float("-inf"), tl.float32)')
-        self.line(f"{pad}{indices} = tl.zeros(({k},), tl.int32)")
-        self.line(f"{pad}{slots} = tl.arange(0, {k})")
         self.line(f"{pad}{positions} = tl.arange(0, {source.shape[0]})")
-        self.line(f"{pad}{selected} = tl.zeros(({source.shape[0]},), tl.int1)")
-        for slot in range(k):
-            value = f"{prefix}_value_{slot}"
-            index = f"{prefix}_index_{slot}"
-            candidates = f"{prefix}_candidates_{slot}"
-            matching = f"{prefix}_matching_{slot}"
-            self.line(
-                f'{pad}{candidates} = tl.where(~{selected}, '
-                f'{operation.reads[0]}, float("-inf"))'
-            )
-            self.line(f"{pad}{value} = tl.max({candidates}, axis=0)")
-            self.line(
-                f"{pad}{matching} = (~{selected}) & "
-                f"({operation.reads[0]} == {value})"
-            )
-            self.line(
-                f"{pad}{index} = tl.min(tl.where({matching}, {positions}, "
-                f"{source.shape[0]}), axis=0)"
-            )
-            self.line(f"{pad}{values} = tl.where({slots} == {slot}, {value}, {values})")
-            self.line(f"{pad}{indices} = tl.where({slots} == {slot}, {index}, {indices})")
-            self.line(f"{pad}{selected} |= {positions} == {index}")
+        keys = self._emit_top_k_keys(
+            operation.reads[0], positions, "True", prefix, pad
+        )
+        ranked = f"{prefix}_ranked_keys"
+        self.line(f"{pad}{ranked} = tl.topk({keys}, {k})")
+        self._emit_top_k_decode(ranked, values, indices, prefix, pad)
 
     def _emit_loop_carried_top_k(self, operation, source, pad: str) -> None:
         """Merge one score tile into deterministic loop-carried top-k state."""
@@ -1310,99 +1288,123 @@ class _TritonEmitter:
         k = operation.parameters.k
         prefix = operation.op_id
         source_positions = f"{prefix}_source_positions"
-        source_selected = f"{prefix}_source_selected"
-        state_slots = f"{prefix}_state_slots"
-        state_selected = f"{prefix}_state_selected"
+        source_valid = f"{prefix}_source_valid"
+        state_valid = f"{prefix}_state_valid"
         previous_values = f"{prefix}_previous_values"
         previous_indices = f"{prefix}_previous_indices"
-        output_slots = f"{prefix}_output_slots"
 
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}{previous_values} = {values}")
         self.line(f"{pad}{previous_indices} = {indices}")
-        self.line(f"{pad}{output_slots} = tl.arange(0, {k})")
-        self.line(f"{pad}{state_slots} = tl.arange(0, {k})")
         self.line(
             f"{pad}{source_positions} = {self.loop.iterator} + "
             f"tl.arange(0, {source.shape[0]})"
         )
         if self.loop.stop is None:
-            self.line(
-                f"{pad}{source_selected} = tl.zeros(({source.shape[0]},), tl.int1)"
-            )
+            self.line(f"{pad}{source_valid} = tl.full(({source.shape[0]},), True, tl.int1)")
         else:
             self.line(
-                f"{pad}{source_selected} = {source_positions} >= {self._loop_stop()}"
+                f"{pad}{source_valid} = {source_positions} < {self._loop_stop()}"
             )
-        self.line(f"{pad}{state_selected} = tl.zeros(({k},), tl.int1)")
-        self.line(f'{pad}{values} = tl.full(({k},), float("-inf"), tl.float32)')
-        self.line(f"{pad}{indices} = tl.full(({k},), 2147483647, tl.int32)")
+        self.line(f"{pad}{state_valid} = {previous_indices} != 2147483647")
+        source_keys = self._emit_top_k_keys(
+            operation.reads[0], source_positions, source_valid, f"{prefix}_source", pad
+        )
+        state_keys = self._emit_top_k_keys(
+            previous_values, previous_indices, state_valid, f"{prefix}_state", pad
+        )
+        width = max(source.shape[0], k)
+        source_keys = self._emit_top_k_key_padding(
+            source_keys, source.shape[0], width, f"{prefix}_source", pad
+        )
+        state_keys = self._emit_top_k_key_padding(
+            state_keys, k, width, f"{prefix}_state", pad
+        )
+        combined = f"{prefix}_combined_keys"
+        ranked = f"{prefix}_ranked_keys"
+        self.line(f"{pad}{combined} = tl.cat({state_keys}, {source_keys})")
+        self.line(f"{pad}{ranked} = tl.topk({combined}, {k})")
+        self._emit_top_k_decode(ranked, values, indices, prefix, pad)
 
-        for slot in range(k):
-            source_candidates = f"{prefix}_source_candidates_{slot}"
-            source_value = f"{prefix}_source_value_{slot}"
-            source_matching = f"{prefix}_source_matching_{slot}"
-            source_index = f"{prefix}_source_index_{slot}"
-            state_candidates = f"{prefix}_state_candidates_{slot}"
-            state_value = f"{prefix}_state_value_{slot}"
-            state_matching = f"{prefix}_state_matching_{slot}"
-            state_index = f"{prefix}_state_index_{slot}"
-            state_position = f"{prefix}_state_position_{slot}"
-            take_source = f"{prefix}_take_source_{slot}"
-            value = f"{prefix}_value_{slot}"
-            index = f"{prefix}_index_{slot}"
+    def _emit_top_k_keys(
+        self,
+        values: str,
+        indices: str,
+        valid: str,
+        prefix: str,
+        pad: str,
+    ) -> str:
+        """Pack FP32 order plus the lowest-index tie break into one uint64."""
 
-            self.line(
-                f'{pad}{source_candidates} = tl.where(~{source_selected}, '
-                f'{operation.reads[0]}, float("-inf"))'
-            )
-            self.line(f"{pad}{source_value} = tl.max({source_candidates}, axis=0)")
-            self.line(
-                f"{pad}{source_matching} = (~{source_selected}) & "
-                f"({operation.reads[0]} == {source_value})"
-            )
-            self.line(
-                f"{pad}{source_index} = tl.min(tl.where({source_matching}, "
-                f"{source_positions}, 2147483647), axis=0)"
-            )
-            self.line(
-                f'{pad}{state_candidates} = tl.where(~{state_selected}, '
-                f'{previous_values}, float("-inf"))'
-            )
-            self.line(f"{pad}{state_value} = tl.max({state_candidates}, axis=0)")
-            self.line(
-                f"{pad}{state_matching} = (~{state_selected}) & "
-                f"({previous_values} == {state_value})"
-            )
-            self.line(
-                f"{pad}{state_index} = tl.min(tl.where({state_matching}, "
-                f"{previous_indices}, 2147483647), axis=0)"
-            )
-            self.line(
-                f"{pad}{state_position} = tl.min(tl.where({state_matching} & "
-                f"({previous_indices} == {state_index}), {state_slots}, {k}), axis=0)"
-            )
-            self.line(
-                f"{pad}{take_source} = ({source_value} > {state_value}) | "
-                f"(({source_value} == {state_value}) & "
-                f"({source_index} < {state_index}))"
-            )
-            self.line(f"{pad}{value} = tl.where({take_source}, {source_value}, {state_value})")
-            self.line(f"{pad}{index} = tl.where({take_source}, {source_index}, {state_index})")
-            self.line(
-                f"{pad}{values} = tl.where({output_slots} == {slot}, {value}, {values})"
-            )
-            self.line(
-                f"{pad}{indices} = tl.where({output_slots} == {slot}, {index}, {indices})"
-            )
-            self.line(
-                f"{pad}{source_selected} |= {take_source} & "
-                f"({source_positions} == {source_index})"
-            )
-            self.line(
-                f"{pad}{state_selected} |= (~{take_source}) & "
-                f"({state_slots} == {state_position})"
-            )
+        canonical = f"{prefix}_canonical_scores"
+        bits = f"{prefix}_score_bits"
+        ordered = f"{prefix}_ordered_scores"
+        ties = f"{prefix}_tie_keys"
+        keys = f"{prefix}_keys"
+        self.line(f"{pad}{canonical} = tl.where({values} == 0.0, 0.0, {values})")
+        self.line(f"{pad}{bits} = {canonical}.to(tl.uint32, bitcast=True)")
+        self.line(
+            f"{pad}{ordered} = tl.where(({bits} & 0x80000000) != 0, "
+            f"{bits} ^ 0xffffffff, {bits} ^ 0x80000000)"
+        )
+        self.line(f"{pad}{ties} = 0xffffffff - {indices}.to(tl.uint32)")
+        self.line(
+            f"{pad}{keys} = tl.where({valid}, "
+            f"({ordered}.to(tl.uint64) << 32) | {ties}.to(tl.uint64), 0)"
+        )
+        return keys
+
+    def _emit_top_k_key_padding(
+        self,
+        keys: str,
+        extent: int,
+        target: int,
+        prefix: str,
+        pad: str,
+    ) -> str:
+        """Pad one power-of-two key vector to the common merge width."""
+
+        current = keys
+        while extent < target:
+            zeros = f"{prefix}_padding_{extent}"
+            padded = f"{prefix}_padded_{extent * 2}"
+            self.line(f"{pad}{zeros} = tl.zeros(({extent},), tl.uint64)")
+            self.line(f"{pad}{padded} = tl.cat({current}, {zeros})")
+            current = padded
+            extent *= 2
+        return current
+
+    def _emit_top_k_decode(
+        self,
+        keys: str,
+        values: str,
+        indices: str,
+        prefix: str,
+        pad: str,
+    ) -> None:
+        """Recover canonical FP32 values and int32 indices from ranked keys."""
+
+        ordered = f"{prefix}_ranked_ordered_scores"
+        bits = f"{prefix}_ranked_score_bits"
+        decoded = f"{prefix}_ranked_scores"
+        low = f"{prefix}_ranked_tie_keys"
+        decoded_indices = f"{prefix}_ranked_indices"
+        valid = f"{prefix}_ranked_valid"
+        self.line(f"{pad}{valid} = {keys} != 0")
+        self.line(f"{pad}{ordered} = ({keys} >> 32).to(tl.uint32)")
+        self.line(
+            f"{pad}{bits} = tl.where(({ordered} & 0x80000000) != 0, "
+            f"{ordered} ^ 0x80000000, {ordered} ^ 0xffffffff)"
+        )
+        self.line(f"{pad}{decoded} = {bits}.to(tl.float32, bitcast=True)")
+        self.line(f"{pad}{low} = ({keys} & 0xffffffff).to(tl.uint32)")
+        self.line(f"{pad}{decoded_indices} = (0xffffffff - {low}).to(tl.int32)")
+        self.line(
+            f'{pad}{values} = tl.where({valid}, {decoded}, float("-inf"))'
+        )
+        self.line(
+            f"{pad}{indices} = tl.where({valid}, {decoded_indices}, 2147483647)"
+        )
 
     def _emit_top_k_finalize(self, operation, pad: str) -> None:
         """Normalize unfilled loop-carried positions to the canonical -1 sentinel."""

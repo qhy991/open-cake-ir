@@ -15,6 +15,7 @@ from hashlib import sha256
 import itertools
 import json
 import re
+import struct
 import unittest
 from pathlib import Path
 
@@ -464,6 +465,13 @@ class ElementwiseArityTest(unittest.TestCase):
 
 
 class TopKEmissionTest(unittest.TestCase):
+    @staticmethod
+    def _key(value: float, index: int) -> int:
+        value = 0.0 if value == 0.0 else value
+        bits = struct.unpack("<I", struct.pack("<f", value))[0]
+        ordered = bits ^ (0xFFFFFFFF if bits & 0x80000000 else 0x80000000)
+        return (ordered << 32) | (0xFFFFFFFF - index)
+
     def test_selection_is_ordered_distinct_and_inspectable(self) -> None:
         source = emit(
             Schedule.load(ROOT / "corpus" / "schedules" / "top-k-b8-smoke.json"),
@@ -471,12 +479,21 @@ class TopKEmissionTest(unittest.TestCase):
         ).source
 
         ast.parse(source)
-        self.assertEqual(source.count(" = tl.max(select_experts_candidates_"), 8)
-        self.assertEqual(source.count(" = tl.min(tl.where(select_experts_matching_"), 8)
-        self.assertEqual(source.count("select_experts_selected |= "), 8)
-        self.assertIn("top_values = tl.where(select_experts_slots == 7", source)
-        self.assertIn("top_indices = tl.where(select_experts_slots == 7", source)
-        self.assertNotIn("return_indices_tie_break_left", source)
+        self.assertEqual(source.count("tl.topk(select_experts_keys, 8)"), 1)
+        self.assertIn("select_experts_score_bits ^ 0xffffffff", source)
+        self.assertIn("tl.where(score_row == 0.0, 0.0, score_row)", source)
+        self.assertIn("0xffffffff - select_experts_source_positions", source)
+        self.assertIn("select_experts_ranked_scores", source)
+        self.assertIn("select_experts_ranked_indices", source)
+        self.assertNotIn("select_experts_candidates_", source)
+
+    def test_composite_key_preserves_float_order_and_lowest_index_ties(self) -> None:
+        values = [float("-inf"), -7.0, -0.0, 0.0, 2.0, 2.0, float("inf")]
+        observed = sorted(
+            range(len(values)), key=lambda index: self._key(values[index], index), reverse=True
+        )
+        expected = sorted(range(len(values)), key=lambda index: (-values[index], index))
+        self.assertEqual(observed, expected)
 
 
 class DimensionSubRangeTest(unittest.TestCase):

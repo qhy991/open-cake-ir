@@ -2028,6 +2028,15 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                         f"{source.shape[0]}",
                         category,
                     )
+                if len(source.shape) == 1 and source.shape[0] & (source.shape[0] - 1):
+                    out.add(
+                        "TOP_K_SOURCE_UNLOWERABLE",
+                        f"{path}.reads",
+                        "the admitted SM100 Triton top_k merge uses power-of-two "
+                        f"resident vectors, but {source.name!r} has extent "
+                        f"{source.shape[0]}",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
                 if source.space is not MemorySpace.REGISTER:
                     out.add(
                         "TOP_K_SOURCE_SPACE",

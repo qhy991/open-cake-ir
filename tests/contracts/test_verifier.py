@@ -182,6 +182,22 @@ class HardwareConformanceTest(unittest.TestCase):
         self.assertIs(finding.category, FindingCategory.HARDWARE_CONFORMANCE)
         self.assertEqual(finding.path, "operations[1].parameters.k")
 
+    def test_current_top_k_lowering_refuses_non_power_of_two_source(self) -> None:
+        def change(document) -> None:
+            next(buffer for buffer in document["buffers"] if buffer["name"] == "scores")[
+                "shape"
+            ] = [8, 192]
+            next(
+                buffer for buffer in document["buffers"] if buffer["name"] == "score_row"
+            )["shape"] = [192]
+
+        schedule = _mutated(TOP_K, change)
+        finding = next(
+            f for f in verify(schedule, TARGET) if f.code == "TOP_K_SOURCE_UNLOWERABLE"
+        )
+        self.assertIs(finding.category, FindingCategory.HARDWARE_CONFORMANCE)
+        self.assertEqual(finding.path, "operations[1].reads")
+
     def test_warp_index_beyond_the_target_range_is_reported(self) -> None:
         """`len(warps)` treats a warp id as a count; the range check does not."""
 

@@ -31,6 +31,11 @@ class StreamingTopKTest(unittest.TestCase):
             "select_blocks_source_positions = score_start + tl.arange(0, 8)",
             source,
         )
+        self.assertIn(
+            "select_blocks_ranked_keys = tl.topk(select_blocks_combined_keys, 8)",
+            source,
+        )
+        self.assertNotIn("select_blocks_source_candidates_", source)
 
     def test_across_loop_without_a_loop_fails_locally(self) -> None:
         assessment = self.compiler.assess_file(
