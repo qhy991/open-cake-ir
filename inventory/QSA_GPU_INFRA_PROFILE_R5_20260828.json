@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_score_topk_attribution",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "source_commit": "beb6d8fb0a16c93712ca399983429ffd5b04a05d",
+  "executor_binding": {
+    "executor_id": "open-cake-ir-b200-v34",
+    "executor_descriptor": "runtime/executors/open-cake-ir-b200-v34.json",
+    "executor_canonical_sha256": "d7949a1f21cf4b0f705b9b66154f0a910eb480c119392641bc05b6e7fb0c14c7",
+    "executor_descriptor_raw_sha256": "4f25a673bf4758eafdaa7351e28b21f6606f3dec7cb740500f61434f132eb7b1"
+  },
+  "execution": {
+    "locator": "b200:open-cake-qsa-prefill-t32768-profile-v1-5699bdda274b",
+    "gpu_id": 0,
+    "profile_job_id": "gpuq-13d056a0a406",
+    "external_evidence_root": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-profile-r5-cake-20260828",
+    "collection": "collection-001",
+    "collection_status": "fetch_failed_catalog_command_timeout",
+    "authority": "node_owned_run"
+  },
+  "observed_result": {
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "correctness_max_abs_diff": 0.01848996803164482,
+    "profile": {
+      "kernel_name": "_cake_qsa_score_topk_t32768_kernel",
+      "tool": "Nsight Compute 2026.1.1.0",
+      "registers_per_thread": 224.0,
+      "resident_ctas_per_sm": 1.0,
+      "binding_resources": ["registers", "shared_memory"],
+      "active_warps_pct": 12.46,
+      "barrier_stall_pct": 35.33,
+      "long_scoreboard_stall_pct": 39.29,
+      "sm_throughput_pct": 9.22,
+      "dram_throughput_pct": 5.29,
+      "l2_throughput_pct": 3.41
+    }
+  },
+  "diagnosis": {
+    "earliest_performance_divergence": "loop-carried top_k lowering emits 512 serial value/index selections for every score tile",
+    "ir_vocabulary_missing": false,
+    "candidate_schedule_error": false,
+    "compiler_lowering_revision_justified": true,
+    "basis": "the same top_k primitive already states the semantics; changing the canonical lowering removes the observed serial dependency and synchronization expansion without changing the Schedule or Workload"
+  },
+  "disposition": {
+    "human_corpus_expectation_review_required": true,
+    "human_compiler_release_approval_required": true,
+    "gpu_validation_before_release_forbidden": true,
+    "next_action": "review the three lowering expectation deltas, run the full Corpus Gate after adoption, and decide whether to release the prepared Compiler successor"
+  }
+}
