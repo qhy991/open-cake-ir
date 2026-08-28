@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_existing_ir_codegen_search_while_int32_top_k_gate_awaits_review",
+  "scientific_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "b7edc29ec4eaba8074995c16b8d5097990ab618b",
+  "compiler_revision": "open-cake-ir-sm100a-v32",
+  "executor_revision": "open-cake-ir-b200-v38",
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "external_evidence_root": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v38-r11-codegen-20260829",
+  "parent_frontier": {
+    "candidate_ms": 154.267102,
+    "correctness_match_fraction": 1.0,
+    "score_topk_ms": 84.9467544555664,
+    "attention_ms": 69.08419036865234
+  },
+  "score_codegen": [
+    {
+      "mechanism": "flatten",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-d8b74624b950",
+      "outcome": "completed",
+      "validity": "valid",
+      "candidate_ms": 154.313452,
+      "correctness_match_fraction": 1.0,
+      "disposition": "null_below_5_percent"
+    },
+    {
+      "mechanism": "loop_unroll_factor_2",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-0d527a5caaaa",
+      "outcome": "rejected",
+      "validity": "invalid",
+      "reason": "dynamic_shared_memory_bytes 274432 exceeds 232448"
+    },
+    {
+      "mechanism": "loop_unroll_factor_4",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-66f034ea9f4c",
+      "outcome": "rejected",
+      "validity": "invalid",
+      "reason": "dynamic_shared_memory_bytes 536576 exceeds 232448"
+    },
+    {
+      "mechanism": "warp_specialize",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-bdd1756cd3ad",
+      "outcome": "rejected",
+      "validity": "invalid",
+      "reason": "Triton PassManager::run failed"
+    }
+  ],
+  "attention_codegen": [
+    {
+      "mechanism": "num_stages_1",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-e9e4a862440e",
+      "outcome": "completed",
+      "validity": "valid",
+      "candidate_ms": 161.39812,
+      "attention_ms": 76.21526336669922,
+      "correctness_match_fraction": 1.0,
+      "disposition": "negative"
+    },
+    {
+      "mechanism": "num_stages_3",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-79074395841a",
+      "outcome": "completed",
+      "validity": "valid",
+      "candidate_ms": 151.48032,
+      "attention_ms": 66.10918426513672,
+      "correctness_match_fraction": 1.0,
+      "improvement_over_parent": 0.01806333609873452,
+      "disposition": "positive_null_below_5_percent"
+    },
+    {
+      "mechanism": "flatten",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-80940bfe81eb",
+      "outcome": "completed",
+      "validity": "valid",
+      "candidate_ms": 154.270456,
+      "attention_ms": 69.08515167236328,
+      "correctness_match_fraction": 1.0,
+      "disposition": "null_below_5_percent"
+    },
+    {
+      "mechanism": "loop_unroll_factor_2",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-c5c365479d89",
+      "outcome": "completed",
+      "validity": "valid",
+      "candidate_ms": 167.040401,
+      "attention_ms": 81.80329895019531,
+      "correctness_match_fraction": 1.0,
+      "disposition": "negative"
+    }
+  ],
+  "terminal_snapshot": "terminal-snapshot.json",
+  "cleanup": {
+    "daemon_pid": 2184042,
+    "isolated_daemon_stopped": true,
+    "isolated_socket_removed": true,
+    "broker_jobs_running_after_cleanup": 0,
+    "broker_queue_after_cleanup": 0,
+    "foreign_gpu_processes_untouched": true
+  },
+  "disposition": {
+    "decision": "continue",
+    "frontier_replaced": false,
+    "frontier_candidate_ms": 154.267102,
+    "current_program_roofline_efficiency": 0.05707017629480294,
+    "existing_ir_codegen_axis": "closed_at_5_percent_materiality",
+    "next_action": "obtain corpus and release approval for resident signed-int32 top_k, then test block-id ordering before token expansion"
+  }
+}
