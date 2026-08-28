@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_gpu_infra_seed_path_qualification",
+  "scientific_claim_authorized": false,
+  "performance_measured": false,
+  "source_commit": "3d6c9cf674f011477e068cd5bff94989c2431e9a",
+  "executor_binding": {
+    "executor_id": "open-cake-ir-b200-v31",
+    "executor_descriptor": "runtime/executors/open-cake-ir-b200-v31.json",
+    "executor_canonical_sha256": "20ce0e8788360403896ff5e53b4c707f003115ecf65b193bc527213250dde4c0",
+    "executor_descriptor_raw_sha256": "dc315812aaa184dcffe04e2d79ca6fd37ac728f29ed5a9f36d5b11f1871fe1ed"
+  },
+  "execution": {
+    "routes": [
+      "b200:open-cake-qsa-prefill-t32768-seed-v1-bda1072eb9b4",
+      "b200:open-cake-qsa-prefill-t32768-seed-v1-bffb7e4dcdbf"
+    ],
+    "external_evidence_root": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-seed-r2-20260828",
+    "collection": "collection-001"
+  },
+  "observed_result": {
+    "both_arms": {
+      "outcome": "infra_error",
+      "validity": "unknown",
+      "terminal_stage": "compile",
+      "gpu_allocated": false,
+      "kernel_calls": 0
+    },
+    "earliest_common_divergence": "fixed direct-CUDA reference NVCC compilation",
+    "diagnosis": "CUDART_INF_F was used without including math_constants.h",
+    "diagnostic_artifact": "qsa-build/baseline/nvcc-cubin.stderr.log"
+  },
+  "disposition": {
+    "candidate_comparison_valid": false,
+    "compiler_revision_change_justified": false,
+    "executor_successor_required": true,
+    "next_action": "include the CUDA math constants declaration in the fixed evaluator reference"
+  }
+}

@@ -1,12 +1,12 @@
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
+#include <math_constants.h>
 
 #include <climits>
 #include <cmath>
 
 namespace {
 
-constexpr int kTokens = 32768;
 constexpr int kBlocks = 8192;
 constexpr int kHeadDim = 128;
 constexpr int kIndexHeads = 8;
