@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_t32768_locality_and_attention_structural_search",
+  "scientific_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "8de8b5898848308f61327b4184a4607557eb9bfb",
+  "compiler_revision": "open-cake-ir-sm100a-v33",
+  "executor_revision": "open-cake-ir-b200-v39",
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "external_evidence_roots": {
+    "static_locality": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-r13-locality-20260829",
+    "r13_search": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v33-r13-locality-search-20260829",
+    "r14_static": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-r14-attention-structural-20260829"
+  },
+  "fresh_frontier": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-66fee4a24c66",
+    "candidate_sha256": "d02d36679690f208631bd2c35c868457a32f77f6bb73a78d26a2d02553aac89d",
+    "program_median_ms": 154.326349,
+    "program_cv": 0.001076715734119272,
+    "matched_direct_black_box_median_ms": 676.872145,
+    "matched_direct_black_box_cv": 0.00024625436344412983,
+    "speedup": 4.385979124018544,
+    "correctness_match_fraction": 1.0,
+    "component_medians_ms": {
+      "pool": 0.1422400027513504,
+      "layernorm": 0.044319998472929,
+      "score_topk": 84.99584197998047,
+      "expand": 0.05411199852824211,
+      "attention": 69.08294677734375
+    }
+  },
+  "r13_locality": [
+    {
+      "mechanism": "resident signed-int32 block ordering in expand",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-a290c9071d82",
+      "outcome": "completed",
+      "validity": "valid",
+      "correctness_match_fraction": 1.0,
+      "program_median_ms": 154.894955,
+      "program_cv": 0.0033087760164953466,
+      "matched_direct_black_box_median_ms": 676.361054,
+      "speedup": 4.366578976055094,
+      "attention_ms": 69.07801818847656,
+      "expand_ms": 0.668287992477417,
+      "disposition": "dominated_valid_negative"
+    },
+    {
+      "mechanism": "resident signed-int32 block ordering in score_topk",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-4a7da2e39bda",
+      "outcome": "completed",
+      "validity": "valid",
+      "correctness_match_fraction": 1.0,
+      "program_median_ms": 159.730484,
+      "program_cv": 0.0005144369032426279,
+      "matched_direct_black_box_median_ms": 676.866813,
+      "speedup": 4.237555637782955,
+      "attention_ms": 69.05840301513672,
+      "score_topk_ms": 90.43475341796875,
+      "disposition": "dominated_valid_negative"
+    }
+  ],
+  "warps16_requalification": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-2b129f2adc86",
+    "compile": "passed",
+    "outcome": "infra_error",
+    "validity": "unknown",
+    "reason": "CUDA Driver cuLaunchKernel failed",
+    "same_failure_as_r12": true,
+    "performance_interpretation": "forbidden",
+    "automatic_retry": false,
+    "third_submission": "forbidden"
+  },
+  "r14_attention": [
+    {
+      "mechanism": "K/V load retention intent",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-4fc706a90e58",
+      "outcome": "completed",
+      "validity": "valid",
+      "correctness_match_fraction": 1.0,
+      "program_median_ms": 170.630024,
+      "program_cv": 0.0055903111462300425,
+      "matched_direct_black_box_median_ms": 676.44039,
+      "speedup": 3.9643690725847875,
+      "attention_ms": 85.43014526367188,
+      "disposition": "valid_negative_cache_regression"
+    },
+    {
+      "mechanism": "attention selected-loop warp specialization",
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-89e470673518",
+      "outcome": "rejected",
+      "validity": "invalid",
+      "reason": "PassManager::run failed",
+      "performance_interpretation": "none",
+      "automatic_retry": false
+    }
+  ],
+  "decision": {
+    "frontier_replaced": false,
+    "locality_hypothesis": "falsified",
+    "attention_existing_ir": "exhausted_at_5_percent_materiality",
+    "score_existing_ir": "exhausted_at_5_percent_materiality",
+    "next_compiler_proposal": "merge two source tiles per loop-carried top-k update without duplicating the 128 KiB key tile",
+    "new_primitive_status": "P1_P8_contract_under_review"
+  },
+  "program_roofline": {
+    "declared_work_floor_ms": 8.804050707628347,
+    "fresh_frontier_efficiency": 0.057048266641935186,
+    "goal_70_percent_achieved": false,
+    "complete_program_bwu": "unknown"
+  },
+  "cleanup": {
+    "isolated_daemon_pid": 3056916,
+    "isolated_daemon_stopped": true,
+    "isolated_socket_removed": true,
+    "remote_project_and_state_evidence_preserved": true,
+    "foreign_or_production_jobs_touched": false
+  }
+}
