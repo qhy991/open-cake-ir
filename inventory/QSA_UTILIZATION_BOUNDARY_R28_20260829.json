@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "purpose": "released_v39_dynamic_stop_corrected_qsa_program_utilization_evidence_boundary",
+  "status": "compiler_replay_complete_official_utilization_unknown",
+  "scientific_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "0ee6a93",
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v39",
+    "canonical_sha256": "b0aa25546a6d6a324f5a9c0d67d2e66e0edb8ee93b972f50e427560cdd5d3e12",
+    "corpus_gate_sha256": "3ebe6191591743286c9bf467ced0ce95f2afaac87f96586d9be0d5e9ba595014",
+    "release_approval_sha256": "fa0ca3ea181998f93b97a6e107aed31e62683e2b10a4b908f00f7789e6b074d1"
+  },
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v39",
+    "canonical_sha256": "d83a9ea37b2b69cd54996a124e7ea53c49e823795a684eceda771bfa21dd3339",
+    "changed": false
+  },
+  "source_authorities": {
+    "work_model": "src/open_cake_ir/compiler/work.py",
+    "utilization_model": "src/open_cake_ir/compiler/utilization.py",
+    "target": "compiler/targets/sm_100a.json",
+    "target_peak": null,
+    "historical_records_retained": [
+      "inventory/QSA_UTILIZATION_SEARCH_R10_20260829.json",
+      "inventory/QSA_ROOFLINE_DYNAMIC_STOP_ERRATUM_20260829.json",
+      "inventory/QSA_HALF_SELECTION_AND_ACC_BUFFER_SEARCH_R23_R24_20260829.json",
+      "inventory/QSA_K64_AND_STAGE3_SEARCH_R26_R27_20260829.json"
+    ]
+  },
+  "external_evidence_roots": {
+    "r10_peak_observation": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v38-r10-components-20260828",
+    "r23_timing": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v37-r23-half-selection-search-20260829",
+    "r23_static_replay_source": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v37-r23-half-selection-static-20260829/candidates/merge2-ieee-half-selection",
+    "r27_timing": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v38-r27-half-stage3-search-20260829",
+    "r27_static_replay_source": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v38-r27-half-stage3-static-20260829/candidates/candidate-half-selection-stage3"
+  },
+  "released_compiler_work_replay": {
+    "all_nodes_accepted_and_lowering_eligible": true,
+    "r23_and_r27_counted_program_flops_equal": true,
+    "schedule_sha256": {
+      "pool": "c495766e9a6782c696aad3ebb6ec9f8ac11c335031bf20fa7f285be64a6156a8",
+      "layernorm": "67d14dfbda6db65d899e4644e1cbe6a5222d4e6ce90aba9ea67d17230affa5ae",
+      "score_topk": "beba1b176c073a4675f380f3e88d601a98960ad0c6fc601c5f8fd43b622598fe",
+      "expand": "089b8deac1883ad526dd842b1a28b1f5d4b900b6fc43f46b33da329089466a71",
+      "r23_attention_stage2": "61d00a1861e645d60beedecf64be2cb193f6b3e460f6d0ed6c11f9a217fab359",
+      "r27_attention_stage3": "fa81a0c841f3d3caedbc15aab4696af0dde85e9de561929e1d6012d7a7d19792"
+    },
+    "nodes": {
+      "pool": {
+        "counted_flops": 4194304,
+        "flops_estimate_kind": "exact",
+        "compulsory_bytes_lower": 12582912,
+        "compulsory_bytes_upper": 12582912
+      },
+      "layernorm": {
+        "counted_flops": 6299648,
+        "flops_estimate_kind": "lower_bound",
+        "uncounted_arithmetic": [
+          "inverse_std"
+        ],
+        "compulsory_bytes_lower": 8389120,
+        "compulsory_bytes_upper": 8389120
+      },
+      "score_topk": {
+        "whole_grid_dynamic_loop_executions": 540576,
+        "mma_flops": 283417509888,
+        "counted_flops": 285631709184,
+        "flops_estimate_kind": "lower_bound",
+        "uncounted_arithmetic": [
+          "cast_query"
+        ],
+        "arithmetic_contract": "triton.dot.fp32_ieee",
+        "compulsory_bytes_lower": 138412032,
+        "compulsory_bytes_upper": 138412032
+      },
+      "expand": {
+        "counted_flops": 0,
+        "flops_estimate_kind": "lower_bound",
+        "uncounted_arithmetic": [
+          "expand_tokens"
+        ],
+        "compulsory_bytes_lower": 335544320,
+        "compulsory_bytes_upper": 335544320
+      },
+      "attention": {
+        "mma_flops": 549755813888,
+        "counted_flops": 551903297536,
+        "flops_estimate_kind": "lower_bound",
+        "uncounted_arithmetic": [
+          "softmax_update"
+        ],
+        "arithmetic_contract": "triton.dot.bf16_fp32",
+        "compulsory_bytes_lower": 805306368,
+        "compulsory_bytes_upper": 872415232,
+        "partially_addressed": [
+          "k",
+          "v"
+        ]
+      }
+    },
+    "program_counted_flops": 837545500672,
+    "program_flops_estimate_kind": "lower_bound",
+    "program_compulsory_bytes_lower": 1300234752,
+    "program_compulsory_bytes_upper": 1367343616,
+    "program_physical_dram_bytes": "unknown"
+  },
+  "observed_complete_program_timing": {
+    "timing_boundary": "balanced_cupti_cold_l2_complete_program_median",
+    "r23_promoted_frontier": {
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-ed40ca678425",
+      "candidate_sha256": "23fae96fa204c7c9d9da3dd04c56c9155ac523395304ae03bb1df31677b0aa4e",
+      "validity": "valid",
+      "correctness_match_fraction": 1.0,
+      "program_median_ms": 127.824867,
+      "program_cv": 0.0004935839391548537,
+      "matched_direct_black_box_median_ms": 676.417878,
+      "matched_direct_black_box_cv": 0.00011848510399825802,
+      "speedup": 5.291754991616772,
+      "score_topk_median_ms": 58.47929763793945,
+      "attention_median_ms": 69.0997085571289,
+      "fresh_confirmation_run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-722fbc815bc7",
+      "fresh_confirmation_program_median_ms": 127.821446,
+      "fresh_confirmation_program_cv": 0.012751844444286028,
+      "status": "fresh_confirmed_promoted_frontier"
+    },
+    "r27_lowest_search_point": {
+      "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-489733011b83",
+      "candidate_sha256": "0aeb72ea09eaf429032baba42d38bfa8fe3d2aaf44ec8dddc67c37652321f78e",
+      "validity": "valid",
+      "correctness_match_fraction": 1.0,
+      "program_median_ms": 124.722902,
+      "program_cv": 0.009057224402677151,
+      "matched_direct_black_box_median_ms": 676.868204,
+      "matched_direct_black_box_cv": 0.000428309585,
+      "speedup": 5.426976065710851,
+      "score_topk_median_ms": 58.52425765991211,
+      "attention_median_ms": 65.98371124267578,
+      "relative_program_improvement_vs_same_round_control": 0.024183093917938495,
+      "status": "valid_search_point_below_five_percent_not_promoted",
+      "fresh_confirmation": false
+    }
+  },
+  "r10_microbenchmark_reference": {
+    "run_id": "open-cake-b200-target-peak-v1-5865c334b2d8",
+    "validity": "valid",
+    "source_semantics": "microbenchmark_best_known_reference_not_device_specification_ceiling",
+    "observed_at": "2026-08-28T15:02:23Z",
+    "memory_bandwidth_bytes_per_second": 6695709285187.448,
+    "bf16_flops_per_second": 1577582173074937.0,
+    "ieee_fp32_flops_per_second": 65950857866101.77,
+    "maximum_cv": 0.009030433083264,
+    "current_target_declares_these_rates": false,
+    "may_produce_official_roofline_floor_or_refutation": false
+  },
+  "conditional_r10_normalization": {
+    "official_claim": false,
+    "assumption": "counterfactually_treat_r10_microbenchmark_rates_as_matched_program_normalizers",
+    "assumption_satisfied": false,
+    "counted_arithmetic_reference_ms": 4.680819155543305,
+    "node_summed_reference_ms": 4.734064650055545,
+    "r23": {
+      "mixed_contract_counted_arithmetic_fraction": 0.03661900274492994,
+      "node_summed_reference_fraction": 0.03703555310607555,
+      "compulsory_byte_reference_fraction_lower": 0.0015191820865475278,
+      "compulsory_byte_reference_fraction_upper": 0.00159759145368722
+    },
+    "r23_fresh_confirmation": {
+      "mixed_contract_counted_arithmetic_fraction": 0.03661998281214331,
+      "node_summed_reference_fraction": 0.037036544321799834,
+      "compulsory_byte_reference_fraction_lower": 0.0015192227457802368,
+      "compulsory_byte_reference_fraction_upper": 0.0015976342114601455
+    },
+    "r27": {
+      "mixed_contract_counted_arithmetic_fraction": 0.03752974859054599,
+      "node_summed_reference_fraction": 0.037956658914619745,
+      "compulsory_byte_reference_fraction_lower": 0.0015569654413727502,
+      "compulsory_byte_reference_fraction_upper": 0.0016373249163806785
+    },
+    "permitted_description": "R10_rate_normalized_conditional_audit_under_unmet_ceiling_and_matching_assumptions",
+    "forbidden_descriptions": [
+      "official_complete_program_mfu",
+      "sound_complete_program_mfu_lower_bound",
+      "official_or_physical_program_bwu",
+      "sound_complete_program_roofline_efficiency",
+      "seventy_percent_utilization_achieved"
+    ]
+  },
+  "official_utilization_boundary": {
+    "current_target_peak": null,
+    "sound_complete_program_mfu_lower_bound": "not_established",
+    "sound_complete_program_bwu": "unknown",
+    "sound_complete_program_roofline_floor_ms": "not_established",
+    "sound_complete_program_roofline_efficiency": "unknown",
+    "goal_70_percent_achieved": false,
+    "reasons": [
+      "released_sm100a_target_declares_no_peak",
+      "program_uses_ieee_fp32_and_bf16_arithmetic_contracts",
+      "r10_rates_are_microbenchmark_observations_not_device_specification_ceilings",
+      "attention_k_v_compulsory_bytes_are_bounded_not_measured_physical_traffic",
+      "inverse_std_cast_expand_and_softmax_arithmetic_remain_uncounted"
+    ]
+  },
+  "append_only_policy": {
+    "rewrite_historical_records": false,
+    "supersedes_files": [],
+    "retain_r23_and_r27_performance_records_unchanged": true,
+    "corrects_claim_boundary_for": [
+      "inventory/QSA_UTILIZATION_SEARCH_R10_20260829.json",
+      "inventory/QSA_ROOFLINE_DYNAMIC_STOP_ERRATUM_20260829.json"
+    ]
+  },
+  "next_minimum_action": "use the corrected score_and_attention attribution to evaluate one bounded existing_IR lowering hypothesis; do not add IR or claim utilization without new ceiling-grade and physical-traffic evidence"
+}
