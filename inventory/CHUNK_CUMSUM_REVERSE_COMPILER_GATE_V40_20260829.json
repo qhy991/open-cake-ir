@@ -1,13 +1,14 @@
 {
   "schema_version": 1,
   "purpose": "exact_gate_and_release_approval_basis_for_reverse_scan_case_after_qsa_v39_sync",
-  "status": "exact_gate_matched_and_repository_owner_authorized_for_approval",
+  "status": "released_and_post_release_verified",
   "integration_commit": "fcf9328",
   "case_adoption_commit": "448578c",
   "compiler_revision": {
-    "id": "open-cake-ir-sm100a-v40-draft",
+    "id": "open-cake-ir-sm100a-v40",
     "proposal_canonical_sha256": "e91ea7074ed7c4a26732d5d63af768dec7e04fec6c87063c2b23bdaa8e577767",
-    "source_set_canonical_sha256": "565548665d7e80fdf9ab860abf79cad1ab455ff769dfdfc0932551b417378588"
+    "source_set_canonical_sha256": "565548665d7e80fdf9ab860abf79cad1ab455ff769dfdfc0932551b417378588",
+    "release_lock_canonical_sha256": "e5bf5488b668d400effbef87a0713c3e8a6c46e9ed10f5254284355281f74a32"
   },
   "gate": {
     "path": "compiler/corpus-gate-report.json",
@@ -49,7 +50,20 @@
   "review": {
     "reviewer": "repository_owner",
     "decision": "approved_under_explicit_primary_sync_and_continuous_compiler_authorization",
-    "approval_artifact_status": "written_and_exactly_bound"
+    "approval_artifact_status": "written_and_exactly_bound",
+    "approval_canonical_sha256": "bc591072d606ed46db0c45e11163584e60e63cf56315df046f69b1cb4c5a7203"
   },
-  "next_minimum_action": "release the approved v40 successor and run the post_release suite from the integrated primary path"
+  "post_release_validation": {
+    "passed": 597,
+    "failed": 4,
+    "subtests_passed": 485,
+    "new_failures": 0,
+    "known_failures": [
+      "local_nsight_compute_custody_differs",
+      "flash_kmeans_historical_ranking_sweep_has_no_refused_member",
+      "rmsnorm_historical_ranking_sweep_has_no_refused_member",
+      "gemm_bias_historical_ranking_sweep_has_no_refused_member"
+    ]
+  },
+  "next_minimum_action": "verify the integrated primary path is clean, all QSA inventory evidence references resolve locally, and both backup branches remain recoverable"
 }
