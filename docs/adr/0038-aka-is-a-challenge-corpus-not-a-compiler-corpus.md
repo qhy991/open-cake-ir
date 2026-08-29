@@ -213,6 +213,47 @@ Both output roots are create-only. Continue with a larger limit only in a fresh 
 after the one-case bridge and review pass deterministically; an existing failed root is
 evidence to inspect, not a queue to overwrite.
 
+## Portable qualified-parent review
+
+AKA commit `4d041e5e88c3da157ce19fd016eed1ce44c4816b` publishes 50 portable
+`aka.portable-kernel-parent.v1` projections under
+`datasets/curated/cuda_kernel_parent_completions_v1`. Each projection has an explicit
+narrowed contract, baseline/reference/harness source bundle, unique fixed B200 locator and
+passed/valid compile, complete-output correctness and sanitizer projection. The projection
+is not the node-owned route/result closure and cannot be replayed through the qualified
+parent validator as GPU authority.
+
+`tools/run_aka_portable_parents_codex.py` therefore reads every source and artifact directly
+from that exact Git commit, checks the portable row against its v1 source field, and creates
+an external canonical `runnable_unqualified` completion. The fixed complete-kernel-parent
+validator must accept that runnable bundle before the ordinary Sol/max reviewer sees it.
+The resulting parent status is `runnable_by_parent_validator`, while node custody stays
+`not_assessed`, semantic binding stays `reviewer_claimed`, and `gpu_test` stays `not_run`.
+Portable qualification is retained as evidence but never promoted into a current GPU claim.
+
+Forty-nine of the 50 records use the v1 task's canonical primary field. One debug record
+qualifies its repaired `output` while the v1 review queue owns the broken `input` as primary;
+the adapter records `source_field_override_required` for that row rather than relabeling the
+completion. This is a deterministic admission outcome, not a model failure or a skipped
+review.
+
+The create-only invocation is:
+
+```bash
+python3 tools/run_aka_portable_parents_codex.py \
+  --source-dataset-root /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --portable-dataset-root /absolute/AKA/datasets/curated/cuda_kernel_parent_completions_v1 \
+  --source-revision 4d041e5e88c3da157ce19fd016eed1ce44c4816b \
+  --completion-root /new/external/aka-portable-runnable-parents \
+  --review-root /new/external/aka-portable-ir-reviews \
+  --limit 49
+```
+
+These reviews assess whether the frozen Compiler can describe a source-complete derived
+operator. They do not import the portable set into the Compiler Corpus, establish the
+portable stage projection as node authority, test generated Cake code on GPU, or evaluate
+the unimplemented optimization handoff.
+
 ## Initial IR assessment
 
 The current vocabulary is plausible but not broad enough to call complete. The useful

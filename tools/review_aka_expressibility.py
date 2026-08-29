@@ -1034,6 +1034,15 @@ def _parent_contract(
         )
         if completion_ref["outcome"] == "qualified":
             derived_status = "qualified_by_parent_validator"
+        elif completion_ref["outcome"] in {
+            "runnable_unqualified",
+            "qualification_unknown",
+        }:
+            derived_status = "runnable_by_parent_validator"
+            missing = _strings(
+                completion.get("missing_facts"),
+                "parent_completion.missing_facts",
+            )
         else:
             derived_status = "missing_by_parent_validator"
             missing = _strings(
@@ -1197,9 +1206,12 @@ def _classify(
             "compiler_check": "unknown",
             "compiler_evidence": None,
         }
-    if parent_status != "qualified_by_parent_validator":
+    if parent_status not in {
+        "qualified_by_parent_validator",
+        "runnable_by_parent_validator",
+    }:
         raise ReviewError(
-            f"{label} non-unknown claim requires a qualified canonical parent completion"
+            f"{label} non-unknown claim requires a runnable canonical parent completion"
         )
     if disposition == "schedule_gap":
         return {

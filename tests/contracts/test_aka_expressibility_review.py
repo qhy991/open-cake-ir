@@ -152,7 +152,11 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
         path.write_text(json.dumps(review, indent=2) + "\n", encoding="utf-8")
 
     def qualified_parent_completion(
-        self, case_id: str, *, work_root: Path | None = None
+        self,
+        case_id: str,
+        *,
+        work_root: Path | None = None,
+        outcome: str = "qualified",
     ) -> Path:
         root = work_root or self.work_root
         case_input = json.loads(
@@ -247,20 +251,28 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
                 "harness": "harness",
                 "task": "task.json",
             },
-            "qualification": {
-                "locator": {"node_id": "fixed-node", "run_id": "run-1"},
-                "route": "evidence/route/route.json",
-                "node_result": "evidence/mirror/result.json",
-                "stages": {
-                    "compile": "evidence/mirror/stages/compile/result.json",
-                    "correctness": "evidence/mirror/stages/correctness/result.json",
-                    "sanitize": "evidence/mirror/stages/sanitize/result.json",
-                },
-            },
-            "outcome": "qualified",
+            "qualification": (
+                {
+                    "locator": {"node_id": "fixed-node", "run_id": "run-1"},
+                    "route": "evidence/route/route.json",
+                    "node_result": "evidence/mirror/result.json",
+                    "stages": {
+                        "compile": "evidence/mirror/stages/compile/result.json",
+                        "correctness": "evidence/mirror/stages/correctness/result.json",
+                        "sanitize": "evidence/mirror/stages/sanitize/result.json",
+                    },
+                }
+                if outcome == "qualified"
+                else None
+            ),
+            "outcome": outcome,
             "missing_facts": [],
             "evidence": ["input.json", "evidence/route/route.json"],
-            "training_route": "augmentation_parent",
+            "training_route": (
+                "augmentation_parent"
+                if outcome == "qualified"
+                else "augmentation_parent_pending_qualification"
+            ),
             "training_eligibility": False,
             "next_action": "Start one fresh mechanism augmentation case.",
         }
@@ -278,13 +290,20 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
         return completion_path
 
     def bind_completion(
-        self, review: dict[str, object], case_id: str, *, work_root: Path | None = None
+        self,
+        review: dict[str, object],
+        case_id: str,
+        *,
+        work_root: Path | None = None,
+        outcome: str = "qualified",
     ) -> None:
         review["parent_contract"] = {
             "status": "completion",
             "missing_facts": [],
             "completion_path": str(
-                self.qualified_parent_completion(case_id, work_root=work_root)
+                self.qualified_parent_completion(
+                    case_id, work_root=work_root, outcome=outcome
+                )
             ),
         }
 
@@ -427,7 +446,7 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
             "reason": "A runtime predicate is an irreducible missing capability.",
         }
         self.write_review("case-000002", gap)
-        with self.assertRaisesRegex(ReviewError, "qualified canonical"):
+        with self.assertRaisesRegex(ReviewError, "runnable canonical"):
             verify_review(self.work_root, "case-000002")
         self.bind_completion(gap, "case-000002")
         self.write_review("case-000002", gap)
@@ -462,6 +481,32 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
         self.write_review("case-000001", review)
         with self.assertRaisesRegex(ReviewError, "absolute"):
             verify_review(self.work_root, "case-000001")
+
+    def test_runnable_unqualified_parent_allows_only_provisional_ir_review(self) -> None:
+        self.initialize()
+        review = self.materialized_review()
+        self.bind_completion(
+            review, "case-000001", outcome="runnable_unqualified"
+        )
+        review["complete_parent"] = {
+            "owner_scope": "schedule",
+            "owner_relation": None,
+            "disposition": "schedule_gap",
+            "schedule": None,
+            "missing_ir": GAP,
+            "reason": "The runnable parent requires one bounded runtime scalar.",
+        }
+        self.write_review("case-000001", review)
+
+        result = verify_review(self.work_root, "case-000001")
+
+        self.assertEqual(
+            result["parent_contract"]["status"],
+            "runnable_by_parent_validator",
+        )
+        self.assertEqual(result["primary_class"], "schedule_gap_candidate")
+        self.assertEqual(result["semantic_binding"], "reviewer_claimed")
+        self.assertEqual(result["gpu_test"], "not_run")
 
     def test_parent_validator_timeout_fails_closed(self) -> None:
         self.initialize()
