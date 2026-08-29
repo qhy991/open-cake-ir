@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "preserve_frozen_qsa_program_v2_while_retaining_generic_merge2_half_selection",
-  "status": "exact_v37_gate_matched_and_repository_owner_authorized_approval_written",
+  "status": "v37_released_program_compatible_and_independently_verified",
   "workload_id": "qsa-prefill-t32768-task-geometry-v1",
   "v36_release": {
     "revision_id": "open-cake-ir-sm100a-v36",
@@ -62,7 +62,7 @@
     "historical_non_new_failures": "one local macOS Nsight custody assertion plus three ranking sweep assertions"
   },
   "v37_gate": {
-    "revision_id": "open-cake-ir-sm100a-v37-draft",
+    "revision_id": "open-cake-ir-sm100a-v37",
     "proposal_canonical_sha256": "2bce3b24df8a1d47836693ddb46aef5d2c666fede64e9a765c8f903a28c75575",
     "gate_canonical_sha256": "839ea93e0b3ab8584bcc4cba9974ebad111bcd03dfa4cbe20a6780dcb4ef060b",
     "source_set_canonical_sha256": "b3c0f9928f65c264dcd3d4ede8c27d9f548a15fcb3131593387c98cc1741b0b3",
@@ -71,7 +71,10 @@
     "bound_source_count": 81,
     "approval_canonical_sha256": "dd424d21d45c69f8f81e842ace980650a040a4acbcbd73750e038b36bbaa8519",
     "approval_artifact_status": "written",
-    "approval_binds_exact_gate": true
+    "approval_binds_exact_gate": true,
+    "released_lock_canonical_sha256": "64b84ff199abaa32008d1dc13709f6a42443c6518ba19ec3dc75dd9f1c69d7c1",
+    "release_verify": "passed",
+    "released_program_contract_test": "24 passed, 8 subtests passed across Program v2 and focused successor contracts"
   },
   "next_minimum_action": "commit the compatibility correction, generate an exact v37 62-case Gate, release under repository-owner authorization, then repeat formal compile-first without modifying Program v2 or Executor v39"
 }
