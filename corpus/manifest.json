@@ -890,6 +890,20 @@
         "schedule_sha256": "cb23592cb95e5e7e212a9421540c8100a7ea977f77e34218221e35f2332c9b00",
         "lowering_source_sha256": "ab9047a4f5e3352d23a0d5eefafcda82255d2ce0ff68271c8d67e65edd28ba3a"
       }
+    },
+    {
+      "case_id": "chunk-cumsum-reverse-accepted",
+      "schedule": "corpus/schedules/chunk-cumsum-reverse-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "bb217a4b095ae751676a0a43cfe73bcf8777f81462a0b49dcc9014282c07b596",
+        "lowering_source_sha256": "24d50cdf637b4f2201d2787f87baaca73c528665201bb099f8a88f708a443d78"
+      }
     }
   ]
 }

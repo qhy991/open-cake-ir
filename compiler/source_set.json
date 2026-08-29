@@ -10,6 +10,7 @@
     "corpus/schedules/cast-b8-smoke.json",
     "corpus/schedules/chunk-cumsum-b8-smoke-shape-drift.json",
     "corpus/schedules/chunk-cumsum-b8-smoke.json",
+    "corpus/schedules/chunk-cumsum-reverse-b8-smoke.json",
     "corpus/schedules/fp32-tf32-mma-b1-smoke-bf16-drift.json",
     "corpus/schedules/fp32-tf32-mma-b1-smoke.json",
     "corpus/schedules/flash-kmeans-assignment-full-epilogue-drift.json",
