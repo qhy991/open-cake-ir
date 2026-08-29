@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "purpose": "repository_owner_expectation_adoption_for_generic_caller_indexed_state_and_outer_product",
+  "status": "awaiting_repository_owner_expectation_adoption",
+  "branch": "codex/kda-fused-decode-cake-r1",
+  "compiler_parent_commit": "c56e352ee4f0efe35b99ab2333ee16be494b4571",
+  "compiler_change_commit": "f7baef22786df7827188bf46e8c7616d91c41834",
+  "released_parent_revision": "open-cake-ir-sm100a-v38",
+  "derived_successor_revision": "open-cake-ir-sm100a-v39-draft",
+  "revision_derivation": {
+    "v38_witness": "inventory/QSA_MULTI_MMA_COMPILER_GATE_V38_R25_20260829.json",
+    "witness_parser_fix": "the release helper now recognizes the inventory's compiler_revision.id and released_lock_canonical_sha256 fields",
+    "manual_revision_id_selection": false
+  },
+  "adr": "docs/adr/0045-caller-indexed-state-uses-unique-indices-and-concrete-strides.md",
+  "change_contract": {
+    "new_vocabulary": [
+      "exact global Buffer strides",
+      "Workload-owned unique-index relation",
+      "guarded store inactive=no_effect or write_zero",
+      "rank-zero register scratch",
+      "rank-one outer product"
+    ],
+    "effects_and_ownership": [
+      "caller-owned indexed FP32/BF16 state replacement requires a traced unique index",
+      "every unowned program or loop axis blocks the store",
+      "multiple state writers require pairwise-disjoint AccessMap subranges",
+      "negative sentinel rows write zero output and no state"
+    ],
+    "storage": "concrete element strides only; explicit dense spelling, negative stride, and overlapping writable padded-row-major storage are rejected",
+    "analysis": "logical traffic remains an upper bound for runtime-indexed/guarded buffers; static profiles name strided/broadcast risks; outer counts one multiply per result element",
+    "lowering": "generic Triton pointer arithmetic, masks, zero-select and outer multiplication; CuTe fails closed",
+    "kda_named_compiler_branch": false,
+    "layout_algebra": false,
+    "fallback": false
+  },
+  "proposed_case_count": 70,
+  "pre_existing_case_count": 64,
+  "proposed_bound_source_count": 89,
+  "pre_existing_bound_source_count": 83,
+  "pre_existing_expectation_drift": false,
+  "proposed_cases": [
+    {
+      "case_id": "caller-indexed-state-accepted",
+      "schedule": "corpus/schedules/caller-indexed-state-b4-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": ["RESIDENCY_BOUND"],
+        "schedule_sha256": "5bac6c8072b084025854cdc40bb9bbde123d461ad310351fa1edaa7ae6a4afaf",
+        "lowering_source_sha256": "7ba6e3ef518c1cf1616d0d1947f20e69c9b884a5ee781f0c149057dcd99e2354"
+      }
+    },
+    {
+      "case_id": "disjoint-state-shift-accepted",
+      "schedule": "corpus/schedules/disjoint-state-shift-b4-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": ["RESIDENCY_BOUND"],
+        "schedule_sha256": "9164e9e2f3130703ba30d563dfd0fde775c256ed72ac9847f8cb986d46144d13",
+        "lowering_source_sha256": "9c046581a3bfd7fcbec8cb867a828d21031345129ef9c5fd533391309aca6c7e"
+      }
+    },
+    {
+      "case_id": "disjoint-state-shift-overlap-drift",
+      "schedule": "corpus/schedules/disjoint-state-shift-b4-smoke-overlap-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": ["BUFFER_MULTIPLE_WRITERS", "RESIDENCY_BOUND"],
+        "schedule_sha256": "864703ebaf4a5fe78baf45eb5f28d0de7230e1de4ea91a7c301449dad9b3d81b",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "scalar-broadcast-accepted",
+      "schedule": "corpus/schedules/scalar-broadcast-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": ["RESIDENCY_BOUND"],
+        "schedule_sha256": "f760dadd180d7457093174d1173ca6176a5e38f331d040ba53d470dc8376c767",
+        "lowering_source_sha256": "f9cd4622f69e97aa483033888a9c7e00abfe8e19d272a136bf175a62e87bef6d"
+      }
+    },
+    {
+      "case_id": "outer-accepted",
+      "schedule": "corpus/schedules/outer-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": ["RESIDENCY_BOUND"],
+        "schedule_sha256": "70fe6c81ce0dc1509eb3513e3b252180ef2faf3586b785070bd418dac455fe99",
+        "lowering_source_sha256": "8007d329bb2ec7ce8bacc28636a31a78e664eb31df59e9ba6f604c2efc83cecc"
+      }
+    },
+    {
+      "case_id": "outer-shape-drift",
+      "schedule": "corpus/schedules/outer-b8-smoke-shape-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": ["OUTER_RESULT_SHAPE", "RESIDENCY_BOUND"],
+        "schedule_sha256": "bd555627080e1c44b1c92462aed40c0144b60a6f24fbe99c97ca0cb56a66d745",
+        "lowering_source_sha256": null
+      }
+    }
+  ],
+  "source_set_additions": [
+    "corpus/schedules/caller-indexed-state-b4-smoke.json",
+    "corpus/schedules/disjoint-state-shift-b4-smoke-overlap-drift.json",
+    "corpus/schedules/disjoint-state-shift-b4-smoke.json",
+    "corpus/schedules/outer-b8-smoke-shape-drift.json",
+    "corpus/schedules/outer-b8-smoke.json",
+    "corpus/schedules/scalar-broadcast-b8-smoke.json"
+  ],
+  "validation": {
+    "focused_contract_tests": "152 passed",
+    "complete_fused_decode_schedule": "all 9 frozen cells parse, verify with no blocking Findings, assess accepted/lowering-eligible, lower, and produce parseable Python",
+    "existing_corpus_expectations": "64 of 64 match the draft Compiler without refresh --write",
+    "full_suite_boundary": "the pre-adoption suite is intentionally blocked by the old released v38 target lock and by six parseable-but-unadopted corpus schedules; the authoring-only builder was moved out of the released Executor source closure and its closure test passes",
+    "gpu": "not run; no Compiler release exists"
+  },
+  "required_external_action": {
+    "owner": "repository_owner",
+    "action": "review and adopt exactly the six manifest expectations and six source-set paths above",
+    "agent_must_not_write_manifest_or_source_set_before_adoption": true,
+    "agent_must_not_refresh_expectations": true
+  },
+  "next_bounded_action_after_adoption": "verify the adopted bytes, run the canonical release cycle to derive v39 and generate the actual full Corpus Gate, run focused and complete suites against that draft, then stop again for exact release approval",
+  "evidence_boundary": {
+    "operator_correctness": "not run",
+    "operator_timing": "not run",
+    "integration": "not run",
+    "serving": "not run",
+    "static_complete_schedule": true
+  }
+}
