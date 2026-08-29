@@ -8,8 +8,8 @@ or Candidate promotion. Those transitions remain externally reviewed and content
 
 ## Irreducible goal
 
-Reduce exact ordered-selection work in an existing FP32 loop-carried `top_k` when its
-merge consists of two equal `k`-key halves. The motivating QSA geometry has `k=512` and
+Reduce exact ordered-selection work in an FP32 two-source-tile loop-carried `top_k` when
+its merge consists of two equal `k`-key halves. The motivating QSA geometry has `k=512` and
 merge width `1024`; earlier merge2 evidence established that selection work is material.
 The IR already says everything needed for the optimization, so no operation, field,
 algorithm flag, QSA branch, unordered shortcut, or layout vocabulary is added.
@@ -35,9 +35,11 @@ Composite-key construction and decoding are unchanged. Consequently:
   `INT_MAX` to `-1` conversion keep their existing semantics;
 - `reject_input` remains the only admitted NaN policy.
 
-The selector is derived only when `merge_width == 2*k` and the structural threshold below
-is met. Every other geometry retains canonical `tl.topk`; there is no author-visible
-choice or compatibility alias.
+The selector is derived only when `source_tiles_per_merge == 2`, `merge_width == 2*k`,
+and the structural threshold below is met. The historical one-source cadence and every
+other geometry retain canonical `tl.topk`; there is no author-visible choice or
+compatibility alias. This preserves the frozen QSA Program-v2 merge1 lowering identity
+while allowing the already released generic merge2 cadence to use the successor.
 
 ## Toolchain-specific structural model
 
@@ -82,7 +84,7 @@ Profiler duration is never Program latency.
 - P4: existing typing, loop placement, result observability, tie, sentinel, and tail
   legality remain the sole semantic owners.
 - P6/P7: randomized reference tests cover repeated zero/even/odd/partial merges and key
-  boundaries; generic Corpus positives cover both merge1 and merge2 optimized paths.
+  boundaries; Corpus covers the merge2 optimized path and the merge1 frozen fallback.
 - P8: exact-tag Triton provenance plus Executor-v39 compilation and B200 evidence ground
   the lowering without inspecting or importing Direct CUDA, PTX, or SASS mechanisms.
 

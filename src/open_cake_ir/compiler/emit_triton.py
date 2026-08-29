@@ -1372,6 +1372,7 @@ class _TritonEmitter:
             source_keys,
             k,
             2 * width,
+            operation.parameters.source_tiles_per_merge,
             prefix,
             pad,
         )
@@ -1462,6 +1463,7 @@ class _TritonEmitter:
             source_keys,
             k,
             2 * width,
+            operation.parameters.source_tiles_per_merge,
             prefix,
             pad,
         )
@@ -1480,6 +1482,7 @@ class _TritonEmitter:
         source_keys: str,
         k: int,
         merge_width: int,
+        source_tiles_per_merge: int,
         prefix: str,
         pad: str,
     ) -> str:
@@ -1490,7 +1493,11 @@ class _TritonEmitter:
         sorts the full vector, and splitting its first half keeps the exact top-k.
         """
 
-        selection = top_k_selection_structure(k, merge_width)
+        selection = top_k_selection_structure(
+            k,
+            merge_width,
+            source_tiles_per_merge,
+        )
         combined = f"{prefix}_combined_keys"
         ranked = f"{prefix}_ranked_keys"
         if selection.algorithm == "triton_topk":

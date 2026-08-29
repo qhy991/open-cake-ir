@@ -66,7 +66,7 @@ def _bitonic_merge_descending(values: list[int]) -> list[int]:
 
 class HalfSelectionStructureTest(unittest.TestCase):
     def test_k512_removes_exactly_thirty_five_percent_of_comparison_work(self) -> None:
-        selection = top_k_selection_structure(512, 1024)
+        selection = top_k_selection_structure(512, 1024, 2)
 
         self.assertEqual(selection.algorithm, "sorted_source_half_bitonic_merge")
         self.assertEqual(selection.comparison_model, "triton_3_7_1_standard_py")
@@ -78,9 +78,10 @@ class HalfSelectionStructureTest(unittest.TestCase):
         )
 
     def test_materiality_gate_keeps_small_or_wider_merges_on_triton_topk(self) -> None:
-        boundary = top_k_selection_structure(256, 512)
-        small = top_k_selection_structure(128, 256)
-        wide = top_k_selection_structure(512, 2048)
+        boundary = top_k_selection_structure(256, 512, 2)
+        small = top_k_selection_structure(128, 256, 2)
+        wide = top_k_selection_structure(512, 2048, 2)
+        merge1 = top_k_selection_structure(512, 1024, 1)
 
         self.assertEqual(
             boundary.algorithm,
@@ -91,6 +92,8 @@ class HalfSelectionStructureTest(unittest.TestCase):
         self.assertLess(small.comparison_lane_reduction_fraction or 0.0, 1 / 3)
         self.assertEqual(wide.algorithm, "triton_topk")
         self.assertIsNone(wide.comparison_lane_reduction_fraction)
+        self.assertEqual(merge1.algorithm, "triton_topk")
+        self.assertEqual(merge1.comparison_lane_reduction_fraction, 0.0)
 
     def test_sorted_halves_merge_to_the_exact_composite_key_prefix(self) -> None:
         k = 512
@@ -151,17 +154,12 @@ class HalfSelectionStructureTest(unittest.TestCase):
 
 
 class HalfSelectionEmissionTest(unittest.TestCase):
-    def test_qsa_carried_merge_uses_only_public_half_selection_primitives(self) -> None:
+    def test_frozen_qsa_merge1_keeps_its_canonical_topk_lowering(self) -> None:
         source = emit(Schedule.load(QSA), TARGET).source
 
         ast.parse(source)
-        self.assertIn("tl.sort(", source)
-        self.assertIn("tl.bitonic_merge(", source)
-        self.assertIn("tl.reshape(", source)
-        self.assertIn("tl.trans(", source)
-        self.assertIn("tl.split(", source)
-        self.assertNotIn("tl.topk(", source)
-        self.assertNotIn("_bitonic_merge", source)
+        self.assertIn("tl.topk(", source)
+        self.assertNotIn("tl.bitonic_merge(", source)
 
     def test_merge2_pair_and_odd_flush_share_the_exact_selector(self) -> None:
         source = emit(_merge2_qsa(), TARGET).source

@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "purpose": "preserve_frozen_qsa_program_v2_while_retaining_generic_merge2_half_selection",
+  "status": "compatibility_successor_implemented_expectations_adopted_gate_pending",
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "v36_release": {
+    "revision_id": "open-cake-ir-sm100a-v36",
+    "canonical_sha256": "fdaeb3be77d063ea945ecdf23b653fee0d8496d44319ad736341f7afcca86247",
+    "corpus_gate": "62 of 62 matched",
+    "gpu_submission_performed": false
+  },
+  "fail_closed_observation": {
+    "external_root": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v36-r22-half-selection-static-20260829",
+    "candidate_sha256": "23fae96fa204c7c9d9da3dd04c56c9155ac523395304ae03bb1df31677b0aa4e",
+    "schedule_level_static_checks": "5 of 5 nodes constructed, typed, accepted and lowering eligible",
+    "program_contract": "contracts/programs/qsa-prefill-t32768-v2.json",
+    "program_result": "rejected before GPU",
+    "reason": "program node score_topk lowering differs",
+    "classification": "compiler_program_binding_incompatibility_not_candidate_quality"
+  },
+  "fixed_boundary": {
+    "workload_changed": false,
+    "program_contract_changed": false,
+    "evaluator_changed": false,
+    "executor_changed": false,
+    "forbidden_alternative": "do not restamp frozen Program v2, modify evaluator, or create Executor v40",
+    "authorized_resolution": "restrict the derived algorithm to the already released generic source_tiles_per_merge=2 cadence"
+  },
+  "v37_change": {
+    "ir_syntax_changed": false,
+    "new_primitive": false,
+    "optimized_condition": "source_tiles_per_merge equals 2, merge_width equals two k, and modeled comparison-lane reduction is at least one third",
+    "merge1": "frozen canonical tl.topk lowering",
+    "merge2": "sorted-source half-selection remains enabled",
+    "qsa_specific_branch": false,
+    "layout_algebra": false
+  },
+  "expectation_adoption": {
+    "reviewer": "repository_owner",
+    "authorization_basis": "user authorized continuous Compiler IR and operator iteration and explicit approval-artifact writing",
+    "refresh_write_performed": false,
+    "changes": [
+      {
+        "case_id": "qsa-score-topk-t32768-accepted",
+        "lowering_source_sha256": "d530fcac401ef45e69e77b951209836db12a59579c6b63984d5ee8985d3395e3",
+        "meaning": "restore frozen Program-v2 merge1 lowering identity"
+      },
+      {
+        "case_id": "top-k-streaming-merge1-exact-half-k256-accepted",
+        "lowering_source_sha256": "48fa03f918cc20515d7670d6e1c6688066afe01ba8adb97f91c1ab43a41e07bb",
+        "meaning": "large merge1 geometry protects the compatibility fallback"
+      }
+    ],
+    "merge2_optimized_case_lowering_source_sha256": "20222dbb59d5bc7097094a9145f4fbcffce01b34803e240653e8917ac191b318"
+  },
+  "local_validation": {
+    "focused_result": "58 passed, 85 subtests passed; released-lock Program tests intentionally unavailable until successor release",
+    "draft_program_v2": "loaded with five ordered nodes under the corrected draft Compiler",
+    "draft_corpus": "62 of 62 matched",
+    "v36_full_suite": "578 passed, 5 failed, 473 subtests passed",
+    "v36_new_failure": "frozen Program-v2 score_topk lowering mismatch",
+    "historical_non_new_failures": "one local macOS Nsight custody assertion plus three ranking sweep assertions"
+  },
+  "next_minimum_action": "commit the compatibility correction, generate an exact v37 62-case Gate, release under repository-owner authorization, then repeat formal compile-first without modifying Program v2 or Executor v39"
+}

@@ -176,7 +176,11 @@ def _top_k_features(schedule: Schedule) -> list[dict[str, object]]:
             continue
         structure = top_k_merge_structure(schedule, operation)
         selection = (
-            top_k_selection_structure(parameters.k, structure.merge_width)
+            top_k_selection_structure(
+                parameters.k,
+                structure.merge_width,
+                parameters.source_tiles_per_merge,
+            )
             if structure is not None and parameters.across_loop
             else None
         )

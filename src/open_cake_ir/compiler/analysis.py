@@ -109,8 +109,12 @@ class TopKSelectionStructure:
     comparison_lane_reduction_fraction: float | None
 
 
-def top_k_selection_structure(k: int, merge_width: int) -> TopKSelectionStructure:
-    """Choose the one exact merge selector whose structural saving is material."""
+def top_k_selection_structure(
+    k: int,
+    merge_width: int,
+    source_tiles_per_merge: int,
+) -> TopKSelectionStructure:
+    """Choose the exact batched-source selector whose structural saving is material."""
 
     if k <= 0 or k & (k - 1) or merge_width != 2 * k:
         return TopKSelectionStructure(
@@ -119,7 +123,7 @@ def top_k_selection_structure(k: int, merge_width: int) -> TopKSelectionStructur
     log_k = k.bit_length() - 1
     baseline = k * (log_k**2 + 2 * log_k + 2)
     half_selection = k * (log_k + 1) * (log_k + 4) // 2
-    if 3 * half_selection > 2 * baseline:
+    if source_tiles_per_merge != 2 or 3 * half_selection > 2 * baseline:
         return TopKSelectionStructure(
             "triton_topk",
             "triton_3_7_1_standard_py",
