@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_t32768_k64_split_and_half_selection_attention_stage3_terminal_search",
+  "scientific_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "c56e352ee4f0efe35b99ab2333ee16be494b4571",
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v38",
+    "canonical_sha256": "2331fbc79ce0e4fef50b558cd55260782c7b8c85010e2a1baa02625732e092e",
+    "corpus_gate": "64 of 64 matched across 83 bound sources"
+  },
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v39",
+    "canonical_sha256": "d83a9ea37b2b69cd54996a124e7ea53c49e823795a684eceda771bfa21dd3339"
+  },
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "external_evidence_roots": {
+    "r26_static": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v38-r26-k64-split-static-20260829",
+    "r26_search": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v38-r26-k64-split-search-20260829",
+    "r27_static": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v38-r27-half-stage3-static-20260829",
+    "r27_search": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v38-r27-half-stage3-search-20260829"
+  },
+  "r26_k64_split": {
+    "only_schedule_change": "one IEEE FP32 K128 score MMA becomes two disjoint IEEE FP32 K64 partial MMAs plus explicit FP32 add before per-head ReLU",
+    "control_run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-a8d31c84328f",
+    "candidate_run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-5511262206d7",
+    "control_candidate_sha256": "23fae96fa204c7c9d9da3dd04c56c9155ac523395304ae03bb1df31677b0aa4e",
+    "candidate_sha256": "ca91a733e2bf198b6cf5d0a3f57d7797b3d2522aba5e76df7ac183e2a293fbfc",
+    "correctness_match_fraction_each": 1.0,
+    "control_program_median_ms": 127.859192,
+    "control_program_cv": 0.0014138592941906512,
+    "candidate_program_median_ms": 140.527106,
+    "candidate_program_cv": 0.0003865401656167264,
+    "relative_program_regression": 0.0990770690933196,
+    "control_score_topk_ms": 58.524478912353516,
+    "candidate_score_topk_ms": 71.20313262939453,
+    "relative_score_regression": 0.2166384725275148,
+    "attention_ms_control": 69.08386993408203,
+    "attention_ms_candidate": 69.09942626953125,
+    "dynamic_shared_memory_bytes_each": 143360,
+    "candidate_matched_direct_black_box_median_ms": 676.420626,
+    "candidate_speedup": 4.8134530430022515,
+    "disposition": "valid_negative_resource_unchanged_k64_axis_closed",
+    "extension_to_k32x4": "not authorized by evidence; additional dots and adds require a new ceiling proof"
+  },
+  "r27_attention_stage3_composition": {
+    "only_schedule_change": "attention selected_loop num_stages 2 to 3 on the half-selection score frontier",
+    "control_run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-010daff73af9",
+    "candidate_run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-489733011b83",
+    "control_candidate_sha256": "23fae96fa204c7c9d9da3dd04c56c9155ac523395304ae03bb1df31677b0aa4e",
+    "candidate_sha256": "0aeb72ea09eaf429032baba42d38bfa8fe3d2aaf44ec8dddc67c37652321f78e",
+    "correctness_match_fraction_each": 1.0,
+    "control_program_median_ms": 127.813836,
+    "control_program_cv": 0.02122822939890025,
+    "candidate_program_median_ms": 124.722902,
+    "candidate_program_cv": 0.009057224402677151,
+    "relative_program_improvement": 0.024183093917938495,
+    "program_saving_ms": 3.090934,
+    "control_score_topk_ms": 58.46803283691406,
+    "candidate_score_topk_ms": 58.52425765991211,
+    "control_attention_ms": 69.10034942626953,
+    "candidate_attention_ms": 65.98371124267578,
+    "relative_attention_improvement": 0.0451030741446427,
+    "control_attention_dynamic_shared_memory_bytes": 68608,
+    "candidate_attention_dynamic_shared_memory_bytes": 69632,
+    "candidate_matched_direct_black_box_median_ms": 676.868204,
+    "candidate_speedup": 5.426976065710851,
+    "disposition": "valid_absolute_latency_search_point_below_five_percent_not_promoted",
+    "fresh_confirmation_or_profile": false
+  },
+  "promoted_frontier": {
+    "source": "inventory/QSA_HALF_SELECTION_AND_ACC_BUFFER_SEARCH_R23_R24_20260829.json",
+    "search_run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-ed40ca678425",
+    "fresh_confirmation_run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-722fbc815bc7",
+    "program_median_ms": 127.824867,
+    "fresh_confirmation_program_median_ms": 127.821446,
+    "score_topk_ms": 58.47929763793945,
+    "attention_ms": 69.0997085571289,
+    "correctness_match_fraction": 1.0,
+    "matched_direct_black_box_median_ms": 676.417878,
+    "speedup": 5.291754991616772,
+    "reason_stage3_not_promoted": "incremental complete-Program improvement is 2.418 percent, below the fixed 5 percent materiality boundary"
+  },
+  "absolute_latency_boundary": {
+    "lowest_valid_observed_program_median_ms": 124.722902,
+    "status": "search point only, not promoted",
+    "operator_or_serving_claim": false
+  },
+  "local_validation": {
+    "post_v38_full_suite": "585 passed, 4 failed, 481 subtests passed",
+    "new_regression": false,
+    "failure_boundary": "one local macOS Nsight custody assertion and three historical ranking sweep assertions"
+  },
+  "mechanism_closure": {
+    "explicit_tf32": "valid negative, Program regressed 53.946 percent",
+    "accumulator_multibuffer_flag": "valid null, compiled shared memory unchanged",
+    "k64_plus_k64": "valid negative, Program regressed 9.908 percent and compiled shared memory unchanged",
+    "attention_stage3_composition": "valid positive 2.418 percent but below promotion materiality",
+    "block_id_locality_and_kv_retention": "previous valid negatives",
+    "attention_existing_ir": "exhausted at fixed materiality",
+    "score_existing_ir": "exhausted after half-selection frontier and subsequent negative/null probes",
+    "batch_two_query_new_ir": "not pursued because R20 retained profile showed negligible DRAM and L2 utilization and rowwise state would require broad new IR without a supported bottleneck"
+  },
+  "utilization_boundary": {
+    "sound_complete_program_mfu_lower_bound": "not_established",
+    "complete_program_bwu": "unknown",
+    "goal_70_percent_achieved": false,
+    "historical_five_point_seven_percent": "v33 declared-work-model estimate with known dynamic-stop overcount, not a sound MFU lower bound",
+    "erratum": "inventory/QSA_ROOFLINE_DYNAMIC_STOP_ERRATUM_20260829.json"
+  },
+  "authoring_boundary": {
+    "direct_cuda_baseline": "task_owned_black_box_only",
+    "direct_or_generated_low_level_implementation_inspected": false,
+    "candidate_classification": "source_runtime_graph_via_high_level_open_cake_schedule"
+  },
+  "disposition": {
+    "decision": "stop_all_grounded_candidates_exhausted",
+    "reason": "the remaining ideas either have prior negative evidence, fail the five-percent ceiling, or require broad new IR unsupported by the measured bottleneck",
+    "next_action_if_new_evidence_arrives": "reopen only with a falsifiable mechanism and the same frozen workload and acceptance boundary"
+  },
+  "cleanup": {
+    "task_owned_daemon_pid": 777914,
+    "isolated_daemon_stopped": true,
+    "isolated_socket_removed": true,
+    "task_pid_and_socket_absence_verified": true,
+    "broker_running_jobs_after_cleanup": 0,
+    "broker_queue_after_cleanup": 0,
+    "broker_probe_error": null,
+    "remote_project_state_and_raw_evidence_preserved": true,
+    "foreign_or_production_jobs_touched": false
+  }
+}
