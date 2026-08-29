@@ -1,12 +1,13 @@
 {
   "schema_version": 1,
   "purpose": "exact_gate_and_release_approval_basis_for_dynamic_loop_stop_whole_grid_work",
-  "status": "exact_gate_matched_and_repository_owner_authorized_for_approval",
+  "status": "released_and_post_release_verified",
   "compiler_change_commit": "68e2b70",
   "compiler_revision": {
-    "id": "open-cake-ir-sm100a-v39-draft",
+    "id": "open-cake-ir-sm100a-v39",
     "proposal_canonical_sha256": "a5b1a81dc019e73ac2aef3fc252a52aa43ce2524c1b8601e8dbb8f15e2cb4132",
-    "source_set_canonical_sha256": "f908b2d6b00dbaf32ae3f224d7dd9864807de666b3f3daf0eaf33b8376541ec0"
+    "source_set_canonical_sha256": "f908b2d6b00dbaf32ae3f224d7dd9864807de666b3f3daf0eaf33b8376541ec0",
+    "release_lock_canonical_sha256": "b0aa25546a6d6a324f5a9c0d67d2e66e0edb8ee93b972f50e427560cdd5d3e12"
   },
   "gate": {
     "path": "compiler/corpus-gate-report.json",
@@ -19,7 +20,8 @@
   "review": {
     "reviewer": "repository_owner",
     "decision": "approved_under_explicit_continuous_iteration_and_artifact_writing_authorization",
-    "approval_artifact_status": "written_and_exactly_bound"
+    "approval_artifact_status": "written_and_exactly_bound",
+    "approval_canonical_sha256": "fa0ca3ea181998f93b97a6e107aed31e62683e2b10a4b908f00f7789e6b074d1"
   },
   "change_contract": {
     "new_ir_or_schema": false,
@@ -40,7 +42,19 @@
     "frozen_program_id": "qsa-prefill-t32768-cake-port-v2",
     "frozen_program_canonical_sha256": "fad3c076191d5eefec201eef7f60dc4d3975b94758e5275c511ba450ce6c6669",
     "frozen_program_nodes": 5,
-    "frozen_lowering_identities_changed": false
+    "frozen_lowering_identities_changed": false,
+    "post_release_full_suite": {
+      "passed": 597,
+      "failed": 4,
+      "subtests_passed": 481,
+      "new_failures": 0,
+      "known_failures": [
+        "local_nsight_compute_custody_differs",
+        "flash_kmeans_historical_ranking_sweep_has_no_refused_member",
+        "rmsnorm_historical_ranking_sweep_has_no_refused_member",
+        "gemm_bias_historical_ranking_sweep_has_no_refused_member"
+      ]
+    }
   },
   "corrected_qsa_score_work": {
     "tile128": {
@@ -69,5 +83,5 @@
     "goal_70_percent_achieved": false,
     "checkpoint_or_serving_claim": false
   },
-  "next_minimum_action": "release the approved successor, run the full post-release suite, and append corrected R23/R27 utilization evidence without rewriting history"
+  "next_minimum_action": "append corrected R23/R27 utilization evidence without rewriting history, then select the next existing-IR candidate only if the corrected attribution supports a material complete-Program hypothesis"
 }
