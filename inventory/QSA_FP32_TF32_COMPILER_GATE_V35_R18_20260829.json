@@ -48,6 +48,15 @@
     "backend_legality_audit": "initial cross-backend eligibility blocker fixed by exact CuTe and Triton MMA contract sets",
     "expectation_refresh_write_performed": false
   },
+  "post_release_local_suite": {
+    "result": "571 passed, 4 failed, 465 subtests passed",
+    "new_tf32_regression": false,
+    "failure_boundary": [
+      "one v39 Linux Nsight Compute executable-custody assertion is not satisfiable on the local macOS host",
+      "three historical ranking calibration sweep assertions expect at least one refused variant but every declared variant lowers"
+    ],
+    "baseline_comparison": "the same four non-new failures were already reproduced on the clean v32 parent line before this successor"
+  },
   "evidence_boundary": {
     "exact_triton_compile": "pending",
     "b200_correctness": "pending",
