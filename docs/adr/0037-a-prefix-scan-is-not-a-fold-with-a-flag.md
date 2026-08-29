@@ -56,6 +56,14 @@ compiled, launched once and matched the independent oracle on all 65,536 outputs
 maximum deviation of `0.0` under the unchanged `1e-5` tolerance
 (`open-cake-ir-sm100a-v29-draft`, schedule `34b747aa`, source `4f2760c7`).
 
+`corpus/schedules/chunk-cumsum-reverse-b8-smoke.json` is the same Schedule with
+`direction: "reverse"`. It emits a distinct lowering, `reverse=True`, and matched its own
+suffix-sum oracle on all 65,536 outputs at maximum deviation `0.0`. It exists because the
+first review of this ADR found that `ScanDirection` was released with both members while
+only `forward` had a gated case — the same standard this document sets for `ScanOp` two
+sections above, unmet in its own corpus. A released mode with no case is a claim the Gate
+cannot speak to.
+
 Its drift sibling declares the result with the scanned axis dropped — the shape a fold
 would produce — and is refused before lowering with `SCAN_SHAPE_MISMATCH`. That case is
 the one this primitive most needs, because writing a scan as a reduction is the mistake
@@ -78,3 +86,16 @@ uses `sigmoid`, which `swiglu-b8-smoke` already spells as `0.5 * (tanh(0.5x) + 1
 needs no `log` and no `softplus`. Those belong to the unbounded branch, which the KDA
 forward benchmark does not take. Until the scalar operand lands, this Schedule takes the
 gate values as input and proves the prefix; calling it the gate stage would be false.
+
+## Recorded limitation: the inside-loop refusal is borrowed
+
+`SCAN`'s exclusion from the tile loop is enforced only by its absence from the Triton
+backend's `INSIDE_LOOP_EMITTERS`, which surfaces as a bare `EmitError`. There is no
+verifier placement rule, so the Schedule is not refused on its own terms; the nearest
+Finding an author is likely to reach is `BUFFER_ESCAPES_LOOP`, which describes a
+different problem and happens to catch this one.
+
+This is accepted for v29 rather than fixed. It is recorded because the refusal reads as
+deliberate from the emitter's table and accidental from the author's side, and because a
+future change that makes a scan result outlive its loop by some other route would remove
+the borrowed block without touching anything named `scan`.

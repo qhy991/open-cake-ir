@@ -11,6 +11,13 @@ from __future__ import annotations
 from kernel_cases import ORACLES as _RETAINED_ORACLES
 
 
+def _chunk_cumsum_reverse_oracle(inputs, torch):
+    """The chunk-local inclusive suffix sum along the token axis."""
+
+    gate, _ = inputs
+    return gate.float().flip(1).cumsum(dim=1).flip(1), None
+
+
 def _chunk_cumsum_oracle(inputs, torch):
     """The chunk-local inclusive prefix sum along the token axis."""
 
@@ -279,6 +286,7 @@ def _masked_gemm_bias_oracle(inputs, torch):
 ORACLES = {
     **_RETAINED_ORACLES,
     "chunk_cumsum_b8_smoke": _chunk_cumsum_oracle,
+    "chunk_cumsum_reverse_b8_smoke": _chunk_cumsum_reverse_oracle,
     "relu_b8_smoke": _relu_oracle,
     "online_softmax_b8_smoke": _online_softmax_oracle,
     "index_expand_b8_smoke": _index_expand_oracle,
@@ -300,6 +308,7 @@ ORACLES = {
 # its bytes are frozen evidence; this is the sole current projection from lowering routes.
 _WORKLOAD_BY_ENTRY_POINT = {
     "cake_chunk_cumsum_b8_smoke": "chunk_cumsum_b8_smoke",
+    "cake_chunk_cumsum_reverse_b8_smoke": "chunk_cumsum_reverse_b8_smoke",
     "cake_relu_b8_smoke": "relu_b8_smoke",
     "cake_online_softmax_b8_smoke": "online_softmax_b8_smoke",
     "cake_index_expand_b8_smoke": "index_expand_b8_smoke",
