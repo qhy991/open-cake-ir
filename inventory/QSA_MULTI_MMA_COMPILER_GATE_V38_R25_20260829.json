@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "purpose": "exact_gate_and_release_approval_basis_for_generic_triton_multi_mma_lowering",
+  "status": "exact_gate_matched_and_repository_owner_authorized_for_approval",
+  "compiler_change_commit": "c0b637e",
+  "corpus_proposal_commit": "a968e64",
+  "corpus_adoption_commit": "0510705",
+  "compiler_revision": {
+    "id": "open-cake-ir-sm100a-v38-draft",
+    "proposal_canonical_sha256": "26c268d251ba821448403e477d75220e0082cd704d2f3ef098158b6a3866a340",
+    "source_set_canonical_sha256": "f908b2d6b00dbaf32ae3f224d7dd9864807de666b3f3daf0eaf33b8376541ec0"
+  },
+  "gate": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "59cc7ff675bd97178c11245dd4dc1255d03e51eade2610ca00f7421059d0ff11",
+    "case_count": 64,
+    "matched_case_count": 64,
+    "bound_source_count": 83
+  },
+  "review": {
+    "reviewer": "repository_owner",
+    "decision": "approved_under_explicit_continuous_iteration_and_artifact_writing_authorization",
+    "approval_artifact_status": "pending_exact_write"
+  },
+  "change_contract": {
+    "new_ir_or_schema": false,
+    "removed_backend_restriction": "TRITON_MMA_COUNT",
+    "per_operation_validation": true,
+    "implicit_accumulator": false,
+    "qsa_specific_branch": false,
+    "frozen_program_v2_exact": true
+  },
+  "gate_evidence": {
+    "generic_positive": "two loop-local K64 IEEE MMAs, independent partial writes, explicit FP32 add, two emitted dots",
+    "generic_negative": "second Target-admitted CuTe contract is localized as TRITON_MMA_INSTRUCTION_UNSUPPORTED",
+    "existing_cases": "62 of 62 retain expectations",
+    "focused_tests": "55 passed, 78 subtests passed",
+    "draft_program_v2_nodes": 5,
+    "expectation_refresh_write_performed": false
+  },
+  "evidence_boundary": {
+    "exact_compile": "pending after release",
+    "compiled_resources": "unknown",
+    "b200_correctness_and_timing": "pending",
+    "workload_program_evaluator_executor_changed": false,
+    "mfu": "unknown",
+    "bwu": "unknown"
+  },
+  "next_minimum_action": "write and validate exact approval, release v38, then construct and exact-compile the explicit K64 plus K64 QSA candidate before external-oracle correctness"
+}
