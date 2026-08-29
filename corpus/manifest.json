@@ -744,6 +744,19 @@
       }
     },
     {
+      "case_id": "top-k-streaming-merge1-exact-half-k256-accepted",
+      "schedule": "corpus/schedules/top-k-streaming-merge1-exact-half-k256-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "b0f9847fc9b21d563bd4d363a9db94d1bba1f6944cd9203da650df3da34b13d2",
+        "lowering_source_sha256": "4ee22f8088710f78ab8e441e60f6b96da45112bea72da7a8f9c700f3017fdc9b"
+      }
+    },
+    {
       "case_id": "top-k-streaming-two-source-tiles-accepted",
       "schedule": "corpus/schedules/top-k-streaming-merge2-b8-smoke.json",
       "expected": {
@@ -754,6 +767,19 @@
         ],
         "schedule_sha256": "ae1645f4dfc0b3f3f5ed4fbfc66c95f0b9b73454df03a536fe4132b0749ba370",
         "lowering_source_sha256": "bc1c009fbcfed421ece21989b438cf85079ca19620af70e83b9572753cb3a253"
+      }
+    },
+    {
+      "case_id": "top-k-streaming-merge2-exact-half-k256-odd-partial-accepted",
+      "schedule": "corpus/schedules/top-k-streaming-merge2-exact-half-k256-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "810d2b6585f7fc98f7899f4359c3cdb7619eda7b424aa6d61c36dbc432d74200",
+        "lowering_source_sha256": "20222dbb59d5bc7097094a9145f4fbcffce01b34803e240653e8917ac191b318"
       }
     },
     {
@@ -808,7 +834,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "28d3ebaa73aeb4ca2e9b9af090c8b2d19c13cc16dbaf76b0855acbb8592597f1",
-        "lowering_source_sha256": "d530fcac401ef45e69e77b951209836db12a59579c6b63984d5ee8985d3395e3"
+        "lowering_source_sha256": "e22030196e688df3cc00d615fd2f05d96cdb439ef1706a04e01fe0c85b303bf4"
       }
     },
     {
