@@ -15,6 +15,7 @@ from .analysis import (
     logical_register_pressure_per_thread,
     residency_upper_bound,
     top_k_merge_structure,
+    top_k_selection_structure,
 )
 from .ir import (
     AccessIndexKind,
@@ -174,6 +175,11 @@ def _top_k_features(schedule: Schedule) -> list[dict[str, object]]:
         if not isinstance(parameters, TopKParameters) or source is None:
             continue
         structure = top_k_merge_structure(schedule, operation)
+        selection = (
+            top_k_selection_structure(parameters.k, structure.merge_width)
+            if structure is not None and parameters.across_loop
+            else None
+        )
         extent = source.shape[0] if len(source.shape) == 1 else None
         rows.append(
             {
@@ -188,6 +194,38 @@ def _top_k_features(schedule: Schedule) -> list[dict[str, object]]:
                     structure.source_elements_per_merge if structure is not None else None
                 ),
                 "merge_width": structure.merge_width if structure is not None else None,
+                "selection_algorithm": (
+                    selection.algorithm if selection is not None else None
+                ),
+                "selection_comparison_model": (
+                    selection.comparison_model if selection is not None else None
+                ),
+                "selection_comparison_estimate_kind": (
+                    "toolchain_frontend_model" if selection is not None else None
+                ),
+                "selection_comparison_model_source": (
+                    "Triton v3.7.1 standard.py" if selection is not None else None
+                ),
+                "baseline_comparison_lane_work": (
+                    selection.baseline_comparison_lane_work
+                    if selection is not None
+                    else None
+                ),
+                "selected_comparison_lane_work": (
+                    selection.selected_comparison_lane_work
+                    if selection is not None
+                    else None
+                ),
+                "comparison_lane_work_reduction_fraction": (
+                    selection.comparison_lane_reduction_fraction
+                    if selection is not None
+                    else None
+                ),
+                "selection_declared_shared_memory_delta_bytes": 0,
+                "selection_compiled_shared_memory_delta_bytes": None,
+                "selection_compiled_resource_missing": [
+                    "matched compiled allocation for selected algorithm and control"
+                ],
                 "loop_carried_state_elements": (
                     2 * parameters.k if parameters.across_loop else 0
                 ),
@@ -313,6 +351,8 @@ def _lowering_document(
         "runtime_indexed_buffers": list(_runtime_indexed_buffers(schedule)),
         "triton_dot_count": source.count("tl.dot("),
         "triton_top_k_count": source.count("tl.topk("),
+        "triton_sort_count": source.count("tl.sort("),
+        "triton_bitonic_merge_count": source.count("tl.bitonic_merge("),
         "triton_range_count": source.count("tl.range("),
     }
 
@@ -375,6 +415,15 @@ def profile_envelope(
         backend_intrinsics.append("tl.dot may allocate implicit shared/register storage")
     if lowered_source is not None and "tl.topk(" in lowered_source:
         backend_intrinsics.append("tl.topk owns an internal bitonic synchronization/storage plan")
+    if lowered_source is not None and (
+        "tl.sort(" in lowered_source or "tl.bitonic_merge(" in lowered_source
+    ):
+        backend_intrinsics.append(
+            "tl.sort and tl.bitonic_merge own internal synchronization/storage plans"
+        )
+        backend_intrinsics.append(
+            "half-selection compiled resource delta requires matched toolchain artifacts"
+        )
     scoreboard_reasons = list(
         f"runtime-indexed global buffer {name}" for name in runtime_indexed
     )

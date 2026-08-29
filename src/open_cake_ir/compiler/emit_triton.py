@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .analysis import top_k_selection_structure
 from .emit import BackendPrecondition, Emission, EmitError, require as _require
 from .ir import (
     ElementwiseOp,
@@ -1366,10 +1367,14 @@ class _TritonEmitter:
         state_keys = self._emit_top_k_key_padding(
             state_keys, k, width, f"{prefix}_state", pad
         )
-        combined = f"{prefix}_combined_keys"
-        ranked = f"{prefix}_ranked_keys"
-        self.line(f"{pad}{combined} = tl.cat({state_keys}, {source_keys})")
-        self.line(f"{pad}{ranked} = tl.topk({combined}, {k})")
+        ranked = self._emit_top_k_merge_selection(
+            state_keys,
+            source_keys,
+            k,
+            2 * width,
+            prefix,
+            pad,
+        )
         self._emit_top_k_decode(ranked, values, indices, prefix, pad, source.dtype)
 
     def _emit_two_tile_loop_carried_top_k(self, operation, source, pad: str) -> None:
@@ -1452,10 +1457,14 @@ class _TritonEmitter:
             f"{prefix}_state",
             pad,
         )
-        combined = f"{prefix}_combined_keys"
-        ranked = f"{prefix}_ranked_keys"
-        self.line(f"{pad}{combined} = tl.cat({state_keys}, {source_keys})")
-        self.line(f"{pad}{ranked} = tl.topk({combined}, {k})")
+        ranked = self._emit_top_k_merge_selection(
+            state_keys,
+            source_keys,
+            k,
+            2 * width,
+            prefix,
+            pad,
+        )
         self._emit_top_k_decode(
             ranked,
             values,
@@ -1464,6 +1473,45 @@ class _TritonEmitter:
             pad,
             source.dtype,
         )
+
+    def _emit_top_k_merge_selection(
+        self,
+        state_keys: str,
+        source_keys: str,
+        k: int,
+        merge_width: int,
+        prefix: str,
+        pad: str,
+    ) -> str:
+        """Select an exact descending top-k from carried state plus source keys.
+
+        The carried half is descending by induction.  Sorting only the source half
+        ascending makes their concatenation bitonic; one public Triton bitonic merge
+        sorts the full vector, and splitting its first half keeps the exact top-k.
+        """
+
+        selection = top_k_selection_structure(k, merge_width)
+        combined = f"{prefix}_combined_keys"
+        ranked = f"{prefix}_ranked_keys"
+        if selection.algorithm == "triton_topk":
+            self.line(f"{pad}{combined} = tl.cat({state_keys}, {source_keys})")
+            self.line(f"{pad}{ranked} = tl.topk({combined}, {k})")
+            return ranked
+
+        sorted_source = f"{prefix}_sorted_source_keys"
+        merged = f"{prefix}_merged_keys"
+        halves = f"{prefix}_merged_halves"
+        pairs = f"{prefix}_merged_pairs"
+        discarded = f"{prefix}_discarded_keys"
+        self.line(f"{pad}{sorted_source} = tl.sort({source_keys}, descending=False)")
+        self.line(f"{pad}{combined} = tl.cat({state_keys}, {sorted_source})")
+        self.line(
+            f"{pad}{merged} = tl.bitonic_merge({combined}, descending=True)"
+        )
+        self.line(f"{pad}{halves} = tl.reshape({merged}, (2, {k}))")
+        self.line(f"{pad}{pairs} = tl.trans({halves})")
+        self.line(f"{pad}{ranked}, {discarded} = tl.split({pairs})")
+        return ranked
 
     def _emit_two_tile_top_k_flush(self, operation, pad: str) -> None:
         """Merge a pending odd final source tile after the declared tile loop."""

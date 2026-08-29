@@ -79,6 +79,16 @@
       "locator": "tl.dot admits input_precision=tf32 for NVIDIA FP32 tensor-core inputs and warns that FP32 inputs may be truncated to TF32 without rounding"
     },
     {
+      "kind": "toolchain_api",
+      "source": "https://github.com/triton-lang/triton/blob/v3.7.1/python/triton/language/__init__.py",
+      "locator": "Triton v3.7.1 imports bitonic_merge into triton.language and lists it in the public namespace __all__"
+    },
+    {
+      "kind": "toolchain_api",
+      "source": "https://github.com/triton-lang/triton/blob/v3.7.1/python/triton/language/standard.py",
+      "locator": "Triton v3.7.1 standard.py defines the last-dimension bitonic_merge and topk frontend networks used only as a version-specific structural work model"
+    },
+    {
       "kind": "device_observation",
       "source": "cuDeviceGetAttribute and torch.cuda.get_device_properties on NVIDIA B200",
       "locator": "occupancy block; observed 2026-08-23 on verda-b200x4 under gpu-run"

@@ -63,6 +63,13 @@ derived state: one packed UINT64 composite key per source element, or
 `8 * source_extent` logical bytes. The field makes that extent visible to analysis
 without adding a destination-passing Buffer; physical register placement remains
 compiled-artifact evidence.
+The canonical Triton lowering may replace a carried merge by sorted-source
+half-selection when the padded source half and already ordered carried half each contain
+`k` keys and the pinned Triton 3.7.1 frontend-network model removes at least one third
+of comparison-lane work. This is a derived lowering choice, not author syntax: no
+algorithm flag or second `top_k` spelling exists. Profile exposes that version-specific
+structural model while abstaining from compiled registers, implicit shared memory,
+instructions, cycles and latency until matched Executor evidence exists.
 `reduce_argmin` compares FP32 values and returns INT32 source positions; admitting FP8
 storage for another operation does not widen that semantic contract.
 
