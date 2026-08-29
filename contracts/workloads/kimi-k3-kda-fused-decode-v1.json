@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "workload_id": "kimi-k3-kda-fused-decode-v1",
+  "revision": "1",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "task_contract_source",
+      "repository": "KDA-internal",
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/tasks/kda_fused_decode/TASK.md",
+      "scope": "rank-local T=1 fused semantics, 17-argument ABI, state effects, matrix, tolerances, and serving exclusion"
+    },
+    {
+      "kind": "task_definition_source",
+      "repository": "KDA-internal",
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/resources/flashinfer_benchmarks/flashinfer_trace/definitions/kda/kda_fused_decode_k128_v128_bf16.json",
+      "scope": "tensor, scalar, output, V-first state, and generated-cache-index contract"
+    },
+    {
+      "kind": "task_workload_matrix_source",
+      "repository": "KDA-internal",
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/resources/flashinfer_benchmarks/flashinfer_trace/workloads/kda/kda_fused_decode_k128_v128_bf16.jsonl",
+      "scope": "ordered nine-cell H12 primary/small and H6/H3 deployment matrix"
+    },
+    {
+      "kind": "task_evaluator_source",
+      "repository": "KDA-internal",
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/resources/flashinfer_benchmarks/benchmarks/bench_kda_fused_decode_standalone.py",
+      "scope": "independent high-level oracle, scattered slots, real state stride, side-effect endpoints, and black-box timing baseline"
+    },
+    {
+      "kind": "task_timer_source",
+      "repository": "KDA-internal",
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/resources/flashinfer_benchmarks/benchmarks/bench_common.py",
+      "scope": "CUPTI 13 or newer, cold-L2, no-CUDA-Graph timer and deterministic per-sample input derivation"
+    },
+    {
+      "kind": "delegated_campaign_acceptance",
+      "authority": "user_delegation_2026-08-29",
+      "scope": "256-step state and slot reuse trajectory; this is stronger than and is not attributed to the upstream TASK.md"
+    }
+  ],
+  "operator": "kda_fused_decode",
+  "cases": [
+    {
+      "case_id": "h12-b1-a1",
+      "shape": {"num_heads": 12, "head_dim": 128, "batch_size": 1, "active_rows": 1, "tokens_per_request": 1, "state_slot_pad": 256},
+      "seed": null,
+      "mode": "small_guardrail_generated_scattered_slots_envelope_state"
+    },
+    {
+      "case_id": "h12-b4-a3",
+      "shape": {"num_heads": 12, "head_dim": 128, "batch_size": 4, "active_rows": 3, "tokens_per_request": 1, "state_slot_pad": 256},
+      "seed": null,
+      "mode": "small_guardrail_generated_scattered_slots_envelope_state"
+    },
+    {
+      "case_id": "h12-b8-a8",
+      "shape": {"num_heads": 12, "head_dim": 128, "batch_size": 8, "active_rows": 8, "tokens_per_request": 1, "state_slot_pad": 256},
+      "seed": null,
+      "mode": "primary_tp8_generated_scattered_slots_envelope_state"
+    },
+    {
+      "case_id": "h12-b16-a13",
+      "shape": {"num_heads": 12, "head_dim": 128, "batch_size": 16, "active_rows": 13, "tokens_per_request": 1, "state_slot_pad": 256},
+      "seed": null,
+      "mode": "primary_tp8_generated_scattered_slots_envelope_state"
+    },
+    {
+      "case_id": "h12-b32-a32",
+      "shape": {"num_heads": 12, "head_dim": 128, "batch_size": 32, "active_rows": 32, "tokens_per_request": 1, "state_slot_pad": 256},
+      "seed": null,
+      "mode": "primary_tp8_generated_scattered_slots_envelope_state"
+    },
+    {
+      "case_id": "h12-b64-a51",
+      "shape": {"num_heads": 12, "head_dim": 128, "batch_size": 64, "active_rows": 51, "tokens_per_request": 1, "state_slot_pad": 256},
+      "seed": null,
+      "mode": "primary_tp8_generated_scattered_slots_envelope_state"
+    },
+    {
+      "case_id": "h12-b128-a128",
+      "shape": {"num_heads": 12, "head_dim": 128, "batch_size": 128, "active_rows": 128, "tokens_per_request": 1, "state_slot_pad": 256},
+      "seed": null,
+      "mode": "primary_tp8_generated_scattered_slots_envelope_state"
+    },
+    {
+      "case_id": "h6-b32-a25",
+      "shape": {"num_heads": 6, "head_dim": 128, "batch_size": 32, "active_rows": 25, "tokens_per_request": 1, "state_slot_pad": 256},
+      "seed": null,
+      "mode": "deployment_guardrail_generated_scattered_slots_envelope_state"
+    },
+    {
+      "case_id": "h3-b64-a51",
+      "shape": {"num_heads": 3, "head_dim": 128, "batch_size": 64, "active_rows": 51, "tokens_per_request": 1, "state_slot_pad": 256},
+      "seed": null,
+      "mode": "deployment_guardrail_generated_scattered_slots_envelope_state"
+    }
+  ],
+  "tensors": {
+    "mixed_qkv": {
+      "shape": ["M", "3*H*128"],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "a": {
+      "shape": ["M", "H*128"],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "b": {
+      "shape": ["M", "H"],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "conv_states": {
+      "shape": ["slots", 3, "3*H*128"],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "strides": ["3*(3*H*128)", "3*H*128", 1],
+      "side_effect": "selected nonnegative slots updated in place"
+    },
+    "w_q_t": {
+      "shape": [4, "H*128"],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major"
+    },
+    "w_k_t": {
+      "shape": [4, "H*128"],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major"
+    },
+    "w_v_t": {
+      "shape": [4, "H*128"],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major"
+    },
+    "conv_bias": {
+      "shape": ["3*H*128"],
+      "dtype": "fp32",
+      "layout": "contiguous"
+    },
+    "A_log": {
+      "shape": ["H"],
+      "dtype": "fp32",
+      "layout": "contiguous"
+    },
+    "dt_bias": {
+      "shape": ["H*128"],
+      "dtype": "fp32",
+      "layout": "contiguous"
+    },
+    "onorm_g": {
+      "shape": ["M", "H*128"],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "onorm_weight": {
+      "shape": [128],
+      "dtype": "fp32",
+      "layout": "contiguous"
+    },
+    "ssm_states": {
+      "shape": ["slots", "H", 128, 128],
+      "dtype": "fp32",
+      "layout": "v_first_envelope_strided_slots",
+      "strides": ["H*128*128+256", 16384, 128, 1],
+      "side_effect": "selected nonnegative slots updated in place"
+    },
+    "cache_indices": {
+      "shape": ["M"],
+      "dtype": "int32",
+      "layout": "contiguous",
+      "value_contract": "nonnegative entries are unique scattered slots within each call; -1 marks a padded row"
+    },
+    "scale": {
+      "shape": null,
+      "dtype": "fp32",
+      "value": 0.08838834764831843
+    },
+    "onorm_eps": {
+      "shape": null,
+      "dtype": "fp32",
+      "value": 1e-06
+    },
+    "lower_bound": {
+      "shape": null,
+      "dtype": "fp32",
+      "value": -5.0
+    },
+    "output": {
+      "shape": [1, "M", "H", 128],
+      "dtype": "bf16",
+      "layout": "contiguous_dedicated_exact_sized_zero_offset"
+    }
+  },
+  "semantics": {
+    "model": "Kimi-K3",
+    "stage": "one_token_persistent_decode",
+    "tokens_per_graph_row": 1,
+    "definition": "causal_conv1d_update -> packed KDA recurrent update -> sigmoid-gated RMSNorm",
+    "candidate_abi": [
+      "mixed_qkv",
+      "a",
+      "b",
+      "conv_states",
+      "w_q_t",
+      "w_k_t",
+      "w_v_t",
+      "conv_bias",
+      "A_log",
+      "dt_bias",
+      "onorm_g",
+      "onorm_weight",
+      "ssm_states",
+      "cache_indices",
+      "scale",
+      "onorm_eps",
+      "lower_bound"
+    ],
+    "geometry": {
+      "K": 128,
+      "V": 128,
+      "conv_width": 4,
+      "conv_history_width": 3,
+      "global_heads": 96,
+      "supported_rank_local_heads": [12, 6, 3],
+      "state_slot_pad_fp32_elements": 256,
+      "state_layout": "V-first"
+    },
+    "state_slots": "batch_size+4",
+    "state_and_padding": {
+      "negative_cache_index_output": "all_zero",
+      "negative_cache_index_state_effect": "none",
+      "selected_slots": "updated exactly once per call",
+      "unselected_slots": "bitwise_unchanged",
+      "slot_indices_within_call": "unique_and_scattered",
+      "state_stride": "must use declared runtime strides rather than assume dense slots"
+    },
+    "output_storage": {
+      "dedicated": true,
+      "contiguous": true,
+      "exact_sized": true,
+      "zero_offset": true,
+      "input_aliasing": "forbidden"
+    },
+    "operator_boundary": "single-GPU rank-local operator timing; TP, EP, DCP, collectives, model-forward, CUDA-Graph integration, and serving are excluded",
+    "excluded_substitutes": [
+      "T=8192 chunk_kda",
+      "H96 prefill",
+      "historical 3.121x kda_forward result"
+    ],
+    "clean_start_reference_policy": {
+      "may_inspect": [
+        "mathematical specification",
+        "task contract",
+        "independent high-level oracle",
+        "high-level wrapper and ABI"
+      ],
+      "must_not_inspect": [
+        "vendored CUDA",
+        "CuTe implementation",
+        "PTX",
+        "SASS",
+        "generated low-level baseline source"
+      ],
+      "timing_baseline_access": "task-owned execute-only black box"
+    }
+  },
+  "oracle": {
+    "kind": "independent_unfused_high_level_oracle_with_separate_black_box_timing_baseline",
+    "correctness_reference": {
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/resources/flashinfer_benchmarks/benchmarks/bench_kda_fused_decode_standalone.py",
+      "callable": "reference_fused_decode",
+      "endpoints": [
+        "output",
+        "post_call_conv_states",
+        "post_call_ssm_states"
+      ]
+    },
+    "timing_baseline": {
+      "kind": "task_owned_pinned_sglang_fused_kernel_black_box",
+      "upstream_revision": "f7a404e9c308502ab87f3acb625052d261f73a99",
+      "visibility_to_clean_start_author": "execute_only",
+      "execution_context": "isolated_worker_symmetric_with_candidate"
+    }
+  },
+  "validation": {
+    "canonical": "all_endpoints_elementwise_tolerance_and_state_ownership_before_timing",
+    "atol": 0.02,
+    "rtol": 0.02,
+    "minimum_match_fraction": 1.0,
+    "all_cases_required": true,
+    "correctness_endpoints": [
+      "output",
+      "post_call_conv_states",
+      "post_call_ssm_states",
+      "unselected_slots_bitwise_unchanged",
+      "negative_rows_zero_output",
+      "negative_rows_no_state_write",
+      "noncontiguous_slot_selection",
+      "declared_runtime_state_strides"
+    ],
+    "cell_tiers": {
+      "primary_tp8_h12": [
+        "h12-b8-a8",
+        "h12-b16-a13",
+        "h12-b32-a32",
+        "h12-b64-a51",
+        "h12-b128-a128"
+      ],
+      "small_guardrail_h12": [
+        "h12-b1-a1",
+        "h12-b4-a3"
+      ],
+      "deployment_guardrail": [
+        "h6-b32-a25",
+        "h3-b64-a51"
+      ]
+    },
+    "trajectory": {
+      "authority": "user_delegation_2026-08-29",
+      "attributed_to_upstream_task": false,
+      "coverage": "all_nine_matrix_cells",
+      "steps_per_cell": 256,
+      "requirements": [
+        "carry candidate and independent-oracle conv and SSM states across all steps",
+        "reuse state slots across steps",
+        "use each cell's declared active and padded row counts with unique scattered nonnegative slots",
+        "include negative padded rows and verify zero output with no state write",
+        "compare output and complete post-call state pools at every step"
+      ],
+      "promotion_required": true
+    },
+    "measurement": {
+      "hardware": "NVIDIA B200",
+      "custody": "one broker-exclusive GPU",
+      "timer": "flashinfer.testing.bench_gpu_time_with_cupti",
+      "required_cupti_major": 13,
+      "warmup_iterations_per_arm": 5,
+      "pair_order": {
+        "baseline_then_candidate": 13,
+        "candidate_then_baseline": 13
+      },
+      "samples_per_cohort": 50,
+      "pairing_protocol_authority": "workload_contract",
+      "cold_l2_cache": true,
+      "use_cuda_graph": false,
+      "raw_samples": "retain_all",
+      "cv": "retain_and_report_per_cohort",
+      "metric": "paired_absolute_latency_ms",
+      "timed_boundary": "rank-local fused operator only; no TP, EP, or DCP communication"
+    },
+    "reporting": {
+      "per_case_absolute_latency_required": true,
+      "tier_views_required": [
+        "primary_tp8_h12",
+        "small_guardrail_h12",
+        "deployment_guardrail"
+      ],
+      "cross_workload_geomean": "forbidden"
+    },
+    "claim_boundary": "operator_artifact_only_not_model_forward_or_serving"
+  }
+}

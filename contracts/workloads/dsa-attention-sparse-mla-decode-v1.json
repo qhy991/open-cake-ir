@@ -1,0 +1,397 @@
+{
+  "schema_version": 1,
+  "workload_id": "deepseek-v3.2-dsa-sparse-mla-decode-v1",
+  "revision": "1",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "task_contract_source",
+      "repository": "KDA-internal",
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/tasks/dsa_attention/TASK.md",
+      "scope": "mathematical semantics, candidate ABI, workload classes, correctness boundary, and black-box baseline policy"
+    },
+    {
+      "kind": "task_definition_source",
+      "repository": "KDA-internal",
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/resources/flashinfer_benchmarks/flashinfer_trace/definitions/dsa_paged/dsa_sparse_attention_h16_ckv512_kpe64_topk2048_ps64.json",
+      "scope": "tensor axes and inspectable high-level numerical reference"
+    },
+    {
+      "kind": "task_workload_matrix_source",
+      "repository": "KDA-internal",
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/resources/flashinfer_benchmarks/flashinfer_trace/workloads/dsa_paged/dsa_sparse_attention_h16_ckv512_kpe64_topk2048_ps64.jsonl",
+      "scope": "ordered 23 captured plus 7 generated rows and their actual 24-small/6-large classification"
+    },
+    {
+      "kind": "task_captured_asset_source",
+      "repository": "KDA-internal",
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/resources/flashinfer_benchmarks/flashinfer_trace/blob/workloads/dsa_paged/dsa_sparse_attention_h16_ckv512_kpe64_topk2048_ps64",
+      "asset_count": 23,
+      "scope": "Git-tracked captured sparse_indices safetensors consumed by the 23 captured workload rows"
+    },
+    {
+      "kind": "task_evaluator_source",
+      "repository": "KDA-internal",
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/resources/flashinfer_benchmarks/benchmarks/bench_dsa_attention_standalone.py",
+      "scope": "executed scale, separate-cache black-box baseline boundary, tolerances, and 3x50 trial protocol"
+    },
+    {
+      "kind": "task_timer_source",
+      "repository": "KDA-internal",
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/resources/flashinfer_benchmarks/benchmarks/bench_common.py",
+      "scope": "CUPTI 13 or newer, cold-L2, no-CUDA-Graph timer and deterministic per-sample input derivation"
+    }
+  ],
+  "operator": "dsa_attention",
+  "cases": [
+    {
+      "case_id": "0c23b10c7b7645719517828c12eaa1d2",
+      "shape": {"num_tokens": 1, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "9d4a5f21268e484ea05a2f2af91d9fa7",
+      "shape": {"num_tokens": 2, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "b7668cfd194c4b95ab600feb205ebac6",
+      "shape": {"num_tokens": 2, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "0a63b87bb2e54e9db1ca3c4c53a1d521",
+      "shape": {"num_tokens": 2, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "05f6de657db543ae9e4c46796522843a",
+      "shape": {"num_tokens": 2, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "fc85411e250c41879b6d6a1edb80f0a7",
+      "shape": {"num_tokens": 2, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "e6b849f2900446148c01d81152efae23",
+      "shape": {"num_tokens": 2, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "9f3f891bfbe24776adfcd5a579d093dd",
+      "shape": {"num_tokens": 2, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "f77df5ce21634f7ca0586af7e3c13434",
+      "shape": {"num_tokens": 2, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "385742b2717e4f02b918c7349dde23d8",
+      "shape": {"num_tokens": 8, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "4c46a94ba2364dc7ab476286dee8dce3",
+      "shape": {"num_tokens": 8, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "3838996164a94d728710f913477feba8",
+      "shape": {"num_tokens": 7, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "02d6ae9c64ab42ff93f05c23c53bcb7d",
+      "shape": {"num_tokens": 8, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "ddfa9e340b264f76abe7418692faa876",
+      "shape": {"num_tokens": 6, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "78b2e11c30004cceb84355722a7c6b0a",
+      "shape": {"num_tokens": 8, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "68d6817dcfd1433aa8d2ddeefd54b6ea",
+      "shape": {"num_tokens": 6, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "564007ac354e4662a62cc4d6352dc494",
+      "shape": {"num_tokens": 8, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "ae4219a95f044f45bd10e17ab63c6e8f",
+      "shape": {"num_tokens": 7, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "232ed014bafc4835b9881bb308c659b0",
+      "shape": {"num_tokens": 8, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "7a389715dcc3479e9b0512309f9d1d56",
+      "shape": {"num_tokens": 8, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "5096e459ce3f4cdf82773ce1a0c73c8a",
+      "shape": {"num_tokens": 8, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "d57eb9e19f0642e8af9bd76ad0823303",
+      "shape": {"num_tokens": 6, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "2207f0fdc96347c59d106e4976cfad57",
+      "shape": {"num_tokens": 7, "num_pages": 8462},
+      "seed": null,
+      "mode": "captured_sparse_indices_small"
+    },
+    {
+      "case_id": "gen-large-num_pages8192-num_tokens8",
+      "shape": {"num_tokens": 8, "num_pages": 8192},
+      "seed": null,
+      "mode": "generated_dense_indices_small"
+    },
+    {
+      "case_id": "gen-large-num_pages32768-num_tokens8",
+      "shape": {"num_tokens": 8, "num_pages": 32768},
+      "seed": null,
+      "mode": "generated_dense_indices_large"
+    },
+    {
+      "case_id": "gen-large-num_pages32768-num_tokens16",
+      "shape": {"num_tokens": 16, "num_pages": 32768},
+      "seed": null,
+      "mode": "generated_dense_indices_large"
+    },
+    {
+      "case_id": "gen-large-num_pages32768-num_tokens32",
+      "shape": {"num_tokens": 32, "num_pages": 32768},
+      "seed": null,
+      "mode": "generated_dense_indices_large"
+    },
+    {
+      "case_id": "gen-large-num_pages32768-num_tokens64",
+      "shape": {"num_tokens": 64, "num_pages": 32768},
+      "seed": null,
+      "mode": "generated_dense_indices_large"
+    },
+    {
+      "case_id": "gen-large-num_pages32768-num_tokens128",
+      "shape": {"num_tokens": 128, "num_pages": 32768},
+      "seed": null,
+      "mode": "generated_dense_indices_large"
+    },
+    {
+      "case_id": "gen-large-num_pages32768-num_tokens256",
+      "shape": {"num_tokens": 256, "num_pages": 32768},
+      "seed": null,
+      "mode": "generated_dense_indices_large"
+    }
+  ],
+  "tensors": {
+    "q_nope": {
+      "shape": ["num_tokens", 16, 512],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "finite_only": true
+    },
+    "q_pe": {
+      "shape": ["num_tokens", 16, 64],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "finite_only": true
+    },
+    "ckv_cache": {
+      "shape": ["num_pages", 64, 512],
+      "dtype": "bf16",
+      "layout": "native_separate_paged_cache",
+      "finite_only": true
+    },
+    "kpe_cache": {
+      "shape": ["num_pages", 64, 64],
+      "dtype": "bf16",
+      "layout": "native_separate_paged_cache",
+      "finite_only": true
+    },
+    "sparse_indices": {
+      "shape": ["num_tokens", 2048],
+      "dtype": "int32",
+      "layout": "contiguous_row_major",
+      "value_contract": "-1 padding or token-level index in [0,num_pages*64)"
+    },
+    "sm_scale": {
+      "shape": null,
+      "dtype": "fp32",
+      "value": 0.1352337788608801
+    },
+    "output": {
+      "shape": ["num_tokens", 16, 512],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    }
+  },
+  "semantics": {
+    "model": "DeepSeek-V3.2",
+    "stage": "sparse_mla_decode_dsa",
+    "definition": "for each query row and head, gather nonnegative token-level sparse indices, form logits=(q_nope@ckv^T + q_pe@kpe^T)*sm_scale, softmax over valid entries, and multiply by ckv values",
+    "empty_valid_set": "zero_output",
+    "geometry": {
+      "num_query_heads": 16,
+      "compressed_kv_dim": 512,
+      "rope_dim": 64,
+      "page_size": 64,
+      "top_k": 2048,
+      "source_tensor_parallel_size": 8
+    },
+    "sm_scale_authority": {
+      "executed_value": 0.1352337788608801,
+      "definition_prose": "1/sqrt(192)",
+      "status": "tracked_source_prose_drift",
+      "binding": "executed_value_is_authoritative"
+    },
+    "case_matrix": {
+      "total_rows": 30,
+      "captured_rows": 23,
+      "generated_rows": 7,
+      "small_rows": 24,
+      "large_rows": 6
+    },
+    "fresh_input_generation": {
+      "source_revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "source_path": "src/kda/resources/flashinfer_benchmarks/benchmarks/bench_common.py",
+      "namespace": "dsa-attention",
+      "seed_material": [
+        "BENCH_INPUT_SALT",
+        "namespace",
+        "suite",
+        "case_id",
+        "axes",
+        "sample_index"
+      ],
+      "seed_derivation": "first 8 SHA-256 bytes of canonical JSON material, big-endian, modulo 2^32",
+      "salt_semantics": "BENCH_INPUT_SALT is evaluator-owned and retained with the run; empty is only the local default",
+      "sample_semantics": "q/cache values are regenerated from a distinct deterministic sample_index; captured sparse_indices stay bound to their Git-tracked asset"
+    },
+    "operator_boundary": "single-GPU rank-local decode operator; TP communication, cache production, scheduling, model-forward, and serving are excluded",
+    "clean_start_reference_policy": {
+      "may_inspect": [
+        "mathematical specification",
+        "task contract",
+        "inspectable high-level numerical reference",
+        "high-level wrapper and ABI"
+      ],
+      "must_not_inspect": [
+        "vendored CUDA",
+        "CuTe implementation",
+        "PTX",
+        "SASS",
+        "generated low-level baseline source"
+      ],
+      "timing_baseline_access": "task-owned execute-only black box"
+    }
+  },
+  "oracle": {
+    "kind": "task_owned_black_box_baseline_with_inspectable_high_level_specification",
+    "high_level_reference": {
+      "revision": "9d6f932c08ab8e027d50fa359b39000f41765f2f",
+      "path": "src/kda/resources/flashinfer_benchmarks/flashinfer_trace/definitions/dsa_paged/dsa_sparse_attention_h16_ckv512_kpe64_topk2048_ps64.json",
+      "returned_candidate_endpoint": "output_only"
+    },
+    "timing_baseline": {
+      "kind": "task_owned_flashinfer_trtllm_mla_black_box",
+      "sparse_mla_top_k": 2048,
+      "visibility_to_clean_start_author": "execute_only",
+      "prepared_outside_timed_region": [
+        "block_tables_view",
+        "sequence_lengths",
+        "maximum_sequence_length"
+      ],
+      "included_in_timed_region": [
+        "q_nope_q_pe_concat",
+        "ckv_kpe_cache_concat",
+        "baseline_kernel"
+      ]
+    }
+  },
+  "validation": {
+    "canonical": "output_elementwise_tolerance_minimum_match_fraction_before_timing",
+    "atol": 0.01,
+    "rtol": 0.01,
+    "minimum_match_fraction": 0.999,
+    "all_cases_required": true,
+    "measurement": {
+      "hardware": "NVIDIA B200",
+      "custody": "one broker-exclusive GPU",
+      "timer": "flashinfer.testing.bench_gpu_time_with_cupti",
+      "required_cupti_major": 13,
+      "warmup_iterations": 3,
+      "samples_per_trial": 50,
+      "trials": 3,
+      "cold_l2_cache": true,
+      "use_cuda_graph": false,
+      "within_trial_aggregation": "median",
+      "across_trial_aggregation": "median",
+      "trial_order": [
+        "baseline_before",
+        "candidate",
+        "baseline_after"
+      ],
+      "baseline_pair_aggregation": "median",
+      "maximum_baseline_relative_drift": 0.1,
+      "baseline_drift_failure": "reject_trial",
+      "raw_samples": "retain_all",
+      "cv": "retain_and_report_per_trial",
+      "metric": "absolute_latency_ms",
+      "matched_baseline": "same case, hardware, timer, and native separate-cache boundary"
+    },
+    "reporting": {
+      "per_case_absolute_latency_required": true,
+      "derived_views": ["all_30", "small_24", "large_6"],
+      "cross_workload_geomean": "forbidden"
+    },
+    "claim_boundary": "operator_artifact_only_not_model_forward_or_serving"
+  }
+}
