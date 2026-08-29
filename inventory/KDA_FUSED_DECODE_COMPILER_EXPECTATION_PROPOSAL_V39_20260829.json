@@ -1,10 +1,13 @@
 {
   "schema_version": 1,
   "purpose": "repository_owner_expectation_adoption_for_generic_caller_indexed_state_and_outer_product",
-  "status": "awaiting_repository_owner_expectation_adoption",
+  "status": "expectations_repository_owner_adopted_gate_prepared_release_approval_pending",
+  "canonical_expectation_owner": "corpus/manifest.json",
+  "canonical_source_closure_owner": "compiler/source_set.json",
   "branch": "codex/kda-fused-decode-cake-r1",
   "compiler_parent_commit": "c56e352ee4f0efe35b99ab2333ee16be494b4571",
   "compiler_change_commit": "f7baef22786df7827188bf46e8c7616d91c41834",
+  "expectation_adoption_commit": "9621df917bb0ba60368b80349988a6d097f25b74",
   "released_parent_revision": "open-cake-ir-sm100a-v38",
   "derived_successor_revision": "open-cake-ir-sm100a-v39-draft",
   "revision_derivation": {
@@ -116,19 +119,23 @@
     "corpus/schedules/scalar-broadcast-b8-smoke.json"
   ],
   "validation": {
-    "focused_contract_tests": "152 passed",
+    "focused_contract_tests_before_release_preparation": "152 passed",
+    "focused_draft_tests_after_gate_preparation": "47 passed, 171 subtests passed",
     "complete_fused_decode_schedule": "all 9 frozen cells parse, verify with no blocking Findings, assess accepted/lowering-eligible, lower, and produce parseable Python",
-    "existing_corpus_expectations": "64 of 64 match the draft Compiler without refresh --write",
-    "full_suite_boundary": "the pre-adoption suite is intentionally blocked by the old released v38 target lock and by six parseable-but-unadopted corpus schedules; the authoring-only builder was moved out of the released Executor source closure and its closure test passes",
+    "expectation_adoption": "exactly 6 proposed cases and 6 proposed source paths adopted; deleting the additions reproduces the prior 64-case and 83-source owners; refresh dry-run reports no drift",
+    "actual_corpus_gate": "70 of 70 match with 89 bound sources",
+    "full_suite_boundary": "after Gate preparation, 512 passed, 89 failed, 2 errors, and 494 subtests passed; the dominant and earliest failure is the deliberately unchanged released v38 lock rejecting the changed target bytes, one release contract rejects the stale v38 approval, and the pre-existing local Nsight Compute custody check remains an environment failure",
     "gpu": "not run; no Compiler release exists"
   },
   "required_external_action": {
     "owner": "repository_owner",
-    "action": "review and adopt exactly the six manifest expectations and six source-set paths above",
-    "agent_must_not_write_manifest_or_source_set_before_adoption": true,
-    "agent_must_not_refresh_expectations": true
+    "action": "review the exact open-cake-ir-sm100a-v39-draft Gate and, only if approved, write compiler/release-approval.json outside the release automation",
+    "expectation_adoption_complete": true,
+    "release_approval_pending": true,
+    "agent_must_not_create_or_modify_release_approval": true,
+    "expectation_refresh_write_performed": false
   },
-  "next_bounded_action_after_adoption": "verify the adopted bytes, run the canonical release cycle to derive v39 and generate the actual full Corpus Gate, run focused and complete suites against that draft, then stop again for exact release approval",
+  "next_bounded_action": "after an external approval binds the exact v39 Gate, rerun the canonical release cycle to install and verify the successor lock; then rerun the full suite before exact compile or GPU evaluation",
   "evidence_boundary": {
     "operator_correctness": "not run",
     "operator_timing": "not run",

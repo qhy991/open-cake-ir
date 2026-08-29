@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "purpose": "exact_gate_and_release_approval_basis_for_generic_caller_indexed_state_and_outer_product",
+  "status": "exact_gate_matched_release_approval_pending",
+  "compiler_change_commit": "f7baef22786df7827188bf46e8c7616d91c41834",
+  "corpus_proposal_commit": "c189536450df0b7af275607a5d8dc685910f2101",
+  "corpus_adoption_commit": "9621df917bb0ba60368b80349988a6d097f25b74",
+  "compiler_revision": {
+    "id": "open-cake-ir-sm100a-v39-draft",
+    "proposal_canonical_sha256": "758b4804a6814891eb6e07165f1573cbf6aa6fa76173ca9460e058d009380ed8",
+    "source_set_canonical_sha256": "c09eb0b947fe1d200c2d2daa6a5eb21ecdb2093add2a5774d3b364576ddc7f5a"
+  },
+  "reviewed_expectation_proposal": {
+    "path": "inventory/KDA_FUSED_DECODE_COMPILER_EXPECTATION_PROPOSAL_V39_20260829.json",
+    "canonical_sha256": "89581f5f0f790d8ef04e79c8cc8f62e11886c4a27825cb5a8f39edb24a97b791"
+  },
+  "gate": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "8f1668d666b22071febff7280b80f003b4925e65ea4a85eb57573eeecabdebf6",
+    "case_count": 70,
+    "matched_case_count": 70,
+    "bound_source_count": 89
+  },
+  "review": {
+    "reviewer": "repository_owner",
+    "expectation_decision": "exact_six_cases_and_six_source_paths_authorized_and_adopted",
+    "release_decision": "pending_exact_gate_review",
+    "approval_artifact_status": "pending_exact_write",
+    "approval_binds_exact_gate": false
+  },
+  "change_contract": {
+    "new_vocabulary": [
+      "exact global Buffer strides",
+      "Workload-owned unique-index relation",
+      "guarded Store inactive no_effect or write_zero",
+      "rank-zero register scratch",
+      "rank-one outer product"
+    ],
+    "generic_verifier_and_analysis": true,
+    "generic_sm100a_triton_lowering": true,
+    "cute_lowering": "fail_closed",
+    "kda_specific_compiler_branch": false,
+    "layout_algebra": false,
+    "silent_fallback": false
+  },
+  "gate_evidence": {
+    "generic_positive_cases": [
+      "caller-indexed-state-accepted",
+      "disjoint-state-shift-accepted",
+      "scalar-broadcast-accepted",
+      "outer-accepted"
+    ],
+    "generic_negative_cases": [
+      "disjoint-state-shift-overlap-drift",
+      "outer-shape-drift"
+    ],
+    "pre_existing_expectations": "64 of 64 retain their reviewed expectations",
+    "adopted_expectations": "6 of 6 match without refresh --write",
+    "focused_draft_tests": "47 passed, 171 subtests passed",
+    "broad_focused_boundary": "121 passed and 31 failed because released v38 lock remains deliberately unchanged before approval",
+    "full_suite_boundary": "512 passed, 89 failed, 2 errors, 494 subtests passed; the dominant failure is the released v38 lock rejecting changed target bytes, the stale approval is rejected, and one pre-existing local Nsight Compute custody check remains an environment failure",
+    "expectation_refresh_write_performed": false
+  },
+  "evidence_boundary": {
+    "compiler_release": "pending external exact Gate approval",
+    "exact_compile": "not authorized before release",
+    "b200_correctness_and_timing": "not run",
+    "compiled_resources": "unknown",
+    "operator_integration_and_serving": "not run"
+  },
+  "next_minimum_action": "an external repository-owner reviewer may bind the exact Gate in compiler/release-approval.json; then rerun the canonical release cycle, verify the successor lock, and rerun the full suite before exact compile or GPU evaluation"
+}

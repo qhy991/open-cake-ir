@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "59cc7ff675bd97178c11245dd4dc1255d03e51eade2610ca00f7421059d0ff11"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Repository-owner continuous-iteration and explicit artifact-writing authorization for the v38 generic Triton multi-MMA Compiler Gate. The exact Gate 59cc7ff675bd97178c11245dd4dc1255d03e51eade2610ca00f7421059d0ff11 matches 64 of 64 Corpus cases across 83 bound Compiler sources. Two separately reviewed additions cover a generic loop with two independent IEEE FP32 K64 MMA partials plus an explicit FP32 add, and a deliberate negative where only the second MMA names a Target-admitted contract unsupported by the Triton backend. The prior 62 cases retain exact expectations. No IR primitive, schema, Target contract, multi-MMA mode, count parameter, hidden accumulator or QSA branch is added; the successor only removes the backend's artificial at-most-one-MMA restriction. Every MMA keeps its own instruction, operands, unique write, accumulation derivation and localized backend validation, while explicit DAG consumers own partial combination. Work/profile count both contractions and the explicit add, and compiled resources remain unknown. The frozen QSA Program v2 loads all five canonical nodes with byte-identical one-MMA lowering identities; Workload, Program, evaluator and Executor are unchanged. Fifty-five focused tests with 78 subtests passed and the complete Gate matched. The motivating K64 plus K64 Schedule changes FP32 reduction association and is not claimed bitwise equivalent to K128; Executor-v39 exact compile, original external-oracle correctness, matched resource metadata and complete-Program B200 timing remain mandatory. This approval authorizes only this Compiler Revision. It does not authorize a workload, Program, evaluator, oracle, tolerance, timing, materiality or shared-infrastructure change, and it establishes no checkpoint or serving result."
+}
