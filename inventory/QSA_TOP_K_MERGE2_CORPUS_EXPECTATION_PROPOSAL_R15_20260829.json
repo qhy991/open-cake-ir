@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "purpose": "review_surface_for_two_source_tile_loop_carried_top_k_corpus_adoption",
+  "status": "proposal_only_awaiting_repository_owner_review",
+  "compiler_change_commit": "ddf18e7",
+  "adr": "docs/adr/0042-loop-carried-top-k-may-batch-two-source-tiles.md",
+  "current_manifest_case_count": 56,
+  "current_source_set_path_count": 77,
+  "current_merge2_manifest_case_count": 0,
+  "existing_case_expectation_check": {
+    "command": "PYTHONPATH=src python tools/refresh_corpus_expectations.py",
+    "result": "corpus expectations already match the draft Compiler",
+    "write_performed": false
+  },
+  "proposed_cases": [
+    {
+      "case_id": "top-k-streaming-two-source-tiles-accepted",
+      "schedule": "corpus/schedules/top-k-streaming-merge2-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ae1645f4dfc0b3f3f5ed4fbfc66c95f0b9b73454df03a536fe4132b0749ba370",
+        "lowering_source_sha256": "bc1c009fbcfed421ece21989b438cf85079ca19620af70e83b9572753cb3a253"
+      }
+    },
+    {
+      "case_id": "top-k-streaming-two-source-tiles-observable-drift",
+      "schedule": "corpus/schedules/top-k-streaming-merge2-observable-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TOP_K_MERGE_CADENCE_OUTPUT_READ_IN_LOOP",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "6994e3b86f323bc4e2128a07dec3372d163682e8fbe548b48e5a28e6d9e90666",
+        "lowering_source_sha256": null
+      }
+    }
+  ],
+  "p1_p8_review_basis": {
+    "P1_ergonomic": "extends canonical top_k with one optional source_tiles_per_merge field and no explicit pending destination",
+    "P2_performance_transparent": "the two-tile cadence, pending packed-key bytes, merge width and exact structural update counts are visible in static profile output",
+    "P3_canonical": "omission remains the only one-tile spelling and explicit 2 is the only admitted batched cadence",
+    "P4_statically_type_checked": "parser, schema and verifier reject resident use, observable in-loop outputs, unsupported factors, INT32 carried state and unsupported Triton loop controls",
+    "P5_analysis_friendly": "one top_k_merge_structure owner derives geometry, pending state, exact or unknown counts and logical-pressure contribution",
+    "P6_test_gated": "the positive three-trip odd-tail case and observable-reader negative join focused parser, verifier, analysis, profile and lowering contracts",
+    "P7_analysis_consistent": "IR, legality, logical pressure, profile diagnostics and lowering evolve in the same change while work FLOP and ranking authorities remain unchanged",
+    "P8_hardware_grounded": "the SM100a lowering uses uniform pair control flow and odd-tail flush, while physical execution remains gated by exact Triton 3.7.1 compilation and B200 evidence"
+  },
+  "qsa_structural_evidence": {
+    "canonical_corpus_tile128": {
+      "source_tile_updates": 1064768,
+      "merge2_updates": 540576,
+      "full_pair_merges": 524192,
+      "odd_tail_flushes": 16384,
+      "merge_width_before": 1024,
+      "merge_width_after": 1024,
+      "pending_key_elements": 128,
+      "pending_key_bytes": 1024,
+      "logical_register_pressure_before": 72,
+      "logical_register_pressure_after": 73
+    },
+    "measured_frontier_tile256_warps4": {
+      "source_tile_updates": 540576,
+      "merge2_updates": 278480,
+      "full_pair_merges": 262096,
+      "odd_tail_flushes": 16384,
+      "merge_width_before": 1024,
+      "merge_width_after": 1024,
+      "pending_key_elements": 256,
+      "pending_key_bytes": 2048,
+      "logical_register_pressure_before": 280,
+      "logical_register_pressure_after": 284
+    },
+    "interpretation": "exact structural counts only; they do not predict latency, MFU, BWU or materiality"
+  },
+  "local_validation": {
+    "focused_command": "PYTHONPATH=src python -m pytest -q tests/contracts/test_ir.py tests/contracts/test_verifier.py tests/contracts/test_top_k_merge_cadence.py tests/contracts/test_streaming_top_k.py tests/contracts/test_analysis.py tests/contracts/test_profile_model.py",
+    "focused_result": "128 passed, 253 subtests passed",
+    "existing_corpus_result": "56 of 56 matched with no expectation drift",
+    "exact_triton_compile": "pending_after_release",
+    "physical_top_k_skip": "unknown_until_exact_toolchain_and_B200_profile"
+  },
+  "roofline_boundary": {
+    "erratum": "inventory/QSA_ROOFLINE_DYNAMIC_STOP_ERRATUM_20260829.json",
+    "work_flop_definition_changed": false,
+    "historical_5_707_percent_description": "v33 declared-work-model estimate with known dynamic-stop overcount, not a sound MFU lower bound"
+  },
+  "required_next_state_transition": [
+    "repository_owner reviews this exact two-case expectation proposal",
+    "repository_owner authorizes or performs adoption into corpus/manifest.json",
+    "agent runs focused and broad tests plus the complete Corpus Gate and reports the actual revision id, case count, source count and Gate digest",
+    "repository_owner writes compiler/release-approval.json for that exact Gate"
+  ],
+  "forbidden_actions": [
+    "do not run tools/refresh_corpus_expectations.py --write merely to make the Gate pass",
+    "do not create or modify compiler/release-approval.json without a new explicit repository-owner decision",
+    "do not publish the successor or launch formal B200 evaluation before the release gate"
+  ]
+}
