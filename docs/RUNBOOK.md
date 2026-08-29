@@ -70,9 +70,60 @@ python tools/check_ranking_calibration.py                               # no GPU
 python tools/observe_lowered_kernel.py --out inventory/<NEW>.json
 python tools/profile_lowered_kernel.py --schedule <path> --out <NEW>.json
 python tools/ir_vocabulary.py                                           # no GPU
+python tools/audit_aka_corpus.py /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --source-revision <AKA_COMMIT> --record-format aka_v1_operator_sft \
+  --dataset-label cuda_kernel_dataset_v1                                # no GPU; read-only
+python tools/review_aka_expressibility.py init \
+  --dataset-root /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --source-revision <AKA_COMMIT> --record-format aka_v1_operator_sft \
+  --work-root /new/external/aka-expressibility-review                    # no GPU; create-only
+python tools/review_aka_expressibility.py next \
+  --work-root /new/external/aka-expressibility-review                    # one case
+python tools/review_aka_expressibility.py verify \
+  --work-root /new/external/aka-expressibility-review --case-id case-000001 --finalize
+python tools/review_aka_expressibility.py status \
+  --work-root /new/external/aka-expressibility-review
+python tools/run_aka_expressibility_codex.py \
+  --dataset-root /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --source-revision <AKA_COMMIT> --record-format aka_v1_operator_sft \
+  --work-root /new/external/aka-expressibility-sol-max --limit 1
 python tools/report_schedule_work.py --target compiler/targets/sm_100a.json   # no GPU
 python tools/observe_target_peak.py --out evidence/calibration/<NEW>.json    # exclusive: timing
 ```
+
+The AKA audit is an external challenge-corpus projection, not a Compiler Corpus Gate. It
+enumerates and reads regular JSONL blobs directly from the exact selected Git commit, rejects
+symlinks and malformed or nested shard paths, and never consumes mutable worktree shard
+bytes. Its source reference retains a credential-stripped observed origin hint and the full
+repository-relative dataset/path; `--dataset-label` is reported metadata, not authority.
+`--record-format` is mandatory: use `aka_v1_operator_sft` for v1, and
+`aka_v2_review_projection` only when projecting v2. Under the v2 contract,
+`optimization_neutral` and `optimization_negative` are review-context/review pairs and emit
+no code signals; positive rows retain baseline/candidate roles. Choosing that format does not
+admit v2 into the IR assessment. The summary reports storage plus separate syntactic scope
+and lexical incidence for each code-artifact role; `--emit cases` produces the same
+reference-only human review queue. Both leave
+complete-parent and delta expressibility unknown, ignore `excluded/`, copy no model-visible
+fields or evidence, and never authorize a Schedule or vocabulary change.
+
+The expressibility reviewer consumes that immutable projection one row at a time. `next`
+atomically creates a case outside both repositories; an agent writes `review.json` using the
+work-level contract and Schema; `verify` then runs any case-local Schedule through the exact
+frozen Compiler `assess/lower` path. A non-unknown proposal requires a canonical
+complete-kernel-parent completion. Output classes are deliberately provisional
+(`schedule_candidate_*`, `schedule_gap_candidate`, or owner redirects), retain
+`semantic_binding=reviewer_claimed`, and always report `gpu_test=not_run`. They are a review
+queue, not IR coverage, semantic equivalence, a Corpus Gate, or an optimization result.
+Omit `--finalize` to preview the deterministic check without creating `checked.json`.
+
+The sequential Codex runner fixes `gpt-5.6-sol` with `model_reasoning_effort=max`, disables
+plugins, apps, browser/computer use, memory, skills and multi-agent features, and uses one
+ephemeral workspace-write Turn per case. It preserves raw Codex JSONL and stderr outside the
+case, accepts only the fixed review and case-local Schedule filenames, runs the deterministic
+checker, and stops on the first model, schema or Compiler failure without retrying or
+skipping. Start with `--limit 1`; increase the positive limit only after the preceding case
+is checked. The model Turn is review generation only and never authorizes provider, remote or
+GPU work.
 
 Read-only Evidence audit does not normalize clone-time modes. It reports archive content
 integrity and `filesystem_custody_verified` separately; weak modes leave intact bytes

@@ -1,0 +1,2294 @@
+{
+  "campaign_id": "aka-portable-parent-v2-sol-max-w30-20260829",
+  "claim_boundary": {
+    "allowed_claim": "provisional_ir_expressibility_review_only",
+    "compiler_maturity": "draft",
+    "gpu_test": "not_run",
+    "parent_status": "runnable_by_parent_validator",
+    "portable_qualification": "projection_not_node_custody",
+    "semantic_binding": "reviewer_claimed"
+  },
+  "codex_version": "codex-cli 0.149.1",
+  "compiler_check_counts": {
+    "lowerable": 13,
+    "not_run": 87
+  },
+  "complete_parent_class_counts": {
+    "portfolio_redirect_candidate": 4,
+    "program_redirect_candidate": 15,
+    "schedule_candidate_lowerable": 13,
+    "schedule_gap_candidate": 68
+  },
+  "delta_class_counts": {
+    "not_applicable": 100
+  },
+  "finished_at": "2026-08-29T07:21:42.331695+00:00",
+  "max_workers": 30,
+  "model": "gpt-5.6-sol",
+  "open_cake_revision": "17b38acd90abf9d458487852667acd19fe962aa0",
+  "overlapping_gap_signal_counts": {
+    "control_or_predicate": 43,
+    "indexed_addressing_or_scatter": 40,
+    "multi_launch_or_program": 25,
+    "numeric_operation_or_conversion": 32,
+    "reduction_or_scan": 24,
+    "runtime_parameterization": 65,
+    "vector_or_lane_mapping": 8
+  },
+  "owner_scope_counts": {
+    "portfolio": 4,
+    "program": 15,
+    "schedule": 81
+  },
+  "primary_class_counts": {
+    "portfolio_redirect_candidate": 4,
+    "program_redirect_candidate": 15,
+    "schedule_candidate_lowerable": 13,
+    "schedule_gap_candidate": 68
+  },
+  "reasoning_effort": "max",
+  "records": 100,
+  "rows": [
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "reduced_nll2d_backward_fp32_i64_contiguous_b256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "indexed_addressing_or_scatter",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "The same-stream zero-fill launch must complete before the scatter-kernel launch, and both launches jointly define the complete output.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000041_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000055",
+      "reason": "The validator-accepted runnable parent defines complete-output semantics through two ordered launches: cudaMemsetAsync zeroes the output and the scatter kernel writes target-class elements. Because one Schedule owns one kernel, this cross-launch relation belongs to program composition; no Schedule is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        41,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "derived_indexed_nll2d_no_reduce_contiguous_f32_i32_block256_v1",
+      "gap_capability": "Typed runtime-conditional dataflow with an INT32 scalar equality predicate, guarded selection, and a nullable FP32 input whose absent value defaults to scalar one.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000042_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000056",
+      "reason": "The narrowed parent is one single-launch kernel, but the frozen Schedule vocabulary provides indexed loads and arithmetic without the runtime scalar comparison, guarded selection, or nullable-weight fallback required by its ignore_index and optional-weight semantics.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        42,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "dwconv3d_backward_weight_contiguous_fp32_int32_block256_v1",
+      "gap_capability": "Add a single-kernel parameterized masked index-reduction capability with named signed INT32 scalar parameters, symbolic buffer and grid extents, integer index expressions combining program and reduction indices with runtime stride, dilation, and padding, exact channel floor division by the positive channel multiplier, zero-valued out-of-bounds loads, and an FP32 sum reduction.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate",
+        "reduction_or_scan",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000043_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000057",
+      "reason": "The canonical completion narrows the record to one standalone depthwise-convolution backward-weight kernel, so Schedule is the appropriate owner. The frozen Schedule vocabulary has literal shapes and grids and lacks the parameterized mixed-index expressions needed for the convolution coordinates and channel quotient; therefore it cannot faithfully bind the completed parent semantics.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        43,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "reflection_pad1d_backward_rows_contiguous_fp32_int64_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "indexed_addressing_or_scatter",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "A full-buffer zero-fill of grad_input must precede the reflection-indexed atomic-scatter kernel on the same supplied CUDA stream.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000044_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000058",
+      "reason": "The canonical completion requires an ordered two-stage GPU relation: completely zero-fill grad_input, then launch the reflection-indexed FP32 atomic-scatter kernel. The frozen contract assigns such multi-launch relations to program composition rather than one Schedule; no node-custody claim is made.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        44,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "replication_pad3d_backward_f32_i32_ncdhw_atomic_scatter_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "indexed_addressing_or_scatter",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "Full-buffer zero initialization precedes atomic-scatter gradient accumulation.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000045_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000059",
+      "reason": "The validator-accepted canonical completion implements complete overwrite semantics with an asynchronous full-buffer initialization followed by an atomic-scatter kernel. These ordered device operations form the complete endpoint, so program composition owns their dependency; one Schedule owns only one kernel. No qualification or node custody is claimed.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        45,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "reflection-pad1d-fp32-parent-v1",
+      "gap_capability": "Add Schedule-level signed INT64 runtime scalar parameters, symbolic dense buffer extents derived from those parameters, a runtime-derived grid, and a bounded reflected-gather AccessMap that maps output coordinate x to min(abs(x - pad_left), 2 * input_width - 2 - abs(x - pad_left)) without requiring an auxiliary index tensor.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000046_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000060",
+      "reason": "The validator-accepted canonical completion narrows this row to one standalone dense FP32 reflection-pad1d kernel, so Schedule is the owner. Frozen Schedule v1 fixes buffer shapes, derives executable arguments only from global Buffers, and cannot express the runtime signed-INT64 shape and padding ABI, derived output extent and grid, or reflected source-coordinate transform. A fixed-shape specialization or precomputed index buffer would narrow or change the completed parent, so this is a Schedule vocabulary gap and no Schedule is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        46,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "reflection_pad3d_ncdhw_f32_i64_block256_v1",
+      "gap_capability": "Add a schedule-owned global-access coordinate expression for signed-int64 scalar shape and padding parameters, supporting the restricted division, remainder, addition, subtraction, constant multiplication, absolute-value, and maximum operations needed to decompose a linear spatial index and compute reflection-pad coordinates.",
+      "gap_signals": [
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000047_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000061",
+      "reason": "The validator-accepted canonical completion narrows the row to one standalone FP32 dense-NCDHW reflection-pad3d kernel, so its arithmetic and access mapping are Schedule-owned. The frozen draft Compiler provides only direct, tiled, dimension, or buffer-supplied AccessMap coordinates and has no checked reflection-padding asset; it cannot express the required signed-int64 div/mod and abs/max coordinate transform without changing the ABI or semantics. This is a vocabulary-gap claim, not GPU qualification or node custody.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        47,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "direct_index_select_rows_contiguous_fp32_i32_u32_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000048_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000062",
+      "reason": "The case-local Schedule represents the completed parent's contiguous FP32 row-gather semantics at the declared source [16384, 64], indices [512], and destination [512, 64] workload. It loads INT32 indices into registers, performs a bounded runtime-indexed FP32 global load, and stores every destination element without claiming framework-wide arbitrary-rank or runtime-shape coverage.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        48,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "replication_pad2d_backward_nchw_fp32_i32_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "The program must zero-initialize grad_input on the supplied stream before launching the replication-pad backward atomic-accumulation kernel on that stream.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000049_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000063",
+      "reason": "The canonical completion defines the complete operator as an ordered same-stream zero-fill followed by an atomic-accumulation kernel. That initialization-to-kernel dependency belongs to program composition because one Schedule owns only one kernel.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        49,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "scatter_add_contiguous_fp32_i64_v1",
+      "gap_capability": "Extend Schedule atomic_rmw to support a rank-one global FP32 state target, a runtime INT64 destination index loaded from an input buffer, and a runtime FP32 addend loaded from a same-length source buffer.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000050_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000064",
+      "reason": "The completed parent is one scatter-add kernel, but the frozen Schedule vocabulary admits indexed atomic_rmw only for INT32 state, a runtime INT32 index, and a declared integer scalar addend. It cannot express this parent's FP32 state, INT64 indices, and per-update runtime FP32 source values.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        50,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "scatter_scalar_add_1d_contiguous_fp32_i64_b128x4_v1",
+      "gap_capability": "Represent a single-kernel indexed FP32 atomic-add update whose destination comes from a signed INT64 index buffer and whose addend is a runtime FP32 scalar.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000051_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000065",
+      "reason": "The canonical completion narrows this row to one contiguous FP32 scalar scatter-add kernel with signed INT64 destination indices and a runtime FP32 addend. The frozen Schedule vocabulary admits atomic_rmw only for INT32 state, a runtime INT32 index, and a declared integer add value, while its Buffer dtype set has no INT64. A load-add-store sequence cannot preserve the required behavior for duplicate indices. This is therefore a single-kernel Schedule vocabulary gap; no Schedule is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        51,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "elementwise_abs_gradient_fp32_i32_contiguous_block128_v1",
+      "gap_capability": "Add typed elementwise FP32 ordered comparisons and same-shaped elementwise selection between buffer or scalar values.",
+      "gap_signals": [
+        "control_or_predicate",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000052_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000066",
+      "reason": "The narrowed parent is one elementwise kernel, but Schedule v1 cannot represent its exact FP32 zero comparisons and three-way result selection; the available elementwise operations are tanh, square, rsqrt, exp, add, sub, mul, and div.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        52,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "directderived_pad_const_nhwc_fp32_int32_block256_v1",
+      "gap_capability": "Represent scalar runtime dimensions, four nonnegative padding parameters, and an FP32 fill parameter together with a boundary-aware affine load that maps output coordinates to input coordinates using signed spatial offsets and returns the fill parameter when the mapped coordinate is out of bounds.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000053_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000067",
+      "reason": "The completed parent is a single-kernel constant-padding operator, but Schedule v1 cannot represent its full contract. Buffer shapes are static, executable arguments are derived only from global buffers, masked indexed loads yield zero, valid_extent describes a runtime-valid prefix, and the admitted elementwise vocabulary has no comparison or selection for a caller-supplied FP32 fill value. The runtime two-sided affine mapping therefore requires a Schedule vocabulary extension.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        53,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "edge_pad_backward_nchw_f32_i32_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "The complete endpoint orders zero-initialization of input_gradient before the edge-padding backward scatter-accumulate launch on the supplied stream.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000054_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000068",
+      "reason": "The canonical narrowed parent produces a complete output through an ordered initialization step and a subsequent kernel launch. That multi-operation dependency belongs to program composition, while one Schedule owns only one kernel.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        54,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "reflect_pad_gradient_nhwc_f32_i32_contiguous_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "indexed_addressing_or_scatter",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "The output-zeroing operation must complete before the reflect-padding scatter-add kernel executes on the same stream.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000055_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000069",
+      "reason": "The canonical parent defines the complete result as an output clear followed by a reflected FP32 scatter-add kernel. Because one Schedule owns one kernel, this required two-stage ordering belongs to program composition, so no Schedule is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        55,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "reflect_pad_nchw_f32_i32_contiguous_block256_v1",
+      "gap_capability": "Add a one-kernel, runtime-scalar-parameterized reflected-coordinate AccessMap expression that maps output coordinate p to min(abs(p - pad_before), 2 * extent - abs(p - pad_before) - 2) without requiring an auxiliary index tensor.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000056_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000070",
+      "reason": "The canonical completion narrows the record to one reflect-padding kernel, so Schedule is the owner. The frozen IR supports direct and buffer-indexed loads but cannot derive the required reflected source coordinates from output coordinates and scalar padding and extent parameters while preserving the completed ABI; this is a Schedule vocabulary gap.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        56,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "reflect_pad_2d_nhwc_contiguous_fp32_int32_block256_v1",
+      "gap_capability": "Add a bounded reflected-gather access transform for contiguous FP32 NHWC buffers, parameterized by runtime int32 N, H, W, C and four runtime int32 padding values, with output extents derived from those parameters.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__reflect_pad_2d_nhwc__l000057__contract_narrowed_v1",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000071",
+      "reason": "The canonical completion provides a runnable but unqualified single-kernel FP32 contiguous-NHWC reflect-padding contract. Frozen Schedule v1 has static buffer shapes and no vocabulary for its runtime-derived extents and reflected coordinate transform, including quotient/remainder decomposition, absolute value, and minimum. Supplying a precomputed index buffer would change the ABI, and no program or portfolio relation is intrinsic to the parent, so this is a provisional Schedule-owned IR gap.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        57,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "lstm_unit_forward_contiguous_fp32_i32_v1",
+      "gap_capability": "Add a Schedule-level runtime row-predicate and selection contract comprising typed by-value scalar arguments, a nullable global input with a presence predicate, signed INT32 less-than, boolean composition, and FP32 elementwise select.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000058_b200_v1__directderived_sol_ultra_v2__parent_completion_v1",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000072",
+      "reason": "The completed parent is one fused LSTM-step kernel and is therefore Schedule-owned. The draft v29 IR can express its FP32 arithmetic, tanh operations, and two outputs, but it has no runtime scalar ABI, nullable-buffer predicate, signed comparison, or conditional select. Its valid_extent relation only masks a declared access coordinate and does not expose the predicate needed to choose the valid and invalid output formulas. Any current Schedule would narrow the completed contract, so no Schedule is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        58,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "adagrad_update_contiguous_fp32_int32_block256_v1",
+      "gap_capability": "A bounded dynamic one-dimensional elementwise Schedule with typed by-value FP32 scalar parameters and a unary FP32 sqrt primitive.",
+      "gap_signals": [
+        "runtime_parameterization"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000059_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000073",
+      "reason": "The canonical runnable parent is one elementwise kernel, so Schedule is the owner, but Schedule v1 cannot describe its complete contract: buffer extents and launch grids are static, its derived ABI has no by-value runtime scalar declarations, and its closed elementwise vocabulary has rsqrt but no sqrt. A fixed-shape or rsqrt rewrite would narrow or change the parent semantics.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        59,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "complex_log2_pow2_principal_f64_soa_i32_b256_v1",
+      "gap_capability": "Admit FP64 buffers and a narrowly scoped elementwise principal-complex log2-of-pow2 operation for separate real and imaginary components over a runtime-valid one-dimensional prefix.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000062_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000076",
+      "reason": "The completed derived parent owns one elementwise kernel, so its proper owner is a Schedule. The frozen Schedule vocabulary cannot encode its IEEE-754 float64 buffers because fp64 is absent from the dtype enum, and it cannot encode the required principal-complex computation because the elementwise vocabulary lacks sin, cos, hypot, log, and atan2 or an equivalent fused operation. The separate identity-copy optimization handoff does not establish complete-parent coverage.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        62,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "sigmoid_focal_loss_elementwise_contiguous_fp32_i32_block256_v1",
+      "gap_capability": "Add a narrowly typed fused sigmoid-focal-loss elementwise operation with runtime FP32 parameters and a grouped target access relation mapping output channel c to target anchor floor(c divided by num_classes).",
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000063_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000077",
+      "reason": "The validator-marked canonical completion narrows the source to one standalone elementwise focal-loss kernel, so Schedule is the owning scope. Schedule v1 admits exp, add, subtract, multiply, divide, square, reciprocal square root, and tanh elementwise forms, but it cannot state the required target comparisons and selection, clamp, logarithm, runtime power, or grouped target coordinate floor(c divided by num_classes). A Schedule omitting those semantics would not express the complete parent.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        63,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "periodic_diagonal_fill_contiguous_f32_i32_b256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "The program orders the zero-output kernel before the periodic-write kernel on the caller-provided stream.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000064_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000078",
+      "reason": "The canonical completion defines complete-output semantics through two ordered kernel launches. Because one Schedule owns one kernel and multi-launch ordering belongs to program composition, the complete parent redirects to the program owner.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        64,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "global_l2_squared_accumulate_contiguous_fp32_u64_block256_v1",
+      "gap_capability": "A Schedule-level atomic read-modify-write operation that adds a computed FP32 register scalar to a fixed coordinate of caller-owned global FP32 state with device scope and relaxed ordering.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000065_b200_v1__directderived_sol_ultra_v2__parent_completion_v1",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000079",
+      "reason": "The canonical completion defines one contiguous FP32 sum-of-squares accumulation kernel. Direct loading, squaring, and CTA reduction fit the frozen vocabulary, but its required atomic addition of a computed FP32 block sum into caller-initialized global state does not: the admitted atomic operation is limited to a declared signed INT32 scalar and runtime INT32 index. This is a Schedule vocabulary gap, not a program or portfolio relation.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        65,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "nearest2d_nhwc_fp32_i32_explicit_scale_block256_v1",
+      "gap_capability": "A first-class runtime nearest-neighbor gather access map with symbolic NHWC extents and FP32 scalar parameters, supporting the equal-extent shortcut and min(floor(destination*scale), input_extent-1) coordinate expression without requiring a caller-supplied index buffer.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000066_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000080",
+      "reason": "The accepted canonical completion defines one standalone FP32 dense-NHWC nearest-neighbor resampling kernel with explicit runtime dimensions and scales. The frozen Schedule vocabulary cannot express its runtime floor-and-clamp gather coordinates or scalar ABI; its buffer-sourced indexed access would require an additional INT32 index buffer and therefore change the operator contract. This is a Schedule vocabulary gap, not a program or portfolio ownership relation.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        66,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "row_rmsnorm_dx_contiguous_f32_i32_b128_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "reduction_or_scan",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "The row-reduction launch produces c2_workspace for the following dX launch on the same CUDA stream.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000067_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000081",
+      "reason": "The canonical completion is validator-accepted as a narrowed runnable bundle and defines the complete derived operator as two stream-ordered kernels: a row reduction writes c2_workspace, and a second kernel consumes it to write dX. Because one Schedule owns one kernel, this producer-consumer launch relation belongs to program composition. No Schedule is submitted, and no node custody or framework equivalence is claimed.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        67,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "group_norm_1d_backward_dx_contiguous_fp32_int32_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "Program composition must order the coefficient launch, which writes c2 and c3, before the packed dX launch that reads those workspaces on the supplied stream.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000069_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000083",
+      "reason": "The referenced canonical completion narrows the complete parent to a dX operator whose declared launch policy is an ordered coefficient kernel followed by a packed dX kernel, with c2 and c3 carrying data between them. Because one Schedule owns one kernel, this complete-parent relation belongs to program composition; no Schedule or IR-gap claim is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        69,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "rowwise_dot_f32_contiguous_i32_block256_v1",
+      "gap_capability": "Runtime int32 scalar extent parameters and symbolic buffer dimensions, including a runtime-capped grid expression and a dynamically bounded reduction loop, within one Schedule.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000070_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000084",
+      "reason": "The frozen vocabulary contains FP32 load, elementwise multiply, CTA sum reduction, and store operations, but Buffer shapes and grid/program extents are concrete integers and lowering signatures are derived from global buffers. It therefore cannot represent the canonical parent's runtime int32 N and D, its full valid shape domain, or grid=min(N,256) in one Schedule; a fixed-shape Schedule would cover only one instance of the complete parent.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        70,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "rowwise_sparse_adagrad_additive_contiguous_fp32_i32_unique_v1",
+      "gap_capability": "Admit computed runtime-indexed FP32 state stores for a scalar and a contiguous row, together with an FP32 square-root operation defined at zero.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000071_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000085",
+      "reason": "The validator-finalized canonical completion defines one single-launch FP32/INT32 RowWise Sparse Adagrad state transition with distinct indices, so it belongs to Schedule scope. The frozen authoring contract admits buffer-indexed AccessMaps for direct global loads but explicitly leaves indexed stores unlowerable, while this parent requires computed FP32 stores to param_mom[indices[i]] and param[indices[i],j]. The frozen elementwise vocabulary also lacks the square root required for the valid zero-moment case. Therefore no semantically complete Schedule is available in this Compiler revision.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        71,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "portfolio_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "instance_affine_nhwc_f32_i32_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate"
+      ],
+      "owner_relation": "At invocation, a portfolio specializes the static buffer extents and grid for runtime N, C, and HxW, then selects the corresponding one-kernel Schedule while preserving the canonical FP32 NHWC affine formula and block-256 policy.",
+      "owner_scope": "portfolio",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000072_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "portfolio_redirect_candidate",
+      "queue_case_id": "case-000086",
+      "reason": "The canonical completion defines one affine kernel, but its public contract ranges over runtime N, C, and HxW. The Schedule vocabulary fixes buffer shapes and program tiling as integer extents and derives its executable signature from global buffers. Covering the complete runtime-shaped contract therefore requires exact-shape specialization and selection, which TASK.md assigns to a portfolio. This redirect makes no Compiler-coverage or GPU-qualification claim.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        72,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "portfolio_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "y_gradient_scale_broadcast_f32_i32_contiguous_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": "At invocation, a portfolio specializes the static buffer extents for runtime N, G, and K and selects the corresponding one-kernel Schedule while preserving the canonical float32 broadcast product and block-256 policy.",
+      "owner_scope": "portfolio",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000073_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "portfolio_redirect_candidate",
+      "queue_case_id": "case-000087",
+      "reason": "The canonical completion defines one affine broadcast-multiply kernel, but its public contract ranges over runtime N, G, and K. The Schedule vocabulary fixes buffer shapes and program tiling as integer extents, and its executable signature is derived from global buffers rather than runtime dimension scalars. Covering the complete runtime-shaped contract therefore requires invocation-time specialization and selection, which TASK.md assigns to a portfolio. This redirect claims neither Compiler coverage nor GPU qualification.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        73,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "grouped_channel_dual_reduce_contiguous_fp32_i32_block256_v1",
+      "gap_capability": "Admit runtime signed-int32 dimension parameters and symbolic buffer extents, a symbolic two-dimensional program grid, a dynamically bounded reduction axis, and an FP32 fused multiply-add primitive with explicit rounding semantics in one Schedule.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "reduction_or_scan",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000074_b200_v1__directderived_sol_ultra_v2__parent_completion_v1",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000088",
+      "reason": "The canonical completion defines one standalone FP32 dual-reduction kernel, so Schedule is the owning scope. Schedule v1 provides FP32 loads, elementwise arithmetic, CTA sum reductions, and stores, but its buffer shapes and program extents are concrete integers and its executable signature is derived only from global buffers. It therefore cannot represent runtime N, G, and K, the dynamic grid and reduction bound, or the complete valid shape domain in one Schedule. Its elementwise vocabulary also lacks an explicit fused multiply-add contract for the parent formula. A fixed-shape or non-fused Schedule would not express the complete parent.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        74,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "nchw_plane_affine_contiguous_f32_i32_block256_v1",
+      "gap_capability": "Add a ternary FP32 elementwise fma operation with the declared broadcast axis applying to both rank-one coefficient operands.",
+      "gap_signals": [
+        "numeric_operation_or_conversion",
+        "vector_or_lane_mapping"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000075_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000089",
+      "reason": "The completed parent is a single-kernel Schedule concern. The draft Compiler can represent its loads, rank-one per-plane broadcasts, and store, but its closed elementwise vocabulary has no fused multiply-add operation. Composing mul followed by add does not bind the parent contract's bit-exact fmaf/std::fma single-round semantics, so a Schedule would be premature.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        75,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "momentum_sgd_non_nesterov_fp32_i32_contiguous_block256_v1",
+      "gap_capability": "Runtime-parameterized one-dimensional elementwise Schedules with typed by-value scalar arguments, symbolic active extents and launch expressions, and nullable global state guarded by a launch-uniform presence predicate.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000077_b200_v1__directderived_sol_ultra_v2__parent_completion_v1",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000091",
+      "reason": "The canonical completion defines one non-Nesterov FP32 kernel, so Schedule is the proper owner. Frozen Schedule v1 can represent static FP32 buffers and the required arithmetic, but its shapes and launch maps are static and its executable signature is derived only from global Buffers. It cannot preserve the completed contract's by-value runtime N and momentum arguments, runtime-dependent launch extent, or nullable parameter state. Fixing N, encoding scalars as buffers, or always requiring the parameter array would change the completed contract.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        77,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "half_to_float_contiguous_fp16_fp32_i32_block256_v1",
+      "gap_capability": "Add an explicit elementwise numeric-conversion operation with declared source and destination dtypes, including fp16-to-fp32 widening.",
+      "gap_signals": [
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000078_b200_v1__directderived_sol_ultra_v2__parent_completion",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000092",
+      "reason": "The canonical completion narrows the parent to one contiguous fp16-to-fp32 conversion kernel. The frozen Schedule vocabulary can declare fp16 and fp32 buffers and load/store operations, but it has no cast or numeric-conversion operation, so no truthful Schedule can encode the required widening semantics.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        78,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "transpose4d_contiguous_fp32_i32_block256_v1",
+      "gap_capability": "A fixed-rank dense-transpose operation or access-map extension with runtime host int32[4] dimension and permutation arguments that determine output extents, launch extent, and source-coordinate mapping.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000079_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000093",
+      "reason": "The accepted runnable-unqualified canonical completion binds this review to a derived runtime-parameterized rank-4 contiguous FP32 transpose, without establishing node custody or full framework equivalence. The frozen draft Schedule has static integer buffer shapes and grid extents, derives executable arguments only from global buffers, and provides no operation or access mapping that binds runtime host dimensions and a runtime permutation to the required quotient/remainder source indexing. Expressing the complete contract therefore requires a provisional Schedule vocabulary extension.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        79,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "atan_gradient_contiguous_fp32_i32_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000094",
+      "reason": "The validator-accepted narrowed parent is a single contiguous FP32 elementwise kernel computing dx = dy / (1 + x * x). complete_parent.schedule.json expresses a 513-element specialization with a 512-element program tile, sixteen warps, and a masked final tile. This is a provisional reviewer semantic binding and does not claim GPU qualification.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        80,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "queue_counter_reset_contiguous_u32_v1",
+      "gap_capability": "Add schedule-owned typed runtime-scalar stores with uint32 values and an exact single-thread launch form.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000082_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000096",
+      "reason": "The completed standalone operator belongs to one kernel Schedule, but frozen Schedule v1 cannot preserve its contract: executable arguments are derived only from global Buffers, the vocabulary has no runtime scalar parameter or uint32 dtype, and roles declare whole warps rather than an exact one-thread launch. Recasting fill_size as an int32 Buffer or launching a warp would change the completed contract, so no Schedule is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        82,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "permute4d_3201_contiguous_fp32_i32_u64_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000083_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000097",
+      "reason": "complete_parent.schedule.json fixes a valid canonical-contract instance at input shape [16,32,64,128] and output shape [128,64,16,32]. Three scalar program axes enumerate i1, i2, and i3; an FP32 register tile enumerates i4; and the output AccessMap writes coordinates [i4,i3,i1,i2], expressing the bijective single-kernel permutation on sm_100a. This is a provisional reviewer semantic binding; no GPU test or full framework equivalence is claimed.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        83,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "batch_gather_grad_scatter_add_contiguous_fp32_i32_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "indexed_addressing_or_scatter",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "A full-output zero-initialization command must precede the indexed FP32 atomic scatter-add kernel on the same stream.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000084_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000098",
+      "reason": "The canonical completed parent requires a complete output overwrite: every output element is first zero-initialized, then gradients are accumulated by an indexed atomic scatter-add with duplicate indices allowed. This ordered multi-command relation belongs to program composition because one Schedule owns only one kernel.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        84,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "fixed_width_grouped_atomic_min_i32_v1",
+      "gap_capability": "Admit a single-kernel signed-int32 fixed-width segmented minimum update that reads a contiguous input and an in/out global accumulator, uses a segment width of four, and writes one complete result per group.",
+      "gap_signals": [
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000085_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000099",
+      "reason": "The validated completion defines one single-kernel, schedule-owned parent in which an int32 in/out accumulator is updated with the minimum of its seed and four contiguous values per group. The frozen Schedule vocabulary admits CTA reductions only for max or sum and atomic_rmw only for relaxed, device-scoped add with a scalar value; it cannot state the required signed-int32 segmented minimum update without changing the completed semantics.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        85,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "batch_permutation_scatter_backward_bijective_contiguous_fp32_int32_block256_v1",
+      "gap_capability": "Permit a store AccessMap to use a rank-one register INT32 buffer coordinate for a direct masked global scatter store.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000086_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000100",
+      "reason": "The completed parent is one standalone row-permutation scatter kernel. Its defining output address uses the runtime value indices[n], while the frozen authoring contract explicitly leaves indexed stores unlowerable, so the current Schedule vocabulary and lowering cannot cover it.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        86,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "row_gather_contiguous_fp32_i32_b256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000087_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000101",
+      "reason": "The case-local Schedule represents the completed parent's forward contiguous FP32 row-gather semantics for N=512 and K=64. It loads INT32 row indices into registers, performs bounded runtime-indexed FP32 global loads, and completely stores the destination. This provisional static binding does not claim runtime-shape, original-framework, GPU-correctness, qualification, or performance coverage.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        87,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "max_pool_backward_gather_fp32_i32_nchw_v1",
+      "gap_capability": "Add a schedule-owned, runtime-parameterized ordered masked gather-reduction operation that declares the signed INT32 pooling geometry, iterates ph then pw for each output coordinate, tests receptive-window containment and loaded-mask equality with h*W+w, and conditionally accumulates the paired FP32 value.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate",
+        "reduction_or_scan",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000088_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000102",
+      "reason": "The validator-marked canonical completion defines one runtime-parameterized max-pool-with-indices backward gather kernel. The frozen Schedule vocabulary has fixed buffer shapes and no scalar ABI operands, and its operations provide neither loaded INT32 comparison/predication nor an ordered masked FP32 reduction. Buffer-indexed loads cannot express the conditional accumulation, while atomic_rmw is limited to a relaxed device-scope INT32 state update by a declared scalar. Consequently, no conforming Schedule can state the complete parent semantics. This is a provisional vocabulary finding and does not claim GPU qualification or node custody.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        88,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "sparse_adam_scatter_inplace_f32_i32_v1",
+      "gap_capability": "Admit an injective indexed FP32 state transition in which rank-one INT32 runtime indices select rows of multiple caller-owned FP32 state buffers that are read and then written non-atomically in one kernel, with an FP32 square-root operation in the elementwise expression.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000089_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000103",
+      "reason": "The canonical completion narrows the row to one sparse Adam scatter-update kernel, so Schedule owns it. The frozen authoring contract explicitly leaves indexed stores unlowerable and admits indexed state mutation only through its specified INT32 atomic transition. This parent requires non-atomic FP32 indexed reads and writes of three state arrays, and its formula requires square root, which is absent from the frozen elementwise vocabulary. The complete parent therefore has a Schedule vocabulary and lowering gap.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        89,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "sparse_adam_distinct_rows_contiguous_fp32_int32_v1",
+      "gap_capability": "Add a Schedule-level capability for non-atomic runtime-indexed FP32 state reads and stores driven by a rank-one INT32 index buffer, together with an FP32 square-root elementwise operation and an explicit distinct-index precondition.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000090_b200_v1__sparse_adam_distinct_rows_parent_v1",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000104",
+      "reason": "The accepted canonical completion narrows this row to one standalone sparse Adam update kernel, so Schedule is the owning scope. The frozen IR admits runtime-indexed direct loads but explicitly does not lower indexed stores, while atomic_rmw is limited to an INT32 scalar add; it also has no FP32 square-root elementwise operation. The required runtime-indexed FP32 updates to param, mom1, and mom2 therefore cannot be represented and lowered faithfully by this Compiler revision, so no Schedule is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        90,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "rowwise_sparse_adam_contiguous_fp32_i32_unique_indices_block128_v1",
+      "gap_capability": "Admit an injective runtime-indexed FP32 state transition in which a rank-one INT32 index selects rows of multiple caller-owned FP32 state buffers for non-atomic loads and stores, including both rank-two row state and rank-one row-wise state, and add an FP32 square-root elementwise operation.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000091_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000105",
+      "reason": "The validated canonical completion defines one standalone row-wise sparse Adam kernel, so Schedule is the owning scope. The frozen vocabulary admits runtime-indexed direct loads and a narrow INT32 atomic state transition, but not the ordinary non-atomic indexed FP32 stores required for param, mom1, and row-wise mom2; it also lacks an FP32 square-root elementwise operation. No current Schedule can faithfully express the complete parent.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        91,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "scaled_broadcast_rank4_contiguous_fp32_int32_v1",
+      "gap_capability": "Runtime parameterization for one rank-4 elementwise Schedule: symbolic positive extents, runtime per-axis broadcast selection, a runtime FP32 scalar, and an output-extent-derived grid.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000092_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000106",
+      "reason": "The canonical completion defines one rank-4 FP32 scaled-broadcast kernel with runtime shapes, runtime broadcast-axis choices, runtime alpha, and a runtime output-size launch. Schedule v1 uses literal buffer shapes and tile or grid extents, lacks a runtime per-axis choose-zero-or-coordinate access map, and permits only a JSON-number scalar for elementwise multiplication. Therefore no single current Schedule covers the complete narrowed contract.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        92,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "im2col_nhwc_fp32_i32_contiguous_block256_v1",
+      "gap_capability": "Add a Schedule-owned parameterized affine padded-gather access form: runtime signed-int32 dimensions, stride, dilation, and padding may define buffer and launch extents, while each load coordinate may be a checked affine expression over program and tile-loop indices with exact typed-zero fill outside the input extent.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000093_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000107",
+      "reason": "The completed parent describes one kernel, so Schedule is the correct owner. Schedule v1 can name only direct program, tile, dimension, or buffer-supplied coordinates; it cannot express signed affine combinations such as oh*SH-PT+kh*DH, the completed runtime scalar shape and launch contract, and its required two-sided zero-filled padded load without adding index buffers or changing the ABI. No current Schedule therefore expresses the completed parent.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        93,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "derived_rowwise_broadcast_add_f32_i32_contiguous_b512_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "vector_or_lane_mapping"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000094_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000108",
+      "reason": "The canonical completion provides a runnable but unqualified standalone parent with contiguous FP32 semantics: output[r,c] = matrix[r,c] + row_vector[c]. complete_parent.schedule.json represents one fixed parent-valid 8-by-512 instance using a row program map, direct global loads, register FP32 addition, a coalesced global store, and 16 contiguous warps. This is a provisional reviewer-claimed semantic binding; it does not claim dynamic-shape or zero-extent coverage, GPU correctness, node custody, or equivalence to the missing framework operator.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        94,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "rowwise_rhs_add_contiguous_fp32_i32_v1",
+      "gap_capability": "Add a first-class one-dimensional lane-to-address relation that can decompose a nonnegative linear block-and-thread coordinate by a declared positive column extent and reuse its exact quotient and remainder in AccessMaps.",
+      "gap_signals": [
+        "control_or_predicate",
+        "numeric_operation_or_conversion",
+        "vector_or_lane_mapping"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000095_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000109",
+      "reason": "The canonical completion narrows the source to one contiguous FP32 rowwise-add kernel with an explicit one-dimensional 512-thread launch. The frozen vocabulary admits FP32 loads, addition, stores, roles, and tiled program axes, but its AccessMap indices cannot bind a physical lane to the linear CUDA index and derive the required quotient and modulo-wrapped row coordinate. A row/column program map would instead implement the completion's unverified division-free optimization handoff and change the parent mapping, so no Schedule is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        95,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "broadcast_add_rank4_contiguous_fp32_int32_v1",
+      "gap_capability": "A bounded dynamic rank-4 dense broadcast-elementwise capability with three host-resident INT32[4] shape descriptors, symbolic buffer extents, a runtime output product and grid, and per-input address transforms that select zero stride independently on every singleton dimension.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000096_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000110",
+      "reason": "The validator-accepted completion defines one dynamic rank-4 FP32 broadcast-add kernel, so Schedule is the owner. Schedule v1 can express FP32 addition, but its buffer and launch extents are literal, its executable signature is derived only from global Buffers, and its elementwise broadcast form covers a narrower rank-one operand rather than arbitrary same-rank singleton dimensions in both inputs. It therefore cannot preserve the three runtime shape descriptors, DivMod address mapping, and runtime grid of the completed contract in one Schedule.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        96,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "col2im_nchw_single_image_contiguous_fp32_i32_block256_v1",
+      "gap_capability": "Add a Schedule-level indexed overlap-sum capability with signed-int32 runtime geometry, derived extents and launch size, variable-bound iteration, integer division and remainder expressions, contribution predicates, computed multidimensional global loads, and an FP32 local sum reduction.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate",
+        "reduction_or_scan",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000097_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000111",
+      "reason": "The canonical parent completion supplies a runnable narrowed single-launch FP32/int32 col2im operator, so the kernel belongs to Schedule scope. Frozen Schedule v1 has fixed integer buffer shapes and grid extents, limited AccessMap index sources, and no operation for a runtime-variable nested overlap reduction. It cannot bind the parent's runtime stride, padding, dilation, divisibility predicates, computed five-dimensional loads, and zero-initialized per-output sum without changing the ABI or semantics.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        97,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "row_scalar_broadcast_add_contiguous_fp32_int32_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "control_or_predicate",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000098_b200_v1__row_scalar_broadcast_add_parent_v1",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000112",
+      "reason": "The canonical completion narrows the parent to contiguous FP32 row-scalar broadcast addition. complete_parent.schedule.json binds its frozen 17-by-17 specialization using masked direct global loads, an explicit axis-0 broadcast add, and a masked complete-output store. This is a provisional static-shape Compiler claim and does not assert dynamic-ABI coverage, framework equivalence, GPU correctness, or qualification.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        98,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "directderived_colwise_max_f32_i32_rowmajor_b512_v1",
+      "gap_capability": "Add positive runtime int32 scalar dimensions that can parameterize global-buffer shapes, access maps, loop bounds, and runtime grid formulas, including min(cols,4096) and grid-stride column iteration.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000099_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000113",
+      "reason": "The referenced canonical completion defines one runtime-shaped column-maximum kernel, so Schedule is the owner. Frozen Schedule v1 can express fixed-shape FP32 loads, CTA maximum reduction, and stores, but its buffer extents and launch maps are literal integers and its executable signature is derived only from global buffers. It cannot preserve the completed contract's runtime rows and cols arguments, full valid shape domain, or min(cols,4096) grid-stride launch in one Schedule. A fixed-shape Schedule would narrow the complete parent; this provisional gap claims neither framework equivalence nor GPU qualification.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        99,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "contiguous_sum_f32_i32_block128_v1",
+      "gap_capability": "Admit a typed by-value signed-int32 runtime extent, a symbolic one-dimensional FP32 buffer extent, and a dynamically bounded CTA reduction loop within one Schedule.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000100_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000114",
+      "reason": "The validator-marked canonical completion defines one standalone contiguous FP32 scalar-sum kernel, so Schedule is the owning scope. Frozen Schedule v1 has FP32 load, CTA sum-reduction, store, and four-warp role vocabulary, but its buffer shapes and loop extents are concrete integers and its executable signature is derived only from global Buffers. It cannot preserve the parent's by-value runtime int32 n, symbolic x[0:n] extent, and dynamically bounded stride-128 reduction across the full valid domain in one Schedule. A fixed-n Schedule or global length buffer would change the completed contract; this provisional gap makes no node-custody or GPU-qualification claim.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        100,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "sum_squares_contiguous_fp32_int32_block128_v1",
+      "gap_capability": "Add first-class signed scalar kernel parameters and scalar-bound symbolic buffer extents and loop bounds to Schedule, including use of an INT32 scalar n to bound a fixed-CTA strided traversal.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000101_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000115",
+      "reason": "This completed parent is a single-kernel Schedule concern, and the frozen vocabulary contains FP32 square, CTA sum, and store operations. However, Schedule buffer shapes are literal positive integers and executable arguments are derived from global Buffers; it cannot preserve the parent's by-value INT32 n as both a symbolic input extent and loop bound without fixing n or changing the ABI to a pointer buffer.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        101,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "maximum_scalar_contiguous_fp32_int32_block512_v1",
+      "gap_capability": "Add a one-dimensional contiguous FP32 elementwise fmax operation whose second operand is a broadcast by-value runtime FP32 scalar.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000102_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000116",
+      "reason": "The canonical completion establishes a standalone single-kernel contract, so Schedule owns this question. Schedule v1 cannot represent its runtime FP32 scalar alpha together with CUDA fmaxf NaN and signed-zero semantics: its elementwise vocabulary has no maximum or fmax operation, and its optional scalar is a JSON literal rather than a by-value runtime input.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        102,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "row_gather_contiguous_f16_i32_block512_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "indexed_addressing_or_scatter"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000103_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000117",
+      "reason": "The accepted canonical completion defines a narrowed contiguous FP16 row gather with INT32 indices. complete_parent.schedule.json binds a valid N=8, D=16 specialization to one program per row: it loads idx[row], uses that rank-one register index for the direct global load x[row, idx[row]], and stores y[row] through the draft sm_100a Triton route. This provisional static-shape compiler claim does not establish the missing framework ABI, dynamic-shape coverage, GPU correctness, performance, or node custody.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        103,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "rowwise_broadcast_add_contiguous_f32_i32_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "runtime_parameterization",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__l000104__rowwise_broadcast_add_parent_completion_v1",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000118",
+      "reason": "The canonical completion supplies a runnable narrowed FP32 contiguous parent with C[r,c] = A[r,c] + B[r]. complete_parent.schedule.json declares an 8-by-128 instance, stages four rows per program, explicitly broadcasts the four-element B tile along result axis 0, performs FP32 addition, and stores the complete C tile. This is only a provisional Schedule claim; it does not establish runtime-generic API coverage or GPU qualification.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        104,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "row_gather_fp32_i32_contiguous_b256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000105_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000119",
+      "reason": "The case-local Schedule represents the canonical parent's contiguous FP32 and INT32 row-column gather for the fixed specialization N=515 and D=7. Each scalar program loads idx[row], uses it as the bounded register-sourced column coordinate for x[row, idx[row]], and stores y[row]. This provisional reviewer binding does not claim full runtime-shape ABI coverage, framework equivalence, GPU correctness, qualification, or performance.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        105,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "im2col_nchw_contiguous_fp32_int32_block256_v1",
+      "gap_capability": "Add a Schedule-owned parameterized affine padded-gather access form: runtime signed-int32 dimensions, stride, dilation, and padding may define buffer and launch extents, while each load coordinate may be a checked affine expression over program and tile-loop indices with exact typed-zero fill outside the input extent.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000106_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000120",
+      "reason": "The completed parent describes one im2col kernel, so Schedule is the correct owner. Schedule v1 has fixed integer buffer and grid extents and can name only direct program, tile, dimension, or buffer-supplied coordinates; it cannot express runtime geometry, signed affine combinations such as oh*SH-PT+kh*DH, or derive the required two-sided zero-filled padded load without adding index buffers and changing the parent ABI. No current Schedule therefore expresses the completed parent.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        106,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "multi_tensor_chunk_schedule_depth2_int32_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "ordered multi-launch composition with cross-launch flush and tensor-carry state",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000107_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000121",
+      "reason": "The completed narrowed operator may enqueue a variable ordered sequence of descriptor-materialization kernels, and its public output records launch indices governed by batching, flush, and cross-launch tensor-carry rules. Because one Schedule owns one kernel, this relation belongs to program composition.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        107,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "token_position_embedding_add_contiguous_fp32_i32_vec4_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000108_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000122",
+      "reason": "The case-local Schedule represents the completed parent's contiguous FP32 token-and-position embedding gather-add semantics for B=3, T=17, C=260, and V=29. It loads INT32 token IDs into registers, performs bounded runtime-indexed token-row loads, broadcasts each position row across the batch tile, adds in FP32, and completely stores the output. This provisional static semantic binding claims neither full runtime-shape or framework ABI coverage nor GPU qualification or performance.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        108,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "adamw_sliced_strided_fp32_i32_i64_block512_v1",
+      "gap_capability": "Add a bounded dynamic sliced-strided FP32 elementwise state-transition form with typed by-value FP32, INT32, and INT64 parameters, symbolic logical extents and element strides, a runtime two-dimensional grid expression, and FP32 square-root and beta-to-integer-power operations with declared semantics.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000110_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000124",
+      "reason": "The canonical completion defines one standalone, single-launch sliced AdamW kernel, so Schedule is the appropriate owner. Frozen Schedule v1 uses literal buffer and launch extents, derives executable arguments only from global Buffers, has no symbolic element-stride parameters, and provides rsqrt but neither sqrt nor runtime power. It therefore cannot preserve the completed dynamic ABI, valid domain, and update formula; a fixed specialization or rsqrt rewrite would express a narrower or different operator.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        110,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "replace_nan_contiguous_fp32_i64_block128_v1",
+      "gap_capability": "Add a Schedule-level FP32 elementwise replace-NaN operation that reads an input value and runtime replacement scalar and selects the replacement exactly when the input is NaN.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000111_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000125",
+      "reason": "The canonical completion defines one contiguous FP32 replace-NaN kernel. The frozen Schedule vocabulary admits loads, stores, and a limited elementwise operation set, but it has neither a NaN predicate nor conditional replacement or selection, so it cannot faithfully encode the completed parent.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        111,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "dual_output_tile_copy_contiguous_fp32_int32_b256_i4_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate",
+        "vector_or_lane_mapping",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000112_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000126",
+      "reason": "The case-local Schedule binds the completed parent's contiguous FP32 complete-output formulas at the valid workload num_items=1537 and P=2048. It declares two ordered global-load/store phases over two 1024-element program tiles, exports an unguarded [2048] output and a guarded [1537] output, and uses eight warps; the guarded store is masked by the shorter accessed-buffer extent. This is a provisional static reviewer binding only and does not claim runtime-num_items coverage, exact CUDA lane or barrier realization, GPU correctness, qualification, or performance.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        112,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "spatial_bn_x_gradient_nchw_contiguous_fp32_int32_block256_v1",
+      "gap_capability": "Add constrained runtime INT32 scalar parameters and symbolic positive extents usable in global-buffer shapes, program-grid expressions, and access-map bounds within one Schedule.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000113_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000127",
+      "reason": "The completed parent is one schedule-owned kernel, but its API has runtime N, C, and S and runtime-dependent extents, indexing, grid size, and tail masking. Schedule v1 admits literal buffer shapes and grid or tile values, while its executable signature is derived only from global buffers. A fixed-shape specialization would not cover the complete parent contract.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        113,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "nhwc_channel_affine_mix_f32_i32_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000114_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000128",
+      "reason": "The case-local Schedule instantiates the narrowed FP32 parent at positions=3 and channels=257. It maps positions to grid axis 0, tiles channels by 256 on grid axis 1 across eight warps, uses masked direct loads for the tensor and per-channel inputs, represents the two multiplies and two additions as FP32 elementwise operations, and completely writes the output with a masked coalesced store. This is a provisional reviewer semantic binding and does not claim framework equivalence or GPU qualification.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        114,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "categorical_nll_probability_gather_contiguous_fp32_i32_block256_v1",
+      "gap_capability": "Admit a target-bound unary FP32 natural-logarithm elementwise operation that can consume a direct runtime-indexed global load and feed the existing scalar multiplication operation.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000115_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000129",
+      "reason": "The canonical runnable parent defines one contiguous FP32/INT32 categorical negative-log-likelihood gather kernel. The frozen draft revision can represent the runtime-indexed global load and scalar negation, but its elementwise vocabulary has no natural logarithm and it binds no matching checked CUDA asset. No Schedule can therefore state the parent's required -logf computation.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        115,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "reduce_middle_sum_contiguous_fp32_int32_block256_v1",
+      "gap_capability": "Add a runtime-parameterized CTA reduction domain with signed INT32 scalar extent arguments, derived products, quotient/remainder index maps, a runtime-derived program grid, and a rank-one result.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "reduction_or_scan",
+        "numeric_operation_or_conversion",
+        "vector_or_lane_mapping"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000116_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000130",
+      "reason": "The canonical runnable completion narrows the record to one FP32 reduction kernel and excludes framework dispatch, so Schedule is the owner. The frozen Schedule fixes buffer shapes and program extents and derives its executable signature only from global Buffers; it cannot bind the runtime pre, middle, and post scalars or the quotient/remainder lane map required by the complete parent. A fixed-shape specialization would cover only one instance, not the completed contract.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        116,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "vol2col3d_contiguous_fp32_int32_block256_v1",
+      "gap_capability": "Add a Schedule-scoped affine masked-gather access form for one kernel. Input coordinates must be integer expressions combining program axes and kernel-loop iterators with declared stride and dilation coefficients, signed padding offsets, and the required output-channel linearization; an invalid coordinate must produce an explicitly typed zero.",
+      "gap_signals": [
+        "indexed_addressing_or_scatter",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000117_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000131",
+      "reason": "The accepted canonical completion defines one contiguous FP32 volumetric-unfold kernel, so Schedule is the applicable owner. Frozen Schedule v1 access maps can directly source coordinates from dimensions, program axes, loops, or index buffers, but cannot combine output and kernel coordinates using signed stride, padding, and dilation expressions or attach the required conditional zero-fill gather. A semantically faithful Schedule therefore cannot be submitted with the current vocabulary.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        117,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "derived_max_pool2d_nhwc_f32_i32_floor_block256_v1",
+      "gap_capability": "Add a single-kernel ordered windowed reduce-argmax capability with affine masked gather coordinates, paired value and winner-index results, and explicit comparison, tie, initialization, and NaN policies.",
+      "gap_signals": [
+        "indexed_addressing_or_scatter",
+        "control_or_predicate",
+        "reduction_or_scan",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000118_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000132",
+      "reason": "The validated canonical completion narrows the record to one standalone dense-NHWC FP32 max-pool-with-INT32-argmax kernel. The frozen Schedule vocabulary has value-only max reduction, while reduce_argmin and top_k admit only reject-input NaN behavior and lowest-index ties; it also lacks the required affine dilated-window winner projection. It therefore cannot represent the parent's paired value/index and last-NaN selection semantics. This is a Schedule vocabulary gap, not program composition or portfolio selection.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        118,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "dilated_max_pool2d_nchw_fp32_i64_block256_v1",
+      "gap_capability": "A schedule-level ordered dilated-window argmax operation that returns the selected FP32 value and an INT64 plane-local index, with explicit numeric-tie and NaN-selection policies.",
+      "gap_signals": [
+        "control_or_predicate",
+        "reduction_or_scan",
+        "vector_or_lane_mapping",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000119_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000133",
+      "reason": "The accepted canonical completion narrows the record to one standalone, single-launch FP32 NCHW dilated max-pool-with-indices kernel, so Schedule is the owning scope. The frozen Schedule vocabulary omits INT64 buffers and does not provide a paired ordered maximum-and-index reduction with the required first-numeric-tie and last-NaN behavior.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        119,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "coalesced_sparse_slice_scatter_add_2d_contiguous_fp32_int32_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "indexed_addressing_or_scatter",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "Execute the full-buffer dense-to-output copy before the sparse slice scatter-add kernel on the same CUDA stream.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000120_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000134",
+      "reason": "The accepted canonical completion defines complete-output semantics as an ordered device-to-device copy followed by the sparse slice scatter-add kernel. Because one Schedule owns one kernel, this multi-operation ordering belongs to program composition rather than a Schedule or a Schedule-vocabulary gap.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        120,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "contiguous_copy_f64_vec4_block256_v1",
+      "gap_capability": "Add a narrowly scoped float64 bit-preserving contiguous-copy capability with a runtime multiple-of-1024 extent and explicit per-thread vector ownership; the current buffer dtype vocabulary and static shapes and grid cannot state this contract.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "vector_or_lane_mapping"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000121_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000135",
+      "reason": "The referenced accepted parent completion defines one contiguous-copy kernel, so Schedule is the proper owner. Schedule v1 cannot express the full derived contract: its buffer dtype enum has no float64 type, and its buffer shapes and grid are static while the parent ABI carries a runtime count. Re-encoding each double as int32 words would change the typed ABI and would not state the required float64 element and thread mapping. This is therefore a Schedule vocabulary gap, not evidence of node custody or Compiler coverage.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        121,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "indexed_uint32_divmod_uniform_steps_contiguous_u32_i32_block256_v1",
+      "gap_capability": "Add exact integer-kernel vocabulary comprising uint32 global and register storage, ABI-preserving field views for mixed uint32/int32 records, loop-carried uint32 values, uint32 addition, and a two-result exact uint32 divmod operation usable after an int32 runtime-indexed global load.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000122_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000136",
+      "reason": "The canonical narrowed parent has a single-kernel computational payload, so Schedule owns this expressibility question. The draft Compiler has no uint32 Schedule dtype, admits elementwise arithmetic only for floating dtypes, provides no integer remainder or divmod operation, and cannot describe the mixed-field TestCaseU32 layout. Its indexed-load subset can express divisor selection but not the exact quotient-and-remainder sequence and complete uint32 outputs, so an honest Schedule cannot currently represent the parent.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        122,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "sparse_adagrad_length_sum_unique_rows_fp32_i32_block256_v1",
+      "gap_capability": "Add a prefix-segmented, runtime-indexed FP32 state-transform region that admits an INT32 prefix-end buffer, INT32 row indices, runtime FP32 scalar operands, FP32 square-root arithmetic, and conflict-free reads and writes to two caller-owned state buffers at identical indexed coordinates.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000123_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000137",
+      "reason": "The runnable canonical completion owns one narrowed kernel, but the frozen draft IR supports runtime-indexed direct loads and a restricted INT32 atomic-add state transition, not this prefix-segmented, conflict-free FP32 mutation of two caller-owned state buffers. An ordinary store cannot preserve the required indexed in-place effects, so no semantically faithful Schedule can currently be submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        123,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "col2im_batched_contiguous_fp32_i64_block512_v1",
+      "gap_capability": "Add a schedule-owned parameterized masked gather-reduction capability with runtime signed geometry scalars, integer affine expressions with quotient and remainder predicates, runtime-derived launch extent, and an explicitly ordered FP32 reduction. It need only admit the narrowed contiguous col2im overlap-sum contract.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate",
+        "reduction_or_scan",
+        "numeric_operation_or_conversion",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000124_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000138",
+      "reason": "The accepted canonical completion defines one runnable single-kernel col2im overlap-sum parent, so Schedule owns the question. Schedule v1 has only concrete buffer shapes and direct AccessMap index sources; it cannot bind the runtime geometry or express the quotient, remainder predicate, window-dependent gather coordinates, and ordered variable-length FP32 reduction required by the complete narrowed contract.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        124,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "select_smooth_l1_scatter_grad_f32_i32_nchw_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "The complete parent is the ordered composition of a full-output zero-fill operation followed by the selective gradient-scatter kernel on the supplied stream.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000125_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000139",
+      "reason": "The canonical completion defines two ordered launches as part of the runnable contract. Because one Schedule owns one kernel, complete-parent expressibility belongs to program composition; no single-kernel Schedule is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        125,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "coo_union_value_sum_contiguous_f32_i64_i32_v1",
+      "gap_capability": "Add a schedule-level ordered COO-union value-merge operation over two strictly lexicographically sorted coordinate streams, supporting int64 coordinates, runtime int32 extents, and rowwise FP32 add, left-copy, or right-copy emission.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000126_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000140",
+      "reason": "The canonical runnable parent is a single-kernel contract and is therefore schedule-owned, but the frozen Schedule vocabulary cannot express its content-dependent two-pointer lexicographic merge. It lacks int64 buffers, coordinate comparisons, conditional cursor advancement, and data-dependent loop control, so no faithful Schedule can be authored without the proposed capability.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        126,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "sparse_to_dense_scatter_copy_contiguous_fp32_i64_v1",
+      "gap_capability": "A runtime-indexed global scatter-assignment operation or access map that writes an FP32 state buffer at coordinates supplied through signed-int64 index data.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000127_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000141",
+      "reason": "The completed parent is one FP32 scatter-copy kernel, but the frozen IR admits buffer-sourced runtime indexing only for direct global loads and a narrow INT32 atomic state transition; indexed stores are explicitly unlowerable, and the Schedule dtype vocabulary omits the parent's signed-int64 indices.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        127,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "segmented_gather_sum_contiguous_fp32_i64_warp4_v1",
+      "gap_capability": "Add an offset-delimited segmented indirect ordered-reduction construct that lets one Schedule derive each output segment's runtime loop interval from adjacent global offsets, gather source rows through a global index buffer, and fold FP32 values in source order.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "reduction_or_scan",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000128_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000142",
+      "reason": "The canonical completion defines one single-kernel segmented gather sum with an int64 offset/index ABI and strictly ordered per-output FP32 accumulation. The frozen Schedule vocabulary cannot derive runtime loop bounds from adjacent offsets, admits runtime indirect coordinates only through register INT32 buffers, and gives reduce-sum no source-order or no-reassociation contract. Encoding this parent would therefore lose irreducible semantics, making this a Schedule vocabulary gap rather than a program or portfolio relation.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        128,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "cdist_x1_backward_p2_f32_contiguous_i64_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "Sequential same-stream producer-consumer composition: the contribution kernel writes caller-owned scratch, then the reduction kernel reads that scratch and writes the complete output.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000130_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000144",
+      "reason": "The completed parent has a two-kernel launch contract. Because one Schedule owns one kernel, the scratch dependency and ordering between these kernels belong to program composition, so no Schedule is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        130,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "sequence_mask_3d_fp32_i32_contiguous_block128_v1",
+      "gap_capability": "Add a narrowly typed valid-prefix load fallback that selects a by-value runtime FP32 scalar instead of zero outside a valid_extent, together with a declared runtime scalar ABI operand.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000131_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000145",
+      "reason": "The canonical completion defines one standalone positive-B sequence-mask kernel, so Schedule owns the question. The frozen valid_extent relation can represent the length-selected prefix, but its masked load yields zero rather than the parent's arbitrary runtime FP32 fill value. Executable arguments are derived only from global Buffers, while the elementwise vocabulary provides neither a runtime scalar operand nor comparison and selection. A literal fill or preinitialized output would change the completed contract, so no faithful Schedule exists in this Compiler revision.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        131,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "derived_l000134_row_sum_f32_i32_contiguous_block256_v1",
+      "gap_capability": "Admit signed INT32 runtime scalar parameters that can bind symbolic buffer extents, a program-map extent, and a tile-loop bound within one Schedule.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000134_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000148",
+      "reason": "The runnable canonical parent is one kernel and is Schedule-owned, but its contract is runtime-shaped. The frozen Schema admits literal positive buffer shapes and grid or tile extents, while the executable signature is derived from global Buffers, so it cannot bind rows and columns to shapes, program count, and the reduction loop. A fixed-shape Schedule would be a further narrowing and would not express the complete parent.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        134,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "portfolio_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "average_pool1d_backward_nhwc_fp32_int32_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate"
+      ],
+      "owner_relation": "The runtime count_include_pad flag selects the include-pad kernel specialization when it is 1 and the exclude-pad kernel specialization when it is 0; a portfolio owns that selector and its two specialist-kernel members.",
+      "owner_scope": "portfolio",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000135_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "portfolio_redirect_candidate",
+      "queue_case_id": "case-000149",
+      "reason": "The completed parent exposes runtime selection between two normalization specialists. Under the frozen ownership contract, runtime specialist selection is portfolio-owned, while one Schedule owns only one kernel. This redirects ownership without claiming Compiler coverage, GPU qualification, or node custody.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        135,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "lp2_pool_valid_nhwc_f32_i32_block128_v1",
+      "gap_capability": "Add an affine-windowed FP32 norm-reduction facility: an AccessMap index can combine a program coordinate, a declared stride, and a tile-loop iterator, while a reduction can request an explicitly ordered stable hypot fold.",
+      "gap_signals": [
+        "indexed_addressing_or_scatter",
+        "control_or_predicate",
+        "reduction_or_scan",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000137_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000151",
+      "reason": "The canonical runnable completion defines one single-launch LP2 pooling kernel, so Schedule is the correct owner. Frozen Schedule v1 cannot preserve that contract: each AccessMap tensor axis selects one coordinate source and cannot express ph*SH+kh or pw*SW+kw, while its arithmetic vocabulary has square, sum, and rsqrt but no ordered stable FP32 hypot fold. A Schedule would therefore have to change either the contiguous input ABI or the required numerical semantics.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        137,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "portfolio_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "average_pool2d_backward_nchw_f32_i32_block128_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate"
+      ],
+      "owner_relation": "The count_include_pad input selects at runtime between the true and false AveragePool2DBackwardNCHWCUDAKernel specializations.",
+      "owner_scope": "portfolio",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000138_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "portfolio_redirect_candidate",
+      "queue_case_id": "case-000152",
+      "reason": "The canonical completion retains runtime specialist selection between two compile-time kernel specializations. That relation is portfolio-owned, so one kernel Schedule cannot represent the complete parent; this redirect makes no claim that either individual specialization is Schedule-expressible.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        138,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "max_pool1d_nwc_fp32_int32_block256_v1",
+      "gap_capability": "Add a runtime-parameterized affine clipped-window reduction construct, or an equivalent access-map iterator with an explicit reduction identity, for a single-kernel Schedule.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000139_b200_v1__directderived_sol_ultra_v2__parent_completion_v1",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000153",
+      "reason": "The accepted parent completion narrows the record to one standalone FP32 NWC 1D max-pool kernel, so Schedule is the correct owner. Schedule v1 provides FP32 loads, max reduction, and stores, but it cannot express the output-dependent clipped interval, preserve the explicit seed for an empty interval, or carry the runtime pooling scalars required by the completed ABI. A Schedule therefore cannot cover the complete derived parent without narrowing its semantics.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        139,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "maxpool1d_backward_nhwc_f32_i32_block256_v1",
+      "gap_capability": "Represent a predicated FP32 equality-and-select fold over a bounded one-dimensional pooling window, with bounds derived from the output coordinate and declared kernel, stride, and padding parameters.",
+      "gap_signals": [
+        "control_or_predicate",
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000140_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000154",
+      "reason": "The canonical narrowed parent is a single-launch kernel owned by one Schedule, but the frozen Schedule vocabulary has no FP32 equality predicate, predicate-select operation, or order-preserving conditional fold for its reverse max-pool window.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        140,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "lowerable",
+      "complete_parent_class": "schedule_candidate_lowerable",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "global_average_pool_backward_nchw_f32_i32_contiguous_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_candidate_lowerable",
+      "queue_case_id": "case-000156",
+      "reason": "The validator-finalized canonical completion supplies a runnable narrowed parent. complete_parent.schedule.json binds its N=2, C=3, HxW=257 contiguous FP32 instance as one kernel that loads dY[nc], multiplies by the frozen float32 reciprocal of 257, and tail-masked stores the spatial outputs. This is a provisional Schedule claim; GPU behavior and independent node custody are not assessed.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        142,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "lstm_unit_gradient_contiguous_fp32_i32_block256_v1",
+      "gap_capability": "Add a runtime-parameterized predicated elementwise capability: typed scalar parameters, a nullable input-buffer relation, integer comparison and boolean composition, and a same-shape select operation for conditional results.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "control_or_predicate"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000143_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000157",
+      "reason": "The canonical parent is a single-launch kernel, so Schedule is the correct owner. The frozen Schedule vocabulary has FP32 arithmetic and tanh but has no typed runtime scalar or nullable-buffer binding, comparison or boolean operation, or conditional select for the parent’s valid-versus-invalid output semantics; valid_extent only governs supported access masking and cannot express this branch.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        143,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "roi_pool_forward_nchw_contiguous_fp32_int32_block256_v1",
+      "gap_capability": "Add a runtime-window indexed argmax reduction with paired FP32 value and INT32 position results, together with expressions for FP32 roundf, floor, and ceil conversion, integer clipping, comparison, and selection.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate",
+        "reduction_or_scan",
+        "numeric_operation_or_conversion",
+        "multi_launch_or_program"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000144_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000158",
+      "reason": "The accepted external completion supplies a runnable_unqualified narrowed one-kernel ROI max-pool parent without establishing node custody. The frozen draft Compiler vocabulary cannot express its runtime ROI-derived two-dimensional iteration domain, exact rounding and clipping, and ordered maximum reduction with coupled value and index outputs. The existing indexed-load, reduce-max, and reduce-argmin forms do not preserve those combined semantics, so no faithful Schedule can be submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        144,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "segmented_boundary_column_sum_contiguous_fp32_int32_block256_v1",
+      "gap_capability": "Add a Schedule-owned parameterized segmented boundary-window gather-reduction construct with runtime signed-INT32 K, N, P, and Q, symbolic contiguous buffer extents, streaming reduction domains, integer index expressions combining loaded INT32 offsets and lengths with reduction iterators, a runtime N-block launch, and two independent FP32 CTA-sum results.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate",
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000145_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000159",
+      "reason": "The validator-accepted canonical completion defines one single-launch segmented boundary-column reduction, so Schedule is the owner. Frozen Schedule v1 has literal shapes and launch extents, derives executable arguments only from global buffers, and lets each AccessMap coordinate select a direct dimension, program, tile, loop, or register-buffer value; it cannot bind runtime K, N, P, and Q or form offsets[k]+p and offsets[k]+lengths[k]-Q+q over runtime reduction domains. A current Schedule would therefore narrow or change the completed ABI. This provisional gap claim does not qualify the runnable parent or establish node custody.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        145,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "scale2_axpy_scale_contiguous_fp32_int32_block256_v1",
+      "gap_capability": "Add a runtime signed INT32 scalar parameter that can bind a shared symbolic one-dimensional buffer extent and bound a tiled program axis.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000162",
+      "reason": "The canonical completion narrows the source to one standalone FP32 elementwise kernel, so Schedule is the correct owner. The frozen Schedule schema admits only concrete positive integer buffer shapes, and its executable signature is derived only from global buffers; it cannot represent the caller-supplied runtime scalar n that determines all buffer extents, the grid ceil(n / 256), and the tail guard. Fixing n or replacing it with a device length buffer would change the completed parent contract.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        148,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "masked_sigmoid_xent_gradient_counts_contiguous_fp32_i32_block256_v1",
+      "gap_capability": "Add typed per-element predicate and selection operations: signed INT32 equality against a scalar, explicit signed INT32-to-FP32 conversion, and FP32 select or where semantics, with one predicate reusable by both output computations.",
+      "gap_signals": [
+        "control_or_predicate",
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000149_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000163",
+      "reason": "The canonical completion narrows the parent to one standalone masked-gradient-and-counts kernel and excludes the surrounding normalization and scaling launches, so Schedule is the owning scope. The frozen Schedule vocabulary can express loads, stores, FP32 exponential, and arithmetic, but it has no value equality, explicit INT32-to-FP32 conversion, or predicate-controlled selection needed to state both outputs. Therefore no Schedule is submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        149,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "program_redirect_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "masked_sigmoid_cross_entropy_mean_fp32_i32_contiguous_block256_v1",
+      "gap_capability": null,
+      "gap_signals": [
+        "multi_launch_or_program"
+      ],
+      "owner_relation": "The first kernel writes per-element loss and count workspaces; a subsequent reduction kernel consumes both workspaces and writes the normalized scalar loss.",
+      "owner_scope": "program",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000150_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "program_redirect_candidate",
+      "queue_case_id": "case-000164",
+      "reason": "The canonical completion defines the complete parent as an ordered two-launch computation. Because one Open Cake Schedule owns one kernel, the inter-kernel producer-consumer and launch-order relation belongs to program composition.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        150,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "elementwise_ceil_contiguous_fp32_i32_b256_v1",
+      "gap_capability": "Add `ceil` as a unary FP32 `elementwise` operation in the Schedule IR.",
+      "gap_signals": [
+        "numeric_operation_or_conversion"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000151_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000165",
+      "reason": "The accepted canonical completion narrows the parent to one standalone contiguous FP32 elementwise-ceiling kernel. The frozen Schedule schema admits FP32 load, store, and elementwise operations, but its elementwise vocabulary includes tanh, square, rsqrt, exp, add, sub, mul, and div—not ceiling—so it cannot state the irreducible parent computation. The completion remains runnable_unqualified and does not establish GPU or node custody.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        151,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "embedding_bag_max_contiguous_fp32_int32_block32x8_grid1024_v1",
+      "gap_capability": "Add one schedule-level offset-defined segmented gather-and-select capability that consumes a contiguous FP32 weight matrix, INT32 indices and bag offsets, and an INT32 padding row, and produces maximum values, first-winning row indices, non-padding bag counts, and the input-position-to-bag map.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "indexed_addressing_or_scatter",
+        "control_or_predicate",
+        "reduction_or_scan"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000152_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000166",
+      "reason": "The completed parent is one kernel, so Schedule is the applicable owner. The frozen Schedule vocabulary does not provide semantics combining runtime offset-defined segments, padding-aware indirect gathers, first-tie maximum selection, and all four coupled outputs; therefore no conforming complete-parent Schedule can be submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        152,
+        "input"
+      ]
+    },
+    {
+      "compiler_check": "not_run",
+      "complete_parent_class": "schedule_gap_candidate",
+      "delta_class": "not_applicable",
+      "derived_parent_id": "elementwise_scale_i32_contiguous_i64_block256_v1",
+      "gap_capability": "Admit a runtime-sized int32 scalar-vector scale Schedule with typed by-value int64 and int32 parameters, symbolic one-dimensional extents and launch dimensions, and same-typed INT32 elementwise multiplication.",
+      "gap_signals": [
+        "runtime_parameterization",
+        "vector_or_lane_mapping"
+      ],
+      "owner_relation": null,
+      "owner_scope": "schedule",
+      "portable_case_id": "data_movement_and_layout__gather_scatter__analysis__l000153_b200_v1__directderived_sol_ultra_v2",
+      "primary_class": "schedule_gap_candidate",
+      "queue_case_id": "case-000167",
+      "reason": "The canonical completion defines one contiguous INT32 scale kernel, but its contract has runtime by-value int64 n and int32 alpha, dynamic extent and grid, and INT32 multiplication. The frozen Schedule vocabulary has positive static buffer shapes, static launch mappings, global Buffers as executable arguments, and only literal elementwise scalars. Freezing n or alpha, or representing them as device buffers, would change the completed ABI and domain, so no semantically matching Schedule can be submitted.",
+      "source_identity": [
+        "categories/data_movement_and_layout/gather_scatter/analysis.jsonl",
+        153,
+        "input"
+      ]
+    }
+  ],
+  "schema": "open-cake.aka-portable-parent-ir-review-summary.v1",
+  "source_revision": "b6607f78148b152bfa48133af98a8f58148c3684",
+  "worker_statuses": {
+    "completed": 100
+  }
+}
