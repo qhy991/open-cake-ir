@@ -59,6 +59,15 @@
     "release_cycle_exit_code": 0,
     "verified": true
   },
+  "post_release_complete_suite": {
+    "environment": "task-owned macOS Python 3.14 venv with torch 2.13.0 and numpy 2.5.2",
+    "result": "539 passed, 4 failed, 438 subtests passed",
+    "failure_boundaries": [
+      "one Executor profiler-custody test requires the v39-pinned Linux Nsight Compute executable and fails closed on macOS",
+      "three retained ranking-sweep subtests fail identically on the clean v32 parent because the historical sweep no longer includes a refused tile after logical register pressure became non-blocking"
+    ],
+    "new_v33_regression_observed": false
+  },
   "validation": {
     "draft_expectations": "corpus expectations already match the draft Compiler",
     "full_corpus_gate": "56 of 56 matched across 75 bound sources",
