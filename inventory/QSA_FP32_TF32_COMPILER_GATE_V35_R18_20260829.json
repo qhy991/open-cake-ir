@@ -1,15 +1,17 @@
 {
   "schema_version": 1,
   "purpose": "exact_gate_and_release_approval_basis_for_explicit_fp32_tf32_mma_compiler_successor",
-  "status": "exact_gate_matched_and_repository_owner_authorized_approval_written",
+  "status": "released_and_independently_verified",
   "compiler_change_commit": "a6b0db0",
   "corpus_adoption_commit": "4b209f4",
   "corpus_adoption_record": "inventory/QSA_FP32_TF32_CORPUS_EXPECTATION_ADOPTION_R18_20260829.json",
   "compiler_revision": {
-    "id": "open-cake-ir-sm100a-v35-draft",
+    "id": "open-cake-ir-sm100a-v35",
     "proposal_canonical_sha256": "0c8496a5011250ab70fc0d94abe19feef00e672c8b65e48d5c177775b3438083",
     "target_canonical_sha256": "e568ff75f6a070b58191daa96e19bd6549ea36b2e39571f3b955131be273eb3a",
-    "source_set_canonical_sha256": "56f6fda8b86d614a40feb4996d036b5c3f384fd2ef5b98c8878454693c360417"
+    "source_set_canonical_sha256": "56f6fda8b86d614a40feb4996d036b5c3f384fd2ef5b98c8878454693c360417",
+    "released_lock_canonical_sha256": "447f801094c19fcd72331a8eced19e99ad5953cf9ab697a34bfe0df5aa2e33f9",
+    "release_verify": "passed"
   },
   "gate": {
     "path": "compiler/corpus-gate-report.json",
