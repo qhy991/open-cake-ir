@@ -38,6 +38,7 @@ from .ir import (
     DType,
     OperationKind,
     Schedule,
+    StoreInactive,
 )
 from .analysis import (
     logical_register_pressure_per_thread,
@@ -940,6 +941,7 @@ _ELEMENTWISE_INSTRUCTION_DTYPES = {
 _ARITY = {
     OperationKind.LOAD: (1, 1, "load"),
     OperationKind.MMA: (2, 1, "mma"),
+    OperationKind.OUTER: (2, 1, "outer"),
     OperationKind.EPILOGUE: (1, 1, "epilogue"),
     OperationKind.REDUCE_ARGMIN: (1, 1, "reduce_argmin"),
     OperationKind.REDUCE: (1, 1, "reduce"),
@@ -1161,6 +1163,298 @@ def _verify_valid_extents(schedule: Schedule, buffers, out: _Collector) -> None:
                 )
 
 
+def _dense_strides(shape: tuple[int, ...]) -> tuple[int, ...]:
+    running = 1
+    result: list[int] = []
+    for extent in reversed(shape):
+        result.insert(0, running)
+        running *= extent
+    return tuple(result)
+
+
+def _verify_buffer_relations(schedule: Schedule, buffers, out: _Collector) -> None:
+    """Concrete storage and caller-owned index preconditions."""
+
+    category = FindingCategory.DATA_CONSISTENCY
+    for index, buffer in enumerate(schedule.buffers):
+        path = f"buffers[{index}]"
+        if buffer.strides is not None:
+            if buffer.space is not MemorySpace.GLOBAL:
+                out.add(
+                    "BUFFER_STRIDES_SPACE",
+                    f"{path}.strides",
+                    "only a global Buffer may declare concrete element strides",
+                    category,
+                )
+            if buffer.mode not in {BufferMode.INPUT, BufferMode.STATE}:
+                out.add(
+                    "BUFFER_STRIDES_MODE",
+                    f"{path}.strides",
+                    "the first concrete-stride subset applies to input or state",
+                    category,
+                )
+            if len(buffer.strides) != len(buffer.shape):
+                out.add(
+                    "BUFFER_STRIDES_RANK",
+                    f"{path}.strides",
+                    f"stride rank {len(buffer.strides)} differs from shape rank "
+                    f"{len(buffer.shape)}",
+                    category,
+                )
+            elif buffer.strides == _dense_strides(buffer.shape):
+                out.add(
+                    "BUFFER_STRIDES_NONCANONICAL",
+                    f"{path}.strides",
+                    "dense row-major storage must omit strides",
+                    FindingCategory.SCHEDULE_SEMANTICS,
+                )
+            elif buffer.mode is BufferMode.STATE:
+                if any(stride <= 0 for stride in buffer.strides):
+                    out.add(
+                        "BUFFER_STRIDES_WRITABLE",
+                        f"{path}.strides",
+                        "writable state strides must be positive",
+                        FindingCategory.PROGRAM_SAFETY,
+                    )
+                elif buffer.strides[-1] != 1 or any(
+                    buffer.strides[axis]
+                    < buffer.shape[axis + 1] * buffer.strides[axis + 1]
+                    for axis in range(len(buffer.shape) - 1)
+                ):
+                    out.add(
+                        "BUFFER_STRIDES_OVERLAP",
+                        f"{path}.strides",
+                        "writable state must use non-overlapping row-major strides "
+                        "with optional padding",
+                        FindingCategory.PROGRAM_SAFETY,
+                    )
+            elif any(stride < 0 for stride in buffer.strides):
+                out.add(
+                    "BUFFER_STRIDES_NEGATIVE",
+                    f"{path}.strides",
+                    "input strides may broadcast with zero but cannot be negative",
+                    category,
+                )
+
+        relation = buffer.unique_index
+        if relation is None:
+            continue
+        if (
+            buffer.space is not MemorySpace.GLOBAL
+            or buffer.mode is not BufferMode.INPUT
+            or buffer.dtype is not DType.INT32
+            or len(buffer.shape) != 1
+        ):
+            out.add(
+                "UNIQUE_INDEX_BUFFER_CONTRACT",
+                f"{path}.unique_index",
+                "a unique-index relation belongs to one rank-one global INT32 input",
+                category,
+            )
+        domain = buffers.get(relation.buffer)
+        if domain is None:
+            out.add(
+                "UNIQUE_INDEX_DOMAIN_UNKNOWN",
+                f"{path}.unique_index.buffer",
+                f"unknown index domain buffer {relation.buffer!r}",
+                category,
+            )
+        elif (
+            domain.space is not MemorySpace.GLOBAL
+            or domain.mode is not BufferMode.STATE
+        ):
+            out.add(
+                "UNIQUE_INDEX_DOMAIN_MODE",
+                f"{path}.unique_index.buffer",
+                f"index domain {domain.name!r} is not caller-owned global state",
+                category,
+            )
+        elif relation.dimension >= len(domain.shape):
+            out.add(
+                "UNIQUE_INDEX_DOMAIN_DIMENSION",
+                f"{path}.unique_index.dimension",
+                f"dimension {relation.dimension} is outside {domain.name!r}",
+                category,
+            )
+        if not -(1 << 31) <= relation.sentinel < 0:
+            out.add(
+                "UNIQUE_INDEX_SENTINEL_RANGE",
+                f"{path}.unique_index.sentinel",
+                "the first unique-index sentinel must be a negative signed INT32",
+                category,
+            )
+
+
+def _unique_index_origin(schedule: Schedule, name: str):
+    """The sole direct load that carries a caller-owned uniqueness relation."""
+
+    producers = [operation for operation in schedule.operations if name in operation.writes]
+    if len(producers) != 1 or producers[0].kind is not OperationKind.LOAD:
+        return None
+    producer = producers[0]
+    if not producer.reads:
+        return None
+    source = schedule.buffer(producer.reads[0])
+    if source is None or source.unique_index is None:
+        return None
+    access = schedule.access_map(producer.op_id, source.name)
+    if access is None or any(
+        component.source is AccessIndexKind.BUFFER for component in access.indices
+    ):
+        return None
+    return source, source.unique_index, producer, access
+
+
+def _enclosing_loops(schedule: Schedule, operation_id: str):
+    direct = next(
+        (loop for loop in schedule.tile_loops if operation_id in loop.body), None
+    )
+    if direct is None:
+        return ()
+    loops = [direct]
+    parents = schedule.loop_parent()
+    name = direct.name
+    while name in parents:
+        parent = schedule.tile_loop(parents[name])
+        if parent is None:
+            break
+        loops.append(parent)
+        name = parent.name
+    return tuple(loops)
+
+
+def _verify_unique_state_store(
+    schedule: Schedule, operation: Operation, access, destination, out: _Collector
+) -> bool:
+    """Prove an indexed state replacement from one unique caller index."""
+
+    path = f"operations[{schedule.operations.index(operation)}]"
+    valid_if = operation.parameters.valid_if
+    if valid_if is None:
+        return False
+    origin = _unique_index_origin(schedule, valid_if)
+    if origin is None:
+        out.add(
+            "STORE_VALID_INDEX_PROVENANCE",
+            f"{path}.parameters.valid_if",
+            f"{valid_if!r} is not the direct load of one unique-index input",
+            FindingCategory.PROGRAM_SAFETY,
+        )
+        return True
+    _source, relation, producer, source_access = origin
+    matching_positions = [
+        position
+        for position, component in enumerate(access.indices)
+        if component.source is AccessIndexKind.BUFFER
+        and component.name == valid_if
+    ]
+    if len(matching_positions) != 1:
+        out.add(
+            "STATE_STORE_INDEX_MISMATCH",
+            f"{path}.parameters.valid_if",
+            "state replacement must address exactly one destination axis through its "
+            "valid index",
+            FindingCategory.PROGRAM_SAFETY,
+        )
+        return True
+    slot_dimension = matching_positions[0]
+    domain = schedule.buffer(relation.buffer)
+    if (
+        domain is not None
+        and relation.dimension < len(domain.shape)
+        and destination.shape[slot_dimension] != domain.shape[relation.dimension]
+    ):
+        out.add(
+            "STATE_STORE_DOMAIN_MISMATCH",
+            f"{path}.parameters.valid_if",
+            f"destination axis {slot_dimension} has extent "
+            f"{destination.shape[slot_dimension]}, not unique-index domain extent "
+            f"{domain.shape[relation.dimension]}",
+            FindingCategory.PROGRAM_SAFETY,
+        )
+
+    if producer.role != operation.role or schedule.operations.index(producer) >= schedule.operations.index(operation):
+        out.add(
+            "STATE_STORE_INDEX_ORDER",
+            f"{path}.parameters.valid_if",
+            "the relation-bearing register index must be produced earlier in the same role",
+            FindingCategory.PROGRAM_SAFETY,
+        )
+
+    source_program_axes = {
+        component.name
+        for component in source_access.indices
+        if component.source in {AccessIndexKind.PROGRAM, AccessIndexKind.PROGRAM_TILE}
+    }
+    destination_program_axes = {
+        component.name
+        for component in access.indices
+        if component.source in {AccessIndexKind.PROGRAM, AccessIndexKind.PROGRAM_TILE}
+    }
+    declared_program_axes = (
+        {axis.name for axis in schedule.program_map.axes}
+        if schedule.program_map is not None
+        else set()
+    )
+    missing_program_axes = sorted(
+        declared_program_axes - source_program_axes - destination_program_axes
+    )
+    if missing_program_axes:
+        out.add(
+            "STATE_STORE_PROGRAM_AXIS_UNOWNED",
+            f"{path}.writes",
+            "state replacement omits program ownership axes "
+            f"{missing_program_axes}",
+            FindingCategory.PROGRAM_SAFETY,
+        )
+
+    destination_loops = {
+        component.name
+        for component in access.indices
+        if component.source is AccessIndexKind.LOOP_TILE
+    }
+    missing_loops = sorted(
+        loop.iterator
+        for loop in _enclosing_loops(schedule, operation.op_id)
+        if loop.iterator not in destination_loops
+    )
+    if missing_loops:
+        out.add(
+            "STATE_STORE_LOOP_AXIS_UNOWNED",
+            f"{path}.writes",
+            f"state replacement repeats in loop axes {missing_loops} without "
+            "address partitioning",
+            FindingCategory.PROGRAM_SAFETY,
+        )
+    return True
+
+
+def _state_store_accesses_disjoint(schedule: Schedule, buffer, writers) -> bool:
+    """Narrow proof: one declared dimension interval separates every writer pair."""
+
+    accesses = [schedule.access_map(writer.op_id, buffer.name) for writer in writers]
+    if any(access is None for access in accesses):
+        return False
+    for left_index, left in enumerate(accesses):
+        for right in accesses[left_index + 1 :]:
+            pair_disjoint = False
+            for position, (a, b) in enumerate(zip(left.indices, right.indices)):
+                if (
+                    a.source is AccessIndexKind.DIMENSION
+                    and b.source is AccessIndexKind.DIMENSION
+                    and a.dimension == b.dimension == position
+                ):
+                    a_start, b_start = a.offset, b.offset
+                    a_stop = a_start + a.span(buffer.shape[position])
+                    b_stop = b_start + b.span(buffer.shape[position])
+                    if a_stop <= b_start or b_stop <= a_start:
+                        pair_disjoint = True
+                        break
+            if not pair_disjoint:
+                return False
+    return True
+
+
 def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     category = FindingCategory.DATA_CONSISTENCY
 
@@ -1171,6 +1465,7 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
 
     _verify_scale_relations(schedule, buffers, out)
     _verify_valid_extents(schedule, buffers, out)
+    _verify_buffer_relations(schedule, buffers, out)
 
     # ---- buffer placement -------------------------------------------------
     for index, buffer in enumerate(schedule.buffers):
@@ -1314,7 +1609,7 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
                 f"operation {operation.op_id!r} both reads and writes {name!r}",
                 category,
             )
-        _verify_operation_shape(operation, path, buffers, out)
+        _verify_operation_shape(schedule, operation, path, buffers, out)
 
     # ---- loop-carried lifetime --------------------------------------------
     # A register value produced inside a tile loop does not survive it: registers hold
@@ -1518,7 +1813,20 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
                 "are read-only for the whole Schedule",
                 category,
             )
-        if len(ops) > 1:
+        writer_operations = [
+            operation for operation in schedule.operations if operation.op_id in ops
+        ]
+        disjoint_state_stores = (
+            buffer.mode is BufferMode.STATE
+            and all(
+                operation.kind is OperationKind.STORE
+                for operation in writer_operations
+            )
+            and _state_store_accesses_disjoint(
+                schedule, buffer, writer_operations
+            )
+        )
+        if len(ops) > 1 and not disjoint_state_stores:
             out.add(
                 "BUFFER_MULTIPLE_WRITERS",
                 f"buffers[{schedule.buffers.index(buffer)}]",
@@ -1713,7 +2021,9 @@ def _elementwise_result_dtype(operation, buffers) -> DType | None:
     return None
 
 
-def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> None:
+def _verify_operation_shape(
+    schedule: Schedule, operation, path: str, buffers, out: _Collector
+) -> None:
     category = FindingCategory.DATA_CONSISTENCY
     if operation.kind is OperationKind.REDUCE_ARGMIN:
         # `reduce_argmin` is not a generic numeric reduction with an incidental
@@ -2297,14 +2607,72 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                         f"{result.dtype.value}",
                         category,
                     )
+    if operation.kind is OperationKind.OUTER:
+        if len(operation.reads) != 2 or len(operation.writes) != 1:
+            out.add(
+                "OUTER_ARITY",
+                path,
+                "outer reads two vectors and writes one matrix",
+                category,
+            )
+        else:
+            left = buffers.get(operation.reads[0])
+            right = buffers.get(operation.reads[1])
+            result = buffers.get(operation.writes[0])
+            for operand in (left, right, result):
+                if operand is not None and operand.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "OUTER_SPACE",
+                        path,
+                        f"outer buffer {operand.name!r} is in {operand.space.value}, "
+                        "not registers",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
+            if left is not None and right is not None:
+                if len(left.shape) != 1 or len(right.shape) != 1:
+                    out.add(
+                        "OUTER_INPUT_SHAPE",
+                        f"{path}.reads",
+                        "outer consumes two rank-one vectors",
+                        category,
+                    )
+                if left.dtype not in _ELEMENTWISE_FLOAT_DTYPES or right.dtype not in _ELEMENTWISE_FLOAT_DTYPES:
+                    out.add(
+                        "OUTER_DTYPE",
+                        f"{path}.reads",
+                        "outer inputs must be bf16, fp16 or fp32",
+                        category,
+                    )
+                if result is not None:
+                    expected_shape = (left.shape[0], right.shape[0])
+                    if len(left.shape) == 1 and len(right.shape) == 1 and result.shape != expected_shape:
+                        out.add(
+                            "OUTER_RESULT_SHAPE",
+                            f"{path}.writes",
+                            f"outer result must have shape {list(expected_shape)}, got "
+                            f"{list(result.shape)}",
+                            category,
+                        )
+                    if result.dtype is not DType.FP32:
+                        out.add(
+                            "OUTER_RESULT_DTYPE",
+                            f"{path}.writes",
+                            f"outer accumulates one FP32 product tile, but "
+                            f"{result.name!r} is {result.dtype.value}",
+                            category,
+                        )
+
     if operation.kind is OperationKind.STORE:
         for name in operation.writes:
             buffer = buffers.get(name)
-            if buffer is not None and buffer.mode is not BufferMode.OUTPUT:
+            if buffer is not None and buffer.mode not in {
+                BufferMode.OUTPUT,
+                BufferMode.STATE,
+            }:
                 out.add(
                     "OP_STORE_DESTINATION",
                     f"{path}.writes",
-                    f"store destination {name!r} is {buffer.mode.value}, not an output",
+                    f"store destination {name!r} is {buffer.mode.value}, not output or state",
                     category,
                 )
         if operation.reads and operation.writes:
@@ -2323,6 +2691,69 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                         f"{source.dtype.value} to {destination.name!r} "
                         f"{destination.dtype.value}; the admitted conversions are "
                         "identity and fp32 to bf16/fp16",
+                        category,
+                    )
+            parameters = operation.parameters
+            guarded = parameters.valid_if is not None or parameters.inactive is not None
+            if (parameters.valid_if is None) != (parameters.inactive is None):
+                out.add(
+                    "STORE_INACTIVE_PAIR",
+                    f"{path}.parameters",
+                    "valid_if and inactive must be declared together",
+                    category,
+                )
+            valid_index = (
+                buffers.get(parameters.valid_if)
+                if parameters.valid_if is not None
+                else None
+            )
+            if parameters.valid_if is not None:
+                if parameters.valid_if not in operation.reads[1:]:
+                    out.add(
+                        "STORE_VALID_INDEX_READ",
+                        f"{path}.reads",
+                        "a guarded store reads its value then its validity index",
+                        category,
+                    )
+                if valid_index is None:
+                    out.add(
+                        "STORE_VALID_INDEX_UNKNOWN",
+                        f"{path}.parameters.valid_if",
+                        f"unknown validity index {parameters.valid_if!r}",
+                        category,
+                    )
+                elif (
+                    valid_index.space is not MemorySpace.REGISTER
+                    or valid_index.dtype is not DType.INT32
+                ):
+                    out.add(
+                        "STORE_VALID_INDEX_CONTRACT",
+                        f"{path}.parameters.valid_if",
+                        "a store validity index must be register-resident INT32",
+                        category,
+                    )
+                elif _unique_index_origin(schedule, parameters.valid_if) is None:
+                    out.add(
+                        "STORE_VALID_INDEX_PROVENANCE",
+                        f"{path}.parameters.valid_if",
+                        "store validity must be the direct load of one unique-index input",
+                        FindingCategory.PROGRAM_SAFETY,
+                    )
+            if destination is not None and destination.mode is BufferMode.STATE:
+                if not guarded or parameters.inactive is not StoreInactive.NO_EFFECT:
+                    out.add(
+                        "STATE_STORE_INACTIVE_POLICY",
+                        f"{path}.parameters",
+                        "caller-owned state replacement requires valid_if with "
+                        "inactive=no_effect",
+                        FindingCategory.PROGRAM_SAFETY,
+                    )
+            elif destination is not None and destination.mode is BufferMode.OUTPUT:
+                if guarded and parameters.inactive is not StoreInactive.WRITE_ZERO:
+                    out.add(
+                        "OUTPUT_STORE_INACTIVE_POLICY",
+                        f"{path}.parameters",
+                        "a guarded output store must declare inactive=write_zero",
                         category,
                     )
     # An ordinary contraction reads two data operands. The one admitted block-scale
@@ -2407,6 +2838,10 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                                 f"{list(widest)} and is not narrower",
                                 category,
                             )
+                        continue
+                    if not read.shape:
+                        # A rank-zero register scratch is a runtime scalar.  It
+                        # broadcasts naturally and owns no array axis.
                         continue
                     axis = parameters.broadcast_axis
                     if axis is None:
@@ -2721,6 +3156,16 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         category,
                     )
 
+                destination = (
+                    buffers.get(operation.writes[0])
+                    if operation.writes
+                    else None
+                )
+                unique_state_store = (
+                    destination is not None
+                    and destination.mode is BufferMode.STATE
+                    and operation.parameters.valid_if is not None
+                )
                 canonical_form = (
                     len(indirect) == 2
                     and len(access.indices) >= 2
@@ -2733,7 +3178,11 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         for component in access.indices[2:]
                     )
                 )
-                if not canonical_form:
+                if unique_state_store:
+                    _verify_unique_state_store(
+                        schedule, operation, access, destination, out
+                    )
+                elif not canonical_form:
                     out.add(
                         "STORE_INDEX_RESERVATION_FORM",
                         f"{path}.indices",
@@ -2864,11 +3313,19 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
             known = [item for item in index_buffers if item is not None]
             if len(known) == len(index_buffers):
                 shapes = {item.shape for item in known}
-                if any(len(item.shape) != 1 for item in known):
+                if any(
+                    len(item.shape) != 1
+                    and not (
+                        len(item.shape) == 0
+                        and _unique_index_origin(schedule, name) is not None
+                    )
+                    for name, item in zip(index_names, known)
+                ):
                     out.add(
                         "ACCESS_INDEX_DOMAIN_RANK",
                         path,
-                        "the admitted runtime index domain is rank one",
+                        "a runtime index is rank one, except for a direct-loaded "
+                        "unique scalar index",
                         FindingCategory.HARDWARE_CONFORMANCE,
                     )
                 elif len(shapes) != 1:
@@ -3241,6 +3698,12 @@ def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
             if producer.role == operation.role:
                 # Same role: program order is real ordering. It must still run forwards.
                 if order.get(producer.op_id, -1) > index:
+                    buffer = schedule.buffer(name)
+                    if buffer is not None and buffer.mode is BufferMode.STATE:
+                        # Caller-owned state has a pre-launch value. Reading that value
+                        # before a later replacement in the same role is the canonical
+                        # recurrent transition, not a read of an unproduced scratch.
+                        continue
                     out.add(
                         "OP_READ_BEFORE_WRITE",
                         f"operations[{index}].reads",

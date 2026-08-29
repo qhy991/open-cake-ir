@@ -41,6 +41,14 @@ class CompilerRevisionWitnessTests(unittest.TestCase):
         self.assertIn("open-cake-ir-sm100a-v6", identities)
         self.assertTrue(
             any(
+                item.revision_id == "open-cake-ir-sm100a-v38"
+                and item.path
+                == "inventory/QSA_MULTI_MMA_COMPILER_GATE_V38_R25_20260829.json"
+                for item in witnesses
+            )
+        )
+        self.assertTrue(
+            any(
                 item.revision_id == "open-cake-ir-sm100a-v4"
                 and item.path
                 == "contracts/studies/matched-search-infrastructure-v4.json"

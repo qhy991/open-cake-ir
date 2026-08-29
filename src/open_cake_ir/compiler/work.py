@@ -45,6 +45,7 @@ from .ir import (
     ReduceOp,
     ReduceParameters,
     Schedule,
+    StoreParameters,
 )
 
 MULTIPLY_ADD_FLOPS = 2
@@ -254,6 +255,15 @@ def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
         m, n, k = shape
         return MULTIPLY_ADD_FLOPS * m * n * k
 
+    if operation.kind is OperationKind.OUTER:
+        # Each result element is one explicit multiply. Shape legality belongs to the
+        # verifier; work only needs the declared result extent once it is available.
+        return (
+            _elements(schedule, operation.writes[0])
+            if len(operation.writes) == 1
+            else None
+        )
+
     if operation.kind is OperationKind.ELEMENTWISE:
         parameters = operation.parameters
         if not isinstance(parameters, ElementwiseParameters) or len(operation.writes) != 1:
@@ -288,14 +298,23 @@ def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
 def _is_partially_addressed(schedule: Schedule, name: str) -> bool:
     """Whether a declared coordinate makes 'the whole Buffer moves' unsafe to assume.
 
-    Three declarations do. A runtime `buffer` coordinate selects rows the Schedule cannot
-    name, a `valid_extent` says a padded axis has a shorter live prefix, and an `offset`
-    or `extent` narrows an access to a sub-range so a sibling can own the rest. Each one
-    means the traffic charged here is an over-count rather than a measurement of it.
+    Four declarations do. A runtime `buffer` coordinate selects rows the Schedule cannot
+    name, a `valid_extent` says a padded axis has a shorter live prefix, an `offset` or
+    `extent` narrows an access to a sub-range so a sibling can own the rest, and a guarded
+    store makes its active rows runtime data. Each one means the traffic charged here is
+    an over-count rather than a measurement of it.
     """
 
     buffer = schedule.buffer(name)
     if buffer is not None and buffer.valid_extent is not None:
+        return True
+    if any(
+        operation.kind is OperationKind.STORE
+        and name in operation.writes
+        and isinstance(operation.parameters, StoreParameters)
+        and operation.parameters.valid_if is not None
+        for operation in schedule.operations
+    ):
         return True
     for access in schedule.access_maps:
         if access.buffer != name:

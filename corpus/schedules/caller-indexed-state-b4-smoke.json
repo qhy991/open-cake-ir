@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "schedule_id": "caller-indexed-state-b4-smoke-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "cache_indices",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [4],
+      "mode": "input",
+      "unique_index": {"buffer": "state", "dimension": 0, "sentinel": -1}
+    },
+    {"name": "updates", "space": "global", "dtype": "fp32", "shape": [4, 2, 4], "mode": "input"},
+    {"name": "state", "space": "global", "dtype": "fp32", "shape": [8, 2, 4], "mode": "state", "strides": [12, 4, 1]},
+    {"name": "output", "space": "global", "dtype": "fp32", "shape": [4, 2, 4], "mode": "output"},
+    {"name": "slot", "space": "register", "dtype": "int32", "shape": [], "mode": "scratch"},
+    {"name": "state_tile", "space": "register", "dtype": "fp32", "shape": [2, 4], "mode": "scratch"},
+    {"name": "update_tile", "space": "register", "dtype": "fp32", "shape": [2, 4], "mode": "scratch"},
+    {"name": "next_tile", "space": "register", "dtype": "fp32", "shape": [2, 4], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_slot", "kind": "load", "role": "compute", "reads": ["cache_indices"], "writes": ["slot"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_state", "kind": "load", "role": "compute", "reads": ["state", "slot"], "writes": ["state_tile"], "depends_on": ["load_slot"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_update", "kind": "load", "role": "compute", "reads": ["updates"], "writes": ["update_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "add_update", "kind": "elementwise", "role": "compute", "reads": ["state_tile", "update_tile"], "writes": ["next_tile"], "depends_on": ["load_state", "load_update"], "parameters": {"op": "add"}},
+    {"id": "store_state", "kind": "store", "role": "compute", "reads": ["next_tile", "slot"], "writes": ["state"], "depends_on": ["add_update"], "parameters": {"coalesced": false, "valid_if": "slot", "inactive": "no_effect"}},
+    {"id": "store_output", "kind": "store", "role": "compute", "reads": ["next_tile", "slot"], "writes": ["output"], "depends_on": ["add_update"], "parameters": {"coalesced": true, "valid_if": "slot", "inactive": "write_zero"}}
+  ],
+  "outputs": ["output"],
+  "program_map": {"axes": [{"name": "row", "axis": 0, "buffer": "cache_indices", "dimension": 0, "tile": 1}]},
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_slot", "buffer": "cache_indices", "indices": [{"source": "program", "name": "row"}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_state", "buffer": "state", "indices": [{"source": "buffer", "name": "slot"}, {"source": "dimension", "dimension": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_update", "buffer": "updates", "indices": [{"source": "program", "name": "row"}, {"source": "dimension", "dimension": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_state", "buffer": "state", "indices": [{"source": "buffer", "name": "slot"}, {"source": "dimension", "dimension": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_output", "buffer": "output", "indices": [{"source": "program", "name": "row"}, {"source": "dimension", "dimension": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {"backend": "triton", "entry_point": "cake_caller_indexed_state_b4_smoke"}
+}

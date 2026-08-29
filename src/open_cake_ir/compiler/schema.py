@@ -38,6 +38,7 @@ from .ir import (
     ScanDirection,
     ScanOp,
     ReductionScope,
+    StoreInactive,
     Swizzle,
 )
 
@@ -236,6 +237,7 @@ _PARAMETERS = {
             "scope": _enum(AtomicMemoryScope),
         }
     ),
+    OperationKind.OUTER: _object({}),
     OperationKind.ELEMENTWISE: {
         "oneOf": [
             _object(
@@ -265,7 +267,18 @@ _PARAMETERS = {
             ),
         ]
     },
-    OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),
+    OperationKind.STORE: {
+        "oneOf": [
+            _object({"coalesced": {"type": "boolean"}}),
+            _object(
+                {
+                    "coalesced": {"type": "boolean"},
+                    "inactive": _enum(StoreInactive),
+                    "valid_if": _NAME,
+                }
+            ),
+        ]
+    },
 }
 
 
@@ -424,53 +437,78 @@ def schedule_schema() -> dict[str, Any]:
             "buffers": {
                 "type": "array",
                 "minItems": 1,
-                "items": _object(
-                    {
-                        "name": _NAME,
-                        "space": _enum(MemorySpace),
-                        "dtype": _enum(DType),
-                        "shape": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": _POSITIVE,
+                "items": {
+                    **_object(
+                        {
+                            "name": _NAME,
+                            "space": _enum(MemorySpace),
+                            "dtype": _enum(DType),
+                            "shape": {
+                                "type": "array",
+                                "minItems": 0,
+                                "items": _POSITIVE,
+                            },
+                            "mode": _enum(BufferMode),
                         },
-                        "mode": _enum(BufferMode),
-                    },
-                    {
-                        "allocation": _NAME,
-                        "byte_offset": _NONNEGATIVE,
-                        "stages": _POSITIVE,
-                        "swizzle": _enum(Swizzle),
-                        "scale_of": _object(
-                            {
-                                "buffer": _NAME,
-                                "granularity": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "items": _POSITIVE,
-                                },
-                                "axis_order": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "uniqueItems": True,
-                                    "items": _NONNEGATIVE,
-                                },
-                            }
-                        ),
-                        "valid_extent": _object(
-                            {
-                                "dimension": _NONNEGATIVE,
-                                "buffer": _NAME,
-                                "indexed_by": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "uniqueItems": True,
-                                    "items": _NONNEGATIVE,
-                                },
-                            }
-                        ),
-                    },
-                ),
+                        {
+                            "allocation": _NAME,
+                            "byte_offset": _NONNEGATIVE,
+                            "stages": _POSITIVE,
+                            "swizzle": _enum(Swizzle),
+                            "scale_of": _object(
+                                {
+                                    "buffer": _NAME,
+                                    "granularity": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "items": _POSITIVE,
+                                    },
+                                    "axis_order": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "uniqueItems": True,
+                                        "items": _NONNEGATIVE,
+                                    },
+                                }
+                            ),
+                            "valid_extent": _object(
+                                {
+                                    "dimension": _NONNEGATIVE,
+                                    "buffer": _NAME,
+                                    "indexed_by": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "uniqueItems": True,
+                                        "items": _NONNEGATIVE,
+                                    },
+                                }
+                            ),
+                            "strides": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {"type": "integer"},
+                            },
+                            "unique_index": _object(
+                                {
+                                    "buffer": _NAME,
+                                    "dimension": _NONNEGATIVE,
+                                    "sentinel": {"type": "integer"},
+                                }
+                            ),
+                        },
+                    ),
+                    "allOf": [
+                        {
+                            "if": {"properties": {"shape": {"maxItems": 0}}},
+                            "then": {
+                                "properties": {
+                                    "space": {"const": MemorySpace.REGISTER.value},
+                                    "mode": {"const": BufferMode.SCRATCH.value},
+                                }
+                            },
+                        }
+                    ],
+                },
             },
             "pipelines": {
                 "type": "array",

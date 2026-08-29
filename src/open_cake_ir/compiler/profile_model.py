@@ -287,6 +287,26 @@ def _runtime_indexed_buffers(schedule: Schedule) -> tuple[str, ...]:
     )
 
 
+def _strided_global_buffers(schedule: Schedule) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            buffer.name
+            for buffer in schedule.buffers
+            if buffer.space is MemorySpace.GLOBAL and buffer.strides is not None
+        )
+    )
+
+
+def _broadcast_global_buffers(schedule: Schedule) -> tuple[str, ...]:
+    return tuple(
+        name
+        for name in _strided_global_buffers(schedule)
+        if (buffer := schedule.buffer(name)) is not None
+        and buffer.strides is not None
+        and 0 in buffer.strides
+    )
+
+
 def _synchronization_risk(schedule: Schedule, top_k: list[dict[str, object]]) -> tuple[str, ...]:
     reasons: list[str] = []
     if schedule.barriers:
@@ -338,8 +358,13 @@ def _lowering_document(
     schedule: Schedule, lowered_source: str | None
 ) -> Mapping[str, object]:
     top_k = _top_k_features(schedule)
+    strided = _strided_global_buffers(schedule)
+    broadcast = _broadcast_global_buffers(schedule)
+    outer_count = sum(
+        operation.kind is OperationKind.OUTER for operation in schedule.operations
+    )
     source = lowered_source or ""
-    return {
+    document = {
         "generated_source_bytes": (
             len(source.encode("utf-8")) if lowered_source is not None else None
         ),
@@ -359,6 +384,15 @@ def _lowering_document(
         "triton_bitonic_merge_count": source.count("tl.bitonic_merge("),
         "triton_range_count": source.count("tl.range("),
     }
+    # Preserve existing profile identities when a Schedule uses none of the successor
+    # vocabulary; new structural fields appear only when they carry information.
+    if outer_count:
+        document["outer_operations"] = outer_count
+    if strided:
+        document["strided_global_buffers"] = list(strided)
+    if broadcast:
+        document["broadcast_global_buffers"] = list(broadcast)
+    return document
 
 
 def profile_envelope(
@@ -378,6 +412,8 @@ def profile_envelope(
     top_k = _top_k_features(schedule)
     synchronization = _synchronization_risk(schedule, top_k)
     runtime_indexed = _runtime_indexed_buffers(schedule)
+    strided = _strided_global_buffers(schedule)
+    broadcast = frozenset(_broadcast_global_buffers(schedule))
     contended_contract = work.contended_contract if work is not None else None
     matched_arithmetic_peak = (
         target.peak.for_contract(contended_contract)
@@ -430,6 +466,14 @@ def profile_envelope(
         )
     scoreboard_reasons = list(
         f"runtime-indexed global buffer {name}" for name in runtime_indexed
+    )
+    scoreboard_reasons.extend(
+        (
+            f"zero-stride broadcast global buffer {name}"
+            if name in broadcast
+            else f"concrete-strided global buffer {name}"
+        )
+        for name in strided
     )
     if occupancy_ctas is not None and occupancy_ctas <= 2:
         scoreboard_reasons.append(

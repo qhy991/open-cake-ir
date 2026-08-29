@@ -161,6 +161,18 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
             f"buffers[{index}].mode",
             "the CuTe-DSL backend does not implement caller-owned mutable state",
         )
+        add(
+            buffer.strides is None,
+            "CUTE_BUFFER_STRIDES_UNSUPPORTED",
+            f"buffers[{index}].strides",
+            "the CuTe-DSL backend does not implement concrete global strides",
+        )
+        add(
+            buffer.unique_index is None,
+            "CUTE_UNIQUE_INDEX_UNSUPPORTED",
+            f"buffers[{index}].unique_index",
+            "the CuTe-DSL backend does not implement caller-owned unique indices",
+        )
 
     for index, mma in kinds[OperationKind.MMA]:
         instruction = mma.parameters.instruction

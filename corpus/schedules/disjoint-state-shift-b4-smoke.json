@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "schedule_id": "disjoint-state-shift-b4-smoke-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "cache_indices", "space": "global", "dtype": "int32", "shape": [4], "mode": "input", "unique_index": {"buffer": "history", "dimension": 0, "sentinel": -1}},
+    {"name": "current", "space": "global", "dtype": "bf16", "shape": [4, 1, 4], "mode": "input"},
+    {"name": "history", "space": "global", "dtype": "bf16", "shape": [8, 3, 4], "mode": "state"},
+    {"name": "output", "space": "global", "dtype": "bf16", "shape": [4, 1, 4], "mode": "output"},
+    {"name": "slot", "space": "register", "dtype": "int32", "shape": [], "mode": "scratch"},
+    {"name": "old_one", "space": "register", "dtype": "bf16", "shape": [1, 4], "mode": "scratch"},
+    {"name": "old_two", "space": "register", "dtype": "bf16", "shape": [1, 4], "mode": "scratch"},
+    {"name": "current_tile", "space": "register", "dtype": "bf16", "shape": [1, 4], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_slot", "kind": "load", "role": "compute", "reads": ["cache_indices"], "writes": ["slot"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_old_one", "kind": "load", "role": "compute", "reads": ["history", "slot"], "writes": ["old_one"], "depends_on": ["load_slot"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_old_two", "kind": "load", "role": "compute", "reads": ["history", "slot"], "writes": ["old_two"], "depends_on": ["load_slot"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_current", "kind": "load", "role": "compute", "reads": ["current"], "writes": ["current_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "store_zero", "kind": "store", "role": "compute", "reads": ["old_one", "slot"], "writes": ["history"], "depends_on": ["load_old_one", "load_old_two"], "parameters": {"coalesced": true, "valid_if": "slot", "inactive": "no_effect"}},
+    {"id": "store_one", "kind": "store", "role": "compute", "reads": ["old_two", "slot"], "writes": ["history"], "depends_on": ["load_old_one", "load_old_two"], "parameters": {"coalesced": true, "valid_if": "slot", "inactive": "no_effect"}},
+    {"id": "store_two", "kind": "store", "role": "compute", "reads": ["current_tile", "slot"], "writes": ["history"], "depends_on": ["load_current", "load_old_one", "load_old_two"], "parameters": {"coalesced": true, "valid_if": "slot", "inactive": "no_effect"}},
+    {"id": "store_output", "kind": "store", "role": "compute", "reads": ["current_tile", "slot"], "writes": ["output"], "depends_on": ["load_current"], "parameters": {"coalesced": true, "valid_if": "slot", "inactive": "write_zero"}}
+  ],
+  "outputs": ["output"],
+  "program_map": {"axes": [{"name": "row", "axis": 0, "buffer": "cache_indices", "dimension": 0, "tile": 1}]},
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_slot", "buffer": "cache_indices", "indices": [{"source": "program", "name": "row"}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_old_one", "buffer": "history", "indices": [{"source": "buffer", "name": "slot"}, {"source": "dimension", "dimension": 1, "offset": 1, "extent": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_old_two", "buffer": "history", "indices": [{"source": "buffer", "name": "slot"}, {"source": "dimension", "dimension": 1, "offset": 2}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_current", "buffer": "current", "indices": [{"source": "program", "name": "row"}, {"source": "dimension", "dimension": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_zero", "buffer": "history", "indices": [{"source": "buffer", "name": "slot"}, {"source": "dimension", "dimension": 1, "extent": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_one", "buffer": "history", "indices": [{"source": "buffer", "name": "slot"}, {"source": "dimension", "dimension": 1, "offset": 1, "extent": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_two", "buffer": "history", "indices": [{"source": "buffer", "name": "slot"}, {"source": "dimension", "dimension": 1, "offset": 2}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_output", "buffer": "output", "indices": [{"source": "program", "name": "row"}, {"source": "dimension", "dimension": 1}, {"source": "dimension", "dimension": 2}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {"backend": "triton", "entry_point": "cake_disjoint_state_shift_b4_smoke"}
+}

@@ -63,9 +63,18 @@ def _walk_references(
             )
         reference = value.get("compiler_revision")
         if isinstance(reference, Mapping):
-            identity = reference.get("revision_id")
+            # Gate-review inventories written by the canonical release workflow used
+            # ``id`` and ``released_lock_canonical_sha256`` before Study references
+            # standardized on ``revision_id`` and ``canonical_sha256``.  Both forms
+            # identify an already released lock; omitting the earlier one lets a
+            # measured Compiler id be silently reused.
+            identity = reference.get("revision_id", reference.get("id"))
             digest = reference.get(
-                "revision_sha256", reference.get("canonical_sha256")
+                "revision_sha256",
+                reference.get(
+                    "canonical_sha256",
+                    reference.get("released_lock_canonical_sha256"),
+                ),
             )
             # Old Study Contracts pinned the canonical bytes but omitted the id. They
             # remain readable only while those bytes are the current lock; successors

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "schedule_id": "scalar-broadcast-b8-smoke-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "values", "space": "global", "dtype": "fp32", "shape": [8], "mode": "input"},
+    {"name": "scale", "space": "global", "dtype": "fp32", "shape": [1], "mode": "input"},
+    {"name": "output", "space": "global", "dtype": "fp32", "shape": [8], "mode": "output"},
+    {"name": "value_tile", "space": "register", "dtype": "fp32", "shape": [8], "mode": "scratch"},
+    {"name": "scale_value", "space": "register", "dtype": "fp32", "shape": [], "mode": "scratch"},
+    {"name": "scaled", "space": "register", "dtype": "fp32", "shape": [8], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_values", "kind": "load", "role": "compute", "reads": ["values"], "writes": ["value_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_scale", "kind": "load", "role": "compute", "reads": ["scale"], "writes": ["scale_value"], "parameters": {"movement": "global", "reuse": "reused"}},
+    {"id": "apply_scale", "kind": "elementwise", "role": "compute", "reads": ["value_tile", "scale_value"], "writes": ["scaled"], "depends_on": ["load_values", "load_scale"], "parameters": {"op": "mul"}},
+    {"id": "store_output", "kind": "store", "role": "compute", "reads": ["scaled"], "writes": ["output"], "depends_on": ["apply_scale"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["output"],
+  "program_map": {"axes": [{"name": "row", "axis": 0, "buffer": "values", "dimension": 0, "tile": 8}]},
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_values", "buffer": "values", "indices": [{"source": "program_tile", "name": "row"}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_scale", "buffer": "scale", "indices": [{"source": "program", "name": "row"}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_output", "buffer": "output", "indices": [{"source": "program_tile", "name": "row"}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {"backend": "triton", "entry_point": "cake_scalar_broadcast_b8_smoke"}
+}

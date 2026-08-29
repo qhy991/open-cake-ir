@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "schedule_id": "outer-b8-smoke-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "left", "space": "global", "dtype": "bf16", "shape": [8], "mode": "input"},
+    {"name": "right", "space": "global", "dtype": "bf16", "shape": [4], "mode": "input"},
+    {"name": "output", "space": "global", "dtype": "fp32", "shape": [8, 4], "mode": "output"},
+    {"name": "left_tile", "space": "register", "dtype": "bf16", "shape": [8], "mode": "scratch"},
+    {"name": "right_tile", "space": "register", "dtype": "bf16", "shape": [4], "mode": "scratch"},
+    {"name": "product", "space": "register", "dtype": "fp32", "shape": [8, 4], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_left", "kind": "load", "role": "compute", "reads": ["left"], "writes": ["left_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_right", "kind": "load", "role": "compute", "reads": ["right"], "writes": ["right_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "form_product", "kind": "outer", "role": "compute", "reads": ["left_tile", "right_tile"], "writes": ["product"], "depends_on": ["load_left", "load_right"], "parameters": {}},
+    {"id": "store_output", "kind": "store", "role": "compute", "reads": ["product"], "writes": ["output"], "depends_on": ["form_product"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["output"],
+  "program_map": {"axes": [{"name": "row", "axis": 0, "buffer": "left", "dimension": 0, "tile": 8}]},
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_left", "buffer": "left", "indices": [{"source": "program_tile", "name": "row"}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_right", "buffer": "right", "indices": [{"source": "dimension", "dimension": 0}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_output", "buffer": "output", "indices": [{"source": "program_tile", "name": "row"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {"backend": "triton", "entry_point": "cake_outer_b8_smoke"}
+}

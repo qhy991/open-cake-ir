@@ -874,7 +874,12 @@ class Compiler:
                     )
                 )
             shape = buffer.get("shape")
-            if dtype not in _DTYPE_BYTES or not isinstance(shape, list) or not shape:
+            mode = buffer.get("mode")
+            if (
+                dtype not in _DTYPE_BYTES
+                or not isinstance(shape, list)
+                or (not shape and (space != "register" or mode != "scratch"))
+            ):
                 raise CompilerError(f"buffers[{index}] has unsupported dtype or shape")
             dimensions = tuple(
                 _positive_int(value, f"buffers[{index}].shape[{axis}]")

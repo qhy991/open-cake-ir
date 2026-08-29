@@ -18,6 +18,7 @@
   "operation_kinds": [
     "load",
     "mma",
+    "outer",
     "epilogue",
     "reduce_argmin",
     "reduce",

@@ -71,6 +71,13 @@ class BufferMode(str, Enum):
     SCRATCH = "scratch"
 
 
+class StoreInactive(str, Enum):
+    """What a guarded store does when its unique index is the sentinel."""
+
+    NO_EFFECT = "no_effect"
+    WRITE_ZERO = "write_zero"
+
+
 # `tl.dot(a, trans(b))` and tcgen05 alike contract the last axis of both staged operands,
 # so a rank-2 operand carries K at axis 1. Named because two modules reason about it.
 _CONTRACTION_AXIS = 1
@@ -93,6 +100,7 @@ class OperationKind(str, Enum):
 
     LOAD = "load"
     MMA = "mma"
+    OUTER = "outer"
     EPILOGUE = "epilogue"
     REDUCE_ARGMIN = "reduce_argmin"
     REDUCE = "reduce"
@@ -343,6 +351,12 @@ def _nonnegative_int(value: Any, context: str) -> int:
     return value
 
 
+def _integer(value: Any, context: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ScheduleParseError(f"{context} must be an integer")
+    return value
+
+
 def _boolean(value: Any, context: str) -> bool:
     if not isinstance(value, bool):
         raise ScheduleParseError(f"{context} must be a boolean")
@@ -570,6 +584,36 @@ class ValidExtentRelation:
 
 
 @dataclass(frozen=True)
+class UniqueIndexRelation:
+    """A caller-validated unique index into one axis of a global state Buffer.
+
+    The Workload owns validation of the runtime values.  The Schedule names only the
+    state domain and its inactive sentinel so the verifier can preserve that relation
+    through a load and derive indexed-store ownership without a second predicate.
+    """
+
+    buffer: str
+    dimension: int
+    sentinel: int
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "UniqueIndexRelation":
+        obj = _strict_object(
+            value,
+            required={"buffer", "dimension", "sentinel"},
+            context=context,
+        )
+        sentinel = obj["sentinel"]
+        if not isinstance(sentinel, int) or isinstance(sentinel, bool):
+            raise ScheduleParseError(f"{context}.sentinel must be an integer")
+        return cls(
+            _string(obj["buffer"], f"{context}.buffer"),
+            _nonnegative_int(obj["dimension"], f"{context}.dimension"),
+            sentinel,
+        )
+
+
+@dataclass(frozen=True)
 class Buffer:
     name: str
     space: MemorySpace
@@ -582,6 +626,8 @@ class Buffer:
     swizzle: Swizzle | None
     scale_of: ScaleRelation | None
     valid_extent: ValidExtentRelation | None
+    strides: tuple[int, ...] | None
+    unique_index: UniqueIndexRelation | None
 
     @property
     def elements(self) -> int:
@@ -612,23 +658,45 @@ class Buffer:
                 "swizzle",
                 "scale_of",
                 "valid_extent",
+                "strides",
+                "unique_index",
             },
             context=context,
         )
-        shape = _object_list(obj["shape"], f"{context}.shape", allow_empty=False)
+        # Rank-zero exists only for register scratch and is verified as such.  Parsing
+        # it here lets a relation-bearing scalar index remain scalar instead of adding a
+        # fake length-one data axis to every indexed state tile.
+        shape = _object_list(obj["shape"], f"{context}.shape", allow_empty=True)
         allocation = obj.get("allocation")
         swizzle = obj.get("swizzle")
         scale_of = obj.get("scale_of")
         valid_extent = obj.get("valid_extent")
+        space = _enum(MemorySpace, obj["space"], f"{context}.space")
+        mode = _enum(BufferMode, obj["mode"], f"{context}.mode")
+        if not shape and not (
+            space is MemorySpace.REGISTER and mode is BufferMode.SCRATCH
+        ):
+            raise ScheduleParseError(
+                f"{context}.shape may be empty only for register scratch"
+            )
+        strides = obj.get("strides")
+        if strides is not None:
+            strides = tuple(
+                _integer(stride, f"{context}.strides[{index}]")
+                for index, stride in enumerate(
+                    _object_list(strides, f"{context}.strides", allow_empty=False)
+                )
+            )
+        unique_index = obj.get("unique_index")
         return cls(
             _string(obj["name"], f"{context}.name"),
-            _enum(MemorySpace, obj["space"], f"{context}.space"),
+            space,
             _enum(DType, obj["dtype"], f"{context}.dtype"),
             tuple(
                 _positive_int(dimension, f"{context}.shape[{index}]")
                 for index, dimension in enumerate(shape)
             ),
-            _enum(BufferMode, obj["mode"], f"{context}.mode"),
+            mode,
             None if allocation is None else _string(allocation, f"{context}.allocation"),
             _nonnegative_int(obj.get("byte_offset", 0), f"{context}.byte_offset"),
             _positive_int(obj.get("stages", 1), f"{context}.stages"),
@@ -640,6 +708,12 @@ class Buffer:
             if valid_extent is None
             else ValidExtentRelation.from_dict(
                 valid_extent, f"{context}.valid_extent"
+            ),
+            strides,
+            None
+            if unique_index is None
+            else UniqueIndexRelation.from_dict(
+                unique_index, f"{context}.unique_index"
             ),
         )
 
@@ -1249,8 +1323,17 @@ class ElementwiseParameters:
 
 
 @dataclass(frozen=True)
+class OuterParameters:
+    """One rank-one by rank-one product with a rank-two FP32 result."""
+
+    pass
+
+
+@dataclass(frozen=True)
 class StoreParameters:
     coalesced: bool
+    inactive: StoreInactive | None
+    valid_if: str | None
 
 
 @dataclass(frozen=True)
@@ -1271,6 +1354,7 @@ OperationParameters = Union[
     AtomicRmwParameters,
     CastParameters,
     ElementwiseParameters,
+    OuterParameters,
     StoreParameters,
     FenceProxyParameters,
 ]
@@ -1497,6 +1581,10 @@ def _operation_parameters(
             _enum(AtomicMemoryScope, obj["scope"], f"{context}.scope"),
         )
 
+    if kind is OperationKind.OUTER:
+        _strict_object(value, required=set(), context=context)
+        return OuterParameters()
+
     if kind is OperationKind.ELEMENTWISE:
         obj = _strict_object(
             value,
@@ -1533,8 +1621,26 @@ def _operation_parameters(
         )
 
     if kind is OperationKind.STORE:
-        obj = _strict_object(value, required={"coalesced"}, context=context)
-        return StoreParameters(_boolean(obj["coalesced"], f"{context}.coalesced"))
+        obj = _strict_object(
+            value,
+            required={"coalesced"},
+            optional={"inactive", "valid_if"},
+            context=context,
+        )
+        has_guard = "valid_if" in obj
+        if has_guard != ("inactive" in obj):
+            raise ScheduleParseError(
+                f"{context}.inactive and {context}.valid_if must appear together"
+            )
+        return StoreParameters(
+            _boolean(obj["coalesced"], f"{context}.coalesced"),
+            (
+                _enum(StoreInactive, obj["inactive"], f"{context}.inactive")
+                if has_guard
+                else None
+            ),
+            _string(obj["valid_if"], f"{context}.valid_if") if has_guard else None,
+        )
 
     _strict_object(value, required=set(), context=context)
     return FenceProxyParameters()

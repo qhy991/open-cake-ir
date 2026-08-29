@@ -35,6 +35,7 @@ from .ir import (
     ScanDirection,
     ScanOp,
     Schedule,
+    StoreInactive,
     TileLoop,
 )
 from .target import Target
@@ -99,6 +100,7 @@ SCANS: dict[ScanOp, str] = {
 OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
+    OperationKind.OUTER: "_emit_outer",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
     OperationKind.REDUCE: "_emit_reduce",
     OperationKind.SCAN: "_emit_scan",
@@ -112,6 +114,7 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
 INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
+    OperationKind.OUTER: "_emit_outer",
     OperationKind.REDUCE_ARGMIN: "_emit_argmin",
     OperationKind.REDUCE: "_emit_reduce",
     OperationKind.TOP_K: "_emit_top_k",
@@ -119,6 +122,7 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.ONLINE_SOFTMAX: "_emit_online_softmax",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
     OperationKind.CAST: "_emit_cast",
+    OperationKind.STORE: "_emit_store",
 }
 
 # A kind outside this union can never be emitted, wherever it is placed, so the Compiler
@@ -448,6 +452,26 @@ class _TritonEmitter:
                 return self._extent(buffer.name, position)
         return None  # a full-dimension index spans its axis and needs no mask
 
+    def _stride_names(self, buffer: Buffer) -> list[str]:
+        """Concrete element strides, or the one canonical dense derivation.
+
+        A non-dense global Buffer owns its address increments directly.  Dense Buffers
+        omit the declaration, so their extents remain the sole owner of row-major
+        strides and existing emitted source stays byte-identical.
+        """
+
+        if buffer.strides is not None:
+            return [str(stride) for stride in buffer.strides]
+        return [
+            "1"
+            if index == len(buffer.shape) - 1
+            else " * ".join(
+                self._extent(buffer.name, later)
+                for later in range(index + 1, len(buffer.shape))
+            )
+            for index in range(len(buffer.shape))
+        ]
+
     def _address(self, access: AccessMap, pad: str) -> tuple[str, str]:
         """Pointer expression and mask for one access map."""
 
@@ -464,20 +488,7 @@ class _TritonEmitter:
             f"access map for {access.buffer!r} has the wrong rank",
         )
         expressions, vectors = self._components(access, buffer)
-        strides: list[int] = []
-        running = 1
-        for extent in reversed(buffer.shape):
-            strides.insert(0, running)
-            running *= extent
-        stride_names = [
-            "1"
-            if index == len(buffer.shape) - 1
-            else " * ".join(
-                self._extent(buffer.name, later)
-                for later in range(index + 1, len(buffer.shape))
-            )
-            for index in range(len(buffer.shape))
-        ]
+        stride_names = self._stride_names(buffer)
 
         terms = []
         for expression, stride in zip(expressions, stride_names):
@@ -551,21 +562,18 @@ class _TritonEmitter:
                 domain = expression
             else:
                 expression = str(component.name)
-                domain = "_runtime_index"
+                index_buffer = self.schedule.buffer(expression)
+                domain = (
+                    "_runtime_index"
+                    if index_buffer is not None and index_buffer.shape
+                    else None
+                )
             expressions.append(expression)
             component_domains.append(domain)
             if domain is not None and domain not in domains:
                 domains.append(domain)
 
-        stride_names = [
-            "1"
-            if index == len(buffer.shape) - 1
-            else " * ".join(
-                self._extent(buffer.name, later)
-                for later in range(index + 1, len(buffer.shape))
-            )
-            for index in range(len(buffer.shape))
-        ]
+        stride_names = self._stride_names(buffer)
 
         def shaped(expression: str, domain: str | None) -> str:
             if domain is None or len(domains) < 2:
@@ -1049,6 +1057,16 @@ class _TritonEmitter:
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}{operation.writes[0]} = {expression}")
 
+    def _emit_outer(self, operation, pad: str) -> None:
+        """Form one explicit FP32 rank-one update tile."""
+
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(
+            f"{pad}{operation.writes[0]} = "
+            f"{operation.reads[0]}[:, None].to(tl.float32) * "
+            f"{operation.reads[1]}[None, :].to(tl.float32)"
+        )
+
     def _operand(self, name: str, operation) -> str:
         """A read, indexed so it spans the declared axis of the wider operand."""
 
@@ -1064,6 +1082,8 @@ class _TritonEmitter:
             default=(),
         )
         if len(buffer.shape) == len(widest):
+            return name
+        if not buffer.shape:
             return name
         axis = operation.parameters.broadcast_axis
         _require(axis is not None, f"operand {name!r} needs a declared broadcast axis")
@@ -1700,9 +1720,28 @@ class _TritonEmitter:
         _require(access is not None, f"store {operation.op_id!r} has no access map")
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         pointer, mask = self._address(access, pad)
+        value = operation.reads[0]
+        valid_if = operation.parameters.valid_if
+        if valid_if is not None:
+            active = f"({valid_if} >= 0)"
+            if operation.parameters.inactive is StoreInactive.WRITE_ZERO:
+                value = f"tl.where({active}, {value}, 0.0)"
+            elif operation.parameters.inactive is StoreInactive.NO_EFFECT:
+                # A state store's AccessMap contains this same relation-bearing index,
+                # so its indexed-address mask already combines the active predicate
+                # with the destination bound.  Repeating it here would give one fact
+                # two textual owners.
+                _require(
+                    any(
+                        component.source is AccessIndexKind.BUFFER
+                        and component.name == valid_if
+                        for component in access.indices
+                    ),
+                    "a no-effect store must address through its valid index",
+                )
         self.line(f"{pad}tl.store(")
         self.line(f"{pad}    {pointer},")
-        self.line(f"{pad}    {operation.reads[0]},")
+        self.line(f"{pad}    {value},")
         if mask:
             self.line(f"{pad}    mask={mask},")
         self.line(f"{pad})")
@@ -1854,24 +1893,58 @@ class _TritonEmitter:
         anchor = caller_owned[0].name
 
         self.line(f"def {entry}({names}, out=None):")
-        self.line("    for tensor, shape, dtype in (")
-        for buffer in caller_owned:
+        if all(buffer.strides is None for buffer in caller_owned):
+            # Preserve the released source identity when the successor storage
+            # vocabulary is unused.  Existing stateful Schedules pin these bytes.
+            self.line("    for tensor, shape, dtype in (")
+            for buffer in caller_owned:
+                self.line(
+                    f"        ({buffer.name}, {tuple(buffer.shape)}, "
+                    f"{_TORCH_DTYPE[buffer.dtype]}),"
+                )
+            self.line("    ):")
+            self.line("        if tuple(tensor.shape) != shape:")
             self.line(
-                f"        ({buffer.name}, {tuple(buffer.shape)}, {_TORCH_DTYPE[buffer.dtype]}),"
+                '            raise ValueError("an input or state differs from the frozen shape")'
             )
-        self.line("    ):")
-        self.line("        if tuple(tensor.shape) != shape:")
-        self.line(
-            '            raise ValueError("an input or state differs from the frozen shape")'
-        )
-        self.line("        if tensor.dtype != dtype:")
-        self.line(
-            '            raise TypeError("an input or state differs from the frozen dtype")'
-        )
-        self.line("        if not tensor.is_cuda or not tensor.is_contiguous():")
-        self.line(
-            '            raise ValueError("every input and state must be contiguous on CUDA")'
-        )
+            self.line("        if tensor.dtype != dtype:")
+            self.line(
+                '            raise TypeError("an input or state differs from the frozen dtype")'
+            )
+            self.line("        if not tensor.is_cuda or not tensor.is_contiguous():")
+            self.line(
+                '            raise ValueError("every input and state must be contiguous on CUDA")'
+            )
+        else:
+            for buffer in caller_owned:
+                self.line(
+                    f"    if tuple({buffer.name}.shape) != {tuple(buffer.shape)}:"
+                )
+                self.line(
+                    '        raise ValueError("an input or state differs from the frozen shape")'
+                )
+                self.line(
+                    f"    if {buffer.name}.dtype != {_TORCH_DTYPE[buffer.dtype]}:"
+                )
+                self.line(
+                    '        raise TypeError("an input or state differs from the frozen dtype")'
+                )
+                self.line(f"    if not {buffer.name}.is_cuda:")
+                self.line(
+                    '        raise ValueError("every input and state must be on CUDA")'
+                )
+                if buffer.strides is None:
+                    self.line(f"    if not {buffer.name}.is_contiguous():")
+                    self.line(
+                        '        raise ValueError("a dense input or state must be contiguous")'
+                    )
+                else:
+                    self.line(
+                        f"    if tuple({buffer.name}.stride()) != {tuple(buffer.strides)}:"
+                    )
+                    self.line(
+                        '        raise ValueError("an input or state differs from the frozen strides")'
+                    )
         self.line(
             f"    if any(t.device != {anchor}.device for t in ({names},)):"
         )
