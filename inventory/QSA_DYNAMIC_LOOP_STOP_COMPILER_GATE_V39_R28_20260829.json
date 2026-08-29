@@ -19,7 +19,7 @@
   "review": {
     "reviewer": "repository_owner",
     "decision": "approved_under_explicit_continuous_iteration_and_artifact_writing_authorization",
-    "approval_artifact_status": "pending_exact_write"
+    "approval_artifact_status": "written_and_exactly_bound"
   },
   "change_contract": {
     "new_ir_or_schema": false,
@@ -69,5 +69,5 @@
     "goal_70_percent_achieved": false,
     "checkpoint_or_serving_claim": false
   },
-  "next_minimum_action": "write approval binding the exact v39 Gate, release the successor, run the full post-release suite, and append corrected R23/R27 utilization evidence without rewriting history"
+  "next_minimum_action": "release the approved successor, run the full post-release suite, and append corrected R23/R27 utilization evidence without rewriting history"
 }
