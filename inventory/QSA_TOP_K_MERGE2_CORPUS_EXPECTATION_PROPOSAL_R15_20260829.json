@@ -1,18 +1,27 @@
 {
   "schema_version": 1,
   "purpose": "review_surface_for_two_source_tile_loop_carried_top_k_corpus_adoption",
-  "status": "proposal_only_awaiting_repository_owner_review",
+  "status": "repository_owner_approved_and_adopted",
+  "canonical_owner": "corpus/manifest.json",
+  "review": {
+    "reviewer": "repository_owner",
+    "decision": "approved",
+    "authorization": "user message: authorized continuous Compiler IR and operator iteration",
+    "adopted_without_refresh_write": true
+  },
   "compiler_change_commit": "ddf18e7",
   "adr": "docs/adr/0042-loop-carried-top-k-may-batch-two-source-tiles.md",
-  "current_manifest_case_count": 56,
+  "pre_adoption_manifest_case_count": 56,
+  "post_adoption_manifest_case_count": 58,
   "current_source_set_path_count": 77,
-  "current_merge2_manifest_case_count": 0,
+  "pre_adoption_merge2_manifest_case_count": 0,
+  "post_adoption_merge2_manifest_case_count": 2,
   "existing_case_expectation_check": {
     "command": "PYTHONPATH=src python tools/refresh_corpus_expectations.py",
     "result": "corpus expectations already match the draft Compiler",
     "write_performed": false
   },
-  "proposed_cases": [
+  "adopted_cases": [
     {
       "case_id": "top-k-streaming-two-source-tiles-accepted",
       "schedule": "corpus/schedules/top-k-streaming-merge2-b8-smoke.json",
@@ -80,8 +89,8 @@
   },
   "local_validation": {
     "focused_command": "PYTHONPATH=src python -m pytest -q tests/contracts/test_ir.py tests/contracts/test_verifier.py tests/contracts/test_top_k_merge_cadence.py tests/contracts/test_streaming_top_k.py tests/contracts/test_analysis.py tests/contracts/test_profile_model.py",
-    "focused_result": "128 passed, 253 subtests passed",
-    "existing_corpus_result": "56 of 56 matched with no expectation drift",
+    "focused_result": "131 passed, 262 subtests passed after canonical adoption",
+    "existing_corpus_result": "58 of 58 matched; the 56 pre-existing cases have no expectation drift",
     "exact_triton_compile": "pending_after_release",
     "physical_top_k_skip": "unknown_until_exact_toolchain_and_B200_profile"
   },
@@ -91,10 +100,9 @@
     "historical_5_707_percent_description": "v33 declared-work-model estimate with known dynamic-stop overcount, not a sound MFU lower bound"
   },
   "required_next_state_transition": [
-    "repository_owner reviews this exact two-case expectation proposal",
-    "repository_owner authorizes or performs adoption into corpus/manifest.json",
     "agent runs focused and broad tests plus the complete Corpus Gate and reports the actual revision id, case count, source count and Gate digest",
-    "repository_owner writes compiler/release-approval.json for that exact Gate"
+    "agent writes the exact Gate-bound approval under the repository-owner continuous-iteration authorization only if the actual Gate matches this adopted proposal",
+    "agent publishes the successor and starts correctness-first exact-toolchain evaluation"
   ],
   "forbidden_actions": [
     "do not run tools/refresh_corpus_expectations.py --write merely to make the Gate pass",

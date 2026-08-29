@@ -717,6 +717,33 @@
       }
     },
     {
+      "case_id": "top-k-streaming-two-source-tiles-accepted",
+      "schedule": "corpus/schedules/top-k-streaming-merge2-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ae1645f4dfc0b3f3f5ed4fbfc66c95f0b9b73454df03a536fe4132b0749ba370",
+        "lowering_source_sha256": "bc1c009fbcfed421ece21989b438cf85079ca19620af70e83b9572753cb3a253"
+      }
+    },
+    {
+      "case_id": "top-k-streaming-two-source-tiles-observable-drift",
+      "schedule": "corpus/schedules/top-k-streaming-merge2-observable-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TOP_K_MERGE_CADENCE_OUTPUT_READ_IN_LOOP",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "6994e3b86f323bc4e2128a07dec3372d163682e8fbe548b48e5a28e6d9e90666",
+        "lowering_source_sha256": null
+      }
+    },
+    {
       "case_id": "qsa-pool-t32768-accepted",
       "schedule": "corpus/schedules/qsa-pool-t32768.json",
       "expected": {
