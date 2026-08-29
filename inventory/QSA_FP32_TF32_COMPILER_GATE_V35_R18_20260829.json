@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "exact_gate_and_release_approval_basis_for_explicit_fp32_tf32_mma_compiler_successor",
-  "status": "exact_gate_matched_and_repository_owner_authorized_for_approval",
+  "status": "exact_gate_matched_and_repository_owner_authorized_approval_written",
   "compiler_change_commit": "a6b0db0",
   "corpus_adoption_commit": "4b209f4",
   "corpus_adoption_record": "inventory/QSA_FP32_TF32_CORPUS_EXPECTATION_ADOPTION_R18_20260829.json",
@@ -23,8 +23,9 @@
     "reviewer": "repository_owner",
     "decision": "approved_under_explicit_continuous_iteration_and_artifact_writing_authorization",
     "approval_path": "compiler/release-approval.json",
-    "approval_artifact_status": "pending_exact_write",
-    "approval_binds_exact_gate": false
+    "approval_canonical_sha256": "115fc7dc2628c13bbbf948547e814e33ea9eec78f92a74719ff96fca3ce6466a",
+    "approval_artifact_status": "written",
+    "approval_binds_exact_gate": true
   },
   "change_contract": {
     "instruction_contract": "triton.dot.fp32_tf32",
