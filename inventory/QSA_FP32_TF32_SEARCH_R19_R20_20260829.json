@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_t32768_explicit_tf32_search_and_paired_score_topk_profile",
+  "scientific_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "e6eef5fc0a4a936135870ba3ee191e775ec9ed9c",
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v35",
+    "canonical_sha256": "447f801094c19fcd72331a8eced19e99ad5953cf9ab697a34bfe0df5aa2e33f9",
+    "corpus_gate_sha256": "eb22cc72cf5278b2d52a2edde27818490455cc1a51f1ef482a971bcecba52340",
+    "corpus_gate": "60 of 60 matched across 79 bound sources"
+  },
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v39",
+    "canonical_sha256": "d83a9ea37b2b69cd54996a124e7ea53c49e823795a684eceda771bfa21dd3339"
+  },
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "external_evidence_roots": {
+    "static": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v35-r19-tf32-static-20260829",
+    "search": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v35-r19-tf32-search-20260829",
+    "paired_profile": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v35-r20-tf32-score-profile-20260829"
+  },
+  "infrastructure": {
+    "gpu_infra_commit": "a0abba8b9fd98efaea2840d0310803d344ae3d89",
+    "kernelinfra_version": "0.16.0",
+    "broker_version": "0.5.3",
+    "broker_instance_id": "warm-sun-begins-fin-03-pid1704179-start94630672",
+    "daemon_pid": 777914,
+    "daemon_instance_id": "warm-sun-begins-fin-03-pid777914-start108341476",
+    "daemon_socket": "/tmp/kernelinfra-open-cake-qsa-e6eef5f-r19-tf32.sock",
+    "remote_project_root": "/home/qinhaiyan/open-cake-ir-qsa-eval-e6eef5f-r19-tf32",
+    "remote_state_root": "/home/qinhaiyan/open-cake-ir-qsa-e6eef5f-r19-tf32/kernelinfra-state",
+    "remote_source_entry_count": 2104,
+    "authority_file_hashes_matched": true,
+    "initial_streaming_archive": "incomplete staging observation; replaced by checksum-bound complete tar before daemon submission",
+    "managed_service_compatible": false,
+    "direct_staged_fixed_node_compatible": true,
+    "gpu_idle_or_reserved_claim": false,
+    "foreign_and_other_broker_jobs_observed_and_untouched": true
+  },
+  "static_filter": {
+    "result": "two_survivors_submitted_as_one_immutable_batch",
+    "control_candidate_sha256": "23fae96fa204c7c9d9da3dd04c56c9155ac523395304ae03bb1df31677b0aa4e",
+    "tf32_candidate_sha256": "4fe02002144cdd2da4c7e5ea226555c20e21924fb11e605fd62bf152d17d1b63",
+    "only_schedule_change": "score_heads instruction contract triton.dot.fp32_ieee to triton.dot.fp32_tf32",
+    "all_program_nodes_constructed_typed_accepted_and_lowering_eligible": true,
+    "program_abis_match": true,
+    "merge2_structure_match": true,
+    "cost_model": "withheld both because no calibrated ranking coverage exists; neither candidate was statically rejected",
+    "logical_register_pressure_per_thread_each": 284,
+    "merge_updates_each": 278480,
+    "merge_width_each": 1024,
+    "pending_state_bytes_each": 2048
+  },
+  "fresh_ieee_control": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-c085f2d57c2a",
+    "candidate_sha256": "23fae96fa204c7c9d9da3dd04c56c9155ac523395304ae03bb1df31677b0aa4e",
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "correctness_max_abs_diff": 0.01848996803164482,
+    "program_median_ms": 142.712875,
+    "program_cv": 0.0005877914632616703,
+    "matched_direct_black_box_median_ms": 676.390583,
+    "matched_direct_black_box_cv": 0.00037387736539577803,
+    "speedup": 4.739520404168159,
+    "component_medians_ms": {
+      "score_topk": 73.3724136352539,
+      "attention": 69.10124969482422,
+      "expand": 0.054207999259233475,
+      "layernorm": 0.03705599904060364,
+      "pool": 0.0944959968328476
+    },
+    "node_frontier_decision": "first-valid"
+  },
+  "tf32_candidate": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-2e150d1b2ef2",
+    "candidate_sha256": "4fe02002144cdd2da4c7e5ea226555c20e21924fb11e605fd62bf152d17d1b63",
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 0.9999995529651642,
+    "correctness_matched_elements": 134217668,
+    "correctness_total_elements": 134217728,
+    "correctness_max_abs_diff": 0.10483180731534958,
+    "program_median_ms": 219.70136,
+    "program_cv": 0.0004777501211607556,
+    "matched_direct_black_box_median_ms": 677.557291,
+    "matched_direct_black_box_cv": 0.00013929628812042898,
+    "speedup": 3.0839922474763015,
+    "component_medians_ms": {
+      "score_topk": 150.1796875,
+      "attention": 69.19884490966797,
+      "expand": 0.054368000477552414,
+      "layernorm": 0.03999999910593033,
+      "pool": 0.11088000237941742
+    },
+    "relative_program_regression_vs_control": 0.5394641863952359,
+    "relative_score_topk_regression_vs_control": 1.0468140553010485,
+    "node_frontier_decision": "dominated",
+    "disposition": "valid_negative_precision_axis_closed"
+  },
+  "paired_score_topk_profile": {
+    "control": {
+      "run_id": "open-cake-qsa-prefill-t32768-profile-v1-378d7b02b940",
+      "correctness_match_fraction": 1.0,
+      "registers_per_thread": 224.0,
+      "resident_ctas_per_sm": 1.0,
+      "binding_resources": [
+        "shared_memory"
+      ],
+      "active_warps_pct": 6.2,
+      "barrier_stall_pct": 0.72,
+      "long_scoreboard_stall_pct": 1.29,
+      "sm_throughput_pct": 14.9,
+      "dram_throughput_pct": 0.02,
+      "l2_throughput_pct": 1.99
+    },
+    "tf32": {
+      "run_id": "open-cake-qsa-prefill-t32768-profile-v1-46ebbaed8525",
+      "correctness_match_fraction": 0.9999995529651642,
+      "registers_per_thread": 214.0,
+      "resident_ctas_per_sm": 1.0,
+      "binding_resources": [
+        "shared_memory"
+      ],
+      "active_warps_pct": 6.23,
+      "barrier_stall_pct": 0.25,
+      "long_scoreboard_stall_pct": 0.52,
+      "sm_throughput_pct": 23.4,
+      "dram_throughput_pct": 0.01,
+      "l2_throughput_pct": 0.82
+    },
+    "interpretation": "TF32 remains slower despite fewer registers, higher SM percentage and lower retained stalls; profiler percentages and profiler duration do not replace absolute Program timing"
+  },
+  "materiality": {
+    "relative_threshold": 0.05,
+    "fresh_control_program_threshold_ms": 135.57723125,
+    "score_only_threshold_ms": 66.2367698852539,
+    "previously_measured_attention_stage3_program_saving_ms": 3.051716,
+    "score_threshold_with_previously_measured_attention_stage3_ms": 69.2884858852539,
+    "tf32_met": false
+  },
+  "subcuda_analog_boundary": {
+    "accepted_metadata_analog": "day10-bf16-index-score-bmm-reduction removes a materialized FP32 weighted-head reduction, but QSA positive scores are already local and relu-before-sum prevents direct transfer",
+    "negative_metadata_analogs": [
+      "attention CTA grouping can regress 12 to 57 percent",
+      "register caps help only when they change the binding occupancy regime",
+      "small boundary fusions remain below whole-graph materiality"
+    ],
+    "low_level_case_implementation_inspected": false
+  },
+  "authoring_boundary": {
+    "direct_cuda_baseline": "task_owned_black_box_only",
+    "direct_or_generated_low_level_implementation_inspected": false,
+    "access_observation": "one broad symbol search by a subagent exposed only a direct-reference .cu path and the qsa_score_topk declaration line; no function body, mechanism, PTX, SASS or generated low-level source was read",
+    "candidate_classification": "source_runtime_graph_via_high_level_open_cake_schedule"
+  },
+  "utilization_boundary": {
+    "sound_complete_program_mfu_lower_bound": "not_established",
+    "complete_program_bwu": "unknown",
+    "tf32_peak": "not_declared_and_must_not_borrow_ieee_or_bf16_peak",
+    "goal_70_percent_achieved": false,
+    "erratum": "inventory/QSA_ROOFLINE_DYNAMIC_STOP_ERRATUM_20260829.json"
+  },
+  "next_bounded_hypotheses": [
+    {
+      "order": 1,
+      "mechanism": "generic exact half-selection canonical lowering for top_k when k is half the merge width",
+      "existing_ir": true,
+      "static_gate": "must reduce comparison and sort work by at least about one third without increasing merge width, carried state or the current shared-memory constraint",
+      "gpu_gate": "score_topk at most about 69.288 ms before any composition with the already measured attention stage3 control"
+    },
+    {
+      "order": 2,
+      "mechanism": "batch two query rows per score CTA while reusing one normalized-key tile and preserving independent rowwise causal merge2 top-k",
+      "existing_ir": false,
+      "status": "consider only if half-selection is closed; requires full P1-P8 generic rowwise stateful selection review"
+    }
+  ],
+  "cleanup": {
+    "task_owned_daemon_pid": 777914,
+    "isolated_daemon_stopped": false,
+    "isolated_socket_removed": false,
+    "reason": "retained temporarily for the immediately following authorized Compiler/operator loop",
+    "foreign_or_production_jobs_touched": false
+  }
+}
