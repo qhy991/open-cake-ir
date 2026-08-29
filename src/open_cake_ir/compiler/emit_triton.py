@@ -129,6 +129,20 @@ SUPPORTED_OPERATION_KINDS = frozenset(OUTSIDE_LOOP_EMITTERS) | frozenset(
 
 _ATOMIC_RMW_CONTRACT = "triton.atomic_add.i32.relaxed.gpu"
 
+_TRITON_MMA_CONTRACTS = frozenset(
+    {
+        "triton.dot.bf16_fp32",
+        "triton.dot.fp32_ieee",
+        "triton.dot.fp32_tf32",
+        "triton.dot.fp8e4m3_block_scale_fp32",
+    }
+)
+
+_TRITON_DOT_INPUT_PRECISION = {
+    "triton.dot.fp32_ieee": "ieee",
+    "triton.dot.fp32_tf32": "tf32",
+}
+
 
 def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, ...]:
     """Return the constructor's backend-owned lowering requirements.
@@ -193,11 +207,21 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
     )
     for index, operation in enumerate(schedule.operations):
         if operation.kind is OperationKind.MMA:
+            instruction = operation.parameters.instruction
             add(
-                operation.parameters.instruction is not None,
+                instruction is not None,
                 "BACKEND_MMA_INSTRUCTION_REQUIRED",
                 f"operations[{index}].parameters.instruction",
                 "the Triton backend requires every mma to name an instruction contract",
+            )
+            add(
+                instruction is None
+                or instruction.contract not in target.instruction_contracts
+                or instruction.contract in _TRITON_MMA_CONTRACTS,
+                "TRITON_MMA_INSTRUCTION_UNSUPPORTED",
+                f"operations[{index}].parameters.instruction.contract",
+                "the Triton backend does not implement instruction contract "
+                f"{None if instruction is None else instruction.contract!r}",
             )
         if operation.kind is OperationKind.LOAD:
             add(
@@ -1229,7 +1253,12 @@ class _TritonEmitter:
             "the dot takes exactly two staged operands and reads nothing else",
         )
         assign = "+=" if self._accumulating(operation) else "="
-        precision = ', input_precision="ieee"' if contract == "triton.dot.fp32_ieee" else ""
+        input_precision = _TRITON_DOT_INPUT_PRECISION.get(contract)
+        precision = (
+            f', input_precision="{input_precision}"'
+            if input_precision is not None
+            else ""
+        )
         self.line(
             f"{pad}{operation.writes[0]} {assign} tl.dot("
             f"{tiles[0]}, tl.trans({tiles[1]}){precision})"

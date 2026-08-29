@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "schedule_id": "fp32-tf32-mma-b1-smoke-v1",
+  "target": "sm_100a",
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [0, 1, 2, 3]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "a",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [16, 16],
+      "mode": "input"
+    },
+    {
+      "name": "b",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [16, 16],
+      "mode": "input"
+    },
+    {
+      "name": "c",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [16, 16],
+      "mode": "output"
+    },
+    {
+      "name": "a_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [16, 16],
+      "mode": "scratch"
+    },
+    {
+      "name": "b_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [16, 16],
+      "mode": "scratch"
+    },
+    {
+      "name": "accumulator",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [16, 16],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_a",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["a"],
+      "writes": ["a_tile"],
+      "parameters": {"movement": "global", "reuse": "reused"}
+    },
+    {
+      "id": "load_b",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["b"],
+      "writes": ["b_tile"],
+      "parameters": {"movement": "global", "reuse": "reused"}
+    },
+    {
+      "id": "tf32_mma",
+      "kind": "mma",
+      "role": "compute",
+      "reads": ["a_tile", "b_tile"],
+      "writes": ["accumulator"],
+      "depends_on": ["load_a", "load_b"],
+      "parameters": {
+        "accumulator": "fp32",
+        "instruction": {"contract": "triton.dot.fp32_tf32"},
+        "tile_shape": [16, 16, 16]
+      }
+    },
+    {
+      "id": "store_c",
+      "kind": "store",
+      "role": "compute",
+      "reads": ["accumulator"],
+      "writes": ["c"],
+      "depends_on": ["tf32_mma"],
+      "parameters": {"coalesced": true}
+    }
+  ],
+  "outputs": ["c"],
+  "program_map": {
+    "axes": [
+      {
+        "name": "row_block",
+        "axis": 0,
+        "buffer": "a",
+        "dimension": 0,
+        "tile": 16
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_a",
+      "buffer": "a",
+      "indices": [
+        {"source": "program_tile", "name": "row_block"},
+        {"source": "dimension", "dimension": 1}
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_b",
+      "buffer": "b",
+      "indices": [
+        {"source": "dimension", "dimension": 0},
+        {"source": "dimension", "dimension": 1}
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_c",
+      "buffer": "c",
+      "indices": [
+        {"source": "program_tile", "name": "row_block"},
+        {"source": "dimension", "dimension": 1}
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {
+    "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "residency": {
+    "ctas_per_multiprocessor": 4,
+    "registers_per_thread": 64
+  },
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_fp32_tf32_mma_b1_smoke"
+  }
+}

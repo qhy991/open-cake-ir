@@ -94,6 +94,10 @@ SUPPORTED_EPILOGUE_FORMULAS = frozenset(
     {EpilogueFormula.CENTROID_SQ_MINUS_TWO_DOT}
 )
 
+_CUTE_MMA_CONTRACTS = frozenset(
+    {"tcgen05.mma.cta_group::1.kind::f16"}
+)
+
 
 def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, ...]:
     """Return the CuTe emitter's backend-owned constructor requirements."""
@@ -159,11 +163,21 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         )
 
     for index, mma in kinds[OperationKind.MMA]:
+        instruction = mma.parameters.instruction
         add(
-            mma.parameters.instruction is not None,
+            instruction is not None,
             "BACKEND_MMA_INSTRUCTION_REQUIRED",
             f"operations[{index}].parameters.instruction",
             "the CuTe-DSL backend requires the mma to name an instruction atom",
+        )
+        add(
+            instruction is None
+            or instruction.contract not in target.instruction_contracts
+            or instruction.contract in _CUTE_MMA_CONTRACTS,
+            "CUTE_MMA_INSTRUCTION_UNSUPPORTED",
+            f"operations[{index}].parameters.instruction.contract",
+            "the CuTe-DSL backend does not implement instruction contract "
+            f"{None if instruction is None else instruction.contract!r}",
         )
         add(
             mma.parameters.tile_shape is not None,

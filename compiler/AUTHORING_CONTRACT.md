@@ -11,6 +11,12 @@ shapes, operations, instructions, memory spaces or uncalibrated analyses are exp
 An otherwise-lowerable `mma` in a generated backend names the Target instruction contract that determines its
 lowering; omitting it is a lowering-blocking candidate Finding rather than a late emitter failure. Instruction-free
 checked assets remain valid only when their asset-specific preflight proves the declared semantics match the asset.
+FP32 Triton MMA makes input precision explicit: `triton.dot.fp32_ieee` requests IEEE
+input precision, while `triton.dot.fp32_tf32` requests TF32 tensor-core input precision.
+Both keep FP32 operand Buffers and FP32 accumulation/results; the TF32 contract is not a
+Buffer dtype or an implicit cast. A backend must emit the selected precision explicitly
+and may not replace it with a default, fallback, or another precision mode. Numerical
+acceptance belongs to the unchanged external Workload oracle and tolerance.
 Emitter-only program-shape requirements have one owner in that backend's `preflight`.
 Assessment projects them into lowering-blocking Findings before `lower`; a backend must
 not silently reinterpret an unsupported epilogue formula or wait for emission to reject

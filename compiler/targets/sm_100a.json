@@ -46,6 +46,7 @@
     "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
     "triton.dot.bf16_fp32",
     "triton.dot.fp32_ieee",
+    "triton.dot.fp32_tf32",
     "triton.dot.fp8e4m3_block_scale_fp32",
     "triton.atomic_add.i32.relaxed.gpu",
     "libdevice.tanh.f32"
@@ -71,6 +72,11 @@
       "kind": "toolchain_api",
       "source": "https://triton-lang.org/main/python-api/generated/triton.language.atomic_add.html",
       "locator": "atomic_add returns the prior value and admits relaxed semantics with gpu scope"
+    },
+    {
+      "kind": "toolchain_api",
+      "source": "https://triton-lang.org/main/python-api/generated/triton.language.dot.html",
+      "locator": "tl.dot admits input_precision=tf32 for NVIDIA FP32 tensor-core inputs and warns that FP32 inputs may be truncated to TF32 without rounding"
     },
     {
       "kind": "device_observation",

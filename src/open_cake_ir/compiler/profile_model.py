@@ -112,6 +112,8 @@ def _work_document(bound: WorkBound | None) -> Mapping[str, object] | None:
         "flops_estimate_kind": "exact" if bound.flops_exact else "lower_bound",
         "mma_flops": bound.mma_flops,
         "mma_fraction": bound.mma_fraction,
+        "arithmetic_contracts": list(bound.arithmetic_contracts),
+        "contended_contract": bound.contended_contract,
         "compulsory_read_bytes": bound.compulsory_read_bytes,
         "compulsory_written_bytes": bound.compulsory_written_bytes,
         "compulsory_bytes_estimate_kind": (
@@ -332,6 +334,29 @@ def profile_envelope(
     top_k = _top_k_features(schedule)
     synchronization = _synchronization_risk(schedule, top_k)
     runtime_indexed = _runtime_indexed_buffers(schedule)
+    contended_contract = work.contended_contract if work is not None else None
+    matched_arithmetic_peak = (
+        target.peak.for_contract(contended_contract)
+        if target.peak is not None and contended_contract is not None
+        else None
+    )
+    throughput_missing = []
+    if matched_arithmetic_peak is None:
+        throughput_missing.append(
+            (
+                f"matching arithmetic peak for instruction contract "
+                f"{contended_contract!r}"
+                if contended_contract is not None
+                else "matching arithmetic peak"
+            )
+        )
+    throughput_missing.append("measured or calibrated duration")
+    throughput_reasons = []
+    if contended_contract is not None:
+        throughput_reasons.append(f"instruction contract={contended_contract}")
+    throughput_reasons.append(
+        f"counted FLOPs={work.flops}" if work is not None else "work domain unavailable"
+    )
     occupancy_ctas = residency.ctas_per_multiprocessor if residency else None
     facts = target.occupancy
     active_warps_upper = None
@@ -450,10 +475,8 @@ def profile_envelope(
             None,
             "%",
             "declared work without a measured duration/rate",
-            reasons=(
-                f"counted FLOPs={work.flops}" if work is not None else "work domain unavailable",
-            ),
-            missing=("matching arithmetic peak", "measured or calibrated duration"),
+            reasons=tuple(throughput_reasons),
+            missing=tuple(throughput_missing),
         ),
         MetricEstimate(
             "dram__throughput.avg.pct_of_peak_sustained_elapsed",

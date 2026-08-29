@@ -60,6 +60,10 @@ class ProfileModelTest(unittest.TestCase):
         self.assertEqual(top_k["whole_grid_source_tile_update_count"], 1_064_768)
         self.assertEqual(top_k["whole_grid_merge_update_count"], 1_064_768)
         self.assertEqual(top_k["whole_grid_tail_flush_merge_count"], 0)
+        self.assertEqual(
+            profile["work"]["arithmetic_contracts"], ["triton.dot.fp32_ieee"]
+        )
+        self.assertEqual(profile["work"]["contended_contract"], "triton.dot.fp32_ieee")
         self.assertEqual(profile["residency"]["logical_register_pressure_per_thread"], 72)
         self.assertEqual(profile["residency"]["ctas_per_sm_upper_bound"], 8)
         registers = _metric(profile, "launch__registers_per_thread")
@@ -77,6 +81,70 @@ class ProfileModelTest(unittest.TestCase):
         sm = _metric(profile, "sm__throughput.avg.pct_of_peak_sustained_elapsed")
         self.assertEqual((sm["estimate_kind"], sm["value"]), ("unknown", None))
         self.assertIn("B200 NCU calibration", barrier["missing"])
+
+    def test_tf32_contract_does_not_borrow_ieee_or_bf16_peak_coverage(self) -> None:
+        tf32 = "triton.dot.fp32_tf32"
+        schedule_document = json.loads(
+            (ROOT / "corpus/schedules/qsa-score-topk-t32768.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        next(
+            item for item in schedule_document["operations"] if item["kind"] == "mma"
+        )["parameters"]["instruction"]["contract"] = tf32
+
+        target_document = json.loads(
+            (ROOT / "compiler/targets/sm_100a.json").read_text(encoding="utf-8")
+        )
+        self.assertIn(tf32, target_document["instruction_contracts"])
+
+        def rate(value: float) -> dict[str, object]:
+            return {
+                "flops_per_second": value,
+                "source": "microbenchmark",
+                "observed_at": "2026-08-29T00:00:00Z",
+            }
+
+        target_document["peak"] = {
+            "arithmetic": {
+                "triton.dot.fp32_ieee": rate(6.5e13),
+                "triton.dot.bf16_fp32": rate(1.5e15),
+            }
+        }
+        target = Target.from_dict(target_document)
+        assert target.peak is not None
+        self.assertIsNone(target.peak.for_contract(tf32))
+
+        profile = profile_envelope(
+            Schedule.from_dict(schedule_document), target
+        ).as_dict()
+        self.assertEqual(profile["work"]["arithmetic_contracts"], [tf32])
+        self.assertEqual(profile["work"]["contended_contract"], tf32)
+        throughput = _metric(
+            profile, "sm__throughput.avg.pct_of_peak_sustained_elapsed"
+        )
+        self.assertEqual(throughput["estimate_kind"], "unknown")
+        self.assertIsNone(throughput["value"])
+        self.assertEqual(throughput["reasons"][0], f"instruction contract={tf32}")
+        self.assertTrue(throughput["reasons"][1].startswith("counted FLOPs="))
+        self.assertEqual(
+            throughput["missing"],
+            [
+                f"matching arithmetic peak for instruction contract '{tf32}'",
+                "measured or calibrated duration",
+            ],
+        )
+
+        target_document["peak"]["arithmetic"][tf32] = rate(4.0e14)
+        covered = profile_envelope(
+            Schedule.from_dict(schedule_document), Target.from_dict(target_document)
+        ).as_dict()
+        self.assertEqual(
+            _metric(
+                covered, "sm__throughput.avg.pct_of_peak_sustained_elapsed"
+            )["missing"],
+            ["measured or calibrated duration"],
+        )
 
     def test_merge2_reports_pending_state_exact_cadence_and_unchanged_qsa_width(self) -> None:
         document = json.loads(

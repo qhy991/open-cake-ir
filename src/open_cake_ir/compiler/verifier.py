@@ -926,6 +926,7 @@ _CONTRACT_DTYPES = {
     "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32": ({DType.BF16}, DType.FP32),
     "triton.dot.bf16_fp32": ({DType.BF16}, DType.FP32),
     "triton.dot.fp32_ieee": ({DType.FP32}, DType.FP32),
+    "triton.dot.fp32_tf32": ({DType.FP32}, DType.FP32),
     "triton.dot.fp8e4m3_block_scale_fp32": ({DType.FP8_E4M3}, DType.FP32),
 }
 
