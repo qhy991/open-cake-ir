@@ -650,7 +650,11 @@ def parse_codex_turn_events(
     if not isinstance(usage, Mapping):
         raise ValueError("provider usage is missing")
     required_usage = {"input_tokens", "output_tokens"}
-    optional_usage = {"cached_input_tokens", "reasoning_output_tokens"}
+    optional_usage = {
+        "cached_input_tokens",
+        "cache_write_input_tokens",
+        "reasoning_output_tokens",
+    }
     if not required_usage <= set(usage) or not set(usage) <= required_usage | optional_usage:
         raise ValueError("provider usage fields differ")
     if any(
@@ -660,9 +664,14 @@ def parse_codex_turn_events(
         raise ValueError("provider usage differs")
     input_tokens = cast(int, usage["input_tokens"])
     output_tokens = cast(int, usage["output_tokens"])
+    cached_input_tokens = cast(int, usage.get("cached_input_tokens", 0))
+    cache_write_input_tokens = cast(
+        int, usage.get("cache_write_input_tokens", 0)
+    )
     if (
         input_tokens + output_tokens <= 0
-        or cast(int, usage.get("cached_input_tokens", 0)) > input_tokens
+        or cached_input_tokens > input_tokens
+        or cache_write_input_tokens > input_tokens
         or cast(int, usage.get("reasoning_output_tokens", 0)) > output_tokens
     ):
         raise ValueError("provider usage differs")

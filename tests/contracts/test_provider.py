@@ -196,6 +196,69 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(duplicate.terminal_message_count, 2)
         self.assertEqual(duplicate.normalization, "duplicate_exact_bracketed")
 
+    def test_codex_0149_cache_write_usage_is_an_input_token_detail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            events = [
+                json.loads(line)
+                for line in self._events(candidate, duplicate=False).splitlines()
+            ]
+            events[-1]["usage"] = {
+                "input_tokens": 131565,
+                "cached_input_tokens": 106240,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 2709,
+                "reasoning_output_tokens": 1284,
+            }
+
+            parsed = parse_codex_turn_events(
+                b"".join(
+                    json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                    for event in events
+                ),
+                expected_terminal_message='{"candidate_written":true}',
+            )
+
+        self.assertEqual(parsed.provider_tokens, 134274)
+
+    def test_provider_usage_rejects_unknown_and_excessive_cache_write(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            events = [
+                json.loads(line)
+                for line in self._events(candidate, duplicate=False).splitlines()
+            ]
+            events[-1]["usage"] = {
+                "input_tokens": 100,
+                "cached_input_tokens": 60,
+                "cache_write_input_tokens": 101,
+                "output_tokens": 20,
+                "reasoning_output_tokens": 10,
+            }
+
+            with self.assertRaisesRegex(ValueError, "provider usage differs"):
+                parse_codex_turn_events(
+                    b"".join(
+                        json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                        for event in events
+                    ),
+                    expected_terminal_message='{"candidate_written":true}',
+                )
+
+            events[-1]["usage"] = {
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "future_usage_tokens": 1,
+            }
+            with self.assertRaisesRegex(ValueError, "provider usage fields differ"):
+                parse_codex_turn_events(
+                    b"".join(
+                        json.dumps(event, separators=(",", ":")).encode() + b"\n"
+                        for event in events
+                    ),
+                    expected_terminal_message='{"candidate_written":true}',
+                )
+
     def test_bracketed_terminal_whitespace_normalizes_by_json_meaning(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "candidate.json"
