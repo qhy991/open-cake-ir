@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from tools.run_aka_portable_parents_codex import (  # noqa: E402
     build_portable_plan,
     materialize_portable_completion,
+    select_review_entries,
 )
 
 
@@ -237,6 +238,16 @@ class AkaPortableParentTests(unittest.TestCase):
                 f"{self.revision}:datasets/curated/cuda_kernel_dataset_v1/"
                 "categories/data_movement_and_layout/copy/analysis.jsonl:1"
             ),
+        )
+
+        selected = select_review_entries(
+            entries,
+            limit=2,
+            start_after=entries[0].portable_record["case_id"],
+        )
+        self.assertEqual(
+            [entry.queue_case_id for entry in selected],
+            ["case-000002", "case-000003"],
         )
 
 

@@ -522,6 +522,27 @@ def materialize_portable_completion(
     return completion_path
 
 
+def select_review_entries(
+    entries: Sequence[PortableEntry], *, limit: int, start_after: str | None
+) -> list[PortableEntry]:
+    review_ready = [entry for entry in entries if entry.review_ready]
+    if start_after is not None:
+        positions = [
+            index
+            for index, entry in enumerate(review_ready)
+            if entry.portable_record["case_id"] == start_after
+        ]
+        if len(positions) != 1:
+            raise PortableParentError(
+                f"start-after portable case is absent or ambiguous: {start_after}"
+            )
+        review_ready = review_ready[positions[0] + 1 :]
+    selected = review_ready[:limit]
+    if not selected:
+        raise PortableParentError("portable selection contains no review-ready cases")
+    return selected
+
+
 def run_portable_queue(
     *,
     source_dataset_root: Path,
@@ -532,6 +553,7 @@ def run_portable_queue(
     limit: int,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     codex_bin: Path | None = None,
+    start_after: str | None = None,
 ) -> dict[str, object]:
     if limit <= 0 or timeout_seconds <= 0:
         raise PortableParentError("limit and timeout must be positive")
@@ -562,7 +584,9 @@ def run_portable_queue(
         portable_dataset_root=portable_dataset_root,
         source_revision=source_revision,
     )
-    selected = [entry for entry in entries if entry.review_ready][:limit]
+    selected = select_review_entries(
+        entries, limit=limit, start_after=start_after
+    )
     completion_root.mkdir(parents=True, exist_ok=False)
     (completion_root / "cases").mkdir()
     (completion_root / "runs").mkdir()
@@ -576,6 +600,7 @@ def run_portable_queue(
                 "reasoning_effort": REASONING_EFFORT,
                 "codex": _codex_identity(command_path),
                 "execution": "sequential_stop_on_first_failure_no_retry",
+                "start_after": start_after,
                 "portable_qualification": "projection_not_node_custody",
                 "gpu": "not_used",
                 "implementation": _git_closure_identity(
@@ -632,6 +657,7 @@ def run_portable_queue(
         "schema": "open-cake.aka-portable-parent-batch.v1",
         "source_revision": source_revision,
         "requested_limit": limit,
+        "start_after": start_after,
         "deterministically_blocked": [
             {
                 "queue_case_id": entry.queue_case_id,
@@ -657,6 +683,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--review-root", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=1)
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--start-after")
     return parser
 
 
@@ -671,6 +698,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             review_root=arguments.review_root,
             limit=arguments.limit,
             timeout_seconds=arguments.timeout_seconds,
+            start_after=arguments.start_after,
         )
     except (OSError, PortableParentError, RunnerError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

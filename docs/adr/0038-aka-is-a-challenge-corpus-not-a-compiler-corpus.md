@@ -254,6 +254,11 @@ operator. They do not import the portable set into the Compiler Corpus, establis
 portable stage projection as node authority, test generated Cake code on GPU, or evaluate
 the unimplemented optimization handoff.
 
+After a successful one-case canary, a fresh create-only batch may continue without
+repeating it by passing that canary's exact portable case id to `--start-after`. The value
+selects only within the commit-bound review-ready order; an absent, blocked or repeated id
+is refused before creating either output root.
+
 ## Initial IR assessment
 
 The current vocabulary is plausible but not broad enough to call complete. The useful
