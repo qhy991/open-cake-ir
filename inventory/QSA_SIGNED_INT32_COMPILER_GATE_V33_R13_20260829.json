@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "repository_owner_review_surface_for_signed_int32_resident_top_k_compiler_release",
-  "status": "awaiting_repository_owner_release_approval",
+  "status": "repository_owner_release_approved",
   "branch": "codex/qsa-locality-r13",
   "compiler_change_commit": "108a3c4b128a6338a056576d56e3d265ec122996",
   "expectation_adoption_commit": "78d34a4",
@@ -65,7 +65,9 @@
     "owner": "repository_owner",
     "artifact": "compiler/release-approval.json",
     "must_bind_gate_sha256": "c1a3d15c43027266b0c0b1e59b7c6e04e009812a914739b632643b087c6ae179",
-    "agent_must_not_write": true
+    "decision": "approved",
+    "authorization": "user message: please write it, I authorize",
+    "artifact_written_under_explicit_owner_authorization": true
   },
   "next_bounded_action_after_approval": "rerun the same release cycle, verify the v33 lock, rerun the complete local suite, prepare a successor Executor without changing the frozen workload or evaluator boundary, and only then submit the two static QSA candidates through a fresh isolated GPU Infra daemon"
 }
