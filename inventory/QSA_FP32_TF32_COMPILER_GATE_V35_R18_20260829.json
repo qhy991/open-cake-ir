@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "purpose": "exact_gate_and_release_approval_basis_for_explicit_fp32_tf32_mma_compiler_successor",
+  "status": "exact_gate_matched_and_repository_owner_authorized_for_approval",
+  "compiler_change_commit": "a6b0db0",
+  "corpus_adoption_commit": "4b209f4",
+  "corpus_adoption_record": "inventory/QSA_FP32_TF32_CORPUS_EXPECTATION_ADOPTION_R18_20260829.json",
+  "compiler_revision": {
+    "id": "open-cake-ir-sm100a-v35-draft",
+    "proposal_canonical_sha256": "0c8496a5011250ab70fc0d94abe19feef00e672c8b65e48d5c177775b3438083",
+    "target_canonical_sha256": "e568ff75f6a070b58191daa96e19bd6549ea36b2e39571f3b955131be273eb3a",
+    "source_set_canonical_sha256": "56f6fda8b86d614a40feb4996d036b5c3f384fd2ef5b98c8878454693c360417"
+  },
+  "gate": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "eb22cc72cf5278b2d52a2edde27818490455cc1a51f1ef482a971bcecba52340",
+    "decision": "awaiting_human_review",
+    "case_count": 60,
+    "matched_case_count": 60,
+    "bound_source_count": 79
+  },
+  "review": {
+    "reviewer": "repository_owner",
+    "decision": "approved_under_explicit_continuous_iteration_and_artifact_writing_authorization",
+    "approval_path": "compiler/release-approval.json",
+    "approval_artifact_status": "pending_exact_write",
+    "approval_binds_exact_gate": false
+  },
+  "change_contract": {
+    "instruction_contract": "triton.dot.fp32_tf32",
+    "operand_storage": "fp32",
+    "input_precision": "tf32",
+    "accumulation_and_result": "fp32",
+    "explicit_lowering": "tl.dot(..., input_precision=\"tf32\")",
+    "new_dtype": false,
+    "implicit_cast": false,
+    "qsa_specific_branch": false,
+    "layout_algebra": false
+  },
+  "gate_evidence": {
+    "new_positive_case": "matched accepted and lowering eligible with RESIDENCY_BOUND only",
+    "new_bf16_drift_case": "matched rejected and not lowering eligible with MMA_OPERAND_DTYPE_DIFFERS plus RESIDENCY_BOUND",
+    "pre_existing_cases": "58 of 58 field-by-field identical in observed acceptance, lowering eligibility, Finding sequence, Schedule hash and lowering-source hash",
+    "focused_tests": "108 passed, 60 subtests passed",
+    "backend_legality_audit": "initial cross-backend eligibility blocker fixed by exact CuTe and Triton MMA contract sets",
+    "expectation_refresh_write_performed": false
+  },
+  "evidence_boundary": {
+    "exact_triton_compile": "pending",
+    "b200_correctness": "pending",
+    "complete_program_timing": "pending",
+    "tf32_peak": "absent",
+    "mfu": "unknown",
+    "bwu": "unknown",
+    "workload_or_acceptance_change": false,
+    "checkpoint_or_serving_claim": false
+  },
+  "next_minimum_action": "validate the exact approval, publish and verify v35, then compile the unchanged-workload merge2 TF32 QSA Candidate and run external-oracle correctness before any timing"
+}
