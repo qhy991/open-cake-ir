@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "purpose": "exact_gate_and_release_approval_basis_for_generic_exact_half_selection_compiler_successor",
+  "status": "exact_gate_matched_and_repository_owner_authorized_for_approval",
+  "compiler_change_commit": "250daeb",
+  "corpus_proposal_commit": "5f4499b",
+  "corpus_adoption_commit": "7709750",
+  "corpus_proposal": "inventory/QSA_HALF_SELECTION_CORPUS_EXPECTATION_PROPOSAL_R21_20260829.json",
+  "compiler_revision": {
+    "id": "open-cake-ir-sm100a-v36-draft",
+    "proposal_canonical_sha256": "d798515904f840e8ffc9ff201da8978929e91aa23c049d7756bc13f55570ab6c",
+    "target_canonical_sha256": "ed4905badd016336243b70fe014e43214f49219366046d48701fee1b335b534c",
+    "source_set_canonical_sha256": "b3c0f9928f65c264dcd3d4ede8c27d9f548a15fcb3131593387c98cc1741b0b3"
+  },
+  "gate": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "e80439635a59c59eaa0eb474a1522a4b441f2c60752e683aa943863d3a19e272",
+    "decision": "awaiting_human_review",
+    "case_count": 62,
+    "matched_case_count": 62,
+    "bound_source_count": 81
+  },
+  "review": {
+    "reviewer": "repository_owner",
+    "decision": "approved_under_explicit_continuous_iteration_and_artifact_writing_authorization",
+    "approval_path": "compiler/release-approval.json",
+    "approval_artifact_status": "pending_exact_write",
+    "approval_binds_exact_gate": false
+  },
+  "change_contract": {
+    "ir_syntax_changed": false,
+    "new_primitive": false,
+    "selection_condition": "merge_width equals two k and Triton-v3.7.1 frontend-model comparison-lane reduction is at least one third",
+    "selected_algorithm": "sort source half ascending, concatenate descending carried half, bitonic merge descending, retain first k",
+    "fallback": "all other geometries retain tl.topk",
+    "qsa_specific_branch": false,
+    "layout_algebra": false
+  },
+  "gate_evidence": {
+    "new_generic_merge1_case": "matched accepted and lowering eligible with RESIDENCY_BOUND only",
+    "new_generic_merge2_odd_partial_case": "matched accepted and lowering eligible with RESIDENCY_BOUND only",
+    "qsa_existing_case": "schedule, findings and eligibility unchanged; lowering identity matches the separately adopted half-selection source",
+    "pre_existing_other_cases": "59 of 59 retained expectations",
+    "focused_tests": "58 passed, 85 subtests passed",
+    "expectation_refresh_write_performed": false
+  },
+  "structural_model": {
+    "owner": "src/open_cake_ir/compiler/analysis.py",
+    "comparison_model": "triton_3_7_1_standard_py",
+    "estimate_kind": "toolchain_frontend_model",
+    "qsa_baseline_comparison_lane_work": 51712,
+    "qsa_selected_comparison_lane_work": 33280,
+    "qsa_reduction_fraction": 0.3564356435643564,
+    "declared_shared_memory_delta_bytes": 0,
+    "compiled_shared_memory_delta_bytes": null
+  },
+  "evidence_boundary": {
+    "executor_v39_exact_compile": "pending after release",
+    "b200_correctness": "pending after release",
+    "complete_program_timing": "pending after release",
+    "comparison_model_is_latency": false,
+    "mfu": "unknown",
+    "bwu": "unknown",
+    "workload_or_acceptance_change": false,
+    "checkpoint_or_serving_claim": false
+  },
+  "next_minimum_action": "write the exact Gate-bound approval, validate and publish v36, then use Executor v39 formal compile-first to check API and compiled resources before correctness or timing"
+}
