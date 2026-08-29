@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "purpose": "exact_gate_review_and_repository_owner_authorized_release_surface_for_two_tile_top_k",
+  "status": "actual_gate_matches_continuous_authorization_pending_approval_artifact",
+  "branch": "codex/qsa-locality-r13",
+  "compiler_change_commit": "ddf18e7",
+  "expectation_adoption_commit": "1d5c16f",
+  "adr": "docs/adr/0042-loop-carried-top-k-may-batch-two-source-tiles.md",
+  "repository_owner_authorization": "user message: authorized continuous Compiler IR and operator iteration",
+  "gate": {
+    "path": "compiler/corpus-gate-report.json",
+    "compiler_revision_id": "open-cake-ir-sm100a-v34-draft",
+    "canonical_sha256": "e3d8bdd95a9e4cfba04393f5af9abd6e15520230b9911fd35328c5a07e50043e",
+    "decision": "awaiting_human_review",
+    "case_count": 58,
+    "matched_case_count": 58,
+    "source_count": 77
+  },
+  "proposal_match": {
+    "pre_existing_cases": 56,
+    "pre_existing_expectation_drift": false,
+    "adopted_cases": [
+      {
+        "case_id": "top-k-streaming-two-source-tiles-accepted",
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ae1645f4dfc0b3f3f5ed4fbfc66c95f0b9b73454df03a536fe4132b0749ba370",
+        "lowering_source_sha256": "bc1c009fbcfed421ece21989b438cf85079ca19620af70e83b9572753cb3a253",
+        "matched": true
+      },
+      {
+        "case_id": "top-k-streaming-two-source-tiles-observable-drift",
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TOP_K_MERGE_CADENCE_OUTPUT_READ_IN_LOOP",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "6994e3b86f323bc4e2128a07dec3372d163682e8fbe548b48e5a28e6d9e90666",
+        "lowering_source_sha256": null,
+        "matched": true
+      }
+    ]
+  },
+  "release_cycle": {
+    "command": "bash tools/release_compiler_cycle.sh",
+    "first_exit_code": 3,
+    "result": "prepared v34 Gate and refused the stale v33 approval",
+    "prior_release_archived": "compiler/releases/v33",
+    "prior_release_lock_replaced": false,
+    "prior_approval_modified": false
+  },
+  "validation": {
+    "full_corpus_gate": "58 of 58 matched across 77 bound sources",
+    "focused_and_boundary_tests": "134 passed, 262 subtests passed",
+    "prior_release_archive_identity": "verified",
+    "exact_triton_3_7_1_compile": "pending_after_release",
+    "b200_correctness_and_timing": "pending_after_release"
+  },
+  "approval_basis": "Repository-owner review and continuous-iteration authorization for the v34 two-source-tile loop-carried top_k Compiler Gate. The exact Gate e3d8bdd95a9e4cfba04393f5af9abd6e15520230b9911fd35328c5a07e50043e matches 58 of 58 Corpus cases across 77 bound Compiler sources. The two separately reviewed Corpus additions cover a generic three-trip FP32 merge2 positive with an odd-tail flush and a deliberate negative where another operation observes delayed top-k outputs inside the loop; all 56 pre-existing cases match their prior expectations. The canonical top_k gains only source_tiles_per_merge=2 for FP32 across-loop state, while omission remains the sole one-tile spelling. Parser, schema and verifier reject other factors, resident use, INT32 carried state, observable in-loop results and unsupported Triton loop controls. Analysis exposes packed pending-key bytes, unchanged merge width, logical-pressure contribution and exact-or-unknown structural update counts without changing the FLOP/roofline or ranking authorities. The SM100a lowering retains global positions, descending FP32 order, lowest-index ties, zero/odd/even/partial tails and the existing sentinel contract. One hundred thirty-four focused and boundary tests with 262 subtests passed, and the complete Corpus Gate matched. Exact Triton 3.7.1 compilation must still prove that uniform control flow is preserved before any performance claim. This approval authorizes only the Compiler Revision; it does not authorize a workload/evaluator boundary change, Candidate promotion, checkpoint claim or serving claim.",
+  "authorized_next_action": "write compiler/release-approval.json binding this exact Gate, rerun the canonical release cycle, verify v34, then perform correctness-first exact-toolchain and fixed-B200 evaluation"
+}
