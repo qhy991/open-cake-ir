@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "kind": "open_cake_ir_mla_kda_artifact_campaign_admission",
+  "recorded_at": "2026-08-29",
+  "claim_scope": "artifact_optimization_only",
+  "scientific_comparison_authorized": false,
+  "cross_workload_geomean": "forbidden",
+  "source": {
+    "immutable_parent": "47bb138873a8898fd2cf9697e703b0f5379f5b32",
+    "branch": "codex/mla-kda-ultra-b200",
+    "isolated_local_worktree": "/Users/haiyan-infiniai/Agent4Kernel/.worktrees/open-cake-ir-mla-kda-ultra-b200",
+    "protected_worktrees_modified": false,
+    "remote_base_checkout": "/home/qinhaiyan/open-cake-ir-mla-kda-ultra-20260829-source",
+    "remote_base_commit": "47bb138873a8898fd2cf9697e703b0f5379f5b32",
+    "remote_experiment_worktree": "/home/qinhaiyan/open-cake-ir-mla-kda-ultra-20260829-worktree"
+  },
+  "provider_treatment": {
+    "executable": "/usr/bin/codex",
+    "executable_sha256": "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477",
+    "provider_revision": "codex-cli-0.149.1-sha134063e133f0",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "ultra",
+    "service_tier": "default",
+    "sandbox": "workspace-write",
+    "output_schema": "contracts/providers/codex-turn-output-schema-v2.json",
+    "feature_policy": "provider_defaults_optimization",
+    "submission_contract": "candidate_set_envelope_v1",
+    "maximum_candidates_per_turn": 3,
+    "qualification": {
+      "status": "qualified_transport_only",
+      "receipt": "contracts/providers/codex-cli-0.149.1-candidate-set-ultra-tool-rich-v1.json",
+      "receipt_sha256": "790fdf2232f3340e1aa93eb35fbc5c954e41ebf4a75fd41430036eefd6c39bea",
+      "anchor": "evidence/qualifications/codex-cli-0.149.1-candidate-set-ultra-tool-rich-v1-anchor.json",
+      "external_evidence_root": "/home/qinhaiyan/open-cake-ir-mla-kda-ultra-runs/provider-qualification/evidence-v2",
+      "run_id": "mla-kda-ultra-b200-provider-qualification-20260829-v2",
+      "terminal_seal_sha256": "4bfdc112b38ae7208d20933bf4a352b912f9ffbb3de61c8e2f18fdadae1d75ba",
+      "reuse_rule": "MLA and KDA may share this receipt only if their complete provider documents are byte-equivalent"
+    },
+    "retained_negative_qualification": {
+      "status": "provider_protocol_fault",
+      "reason": "Codex 0.149.1 added cache_write_input_tokens before the provider normalizer admitted that understood detail",
+      "external_evidence_root": "/home/qinhaiyan/open-cake-ir-mla-kda-ultra-runs/provider-qualification/evidence-v1",
+      "run_id": "mla-kda-ultra-b200-provider-qualification-20260829-v1",
+      "terminal_seal_sha256": "fe6fc1a33afa57226707ea45f26edd1defb0c527dfedb1a5c76d17ca322c4cae",
+      "receipt_issued": false
+    }
+  },
+  "released_authorities": {
+    "compiler": {
+      "revision_id": "open-cake-ir-sm100a-v38",
+      "state": "released",
+      "corpus_gate": "64/64",
+      "source_count": 83,
+      "calibration_coverage": []
+    },
+    "parent_executor": {
+      "executor_id": "open-cake-ir-b200-v39",
+      "state": "released",
+      "source_count": 43,
+      "status_for_new_contracts": "historical_closure_not_reused"
+    },
+    "successor_executor": {
+      "executor_id": "open-cake-ir-b200-v40",
+      "state": "released",
+      "source_count": 43,
+      "canonical_sha256": "a4cbc3302e85b19a49c0fbb72bc5c865f21e25ed7df79579cb828fa420771157",
+      "descriptor_raw_sha256": "6e999944805b947c06039149ad8fb037ca6d8fb0893236399f1e23c74a4a0d79",
+      "scope": "Codex 0.149.1 usage normalization and MLA/KDA Workload loading only; no generic multi-cell evaluator or Compiler capability is implied"
+    }
+  },
+  "subcuda": {
+    "repository": "/Users/haiyan-infiniai/SubCUDA",
+    "revision": "5b6b45bbc896ad6862ad61c418a3fcc1ed9865e5",
+    "role": "mechanism_evidence_only_not_performance_transfer",
+    "mla": {
+      "accepted": {
+        "case_id": "day10-sparse-mla-runtime-layout",
+        "classification": "source/runtime graph",
+        "replay": "passed"
+      },
+      "rejected_or_null": {
+        "case_id": "omoe-qwen35-tp2-r02-r04-batch-attention-rejects",
+        "classification": "source/runtime graph",
+        "replay": "passed"
+      },
+      "migration_or_attribution": {
+        "case_id": "day3-sglang-amdahl-path-attribution",
+        "classification": "source/runtime graph attribution",
+        "replay": "passed"
+      }
+    },
+    "kda": {
+      "accepted": {
+        "case_id": "omoe-qwen35-tp2-r33-gdn-conv-decode",
+        "classification": "source/runtime graph",
+        "replay": "blocked_without_external_tp2_root"
+      },
+      "rejected_or_null": {
+        "case_id": "omoe-qwen35-tp2-d001-state-retime",
+        "classification": "direct PTX",
+        "replay": "passed"
+      },
+      "migration_or_attribution": {
+        "case_id": "omoe-qwen35-tp2-r95-gdn-cuda-counterfactual",
+        "classification": "PTX/SASS-directed CUDA attribution",
+        "replay": "passed"
+      }
+    }
+  },
+  "campaign_admission": {
+    "mla": {
+      "planned_label": "deepseek-v3.2-dsa-sparse-mla-ultra-b200-20260829",
+      "external_root": "/home/qinhaiyan/open-cake-ir-mla-kda-ultra-runs/mla",
+      "workload": {
+        "status": "frozen_source_contract",
+        "path": "contracts/workloads/dsa-attention-sparse-mla-decode-v1.json"
+      },
+      "study": {
+        "status": "not_issued",
+        "reason": "current matched Lab cannot represent one 30-cell static-specialist candidate package or its per-cell black-box-baseline receipts"
+      },
+      "campaign_lock": {
+        "status": "not_issued",
+        "reason": "Lab preflight has no valid workload-specific Study authority to consume"
+      },
+      "lab_preflight": {
+        "status": "blocked_before_command",
+        "reason": "constructing a Flash-KMeans-shaped or one-cell Study would narrow the workload and falsely authorize an unevaluable Campaign"
+      },
+      "provider_started": false,
+      "gpu_work_submitted": false,
+      "frontier": "unavailable",
+      "blockers": [
+        "Lab and Evaluation are Flash-KMeans-specific and bind one Schedule, one CUBIN, one case, one kernel call, and one scalar latency",
+        "the exact 30-cell workload needs an Evaluation-owned no-copy paged-cache flatten view and exact-shape specialist package",
+        "one static Schedule cannot own all (num_tokens,num_pages) cells",
+        "the task scalar ABI and per-cell matched black-box baseline samples have no current common Evaluation receipt",
+        "current IR has no direct quotient/remainder view from token-level indices to the rank-three paged-cache ABI"
+      ],
+      "next_minimal_action": "add one workload-generic multi-cell candidate-package and receipt vertical slice in Lab/Evaluation, release an Executor successor, then reassess whether an Evaluation-owned cache view closes the remaining IR gap"
+    },
+    "kda": {
+      "planned_label": "kimi-k3-kda-fused-decode-ultra-b200-20260829",
+      "external_root": "/home/qinhaiyan/open-cake-ir-mla-kda-ultra-runs/kda",
+      "workload": {
+        "status": "frozen_source_contract",
+        "path": "contracts/workloads/kimi-k3-kda-fused-decode-v1.json"
+      },
+      "study": {
+        "status": "not_issued",
+        "reason": "current matched Lab cannot represent the nine-cell stateful ABI, paired baseline receipts, or 256-step trajectory"
+      },
+      "campaign_lock": {
+        "status": "not_issued",
+        "reason": "Lab preflight has no valid workload-specific Study authority to consume"
+      },
+      "lab_preflight": {
+        "status": "blocked_before_command",
+        "reason": "a Study that omits state effects, real strides, padded rows, matrix cells, or trajectory would change the acceptance boundary"
+      },
+      "provider_started": false,
+      "gpu_work_submitted": false,
+      "frontier": "unavailable",
+      "blockers": [
+        "v38 cannot declare the real outer SSM slot stride",
+        "v38 cannot prove caller-owned unique cache_indices for ordinary indexed state stores",
+        "v38 has no one predicate owning negative-row zero output and no state effects",
+        "v38 cannot express the required disjoint convolution history shift and append state writes",
+        "one static Schedule cannot own all nine H/M cells",
+        "current Evaluation cannot retain the paired per-cell baseline/candidate cohorts or execute the required 256-step state trajectory"
+      ],
+      "protected_external_work": {
+        "path": "/Users/haiyan-infiniai/Agent4Kernel/.worktrees/open-cake-ir-kda-fused-decode-r1",
+        "status": "active_dirty_worktree_not_consumed_or_modified"
+      },
+      "next_minimal_action": "finish the separate caller-indexed-state Compiler proposal and Lab/Evaluation trajectory vertical slice, then stop for repository-owner expectation adoption and exact release approval"
+    }
+  },
+  "infrastructure_snapshot": {
+    "observed_at": "2026-08-29T06:32:58Z",
+    "host": "verda-b200x4",
+    "root_disk_available_bytes": 48369684480,
+    "root_disk_used_percent": 97,
+    "broker": {
+      "socket": "/tmp/agent-gpu-broker.sock",
+      "version": "0.5.3",
+      "instance_id": "warm-sun-begins-fin-03-pid1704179-start94630672",
+      "probe_error": null,
+      "running": 0,
+      "queued": 0,
+      "interpretation": "snapshot only; empty queue and idle rows do not prove allocability"
+    },
+    "managed_service_gate": "blocked_below_v0.6_and_gpu_run_has_no_receipt_out",
+    "ordinary_direct_broker_path": "separate_path_not_yet_authorized_without_a_valid_CampaignLock",
+    "gpu_custody": "dynamic; foreign DSA processes were observed and no task GPU was allocated"
+  }
+}
