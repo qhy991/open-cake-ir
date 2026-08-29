@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "purpose": "exact_gate_and_release_approval_basis_for_dynamic_loop_stop_whole_grid_work",
+  "status": "exact_gate_matched_and_repository_owner_authorized_for_approval",
+  "compiler_change_commit": "68e2b70",
+  "compiler_revision": {
+    "id": "open-cake-ir-sm100a-v39-draft",
+    "proposal_canonical_sha256": "a5b1a81dc019e73ac2aef3fc252a52aa43ce2524c1b8601e8dbb8f15e2cb4132",
+    "source_set_canonical_sha256": "f908b2d6b00dbaf32ae3f224d7dd9864807de666b3f3daf0eaf33b8376541ec0"
+  },
+  "gate": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "3ebe6191591743286c9bf467ced0ce95f2afaac87f96586d9be0d5e9ba595014",
+    "case_count": 64,
+    "matched_case_count": 64,
+    "bound_source_count": 83,
+    "case_rows_byte_equivalent_to_v38": true
+  },
+  "review": {
+    "reviewer": "repository_owner",
+    "decision": "approved_under_explicit_continuous_iteration_and_artifact_writing_authorization",
+    "approval_artifact_status": "pending_exact_write"
+  },
+  "change_contract": {
+    "new_ir_or_schema": false,
+    "work_and_top_k_trip_domain_owner": "src/open_cake_ir/compiler/work.py",
+    "dynamic_stop_order": "add_then_floor_div_then_clamp_then_tile_ceil",
+    "one_dynamic_plus_static_chain": "exact",
+    "multiple_dynamic_stops": "unknown_without_static_max_fallback",
+    "stopped_global_buffer_exactness": "whole_program_padded_tile_union",
+    "microbenchmark_rate_role": "comparative_ratio_only_not_roofline_or_refutation",
+    "profile_repetition_owner": "operation_repetitions",
+    "workload_program_evaluator_target_executor_changed": false
+  },
+  "gate_evidence": {
+    "focused_tests_passed": 84,
+    "draft_corpus": "64_of_64_matched",
+    "expectation_refresh_write_performed": false,
+    "corpus_expectations": "already_match_draft_compiler",
+    "frozen_program_id": "qsa-prefill-t32768-cake-port-v2",
+    "frozen_program_canonical_sha256": "fad3c076191d5eefec201eef7f60dc4d3975b94758e5275c511ba450ce6c6669",
+    "frozen_program_nodes": 5,
+    "frozen_lowering_identities_changed": false
+  },
+  "corrected_qsa_score_work": {
+    "tile128": {
+      "whole_grid_loop_executions": 1064768,
+      "mma_flops": 279122542592,
+      "counted_flops": 281303187456
+    },
+    "tile256": {
+      "whole_grid_loop_executions": 540576,
+      "mma_flops": 283417509888,
+      "counted_flops": 285631709184
+    },
+    "estimate_kind": "lower_bound",
+    "uncounted_arithmetic": [
+      "cast_query"
+    ]
+  },
+  "evidence_boundary": {
+    "compiler_analysis_correction": true,
+    "gpu_run_performed": false,
+    "complete_program_latency_changed": false,
+    "current_target_peak": null,
+    "official_complete_program_mfu": "unknown",
+    "official_complete_program_bwu": "unknown",
+    "official_complete_program_roofline_efficiency": "unknown",
+    "goal_70_percent_achieved": false,
+    "checkpoint_or_serving_claim": false
+  },
+  "next_minimum_action": "write approval binding the exact v39 Gate, release the successor, run the full post-release suite, and append corrected R23/R27 utilization evidence without rewriting history"
+}
