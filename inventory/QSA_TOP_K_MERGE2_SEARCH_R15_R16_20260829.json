@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_t32768_two_tile_top_k_search_confirmation_profile_and_composition",
+  "scientific_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "9d41b18b8b24ea5b4118a114aa82101baa11d944",
+  "compiler_revision": "open-cake-ir-sm100a-v34",
+  "executor_revision": "open-cake-ir-b200-v39",
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "external_evidence_roots": {
+    "candidate": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-r15-topk-merge2-20260829",
+    "search": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v34-r15-topk-merge2-search-20260829",
+    "profile": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v34-r15-topk-merge2-profile-20260829",
+    "composition": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-r16-merge2-attention-stage3-20260829"
+  },
+  "search": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-b3342e3fb19f",
+    "candidate_sha256": "23fae96fa204c7c9d9da3dd04c56c9155ac523395304ae03bb1df31677b0aa4e",
+    "program_median_ms": 142.726419,
+    "program_cv": 0.0006806723750818123,
+    "matched_direct_black_box_median_ms": 676.436722,
+    "matched_direct_black_box_cv": 0.0002786009884356934,
+    "speedup": 4.739393916973423,
+    "correctness_match_fraction": 1.0,
+    "relative_improvement_vs_fresh_merge1_control": 0.07518952254477952,
+    "component_medians_ms": {
+      "score_topk": 73.39305877685547,
+      "attention": 69.10131072998047,
+      "expand": 0.054207999259233475
+    }
+  },
+  "fresh_confirmation": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-ed7adc02db5c",
+    "program_median_ms": 142.756776,
+    "program_cv": 0.0006170577350301683,
+    "matched_direct_black_box_median_ms": 676.865508,
+    "matched_direct_black_box_cv": 0.00011568223903063137,
+    "speedup": 4.741389704682039,
+    "correctness_match_fraction": 1.0,
+    "search_over_confirmation_ratio": 0.9997873516000388,
+    "score_topk_ms": 73.42960357666016,
+    "attention_ms": 69.08386993408203
+  },
+  "causal_attribution": {
+    "merge_updates_before": 540576,
+    "merge_updates_after": 278480,
+    "merge_width_before": 1024,
+    "merge_width_after": 1024,
+    "fresh_control_score_topk_ms": 84.99673461914062,
+    "merge2_score_topk_ms": 73.39305877685547,
+    "score_topk_improvement": 0.1365190779890513,
+    "attention_changed_materially": false
+  },
+  "profile": {
+    "run_id": "open-cake-qsa-prefill-t32768-profile-v1-fbe383a78d4f",
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "registers_per_thread": 224.0,
+    "resident_ctas_per_sm": 1.0,
+    "binding_resources": [
+      "shared_memory"
+    ],
+    "active_warps_pct": 6.23,
+    "barrier_stall_pct": 0.74,
+    "long_scoreboard_stall_pct": 1.29,
+    "sm_throughput_pct": 14.93,
+    "dram_throughput_pct": 0.02,
+    "l2_throughput_pct": 2.14
+  },
+  "composition": {
+    "candidate": "merge2 plus attention num_stages3",
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-7bae3c32175e",
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "program_median_ms": 139.66088,
+    "program_cv": 0.021234551499778088,
+    "matched_direct_black_box_median_ms": 676.818872,
+    "speedup": 4.8461592967193114,
+    "relative_improvement_vs_merge2_control": 0.021383648574369703,
+    "score_topk_ms": 73.4315185546875,
+    "attention_ms": 65.978271484375,
+    "disposition": "valid_positive_below_5_percent_materiality_not_promoted"
+  },
+  "factor4_and_tile128_decision": {
+    "factor4": "closed_without_implementation",
+    "tile128_diagnostic": "static_filtered_without_gpu_submission",
+    "reason": "tile128 factor4 has the same merge count and width as the current frontier but about 1.97x source-loop trips; tile256 factor4 doubles merge width and has a count-only ceiling below 5 percent"
+  },
+  "frontier": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-b3342e3fb19f",
+    "program_median_ms": 142.726419,
+    "fresh_confirmed": true,
+    "node_frontier_decision": "improves-primary"
+  },
+  "utilization_boundary": {
+    "sound_complete_program_mfu_lower_bound": "not_established",
+    "complete_program_bwu": "unknown",
+    "goal_70_percent_achieved": false,
+    "erratum": "inventory/QSA_ROOFLINE_DYNAMIC_STOP_ERRATUM_20260829.json"
+  },
+  "next_compiler_hypothesis": {
+    "contract": "generic explicit FP32-storage TF32-input-precision FP32-accumulate MMA",
+    "status": "P1_P8_contract_under_review",
+    "program_5_percent_threshold_ms": 135.6189372,
+    "score_topk_threshold_ms": 66.2917648
+  },
+  "cleanup": {
+    "isolated_daemon_pid": 2510369,
+    "isolated_daemon_stopped": true,
+    "isolated_socket_removed": true,
+    "remote_project_and_state_evidence_preserved": true,
+    "foreign_or_production_jobs_touched": false
+  }
+}
