@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "schedule_id": "triton-fp32-two-k64-mma-loop-b1-smoke-v1",
+  "target": "sm_100a",
+  "roles": [
+    {"name": "compute", "warps": [0, 1, 2, 3]}
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "lhs", "space": "global", "dtype": "fp32", "shape": [1, 16, 128], "mode": "input"},
+    {"name": "rhs", "space": "global", "dtype": "fp32", "shape": [1, 32, 128], "mode": "input"},
+    {"name": "output", "space": "global", "dtype": "fp32", "shape": [1, 16], "mode": "output"},
+    {"name": "lhs_k0", "space": "register", "dtype": "fp32", "shape": [16, 64], "mode": "scratch"},
+    {"name": "rhs_k0", "space": "register", "dtype": "fp32", "shape": [16, 64], "mode": "scratch"},
+    {"name": "lhs_k1", "space": "register", "dtype": "fp32", "shape": [16, 64], "mode": "scratch"},
+    {"name": "rhs_k1", "space": "register", "dtype": "fp32", "shape": [16, 64], "mode": "scratch"},
+    {"name": "partial_k0", "space": "register", "dtype": "fp32", "shape": [16, 16], "mode": "scratch"},
+    {"name": "partial_k1", "space": "register", "dtype": "fp32", "shape": [16, 16], "mode": "scratch"},
+    {"name": "accumulator", "space": "register", "dtype": "fp32", "shape": [16, 16], "mode": "scratch"},
+    {"name": "row_sum", "space": "register", "dtype": "fp32", "shape": [16], "mode": "scratch"}
+  ],
+  "operations": [
+    {
+      "id": "load_lhs_k0",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["lhs"],
+      "writes": ["lhs_k0"],
+      "parameters": {"movement": "global", "reuse": "reused"}
+    },
+    {
+      "id": "load_rhs_k0",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["rhs"],
+      "writes": ["rhs_k0"],
+      "parameters": {"movement": "global", "reuse": "streamed"}
+    },
+    {
+      "id": "load_lhs_k1",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["lhs"],
+      "writes": ["lhs_k1"],
+      "parameters": {"movement": "global", "reuse": "reused"}
+    },
+    {
+      "id": "load_rhs_k1",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["rhs"],
+      "writes": ["rhs_k1"],
+      "parameters": {"movement": "global", "reuse": "streamed"}
+    },
+    {
+      "id": "mma_k0",
+      "kind": "mma",
+      "role": "compute",
+      "reads": ["lhs_k0", "rhs_k0"],
+      "writes": ["partial_k0"],
+      "depends_on": ["load_lhs_k0", "load_rhs_k0"],
+      "parameters": {
+        "accumulator": "fp32",
+        "instruction": {"contract": "triton.dot.fp32_ieee"},
+        "tile_shape": [16, 16, 64]
+      }
+    },
+    {
+      "id": "mma_k1",
+      "kind": "mma",
+      "role": "compute",
+      "reads": ["lhs_k1", "rhs_k1"],
+      "writes": ["partial_k1"],
+      "depends_on": ["load_lhs_k1", "load_rhs_k1"],
+      "parameters": {
+        "accumulator": "fp32",
+        "instruction": {"contract": "triton.dot.fp32_ieee"},
+        "tile_shape": [16, 16, 64]
+      }
+    },
+    {
+      "id": "add_partials",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": ["partial_k0", "partial_k1"],
+      "writes": ["accumulator"],
+      "depends_on": ["mma_k0", "mma_k1"],
+      "parameters": {"op": "add"}
+    },
+    {
+      "id": "reduce_output",
+      "kind": "reduce",
+      "role": "compute",
+      "reads": ["accumulator"],
+      "writes": ["row_sum"],
+      "depends_on": ["add_partials"],
+      "parameters": {"op": "sum", "axis": 1, "scope": "cta"}
+    },
+    {
+      "id": "store_output",
+      "kind": "store",
+      "role": "compute",
+      "reads": ["row_sum"],
+      "writes": ["output"],
+      "depends_on": ["reduce_output"],
+      "parameters": {"coalesced": true}
+    }
+  ],
+  "outputs": ["output"],
+  "program_map": {
+    "axes": [
+      {"name": "batch", "axis": 0, "buffer": "lhs", "dimension": 0, "tile": 1},
+      {"name": "row_block", "axis": 1, "buffer": "lhs", "dimension": 1, "tile": 16}
+    ]
+  },
+  "tile_loops": [
+    {
+      "name": "column_loop",
+      "iterator": "column_start",
+      "buffer": "rhs",
+      "dimension": 1,
+      "tile": 16,
+      "body": [
+        "load_lhs_k0",
+        "load_rhs_k0",
+        "load_lhs_k1",
+        "load_rhs_k1",
+        "mma_k0",
+        "mma_k1",
+        "add_partials",
+        "reduce_output"
+      ],
+      "range_options": {
+        "num_stages": 1,
+        "warp_specialize": false,
+        "flatten": false,
+        "disallow_acc_multi_buffer": false,
+        "disable_licm": false,
+        "loop_unroll_factor": 1
+      }
+    }
+  ],
+  "access_maps": [
+    {
+      "operation": "load_lhs_k0",
+      "buffer": "lhs",
+      "indices": [
+        {"source": "program", "name": "batch"},
+        {"source": "program_tile", "name": "row_block"},
+        {"source": "dimension", "dimension": 2, "extent": 64}
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_rhs_k0",
+      "buffer": "rhs",
+      "indices": [
+        {"source": "program", "name": "batch"},
+        {"source": "loop_tile", "name": "column_start"},
+        {"source": "dimension", "dimension": 2, "extent": 64}
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_lhs_k1",
+      "buffer": "lhs",
+      "indices": [
+        {"source": "program", "name": "batch"},
+        {"source": "program_tile", "name": "row_block"},
+        {"source": "dimension", "dimension": 2, "offset": 64}
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_rhs_k1",
+      "buffer": "rhs",
+      "indices": [
+        {"source": "program", "name": "batch"},
+        {"source": "loop_tile", "name": "column_start"},
+        {"source": "dimension", "dimension": 2, "offset": 64}
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_output",
+      "buffer": "output",
+      "indices": [
+        {"source": "program", "name": "batch"},
+        {"source": "program_tile", "name": "row_block"}
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {
+    "workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_triton_fp32_two_k64_mma_loop_b1_smoke"
+  }
+}

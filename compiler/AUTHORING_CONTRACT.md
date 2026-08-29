@@ -11,6 +11,11 @@ shapes, operations, instructions, memory spaces or uncalibrated analyses are exp
 An otherwise-lowerable `mma` in a generated backend names the Target instruction contract that determines its
 lowering; omitting it is a lowering-blocking candidate Finding rather than a late emitter failure. Instruction-free
 checked assets remain valid only when their asset-specific preflight proves the declared semantics match the asset.
+The Triton backend admits multiple existing `mma` DAG nodes. Each operation independently
+owns its instruction, operands, unique write and accumulation derivation; combining
+partial contractions requires an explicit typed consumer such as FP32 `elementwise add`.
+There is no multi-MMA mode, count parameter, implicit shared accumulator, or split-K
+operation. A later MMA is checked and refused at its own path just like the first.
 FP32 Triton MMA makes input precision explicit: `triton.dot.fp32_ieee` requests IEEE
 input precision, while `triton.dot.fp32_tf32` requests TF32 tensor-core input precision.
 Both keep FP32 operand Buffers and FP32 accumulation/results; the TF32 contract is not a

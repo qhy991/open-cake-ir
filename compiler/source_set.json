@@ -65,6 +65,8 @@
     "corpus/schedules/top-k-streaming-merge2-observable-drift.json",
     "corpus/schedules/tinygemm2-stage4-split-k-reduction-drift.json",
     "corpus/schedules/tinygemm2-stage4-split-k.json",
+    "corpus/schedules/triton-bf16-two-k64-mma-loop-b1-smoke-second-contract-drift.json",
+    "corpus/schedules/triton-fp32-two-k64-mma-loop-b1-smoke.json",
     "src/open_cake_ir/compiler/__init__.py",
     "src/open_cake_ir/compiler/analysis.py",
     "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",

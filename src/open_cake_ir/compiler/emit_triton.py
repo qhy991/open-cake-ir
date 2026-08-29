@@ -186,19 +186,13 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
 
     counts = {
         kind: sum(operation.kind is kind for operation in schedule.operations)
-        for kind in (OperationKind.STORE, OperationKind.MMA, OperationKind.REDUCE_ARGMIN)
+        for kind in (OperationKind.STORE, OperationKind.REDUCE_ARGMIN)
     }
     add(
         counts[OperationKind.STORE] >= 1,
         "TRITON_STORE_COUNT",
         "operations",
         "the Triton backend requires at least one store operation",
-    )
-    add(
-        counts[OperationKind.MMA] <= 1,
-        "TRITON_MMA_COUNT",
-        "operations",
-        "the Triton backend supports at most one mma operation",
     )
     add(
         counts[OperationKind.REDUCE_ARGMIN] <= 1,
@@ -276,15 +270,15 @@ class _TritonEmitter:
         self.role = schedule.roles[0]
 
         # A kernel must write something, so a store is required of every Schedule -- but
-        # how many is the host wrapper's business, not this constructor's, and holding one
-        # here only recorded a limit nothing read. An mma and a reduction are not required:
-        # requiring them described the operator this backend was written for rather than
-        # anything Triton needs, and a Schedule that reduces without contracting was
-        # refused for missing a contraction it never claimed.
-        self.mma = self._at_most_one(OperationKind.MMA, "mma")
+        # how many is the host wrapper's business, not this constructor's. MMA operations
+        # are independent DAG nodes; each validates its own Target/backend contract and
+        # the declared order decides when its write becomes available. A reduction is not
+        # required either: requiring one described the first operator this backend served.
         self.reduce = self._at_most_one(OperationKind.REDUCE_ARGMIN, "reduce_argmin")
-        if self.mma is not None:
-            instruction = self.mma.parameters.instruction
+        for operation in self.schedule.operations:
+            if operation.kind is not OperationKind.MMA:
+                continue
+            instruction = operation.parameters.instruction
             assert instruction is not None
             _require(
                 instruction.contract in target.instruction_contracts,
