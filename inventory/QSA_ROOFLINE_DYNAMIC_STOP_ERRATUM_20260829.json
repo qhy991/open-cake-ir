@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "purpose": "correct_the_evidence_boundary_of_qsa_declared_work_roofline_reporting",
+  "status": "erratum_analysis_correction_not_yet_authorized",
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "compiler_revision_observed": "open-cake-ir-sm100a-v33",
+  "affected_historical_records": [
+    "inventory/QSA_UTILIZATION_SEARCH_R10_20260829.json",
+    "docs/adr/0040-qsa-utilization-and-component-attribution.md"
+  ],
+  "observed_divergence": {
+    "work_model_owner": "src/open_cake_ir/compiler/work.py",
+    "cause": "_loop_trips derives the full buffer extent divided by tile and ignores TileLoop.stop",
+    "canonical_qsa_score_tile": 128,
+    "reported_source_tile_executions": 2097152,
+    "actual_causal_source_tile_executions": 1064768,
+    "reported_over_actual_ratio": 1.9695858628358478,
+    "reported_counted_score_flops": 554050781184,
+    "dynamic_stop_counted_score_ops_under_current_formulas": 281303187456,
+    "reported_mma_flops": 549755813888,
+    "dynamic_stop_mma_ops_under_current_formulas": 279122542592
+  },
+  "evidence_boundary_correction": {
+    "historical_roofline_floor_ms": 8.804050707628347,
+    "historical_efficiency": 0.05707017629480294,
+    "permitted_description": "v33 declared-work-model estimate with known dynamic-stop overcount",
+    "forbidden_description": "exact or conservative complete-Program MFU lower bound",
+    "complete_program_mfu_lower_bound": "not_established",
+    "complete_program_bwu": "unknown",
+    "goal_70_percent_achieved": false
+  },
+  "separation_from_top_k_merge_successor": {
+    "merge_update_counts_may_be_reported": true,
+    "flop_or_roofline_definition_changed": false,
+    "reason": "changing the FLOP domain would change the utilization evidence boundary and must not be hidden inside a scheduling optimization"
+  },
+  "next_required_authority": "separate review and authorization before changing dynamic-stop FLOP accounting or recomputing the Program roofline/MFU record",
+  "append_only_policy": "do not rewrite R10; retain this erratum alongside the original record"
+}
