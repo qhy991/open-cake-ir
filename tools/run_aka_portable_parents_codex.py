@@ -187,6 +187,7 @@ def build_portable_plan(
     source_dataset_root: Path,
     portable_dataset_root: Path,
     source_revision: str,
+    expected_count: int | None = None,
 ) -> tuple[dict[str, object], list[PortableEntry]]:
     if COMMIT.fullmatch(source_revision) is None:
         raise PortableParentError("source revision must be one exact lowercase commit")
@@ -212,9 +213,12 @@ def build_portable_plan(
         repository, source_revision, portable_relative / "records.jsonl"
     )
     portable_records = _records(payload)
-    if len(portable_records) != 50:
+    if not portable_records:
+        raise PortableParentError("portable dataset contains no records")
+    if expected_count is not None and len(portable_records) != expected_count:
         raise PortableParentError(
-            f"portable review requires exactly 50 records, observed {len(portable_records)}"
+            f"portable review expected {expected_count} records, observed "
+            f"{len(portable_records)}"
         )
 
     entries: list[PortableEntry] = []
@@ -554,6 +558,8 @@ def run_portable_queue(
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     codex_bin: Path | None = None,
     start_after: str | None = None,
+    expected_count: int | None = None,
+    only_portable_case_id: str | None = None,
 ) -> dict[str, object]:
     if limit <= 0 or timeout_seconds <= 0:
         raise PortableParentError("limit and timeout must be positive")
@@ -583,10 +589,28 @@ def run_portable_queue(
         source_dataset_root=source_dataset_root,
         portable_dataset_root=portable_dataset_root,
         source_revision=source_revision,
+        expected_count=expected_count,
     )
-    selected = select_review_entries(
-        entries, limit=limit, start_after=start_after
-    )
+    if only_portable_case_id is not None:
+        if start_after is not None or limit != 1:
+            raise PortableParentError(
+                "one portable case requires limit=1 and no start-after"
+            )
+        selected = [
+            entry
+            for entry in entries
+            if entry.review_ready
+            and entry.portable_record["case_id"] == only_portable_case_id
+        ]
+        if len(selected) != 1:
+            raise PortableParentError(
+                "requested portable case is absent, blocked, or ambiguous: "
+                f"{only_portable_case_id}"
+            )
+    else:
+        selected = select_review_entries(
+            entries, limit=limit, start_after=start_after
+        )
     completion_root.mkdir(parents=True, exist_ok=False)
     (completion_root / "cases").mkdir()
     (completion_root / "runs").mkdir()
@@ -601,6 +625,8 @@ def run_portable_queue(
                 "codex": _codex_identity(command_path),
                 "execution": "sequential_stop_on_first_failure_no_retry",
                 "start_after": start_after,
+                "only_portable_case_id": only_portable_case_id,
+                "expected_count": expected_count,
                 "portable_qualification": "projection_not_node_custody",
                 "gpu": "not_used",
                 "implementation": _git_closure_identity(
@@ -658,6 +684,8 @@ def run_portable_queue(
         "source_revision": source_revision,
         "requested_limit": limit,
         "start_after": start_after,
+        "only_portable_case_id": only_portable_case_id,
+        "expected_count": expected_count,
         "deterministically_blocked": [
             {
                 "queue_case_id": entry.queue_case_id,
@@ -684,6 +712,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=int, default=1)
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--start-after")
+    parser.add_argument("--expected-count", type=int)
+    parser.add_argument("--only-portable-case-id")
     return parser
 
 
@@ -699,6 +729,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             limit=arguments.limit,
             timeout_seconds=arguments.timeout_seconds,
             start_after=arguments.start_after,
+            expected_count=arguments.expected_count,
+            only_portable_case_id=arguments.only_portable_case_id,
         )
     except (OSError, PortableParentError, RunnerError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

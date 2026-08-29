@@ -259,6 +259,33 @@ repeating it by passing that canary's exact portable case id to `--start-after`.
 selects only within the commit-bound review-ready order; an absent, blocked or repeated id
 is refused before creating either output root.
 
+AKA commit `b6607f78148b152bfa48133af98a8f58148c3684` adds the immutable
+`cuda_kernel_parent_completions_v2` snapshot: the 50-record v1 set plus 100 new source
+identities. `tools/run_aka_portable_parent_pool.py` computes that difference from the two
+commit-bound source identities rather than trusting a filename, count label or row position.
+The pool requires exactly 150 current, 50 prior and 100 new records before launch.
+
+Each selected parent receives an independent completion root, review root, Codex receipt
+and deterministic checked result. At most 30 workers may run concurrently. A failed case is
+preserved without retry; it neither cancels nor rolls back already running siblings, and no
+worker uses a GPU. Controller completion is successful only when all 100 workers finish with
+ordinary `completed` status; partial success and controller failures remain explicit.
+
+The create-only pool invocation is:
+
+```bash
+python3 tools/run_aka_portable_parent_pool.py \
+  --source-dataset-root /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --portable-dataset-root /absolute/AKA/datasets/curated/cuda_kernel_parent_completions_v2 \
+  --prior-portable-dataset-root /absolute/AKA/datasets/curated/cuda_kernel_parent_completions_v1 \
+  --source-revision b6607f78148b152bfa48133af98a8f58148c3684 \
+  --portable-record-count 150 \
+  --prior-record-count 50 \
+  --expected-new-count 100 \
+  --batch-root /new/external/aka-portable-100-pool \
+  --max-workers 30
+```
+
 ## Initial IR assessment
 
 The current vocabulary is plausible but not broad enough to call complete. The useful
