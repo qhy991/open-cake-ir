@@ -23,7 +23,7 @@ from dataclasses import dataclass
 
 from .ir import MemorySpace, Operation, OperationKind, Schedule, TopKParameters
 from .target import Target
-from .work import program_tiles
+from .work import loop_trip_distribution, program_tiles
 
 REGISTER_BYTES = 4
 TOP_K_RANKED_KEY_BYTES = 8
@@ -145,53 +145,6 @@ def _containing_loop(schedule: Schedule, operation: Operation):
     return matches[0] if len(matches) == 1 else None
 
 
-def _loop_trip_distribution(
-    schedule: Schedule, operation: Operation
-) -> tuple[tuple[int, ...], int] | tuple[None, str]:
-    """Per-program-coordinate trips and the multiplicity of every coordinate.
-
-    Grouped top-k currently has one direct containing loop.  Nested-loop cadence is still
-    a valid lowering concern, but this structural counter abstains until it has a declared
-    dynamic-domain model for the enclosing loop rather than multiplying a guessed extent.
-    """
-
-    loop = _containing_loop(schedule, operation)
-    if loop is None:
-        return None, "top_k has no unique containing loop"
-    if loop.name in schedule.loop_parent():
-        return None, "nested top_k loop cadence is not modeled"
-    buffer = schedule.buffer(loop.buffer)
-    if buffer is None or loop.dimension >= len(buffer.shape):
-        return None, "top_k loop extent is unavailable"
-    loop_extent = buffer.shape[loop.dimension]
-    tile_count = program_tiles(schedule)
-    if tile_count is None:
-        return None, "program tile domain is unavailable"
-
-    if loop.stop is None:
-        trips = (loop_extent + loop.tile - 1) // loop.tile
-        return (trips,), tile_count
-
-    program_map = schedule.program_map
-    axis = None if program_map is None else program_map.axis(loop.stop.program)
-    if axis is None or axis.tile != 1:
-        return None, "query-derived loop stop lacks one scalar program axis"
-    axis_buffer = schedule.buffer(axis.buffer)
-    if axis_buffer is None or axis.dimension >= len(axis_buffer.shape):
-        return None, "loop-stop program extent is unavailable"
-    axis_extent = axis_buffer.shape[axis.dimension]
-    if axis_extent <= 0 or tile_count % axis_extent:
-        return None, "loop-stop program multiplicity is unavailable"
-
-    trips: list[int] = []
-    for coordinate in range(axis_extent):
-        stop = (coordinate + loop.stop.add) // loop.stop.floor_div
-        if stop < 0 or stop > loop_extent:
-            return None, "query-derived loop stop leaves the declared loop extent"
-        trips.append((stop + loop.tile - 1) // loop.tile if stop else 0)
-    return tuple(trips), tile_count // axis_extent
-
-
 def top_k_merge_structure(
     schedule: Schedule, operation: Operation
 ) -> TopKMergeStructure | None:
@@ -239,19 +192,22 @@ def top_k_merge_structure(
             (reason,),
         )
 
-    if parameters.across_loop:
-        distribution, multiplicity = _loop_trip_distribution(schedule, operation)
-        if distribution is None:
-            return unknown(multiplicity)
-        trip_counts = distribution
-        factor = multiplicity
+    loop = _containing_loop(schedule, operation)
+    if loop is not None:
+        if loop.name in schedule.loop_parent():
+            return unknown("nested top_k loop cadence is not modeled")
+        distribution = loop_trip_distribution(schedule, loop)
+        if distribution.trips is None or distribution.multiplicity is None:
+            return unknown(
+                distribution.missing[0]
+                if distribution.missing
+                else "top_k loop cadence is unavailable"
+            )
+        trip_counts = distribution.trips
+        factor = distribution.multiplicity
     else:
-        if _containing_loop(schedule, operation) is not None:
-            distribution, multiplicity = _loop_trip_distribution(schedule, operation)
-            if distribution is None:
-                return unknown(multiplicity)
-            trip_counts = distribution
-            factor = multiplicity
+        if parameters.across_loop:
+            return unknown("top_k has no unique containing loop")
         else:
             tile_count = program_tiles(schedule)
             if tile_count is None:

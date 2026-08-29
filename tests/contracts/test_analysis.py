@@ -131,7 +131,7 @@ class ResidencyTest(unittest.TestCase):
         self.assertEqual(structure.whole_grid_tail_flush_merge_count, 8)
         self.assertEqual(structure.whole_grid_merge_update_count, 16)
 
-    def test_qsa_merge2_counts_the_dynamic_stop_without_changing_work_flops(self) -> None:
+    def test_qsa_merge2_counts_dynamic_stop_and_pending_state(self) -> None:
         schedule = _merge2_qsa()
         structure = top_k_merge_structure(schedule, _top_k(schedule))
         assert structure is not None

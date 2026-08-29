@@ -11,11 +11,18 @@ work model that disagrees with it is wrong rather than approximate.
 
 from __future__ import annotations
 
+import copy
+import json
 import unittest
 from pathlib import Path
 
 from open_cake_ir.compiler.ir import OperationKind, Schedule
-from open_cake_ir.compiler.work import program_tiles, work_bound
+from open_cake_ir.compiler.work import (
+    loop_trip_distribution,
+    operation_repetitions,
+    program_tiles,
+    work_bound,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEDULES = ROOT / "corpus" / "schedules"
@@ -30,12 +37,31 @@ GATHER = SCHEDULES / "indexed-gather-b8-smoke.json"
 RAGGED = SCHEDULES / "ragged-grouped-gemm-b1-smoke.json"
 ROPE_FUSED = SCHEDULES / "rope-b8-fused.json"
 ROPE = SCHEDULES / "rope-b8-smoke.json"
+QSA = SCHEDULES / "qsa-score-topk-t32768.json"
 
 
 def _bound(path: Path):
     bound = work_bound(Schedule.load(path))
     assert bound is not None
     return bound
+
+
+def _qsa(tile: int = 128) -> Schedule:
+    document = copy.deepcopy(json.loads(QSA.read_text(encoding="utf-8")))
+    document["tile_loops"][0]["tile"] = tile
+    for buffer in document["buffers"]:
+        if buffer["name"] == "key_tile":
+            buffer["shape"][0] = tile
+        elif buffer["name"] in ("head_scores", "positive_scores"):
+            buffer["shape"][1] = tile
+        elif buffer["name"] in ("score_sum", "score_tile"):
+            buffer["shape"][0] = tile
+    next(
+        operation
+        for operation in document["operations"]
+        if operation["id"] == "score_heads"
+    )["parameters"]["tile_shape"][1] = tile
+    return Schedule.from_dict(document)
 
 
 class ContractionTest(unittest.TestCase):
@@ -71,6 +97,10 @@ class ContractionTest(unittest.TestCase):
 
         bound = _bound(ASSIGNMENT_FULL)
         self.assertEqual(bound.mma_flops, 8 * 2 * 128 * 256 * 64)
+        repetitions = {
+            row.operation: row.whole_grid for row in bound.operation_repetitions
+        }
+        self.assertEqual(repetitions["dot_mma"], 8)
 
     def test_a_contraction_without_a_declared_shape_abstains(self) -> None:
         """TinyGEMM2's asset is not generated from the Schedule, so it declares no shape."""
@@ -111,6 +141,30 @@ class CompulsoryTrafficTest(unittest.TestCase):
 
         self.assertFalse(_bound(ROPE_FUSED).compulsory_bytes_exact)
         self.assertTrue(_bound(ROPE).compulsory_bytes_exact)
+
+    def test_stopped_loop_bytes_use_padded_whole_program_union_coverage(self) -> None:
+        complete = _bound(QSA)
+        self.assertTrue(complete.compulsory_bytes_exact)
+        self.assertNotIn("normalized_keys", complete.partially_addressed)
+
+        padded_document = json.loads(QSA.read_text(encoding="utf-8"))
+        padded_document["tile_loops"][0]["stop"]["add"] = 0
+        padded_schedule = Schedule.from_dict(padded_document)
+        padded = work_bound(padded_schedule)
+        assert padded is not None
+        distribution = loop_trip_distribution(
+            padded_schedule, padded_schedule.tile_loops[0]
+        )
+        assert distribution.trips is not None
+        self.assertEqual(max(distribution.trips), 64)
+        self.assertTrue(padded.compulsory_bytes_exact)
+
+        prefix_document = json.loads(QSA.read_text(encoding="utf-8"))
+        prefix_document["tile_loops"][0]["stop"]["floor_div"] = 8
+        prefix = work_bound(Schedule.from_dict(prefix_document))
+        assert prefix is not None
+        self.assertFalse(prefix.compulsory_bytes_exact)
+        self.assertIn("normalized_keys", prefix.partially_addressed)
 
 
 class AbstentionTest(unittest.TestCase):
@@ -174,6 +228,132 @@ class WorkDomainTest(unittest.TestCase):
         assert persistent.program_map is not None
         self.assertTrue(persistent.program_map.persistent)
         self.assertEqual(program_tiles(persistent), 1024)
+
+    def test_qsa_dynamic_stop_owns_exact_tile128_whole_grid_work(self) -> None:
+        schedule = _qsa()
+        bound = work_bound(schedule)
+        assert bound is not None
+        repetitions = {
+            row.operation: row.whole_grid for row in bound.operation_repetitions
+        }
+
+        self.assertEqual(repetitions["load_query"], 32_768)
+        self.assertEqual(repetitions["score_heads"], 1_064_768)
+        self.assertEqual(repetitions["select_blocks"], 1_064_768)
+        self.assertEqual(repetitions["store_blocks"], 32_768)
+        self.assertEqual(bound.mma_flops, 279_122_542_592)
+        self.assertEqual(bound.flops, 281_303_187_456)
+
+    def test_qsa_dynamic_stop_owns_exact_tile256_whole_grid_work(self) -> None:
+        schedule = _qsa(256)
+        bound = work_bound(schedule)
+        assert bound is not None
+        repetitions = {
+            row.operation: row.whole_grid for row in bound.operation_repetitions
+        }
+
+        self.assertEqual(repetitions["score_heads"], 540_576)
+        self.assertEqual(repetitions["select_blocks"], 540_576)
+        self.assertEqual(bound.mma_flops, 283_417_509_888)
+        self.assertEqual(bound.flops, 285_631_709_184)
+
+    def test_loop_stop_clamps_zero_partial_and_high_coordinates_exactly(self) -> None:
+        schedule = _qsa()
+        loop = schedule.tile_loops[0]
+        distribution = loop_trip_distribution(schedule, loop)
+        assert distribution.trips is not None
+
+        self.assertEqual(distribution.trips[:6], (0, 0, 0, 1, 1, 1))
+        self.assertEqual(distribution.multiplicity, 1)
+
+        high_document = json.loads(QSA.read_text(encoding="utf-8"))
+        high_document["tile_loops"][0]["stop"]["add"] = 40_000
+        high = Schedule.from_dict(high_document)
+        clipped = loop_trip_distribution(high, high.tile_loops[0])
+        assert clipped.trips is not None
+        self.assertEqual(set(clipped.trips), {64})
+
+        low_document = json.loads(QSA.read_text(encoding="utf-8"))
+        low_document["tile_loops"][0]["stop"]["add"] = -1
+        low = Schedule.from_dict(low_document)
+        zero_prefix = loop_trip_distribution(low, low.tile_loops[0])
+        assert zero_prefix.trips is not None
+        self.assertEqual(zero_prefix.trips[:6], (0, 0, 0, 0, 0, 1))
+
+    def test_dynamic_stop_distribution_keeps_other_program_axis_multiplicity(self) -> None:
+        document = json.loads(QSA.read_text(encoding="utf-8"))
+        document["program_map"]["axes"].append(
+            {
+                "name": "index_head",
+                "axis": 1,
+                "buffer": "index_q",
+                "dimension": 1,
+                "tile": 1,
+            }
+        )
+        schedule = Schedule.from_dict(document)
+        distribution = loop_trip_distribution(schedule, schedule.tile_loops[0])
+        rows = operation_repetitions(schedule)
+        assert distribution.trips is not None and rows is not None
+        repetitions = {row.operation: row.whole_grid for row in rows}
+
+        self.assertEqual(distribution.multiplicity, 8)
+        self.assertEqual(repetitions["score_heads"], 8 * 1_064_768)
+        self.assertEqual(repetitions["load_query"], 8 * 32_768)
+
+    def test_two_dynamic_loops_are_unknown_without_static_max_fallback(self) -> None:
+        document = json.loads(QSA.read_text(encoding="utf-8"))
+        inner = document["tile_loops"][0]
+        inner["name"] = "inner_block_loop"
+        document["tile_loops"].append(
+            {
+                **copy.deepcopy(inner),
+                "name": "outer_block_loop",
+                "iterator": "outer_block_start",
+                "body": ["inner_block_loop"],
+            }
+        )
+        inner["body"].remove("scale_scores")
+        schedule = Schedule.from_dict(document)
+        rows = operation_repetitions(schedule)
+        assert rows is not None
+        by_operation = {row.operation: row for row in rows}
+        score = by_operation["score_heads"]
+
+        self.assertEqual(score.estimate_kind, "unknown")
+        self.assertIsNone(score.whole_grid)
+        self.assertEqual(
+            score.missing,
+            ("operation loop chain has more than one dynamic stop",),
+        )
+        bound = work_bound(schedule)
+        assert bound is not None
+        self.assertEqual(bound.mma_flops, 0)
+        self.assertGreater(bound.flops, 0)
+        self.assertIn("score_heads", bound.uncounted_arithmetic)
+        self.assertIsNone(bound.contended_contract)
+
+    def test_one_dynamic_loop_composes_with_an_arbitrary_static_parent(self) -> None:
+        document = json.loads(QSA.read_text(encoding="utf-8"))
+        inner = document["tile_loops"][0]
+        inner["name"] = "inner_block_loop"
+        outer = copy.deepcopy(inner)
+        outer.update(
+            {
+                "name": "outer_block_loop",
+                "iterator": "outer_block_start",
+                "tile": 4096,
+                "body": ["inner_block_loop"],
+            }
+        )
+        outer.pop("stop")
+        document["tile_loops"].append(outer)
+        rows = operation_repetitions(Schedule.from_dict(document))
+        assert rows is not None
+        repetitions = {row.operation: row.whole_grid for row in rows}
+
+        self.assertEqual(repetitions["score_heads"], 2 * 1_064_768)
+        self.assertEqual(repetitions["load_query"], 32_768)
 
 
 class NoPredictedTimeTest(unittest.TestCase):

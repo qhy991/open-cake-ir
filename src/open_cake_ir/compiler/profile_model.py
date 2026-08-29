@@ -122,6 +122,15 @@ def _work_document(bound: WorkBound | None) -> Mapping[str, object] | None:
         ),
         "arithmetic_intensity": bound.arithmetic_intensity,
         "uncounted_arithmetic": list(bound.uncounted_arithmetic),
+        "operation_repetitions": [
+            {
+                "operation": row.operation,
+                "estimate_kind": row.estimate_kind,
+                "whole_grid": row.whole_grid,
+                "missing": list(row.missing),
+            }
+            for row in bound.operation_repetitions
+        ],
         "partially_addressed": list(bound.partially_addressed),
     }
 

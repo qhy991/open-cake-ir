@@ -76,6 +76,15 @@ is a derived lowering choice, not author syntax: no
 algorithm flag or second `top_k` spelling exists. Profile exposes that version-specific
 structural model while abstaining from compiled registers, implicit shared memory,
 instructions, cycles and latency until matched Executor evidence exists.
+Declared work uses the same query-derived loop-stop domain as lowering: apply `add`, then
+`floor_div`, clamp to the static loop extent, and tile the result for every scalar program
+coordinate. One dynamic stop composes with static enclosing loops and other program-axis
+multiplicity. More than one dynamic stop in an operation's loop chain is an explicit
+analysis abstention, never a static-maximum fallback. Work and top-k cadence share this
+domain owner. A roofline floor uses only `device_specification` ceilings; it may use
+lower-bound arithmetic, but may use compulsory bytes only when their count is exact. A
+microbenchmark reference or partial-addressing byte upper bound remains a comparative
+ratio and cannot by itself refute a measurement.
 `reduce_argmin` compares FP32 values and returns INT32 source positions; admitting FP8
 storage for another operation does not widen that semantic contract.
 

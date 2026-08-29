@@ -64,6 +64,18 @@ class ProfileModelTest(unittest.TestCase):
             profile["work"]["arithmetic_contracts"], ["triton.dot.fp32_ieee"]
         )
         self.assertEqual(profile["work"]["contended_contract"], "triton.dot.fp32_ieee")
+        self.assertEqual(profile["work"]["flops"], 281_303_187_456)
+        self.assertEqual(profile["work"]["mma_flops"], 279_122_542_592)
+        repetitions = {
+            row["operation"]: row
+            for row in profile["work"]["operation_repetitions"]
+        }
+        self.assertEqual(repetitions["load_query"]["whole_grid"], 32_768)
+        self.assertEqual(repetitions["score_heads"]["whole_grid"], 1_064_768)
+        self.assertEqual(
+            repetitions["select_blocks"]["whole_grid"],
+            top_k["whole_grid_source_tile_update_count"],
+        )
         self.assertEqual(profile["residency"]["logical_register_pressure_per_thread"], 72)
         self.assertEqual(profile["residency"]["ctas_per_sm_upper_bound"], 8)
         registers = _metric(profile, "launch__registers_per_thread")
@@ -187,7 +199,7 @@ class ProfileModelTest(unittest.TestCase):
             ],
         )
 
-    def test_merge2_structural_count_abstains_on_an_out_of_domain_stop(self) -> None:
+    def test_merge2_structural_count_clamps_an_out_of_domain_stop(self) -> None:
         document = json.loads(
             (ROOT / "corpus/schedules/qsa-score-topk-t32768.json").read_text(
                 encoding="utf-8"
@@ -202,13 +214,44 @@ class ProfileModelTest(unittest.TestCase):
         ).as_dict()
         top_k = profile["lowering"]["top_k"][0]
 
-        self.assertEqual(top_k["structural_count_estimate_kind"], "unknown")
-        self.assertIsNone(top_k["whole_grid_source_tile_update_count"])
-        self.assertIsNone(top_k["whole_grid_merge_update_count"])
-        self.assertEqual(
-            top_k["structural_count_missing"],
-            ["query-derived loop stop leaves the declared loop extent"],
+        self.assertEqual(top_k["structural_count_estimate_kind"], "exact")
+        self.assertEqual(top_k["whole_grid_source_tile_update_count"], 2_097_152)
+        self.assertEqual(top_k["whole_grid_full_group_merge_count"], 1_048_576)
+        self.assertEqual(top_k["whole_grid_tail_flush_merge_count"], 0)
+        self.assertEqual(top_k["whole_grid_merge_update_count"], 1_048_576)
+        self.assertEqual(top_k["structural_count_missing"], [])
+
+    def test_work_profile_names_unknown_repetition_without_max_trip_fallback(self) -> None:
+        document = json.loads(
+            (ROOT / "corpus/schedules/qsa-score-topk-t32768.json").read_text(
+                encoding="utf-8"
+            )
         )
+        inner = document["tile_loops"][0]
+        inner["name"] = "inner_block_loop"
+        document["tile_loops"].append(
+            {
+                **json.loads(json.dumps(inner)),
+                "name": "outer_block_loop",
+                "iterator": "outer_block_start",
+                "body": ["inner_block_loop"],
+            }
+        )
+        profile = profile_envelope(
+            Schedule.from_dict(document), self.target
+        ).as_dict()
+        work = profile["work"]
+        repetitions = {
+            row["operation"]: row for row in work["operation_repetitions"]
+        }
+
+        self.assertEqual(repetitions["score_heads"]["estimate_kind"], "unknown")
+        self.assertIsNone(repetitions["score_heads"]["whole_grid"])
+        self.assertEqual(
+            repetitions["score_heads"]["missing"],
+            ["operation loop chain has more than one dynamic stop"],
+        )
+        self.assertIn("score_heads", work["uncounted_arithmetic"])
 
     def test_generic_three_trip_merge2_reports_one_pair_and_one_tail_per_program(self) -> None:
         profile = self._profile("top-k-streaming-merge2-b8-smoke.json")

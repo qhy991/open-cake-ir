@@ -11,18 +11,19 @@ Target does not declare. These are counts. `flops` is what the declared operatio
 to computing and `compulsory_bytes` is what the declared global Buffers commit to moving.
 Neither mentions a clock, a bandwidth or a second, and nothing here is divided by one.
 
-What a caller may then do with a *measured* time and a separately declared peak rate is
-divide, and the useful property of that quotient is that it cannot exceed one: no kernel
-performs more arithmetic than the arithmetic peak, and none moves compulsory bytes faster
-than the memory system moves any bytes. A quotient above one is therefore a refutation of
-the work model or of the declared peak rather than an unfalsifiable estimate. That
-ceiling is the whole reason this is worth deriving; the refuted wave-count term never had
-one. Supplying the peak is not this module's business and neither is the measurement.
+What a caller may then do with a *measured* time and a separately declared rate is divide.
+When that rate is a device-specification ceiling, the useful property of the quotient is
+that a sound lower bound cannot exceed one: no kernel performs more arithmetic than the
+architecture ceiling, and exact compulsory bytes do not cross faster than the specified
+memory ceiling. A microbenchmark rate is instead a comparative reference and may be
+exceeded. Supplying either rate is not this module's business and neither is the
+measurement.
 
 Two error directions, and they are stated rather than hidden:
 
 * `flops` is exact when `uncounted_arithmetic` is empty and a lower bound otherwise. An
-  operation whose arithmetic the IR does not decompose is named instead of guessed at.
+  operation whose arithmetic the IR does not decompose, or whose whole-grid repetition
+  is unknown, is named instead of guessed at.
 * `compulsory_bytes` is exact when `partially_addressed` is empty and an upper bound
   otherwise, because it charges every global Buffer an operation touches in full.
 
@@ -45,6 +46,7 @@ from .ir import (
     ReduceOp,
     ReduceParameters,
     Schedule,
+    TileLoop,
 )
 
 MULTIPLY_ADD_FLOPS = 2
@@ -92,12 +94,33 @@ Schedule does not say which, so neither does this.
 
 
 @dataclass(frozen=True)
+class LoopTripDistribution:
+    """One loop's trips across its declared whole-grid program domain."""
+
+    estimate_kind: str
+    trips: tuple[int, ...] | None
+    multiplicity: int | None
+    missing: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OperationRepetition:
+    """One operation's whole-grid execution count, or why it is unknown."""
+
+    operation: str
+    estimate_kind: str
+    whole_grid: int | None
+    missing: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class WorkBound:
     """What one Schedule's declarations commit to computing and to moving.
 
-    Every field is a whole-grid quantity: per-operation work multiplied by the tile loops
-    that repeat it and by the program tiles that spread it, so the numbers are comparable
-    against one kernel launch.
+    Every field is a whole-grid quantity. ``operation_repetitions`` owns how the declared
+    loops and program coordinates compose; arithmetic with an unknown repetition is
+    omitted and named in ``uncounted_arithmetic``, preserving a lower bound rather than
+    substituting a static maximum.
     """
 
     program_tiles: int
@@ -105,6 +128,7 @@ class WorkBound:
     mma_flops: int
     arithmetic_contracts: tuple[str, ...]
     uncounted_arithmetic: tuple[str, ...]
+    operation_repetitions: tuple[OperationRepetition, ...]
     compulsory_read_bytes: int
     compulsory_written_bytes: int
     partially_addressed: tuple[str, ...]
@@ -113,11 +137,15 @@ class WorkBound:
     def contended_contract(self) -> str | None:
         """The one instruction contract this Schedule's counted contractions issue.
 
-        None when there is no contraction, and None again when there are several
+        None when there is no counted contraction, and None again when there are several
         different ones: a Schedule that issues two instructions has no single rate to be
-        compared against, and picking either would decide by which appeared first.
+        compared against, and picking either would decide by which appeared first. An
+        uncounted contraction must not lend its tensor rate to unrelated counted scalar
+        arithmetic.
         """
 
+        if not self.mma_flops:
+            return None
         contracts = set(self.arithmetic_contracts)
         return contracts.pop() if len(contracts) == 1 else None
 
@@ -196,39 +224,164 @@ def _loop_trips(schedule: Schedule, loop) -> int | None:
     return -(-buffer.shape[loop.dimension] // loop.tile)
 
 
-def _repetition(schedule: Schedule) -> dict[str, int] | None:
-    """Operation id -> how many times one program tile executes it.
+def loop_trip_distribution(
+    schedule: Schedule, loop: TileLoop
+) -> LoopTripDistribution:
+    """Derive exact trips after add, floor-divide, clamp, then tile ceiling.
 
-    A `tile_loops` body lists operation ids and the names of loops nested inside it, so
-    an operation's repetition is the product of trip counts up its enclosing chain. The
-    chain is walked with a seen-set because `loop_depth` already guards the same cycle
-    and a second walk should not be the one that hangs.
+    The order mirrors the Triton emitter.  A static loop has one trip count repeated for
+    every program tile; a program-derived stop has one count per scalar coordinate and a
+    multiplicity for all other program axes.
     """
 
-    trips: dict[str, int] = {}
-    for loop in schedule.tile_loops:
-        count = _loop_trips(schedule, loop)
-        if count is None:
-            return None
-        trips[loop.name] = count
+    static_trips = _loop_trips(schedule, loop)
+    tiles = program_tiles(schedule)
+    if static_trips is None:
+        return LoopTripDistribution(
+            "unknown", None, None, ("loop extent is unavailable",)
+        )
+    if tiles is None:
+        return LoopTripDistribution(
+            "unknown", None, None, ("program tile domain is unavailable",)
+        )
+    if loop.stop is None:
+        return LoopTripDistribution("exact", (static_trips,), tiles)
 
-    innermost: dict[str, str] = {}
+    program_map = schedule.program_map
+    axis = None if program_map is None else program_map.axis(loop.stop.program)
+    if axis is None or axis.tile != 1:
+        return LoopTripDistribution(
+            "unknown",
+            None,
+            None,
+            ("loop stop lacks one scalar program axis",),
+        )
+    axis_buffer = schedule.buffer(axis.buffer)
+    if axis_buffer is None or axis.dimension >= len(axis_buffer.shape):
+        return LoopTripDistribution(
+            "unknown", None, None, ("loop-stop program extent is unavailable",)
+        )
+    axis_extent = axis_buffer.shape[axis.dimension]
+    if axis_extent <= 0 or tiles % axis_extent:
+        return LoopTripDistribution(
+            "unknown", None, None, ("loop-stop program multiplicity is unavailable",)
+        )
+    loop_buffer = schedule.buffer(loop.buffer)
+    assert loop_buffer is not None
+    loop_extent = loop_buffer.shape[loop.dimension]
+    trips = []
+    for coordinate in range(axis_extent):
+        stop = (coordinate + loop.stop.add) // loop.stop.floor_div
+        stop = min(max(stop, 0), loop_extent)
+        trips.append((stop + loop.tile - 1) // loop.tile if stop else 0)
+    return LoopTripDistribution("exact", tuple(trips), tiles // axis_extent)
+
+
+def operation_repetitions(
+    schedule: Schedule,
+) -> tuple[OperationRepetition, ...] | None:
+    """Return per-operation exact whole-grid repetitions without max-trip fallback."""
+
+    tiles = program_tiles(schedule)
+    if tiles is None:
+        return None
+
+    loops = {loop.name: loop for loop in schedule.tile_loops}
+    scopes: dict[str, list[str]] = {}
     for loop in schedule.tile_loops:
         for entry in loop.body:
-            if entry not in trips and schedule.operation(entry) is not None:
-                innermost[entry] = loop.name
+            if entry not in loops and schedule.operation(entry) is not None:
+                scopes.setdefault(entry, []).append(loop.name)
 
     parent = schedule.loop_parent()
-    factors: dict[str, int] = {}
+    rows: list[OperationRepetition] = []
     for operation in schedule.operations:
-        name = innermost.get(operation.op_id)
-        factor, seen = 1, set()
-        while name is not None and name not in seen:
+        direct = scopes.get(operation.op_id, [])
+        if len(direct) > 1:
+            rows.append(
+                OperationRepetition(
+                    operation.op_id,
+                    "unknown",
+                    None,
+                    ("operation belongs to multiple loop scopes",),
+                )
+            )
+            continue
+        chain = []
+        name = direct[0] if direct else None
+        seen: set[str] = set()
+        chain_error = None
+        while name is not None:
+            if name in seen or name not in loops:
+                chain_error = "operation loop chain is cyclic or unresolved"
+                break
             seen.add(name)
-            factor *= trips[name]
+            chain.append(loops[name])
             name = parent.get(name)
-        factors[operation.op_id] = factor
-    return factors
+        if chain_error is not None:
+            rows.append(
+                OperationRepetition(
+                    operation.op_id,
+                    "unknown",
+                    None,
+                    (chain_error,),
+                )
+            )
+            continue
+        dynamic = [loop for loop in chain if loop.stop is not None]
+        if len(dynamic) > 1:
+            rows.append(
+                OperationRepetition(
+                    operation.op_id,
+                    "unknown",
+                    None,
+                    ("operation loop chain has more than one dynamic stop",),
+                )
+            )
+            continue
+        static_factor = 1
+        missing = None
+        for loop in chain:
+            if loop.stop is not None:
+                continue
+            count = _loop_trips(schedule, loop)
+            if count is None:
+                missing = "static loop extent is unavailable"
+                break
+            static_factor *= count
+        if missing is not None:
+            rows.append(
+                OperationRepetition(operation.op_id, "unknown", None, (missing,))
+            )
+            continue
+        if not dynamic:
+            rows.append(
+                OperationRepetition(
+                    operation.op_id, "exact", tiles * static_factor
+                )
+            )
+            continue
+        distribution = loop_trip_distribution(schedule, dynamic[0])
+        if distribution.trips is None or distribution.multiplicity is None:
+            rows.append(
+                OperationRepetition(
+                    operation.op_id,
+                    "unknown",
+                    None,
+                    distribution.missing,
+                )
+            )
+            continue
+        rows.append(
+            OperationRepetition(
+                operation.op_id,
+                "exact",
+                sum(distribution.trips)
+                * distribution.multiplicity
+                * static_factor,
+            )
+        )
+    return tuple(rows)
 
 
 def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
@@ -288,15 +441,32 @@ def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
 def _is_partially_addressed(schedule: Schedule, name: str) -> bool:
     """Whether a declared coordinate makes 'the whole Buffer moves' unsafe to assume.
 
-    Three declarations do. A runtime `buffer` coordinate selects rows the Schedule cannot
-    name, a `valid_extent` says a padded axis has a shorter live prefix, and an `offset`
-    or `extent` narrows an access to a sub-range so a sibling can own the rest. Each one
-    means the traffic charged here is an over-count rather than a measurement of it.
+    Four declarations do. A runtime `buffer` coordinate selects rows the Schedule cannot
+    name, a `valid_extent` says a padded axis has a shorter live prefix, a stopped loop may
+    leave a suffix untouched across the whole program, and an `offset` or `extent` narrows
+    an access to a sub-range so a sibling can own the rest. Each one means the traffic
+    charged here is an over-count rather than a measurement of it.
     """
 
     buffer = schedule.buffer(name)
     if buffer is not None and buffer.valid_extent is not None:
         return True
+    for loop in schedule.tile_loops:
+        if loop.buffer != name or loop.stop is None:
+            continue
+        distribution = loop_trip_distribution(schedule, loop)
+        if distribution.trips is None:
+            return True
+        assert buffer is not None and loop.dimension < len(buffer.shape)
+        # The emitted loop starts every tile whose start is below `stop`, and the access
+        # mask clips that tile only to the static Buffer extent. Whole-Program union
+        # coverage is therefore the largest padded trip count, not the largest raw stop.
+        padded_coverage = min(
+            max(distribution.trips, default=0) * loop.tile,
+            buffer.shape[loop.dimension],
+        )
+        if padded_coverage < buffer.shape[loop.dimension]:
+            return True
     for access in schedule.access_maps:
         if access.buffer != name:
             continue
@@ -338,38 +508,42 @@ def _compulsory_traffic(schedule: Schedule) -> tuple[int, int, tuple[str, ...]]:
 
 
 def work_bound(schedule: Schedule) -> WorkBound | None:
-    """Declared arithmetic and compulsory traffic, or None when the structure cannot be walked.
+    """Declared arithmetic and compulsory traffic over the walkable program domain.
 
-    None means a program axis or a tile loop names a Buffer dimension that is not there,
-    which a gated Schedule cannot do. It is the same abstention `residency_upper_bound`
-    makes when the Target says too little: a missing answer rather than a zero.
+    None means the program tile domain itself is unavailable. A localized unknown loop
+    repetition instead leaves the affected arithmetic uncounted and carries its reason
+    in ``operation_repetitions``; known operations remain a sound lower bound.
     """
 
     tiles = program_tiles(schedule)
     if tiles is None:
         return None
-    repetition = _repetition(schedule)
-    if repetition is None:
+    repetitions = operation_repetitions(schedule)
+    if repetitions is None:
         return None
+    repetition_by_operation = {row.operation: row for row in repetitions}
 
     flops = mma_flops = 0
     uncounted: list[str] = []
     contracts: list[str] = []
     for operation in schedule.operations:
-        per_execution = _operation_flops(schedule, operation)
-        if per_execution is None:
-            uncounted.append(operation.op_id)
-            continue
-        total = per_execution * repetition[operation.op_id] * tiles
-        flops += total
         if operation.kind is OperationKind.MMA:
-            mma_flops += total
-            # Which instruction performs the counted arithmetic, so a caller comparing
-            # against a peak rate compares against the rate for *this* instruction
-            # rather than for a dtype that several instructions share.
             parameters = operation.parameters
             if isinstance(parameters, MmaParameters) and parameters.instruction:
                 contracts.append(parameters.instruction.contract)
+        per_execution = _operation_flops(schedule, operation)
+        repetition = repetition_by_operation[operation.op_id]
+        if repetition.whole_grid is None:
+            if per_execution is None or per_execution > 0:
+                uncounted.append(operation.op_id)
+            continue
+        if per_execution is None:
+            uncounted.append(operation.op_id)
+            continue
+        total = per_execution * repetition.whole_grid
+        flops += total
+        if operation.kind is OperationKind.MMA:
+            mma_flops += total
 
     read, written, partial = _compulsory_traffic(schedule)
     return WorkBound(
@@ -378,6 +552,7 @@ def work_bound(schedule: Schedule) -> WorkBound | None:
         mma_flops=mma_flops,
         arithmetic_contracts=tuple(contracts),
         uncounted_arithmetic=tuple(uncounted),
+        operation_repetitions=repetitions,
         compulsory_read_bytes=read,
         compulsory_written_bytes=written,
         partially_addressed=partial,

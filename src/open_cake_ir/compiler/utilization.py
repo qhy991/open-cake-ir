@@ -7,17 +7,17 @@ the only module in the Compiler that takes a number nothing here derived.
 That is the whole design. The analysis has refused to predict a time since it was
 written, and this does not start: no quantity here is computed *instead of* running the
 kernel. A measured second is an argument, not an output, and what comes back is a
-fraction of a declared ceiling that the kernel already reached.
+fraction of a declared rate that the kernel already reached.
 
 Why it is worth having, when a predicted time was not:
 
-**It is bounded by one, so a single launch can refute it.** Nothing performs arithmetic
-faster than the arithmetic peak, and nothing moves its compulsory bytes faster than the
-memory system moves any bytes. A utilisation above one is therefore a defect in the work
-count or in the declared rate, and it says which by which of the two exceeded. The
-refuted wave-count term had no such ceiling; it could only ever be less useful than
-hoped, never wrong. `Utilization.refuted` is that check, and a caller that ignores it is
-choosing to.
+**A sound lower bound is bounded by one, so a single launch can refute it.** Nothing
+performs the counted arithmetic faster than an architecture ceiling, and exact compulsory
+bytes cannot cross faster than a specified memory ceiling. Arithmetic work is exact or a
+lower bound, so its ratio keeps that property. A bandwidth ratio is a refutation only
+when the compulsory byte count is exact. A measured microbenchmark rate is a best-known
+reference rather than a ceiling, and a better kernel may exceed it. `Utilization.refuted`
+preserves both distinctions.
 
 **It abstains loudly.** A Schedule with no contraction has no arithmetic utilisation,
 because the only peaks a Target declares are per instruction contract and an rmsnorm
@@ -31,17 +31,20 @@ bound and the bandwidth utilisation is an upper bound. `exact` travels with each
 ratio printed without it is the estimate this repository keeps refusing to produce.
 
 The roofline time is the same three inputs read the other way round -- how long the
-declared work must take at the declared rates. It is a lower bound on the measured time,
-which makes it the one term in this file that could order candidates before a GPU. That
-is a claim for a calibration to test, not for this module to assert, so nothing here
-ranks anything.
+declared work must take at declared architecture ceilings. Only sound lower-bound terms
+participate: counted arithmetic does when its matching rate is a device specification,
+while compulsory bytes additionally require an exact count. Microbenchmark references
+still produce utilization ratios, but never a roofline floor. The resulting time is a
+lower bound on measured time, which makes it the one term in this file that could order
+candidates before a GPU. That is a claim for a calibration to test, not for this module
+to assert, so nothing here ranks anything.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .target import PeakRate, Target
+from .target import PeakRate, PeakSource, Target
 from .work import WorkBound
 
 
@@ -61,26 +64,36 @@ class Utilization:
 
     @property
     def refuted(self) -> bool:
-        """Whether a ratio exceeded one, which no correct pair of inputs can do.
+        """Whether a device-ceiling-backed lower-bound ratio exceeded one.
 
-        Read it before quoting either number. It fires on a wrong work count, a peak
-        declared below what the device actually does, or a duration that is not this
-        kernel's -- and every one of those makes the utilisation beside it meaningless
-        rather than merely imprecise.
+        Read it before quoting either number. It fires on a wrong work count, a wrong
+        device specification, or a duration that is not this kernel's. Microbenchmark
+        references and upper-bound byte ratios cannot fire it.
         """
 
-        return any(
-            ratio is not None and ratio > 1 for ratio in (self.arithmetic, self.bandwidth)
+        arithmetic_refuted = (
+            self.arithmetic_peak is not None
+            and self.arithmetic_peak.source is PeakSource.DEVICE_SPECIFICATION
+            and self.arithmetic is not None
+            and self.arithmetic > 1
         )
+        bandwidth_refuted = (
+            self.bandwidth_exact
+            and self.bandwidth_peak is not None
+            and self.bandwidth_peak.source is PeakSource.DEVICE_SPECIFICATION
+            and self.bandwidth is not None
+            and self.bandwidth > 1
+        )
+        return arithmetic_refuted or bandwidth_refuted
 
     @property
     def roofline_efficiency(self) -> float | None:
         """Declared-work time over measured time: how close the launch came to its bound.
 
-        The larger of the two utilisations, and therefore the one that names the resource
-        the kernel got closest to saturating. A value far below one on both means neither
-        rate was the limit and the answer is somewhere the declarations cannot see --
-        occupancy, latency, or a stall the profiler has a counter for.
+        This equals the larger sound lower-bound ratio. An upper-bound bandwidth ratio is
+        omitted from the floor, so it may be numerically larger without becoming this
+        efficiency. A value far below one means the answer is somewhere the declarations
+        cannot see -- occupancy, latency, or a stall the profiler has a counter for.
         """
 
         if self.roofline_seconds is None or not self.seconds:
@@ -89,14 +102,15 @@ class Utilization:
 
 
 def roofline_seconds(bound: WorkBound, target: Target) -> float | None:
-    """How long the declared work must take at the declared rates, or None without them.
+    """How long declared work must take at specification ceilings, or None without them.
 
     The one quantity in this repository that is a time and is not a measurement, and it
     is admissible for exactly one reason: it is a *bound*, in the same sense the residency
     figure is. A kernel cannot finish before its arithmetic is issued at the arithmetic
-    peak, and it cannot finish before its compulsory bytes have crossed the memory system
-    at the bandwidth peak, so the larger of those two is a floor under any measurement.
-    A measured time below it refutes an input rather than beating the hardware.
+    specification ceiling, and it cannot finish before exact compulsory bytes have crossed
+    the memory system at its specification ceiling, so the larger sound term is a floor
+    under any measurement. A measured time below it refutes an input rather than beating
+    the hardware.
 
     That is not a predicted time and must not be used as one. The gap between this floor
     and a real launch is everything the declarations cannot see -- occupancy, latency,
@@ -105,8 +119,9 @@ def roofline_seconds(bound: WorkBound, target: Target) -> float | None:
     whether it separates candidates is a question for a measured calibration to answer,
     and until one does, this is a floor and nothing more.
 
-    Terms with no declared rate are omitted rather than treated as zero, so a partial
-    peak yields a partial floor rather than a whole one that quietly ignores a resource.
+    Terms with no device-specification ceiling are omitted rather than treated as zero,
+    so a partial ceiling set yields a partial floor. Microbenchmark rates still produce
+    comparative utilization ratios but do not enter this bound.
     """
 
     peak = target.peak
@@ -115,9 +130,18 @@ def roofline_seconds(bound: WorkBound, target: Target) -> float | None:
     floors: list[float] = []
     contract = bound.contended_contract
     arithmetic_peak = peak.for_contract(contract) if contract else None
-    if arithmetic_peak is not None and bound.flops:
+    if (
+        arithmetic_peak is not None
+        and arithmetic_peak.source is PeakSource.DEVICE_SPECIFICATION
+        and bound.flops
+    ):
         floors.append(bound.flops / arithmetic_peak.value)
-    if peak.memory_bandwidth is not None and bound.compulsory_bytes:
+    if (
+        peak.memory_bandwidth is not None
+        and peak.memory_bandwidth.source is PeakSource.DEVICE_SPECIFICATION
+        and bound.compulsory_bytes
+        and bound.compulsory_bytes_exact
+    ):
         floors.append(bound.compulsory_bytes / peak.memory_bandwidth.value)
     return max(floors) if floors else None
 
@@ -165,7 +189,7 @@ def utilization(
         bandwidth=bandwidth,
         bandwidth_exact=bound.compulsory_bytes_exact,
         bandwidth_peak=bandwidth_peak,
-        # Derived from the same rates rather than from the ratios above, so the floor
-        # and the utilisations cannot disagree about which resource binds.
+        # Derived from specification ceilings rather than blindly from the ratios above;
+        # microbenchmark references and byte upper bounds are deliberately omitted.
         roofline_seconds=roofline_seconds(bound, target),
     )
