@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "exact_gate_and_release_approval_basis_for_generic_exact_half_selection_compiler_successor",
-  "status": "exact_gate_matched_and_repository_owner_authorized_for_approval",
+  "status": "exact_gate_matched_and_repository_owner_authorized_approval_written",
   "compiler_change_commit": "250daeb",
   "corpus_proposal_commit": "5f4499b",
   "corpus_adoption_commit": "7709750",
@@ -24,8 +24,9 @@
     "reviewer": "repository_owner",
     "decision": "approved_under_explicit_continuous_iteration_and_artifact_writing_authorization",
     "approval_path": "compiler/release-approval.json",
-    "approval_artifact_status": "pending_exact_write",
-    "approval_binds_exact_gate": false
+    "approval_canonical_sha256": "d8f1268ccd7a6263d1de28530c9473855bbb034fbb0bc169e2ce918bcbf7834a",
+    "approval_artifact_status": "written",
+    "approval_binds_exact_gate": true
   },
   "change_contract": {
     "ir_syntax_changed": false,
