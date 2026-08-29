@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
-from launch_qsa_seed_experiment import _task  # noqa: E402
+from launch_qsa_seed_experiment import (  # noqa: E402
+    _external_open_cake_candidates,
+    _select_candidates,
+    _task,
+    build_parser,
+)
 
 
 class QsaLauncherContractTest(unittest.TestCase):
@@ -21,6 +29,132 @@ class QsaLauncherContractTest(unittest.TestCase):
                 "cuobjdump": "/cuda/cuobjdump",
             }
         }
+
+    def _candidate(self, root: Path, name: str, *, arm: str = "open_cake") -> Path:
+        candidate = root / name
+        candidate.mkdir()
+        (candidate / "candidate.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "arm": arm,
+                    "nodes": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return candidate
+
+    def test_external_open_cake_batch_preserves_order_and_skips_seed_materialization(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = self._candidate(root, "first")
+            second = self._candidate(root, "second")
+            with patch(
+                "launch_qsa_seed_experiment._materialize_candidates"
+            ) as materialize:
+                selected = _select_candidates(
+                    root / "run",
+                    SimpleNamespace(),
+                    arm="open_cake",
+                    external_open_cake=[second, first],
+                )
+
+        self.assertEqual(selected, (second.resolve(), first.resolve()))
+        materialize.assert_not_called()
+
+    def test_external_open_cake_candidates_require_matching_arm(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = self._candidate(Path(directory), "candidate")
+            with self.assertRaisesRegex(ValueError, "require --arm open_cake"):
+                _external_open_cake_candidates([candidate], arm="both")
+
+    def test_external_open_cake_candidates_reject_descriptor_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = self._candidate(
+                Path(directory), "direct-candidate", arm="direct_cuda"
+            )
+            with self.assertRaisesRegex(ValueError, "descriptor differs"):
+                _external_open_cake_candidates([candidate], arm="open_cake")
+
+    def test_external_open_cake_candidates_reject_duplicates_and_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = self._candidate(root, "candidate")
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                _external_open_cake_candidates(
+                    [candidate, candidate], arm="open_cake"
+                )
+            alias = root / "alias"
+            alias.symlink_to(candidate, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                _external_open_cake_candidates([alias], arm="open_cake")
+
+    def test_default_candidate_selection_and_label_prefix_remain_compatible(
+        self,
+    ) -> None:
+        cake = Path("/seed/open-cake")
+        direct = Path("/seed/direct")
+        with patch(
+            "launch_qsa_seed_experiment._materialize_candidates",
+            return_value=(cake, direct),
+        ) as materialize:
+            selected = _select_candidates(
+                Path("/run"),
+                SimpleNamespace(),
+                arm="both",
+                external_open_cake=[],
+            )
+        arguments = build_parser().parse_args(
+            [
+                "--run-root",
+                "/run",
+                "--remote-project-root",
+                "/remote/project",
+                "--remote-state-root",
+                "/remote/state",
+                "--remote-socket",
+                "/tmp/qsa.sock",
+                "--remote-inbox",
+                "/remote/inbox",
+            ]
+        )
+
+        self.assertEqual(selected, (cake, direct))
+        self.assertEqual(arguments.label_prefix, "qsa-seed-")
+        materialize.assert_called_once()
+
+    def test_parser_accepts_repeated_candidates_and_custom_label_prefix(self) -> None:
+        arguments = build_parser().parse_args(
+            [
+                "--run-root",
+                "/run",
+                "--remote-project-root",
+                "/remote/project",
+                "--remote-state-root",
+                "/remote/state",
+                "--remote-socket",
+                "/tmp/qsa.sock",
+                "--remote-inbox",
+                "/remote/inbox",
+                "--arm",
+                "open_cake",
+                "--open-cake-candidate",
+                "/candidate/one",
+                "--open-cake-candidate",
+                "/candidate/two",
+                "--label-prefix",
+                "qsa-r13-",
+            ]
+        )
+
+        self.assertEqual(
+            arguments.open_cake_candidate,
+            [Path("/candidate/one"), Path("/candidate/two")],
+        )
+        self.assertEqual(arguments.label_prefix, "qsa-r13-")
 
     def test_component_timing_has_a_distinct_task_and_explicit_evaluator_flag(self) -> None:
         task = _task(

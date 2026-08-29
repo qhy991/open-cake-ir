@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install exact local source and submit the two QSA seed arms through GPU Infra."""
+"""Install exact local source and submit QSA candidates through GPU Infra."""
 
 from __future__ import annotations
 
@@ -109,6 +109,65 @@ def _materialize_candidates(root: Path, program: ProgramContract) -> tuple[Path,
         },
     )
     return cake, direct
+
+
+def _external_open_cake_candidates(
+    candidates: list[Path], *, arm: str
+) -> tuple[Path, ...]:
+    if arm != "open_cake":
+        raise ValueError("external Open-Cake candidates require --arm open_cake")
+    resolved: list[Path] = []
+    seen: set[Path] = set()
+    for source in candidates:
+        if source.is_symlink():
+            raise ValueError(f"external Open-Cake candidate is a symlink: {source}")
+        candidate = source.resolve(strict=True)
+        if not candidate.is_dir():
+            raise ValueError(
+                f"external Open-Cake candidate is not a directory: {source}"
+            )
+        if candidate in seen:
+            raise ValueError(f"duplicate external Open-Cake candidate: {source}")
+        descriptor_source = candidate / "candidate.json"
+        if descriptor_source.is_symlink():
+            raise ValueError(
+                f"external Open-Cake candidate descriptor is a symlink: {source}"
+            )
+        if not descriptor_source.is_file():
+            raise ValueError(
+                f"external Open-Cake candidate descriptor is missing: {source}"
+            )
+        descriptor = json.loads(descriptor_source.read_text(encoding="utf-8"))
+        if (
+            not isinstance(descriptor, dict)
+            or set(descriptor) != {"schema_version", "arm", "nodes"}
+            or descriptor.get("schema_version") != 1
+            or descriptor.get("arm") != "open_cake"
+            or not isinstance(descriptor.get("nodes"), list)
+        ):
+            raise ValueError(
+                f"external Open-Cake candidate descriptor differs: {source}"
+            )
+        seen.add(candidate)
+        resolved.append(candidate)
+    return tuple(resolved)
+
+
+def _select_candidates(
+    root: Path,
+    program: ProgramContract,
+    *,
+    arm: str,
+    external_open_cake: list[Path],
+) -> tuple[Path, ...]:
+    if external_open_cake:
+        return _external_open_cake_candidates(external_open_cake, arm=arm)
+    cake, direct = _materialize_candidates(root, program)
+    return {
+        "both": (cake, direct),
+        "open_cake": (cake,),
+        "direct_cuda": (direct,),
+    }[arm]
 
 
 def _task(
@@ -340,6 +399,22 @@ def build_parser() -> argparse.ArgumentParser:
         default="both",
         help="submit both matched seeds or one explicitly diagnostic arm",
     )
+    parser.add_argument(
+        "--open-cake-candidate",
+        action="append",
+        default=[],
+        type=Path,
+        help=(
+            "submit one existing Open-Cake candidate directory instead of "
+            "materializing the seed arms; repeat for a batch and use with "
+            "--arm open_cake"
+        ),
+    )
+    parser.add_argument(
+        "--label-prefix",
+        default="qsa-seed-",
+        help="GPU Infra label prefix for this immutable candidate batch",
+    )
     return parser
 
 
@@ -354,8 +429,22 @@ def main(argv: list[str] | None = None) -> int:
     node = runtime["node"]
     if runtime.get("schema_version") != 1 or not isinstance(node, dict):
         raise ValueError("QSA GPU Infra runtime binding differs")
-    run_root.mkdir(parents=True)
-    cake, direct = _materialize_candidates(run_root, program)
+    if arguments.open_cake_candidate:
+        selected_candidates = _select_candidates(
+            run_root,
+            program,
+            arm=arguments.arm,
+            external_open_cake=arguments.open_cake_candidate,
+        )
+        run_root.mkdir(parents=True)
+    else:
+        run_root.mkdir(parents=True)
+        selected_candidates = _select_candidates(
+            run_root,
+            program,
+            arm=arguments.arm,
+            external_open_cake=[],
+        )
     task_path = run_root / "task.json"
     _write_new(
         task_path,
@@ -399,11 +488,6 @@ def main(argv: list[str] | None = None) -> int:
         runtime=runtime,
     )
     routes = run_root / "routes"
-    selected_candidates = {
-        "both": [cake, direct],
-        "open_cake": [cake],
-        "direct_cuda": [direct],
-    }[arguments.arm]
     _run(
         [
             str(kernelctl),
@@ -413,7 +497,7 @@ def main(argv: list[str] | None = None) -> int:
             "--require",
             "b200",
             "--label-prefix",
-            "qsa-seed-",
+            arguments.label_prefix,
             "--route-dir",
             str(routes),
             str(task_path),
