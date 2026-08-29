@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "repository_owner_review_surface_for_signed_int32_resident_top_k_compiler_release",
-  "status": "repository_owner_release_approved",
+  "status": "compiler_revision_released",
   "branch": "codex/qsa-locality-r13",
   "compiler_change_commit": "108a3c4b128a6338a056576d56e3d265ec122996",
   "expectation_adoption_commit": "78d34a4",
@@ -51,6 +51,13 @@
     "prior_release_archived": "compiler/releases/v32",
     "prior_release_lock_replaced": false,
     "release_approval_modified": false
+  },
+  "released_revision": {
+    "revision_id": "open-cake-ir-sm100a-v33",
+    "canonical_sha256": "c5c9816ec480db9fac85be782dc5207255ef95a82b7b511bb825e190e51342b5",
+    "approval_canonical_sha256": "815d756a5f78dd8741f1c4ca069c372b77d86c31beeb7434778131f4d07529d6",
+    "release_cycle_exit_code": 0,
+    "verified": true
   },
   "validation": {
     "draft_expectations": "corpus expectations already match the draft Compiler",
