@@ -378,6 +378,33 @@
       }
     },
     {
+      "case_id": "fp32-tf32-mma-accepted",
+      "schedule": "corpus/schedules/fp32-tf32-mma-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "9eca1138b6efdecb5a813abcc84d85f676f12ed4d200643f33db0f72e8432cca",
+        "lowering_source_sha256": "da448d841a49f817ff05064f2abad58dd59eaad9fac351905b0078b60e25da2a"
+      }
+    },
+    {
+      "case_id": "fp32-tf32-mma-bf16-drift",
+      "schedule": "corpus/schedules/fp32-tf32-mma-b1-smoke-bf16-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_OPERAND_DTYPE_DIFFERS",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "2faab4df4bd3daf9aa756814a1e7cabf04ec9c1096d27ba8b79dcb3b60f7519c",
+        "lowering_source_sha256": null
+      }
+    },
+    {
       "case_id": "ragged-zero-pad-accepted",
       "schedule": "corpus/schedules/ragged-zero-pad-b1-smoke.json",
       "expected": {
