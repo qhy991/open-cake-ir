@@ -1,7 +1,8 @@
 {
   "schema_version": 1,
   "purpose": "review_surface_for_generic_triton_multi_mma_corpus_adoption",
-  "status": "proposal_ready_for_repository_owner_authorized_adoption",
+  "status": "repository_owner_authorized_and_adopted",
+  "canonical_owner": "corpus/manifest.json",
   "compiler_change_commit": "c0b637e",
   "adr": "docs/adr/0045-triton-lowering-admits-multiple-explicit-mma-dag-nodes.md",
   "pre_adoption_manifest_case_count": 62,
@@ -64,19 +65,19 @@
     "workload_program_evaluator_executor_changed": false
   },
   "local_validation": {
-    "focused_result": "55 passed, 76 subtests passed",
+    "focused_result": "55 passed, 78 subtests passed after canonical adoption",
     "draft_corpus_before_adoption": "62 of 62 matched",
+    "draft_corpus_after_adoption": "64 of 64 matched",
     "exact_triton_compile": "pending after release",
     "b200_candidate_correctness_and_timing": "pending after release"
   },
   "review_authority": {
     "reviewer": "repository_owner",
     "authorization_basis": "user authorized continuous Compiler IR and operator iteration and explicit approval-artifact writing",
-    "adoption_condition": "adopt only the two exact cases above without refreshing any existing expectation"
+    "adoption_condition": "adopt only the two exact cases above without refreshing any existing expectation",
+    "adopted_without_refresh_write": true
   },
   "required_next_state_transition": [
-    "adopt the two exact cases into canonical corpus/manifest.json",
-    "verify all 64 draft Corpus cases match",
     "generate and approve the exact v38 Gate",
     "release and exact-compile the explicit K64 QSA candidate before external-oracle correctness and complete-Program timing"
   ],

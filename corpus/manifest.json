@@ -797,6 +797,34 @@
       }
     },
     {
+      "case_id": "triton-fp32-two-k64-mma-loop-accepted",
+      "schedule": "corpus/schedules/triton-fp32-two-k64-mma-loop-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "73d67a40731571206d6c32f44aa94a8831ee1454c7bc83ee7ef48a7819f1343d",
+        "lowering_source_sha256": "beda30fe8261c739a484b1ef8835e5f221f432eab84ced1757bdd816754a94b5"
+      }
+    },
+    {
+      "case_id": "triton-multi-mma-second-contract-drift",
+      "schedule": "corpus/schedules/triton-bf16-two-k64-mma-loop-b1-smoke-second-contract-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "TRITON_MMA_INSTRUCTION_UNSUPPORTED"
+        ],
+        "schedule_sha256": "5cfb892beb3dcbbeaf7b46a5de06aeba52669c92a6d80e0c38af2fafaf85d0e5",
+        "lowering_source_sha256": null
+      }
+    },
+    {
       "case_id": "qsa-pool-t32768-accepted",
       "schedule": "corpus/schedules/qsa-pool-t32768.json",
       "expected": {
