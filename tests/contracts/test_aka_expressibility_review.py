@@ -313,8 +313,11 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
         return name
 
     @staticmethod
-    def schedule_aspect(path: str) -> dict[str, object]:
+    def schedule_aspect(
+        path: str, assessment_scope: str = "contract"
+    ) -> dict[str, object]:
         return {
+            "assessment_scope": assessment_scope,
             "owner_scope": "schedule",
             "owner_relation": None,
             "disposition": "schedule",
@@ -399,6 +402,13 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
         result = verify_review(self.work_root, "case-000001")
 
         self.assertEqual(result["primary_class"], "unknown")
+        self.assertEqual(
+            result["complete_parent_expressibility"]["assessment_scope"],
+            "contract",
+        )
+        self.assertEqual(
+            result["delta_expressibility"]["assessment_scope"], "contract"
+        )
         self.assertEqual(result["delta_expressibility"]["classification"], "not_applicable")
         self.assertEqual(result["semantic_binding"], "reviewer_claimed")
         self.assertEqual(result["compiler_maturity"], "draft")
@@ -438,6 +448,7 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
 
         gap = self.materialized_review("case-000002")
         gap["complete_parent"] = {
+            "assessment_scope": "contract",
             "owner_scope": "schedule",
             "owner_relation": None,
             "disposition": "schedule_gap",
@@ -489,6 +500,7 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
             review, "case-000001", outcome="runnable_unqualified"
         )
         review["complete_parent"] = {
+            "assessment_scope": "contract",
             "owner_scope": "schedule",
             "owner_relation": None,
             "disposition": "schedule_gap",
@@ -545,6 +557,33 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
         self.assertNotIn("no_gap", json.dumps(result))
         self.assertNotIn("described", json.dumps(result))
 
+    def test_fixed_instance_lowering_does_not_claim_complete_parent(self) -> None:
+        self.initialize()
+        review = self.materialized_review()
+        self.bind_completion(review, "case-000001")
+        schedule = self.copy_schedule(
+            "case-000001", "corpus/schedules/flash-kmeans-assignment-full.json"
+        )
+        review["complete_parent"] = self.schedule_aspect(
+            schedule, "fixed_instance"
+        )
+        self.write_review("case-000001", review)
+
+        result = verify_review(self.work_root, "case-000001")
+
+        self.assertEqual(result["primary_class"], "fixed_instance_candidate_lowerable")
+        checked = result["complete_parent_expressibility"]
+        self.assertEqual(checked["assessment_scope"], "fixed_instance")
+        self.assertEqual(checked["compiler_check"], "lowerable")
+        self.assertNotEqual(checked["classification"], "schedule_candidate_lowerable")
+
+        review["complete_parent"]["disposition"] = "schedule_gap"
+        self.write_review("case-000001", review)
+        with self.assertRaisesRegex(
+            ReviewError, "fixed_instance assessment_scope requires"
+        ):
+            verify_review(self.work_root, "case-000001")
+
     def test_case_local_backend_blocked_schedule_is_only_a_candidate(self) -> None:
         self.initialize()
         review = self.materialized_review()
@@ -591,6 +630,7 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
         review = self.materialized_review()
         self.bind_completion(review, "case-000001")
         review["complete_parent"] = {
+            "assessment_scope": "contract",
             "owner_scope": "program",
             "owner_relation": "Two launches and their dependency edge form the endpoint.",
             "disposition": "owner_redirect",
@@ -599,6 +639,7 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
             "reason": "The complete endpoint is larger than one Schedule.",
         }
         review["delta"] = {
+            "assessment_scope": "contract",
             "owner_scope": "portfolio",
             "owner_relation": "A runtime shape guard selects one specialist.",
             "disposition": "owner_redirect",

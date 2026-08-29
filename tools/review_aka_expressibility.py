@@ -41,17 +41,18 @@ from tools.audit_aka_corpus import (  # noqa: E402
 )
 
 
-WORK_SCHEMA = "open-cake.aka-expressibility-work.v2"
+WORK_SCHEMA = "open-cake.aka-expressibility-work.v3"
 INPUT_SCHEMA = "open-cake.aka-expressibility-input.v2"
-REVIEW_SCHEMA = "open-cake.aka-expressibility-review.v2"
-CHECKED_SCHEMA = "open-cake.aka-expressibility-checked.v2"
-STATUS_SCHEMA = "open-cake.aka-expressibility-status.v2"
+REVIEW_SCHEMA = "open-cake.aka-expressibility-review.v3"
+CHECKED_SCHEMA = "open-cake.aka-expressibility-checked.v3"
+STATUS_SCHEMA = "open-cake.aka-expressibility-status.v3"
 
 PARENT_STATUSES = frozenset({"unknown", "missing", "completion"})
 OWNER_SCOPES = frozenset({"unknown", "schedule", "program", "portfolio"})
 DISPOSITIONS = frozenset(
     {"unknown", "not_applicable", "schedule_gap", "schedule", "owner_redirect"}
 )
+ASSESSMENT_SCOPES = frozenset({"contract", "fixed_instance"})
 GAP_FIELDS = frozenset(
     {
         "capability",
@@ -366,6 +367,7 @@ def _aspect_schema() -> dict[str, object]:
         "type": "object",
         "additionalProperties": False,
         "required": [
+            "assessment_scope",
             "owner_scope",
             "owner_relation",
             "disposition",
@@ -374,6 +376,10 @@ def _aspect_schema() -> dict[str, object]:
             "reason",
         ],
         "properties": {
+            "assessment_scope": {
+                "type": "string",
+                "enum": sorted(ASSESSMENT_SCOPES),
+            },
             "owner_scope": {"type": "string", "enum": sorted(OWNER_SCOPES)},
             "owner_relation": {"type": ["string", "null"]},
             "disposition": {"type": "string", "enum": sorted(DISPOSITIONS)},
@@ -467,6 +473,11 @@ with a case-relative path. Do not use a Compiler Corpus Schedule as proof. Progr
 and multi-launch relations belong to program composition; runtime specialist selection
 belongs to a portfolio. Those redirects require an explicit owner relation and no
 Schedule. A Schedule vocabulary gap requires every `missing_ir` field.
+
+State exactly what a submitted Schedule checks. Use `contract` only when one Schedule
+represents the whole narrowed contract of its containing lane. Use `fixed_instance` when
+it checks one static shape or binding from a wider runtime contract; Compiler acceptance
+then says nothing about the remaining runtime domain.
 
 Copy `review.template.json` to `review.json`. The checker derives classifications; do not
 add one. It runs case-local Schedules through the exact Compiler assess/lower interface.
@@ -729,8 +740,9 @@ def _review_applicability(record: SourceRecord) -> tuple[bool, bool]:
     return complete_parent, delta
 
 
-def _unknown_aspect(reason: str) -> dict[str, object]:
+def _unknown_aspect(reason: str, *, assessment_scope: str) -> dict[str, object]:
     return {
+        "assessment_scope": assessment_scope,
         "owner_scope": "unknown",
         "owner_relation": None,
         "disposition": "unknown",
@@ -740,8 +752,9 @@ def _unknown_aspect(reason: str) -> dict[str, object]:
     }
 
 
-def _not_applicable_aspect() -> dict[str, object]:
+def _not_applicable_aspect(*, assessment_scope: str) -> dict[str, object]:
     return {
+        "assessment_scope": assessment_scope,
         "owner_scope": "unknown",
         "owner_relation": None,
         "disposition": "not_applicable",
@@ -797,17 +810,19 @@ def _case_documents(context: Context, index: int) -> tuple[dict[str, object], di
         },
         "complete_parent": (
             _unknown_aspect(
-                "The available evidence is insufficient to classify the complete parent."
+                "The available evidence is insufficient to classify the complete parent.",
+                assessment_scope="contract",
             )
             if complete_applicable
-            else _not_applicable_aspect()
+            else _not_applicable_aspect(assessment_scope="contract")
         ),
         "delta": (
             _unknown_aspect(
-                "The available evidence is insufficient to classify the delta."
+                "The available evidence is insufficient to classify the delta.",
+                assessment_scope="contract",
             )
             if delta_applicable
-            else _not_applicable_aspect()
+            else _not_applicable_aspect(assessment_scope="contract")
         ),
     }
     return case_input, template
@@ -1076,6 +1091,7 @@ def _aspect(value: object, label: str, *, applicable: bool) -> dict[str, object]
     _expect_fields(
         value,
         {
+            "assessment_scope",
             "owner_scope",
             "owner_relation",
             "disposition",
@@ -1085,10 +1101,21 @@ def _aspect(value: object, label: str, *, applicable: bool) -> dict[str, object]
         },
         label,
     )
+    assessment_scope = value.get("assessment_scope")
     owner = value.get("owner_scope")
     disposition = value.get("disposition")
-    if owner not in OWNER_SCOPES or disposition not in DISPOSITIONS:
-        raise ReviewError(f"{label} owner_scope or disposition is invalid")
+    if (
+        assessment_scope not in ASSESSMENT_SCOPES
+        or owner not in OWNER_SCOPES
+        or disposition not in DISPOSITIONS
+    ):
+        raise ReviewError(
+            f"{label} assessment_scope, owner_scope or disposition is invalid"
+        )
+    if assessment_scope == "fixed_instance" and disposition != "schedule":
+        raise ReviewError(
+            "fixed_instance assessment_scope requires a Schedule disposition"
+        )
     relation = value.get("owner_relation")
     if relation is not None and (not isinstance(relation, str) or not relation.strip()):
         raise ReviewError(f"{label}.owner_relation must be a non-empty string or null")
@@ -1125,6 +1152,7 @@ def _aspect(value: object, label: str, *, applicable: bool) -> dict[str, object]
             f"{label} redirect requires a program/portfolio relation and no Schedule"
         )
     return {
+        "assessment_scope": assessment_scope,
         "owner_scope": owner,
         "owner_relation": relation,
         "disposition": disposition,
@@ -1241,6 +1269,11 @@ def _classify(
         raise ReviewError(
             f"{label} Schedule is invalid authoring, not an IR gap; findings: {codes}"
         )
+    prefix = (
+        "fixed_instance_candidate"
+        if aspect["assessment_scope"] == "fixed_instance"
+        else "schedule_candidate"
+    )
     lowering_record = None
     if assessment.lowering_eligible:
         try:
@@ -1258,10 +1291,10 @@ def _classify(
             "source_sha256": lowering.source_sha256,
             "toolchain_requirements": dict(lowering.toolchain_requirements),
         }
-        classification = "schedule_candidate_lowerable"
+        classification = f"{prefix}_lowerable"
         compiler_check = "lowerable"
     else:
-        classification = "schedule_candidate_backend_blocked"
+        classification = f"{prefix}_backend_blocked"
         compiler_check = "backend_blocked"
     return {
         **aspect,

@@ -147,6 +147,7 @@ relation: analyze | generate | repair | optimize
 artifact field roles
 scope and lexical signals per code-artifact role
 owner_scope
+assessment_scope: contract | fixed_instance
 complete_parent_expressibility
 delta_expressibility
 provenance/evidence/split status
@@ -168,9 +169,15 @@ case-local Schedule candidates are checked with the exact frozen Compiler `asses
 path. Compiler acceptance and lowering are not semantic equivalence: the result remains
 `semantic_binding=reviewer_claimed`, `review_state=checked`, and `gpu_test=not_run`.
 
-The admitted outputs are therefore provisional `schedule_candidate_lowerable`,
-`schedule_candidate_backend_blocked`, `schedule_gap_candidate`, or program/portfolio
-redirect candidates. They must not be aggregated as released IR coverage. A future
+The Schedule check has one explicit scope owner. `schedule_candidate_lowerable` and
+`schedule_candidate_backend_blocked` are reserved for a reviewer claim about the whole
+narrowed parent contract. A static case-local Schedule from a wider runtime parent is
+instead `fixed_instance_candidate_lowerable` or
+`fixed_instance_candidate_backend_blocked`; it does not classify the rest of the runtime
+domain. Other admitted outputs remain provisional `schedule_gap_candidate` or
+program/portfolio redirect candidates. They must not be aggregated as released IR
+coverage. Lexical signal counts are retrieval aids only, never gap counts or priority.
+A future
 independent semantic adjudicator and workload-owned external evaluation are required before
 any row may become described/tested evidence or motivate a Compiler Corpus change.
 
@@ -311,10 +318,11 @@ and documents parser ownership of arbitrary-length warp adjacency. Because v29 a
 a retained observation, the fixes require a successor Compiler Revision and external release
 approval before an AKA coverage run can treat them as the current Compiler boundary.
 
-No new primitive is justified by row frequency alone. The first vocabulary candidate must
-have at least two independent, source-complete cases that require the same irreducible
-commitment. Current candidates for that review are concrete vector width/alignment/lane
-mapping and a runtime scalar value; neither is accepted by this ADR.
+No new primitive is justified by row frequency alone. As a governance policy rather than a
+finding of the AKA corpus, a vocabulary candidate must have at least two independent,
+source-complete cases that require the same irreducible commitment. Current candidates for
+that review are concrete vector width/alignment/lane mapping and a runtime scalar value;
+neither is accepted by this ADR.
 
 ## Promotion into the Compiler Corpus
 

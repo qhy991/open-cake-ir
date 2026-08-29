@@ -11,8 +11,17 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
-SUMMARY_SCHEMA = "open-cake.aka-portable-parent-ir-review-summary.v1"
+SUMMARY_SCHEMA = "open-cake.aka-portable-parent-ir-review-summary.v2"
 POOL_FINAL_SCHEMA = "open-cake.aka-portable-parent-pool-final.v1"
+CHECKED_SCHEMAS = {
+    "open-cake.aka-expressibility-checked.v2",
+    "open-cake.aka-expressibility-checked.v3",
+}
+ASSESSMENT_SCOPES = {
+    "contract",
+    "fixed_instance",
+    "legacy_unspecified",
+}
 SIGNALS = {
     "runtime_parameterization": (
         "runtime",
@@ -96,6 +105,7 @@ def summarize(pool_root: Path, *, expected_count: int) -> dict[str, object]:
     complete_counts: Counter[str] = Counter()
     delta_counts: Counter[str] = Counter()
     owner_counts: Counter[str] = Counter()
+    scope_counts: Counter[str] = Counter()
     compiler_counts: Counter[str] = Counter()
     signal_counts: Counter[str] = Counter()
 
@@ -154,11 +164,36 @@ def summarize(pool_root: Path, *, expected_count: int) -> dict[str, object]:
         complete_class = str(complete.get("classification"))
         delta_class = str(delta.get("classification"))
         owner_scope = str(complete.get("owner_scope"))
+        checked_schema = checked.get("schema")
+        if checked_schema not in CHECKED_SCHEMAS:
+            raise SummaryError(f"checked schema differs for {queue_case_id}")
+        assessment_scope = complete.get("assessment_scope")
+        if checked_schema == "open-cake.aka-expressibility-checked.v2":
+            if assessment_scope is not None:
+                raise SummaryError(
+                    f"legacy checked scope is unexpectedly present for {queue_case_id}"
+                )
+            assessment_scope = "legacy_unspecified"
+        if assessment_scope not in ASSESSMENT_SCOPES:
+            raise SummaryError(f"checked assessment scope differs for {queue_case_id}")
+        if primary_class != complete_class:
+            raise SummaryError(f"primary class differs from complete lane for {queue_case_id}")
+        if (
+            assessment_scope == "fixed_instance"
+            and not complete_class.startswith("fixed_instance_candidate_")
+        ):
+            raise SummaryError(f"fixed instance class differs for {queue_case_id}")
+        if (
+            assessment_scope == "contract"
+            and complete_class.startswith("fixed_instance_candidate_")
+        ):
+            raise SummaryError(f"complete parent class differs for {queue_case_id}")
         compiler_check = str(complete.get("compiler_check"))
         primary_counts[primary_class] += 1
         complete_counts[complete_class] += 1
         delta_counts[delta_class] += 1
         owner_counts[owner_scope] += 1
+        scope_counts[str(assessment_scope)] += 1
         compiler_counts[compiler_check] += 1
         gap = complete.get("missing_ir")
         capability = gap.get("capability") if isinstance(gap, dict) else None
@@ -182,6 +217,7 @@ def summarize(pool_root: Path, *, expected_count: int) -> dict[str, object]:
                 "source_identity": entry.get("source_identity"),
                 "primary_class": primary_class,
                 "complete_parent_class": complete_class,
+                "assessment_scope": assessment_scope,
                 "owner_scope": owner_scope,
                 "owner_relation": complete.get("owner_relation"),
                 "compiler_check": compiler_check,
@@ -213,8 +249,9 @@ def summarize(pool_root: Path, *, expected_count: int) -> dict[str, object]:
         "complete_parent_class_counts": dict(sorted(complete_counts.items())),
         "delta_class_counts": dict(sorted(delta_counts.items())),
         "owner_scope_counts": dict(sorted(owner_counts.items())),
+        "assessment_scope_counts": dict(sorted(scope_counts.items())),
         "compiler_check_counts": dict(sorted(compiler_counts.items())),
-        "overlapping_gap_signal_counts": dict(sorted(signal_counts.items())),
+        "retrieval_signal_counts": dict(sorted(signal_counts.items())),
         "claim_boundary": {
             "parent_status": "runnable_by_parent_validator",
             "portable_qualification": "projection_not_node_custody",
@@ -229,7 +266,7 @@ def summarize(pool_root: Path, *, expected_count: int) -> dict[str, object]:
 
 def markdown(summary: dict[str, object]) -> str:
     primary = summary["primary_class_counts"]
-    signals = summary["overlapping_gap_signal_counts"]
+    signals = summary["retrieval_signal_counts"]
     lines = [
         "# AKA portable parent v2 IR review",
         "",
@@ -263,9 +300,9 @@ def markdown(summary: dict[str, object]) -> str:
             "",
             "The 100 parents were selected as the source-identity difference between the 150-record v2 snapshot and the 50-record v1 snapshot. This is not a representative IR coverage rate over all AKA rows; it is a challenge set reconstructed from historical parent-invalid records.",
             "",
-            "## Overlapping gap signals",
+            "## Retrieval-only signals",
             "",
-            "These are deterministic lexical projections over the exact reviewer capability/reason fields. They overlap and are not a new IR taxonomy or frequency-based authorization for a primitive.",
+            "These deterministic lexical projections exist only to retrieve cases for human review. They overlap, do not measure gaps, and cannot rank or authorize an IR primitive.",
             "",
             "| Signal | Cases |",
             "| --- | ---: |",
@@ -278,14 +315,15 @@ def markdown(summary: dict[str, object]) -> str:
             "",
             "## Interpretation",
             "",
-            "- `schedule_candidate_lowerable` means a model-authored case-local Schedule passed the frozen draft Compiler assessment and lowering. It does not prove semantic equivalence or GPU correctness.",
-            "- `schedule_gap_candidate` identifies a source-complete single-kernel parent whose reviewer found an irreducible missing capability. Human review and independent recurrence are required before changing the IR.",
+            "- `fixed_instance_candidate_lowerable` means one static case-local Schedule passed Compiler assessment and lowering; it says nothing about the complete runtime parent domain.",
+            "- `schedule_candidate_lowerable` is reserved for a reviewer claim that the case-local Schedule covers the whole narrowed parent contract. It still does not prove semantic equivalence or GPU correctness.",
+            "- `schedule_gap_candidate` identifies a runnable derived single-kernel parent whose reviewer proposed an irreducible missing capability. Human review and independent recurrence are required before changing the IR.",
             "- `program_redirect_candidate` and `portfolio_redirect_candidate` preserve the one-Schedule/one-kernel boundary rather than encoding multi-launch relations or runtime dispatch as Schedule flags.",
             "",
             "## Per-parent results",
             "",
-            "| Queue case | Derived parent | Source | Primary class | Owner | Compiler | Gap capability |",
-            "| --- | --- | --- | --- | --- | --- | --- |",
+            "| Queue case | Derived parent | Source | Primary class | Scope | Owner | Compiler | Gap capability |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for row in summary["rows"]:
@@ -293,14 +331,14 @@ def markdown(summary: dict[str, object]) -> str:
         source_text = f"`{source[0]}:{source[1]}:{source[2]}`"
         capability = str(row.get("gap_capability") or "").replace("|", "\\|")
         lines.append(
-            f"| `{row['queue_case_id']}` | `{row['derived_parent_id']}` | {source_text} | `{row['primary_class']}` | `{row['owner_scope']}` | `{row['compiler_check']}` | {capability} |"
+            f"| `{row['queue_case_id']}` | `{row['derived_parent_id']}` | {source_text} | `{row['primary_class']}` | `{row['assessment_scope']}` | `{row['owner_scope']}` | `{row['compiler_check']}` | {capability} |"
         )
     lines.extend(
         [
             "",
             "## Promotion boundary",
             "",
-            "A recurring gap may enter an IR proposal only after at least two independent source-complete cases require the same irreducible commitment. A proposal must update typed IR, authoring Schema, verifier, analysis and lowering together; add a minimal positive and near-miss falsifier; pass the full Corpus Gate; receive external human release approval; and obtain independent target correctness before any coverage claim.",
+            "Governance policy, not a finding of this corpus: a recurring gap may enter an IR proposal only after at least two independent source-complete cases require the same irreducible commitment. A proposal must update typed IR, authoring Schema, verifier, analysis and lowering together; add a minimal positive and near-miss falsifier; pass the full Corpus Gate; receive external human release approval; and obtain independent target correctness before any coverage claim.",
             "",
         ]
     )

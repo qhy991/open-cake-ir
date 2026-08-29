@@ -10,7 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.summarize_aka_portable_parent_pool import summarize  # noqa: E402
+from tools.summarize_aka_portable_parent_pool import markdown, summarize  # noqa: E402
 
 
 def write(path: Path, value: object) -> None:
@@ -79,10 +79,11 @@ class AkaPortablePoolSummaryTests(unittest.TestCase):
                 write(
                     case_root / f"reviews/cases/{case_id}/checked.json",
                     {
+                        "schema": "open-cake.aka-expressibility-checked.v3",
                         "primary_class": (
                             "schedule_gap_candidate"
                             if gap
-                            else "schedule_candidate_lowerable"
+                            else "fixed_instance_candidate_lowerable"
                         ),
                         "semantic_binding": "reviewer_claimed",
                         "gpu_test": "not_run",
@@ -91,10 +92,15 @@ class AkaPortablePoolSummaryTests(unittest.TestCase):
                             "status": "runnable_by_parent_validator"
                         },
                         "complete_parent_expressibility": {
+                            "assessment_scope": (
+                                "contract"
+                                if gap
+                                else "fixed_instance"
+                            ),
                             "classification": (
                                 "schedule_gap_candidate"
                                 if gap
-                                else "schedule_candidate_lowerable"
+                                else "fixed_instance_candidate_lowerable"
                             ),
                             "owner_scope": "schedule",
                             "owner_relation": None,
@@ -126,22 +132,51 @@ class AkaPortablePoolSummaryTests(unittest.TestCase):
             self.assertEqual(
                 result["primary_class_counts"],
                 {
-                    "schedule_candidate_lowerable": 1,
+                    "fixed_instance_candidate_lowerable": 1,
                     "schedule_gap_candidate": 1,
                 },
             )
             self.assertEqual(
-                result["overlapping_gap_signal_counts"]["runtime_parameterization"],
+                result["assessment_scope_counts"],
+                {
+                    "contract": 1,
+                    "fixed_instance": 1,
+                },
+            )
+            self.assertEqual(
+                result["retrieval_signal_counts"]["runtime_parameterization"],
                 1,
             )
             self.assertEqual(
-                result["overlapping_gap_signal_counts"][
+                result["retrieval_signal_counts"][
                     "indexed_addressing_or_scatter"
                 ],
                 1,
             )
             self.assertEqual(
                 result["claim_boundary"]["semantic_binding"], "reviewer_claimed"
+            )
+            rendered = markdown(result)
+            self.assertIn("## Retrieval-only signals", rendered)
+            self.assertIn("fixed_instance_candidate_lowerable", rendered)
+            self.assertNotIn("## Overlapping gap signals", rendered)
+
+            legacy_path = (
+                root
+                / "cases/case-000002/reviews/cases/case-000002/checked.json"
+            )
+            legacy = json.loads(legacy_path.read_text(encoding="utf-8"))
+            legacy["schema"] = "open-cake.aka-expressibility-checked.v2"
+            legacy["primary_class"] = "schedule_candidate_lowerable"
+            legacy["complete_parent_expressibility"][
+                "classification"
+            ] = "schedule_candidate_lowerable"
+            legacy["complete_parent_expressibility"].pop("assessment_scope")
+            write(legacy_path, legacy)
+
+            legacy_result = summarize(root, expected_count=2)
+            self.assertEqual(
+                legacy_result["assessment_scope_counts"]["legacy_unspecified"], 1
             )
 
 
