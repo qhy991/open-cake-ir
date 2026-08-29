@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "purpose": "exact_gate_and_release_approval_basis_for_reverse_scan_case_after_qsa_v39_sync",
+  "status": "exact_gate_matched_and_repository_owner_authorized_for_approval",
+  "integration_commit": "fcf9328",
+  "case_adoption_commit": "448578c",
+  "compiler_revision": {
+    "id": "open-cake-ir-sm100a-v40-draft",
+    "proposal_canonical_sha256": "e91ea7074ed7c4a26732d5d63af768dec7e04fec6c87063c2b23bdaa8e577767",
+    "source_set_canonical_sha256": "565548665d7e80fdf9ab860abf79cad1ab455ff769dfdfc0932551b417378588"
+  },
+  "gate": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "5961b335a67c15cd3afedfff9524e9d804b391bf07d7d6bdc4e9530deeaae723",
+    "case_count": 65,
+    "matched_case_count": 65,
+    "bound_source_count": 84,
+    "prior_v39_case_rows_unchanged": true
+  },
+  "new_case": {
+    "case_id": "chunk-cumsum-reverse-accepted",
+    "schedule": "corpus/schedules/chunk-cumsum-reverse-b8-smoke.json",
+    "schedule_sha256": "bb217a4b095ae751676a0a43cfe73bcf8777f81462a0b49dcc9014282c07b596",
+    "lowering_source_sha256": "24d50cdf637b4f2201d2787f87baaca73c528665201bb099f8a88f708a443d78",
+    "finding_codes": [
+      "REGISTER_PRESSURE",
+      "RESIDENCY_BOUND"
+    ],
+    "accepted": true,
+    "lowering_eligible": true
+  },
+  "correctness_evidence": {
+    "authority": "inventory/EMITTED_KERNEL_OBSERVATION_CHUNK_CUMSUM_REVERSE_V29_20260827.json",
+    "exact_schedule_and_lowering_bytes_reused": true,
+    "device": "NVIDIA B200",
+    "total_elements": 65536,
+    "mismatch_count": 0,
+    "max_deviation": 0.0,
+    "tolerance": 1e-05,
+    "performance_measured": false
+  },
+  "sync_boundary": {
+    "qsa_v39_release_preserved": true,
+    "stale_v29_gate_approval_or_lock_reused": false,
+    "backup_branch": "codex/backup-primary-pre-qsa-r13-20260829",
+    "original_primary_branch_rewritten": false,
+    "raw_qsa_runs_copied_into_repo": false
+  },
+  "review": {
+    "reviewer": "repository_owner",
+    "decision": "approved_under_explicit_primary_sync_and_continuous_compiler_authorization",
+    "approval_artifact_status": "pending_exact_write"
+  },
+  "next_minimum_action": "write approval binding the exact v40 Gate, release, and run the post_release suite from the integrated primary path"
+}
