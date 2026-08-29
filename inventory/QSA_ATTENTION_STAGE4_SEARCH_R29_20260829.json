@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_t32768_terminal_existing_ir_attention_stage4_search",
+  "scientific_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "e2f949784ff3614bd2fc7559ef6b5e5527488392",
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v39",
+    "canonical_sha256": "b0aa25546a6d6a324f5a9c0d67d2e66e0edb8ee93b972f50e427560cdd5d3e12",
+    "corpus_gate": "64_of_64_matched"
+  },
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v39",
+    "canonical_sha256": "d83a9ea37b2b69cd54996a124e7ea53c49e823795a684eceda771bfa21dd3339"
+  },
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "external_evidence_roots": {
+    "static": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v39-r29-attention-stage4-static-20260829",
+    "search": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v39-r29-attention-stage4-search-20260829",
+    "authoritative_collection": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v39-r29-attention-stage4-search-20260829/collection-002"
+  },
+  "hypothesis": {
+    "mechanism": "attention selected_loop num_stages 2_to_4 on the merge2 exact_half_selection score frontier",
+    "existing_ir": true,
+    "basis": "stage2_to_stage3 repeatedly saved about three attention milliseconds while the prior stage2 profile retained long_scoreboard stalls",
+    "only_schedule_change": "attention.tile_loops[0].range_options.num_stages: 2_to_4",
+    "program_or_evaluator_change": false,
+    "promotion_threshold_ms": 121.43362365,
+    "required_attention_threshold_ms": 62.7084652071289
+  },
+  "static_filter": {
+    "control_candidate_sha256": "23fae96fa204c7c9d9da3dd04c56c9155ac523395304ae03bb1df31677b0aa4e",
+    "stage4_candidate_sha256": "a3914f7603589d624434dddc4c6ffc5fe99615460603abe29770c3de5ee59d1e",
+    "stage4_attention_schedule_sha256": "d577ad4866abe2f1d88985939e6d9dbe4768c034de364cbbc10fa21708851412",
+    "stage4_attention_lowering_source_sha256": "604b36facaab507992e4983945d3e1e548de7e804496d4cf26d03e82faf9519c",
+    "all_five_nodes_constructed_typed_accepted_and_lowering_eligible": true,
+    "all_five_nodes_program_abi_match": true,
+    "other_candidate_files_byte_identical": true,
+    "work_structure_changed": false,
+    "cost_model": "withheld_not_rejected_no_calibrated_domain_timing_or_compiled_resource_model"
+  },
+  "infrastructure_observation": {
+    "initial_default_controlmaster_observations": "unknown_no_output_and_locally_interrupted",
+    "successful_observation_transport": "ssh_with_controlmaster_disabled",
+    "kernelinfra_version": "0.16.0",
+    "broker_version": "0.5.3",
+    "broker_instance_id": "warm-sun-begins-fin-03-pid1704179-start94630672",
+    "broker_probe_error": null,
+    "pre_submission_disk_free_bytes": 45633228800,
+    "pre_submission_other_job": "gpu0_exclusive_then_broker_released_before_qsa_allocation",
+    "pre_submission_queue": [],
+    "foreign_or_other_jobs_touched": false
+  },
+  "routes": {
+    "control": "b200:open-cake-qsa-prefill-t32768-seed-component-v1-247a890e3895",
+    "stage4": "b200:open-cake-qsa-prefill-t32768-seed-component-v1-d939e2d363c8",
+    "task_sha256": "49d7dde7e2b3434ab1b2203ef5eb195c4f9a95c7a94bf01c03a68e7e9fd5a3a0",
+    "collection_001": "fetch_failed_unknown_due_120_second_transport_timeout",
+    "collection_002": "complete_two_of_two_mirrored_validation_passed",
+    "gpu_rerun_for_collection": false
+  },
+  "same_round_control": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-247a890e3895",
+    "physical_gpu": 0,
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "correctness_max_abs_diff": 0.01848996803164482,
+    "program_median_ms": 127.866484,
+    "program_cv": 0.003572139923422194,
+    "matched_direct_black_box_median_ms": 676.887292,
+    "matched_direct_black_box_cv": 0.0008644018747332198,
+    "speedup": 5.293703798096145,
+    "score_topk_median_ms": 58.53580856323242,
+    "score_topk_cv": 0.00635696074306016,
+    "attention_median_ms": 69.08271789550781,
+    "attention_cv": 0.0051761681691143415,
+    "attention_dynamic_shared_memory_bytes": 68608
+  },
+  "stage4_candidate": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-d939e2d363c8",
+    "physical_gpu": 1,
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "correctness_max_abs_diff": 0.01848996803164482,
+    "program_median_ms": 124.673001,
+    "program_cv": 0.0036420097275464886,
+    "matched_direct_black_box_median_ms": 676.447188,
+    "matched_direct_black_box_cv": 0.0008841263604323872,
+    "speedup": 5.425771278257752,
+    "score_topk_median_ms": 58.488704681396484,
+    "score_topk_cv": 0.0063014929500893845,
+    "attention_median_ms": 65.9362564086914,
+    "attention_cv": 0.005206543173441817,
+    "attention_dynamic_shared_memory_bytes": 70656,
+    "compiled_registers_per_thread": "unknown"
+  },
+  "attribution": {
+    "same_round_program_saving_ms": 3.1934830000000005,
+    "same_round_program_improvement": 0.02497513734717223,
+    "same_round_attention_saving_ms": 3.1464614868164062,
+    "same_round_attention_improvement": 0.04554628976201599,
+    "improvement_vs_promoted_r23": 0.02465769043201898,
+    "improvement_vs_r27_stage3_search": 0.0004000949240261065,
+    "attention_improvement_vs_r27_stage3": 0.0007191901317863885,
+    "program_gap_to_promotion_ms": 3.239377349999998,
+    "stage4_shared_memory_delta_vs_stage2_bytes": 2048,
+    "stage4_shared_memory_delta_vs_stage3_bytes": 1024
+  },
+  "frontier": {
+    "promoted_source": "inventory/QSA_HALF_SELECTION_AND_ACC_BUFFER_SEARCH_R23_R24_20260829.json",
+    "promoted_program_median_ms": 127.824867,
+    "fresh_confirmation_program_median_ms": 127.821446,
+    "lowest_valid_search_program_median_ms": 124.673001,
+    "lowest_valid_search_status": "not_promoted_below_five_percent_materiality",
+    "stage4_fresh_confirmation_or_profile": false
+  },
+  "utilization_boundary": {
+    "authority": "inventory/QSA_UTILIZATION_BOUNDARY_R28_20260829.json",
+    "program_counted_flops_lower_bound": 837545500672,
+    "program_compulsory_bytes_interval": [
+      1300234752,
+      1367343616
+    ],
+    "sound_complete_program_mfu_lower_bound": "not_established",
+    "sound_complete_program_bwu": "unknown",
+    "sound_complete_program_roofline_efficiency": "unknown",
+    "goal_70_percent_achieved": false
+  },
+  "mechanism_closure": {
+    "attention_num_stages": "closed_after_stage1_negative_stage3_positive_below_materiality_and_stage4_valid_positive_below_materiality",
+    "attention_existing_ir": "exhausted_at_fixed_five_percent_materiality",
+    "score_existing_ir": "exhausted_after_half_selection_and_tf32_acc_buffer_k64_negative_or_null_probes",
+    "new_ir": "not_justified_by_current_evidence",
+    "reason_no_new_ir": "remaining limits are compiled_resource_and_runtime_efficiency phenomena but no repeated measured bottleneck has been shown unexpressible by an existing primitive"
+  },
+  "cleanup": {
+    "isolated_daemon_instance_id": "warm-sun-begins-fin-03-pid2098472-start109896586",
+    "isolated_daemon_pid": 2098472,
+    "isolated_daemon_stopped": true,
+    "isolated_socket_removed": true,
+    "remote_project_state_and_raw_evidence_preserved": true,
+    "post_cleanup_broker_running": [],
+    "post_cleanup_broker_queue": [],
+    "foreign_gpu_processes_untouched": true,
+    "local_transport_wrapper_removed": true
+  },
+  "disposition": {
+    "decision": "stop_all_grounded_existing_ir_candidates_exhausted",
+    "reason": "stage4 is correct and stable but improves the complete Program by only 2.498_percent in the same round and is indistinguishable from the prior stage3 point at the fixed five_percent promotion boundary",
+    "next_action_if_new_evidence_arrives": "reopen only for a falsifiable mechanism on the unchanged workload or for explicit authorization to establish ceiling_grade Target rates and measured Program traffic; do not add IR speculatively"
+  }
+}
