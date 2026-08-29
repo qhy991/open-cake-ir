@@ -49,7 +49,7 @@
   "review": {
     "reviewer": "repository_owner",
     "decision": "approved_under_explicit_primary_sync_and_continuous_compiler_authorization",
-    "approval_artifact_status": "pending_exact_write"
+    "approval_artifact_status": "written_and_exactly_bound"
   },
-  "next_minimum_action": "write approval binding the exact v40 Gate, release, and run the post_release suite from the integrated primary path"
+  "next_minimum_action": "release the approved v40 successor and run the post_release suite from the integrated primary path"
 }
