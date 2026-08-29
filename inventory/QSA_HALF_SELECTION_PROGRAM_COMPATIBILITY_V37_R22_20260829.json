@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "preserve_frozen_qsa_program_v2_while_retaining_generic_merge2_half_selection",
-  "status": "exact_v37_gate_matched_and_repository_owner_authorized_for_approval",
+  "status": "exact_v37_gate_matched_and_repository_owner_authorized_approval_written",
   "workload_id": "qsa-prefill-t32768-task-geometry-v1",
   "v36_release": {
     "revision_id": "open-cake-ir-sm100a-v36",
@@ -69,7 +69,9 @@
     "matched_case_count": 62,
     "case_count": 62,
     "bound_source_count": 81,
-    "approval_artifact_status": "pending_exact_write"
+    "approval_canonical_sha256": "dd424d21d45c69f8f81e842ace980650a040a4acbcbd73750e038b36bbaa8519",
+    "approval_artifact_status": "written",
+    "approval_binds_exact_gate": true
   },
   "next_minimum_action": "commit the compatibility correction, generate an exact v37 62-case Gate, release under repository-owner authorization, then repeat formal compile-first without modifying Program v2 or Executor v39"
 }
