@@ -869,6 +869,16 @@ class _TritonEmitter:
                 self.line(
                     f"{pad}{indices} = tl.full(({k},), 2147483647, tl.int32)"
                 )
+                if operation.parameters.source_tiles_per_merge == 2:
+                    source = self.schedule.buffer(operation.reads[0])
+                    _require(
+                        source is not None and len(source.shape) == 1,
+                        "two-tile top_k has no resident rank-one source",
+                    )
+                    self.line(
+                        f"{pad}{operation.op_id}_pending_keys = "
+                        f"tl.zeros(({source.shape[0]},), tl.uint64)"
+                    )
                 self.line()
             elif operation.kind is OperationKind.ONLINE_SOFTMAX:
                 maximum, normalizer, accumulator, _ = (
@@ -956,6 +966,8 @@ class _TritonEmitter:
                 and operation.kind is OperationKind.TOP_K
                 and operation.parameters.across_loop
             ):
+                if operation.parameters.source_tiles_per_merge == 2:
+                    self._emit_two_tile_top_k_flush(operation, self._body_pad())
                 self._emit_top_k_finalize(operation, self._body_pad())
         self.line()
 
@@ -1284,6 +1296,9 @@ class _TritonEmitter:
         """Merge one score tile into deterministic loop-carried top-k state."""
 
         _require(self.loop is not None, "loop-carried top_k has no tile loop")
+        if operation.parameters.source_tiles_per_merge == 2:
+            self._emit_two_tile_loop_carried_top_k(operation, source, pad)
+            return
         values, indices = operation.writes
         k = operation.parameters.k
         prefix = operation.op_id
@@ -1327,6 +1342,131 @@ class _TritonEmitter:
         self.line(f"{pad}{combined} = tl.cat({state_keys}, {source_keys})")
         self.line(f"{pad}{ranked} = tl.topk({combined}, {k})")
         self._emit_top_k_decode(ranked, values, indices, prefix, pad, source.dtype)
+
+    def _emit_two_tile_loop_carried_top_k(self, operation, source, pad: str) -> None:
+        """Retain one source-key tile and merge only on every second loop trip."""
+
+        _require(self.loop is not None, "two-tile top_k has no tile loop")
+        prefix = operation.op_id
+        source_positions = f"{prefix}_source_positions"
+        source_valid = f"{prefix}_source_valid"
+        pending = f"{prefix}_pending_keys"
+        pair = f"{prefix}_pair_keys"
+
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(
+            f"{pad}{source_positions} = {self.loop.iterator} + "
+            f"tl.arange(0, {source.shape[0]})"
+        )
+        # The access-map mask protects the load, while this mask protects selection.
+        # They must use the same effective stop even for a static partial final tile;
+        # otherwise the load's zero fill becomes a real score.
+        self.line(
+            f"{pad}{source_valid} = {source_positions} < {self._loop_stop()}"
+        )
+        source_keys = self._emit_top_k_keys(
+            operation.reads[0],
+            source_positions,
+            source_valid,
+            f"{prefix}_source",
+            pad,
+            source.dtype,
+        )
+        tile = self._tile(self.loop.name)
+        self.line(f"{pad}if (({self.loop.iterator} // {tile}) & 1) != 0:")
+        self.line(f"{pad}    {pair} = tl.cat({pending}, {source_keys})")
+        self._emit_two_tile_top_k_merge(
+            operation,
+            source,
+            pair,
+            f"{prefix}_pair",
+            pad + "    ",
+        )
+        self.line(f"{pad}else:")
+        self.line(f"{pad}    {pending} = {source_keys}")
+
+    def _emit_two_tile_top_k_merge(
+        self,
+        operation,
+        source,
+        source_keys: str,
+        prefix: str,
+        pad: str,
+    ) -> None:
+        """Merge one pair of source-key tiles with the carried selected state."""
+
+        values, indices = operation.writes
+        k = operation.parameters.k
+        state_valid = f"{prefix}_state_valid"
+        self.line(f"{pad}{state_valid} = {indices} != 2147483647")
+        state_keys = self._emit_top_k_keys(
+            values,
+            indices,
+            state_valid,
+            f"{prefix}_state",
+            pad,
+            source.dtype,
+        )
+        source_extent = 2 * source.shape[0]
+        width = max(source_extent, k)
+        source_keys = self._emit_top_k_key_padding(
+            source_keys,
+            source_extent,
+            width,
+            f"{prefix}_source",
+            pad,
+        )
+        state_keys = self._emit_top_k_key_padding(
+            state_keys,
+            k,
+            width,
+            f"{prefix}_state",
+            pad,
+        )
+        combined = f"{prefix}_combined_keys"
+        ranked = f"{prefix}_ranked_keys"
+        self.line(f"{pad}{combined} = tl.cat({state_keys}, {source_keys})")
+        self.line(f"{pad}{ranked} = tl.topk({combined}, {k})")
+        self._emit_top_k_decode(
+            ranked,
+            values,
+            indices,
+            prefix,
+            pad,
+            source.dtype,
+        )
+
+    def _emit_two_tile_top_k_flush(self, operation, pad: str) -> None:
+        """Merge a pending odd final source tile after the declared tile loop."""
+
+        _require(self.loop is not None, "two-tile top_k flush has no tile loop")
+        source = self.schedule.buffer(operation.reads[0])
+        _require(
+            source is not None and len(source.shape) == 1,
+            "two-tile top_k flush has no resident rank-one source",
+        )
+        prefix = operation.op_id
+        pending = f"{prefix}_pending_keys"
+        count = f"{prefix}_source_tile_count"
+        zeros = f"{prefix}_flush_zero_keys"
+        pair = f"{prefix}_flush_pair_keys"
+        tile = self._tile(self.loop.name)
+        stop = self._loop_stop()
+
+        self.line(f"{pad}# CAKE_FLUSH:{operation.op_id}")
+        self.line(f"{pad}{count} = ({stop} + {tile} - 1) // {tile}")
+        self.line(f"{pad}if ({count} & 1) != 0:")
+        self.line(
+            f"{pad}    {zeros} = tl.zeros(({source.shape[0]},), tl.uint64)"
+        )
+        self.line(f"{pad}    {pair} = tl.cat({pending}, {zeros})")
+        self._emit_two_tile_top_k_merge(
+            operation,
+            source,
+            pair,
+            f"{prefix}_flush",
+            pad + "    ",
+        )
 
     def _emit_top_k_keys(
         self,

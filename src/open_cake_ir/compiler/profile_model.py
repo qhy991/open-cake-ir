@@ -11,7 +11,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from .analysis import logical_register_pressure_per_thread, residency_upper_bound
+from .analysis import (
+    logical_register_pressure_per_thread,
+    residency_upper_bound,
+    top_k_merge_structure,
+)
 from .ir import (
     AccessIndexKind,
     MemorySpace,
@@ -167,6 +171,7 @@ def _top_k_features(schedule: Schedule) -> list[dict[str, object]]:
         source = schedule.buffer(operation.reads[0])
         if not isinstance(parameters, TopKParameters) or source is None:
             continue
+        structure = top_k_merge_structure(schedule, operation)
         extent = source.shape[0] if len(source.shape) == 1 else None
         rows.append(
             {
@@ -174,11 +179,52 @@ def _top_k_features(schedule: Schedule) -> list[dict[str, object]]:
                 "k": parameters.k,
                 "source_extent": extent,
                 "across_loop": parameters.across_loop,
-                "merge_width": (
-                    2 * max(parameters.k, extent) if extent is not None else None
+                "source_tiles_per_merge": (
+                    structure.source_tiles_per_merge if structure is not None else None
                 ),
+                "source_elements_per_merge": (
+                    structure.source_elements_per_merge if structure is not None else None
+                ),
+                "merge_width": structure.merge_width if structure is not None else None,
                 "loop_carried_state_elements": (
                     2 * parameters.k if parameters.across_loop else 0
+                ),
+                "loop_carried_state_bytes": (
+                    structure.loop_carried_state_bytes if structure is not None else None
+                ),
+                "pending_source_key_elements": (
+                    structure.pending_source_key_elements if structure is not None else None
+                ),
+                "pending_source_state_bytes": (
+                    structure.pending_source_state_bytes if structure is not None else None
+                ),
+                "structural_count_estimate_kind": (
+                    structure.count_estimate_kind if structure is not None else "unknown"
+                ),
+                "whole_grid_source_tile_update_count": (
+                    structure.whole_grid_source_tile_update_count
+                    if structure is not None
+                    else None
+                ),
+                "whole_grid_full_group_merge_count": (
+                    structure.whole_grid_full_group_merge_count
+                    if structure is not None
+                    else None
+                ),
+                "whole_grid_tail_flush_merge_count": (
+                    structure.whole_grid_tail_flush_merge_count
+                    if structure is not None
+                    else None
+                ),
+                "whole_grid_merge_update_count": (
+                    structure.whole_grid_merge_update_count
+                    if structure is not None
+                    else None
+                ),
+                "structural_count_missing": (
+                    list(structure.count_missing)
+                    if structure is not None
+                    else ["top_k merge structure is unavailable"]
                 ),
             }
         )
@@ -205,9 +251,17 @@ def _synchronization_risk(schedule: Schedule, top_k: list[dict[str, object]]) ->
         )
     for row in top_k:
         if row["across_loop"]:
-            reasons.append(
-                f"loop-carried top_k k={row['k']} merge_width={row['merge_width']}"
-            )
+            if row["source_tiles_per_merge"] == 1:
+                reasons.append(
+                    f"loop-carried top_k k={row['k']} merge_width={row['merge_width']}"
+                )
+            else:
+                reasons.append(
+                    f"loop-carried top_k k={row['k']} "
+                    f"source_tiles_per_merge={row['source_tiles_per_merge']} "
+                    f"merge_width={row['merge_width']} "
+                    f"pending_source_state_bytes={row['pending_source_state_bytes']}"
+                )
         else:
             reasons.append(f"resident top_k k={row['k']}")
     if any(operation.kind is OperationKind.SCAN for operation in schedule.operations):

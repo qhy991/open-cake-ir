@@ -1146,15 +1146,18 @@ class TopKParameters:
 
     Descending result order is part of the operation rather than an optional spelling.
     ``across_loop`` carries the same values/indices state across tiles of one declared
-    loop for FP32 scores; resident INT32 ordering is admitted while carried INT32 state
-    remains an explicit backend exclusion. Group formation and batched routing remain
-    separate operations.
+    loop for FP32 scores.  ``source_tiles_per_merge`` makes the one admitted delayed
+    state-update cadence visible: one is the historical per-tile merge and two batches
+    exactly two source tiles before each merge.  Resident INT32 ordering is admitted
+    while carried INT32 state remains an explicit backend exclusion. Group formation and
+    batched routing remain separate operations.
     """
 
     k: int
     tie_break: IndexTieBreak
     nan_policy: NaNPolicy
     across_loop: bool = False
+    source_tiles_per_merge: int = 1
 
 
 @dataclass(frozen=True)
@@ -1415,14 +1418,30 @@ def _operation_parameters(
         obj = _strict_object(
             value,
             required={"k", "tie_break", "nan_policy"},
-            optional={"across_loop"},
+            optional={"across_loop", "source_tiles_per_merge"},
             context=context,
         )
+        source_tiles_per_merge = (
+            obj["source_tiles_per_merge"]
+            if "source_tiles_per_merge" in obj
+            else None
+        )
+        if "source_tiles_per_merge" in obj:
+            source_tiles_per_merge = _positive_int(
+                source_tiles_per_merge,
+                f"{context}.source_tiles_per_merge",
+            )
+            if source_tiles_per_merge != 2:
+                raise ScheduleParseError(
+                    f"{context}.source_tiles_per_merge must be omitted for the "
+                    "canonical one-source-tile cadence or be exactly 2"
+                )
         return TopKParameters(
             _positive_int(obj["k"], f"{context}.k"),
             _enum(IndexTieBreak, obj["tie_break"], f"{context}.tie_break"),
             _enum(NaNPolicy, obj["nan_policy"], f"{context}.nan_policy"),
             _boolean(obj.get("across_loop", False), f"{context}.across_loop"),
+            1 if source_tiles_per_merge is None else source_tiles_per_merge,
         )
 
     if kind is OperationKind.ONLINE_SOFTMAX:

@@ -202,7 +202,16 @@ _PARAMETERS = {
             "tie_break": _enum(IndexTieBreak),
             "nan_policy": _enum(NaNPolicy),
         },
-        {"across_loop": {"type": "boolean"}},
+        {
+            "across_loop": {"type": "boolean"},
+            "source_tiles_per_merge": {
+                "const": 2,
+                "description": (
+                    "Batch exactly two FP32 source tiles per loop-carried merge; "
+                    "omit for the canonical one-tile cadence."
+                ),
+            },
+        },
     ),
     OperationKind.ONLINE_SOFTMAX: _object(
         {

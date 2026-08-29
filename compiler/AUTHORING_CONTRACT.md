@@ -47,6 +47,16 @@ in descending order and INT32 source positions, with the lowest source position 
 equal-value ties. INT32 ordering uses the ordinary signed order; its `nan_policy` field is
 vacuous. Loop-carried INT32 top-k is explicitly unlowerable until a real carried-state use
 case justifies its initialization and finalization contract.
+Loop-carried FP32 `top_k` may declare `source_tiles_per_merge: 2` to batch exactly two
+source tiles before updating its carried state; omission is the single canonical spelling
+of the historical one-tile cadence. The final values and global source positions are
+unchanged, including odd and partial tails, but the delayed results may be read only after
+the loop. The current Triton slice admits this cadence only with an unflattened,
+non-warp-specialized loop whose unroll factor is one. Pending keys are lowering-owned
+derived state: one packed UINT64 composite key per source element, or
+`8 * source_extent` logical bytes. The field makes that extent visible to analysis
+without adding a destination-passing Buffer; physical register placement remains
+compiled-artifact evidence.
 `reduce_argmin` compares FP32 values and returns INT32 source positions; admitting FP8
 storage for another operation does not widen that semantic contract.
 

@@ -57,6 +57,8 @@
     "corpus/schedules/top-k-int32-b8-smoke.json",
     "corpus/schedules/top-k-int32-streaming-b8-drift.json",
     "corpus/schedules/top-k-streaming-b8-smoke.json",
+    "corpus/schedules/top-k-streaming-merge2-b8-smoke.json",
+    "corpus/schedules/top-k-streaming-merge2-observable-drift.json",
     "corpus/schedules/tinygemm2-stage4-split-k-reduction-drift.json",
     "corpus/schedules/tinygemm2-stage4-split-k.json",
     "src/open_cake_ir/compiler/__init__.py",

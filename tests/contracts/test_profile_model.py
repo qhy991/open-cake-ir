@@ -39,11 +39,27 @@ class ProfileModelTest(unittest.TestCase):
             lowered_source=self.compiler.lower(assessment).source,
         ).as_dict()
 
+    def _profile_document(self, document: dict[str, object]) -> dict[str, object]:
+        assessment = self.compiler.assess(document)
+        self.assertTrue(assessment.lowering_eligible)
+        return profile_envelope(
+            Schedule.from_dict(document),
+            self.target,
+            lowered_source=self.compiler.lower(assessment).source,
+        ).as_dict()
+
     def test_qsa_top_k_reports_bounds_risks_and_explicit_abstentions(self) -> None:
         profile = self._profile("qsa-score-topk-t32768.json")
 
         self.assertEqual(profile["lowering"]["generated_source_bytes"], 7310)
-        self.assertEqual(profile["lowering"]["top_k"][0]["merge_width"], 1024)
+        top_k = profile["lowering"]["top_k"][0]
+        self.assertEqual(top_k["source_tiles_per_merge"], 1)
+        self.assertEqual(top_k["merge_width"], 1024)
+        self.assertEqual(top_k["pending_source_state_bytes"], 0)
+        self.assertEqual(top_k["structural_count_estimate_kind"], "exact")
+        self.assertEqual(top_k["whole_grid_source_tile_update_count"], 1_064_768)
+        self.assertEqual(top_k["whole_grid_merge_update_count"], 1_064_768)
+        self.assertEqual(top_k["whole_grid_tail_flush_merge_count"], 0)
         self.assertEqual(profile["residency"]["logical_register_pressure_per_thread"], 72)
         self.assertEqual(profile["residency"]["ctas_per_sm_upper_bound"], 8)
         registers = _metric(profile, "launch__registers_per_thread")
@@ -61,6 +77,81 @@ class ProfileModelTest(unittest.TestCase):
         sm = _metric(profile, "sm__throughput.avg.pct_of_peak_sustained_elapsed")
         self.assertEqual((sm["estimate_kind"], sm["value"]), ("unknown", None))
         self.assertIn("B200 NCU calibration", barrier["missing"])
+
+    def test_merge2_reports_pending_state_exact_cadence_and_unchanged_qsa_width(self) -> None:
+        document = json.loads(
+            (ROOT / "corpus/schedules/qsa-score-topk-t32768.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        document["schedule_id"] = "qsa-score-topk-t32768-merge2-profile"
+        top_k_operation = next(
+            item for item in document["operations"] if item["kind"] == "top_k"
+        )
+        top_k_operation["parameters"]["source_tiles_per_merge"] = 2
+
+        profile = self._profile_document(document)
+        top_k = profile["lowering"]["top_k"][0]
+
+        self.assertEqual(top_k["source_elements_per_merge"], 256)
+        self.assertEqual(top_k["merge_width"], 1024)
+        self.assertEqual(top_k["loop_carried_state_bytes"], 4096)
+        self.assertEqual(top_k["pending_source_key_elements"], 128)
+        self.assertEqual(top_k["pending_source_state_bytes"], 1024)
+        self.assertEqual(top_k["structural_count_estimate_kind"], "exact")
+        self.assertEqual(top_k["whole_grid_source_tile_update_count"], 1_064_768)
+        self.assertEqual(top_k["whole_grid_full_group_merge_count"], 524_192)
+        self.assertEqual(top_k["whole_grid_tail_flush_merge_count"], 16_384)
+        self.assertEqual(top_k["whole_grid_merge_update_count"], 540_576)
+        self.assertEqual(
+            profile["residency"]["logical_register_pressure_per_thread"], 73
+        )
+        barrier = _metric(
+            profile,
+            "smsp__warp_issue_stalled_barrier_per_warp_active.pct",
+        )
+        self.assertEqual(barrier["value"], "high")
+        self.assertEqual(
+            barrier["reasons"],
+            [
+                "loop-carried top_k k=512 source_tiles_per_merge=2 "
+                "merge_width=1024 pending_source_state_bytes=1024"
+            ],
+        )
+
+    def test_merge2_structural_count_abstains_on_an_out_of_domain_stop(self) -> None:
+        document = json.loads(
+            (ROOT / "corpus/schedules/qsa-score-topk-t32768.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        next(item for item in document["operations"] if item["kind"] == "top_k")[
+            "parameters"
+        ]["source_tiles_per_merge"] = 2
+        document["tile_loops"][0]["stop"]["add"] = 40_000
+        profile = profile_envelope(
+            Schedule.from_dict(document), self.target
+        ).as_dict()
+        top_k = profile["lowering"]["top_k"][0]
+
+        self.assertEqual(top_k["structural_count_estimate_kind"], "unknown")
+        self.assertIsNone(top_k["whole_grid_source_tile_update_count"])
+        self.assertIsNone(top_k["whole_grid_merge_update_count"])
+        self.assertEqual(
+            top_k["structural_count_missing"],
+            ["query-derived loop stop leaves the declared loop extent"],
+        )
+
+    def test_generic_three_trip_merge2_reports_one_pair_and_one_tail_per_program(self) -> None:
+        profile = self._profile("top-k-streaming-merge2-b8-smoke.json")
+        top_k = profile["lowering"]["top_k"][0]
+
+        self.assertEqual(top_k["merge_width"], 32)
+        self.assertEqual(top_k["pending_source_state_bytes"], 64)
+        self.assertEqual(top_k["whole_grid_source_tile_update_count"], 24)
+        self.assertEqual(top_k["whole_grid_full_group_merge_count"], 8)
+        self.assertEqual(top_k["whole_grid_tail_flush_merge_count"], 8)
+        self.assertEqual(top_k["whole_grid_merge_update_count"], 16)
 
     def test_runtime_gather_is_a_high_scoreboard_risk_not_a_fake_percentage(self) -> None:
         profile = self._profile("qsa-selected-attention-t32768.json")

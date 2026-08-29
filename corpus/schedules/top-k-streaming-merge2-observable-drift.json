@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "schedule_id": "top-k-streaming-merge2-observable-drift-v1",
+  "target": "sm_100a",
+  "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "scores", "space": "global", "dtype": "fp32", "shape": [8, 24], "mode": "input"},
+    {"name": "indices", "space": "global", "dtype": "int32", "shape": [8, 8], "mode": "output"},
+    {"name": "score_tile", "space": "register", "dtype": "fp32", "shape": [8], "mode": "scratch"},
+    {"name": "top_values", "space": "register", "dtype": "fp32", "shape": [8], "mode": "scratch"},
+    {"name": "top_indices", "space": "register", "dtype": "int32", "shape": [8], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_scores", "kind": "load", "role": "compute", "reads": ["scores"], "writes": ["score_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "select_blocks", "kind": "top_k", "role": "compute", "reads": ["score_tile"], "writes": ["top_values", "top_indices"], "depends_on": ["load_scores"], "parameters": {"k": 8, "tie_break": "lowest_index", "nan_policy": "reject_input", "across_loop": true, "source_tiles_per_merge": 2}},
+    {"id": "store_indices", "kind": "store", "role": "compute", "reads": ["top_indices"], "writes": ["indices"], "depends_on": ["select_blocks"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": ["indices"],
+  "program_map": {"axes": [{"name": "batch", "axis": 0, "buffer": "scores", "dimension": 0, "tile": 1}]},
+  "tile_loops": [
+    {"name": "score_loop", "iterator": "score_start", "buffer": "scores", "dimension": 1, "tile": 8, "body": ["load_scores", "select_blocks", "store_indices"], "range_options": {"num_stages": 1, "warp_specialize": false, "flatten": false, "disallow_acc_multi_buffer": false, "disable_licm": false, "loop_unroll_factor": 1}}
+  ],
+  "access_maps": [
+    {"operation": "load_scores", "buffer": "scores", "indices": [{"source": "program", "name": "batch"}, {"source": "loop_tile", "name": "score_start"}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_indices", "buffer": "indices", "indices": [{"source": "program", "name": "batch"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"}
+  ],
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {"backend": "triton", "entry_point": "cake_top_k_streaming_merge2_observable_drift"}
+}

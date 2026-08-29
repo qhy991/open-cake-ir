@@ -16,8 +16,9 @@ from pathlib import Path
 from open_cake_ir.compiler.analysis import (
     logical_register_pressure_per_thread,
     residency_upper_bound,
+    top_k_merge_structure,
 )
-from open_cake_ir.compiler.ir import Schedule
+from open_cake_ir.compiler.ir import OperationKind, Schedule
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.verifier import FindingSeverity, verify
 
@@ -26,6 +27,39 @@ TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
 B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 ASSIGNMENT_FULL = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
 TOP_K = ROOT / "corpus" / "schedules" / "top-k-b8-smoke.json"
+MERGE2 = ROOT / "corpus" / "schedules" / "top-k-streaming-merge2-b8-smoke.json"
+QSA_SCORE = ROOT / "corpus" / "schedules" / "qsa-score-topk-t32768.json"
+
+
+def _merge2_qsa(tile: int = 128) -> Schedule:
+    document = json.loads(QSA_SCORE.read_text(encoding="utf-8"))
+    document["schedule_id"] = f"qsa-score-topk-t32768-tile{tile}-merge2"
+    loop = document["tile_loops"][0]
+    loop["tile"] = tile
+    operation = next(
+        item for item in document["operations"] if item["kind"] == "top_k"
+    )
+    operation["parameters"]["source_tiles_per_merge"] = 2
+    if tile != 128:
+        document["roles"][0]["warps"] = [0, 1, 2, 3]
+        buffers = {item["name"]: item for item in document["buffers"]}
+        buffers["key_tile"]["shape"] = [tile, 128]
+        for name in ("head_scores", "positive_scores"):
+            buffers[name]["shape"] = [8, tile]
+        for name in ("score_sum", "score_tile"):
+            buffers[name]["shape"] = [tile]
+        next(
+            item for item in document["operations"] if item["id"] == "score_heads"
+        )["parameters"]["tile_shape"] = [8, tile, 128]
+    return Schedule.from_dict(document)
+
+
+def _top_k(schedule: Schedule):
+    return next(
+        operation
+        for operation in schedule.operations
+        if operation.kind is OperationKind.TOP_K
+    )
 
 
 class ObservedFactsTest(unittest.TestCase):
@@ -80,6 +114,55 @@ class ResidencyTest(unittest.TestCase):
         # The logical pressure proxy sees 272 values across 128 CTA threads.
         schedule = Schedule.load(TOP_K)
         self.assertEqual(logical_register_pressure_per_thread(schedule, TARGET), 3)
+
+    def test_merge2_charges_the_pending_source_tile_and_reports_exact_cadence(self) -> None:
+        schedule = Schedule.load(MERGE2)
+        structure = top_k_merge_structure(schedule, _top_k(schedule))
+        assert structure is not None
+
+        self.assertEqual(structure.source_elements_per_merge, 16)
+        self.assertEqual(structure.merge_width, 32)
+        self.assertEqual(structure.loop_carried_state_bytes, 64)
+        self.assertEqual(structure.pending_source_key_elements, 8)
+        self.assertEqual(structure.pending_source_state_bytes, 64)
+        self.assertEqual(structure.count_estimate_kind, "exact")
+        self.assertEqual(structure.whole_grid_source_tile_update_count, 24)
+        self.assertEqual(structure.whole_grid_full_group_merge_count, 8)
+        self.assertEqual(structure.whole_grid_tail_flush_merge_count, 8)
+        self.assertEqual(structure.whole_grid_merge_update_count, 16)
+
+    def test_qsa_merge2_counts_the_dynamic_stop_without_changing_work_flops(self) -> None:
+        schedule = _merge2_qsa()
+        structure = top_k_merge_structure(schedule, _top_k(schedule))
+        assert structure is not None
+
+        self.assertEqual(structure.source_extent, 128)
+        self.assertEqual(structure.source_elements_per_merge, 256)
+        self.assertEqual(structure.merge_width, 1024)
+        self.assertEqual(structure.loop_carried_state_bytes, 4096)
+        self.assertEqual(structure.pending_source_key_elements, 128)
+        self.assertEqual(structure.pending_source_state_bytes, 1024)
+        self.assertEqual(structure.whole_grid_source_tile_update_count, 1_064_768)
+        self.assertEqual(structure.whole_grid_full_group_merge_count, 524_192)
+        self.assertEqual(structure.whole_grid_tail_flush_merge_count, 16_384)
+        self.assertEqual(structure.whole_grid_merge_update_count, 540_576)
+        self.assertEqual(logical_register_pressure_per_thread(schedule, TARGET), 73)
+
+    def test_external_tile256_frontier_has_a_separate_merge2_geometry(self) -> None:
+        schedule = _merge2_qsa(256)
+        structure = top_k_merge_structure(schedule, _top_k(schedule))
+        assert structure is not None
+
+        self.assertEqual(structure.source_extent, 256)
+        self.assertEqual(structure.source_elements_per_merge, 512)
+        self.assertEqual(structure.merge_width, 1024)
+        self.assertEqual(structure.pending_source_key_elements, 256)
+        self.assertEqual(structure.pending_source_state_bytes, 2048)
+        self.assertEqual(structure.whole_grid_source_tile_update_count, 540_576)
+        self.assertEqual(structure.whole_grid_full_group_merge_count, 262_096)
+        self.assertEqual(structure.whole_grid_tail_flush_merge_count, 16_384)
+        self.assertEqual(structure.whole_grid_merge_update_count, 278_480)
+        self.assertEqual(logical_register_pressure_per_thread(schedule, TARGET), 284)
 
     def test_a_smaller_tile_reduces_pressure_without_changing_exact_bounds(self) -> None:
 

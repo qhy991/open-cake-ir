@@ -32,6 +32,7 @@ from .ir import (
     BarrierMechanism,
     BufferMode,
     LoadMovement,
+    LoweringBackend,
     MemorySpace,
     Operation,
     DType,
@@ -1343,6 +1344,49 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
                     f"{list(source.shape)}",
                     category,
                 )
+            if operation.parameters.source_tiles_per_merge != 2:
+                continue
+
+            for reader_id in sorted(
+                {
+                    reader
+                    for result in operation.writes
+                    for reader in readers.get(result, ())
+                    if reader in body
+                }
+            ):
+                reader = schedule.operation(reader_id)
+                if reader is None:
+                    continue
+                observed = sorted(set(reader.reads) & set(operation.writes))
+                out.add(
+                    "TOP_K_MERGE_CADENCE_OUTPUT_READ_IN_LOOP",
+                    f"operations[{schedule.operations.index(reader)}].reads",
+                    f"{reader.op_id!r} reads delayed top_k result(s) "
+                    f"{', '.join(repr(name) for name in observed)} inside {loop.name!r}; "
+                    "a two-source-tile merge exposes only the finalized state after "
+                    "the loop",
+                    category,
+                )
+
+            if schedule.lowering.backend is LoweringBackend.TRITON:
+                options = loop.range_options
+                unsupported = (
+                    ("loop_unroll_factor", options.loop_unroll_factor, 1),
+                    ("warp_specialize", options.warp_specialize, False),
+                    ("flatten", options.flatten, False),
+                )
+                for field, actual, admitted in unsupported:
+                    if actual == admitted:
+                        continue
+                    out.add(
+                        "TRITON_TOP_K_TWO_TILE_CONTROL_FLOW_UNSUPPORTED",
+                        f"tile_loops[{schedule.tile_loops.index(loop)}].range_options.{field}",
+                        f"the current Triton two-source-tile top_k control flow "
+                        f"requires {field}={admitted!r}, got {actual!r}; the Compiler "
+                        "does not silently rewrite a declared loop option",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
         for op_id in loop.body:
             operation = schedule.operation(op_id)
             if operation is None or operation.kind is not OperationKind.ONLINE_SOFTMAX:
@@ -1997,6 +2041,17 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                         FindingCategory.HARDWARE_CONFORMANCE,
                     )
     if operation.kind is OperationKind.TOP_K:
+        if (
+            operation.parameters.source_tiles_per_merge == 2
+            and not operation.parameters.across_loop
+        ):
+            out.add(
+                "TOP_K_MERGE_CADENCE_REQUIRES_ACROSS_LOOP",
+                f"{path}.parameters.source_tiles_per_merge",
+                "source_tiles_per_merge=2 changes a loop-carried merge cadence, but "
+                "this top_k does not declare across_loop=true",
+                category,
+            )
         if len(operation.reads) != 1 or len(operation.writes) != 2:
             out.add(
                 "TOP_K_ARITY",

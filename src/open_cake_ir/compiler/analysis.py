@@ -10,16 +10,26 @@ facts. Threads and explicit shared/tensor allocations are in that domain. Regist
 Buffers are different: a backend may distribute, alias, recompute, spill, or place their
 logical values elsewhere, so their live logical extent is only a pressure proxy. It is
 reported separately and never used as a physical-register bound or legality gate.
+
+Loop-carried ``top_k`` also declares a merge cadence whose pending ranked-key payload is
+not an author-visible Buffer.  This module derives that logical pressure and exact
+whole-grid update counts when the declared program/loop-stop domain is walkable; otherwise
+it names the missing domain and abstains.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .ir import MemorySpace, OperationKind, Schedule
+from .ir import MemorySpace, Operation, OperationKind, Schedule, TopKParameters
 from .target import Target
+from .work import program_tiles
 
 REGISTER_BYTES = 4
+TOP_K_RANKED_KEY_BYTES = 8
+"""The admitted lowering carries each pending FP32 value and INT32 source position as
+one packed uint64 ordering key.  This is logical lowering state, not a claim about ptxas
+physical-register allocation."""
 
 
 @dataclass(frozen=True)
@@ -53,6 +63,207 @@ class ResidencyUpperBound:
     @property
     def ctas_per_multiprocessor(self) -> int | None:
         return self.binding.ctas if self.binding else None
+
+
+@dataclass(frozen=True)
+class TopKMergeStructure:
+    """Schedule-derived state and cadence for one canonical ``top_k``.
+
+    The byte counts describe logical lowering payloads, not backend physical registers. The
+    whole-grid counts are exact only when this analysis can walk the declared program axis
+    and containing loop, including a query-derived stop.  An unsupported shape is reported
+    as ``unknown`` rather than silently falling back to the loop buffer's full extent.
+    """
+
+    source_tiles_per_merge: int
+    source_extent: int
+    source_elements_per_merge: int
+    merge_width: int
+    loop_carried_state_bytes: int
+    pending_source_key_elements: int
+    pending_source_state_bytes: int
+    count_estimate_kind: str
+    whole_grid_source_tile_update_count: int | None
+    whole_grid_full_group_merge_count: int | None
+    whole_grid_tail_flush_merge_count: int | None
+    whole_grid_merge_update_count: int | None
+    count_missing: tuple[str, ...] = ()
+
+
+def _containing_loop(schedule: Schedule, operation: Operation):
+    matches = tuple(loop for loop in schedule.tile_loops if operation.op_id in loop.body)
+    return matches[0] if len(matches) == 1 else None
+
+
+def _loop_trip_distribution(
+    schedule: Schedule, operation: Operation
+) -> tuple[tuple[int, ...], int] | tuple[None, str]:
+    """Per-program-coordinate trips and the multiplicity of every coordinate.
+
+    Grouped top-k currently has one direct containing loop.  Nested-loop cadence is still
+    a valid lowering concern, but this structural counter abstains until it has a declared
+    dynamic-domain model for the enclosing loop rather than multiplying a guessed extent.
+    """
+
+    loop = _containing_loop(schedule, operation)
+    if loop is None:
+        return None, "top_k has no unique containing loop"
+    if loop.name in schedule.loop_parent():
+        return None, "nested top_k loop cadence is not modeled"
+    buffer = schedule.buffer(loop.buffer)
+    if buffer is None or loop.dimension >= len(buffer.shape):
+        return None, "top_k loop extent is unavailable"
+    loop_extent = buffer.shape[loop.dimension]
+    tile_count = program_tiles(schedule)
+    if tile_count is None:
+        return None, "program tile domain is unavailable"
+
+    if loop.stop is None:
+        trips = (loop_extent + loop.tile - 1) // loop.tile
+        return (trips,), tile_count
+
+    program_map = schedule.program_map
+    axis = None if program_map is None else program_map.axis(loop.stop.program)
+    if axis is None or axis.tile != 1:
+        return None, "query-derived loop stop lacks one scalar program axis"
+    axis_buffer = schedule.buffer(axis.buffer)
+    if axis_buffer is None or axis.dimension >= len(axis_buffer.shape):
+        return None, "loop-stop program extent is unavailable"
+    axis_extent = axis_buffer.shape[axis.dimension]
+    if axis_extent <= 0 or tile_count % axis_extent:
+        return None, "loop-stop program multiplicity is unavailable"
+
+    trips: list[int] = []
+    for coordinate in range(axis_extent):
+        stop = (coordinate + loop.stop.add) // loop.stop.floor_div
+        if stop < 0 or stop > loop_extent:
+            return None, "query-derived loop stop leaves the declared loop extent"
+        trips.append((stop + loop.tile - 1) // loop.tile if stop else 0)
+    return tuple(trips), tile_count // axis_extent
+
+
+def top_k_merge_structure(
+    schedule: Schedule, operation: Operation
+) -> TopKMergeStructure | None:
+    """Return the canonical merge geometry and exact structural cadence when derivable."""
+
+    if (
+        operation.kind is not OperationKind.TOP_K
+        or not isinstance(operation.parameters, TopKParameters)
+        or not operation.reads
+    ):
+        return None
+    source = schedule.buffer(operation.reads[0])
+    if source is None or len(source.shape) != 1:
+        return None
+
+    parameters = operation.parameters
+    source_extent = source.shape[0]
+    source_tiles_per_merge = parameters.source_tiles_per_merge
+    source_elements_per_merge = source_extent * source_tiles_per_merge
+    merge_width = 2 * max(parameters.k, source_elements_per_merge)
+    loop_carried_state_bytes = (
+        parameters.k * TOP_K_RANKED_KEY_BYTES if parameters.across_loop else 0
+    )
+    pending_source_key_elements = (
+        (source_tiles_per_merge - 1) * source_extent
+        if parameters.across_loop
+        else 0
+    )
+    pending_source_state_bytes = pending_source_key_elements * TOP_K_RANKED_KEY_BYTES
+
+    def unknown(reason: str) -> TopKMergeStructure:
+        return TopKMergeStructure(
+            source_tiles_per_merge,
+            source_extent,
+            source_elements_per_merge,
+            merge_width,
+            loop_carried_state_bytes,
+            pending_source_key_elements,
+            pending_source_state_bytes,
+            "unknown",
+            None,
+            None,
+            None,
+            None,
+            (reason,),
+        )
+
+    if parameters.across_loop:
+        distribution, multiplicity = _loop_trip_distribution(schedule, operation)
+        if distribution is None:
+            return unknown(multiplicity)
+        trip_counts = distribution
+        factor = multiplicity
+    else:
+        if _containing_loop(schedule, operation) is not None:
+            distribution, multiplicity = _loop_trip_distribution(schedule, operation)
+            if distribution is None:
+                return unknown(multiplicity)
+            trip_counts = distribution
+            factor = multiplicity
+        else:
+            tile_count = program_tiles(schedule)
+            if tile_count is None:
+                return unknown("program tile domain is unavailable")
+            trip_counts = (1,)
+            factor = tile_count
+
+    source_updates = sum(trip_counts) * factor
+    full_groups = sum(
+        trips // source_tiles_per_merge for trips in trip_counts
+    ) * factor
+    tail_flushes = sum(
+        bool(trips % source_tiles_per_merge) for trips in trip_counts
+    ) * factor
+    return TopKMergeStructure(
+        source_tiles_per_merge,
+        source_extent,
+        source_elements_per_merge,
+        merge_width,
+        loop_carried_state_bytes,
+        pending_source_key_elements,
+        pending_source_state_bytes,
+        "exact",
+        source_updates,
+        full_groups,
+        tail_flushes,
+        full_groups + tail_flushes,
+    )
+
+
+def _loop_operation_ids(schedule: Schedule, loop_name: str) -> frozenset[str]:
+    loops = {loop.name: loop for loop in schedule.tile_loops}
+    operation_ids = {operation.op_id for operation in schedule.operations}
+    found: set[str] = set()
+    seen: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in seen or name not in loops:
+            return
+        seen.add(name)
+        for entry in loops[name].body:
+            if entry in operation_ids:
+                found.add(entry)
+            elif entry in loops:
+                visit(entry)
+
+    visit(loop_name)
+    return frozenset(found)
+
+
+def _pending_top_k_bytes_by_operation(schedule: Schedule) -> dict[str, int]:
+    pending: dict[str, int] = {}
+    for operation in schedule.operations:
+        structure = top_k_merge_structure(schedule, operation)
+        if structure is None or not structure.pending_source_state_bytes:
+            continue
+        loop = _containing_loop(schedule, operation)
+        if loop is None:
+            continue
+        for op_id in _loop_operation_ids(schedule, loop.name):
+            pending[op_id] = pending.get(op_id, 0) + structure.pending_source_state_bytes
+    return pending
 
 
 def _storage_classes(schedule: Schedule, registers) -> dict[str, str]:
@@ -92,7 +303,7 @@ def _storage_classes(schedule: Schedule, registers) -> dict[str, str]:
 
 
 def _logical_register_pressure_bytes(schedule: Schedule) -> int:
-    """Peak live bytes named by logical register Buffers after simple aliasing.
+    """Peak live logical bytes after simple aliasing and derived pending top-k state.
 
     Summing them charges a Schedule for every temporary it ever names, which reads the
     same whether two tiles overlap or one is dead before the other is written. That was
@@ -105,7 +316,10 @@ def _logical_register_pressure_bytes(schedule: Schedule) -> int:
     since nothing here can say when it dies. This quantity has no sound direction against
     physical registers: a backend can add temporaries, but it can also distribute values
     across lanes, recompute them, alias them more aggressively, or realize them in another
-    storage class. The compiled artifact remains the authority for physical allocation.
+    storage class. A two-source-tile top-k necessarily retains one packed key tile across
+    loop trips, so that derived payload is charged across the containing loop body even
+    though making an author declare an implementation Buffer would duplicate the operation
+    contract. The compiled artifact remains the authority for physical allocation.
     """
 
     registers = {
@@ -133,9 +347,10 @@ def _logical_register_pressure_bytes(schedule: Schedule) -> int:
                 last_read[classes[name]] = position
 
     total = len(schedule.operations)
+    pending_top_k = _pending_top_k_bytes_by_operation(schedule)
     peak = 0
     for position in range(total):
-        live = 0
+        live = pending_top_k.get(schedule.operations[position].op_id, 0)
         for root, extent in size.items():
             birth = first_write.get(root)
             if birth is None:
