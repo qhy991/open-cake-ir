@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "purpose": "qsa_t32768_half_selection_frontier_confirmation_profile_and_accumulator_multibuffer_probe",
+  "scientific_claim_authorized": false,
+  "checkpoint_or_serving_claim": false,
+  "source_commit": "2582c4de100f296da279424d4098315a8ce49323",
+  "compiler_revision": {
+    "revision_id": "open-cake-ir-sm100a-v37",
+    "canonical_sha256": "64b84ff199abaa32008d1dc13709f6a42443c6518ba19ec3dc75dd9f1c69d7c1",
+    "corpus_gate": "62 of 62 matched across 81 bound sources"
+  },
+  "executor_revision": {
+    "executor_id": "open-cake-ir-b200-v39",
+    "canonical_sha256": "d83a9ea37b2b69cd54996a124e7ea53c49e823795a684eceda771bfa21dd3339"
+  },
+  "workload_id": "qsa-prefill-t32768-task-geometry-v1",
+  "external_evidence_roots": {
+    "v36_fail_closed_static": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v36-r22-half-selection-static-20260829",
+    "v37_static": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v37-r23-half-selection-static-20260829",
+    "v37_compile_only_task_check": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v37-r23-half-selection-compile-20260829",
+    "r23_search_and_confirmation": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v37-r23-half-selection-search-20260829",
+    "r23_profile": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v37-r23-half-selection-profile-20260829",
+    "r24_static": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v37-r24-acc-buffer-static-20260829",
+    "r24_search": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir-qsa-runs/qsa-v37-r24-acc-buffer-search-20260829"
+  },
+  "compiler_program_boundary": {
+    "v36_schedule_static_checks": "passed",
+    "v36_frozen_program_v2": "rejected because canonical merge1 score_topk lowering identity differed",
+    "v36_gpu_submission": false,
+    "v37_resolution": "half-selection applies only to generic source_tiles_per_merge=2; frozen Program v2 merge1 keeps prior lowering",
+    "program_or_evaluator_modified": false
+  },
+  "r23_static": {
+    "candidate_sha256": "23fae96fa204c7c9d9da3dd04c56c9155ac523395304ae03bb1df31677b0aa4e",
+    "score_schedule_sha256": "beba1b176c073a4675f380f3e88d601a98960ad0c6fc601c5f8fd43b622598fe",
+    "score_lowering_source_sha256": "649d1be7ef2a4512ef0f8a283c7559d7447f9bbcca68b40ad3285f5ab58d7ae5",
+    "program_v2_and_executor_v39_preflight": "passed",
+    "all_five_nodes_constructed_typed_accepted_and_lowering_eligible": true,
+    "selection_algorithm": "sorted_source_half_bitonic_merge",
+    "comparison_model": "51712 to 33280 Triton-v3.7.1 frontend comparison-lane units",
+    "compiled_resources": "unknown before formal run"
+  },
+  "compile_only_task_observation": {
+    "task_check": "rejected because a KernelInfra task must contain correctness or judge",
+    "run_submitted": false,
+    "interpretation": "apparatus contract observation, not compile or performance evidence",
+    "workaround_forbidden": "no direct SSH compile and no deliberate cancellation race"
+  },
+  "r23_search": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-ed40ca678425",
+    "candidate_sha256": "23fae96fa204c7c9d9da3dd04c56c9155ac523395304ae03bb1df31677b0aa4e",
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "correctness_max_abs_diff": 0.01848996803164482,
+    "program_median_ms": 127.824867,
+    "program_cv": 0.0004935839391548537,
+    "matched_direct_black_box_median_ms": 676.417878,
+    "matched_direct_black_box_cv": 0.00011848510399825802,
+    "speedup": 5.291754991616772,
+    "score_topk_ms": 58.47929763793945,
+    "score_topk_cv": 0.000526542571594532,
+    "attention_ms": 69.0997085571289,
+    "attention_cv": 0.000052551386869815784,
+    "score_dynamic_shared_memory_bytes": 143360,
+    "relative_program_improvement_vs_r19_fresh_control": 0.10432140758148134,
+    "relative_score_improvement_vs_r19_fresh_control": 0.20297977481496698,
+    "node_frontier_decision": "first-valid"
+  },
+  "r23_fresh_confirmation": {
+    "run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-722fbc815bc7",
+    "correctness_match_fraction": 1.0,
+    "program_median_ms": 127.821446,
+    "program_cv": 0.012751844444286028,
+    "matched_direct_black_box_median_ms": 676.423598,
+    "matched_direct_black_box_cv": 0.00026676113832164284,
+    "speedup": 5.291941369525737,
+    "score_topk_ms": 58.476192474365234,
+    "score_topk_cv": 0.0004907505296042391,
+    "attention_ms": 69.10099029541016,
+    "search_over_confirmation_ratio": 1.0000267638968816,
+    "disposition": "fresh_confirmed_new_frontier"
+  },
+  "r23_profile": {
+    "run_id": "open-cake-qsa-prefill-t32768-profile-v1-fe8c136f57c1",
+    "outcome": "completed",
+    "validity": "valid",
+    "correctness_match_fraction": 1.0,
+    "registers_per_thread": 224.0,
+    "resident_ctas_per_sm": 1.0,
+    "binding_resources": [
+      "shared_memory"
+    ],
+    "active_warps_pct": 6.22,
+    "barrier_stall_pct": 0.72,
+    "long_scoreboard_stall_pct": 1.69,
+    "sm_throughput_pct": 14.89,
+    "dram_throughput_pct": 0.02,
+    "l2_throughput_pct": 4.4,
+    "interpretation": "macro occupancy and retained NCU percentages remain close to the prior control; the measured gain is attributed to less exact selection-network work, not a new occupancy regime"
+  },
+  "r24_accumulator_multibuffer": {
+    "only_schedule_change": "score_topk block_loop disallow_acc_multi_buffer false to true",
+    "control_run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-b42b13b4421b",
+    "candidate_run_id": "open-cake-qsa-prefill-t32768-seed-component-v1-60f764faebb4",
+    "control_candidate_sha256": "23fae96fa204c7c9d9da3dd04c56c9155ac523395304ae03bb1df31677b0aa4e",
+    "candidate_sha256": "438d704a6ce3ca1e1d97e787f8195632a04a457577aec427e9d6089337bddbf5",
+    "correctness_match_fraction_each": 1.0,
+    "control_program_median_ms": 128.013273,
+    "control_program_cv": 0.0004857528510281127,
+    "candidate_program_median_ms": 127.999684,
+    "candidate_program_cv": 0.006025324984063098,
+    "relative_program_change": -0.00010615305492578386,
+    "control_score_topk_ms": 58.562110900878906,
+    "candidate_score_topk_ms": 58.58367919921875,
+    "relative_score_change": 0.0003682978295703029,
+    "control_dynamic_shared_memory_bytes": 143360,
+    "candidate_dynamic_shared_memory_bytes": 143360,
+    "candidate_matched_direct_black_box_median_ms": 677.50797,
+    "candidate_speedup": 5.2930440828275795,
+    "node_frontier_decision": "dominated",
+    "disposition": "valid_null_resource_unchanged_axis_closed"
+  },
+  "current_materiality": {
+    "relative_threshold": 0.05,
+    "frontier_program_median_ms": 127.824867,
+    "next_program_threshold_ms": 121.43362365,
+    "required_program_saving_ms": 6.39124335,
+    "score_only_threshold_ms": 52.08805428793944,
+    "score_threshold_with_previously_measured_attention_stage3_ms": 55.13977028793944
+  },
+  "local_validation": {
+    "post_v37_full_suite": "579 passed, 4 failed, 473 subtests passed",
+    "new_regression": false,
+    "failure_boundary": "one local macOS Nsight custody assertion and three historical ranking sweep assertions"
+  },
+  "utilization_boundary": {
+    "sound_complete_program_mfu_lower_bound": "not_established",
+    "complete_program_bwu": "unknown",
+    "goal_70_percent_achieved": false,
+    "erratum": "inventory/QSA_ROOFLINE_DYNAMIC_STOP_ERRATUM_20260829.json"
+  },
+  "authoring_boundary": {
+    "direct_cuda_baseline": "task_owned_black_box_only",
+    "direct_or_generated_low_level_implementation_inspected": false,
+    "candidate_classification": "source_runtime_graph_via_high_level_open_cake_schedule"
+  },
+  "next_bounded_hypothesis": {
+    "mechanism": "split the IEEE K128 score contraction into two K64 MMAs and FP32-add partials before the required per-head ReLU",
+    "existing_ir": true,
+    "current_blocker": "generic Triton backend admits at most one MMA operation",
+    "compiler_change": "remove the artificial single-MMA lowering restriction while preserving each operation contract and dataflow",
+    "static_basis": "candidate construction is typed and accepted and lowers logical pressure from 284 to 168; compiled resources and performance remain unknown",
+    "program_and_evaluator_change": false
+  },
+  "cleanup": {
+    "task_owned_daemon_pid": 777914,
+    "isolated_daemon_stopped": false,
+    "isolated_socket_removed": false,
+    "reason": "retained temporarily for the immediately following authorized Compiler and operator loop",
+    "foreign_or_production_jobs_touched": false
+  }
+}
