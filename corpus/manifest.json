@@ -825,6 +825,86 @@
       }
     },
     {
+      "case_id": "caller-indexed-state-accepted",
+      "schedule": "corpus/schedules/caller-indexed-state-b4-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "5bac6c8072b084025854cdc40bb9bbde123d461ad310351fa1edaa7ae6a4afaf",
+        "lowering_source_sha256": "7ba6e3ef518c1cf1616d0d1947f20e69c9b884a5ee781f0c149057dcd99e2354"
+      }
+    },
+    {
+      "case_id": "disjoint-state-shift-accepted",
+      "schedule": "corpus/schedules/disjoint-state-shift-b4-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "9164e9e2f3130703ba30d563dfd0fde775c256ed72ac9847f8cb986d46144d13",
+        "lowering_source_sha256": "9c046581a3bfd7fcbec8cb867a828d21031345129ef9c5fd533391309aca6c7e"
+      }
+    },
+    {
+      "case_id": "disjoint-state-shift-overlap-drift",
+      "schedule": "corpus/schedules/disjoint-state-shift-b4-smoke-overlap-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "BUFFER_MULTIPLE_WRITERS",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "864703ebaf4a5fe78baf45eb5f28d0de7230e1de4ea91a7c301449dad9b3d81b",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "scalar-broadcast-accepted",
+      "schedule": "corpus/schedules/scalar-broadcast-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "f760dadd180d7457093174d1173ca6176a5e38f331d040ba53d470dc8376c767",
+        "lowering_source_sha256": "f9cd4622f69e97aa483033888a9c7e00abfe8e19d272a136bf175a62e87bef6d"
+      }
+    },
+    {
+      "case_id": "outer-accepted",
+      "schedule": "corpus/schedules/outer-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "70fe6c81ce0dc1509eb3513e3b252180ef2faf3586b785070bd418dac455fe99",
+        "lowering_source_sha256": "8007d329bb2ec7ce8bacc28636a31a78e664eb31df59e9ba6f604c2efc83cecc"
+      }
+    },
+    {
+      "case_id": "outer-shape-drift",
+      "schedule": "corpus/schedules/outer-b8-smoke-shape-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "OUTER_RESULT_SHAPE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "bd555627080e1c44b1c92462aed40c0144b60a6f24fbe99c97ca0cb56a66d745",
+        "lowering_source_sha256": null
+      }
+    },
+    {
       "case_id": "qsa-pool-t32768-accepted",
       "schedule": "corpus/schedules/qsa-pool-t32768.json",
       "expected": {
