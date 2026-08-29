@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "exact_gate_and_release_approval_basis_for_generic_triton_multi_mma_lowering",
-  "status": "exact_gate_matched_and_repository_owner_authorized_for_approval",
+  "status": "exact_gate_matched_and_repository_owner_authorized_approval_written",
   "compiler_change_commit": "c0b637e",
   "corpus_proposal_commit": "a968e64",
   "corpus_adoption_commit": "0510705",
@@ -20,7 +20,9 @@
   "review": {
     "reviewer": "repository_owner",
     "decision": "approved_under_explicit_continuous_iteration_and_artifact_writing_authorization",
-    "approval_artifact_status": "pending_exact_write"
+    "approval_canonical_sha256": "64bd68e282e2f0669f2563056771d9a1860a3a0669cbc437df2d6bb48615d5cc",
+    "approval_artifact_status": "written",
+    "approval_binds_exact_gate": true
   },
   "change_contract": {
     "new_ir_or_schema": false,
