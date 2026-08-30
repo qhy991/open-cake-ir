@@ -58,9 +58,10 @@ class AkaPortableParentPoolTests(unittest.TestCase):
         prior = [entry(index) for index in range(1, 51)]
         current = [entry(index) for index in range(1, 151)]
 
-        selected = select_new_entries(current, prior, expected_count=100)
+        selected, blocked = select_new_entries(current, prior, expected_count=100)
 
         self.assertEqual(len(selected), 100)
+        self.assertEqual(blocked, [])
         self.assertEqual(selected[0].queue_case_id, "case-000051")
         self.assertEqual(selected[-1].queue_case_id, "case-000150")
 
@@ -77,6 +78,23 @@ class AkaPortableParentPoolTests(unittest.TestCase):
                 [entry(1), entry(2), entry(3, ready=False)],
                 prior,
                 expected_count=1,
+            )
+
+        selected, blocked = select_new_entries(
+            [entry(1), entry(2), entry(3, ready=False)],
+            prior,
+            expected_count=1,
+            expected_review_ready_count=0,
+        )
+        self.assertEqual(selected, [])
+        self.assertEqual([item.queue_case_id for item in blocked], ["case-000003"])
+
+        with self.assertRaisesRegex(PortablePoolError, "expected 1 review-ready"):
+            select_new_entries(
+                [entry(1), entry(2), entry(3, ready=False)],
+                prior,
+                expected_count=1,
+                expected_review_ready_count=1,
             )
 
 

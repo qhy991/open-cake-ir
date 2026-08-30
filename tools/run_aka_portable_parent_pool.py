@@ -61,23 +61,37 @@ def select_new_entries(
     prior: Sequence[PortableEntry],
     *,
     expected_count: int,
-) -> list[PortableEntry]:
+    expected_review_ready_count: int | None = None,
+) -> tuple[list[PortableEntry], list[PortableEntry]]:
     prior_ids = {portable_identity(entry) for entry in prior}
     current_ids = {portable_identity(entry) for entry in current}
     if not prior_ids <= current_ids:
         raise PortablePoolError("prior portable identities are not a subset of current")
-    selected = [entry for entry in current if portable_identity(entry) not in prior_ids]
-    if len(selected) != expected_count:
+    new_entries = [
+        entry for entry in current if portable_identity(entry) not in prior_ids
+    ]
+    if len(new_entries) != expected_count:
         raise PortablePoolError(
-            f"expected {expected_count} new portable parents, observed {len(selected)}"
+            f"expected {expected_count} new portable parents, observed {len(new_entries)}"
         )
-    blocked = [entry for entry in selected if not entry.review_ready]
-    if blocked:
+    selected = [entry for entry in new_entries if entry.review_ready]
+    blocked = [entry for entry in new_entries if not entry.review_ready]
+    if expected_review_ready_count is None and blocked:
         raise PortablePoolError(
             "new portable parents contain source-field blockers: "
             + ", ".join(entry.queue_case_id for entry in blocked)
         )
-    return selected
+    expected_ready = (
+        expected_count
+        if expected_review_ready_count is None
+        else expected_review_ready_count
+    )
+    if len(selected) != expected_ready:
+        raise PortablePoolError(
+            f"expected {expected_ready} review-ready portable parents, "
+            f"observed {len(selected)}"
+        )
+    return selected, blocked
 
 
 def _worker_command(
@@ -181,6 +195,7 @@ def build_delta_plan(
     portable_record_count: int,
     prior_record_count: int,
     expected_new_count: int,
+    expected_review_ready_count: int | None = None,
 ) -> tuple[dict[str, object], list[PortableEntry]]:
     current_plan, current = build_portable_plan(
         source_dataset_root=source_dataset_root,
@@ -194,7 +209,12 @@ def build_delta_plan(
         source_revision=source_revision,
         expected_count=prior_record_count,
     )
-    selected = select_new_entries(current, prior, expected_count=expected_new_count)
+    selected, blocked = select_new_entries(
+        current,
+        prior,
+        expected_count=expected_new_count,
+        expected_review_ready_count=expected_review_ready_count,
+    )
     plan = {
         "schema": POOL_SCHEMA,
         "source_revision": source_revision,
@@ -202,7 +222,17 @@ def build_delta_plan(
         "reasoning_effort": REASONING_EFFORT,
         "portable_dataset": current_plan["portable_dataset"],
         "prior_portable_dataset": prior_plan["portable_dataset"],
+        "new_identity_count": expected_new_count,
         "selected": len(selected),
+        "deterministically_blocked": [
+            {
+                "queue_case_id": entry.queue_case_id,
+                "portable_case_id": entry.portable_record["case_id"],
+                "source_identity": list(portable_identity(entry)),
+                "blocker": entry.blocker,
+            }
+            for entry in blocked
+        ],
         "entries": [
             {
                 "queue_case_id": entry.queue_case_id,
@@ -228,6 +258,7 @@ def run_pool(
     portable_record_count: int,
     prior_record_count: int,
     expected_new_count: int,
+    expected_review_ready_count: int | None,
     batch_root: Path,
     max_workers: int,
     timeout_seconds: int,
@@ -267,6 +298,7 @@ def run_pool(
         portable_record_count=portable_record_count,
         prior_record_count=prior_record_count,
         expected_new_count=expected_new_count,
+        expected_review_ready_count=expected_review_ready_count,
     )
     batch_root.mkdir(parents=True, exist_ok=False)
     (batch_root / "cases").mkdir()
@@ -281,7 +313,11 @@ def run_pool(
                 "reasoning_effort": REASONING_EFFORT,
                 "codex": _codex_identity(Path(codex)),
                 "max_workers": max_workers,
+                "new_identity_count": plan["new_identity_count"],
                 "selected": len(selected),
+                "deterministically_blocked": len(
+                    plan["deterministically_blocked"]
+                ),
                 "execution": "independent_cases_no_retry_no_sibling_rollback",
                 "gpu": "not_used",
                 "implementation": _git_closure_identity(
@@ -339,7 +375,9 @@ def run_pool(
     final = {
         "schema": FINAL_SCHEMA,
         "source_revision": source_revision,
+        "new_identity_count": plan["new_identity_count"],
         "selected": len(selected),
+        "deterministically_blocked": plan["deterministically_blocked"],
         "max_workers": max_workers,
         "counts": dict(sorted(counts.items())),
         "finished_at": datetime.now(timezone.utc).isoformat(),
@@ -358,6 +396,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--portable-record-count", type=int, required=True)
     parser.add_argument("--prior-record-count", type=int, required=True)
     parser.add_argument("--expected-new-count", type=int, required=True)
+    parser.add_argument("--expected-review-ready-count", type=int)
     parser.add_argument("--batch-root", type=Path)
     parser.add_argument("--max-workers", type=int, default=MAX_WORKERS)
     parser.add_argument("--timeout-seconds", type=int, default=7200)
@@ -377,6 +416,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 portable_record_count=arguments.portable_record_count,
                 prior_record_count=arguments.prior_record_count,
                 expected_new_count=arguments.expected_new_count,
+                expected_review_ready_count=arguments.expected_review_ready_count,
             )
             print(json.dumps({"selected": len(selected), "plan": plan}, indent=2, sort_keys=True))
             return 0
@@ -390,6 +430,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             portable_record_count=arguments.portable_record_count,
             prior_record_count=arguments.prior_record_count,
             expected_new_count=arguments.expected_new_count,
+            expected_review_ready_count=arguments.expected_review_ready_count,
             batch_root=arguments.batch_root,
             max_workers=arguments.max_workers,
             timeout_seconds=arguments.timeout_seconds,
