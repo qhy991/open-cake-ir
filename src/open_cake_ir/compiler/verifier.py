@@ -1358,6 +1358,10 @@ def _verify_unique_state_store(
         )
         return True
     slot_dimension = matching_positions[0]
+    if slot_dimension >= len(destination.shape):
+        # ACCESS_RANK already owns this malformed map.  Do not index a destination
+        # dimension that the generic access verifier has rejected.
+        return True
     domain = schedule.buffer(relation.buffer)
     if (
         domain is not None
@@ -2629,7 +2633,8 @@ def _verify_operation_shape(
                         FindingCategory.HARDWARE_CONFORMANCE,
                     )
             if left is not None and right is not None:
-                if len(left.shape) != 1 or len(right.shape) != 1:
+                input_shapes_valid = len(left.shape) == 1 and len(right.shape) == 1
+                if not input_shapes_valid:
                     out.add(
                         "OUTER_INPUT_SHAPE",
                         f"{path}.reads",
@@ -2644,12 +2649,15 @@ def _verify_operation_shape(
                         category,
                     )
                 if result is not None:
-                    expected_shape = (left.shape[0], right.shape[0])
-                    if len(left.shape) == 1 and len(right.shape) == 1 and result.shape != expected_shape:
+                    if input_shapes_valid and result.shape != (
+                        left.shape[0],
+                        right.shape[0],
+                    ):
                         out.add(
                             "OUTER_RESULT_SHAPE",
                             f"{path}.writes",
-                            f"outer result must have shape {list(expected_shape)}, got "
+                            "outer result must have shape "
+                            f"{[left.shape[0], right.shape[0]]}, got "
                             f"{list(result.shape)}",
                             category,
                         )

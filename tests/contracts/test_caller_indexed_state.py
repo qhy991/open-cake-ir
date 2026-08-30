@@ -7,6 +7,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.emit_cutedsl import preflight as cute_preflight
 from open_cake_ir.compiler.emit_triton import emit
 from open_cake_ir.compiler.ir import Schedule
@@ -110,6 +111,32 @@ class CallerIndexedStateContractTest(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, _blocking(document))
 
+    def test_out_of_rank_unique_state_index_fails_closed(self) -> None:
+        document = _document(STATE)
+        operation = _operation(document, "store_state")
+        access = next(
+            item
+            for item in document["access_maps"]
+            if item["operation"] == operation["id"] and item["buffer"] == "state"
+        )
+        valid_if = operation["parameters"]["valid_if"]
+        component = next(
+            item
+            for item in access["indices"]
+            if item.get("source") == "buffer" and item.get("name") == valid_if
+        )
+        access["indices"].remove(component)
+        access["indices"].insert(0, {"source": "dimension", "dimension": 0})
+        access["indices"].append(component)
+
+        assessment = Compiler.load(ROOT, ROOT / "compiler/revision.json").assess(
+            document
+        )
+        self.assertIn(
+            "ACCESS_RANK",
+            {finding.code for finding in assessment.findings},
+        )
+
     def test_inactive_policy_is_destination_specific(self) -> None:
         output_no_effect = _document(STATE)
         _operation(output_no_effect, "store_output")["parameters"][
@@ -170,6 +197,19 @@ class OuterPrimitiveTest(unittest.TestCase):
     def test_outer_shape_drift_is_rejected_before_lowering(self) -> None:
         self.assertEqual(
             {"OUTER_RESULT_SHAPE"}, _blocking(_document(OUTER_DRIFT))
+        )
+
+    def test_rank_zero_outer_input_fails_closed(self) -> None:
+        document = _document(OUTER)
+        operation = _operation(document, "form_product")
+        _buffer(document, operation["reads"][0])["shape"] = []
+
+        assessment = Compiler.load(ROOT, ROOT / "compiler/revision.json").assess(
+            document
+        )
+        self.assertIn(
+            "OUTER_INPUT_SHAPE",
+            {finding.code for finding in assessment.findings},
         )
 
 
