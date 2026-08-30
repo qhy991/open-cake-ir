@@ -21,6 +21,7 @@ from open_cake_ir.compiler.verifier import verify
 from open_cake_ir.compiler.work import work_bound
 from tools.kda_fused_decode_schedule import (
     ABI_ARGUMENTS,
+    COMPARISON_CELLS_V5,
     FROZEN_CELLS,
     HEAD_DIM,
     LOWER_BOUND,
@@ -28,6 +29,7 @@ from tools.kda_fused_decode_schedule import (
     QK_L2_EPS,
     SCALE,
     build_kda_fused_decode_schedule,
+    build_comparison_kda_fused_decode_schedules_v5,
     frozen_cell,
     kda_fused_decode_adapter_contract,
     kda_fused_decode_schedule_document,
@@ -93,6 +95,30 @@ class FrozenMatrixTest(unittest.TestCase):
     def test_builder_refuses_an_unfrozen_shape(self) -> None:
         with self.assertRaisesRegex(ValueError, "outside the frozen"):
             frozen_cell(12, 2)
+
+    def test_ten_cell_comparison_successor_keeps_nine_cell_history(self) -> None:
+        self.assertEqual(9, len(FROZEN_CELLS))
+        self.assertEqual(10, len(COMPARISON_CELLS_V5))
+        self.assertEqual(
+            [(12, 64, 51), (12, 64, 64)],
+            [
+                (cell.heads, cell.batch_size, cell.active_rows)
+                for cell in COMPARISON_CELLS_V5
+                if cell.heads == 12 and cell.batch_size == 64
+            ],
+        )
+        schedules = build_comparison_kda_fused_decode_schedules_v5()
+        self.assertEqual(10, len(schedules))
+        for cell, schedule in zip(COMPARISON_CELLS_V5, schedules, strict=True):
+            with self.subTest(cell=cell.cell_id):
+                document = kda_fused_decode_schedule_document(
+                    cell.heads, cell.batch_size
+                )
+                Draft202012Validator(schedule_schema()).validate(document)
+                self.assertEqual([], _blocking(schedule))
+                assessment = self.compiler.assess(document)
+                self.assertTrue(assessment.accepted)
+                self.assertTrue(assessment.lowering_eligible)
 
 
 class AdapterViewContractTest(unittest.TestCase):

@@ -84,6 +84,11 @@ FROZEN_CELLS = (
     KdaFusedDecodeCell(6, 32, 25, "deployment_guardrail"),
     KdaFusedDecodeCell(3, 64, 51, "deployment_guardrail"),
 )
+COMPARISON_CELLS_V5 = (
+    *FROZEN_CELLS[:6],
+    KdaFusedDecodeCell(12, 64, 64, "primary"),
+    *FROZEN_CELLS[6:],
+)
 
 
 def frozen_cell(heads: int, batch_size: int) -> KdaFusedDecodeCell:
@@ -928,4 +933,13 @@ def build_frozen_kda_fused_decode_schedules() -> tuple[Schedule, ...]:
     return tuple(
         build_kda_fused_decode_schedule(cell.heads, cell.batch_size)
         for cell in FROZEN_CELLS
+    )
+
+
+def build_comparison_kda_fused_decode_schedules_v5() -> tuple[Schedule, ...]:
+    """Build the ten-cell comparison successor; retain the nine-cell Study."""
+
+    return tuple(
+        build_kda_fused_decode_schedule(cell.heads, cell.batch_size)
+        for cell in COMPARISON_CELLS_V5
     )
