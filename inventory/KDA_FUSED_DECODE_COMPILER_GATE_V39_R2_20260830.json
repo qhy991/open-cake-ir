@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "purpose": "replacement exact Gate and approval basis after fail-closed verifier repair",
+  "status": "exact_gate_matched_release_approval_pending",
+  "supersedes_gate": {
+    "canonical_sha256": "8f1668d666b22071febff7280b80f003b4925e65ea4a85eb57573eeecabdebf6",
+    "reason": "repository-owner review reproduced two public Compiler.assess IndexError paths in v39-bound verifier logic"
+  },
+  "repair_commit": "86e2eeff50e35ad3fc3ba407bb0c380f5e68f115",
+  "lab_comparison_commit": "752aa3135994d17f4a9329f644f1ab29a13925b1",
+  "compiler_revision": "open-cake-ir-sm100a-v39-draft",
+  "gate": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "eada6c0373063f53c5ae9e24f428466efc2187af9f4c5fbdb736d03f56eb8ac8",
+    "case_count": 70,
+    "matched_case_count": 70,
+    "bound_source_count": 89
+  },
+  "repair": {
+    "outer_rank_zero": "OUTER_INPUT_SHAPE is returned without indexing a missing vector extent",
+    "unique_state_access_rank": "ACCESS_RANK remains the canonical finding and the unique-state proof no longer indexes an out-of-rank destination axis",
+    "new_primitive": false,
+    "new_finding": false,
+    "corpus_expectation_change": false,
+    "fallback": false
+  },
+  "tests": {
+    "public_assess_regressions": "2 reproduced crashes now fail closed",
+    "focused": "47 passed, 181 subtests passed",
+    "direct_corpus_check": "70/70 matched, exit 0",
+    "full_pre_release_suite": "515 passed, 89 failed, 2 errors, 504 subtests passed",
+    "full_suite_boundary": "the 89 failures and 2 errors remain dominated by the deliberately unchanged released-v38 lock rejecting changed target/source bytes; no release approval or successor lock exists"
+  },
+  "approval": {
+    "writer": "external_repository_owner",
+    "decision": "pending_new_exact_gate_review",
+    "approval_artifact_modified": false,
+    "released_v38_lock_modified": false
+  },
+  "evidence_boundary": {
+    "compiler_release": "not authorized",
+    "exact_compile": "not run",
+    "b200_cake_correctness_or_performance": "not run",
+    "operator_or_serving_qualification": "not run"
+  }
+}
