@@ -79,7 +79,7 @@ class AkaPortablePoolSummaryTests(unittest.TestCase):
                 write(
                     case_root / f"reviews/cases/{case_id}/checked.json",
                     {
-                        "schema": "open-cake.aka-expressibility-checked.v3",
+                        "schema": "open-cake.aka-expressibility-checked.v4",
                         "primary_class": (
                             "schedule_gap_candidate"
                             if gap

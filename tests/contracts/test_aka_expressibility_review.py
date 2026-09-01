@@ -577,11 +577,74 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
         self.assertEqual(checked["compiler_check"], "lowerable")
         self.assertNotEqual(checked["classification"], "schedule_candidate_lowerable")
 
-        review["complete_parent"]["disposition"] = "schedule_gap"
+        review["complete_parent"] = {
+            "assessment_scope": "fixed_instance",
+            "owner_scope": "schedule",
+            "owner_relation": None,
+            "disposition": "schedule_gap",
+            "schedule": None,
+            "missing_ir": GAP,
+            "reason": "This fixed instance needs one closed missing capability.",
+        }
         self.write_review("case-000001", review)
-        with self.assertRaisesRegex(
-            ReviewError, "fixed_instance assessment_scope requires"
-        ):
+        gap = verify_review(self.work_root, "case-000001")
+        self.assertEqual(gap["primary_class"], "fixed_instance_gap_candidate")
+        self.assertEqual(
+            gap["complete_parent_expressibility"]["compiler_check"], "not_run"
+        )
+
+    def test_fixed_instance_unknown_and_redirect_stay_in_the_fixed_lane(self) -> None:
+        self.initialize(["optimization_positive"])
+        review = self.materialized_review()
+        review["complete_parent"]["assessment_scope"] = "fixed_instance"
+        self.write_review("case-000001", review)
+        with self.assertRaisesRegex(ReviewError, "fixed-instance claim requires"):
+            verify_review(self.work_root, "case-000001")
+
+        self.bind_completion(review, "case-000001")
+        self.write_review("case-000001", review)
+        unknown = verify_review(self.work_root, "case-000001")
+        self.assertEqual(unknown["primary_class"], "fixed_instance_unknown")
+
+        review["complete_parent"] = {
+            "assessment_scope": "fixed_instance",
+            "owner_scope": "program",
+            "owner_relation": "Two launches form this one fixed endpoint.",
+            "disposition": "owner_redirect",
+            "schedule": None,
+            "missing_ir": None,
+            "reason": "Even this fixed instance is larger than one Schedule.",
+        }
+        review["delta"] = {
+            "assessment_scope": "fixed_instance",
+            "owner_scope": "portfolio",
+            "owner_relation": "One fixed binding still selects a sealed specialist.",
+            "disposition": "owner_redirect",
+            "schedule": None,
+            "missing_ir": None,
+            "reason": "The fixed delta is a specialist-selection decision.",
+        }
+        self.write_review("case-000001", review)
+        redirected = verify_review(self.work_root, "case-000001")
+        self.assertEqual(
+            redirected["primary_class"],
+            "fixed_instance_program_redirect_candidate",
+        )
+        self.assertEqual(
+            redirected["delta_expressibility"]["classification"],
+            "fixed_instance_portfolio_redirect_candidate",
+        )
+
+        review["delta"] = {
+            **review["delta"],
+            "assessment_scope": "fixed_instance",
+            "owner_scope": "unknown",
+            "owner_relation": None,
+            "disposition": "not_applicable",
+            "reason": "This lane is not applicable.",
+        }
+        self.write_review("case-000001", review)
+        with self.assertRaisesRegex(ReviewError, "cannot be not_applicable"):
             verify_review(self.work_root, "case-000001")
 
     def test_case_local_backend_blocked_schedule_is_only_a_candidate(self) -> None:

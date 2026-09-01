@@ -16,6 +16,7 @@ POOL_FINAL_SCHEMA = "open-cake.aka-portable-parent-pool-final.v1"
 CHECKED_SCHEMAS = {
     "open-cake.aka-expressibility-checked.v2",
     "open-cake.aka-expressibility-checked.v3",
+    "open-cake.aka-expressibility-checked.v4",
 }
 ASSESSMENT_SCOPES = {
     "contract",
@@ -180,7 +181,7 @@ def summarize(pool_root: Path, *, expected_count: int) -> dict[str, object]:
             raise SummaryError(f"primary class differs from complete lane for {queue_case_id}")
         if (
             assessment_scope == "fixed_instance"
-            and not complete_class.startswith("fixed_instance_candidate_")
+            and not complete_class.startswith("fixed_instance_")
         ):
             raise SummaryError(f"fixed instance class differs for {queue_case_id}")
         if (
@@ -316,6 +317,7 @@ def markdown(summary: dict[str, object]) -> str:
             "## Interpretation",
             "",
             "- `fixed_instance_candidate_lowerable` means one static case-local Schedule passed Compiler assessment and lowering; it says nothing about the complete runtime parent domain.",
+            "- `fixed_instance_gap_candidate`, fixed-instance redirects, and `fixed_instance_unknown` classify only one static binding; they never classify the remaining runtime domain.",
             "- `schedule_candidate_lowerable` is reserved for a reviewer claim that the case-local Schedule covers the whole narrowed parent contract. It still does not prove semantic equivalence or GPU correctness.",
             "- `schedule_gap_candidate` identifies a runnable derived single-kernel parent whose reviewer proposed an irreducible missing capability. Human review and independent recurrence are required before changing the IR.",
             "- `program_redirect_candidate` and `portfolio_redirect_candidate` preserve the one-Schedule/one-kernel boundary rather than encoding multi-launch relations or runtime dispatch as Schedule flags.",

@@ -12,6 +12,7 @@ from tools.audit_aka_corpus import SourceRecord  # noqa: E402
 from tools.run_aka_portable_parent_pool import (  # noqa: E402
     PortablePoolError,
     select_new_entries,
+    select_requested_entries,
 )
 from tools.run_aka_portable_parents_codex import PortableEntry  # noqa: E402
 
@@ -96,6 +97,24 @@ class AkaPortableParentPoolTests(unittest.TestCase):
                 expected_count=1,
                 expected_review_ready_count=1,
             )
+
+    def test_explicit_recovery_subset_is_exact_and_preserves_delta_order(self) -> None:
+        current = [entry(index) for index in range(1, 6)]
+
+        selected = select_requested_entries(
+            current, ["case-000004", "case-000002"]
+        )
+
+        self.assertEqual(
+            [item.queue_case_id for item in selected],
+            ["case-000002", "case-000004"],
+        )
+        with self.assertRaisesRegex(PortablePoolError, "duplicates"):
+            select_requested_entries(
+                current, ["case-000002", "case-000002"]
+            )
+        with self.assertRaisesRegex(PortablePoolError, "outside"):
+            select_requested_entries(current, ["case-999999"])
 
 
 if __name__ == "__main__":

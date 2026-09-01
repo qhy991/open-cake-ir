@@ -173,13 +173,14 @@ The Schedule check has one explicit scope owner. `schedule_candidate_lowerable` 
 `schedule_candidate_backend_blocked` are reserved for a reviewer claim about the whole
 narrowed parent contract. A static case-local Schedule from a wider runtime parent is
 instead `fixed_instance_candidate_lowerable` or
-`fixed_instance_candidate_backend_blocked`; it does not classify the rest of the runtime
-domain. Other admitted outputs remain provisional `schedule_gap_candidate` or
-program/portfolio redirect candidates. They must not be aggregated as released IR
-coverage. Lexical signal counts are retrieval aids only, never gap counts or priority.
-A future
-independent semantic adjudicator and workload-owned external evaluation are required before
-any row may become described/tested evidence or motivate a Compiler Corpus change.
+`fixed_instance_candidate_backend_blocked`. A fixed binding may also be
+`fixed_instance_gap_candidate`, `fixed_instance_unknown`, or a fixed-instance
+Program/Portfolio redirect; none of those states classifies the rest of the runtime domain.
+Contract-scoped outputs remain provisional `schedule_gap_candidate` or program/portfolio
+redirect candidates. They must not be aggregated as released IR coverage. Lexical signal
+counts are retrieval aids only, never gap counts or priority. A future independent semantic
+adjudicator and workload-owned external evaluation are required before any row may become
+described/tested evidence or motivate a Compiler Corpus change.
 
 `tools/run_aka_expressibility_codex.py` is a transport-only sequential consumer of that
 review layer. It fixes GPT-5.6 Sol at max reasoning, disables unrelated tools and agent

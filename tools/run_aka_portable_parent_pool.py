@@ -94,6 +94,32 @@ def select_new_entries(
     return selected, blocked
 
 
+def select_requested_entries(
+    entries: Sequence[PortableEntry],
+    requested_queue_case_ids: Sequence[str] | None,
+) -> list[PortableEntry]:
+    """Select an explicit recovery subset while preserving the frozen delta order."""
+
+    if requested_queue_case_ids is None:
+        return list(entries)
+    requested = tuple(requested_queue_case_ids)
+    if not requested:
+        raise PortablePoolError("explicit queue-case selection is empty")
+    if len(set(requested)) != len(requested):
+        raise PortablePoolError("explicit queue-case selection contains duplicates")
+    available = {entry.queue_case_id for entry in entries}
+    missing = sorted(set(requested) - available)
+    if missing:
+        raise PortablePoolError(
+            "explicit queue-case selection is outside the review-ready delta: "
+            + ", ".join(missing)
+        )
+    selected = [entry for entry in entries if entry.queue_case_id in set(requested)]
+    if len(selected) != len(requested):
+        raise PortablePoolError("explicit queue-case selection is ambiguous")
+    return selected
+
+
 def _worker_command(
     *,
     source_dataset_root: Path,
@@ -196,6 +222,7 @@ def build_delta_plan(
     prior_record_count: int,
     expected_new_count: int,
     expected_review_ready_count: int | None = None,
+    only_queue_case_ids: Sequence[str] | None = None,
 ) -> tuple[dict[str, object], list[PortableEntry]]:
     current_plan, current = build_portable_plan(
         source_dataset_root=source_dataset_root,
@@ -215,6 +242,8 @@ def build_delta_plan(
         expected_count=expected_new_count,
         expected_review_ready_count=expected_review_ready_count,
     )
+    review_ready_domain_count = len(selected)
+    selected = select_requested_entries(selected, only_queue_case_ids)
     plan = {
         "schema": POOL_SCHEMA,
         "source_revision": source_revision,
@@ -223,7 +252,16 @@ def build_delta_plan(
         "portable_dataset": current_plan["portable_dataset"],
         "prior_portable_dataset": prior_plan["portable_dataset"],
         "new_identity_count": expected_new_count,
+        "review_ready_domain_count": review_ready_domain_count,
         "selected": len(selected),
+        "selection_mode": (
+            "explicit_queue_case_ids"
+            if only_queue_case_ids is not None
+            else "full_review_ready_delta"
+        ),
+        "requested_queue_case_ids": (
+            list(only_queue_case_ids) if only_queue_case_ids is not None else []
+        ),
         "deterministically_blocked": [
             {
                 "queue_case_id": entry.queue_case_id,
@@ -259,6 +297,7 @@ def run_pool(
     prior_record_count: int,
     expected_new_count: int,
     expected_review_ready_count: int | None,
+    only_queue_case_ids: Sequence[str] | None,
     batch_root: Path,
     max_workers: int,
     timeout_seconds: int,
@@ -299,6 +338,7 @@ def run_pool(
         prior_record_count=prior_record_count,
         expected_new_count=expected_new_count,
         expected_review_ready_count=expected_review_ready_count,
+        only_queue_case_ids=only_queue_case_ids,
     )
     batch_root.mkdir(parents=True, exist_ok=False)
     (batch_root / "cases").mkdir()
@@ -314,7 +354,9 @@ def run_pool(
                 "codex": _codex_identity(Path(codex)),
                 "max_workers": max_workers,
                 "new_identity_count": plan["new_identity_count"],
+                "review_ready_domain_count": plan["review_ready_domain_count"],
                 "selected": len(selected),
+                "selection_mode": plan["selection_mode"],
                 "deterministically_blocked": len(
                     plan["deterministically_blocked"]
                 ),
@@ -376,7 +418,9 @@ def run_pool(
         "schema": FINAL_SCHEMA,
         "source_revision": source_revision,
         "new_identity_count": plan["new_identity_count"],
+        "review_ready_domain_count": plan["review_ready_domain_count"],
         "selected": len(selected),
+        "selection_mode": plan["selection_mode"],
         "deterministically_blocked": plan["deterministically_blocked"],
         "max_workers": max_workers,
         "counts": dict(sorted(counts.items())),
@@ -397,6 +441,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--prior-record-count", type=int, required=True)
     parser.add_argument("--expected-new-count", type=int, required=True)
     parser.add_argument("--expected-review-ready-count", type=int)
+    parser.add_argument("--only-queue-case-id", action="append")
     parser.add_argument("--batch-root", type=Path)
     parser.add_argument("--max-workers", type=int, default=MAX_WORKERS)
     parser.add_argument("--timeout-seconds", type=int, default=7200)
@@ -417,6 +462,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 prior_record_count=arguments.prior_record_count,
                 expected_new_count=arguments.expected_new_count,
                 expected_review_ready_count=arguments.expected_review_ready_count,
+                only_queue_case_ids=arguments.only_queue_case_id,
             )
             print(json.dumps({"selected": len(selected), "plan": plan}, indent=2, sort_keys=True))
             return 0
@@ -431,6 +477,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             prior_record_count=arguments.prior_record_count,
             expected_new_count=arguments.expected_new_count,
             expected_review_ready_count=arguments.expected_review_ready_count,
+            only_queue_case_ids=arguments.only_queue_case_id,
             batch_root=arguments.batch_root,
             max_workers=arguments.max_workers,
             timeout_seconds=arguments.timeout_seconds,

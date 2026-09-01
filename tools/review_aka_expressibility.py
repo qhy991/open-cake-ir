@@ -41,11 +41,11 @@ from tools.audit_aka_corpus import (  # noqa: E402
 )
 
 
-WORK_SCHEMA = "open-cake.aka-expressibility-work.v3"
+WORK_SCHEMA = "open-cake.aka-expressibility-work.v4"
 INPUT_SCHEMA = "open-cake.aka-expressibility-input.v2"
-REVIEW_SCHEMA = "open-cake.aka-expressibility-review.v3"
-CHECKED_SCHEMA = "open-cake.aka-expressibility-checked.v3"
-STATUS_SCHEMA = "open-cake.aka-expressibility-status.v3"
+REVIEW_SCHEMA = "open-cake.aka-expressibility-review.v4"
+CHECKED_SCHEMA = "open-cake.aka-expressibility-checked.v4"
+STATUS_SCHEMA = "open-cake.aka-expressibility-status.v4"
 
 PARENT_STATUSES = frozenset({"unknown", "missing", "completion"})
 OWNER_SCOPES = frozenset({"unknown", "schedule", "program", "portfolio"})
@@ -476,8 +476,9 @@ Schedule. A Schedule vocabulary gap requires every `missing_ir` field.
 
 State exactly what a submitted Schedule checks. Use `contract` only when one Schedule
 represents the whole narrowed contract of its containing lane. Use `fixed_instance` when
-it checks one static shape or binding from a wider runtime contract; Compiler acceptance
-then says nothing about the remaining runtime domain.
+the assessment concerns one static shape or binding from a wider runtime contract. A fixed
+instance may be lowerable, backend-blocked, missing one Schedule capability, redirected to
+Program/Portfolio, or unknown; none of those states classifies the remaining runtime domain.
 
 Copy `review.template.json` to `review.json`. The checker derives classifications; do not
 add one. It runs case-local Schedules through the exact Compiler assess/lower interface.
@@ -1112,9 +1113,9 @@ def _aspect(value: object, label: str, *, applicable: bool) -> dict[str, object]
         raise ReviewError(
             f"{label} assessment_scope, owner_scope or disposition is invalid"
         )
-    if assessment_scope == "fixed_instance" and disposition != "schedule":
+    if assessment_scope == "fixed_instance" and disposition == "not_applicable":
         raise ReviewError(
-            "fixed_instance assessment_scope requires a Schedule disposition"
+            "fixed_instance assessment_scope cannot be not_applicable"
         )
     relation = value.get("owner_relation")
     if relation is not None and (not isinstance(relation, str) or not relation.strip()):
@@ -1215,6 +1216,11 @@ def _classify(
     case_root: Path,
 ) -> dict[str, object]:
     disposition = aspect["disposition"]
+    fixed_instance = aspect["assessment_scope"] == "fixed_instance"
+    parent_runnable = parent_status in {
+        "qualified_by_parent_validator",
+        "runnable_by_parent_validator",
+    }
     if disposition == "not_applicable":
         return {
             **aspect,
@@ -1222,11 +1228,19 @@ def _classify(
             "compiler_check": "not_applicable",
             "compiler_evidence": None,
         }
+    if fixed_instance and not parent_runnable:
+        raise ReviewError(
+            f"{label} fixed-instance claim requires a runnable canonical parent completion"
+        )
     if disposition == "unknown":
         classification = (
-            "contract_missing"
-            if label == "complete_parent" and parent_status.startswith("missing_by_")
-            else "unknown"
+            "fixed_instance_unknown"
+            if fixed_instance
+            else (
+                "contract_missing"
+                if label == "complete_parent" and parent_status.startswith("missing_by_")
+                else "unknown"
+            )
         )
         return {
             **aspect,
@@ -1234,17 +1248,18 @@ def _classify(
             "compiler_check": "unknown",
             "compiler_evidence": None,
         }
-    if parent_status not in {
-        "qualified_by_parent_validator",
-        "runnable_by_parent_validator",
-    }:
+    if not parent_runnable:
         raise ReviewError(
             f"{label} non-unknown claim requires a runnable canonical parent completion"
         )
     if disposition == "schedule_gap":
         return {
             **aspect,
-            "classification": "schedule_gap_candidate",
+            "classification": (
+                "fixed_instance_gap_candidate"
+                if fixed_instance
+                else "schedule_gap_candidate"
+            ),
             "compiler_check": "not_run",
             "compiler_evidence": None,
         }
@@ -1252,7 +1267,11 @@ def _classify(
         owner = aspect["owner_scope"]
         return {
             **aspect,
-            "classification": f"{owner}_redirect_candidate",
+            "classification": (
+                f"fixed_instance_{owner}_redirect_candidate"
+                if fixed_instance
+                else f"{owner}_redirect_candidate"
+            ),
             "compiler_check": "not_run",
             "compiler_evidence": None,
         }
@@ -1271,7 +1290,7 @@ def _classify(
         )
     prefix = (
         "fixed_instance_candidate"
-        if aspect["assessment_scope"] == "fixed_instance"
+        if fixed_instance
         else "schedule_candidate"
     )
     lowering_record = None
