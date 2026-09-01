@@ -59,6 +59,40 @@ python tools/release_executor.py --project-root . \
 A released id or output path is never reused. Source, evaluator, audit, provider, or host
 closure changes require a successor descriptor.
 
+### Review an external AKA corpus
+
+AKA review is a read-only challenge-corpus workflow, not a Compiler Corpus Gate, an IR
+relevance judgment, or GPU/performance evidence. Bind the exact AKA commit and record
+format, keep generated case state outside both repositories, and begin with one case:
+
+```bash
+python tools/audit_aka_corpus.py \
+  /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --source-revision <AKA_COMMIT> \
+  --record-format aka_v1_operator_sft \
+  --dataset-label cuda_kernel_dataset_v1
+
+python tools/review_aka_expressibility.py init \
+  --dataset-root /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --source-revision <AKA_COMMIT> \
+  --record-format aka_v1_operator_sft \
+  --work-root /new/external/aka-expressibility-review
+
+python tools/run_aka_expressibility_codex.py \
+  --dataset-root /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
+  --source-revision <AKA_COMMIT> \
+  --record-format aka_v1_operator_sft \
+  --work-root /new/external/aka-expressibility-sol-max \
+  --limit 1
+```
+
+Use `aka_v2_review_projection` only for an explicitly audit-only v2 projection. A
+non-unknown result requires a canonical complete-parent completion, and every result
+remains provisional with `semantic_binding=reviewer_claimed` and `gpu_test=not_run` until
+the independent owners provide stronger evidence. Use `review_aka_expressibility.py
+verify` and `status` to check the deterministic case state; never infer a new primitive
+from the model Turn alone.
+
 ## 3. Select and freeze a Study
 
 Choose by question, not by historical sequence number:
