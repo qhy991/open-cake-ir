@@ -251,6 +251,30 @@ def _verify_schedule_semantics(schedule: Schedule, out: _Collector) -> None:
                     category,
                 )
         axes = schedule.program_map.axes
+        for index, axis in enumerate(axes):
+            owner = schedule.buffer(axis.buffer)
+            if axis.axis >= 3:
+                out.add(
+                    "PROGRAM_AXIS_NUMBER_RANGE",
+                    f"program_map.axes[{index}].axis",
+                    f"program dimension {axis.axis} is outside the supported range [0, 2]",
+                    category,
+                )
+            if owner is None:
+                out.add(
+                    "PROGRAM_AXIS_BUFFER_UNKNOWN",
+                    f"program_map.axes[{index}].buffer",
+                    f"program axis {axis.name!r} names unknown buffer {axis.buffer!r}",
+                    category,
+                )
+            elif axis.dimension >= len(owner.shape):
+                out.add(
+                    "PROGRAM_AXIS_DIMENSION_RANGE",
+                    f"program_map.axes[{index}].dimension",
+                    f"dimension {axis.dimension} is outside rank-{len(owner.shape)} "
+                    f"buffer {axis.buffer!r}",
+                    category,
+                )
         for duplicate in _duplicates(axis.name for axis in axes):
             out.add(
                 "PROGRAM_AXIS_DUPLICATE_NAME",
@@ -2308,6 +2332,14 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                         category,
                     )
     if operation.kind is OperationKind.STORE:
+        if len(operation.writes) != 1:
+            out.add(
+                "STORE_EDGE_COUNT",
+                f"{path}.writes",
+                f"store declares exactly one destination edge, got "
+                f"{len(operation.writes)}",
+                category,
+            )
         for name in operation.writes:
             buffer = buffers.get(name)
             if buffer is not None and buffer.mode not in {
@@ -2671,6 +2703,18 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                     f"{staged.name!r} is {staged.dtype.value}",
                     category,
                 )
+        if (
+            operation.kind is OperationKind.STORE
+            and not indirect
+            and len(operation.reads) != 1
+        ):
+            out.add(
+                "STORE_EDGE_COUNT",
+                f"operations[{schedule.operations.index(operation)}].reads",
+                f"direct store declares exactly one value edge, got "
+                f"{len(operation.reads)}",
+                category,
+            )
         if indirect:
             index_names = tuple(dict.fromkeys(component.name for component in indirect))
             if operation.kind not in {

@@ -445,45 +445,29 @@ def _named(items: Sequence[Mapping[str, object]], path: str) -> dict[str, Mappin
     return result
 
 
-def _resolve_grid(
-    schedule: Mapping[str, object],
-    buffers: Mapping[str, Mapping[str, object]],
-) -> tuple[int, int, int]:
-    grid = schedule.get("grid")
-    if grid is not None:
-        if not isinstance(grid, list) or len(grid) != 3:
-            raise CompilerError("schedule.grid must contain exactly three dimensions")
-        return cast(
-            tuple[int, int, int],
-            tuple(_positive_int(value, f"grid[{index}]") for index, value in enumerate(grid)),
-        )
+def _resolve_grid(schedule: Schedule) -> tuple[int, int, int]:
+    """Project a typed Schedule's launch grid without deciding ProgramMap legality."""
 
-    program_map = _object(schedule.get("program_map"), "program_map")
-    axes = _objects(program_map.get("axes"), "program_map.axes")
+    if schedule.grid is not None:
+        return schedule.grid
+
+    program_map = schedule.program_map
+    if program_map is None:
+        return (1, 1, 1)
     resolved = [1, 1, 1]
     seen_axes: set[int] = set()
-    for index, axis in enumerate(axes):
-        axis_index = axis.get("axis")
-        dimension = axis.get("dimension")
-        if (
-            not isinstance(axis_index, int)
-            or isinstance(axis_index, bool)
-            or not 0 <= axis_index < 3
-            or axis_index in seen_axes
-            or not isinstance(dimension, int)
-            or isinstance(dimension, bool)
-            or dimension < 0
-        ):
-            raise CompilerError(f"program_map.axes[{index}] has an invalid axis or dimension")
-        buffer_name = _name(axis.get("buffer"), f"program_map.axes[{index}].buffer")
-        buffer = buffers.get(buffer_name)
-        shape = buffer.get("shape") if buffer is not None else None
-        if not isinstance(shape, list) or dimension >= len(shape):
-            raise CompilerError(f"program_map.axes[{index}] refers to an invalid buffer dimension")
-        extent = _positive_int(shape[dimension], f"buffers.{buffer_name}.shape[{dimension}]")
-        tile = _positive_int(axis.get("tile"), f"program_map.axes[{index}].tile")
-        resolved[axis_index] = (extent + tile - 1) // tile
-        seen_axes.add(axis_index)
+    for axis in program_map.axes:
+        # The Verifier owns range, uniqueness, owner and dimension legality. Skipping an
+        # invalid axis keeps this derived projection total, so public assess can return
+        # the localized blocking Finding instead of turning candidate feedback into a
+        # harness exception.
+        if not 0 <= axis.axis < 3 or axis.axis in seen_axes:
+            continue
+        buffer = schedule.buffer(axis.buffer)
+        if buffer is None or axis.dimension >= len(buffer.shape):
+            continue
+        resolved[axis.axis] = axis.tile_count(buffer.shape[axis.dimension])
+        seen_axes.add(axis.axis)
     return cast(tuple[int, int, int], tuple(resolved))
 
 
@@ -809,7 +793,7 @@ class Compiler:
         buffer_by_name = _named(buffers, "buffers")
         pipeline_by_name = _named(pipelines, "pipelines")
         barrier_by_name = _named(barriers, "barriers")
-        parsed_grid = _resolve_grid(schedule, buffer_by_name)
+        parsed_grid = _resolve_grid(typed_schedule)
         if "program_map" in schedule:
             _objects(schedule.get("tile_loops", []), "tile_loops")
             _objects(schedule.get("access_maps", []), "access_maps")
