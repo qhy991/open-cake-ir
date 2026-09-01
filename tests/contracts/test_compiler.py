@@ -988,6 +988,43 @@ class CompilerContractTests(unittest.TestCase):
             ],
         )
 
+    def test_store_edges_are_not_silently_dropped_by_lowering(self) -> None:
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        path = ROOT / "corpus/schedules/state-store-b8-smoke.json"
+        base = json.loads(path.read_text(encoding="utf-8"))
+
+        extra_read = json.loads(json.dumps(base))
+        extra_read["operations"][3]["reads"].append("update_tile")
+        read_assessment = compiler.assess(extra_read)
+        self.assertFalse(read_assessment.accepted)
+        self.assertFalse(read_assessment.lowering_eligible)
+        self.assertIn(
+            ("STORE_EDGE_COUNT", "operations[3].reads"),
+            [
+                (finding.code, finding.path)
+                for finding in _decisive(read_assessment)
+            ],
+        )
+
+        extra_write = json.loads(json.dumps(base))
+        second_state = json.loads(json.dumps(extra_write["buffers"][0]))
+        second_state["name"] = "state2"
+        extra_write["buffers"].append(second_state)
+        extra_write["operations"][3]["writes"].append("state2")
+        second_access = json.loads(json.dumps(extra_write["access_maps"][2]))
+        second_access["buffer"] = "state2"
+        extra_write["access_maps"].append(second_access)
+        write_assessment = compiler.assess(extra_write)
+        self.assertFalse(write_assessment.accepted)
+        self.assertFalse(write_assessment.lowering_eligible)
+        self.assertIn(
+            ("STORE_EDGE_COUNT", "operations[3].writes"),
+            [
+                (finding.code, finding.path)
+                for finding in _decisive(write_assessment)
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

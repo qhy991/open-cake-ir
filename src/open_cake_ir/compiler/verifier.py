@@ -2332,6 +2332,14 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                         category,
                     )
     if operation.kind is OperationKind.STORE:
+        if len(operation.writes) != 1:
+            out.add(
+                "STORE_EDGE_COUNT",
+                f"{path}.writes",
+                f"store declares exactly one destination edge, got "
+                f"{len(operation.writes)}",
+                category,
+            )
         for name in operation.writes:
             buffer = buffers.get(name)
             if buffer is not None and buffer.mode not in {
@@ -2695,6 +2703,18 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                     f"{staged.name!r} is {staged.dtype.value}",
                     category,
                 )
+        if (
+            operation.kind is OperationKind.STORE
+            and not indirect
+            and len(operation.reads) != 1
+        ):
+            out.add(
+                "STORE_EDGE_COUNT",
+                f"operations[{schedule.operations.index(operation)}].reads",
+                f"direct store declares exactly one value edge, got "
+                f"{len(operation.reads)}",
+                category,
+            )
         if indirect:
             index_names = tuple(dict.fromkeys(component.name for component in indirect))
             if operation.kind not in {
