@@ -10,8 +10,8 @@ performance claim and does not authorize a Campaign.
 - Revision: `open-cake-ir-sm100a-v40`
 - State: `released`
 - Targets: `sm_100a`
-- Corpus Gate: `65/65` cases matched
-- Released source closure: `84` files
+- Corpus Gate: `68/68` cases matched
+- Released source closure: `87` files
 - Calibration coverage: `none released`
 - Authority: [`compiler/revision.lock.json`](../../compiler/revision.lock.json)
 
