@@ -251,6 +251,30 @@ def _verify_schedule_semantics(schedule: Schedule, out: _Collector) -> None:
                     category,
                 )
         axes = schedule.program_map.axes
+        for index, axis in enumerate(axes):
+            owner = schedule.buffer(axis.buffer)
+            if axis.axis >= 3:
+                out.add(
+                    "PROGRAM_AXIS_NUMBER_RANGE",
+                    f"program_map.axes[{index}].axis",
+                    f"program dimension {axis.axis} is outside the supported range [0, 2]",
+                    category,
+                )
+            if owner is None:
+                out.add(
+                    "PROGRAM_AXIS_BUFFER_UNKNOWN",
+                    f"program_map.axes[{index}].buffer",
+                    f"program axis {axis.name!r} names unknown buffer {axis.buffer!r}",
+                    category,
+                )
+            elif axis.dimension >= len(owner.shape):
+                out.add(
+                    "PROGRAM_AXIS_DIMENSION_RANGE",
+                    f"program_map.axes[{index}].dimension",
+                    f"dimension {axis.dimension} is outside rank-{len(owner.shape)} "
+                    f"buffer {axis.buffer!r}",
+                    category,
+                )
         for duplicate in _duplicates(axis.name for axis in axes):
             out.add(
                 "PROGRAM_AXIS_DUPLICATE_NAME",

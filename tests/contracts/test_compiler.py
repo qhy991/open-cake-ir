@@ -922,6 +922,72 @@ class CompilerContractTests(unittest.TestCase):
         )
         self.assertNotIn("torch.empty((8, 128)", lowering.source)
 
+    def test_program_axis_numbers_are_public_assessment_findings(self) -> None:
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        path = ROOT / "corpus/schedules/state-store-b8-smoke.json"
+        base = json.loads(path.read_text(encoding="utf-8"))
+
+        duplicate = json.loads(json.dumps(base))
+        duplicate["program_map"]["axes"].append(
+            {
+                "name": "state_columns",
+                "axis": 0,
+                "buffer": "state",
+                "dimension": 1,
+                "tile": 128,
+            }
+        )
+        duplicate_assessment = compiler.assess(duplicate)
+        self.assertFalse(duplicate_assessment.accepted)
+        self.assertIn(
+            ("PROGRAM_AXIS_DUPLICATE_NUMBER", "program_map.axes"),
+            [
+                (finding.code, finding.path)
+                for finding in _decisive(duplicate_assessment)
+            ],
+        )
+
+        out_of_range = json.loads(json.dumps(base))
+        out_of_range["program_map"]["axes"][0]["axis"] = 3
+        range_assessment = compiler.assess(out_of_range)
+        self.assertFalse(range_assessment.accepted)
+        self.assertIn(
+            ("PROGRAM_AXIS_NUMBER_RANGE", "program_map.axes[0].axis"),
+            [
+                (finding.code, finding.path)
+                for finding in _decisive(range_assessment)
+            ],
+        )
+
+    def test_program_axis_owner_projection_is_total(self) -> None:
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        path = ROOT / "corpus/schedules/state-store-b8-smoke.json"
+        base = json.loads(path.read_text(encoding="utf-8"))
+
+        unknown_buffer = json.loads(json.dumps(base))
+        unknown_buffer["program_map"]["axes"][0]["buffer"] = "missing_state"
+        buffer_assessment = compiler.assess(unknown_buffer)
+        self.assertFalse(buffer_assessment.accepted)
+        self.assertIn(
+            ("PROGRAM_AXIS_BUFFER_UNKNOWN", "program_map.axes[0].buffer"),
+            [
+                (finding.code, finding.path)
+                for finding in _decisive(buffer_assessment)
+            ],
+        )
+
+        invalid_dimension = json.loads(json.dumps(base))
+        invalid_dimension["program_map"]["axes"][0]["dimension"] = 2
+        dimension_assessment = compiler.assess(invalid_dimension)
+        self.assertFalse(dimension_assessment.accepted)
+        self.assertIn(
+            ("PROGRAM_AXIS_DIMENSION_RANGE", "program_map.axes[0].dimension"),
+            [
+                (finding.code, finding.path)
+                for finding in _decisive(dimension_assessment)
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
