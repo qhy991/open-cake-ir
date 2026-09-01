@@ -63,7 +63,12 @@ class RankingCalibrationInstrumentTests(unittest.TestCase):
 
                 self.assertTrue(all(view == global_views[0] for view in global_views))
                 self.assertGreater(lowering_eligible, 0)
-                self.assertGreater(refused, 0)
+                # Refusal is revision-specific. Frozen calibration records own the
+                # historical rejected rows; a later Compiler may admit every default.
+                self.assertEqual(
+                    lowering_eligible + refused,
+                    len(DEFAULT_TILES[profile]),
+                )
 
     def test_existing_output_is_refused_before_importing_gpu_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
