@@ -885,43 +885,6 @@ class CompilerContractTests(unittest.TestCase):
             },
         )
 
-    def test_single_writer_state_store_requires_program_owned_coordinates(self) -> None:
-        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
-        cases = {
-            "state-store-b8-smoke.json": (True, []),
-            "state-store-b8-smoke-owner-drift.json": (
-                False,
-                ["STATE_STORE_PROGRAM_OWNER"],
-            ),
-            "state-store-b8-smoke-axis-drift.json": (
-                False,
-                ["STATE_STORE_PROGRAM_AXIS_COVERAGE"],
-            ),
-        }
-
-        for name, (accepted, expected_codes) in cases.items():
-            with self.subTest(name=name):
-                assessment = compiler.assess_file(ROOT / "corpus/schedules" / name)
-                self.assertEqual(assessment.accepted, accepted)
-                self.assertEqual(
-                    [finding.code for finding in _decisive(assessment)],
-                    expected_codes,
-                )
-
-        accepted = compiler.assess_file(
-            ROOT / "corpus/schedules/state-store-b8-smoke.json"
-        )
-        lowering = compiler.lower(accepted)
-        compile(lowering.source, "<state-store-lowering>", "exec")
-        self.assertIn("# CAKE_OP:store_state", lowering.source)
-        self.assertIn("tl.store(", lowering.source)
-        self.assertIn("state + batch * D_STATE_1", lowering.source)
-        self.assertIn(
-            "def cake_state_store_b8_smoke(state, update, out=None):",
-            lowering.source,
-        )
-        self.assertNotIn("torch.empty((8, 128)", lowering.source)
-
 
 if __name__ == "__main__":
     unittest.main()

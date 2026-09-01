@@ -904,47 +904,6 @@
         "schedule_sha256": "bb217a4b095ae751676a0a43cfe73bcf8777f81462a0b49dcc9014282c07b596",
         "lowering_source_sha256": "24d50cdf637b4f2201d2787f87baaca73c528665201bb099f8a88f708a443d78"
       }
-    },
-    {
-      "case_id": "state-store-b8-accepted",
-      "schedule": "corpus/schedules/state-store-b8-smoke.json",
-      "expected": {
-        "accepted": true,
-        "lowering_eligible": true,
-        "finding_codes": [
-          "RESIDENCY_BOUND"
-        ],
-        "schedule_sha256": "4f7145bf1c9fdccb0ae62310d966cc9e19acef2a289da88b9a162602ceda2c63",
-        "lowering_source_sha256": "ef4695ce146fd83c38de4fec5c73b3a1ec78d1f5327ff5e8a06b535b8f4caa44"
-      }
-    },
-    {
-      "case_id": "state-store-b8-owner-drift",
-      "schedule": "corpus/schedules/state-store-b8-smoke-owner-drift.json",
-      "expected": {
-        "accepted": false,
-        "lowering_eligible": false,
-        "finding_codes": [
-          "STATE_STORE_PROGRAM_OWNER",
-          "RESIDENCY_BOUND"
-        ],
-        "schedule_sha256": "bc823192d57470d5f6d83890c1dbae211a42f027099574aaa99123f54148c0a3",
-        "lowering_source_sha256": null
-      }
-    },
-    {
-      "case_id": "state-store-b8-axis-drift",
-      "schedule": "corpus/schedules/state-store-b8-smoke-axis-drift.json",
-      "expected": {
-        "accepted": false,
-        "lowering_eligible": false,
-        "finding_codes": [
-          "STATE_STORE_PROGRAM_AXIS_COVERAGE",
-          "RESIDENCY_BOUND"
-        ],
-        "schedule_sha256": "24b04b663f77433ec43b9bdf178497c57eaa5bf2dad555260c6bc73adb81ab5b",
-        "lowering_source_sha256": null
-      }
     }
   ]
 }

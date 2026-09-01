@@ -1556,16 +1556,6 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
                 category,
             )
 
-    if not schedule.outputs and not any(
-        buffer.mode is BufferMode.STATE for buffer in schedule.buffers
-    ):
-        out.add(
-            "OUTPUTS_EMPTY_WITHOUT_STATE",
-            "outputs",
-            "a Schedule with no returned output must update caller-owned state",
-            category,
-        )
-
     for position, name in enumerate(schedule.outputs):
         if name in schedule.outputs[:position]:
             # `outputs` is the order the caller receives its tensors in, so a name
@@ -2310,14 +2300,11 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
     if operation.kind is OperationKind.STORE:
         for name in operation.writes:
             buffer = buffers.get(name)
-            if buffer is not None and buffer.mode not in {
-                BufferMode.OUTPUT,
-                BufferMode.STATE,
-            }:
+            if buffer is not None and buffer.mode is not BufferMode.OUTPUT:
                 out.add(
                     "OP_STORE_DESTINATION",
                     f"{path}.writes",
-                    f"store destination {name!r} is {buffer.mode.value}, not output/state",
+                    f"store destination {name!r} is {buffer.mode.value}, not an output",
                     category,
                 )
         if operation.reads and operation.writes:
@@ -3074,123 +3061,13 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
 TARGET_SYNC_HINT = {"mbarrier", "barrier.sync"}
 
 
-def _verify_state_store_ownership(schedule: Schedule, out: _Collector) -> None:
-    """Prove the first direct, single-writer ordinary store to caller-owned state."""
-
-    category = FindingCategory.PROGRAM_SAFETY
-    buffers = {buffer.name: buffer for buffer in schedule.buffers}
-    loop_bodies = {op_id for loop in schedule.tile_loops for op_id in loop.body}
-
-    for operation_index, operation in enumerate(schedule.operations):
-        if operation.kind is not OperationKind.STORE or not operation.writes:
-            continue
-        state = buffers.get(operation.writes[0])
-        if state is None or state.mode is not BufferMode.STATE:
-            continue
-        path = f"operations[{operation_index}]"
-        access = schedule.access_map(operation.op_id, state.name)
-        if access is None:
-            # The generic AccessMap rule owns this malformed edge.
-            continue
-        if schedule.program_map is None:
-            out.add(
-                "STATE_STORE_PROGRAM_MAP_REQUIRED",
-                path,
-                "an ordinary state store requires a ProgramMap ownership proof",
-                category,
-            )
-            continue
-        if operation.op_id in loop_bodies:
-            out.add(
-                "STATE_STORE_LOOP_UNSUPPORTED",
-                path,
-                "the first single-writer state-store subset executes outside TileLoop",
-                category,
-            )
-
-        used_axes: list[str] = []
-        if len(access.indices) != len(state.shape):
-            # The generic rank rule localizes the malformed AccessMap.
-            continue
-        for dimension, component in enumerate(access.indices):
-            component_path = (
-                f"access_maps[{schedule.access_maps.index(access)}].indices[{dimension}]"
-            )
-            if component.source in {
-                AccessIndexKind.PROGRAM,
-                AccessIndexKind.PROGRAM_TILE,
-            }:
-                axis = schedule.program_map.axis(component.name or "")
-                if axis is None:
-                    # The generic AccessMap rule owns an unknown axis.
-                    continue
-                used_axes.append(axis.name)
-                if axis.buffer != state.name or axis.dimension != dimension:
-                    out.add(
-                        "STATE_STORE_PROGRAM_OWNER",
-                        component_path,
-                        f"program axis {axis.name!r} is owned by {axis.buffer!r} "
-                        f"dimension {axis.dimension}, not state {state.name!r} "
-                        f"dimension {dimension}",
-                        category,
-                    )
-                if (
-                    component.source is AccessIndexKind.PROGRAM
-                    and axis.tile != 1
-                ) or (
-                    component.source is AccessIndexKind.PROGRAM_TILE
-                    and axis.tile == 1
-                ):
-                    out.add(
-                        "STATE_STORE_PROGRAM_COORDINATE",
-                        component_path,
-                        f"axis {axis.name!r} tile {axis.tile} must use "
-                        f"{'program' if axis.tile == 1 else 'program_tile'}",
-                        category,
-                    )
-                continue
-            if component.source is AccessIndexKind.DIMENSION:
-                if (
-                    component.dimension != dimension
-                    or component.offset != 0
-                    or component.extent is not None
-                ):
-                    out.add(
-                        "STATE_STORE_DIMENSION_COVERAGE",
-                        component_path,
-                        f"state dimension {dimension} must be covered once in full",
-                        category,
-                    )
-                continue
-            out.add(
-                "STATE_STORE_COORDINATE_UNPROVEN",
-                component_path,
-                "state store coordinates admit only program/program_tile and full "
-                "dimension components",
-                category,
-            )
-
-        for axis_index, axis in enumerate(schedule.program_map.axes):
-            count = used_axes.count(axis.name)
-            if count != 1:
-                out.add(
-                    "STATE_STORE_PROGRAM_AXIS_COVERAGE",
-                    f"program_map.axes[{axis_index}]",
-                    f"state store must consume axis {axis.name!r} exactly once, got {count}",
-                    category,
-                )
-
-
 def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
     category = FindingCategory.PROGRAM_SAFETY
 
-    buffers = {buffer.name: buffer for buffer in schedule.buffers}
     roles = {role.name for role in schedule.roles}
     pipelines = {pipeline.name for pipeline in schedule.pipelines}
     barriers = {barrier.name: barrier for barrier in schedule.barriers}
     active = {operation.role for operation in schedule.operations}
-
-    _verify_state_store_ownership(schedule, out)
 
     for index, allocation in enumerate(schedule.allocations):
         role = allocation.allocating_role
@@ -3364,15 +3241,6 @@ def _verify_program_safety(schedule: Schedule, out: _Collector) -> None:
             if producer.role == operation.role:
                 # Same role: program order is real ordering. It must still run forwards.
                 if order.get(producer.op_id, -1) > index:
-                    buffer = buffers.get(name)
-                    if (
-                        buffer is not None
-                        and buffer.mode is BufferMode.STATE
-                        and producer.kind is OperationKind.STORE
-                    ):
-                        # State exists before the Schedule. A same-role load may read that
-                        # initial value before the one admitted ordinary update.
-                        continue
                     out.add(
                         "OP_READ_BEFORE_WRITE",
                         f"operations[{index}].reads",
