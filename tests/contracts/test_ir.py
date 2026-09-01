@@ -23,6 +23,7 @@ from open_cake_ir.compiler.ir import (
     PLACED_CONTRACT_PREFIXES,
     AccessIndexKind,
     BoundaryPolicy,
+    BufferMode,
     DType,
     ElementwiseInstruction,
     ElementwiseOp,
@@ -88,7 +89,10 @@ class RetainedScheduleTest(unittest.TestCase):
                 self.assertEqual(schedule.schema_version, 1)
                 self.assertEqual(schedule.target, "sm_100a")
                 self.assertTrue(schedule.operations)
-                self.assertTrue(schedule.outputs)
+                self.assertTrue(
+                    schedule.outputs
+                    or any(buffer.mode is BufferMode.STATE for buffer in schedule.buffers)
+                )
 
     def test_every_corpus_schedule_is_admitted_by_the_authoring_schema(self) -> None:
         """The prompt projection may not refuse bytes the canonical parser admits.
