@@ -85,6 +85,15 @@ domain owner. A roofline floor uses only `device_specification` ceilings; it may
 lower-bound arithmetic, but may use compulsory bytes only when their count is exact. A
 microbenchmark reference or partial-addressing byte upper bound remains a comparative
 ratio and cannot by itself refute a measurement.
+An ordinary `store` may target state only when its AccessMap mechanically partitions the
+state across every ProgramMap axis. Each Program axis must be owned by the same state
+Buffer/dimension and consumed exactly once; remaining dimensions are covered in full.
+Indirect coordinates, TileLoop placement, partial slices, unused launch axes and legacy
+grid are refused. No `unique` assertion or Workload precondition substitutes for this
+proof. The store keeps its existing dtype and ordering rules and lowers to the
+caller-owned state pointer. A Schedule may return no output only when it updates
+caller-owned state; the host wrapper returns an empty output tuple and the state effect
+remains observable through the argument.
 `reduce_argmin` compares FP32 values and returns INT32 source positions; admitting FP8
 storage for another operation does not widen that semantic contract.
 

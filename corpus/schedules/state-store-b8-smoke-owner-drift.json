@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "schedule_id": "state-store-b8-smoke-owner-drift-v1",
+  "target": "sm_100a",
+  "roles": [
+    {"name": "compute", "warps": [0, 1, 2, 3]}
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {"name": "state", "space": "global", "dtype": "fp32", "shape": [8, 128], "mode": "state"},
+    {"name": "update", "space": "global", "dtype": "fp32", "shape": [8, 128], "mode": "input"},
+    {"name": "state_tile", "space": "register", "dtype": "fp32", "shape": [128], "mode": "scratch"},
+    {"name": "update_tile", "space": "register", "dtype": "fp32", "shape": [128], "mode": "scratch"},
+    {"name": "result_tile", "space": "register", "dtype": "fp32", "shape": [128], "mode": "scratch"}
+  ],
+  "operations": [
+    {"id": "load_state", "kind": "load", "role": "compute", "reads": ["state"], "writes": ["state_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "load_update", "kind": "load", "role": "compute", "reads": ["update"], "writes": ["update_tile"], "parameters": {"movement": "global", "reuse": "streamed"}},
+    {"id": "add_update", "kind": "elementwise", "role": "compute", "reads": ["state_tile", "update_tile"], "writes": ["result_tile"], "depends_on": ["load_state", "load_update"], "parameters": {"op": "add"}},
+    {"id": "store_state", "kind": "store", "role": "compute", "reads": ["result_tile"], "writes": ["state"], "depends_on": ["add_update"], "parameters": {"coalesced": true}}
+  ],
+  "outputs": [],
+  "program_map": {
+    "axes": [
+      {"name": "batch", "axis": 0, "buffer": "update", "dimension": 0, "tile": 1}
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {"operation": "load_state", "buffer": "state", "indices": [{"source": "program", "name": "batch"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"},
+    {"operation": "load_update", "buffer": "update", "indices": [{"source": "program", "name": "batch"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"},
+    {"operation": "store_state", "buffer": "state", "indices": [{"source": "program", "name": "batch"}, {"source": "dimension", "dimension": 1}], "boundary": "mask_tiled_axes"}
+  ],
+  "residency": {"ctas_per_multiprocessor": 4, "registers_per_thread": 64},
+  "lowering": {"backend": "triton", "entry_point": "cake_state_store_b8_smoke_owner_drift"},
+  "metadata": {"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"}
+}
