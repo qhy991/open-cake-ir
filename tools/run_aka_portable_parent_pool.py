@@ -12,7 +12,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Sequence
+from typing import Mapping, Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +42,54 @@ MAX_WORKERS = 30
 
 class PortablePoolError(ValueError):
     """The portable delta or bounded pool contract is invalid."""
+
+
+def load_json_object(path: Path, label: str) -> dict[str, object]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise PortablePoolError(f"cannot read {label} {path}: {error}") from error
+    if not isinstance(value, dict):
+        raise PortablePoolError(f"{label} must be one JSON object")
+    return value
+
+
+def recovery_basis(
+    predecessor: Mapping[str, object],
+    *,
+    predecessor_path: Path,
+    source_revision: str,
+    requested_queue_case_ids: Sequence[str] | None,
+) -> dict[str, object]:
+    """Bind an explicit recovery subset to failed workers in one terminal pool."""
+
+    if requested_queue_case_ids is None:
+        raise PortablePoolError("recovery requires explicit queue-case ids")
+    if predecessor.get("schema") != FINAL_SCHEMA:
+        raise PortablePoolError("recovery predecessor has an unsupported schema")
+    if predecessor.get("source_revision") != source_revision:
+        raise PortablePoolError("recovery predecessor source revision differs")
+    results = predecessor.get("results")
+    if not isinstance(results, list):
+        raise PortablePoolError("recovery predecessor has no worker results")
+    failed_ids = {
+        result.get("queue_case_id")
+        for result in results
+        if isinstance(result, dict) and result.get("status") == "failed"
+    }
+    requested = set(requested_queue_case_ids)
+    outside = sorted(requested - failed_ids)
+    if outside:
+        raise PortablePoolError(
+            "recovery selection was not failed in the predecessor: "
+            + ", ".join(outside)
+        )
+    return {
+        "pool_final": str(predecessor_path.resolve(strict=True)),
+        "finished_at": predecessor.get("finished_at"),
+        "failed_domain_count": len(failed_ids),
+        "selected_failed_count": len(requested),
+    }
 
 
 def portable_identity(entry: PortableEntry) -> tuple[str, int, str]:
@@ -298,6 +346,7 @@ def run_pool(
     expected_new_count: int,
     expected_review_ready_count: int | None,
     only_queue_case_ids: Sequence[str] | None,
+    recovery_from_pool_final: Path | None,
     batch_root: Path,
     max_workers: int,
     timeout_seconds: int,
@@ -340,6 +389,18 @@ def run_pool(
         expected_review_ready_count=expected_review_ready_count,
         only_queue_case_ids=only_queue_case_ids,
     )
+    if only_queue_case_ids is not None and recovery_from_pool_final is None:
+        raise PortablePoolError(
+            "explicit recovery selection requires --recovery-from-pool-final"
+        )
+    if recovery_from_pool_final is not None:
+        predecessor_path = recovery_from_pool_final.resolve(strict=True)
+        plan["recovery_from"] = recovery_basis(
+            load_json_object(predecessor_path, "recovery predecessor"),
+            predecessor_path=predecessor_path,
+            source_revision=source_revision,
+            requested_queue_case_ids=only_queue_case_ids,
+        )
     batch_root.mkdir(parents=True, exist_ok=False)
     (batch_root / "cases").mkdir()
     _write_new(batch_root / "pool.plan.json", _json_bytes(plan))
@@ -357,6 +418,7 @@ def run_pool(
                 "review_ready_domain_count": plan["review_ready_domain_count"],
                 "selected": len(selected),
                 "selection_mode": plan["selection_mode"],
+                "recovery_from": plan.get("recovery_from"),
                 "deterministically_blocked": len(
                     plan["deterministically_blocked"]
                 ),
@@ -421,6 +483,7 @@ def run_pool(
         "review_ready_domain_count": plan["review_ready_domain_count"],
         "selected": len(selected),
         "selection_mode": plan["selection_mode"],
+        "recovery_from": plan.get("recovery_from"),
         "deterministically_blocked": plan["deterministically_blocked"],
         "max_workers": max_workers,
         "counts": dict(sorted(counts.items())),
@@ -442,6 +505,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-new-count", type=int, required=True)
     parser.add_argument("--expected-review-ready-count", type=int)
     parser.add_argument("--only-queue-case-id", action="append")
+    parser.add_argument("--recovery-from-pool-final", type=Path)
     parser.add_argument("--batch-root", type=Path)
     parser.add_argument("--max-workers", type=int, default=MAX_WORKERS)
     parser.add_argument("--timeout-seconds", type=int, default=7200)
@@ -478,6 +542,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             expected_new_count=arguments.expected_new_count,
             expected_review_ready_count=arguments.expected_review_ready_count,
             only_queue_case_ids=arguments.only_queue_case_id,
+            recovery_from_pool_final=arguments.recovery_from_pool_final,
             batch_root=arguments.batch_root,
             max_workers=arguments.max_workers,
             timeout_seconds=arguments.timeout_seconds,

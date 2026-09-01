@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 from tools.audit_aka_corpus import SourceRecord  # noqa: E402
 from tools.run_aka_portable_parent_pool import (  # noqa: E402
     PortablePoolError,
+    recovery_basis,
     select_new_entries,
     select_requested_entries,
 )
@@ -115,6 +116,34 @@ class AkaPortableParentPoolTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(PortablePoolError, "outside"):
             select_requested_entries(current, ["case-999999"])
+
+    def test_recovery_basis_accepts_only_failed_predecessor_workers(self) -> None:
+        predecessor = {
+            "schema": "open-cake.aka-portable-parent-pool-final.v1",
+            "source_revision": "a" * 40,
+            "finished_at": "2026-08-30T00:00:00+00:00",
+            "results": [
+                {"queue_case_id": "case-000001", "status": "completed"},
+                {"queue_case_id": "case-000002", "status": "failed"},
+                {"queue_case_id": "case-000003", "status": "failed"},
+            ],
+        }
+        basis = recovery_basis(
+            predecessor,
+            predecessor_path=ROOT / "tests/contracts/test_aka_portable_parent_pool.py",
+            source_revision="a" * 40,
+            requested_queue_case_ids=["case-000003"],
+        )
+        self.assertEqual(basis["failed_domain_count"], 2)
+        self.assertEqual(basis["selected_failed_count"], 1)
+
+        with self.assertRaisesRegex(PortablePoolError, "not failed"):
+            recovery_basis(
+                predecessor,
+                predecessor_path=ROOT / "tests/contracts/test_aka_portable_parent_pool.py",
+                source_revision="a" * 40,
+                requested_queue_case_ids=["case-000001"],
+            )
 
 
 if __name__ == "__main__":
