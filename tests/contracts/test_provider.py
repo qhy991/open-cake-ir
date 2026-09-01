@@ -23,6 +23,10 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     required_live_provider_qualification_scope,
 )
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
+from open_cake_ir.lab.task_package import (  # noqa: E402
+    TaskPackage,
+    materialize_task_package,
+)
 
 
 class ProviderContractTests(unittest.TestCase):
@@ -1094,6 +1098,152 @@ class ProviderContractTests(unittest.TestCase):
                         "one to\n2 Schedule objects",
                         adapter.invocation.argv[-1],
                     )
+
+    def test_ralph_provider_exposes_only_task_agents_and_candidate_set(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            executable.write_bytes(b"fixture executable")
+            executable.chmod(0o700)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            schema = root / "schema.json"
+            schema.write_text("{}")
+            package = TaskPackage(
+                "open_cake-1",
+                "open_cake",
+                "# TASK.md\n\nImplement the frozen task.\n",
+                "# AGENTS.md\n\nWrite only candidate-set.json.\n",
+            )
+            materialize_task_package(workspace, package)
+            builder = CodexInvocationBuilder(
+                executable=executable,
+                provider_revision="codex-ralph-fixture",
+                model="gpt-5.6-sol",
+                reasoning_effort="max",
+                service_tier="default",
+                workspace=workspace,
+                output_schema=schema,
+                removed_environment=("OPENAI_API_KEY",),
+                submission_contract=CANDIDATE_SET_ENVELOPE_V1,
+                cwd_policy="independent_task_workspace",
+                reference_visibility="workspace_task_files",
+            )
+            qualification = ProviderQualificationReceipt(
+                provider_revision=builder.provider_revision,
+                executable_sha256=sha256(executable.read_bytes()).hexdigest(),
+                configuration_sha256=builder.configuration_sha256,
+                initial_and_resume_equivalent=True,
+                file_lifecycle_observed=True,
+                usage_observed=True,
+                qualified=True,
+                scope="live_two_turn_current_provider",
+            )
+
+            class Adapter:
+                def __init__(self):
+                    self.invocations = []
+
+                def execute(
+                    self,
+                    invocation,
+                    *,
+                    candidate_path,
+                    expected_change,
+                    expected_terminal_message,
+                    event_contract,
+                    submission_contract,
+                    arm,
+                    maximum_candidates_per_turn,
+                ):
+                    self.invocations.append(invocation)
+                    member = {"turn": len(self.invocations)}
+                    candidate_path.write_bytes(
+                        json.dumps(
+                            {
+                                "schema_version": 1,
+                                "arm": arm,
+                                "candidates": [member],
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode()
+                        + b"\n"
+                    )
+                    payload = json.dumps(
+                        member, sort_keys=True, separators=(",", ":")
+                    ).encode()
+                    return ProviderTurn(
+                        thread_id="01234567-89ab-cdef-0123-456789abcdef",
+                        provider_tokens=100,
+                        candidates=(payload,),
+                        candidate_sha256s=(sha256(payload).hexdigest(),),
+                        raw_events=b"{}\n",
+                        raw_events_sha256=sha256(b"{}\n").hexdigest(),
+                        terminal_message=expected_terminal_message,
+                        terminal_message_count=1,
+                        normalization="single_exact",
+                    )
+
+            adapter = Adapter()
+            provider = CodexRunProvider(
+                qualification=qualification,
+                builders={"open_cake-1": builder},
+                reference_roots={},
+                prompt_templates={},
+                task_packages={"open_cake-1": package},
+                adapter=adapter,
+            )
+            state = MappingProxyType(
+                {
+                    "schema_version": 1,
+                    "kind": "ralph_state_v1",
+                    "iteration": 1,
+                }
+            )
+            first = provider.turn(
+                SimpleNamespace(
+                    run_id="open_cake-1",
+                    arm="open_cake",
+                    turn=1,
+                    cumulative_provider_tokens=0,
+                    thread_id=None,
+                    feedback={"kind": "initial"},
+                    maximum_candidates_per_turn=2,
+                    state_card=state,
+                )
+            )
+            second = provider.turn(
+                SimpleNamespace(
+                    run_id="open_cake-1",
+                    arm="open_cake",
+                    turn=2,
+                    cumulative_provider_tokens=100,
+                    thread_id=first.thread_id,
+                    feedback={"kind": "evaluation"},
+                    maximum_candidates_per_turn=2,
+                    state_card=MappingProxyType(
+                        {
+                            "schema_version": 1,
+                            "kind": "ralph_state_v1",
+                            "iteration": 2,
+                        }
+                    ),
+                )
+            )
+
+            self.assertEqual(
+                {path.name for path in workspace.iterdir()},
+                {"TASK.md", "AGENTS.md", "candidate-set.json"},
+            )
+            self.assertIn("Read TASK.md and AGENTS.md", adapter.invocations[0].argv[-1])
+            self.assertNotIn("Implement the frozen task", adapter.invocations[0].argv[-1])
+            self.assertIn("resume", adapter.invocations[1].argv)
+            self.assertNotEqual(first.candidate_sha256s, second.candidate_sha256s)
+            bundle = json.loads(second.reference_bundle)
+            self.assertEqual(bundle["task_markdown"], package.task_markdown)
+            self.assertEqual(bundle["agents_markdown"], package.agents_markdown)
+            self.assertEqual(bundle["state_card"]["iteration"], 2)
 
 
 if __name__ == "__main__":

@@ -1,14 +1,20 @@
 # Compiler-first one-way migration
 
+> **Historical migration plan.** The active documentation architecture, released
+> authorities, and current views now live at the destinations named in
+> [`../CONTEXT-MAP.md`](../CONTEXT-MAP.md). This file is retained for migration rationale,
+> not current status.
+
 ## 1. Rule
 
 The migration is a one-way cutover from a campaign-shaped legacy repository to a compiler-first product with a
 dependent Research Lab. The legacy repository remains a read-only evidence source. No formal run dual-writes and
 no legacy runner is copied for convenience.
 
-Implementation status: P0-P8 are complete in the new architecture, including the real r43-r45 Portfolio, the G8 r6
-system Study and the private `qhy991/open-cake-ir` source authority. G7 r4/G8 r6 preserve the closed research path;
-the separately qualified tool-rich path supports final artifact optimization without changing their evidence.
+Historical implementation snapshot: the migration phases were completed through source-authority cutover, including
+the retained r43-r45 Portfolio, a bounded two-arm B200 system-qualification Study, and the private
+`qhy991/open-cake-ir` source authority. Separate closed-provider and provider-default qualifications preserve the
+research and engineering authoring paths without changing their frozen evidence.
 
 ## 2. What migrates
 
@@ -91,7 +97,7 @@ all projections after deleting them.
 ### P6 — Research Lab vertical slice
 
 Implement `matched_search` only. Separate Workload Contract from Study Contract; preflight resolves both plus exact
-Authoring Environment, provider, Compiler, toolchain and machine identities into one Campaign Lock.
+Authoring Environment, provider, Compiler, toolchain and machine identities into one CampaignLock.
 
 First execute a zero-GPU fake-provider Run covering initial turn, resume, rejection, protocol fault, terminal archive
 and the three checkpoint states. Then execute one two-turn live-provider qualification without GPU to settle actual

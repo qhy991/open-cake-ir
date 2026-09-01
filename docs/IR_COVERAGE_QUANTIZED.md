@@ -1,5 +1,8 @@
 # DeepGEMM: quantization is not a dtype
 
+> **Survey snapshot, 2026-08-25.** This records the examined DeepGEMM mechanisms and the
+> then-visible IR gaps. Later releases do not retroactively change the survey.
+
 Surveyed against the typed IR. Thirty-one axes across FP8 and FP4 block-wise GEMM,
 grouped and masked variants, and a fused MoE megakernel. Paths under `DeepGEMM-upstream/`.
 

@@ -1,5 +1,11 @@
 # Current-state inventory
 
+> **Frozen historical snapshot.** This file records the migration state observed on
+> 2026-08-25. Do not update it to follow later Compiler, Executor, or experiment results.
+> Current released authorities are generated in
+> [`../reports/current/STATUS.md`](../reports/current/STATUS.md); corrections to this
+> snapshot require an erratum or successor record.
+
 Snapshot: 2026-08-25 after declared-domain ranking calibration, candidate-set envelope implementation and live
 system qualification, historical Executor-v10 NCU attribution validation, Executor v29 release and Compiler v28
 KDA reservation-owned indexed-store successor over the v27 atomic-reservation slice. The final

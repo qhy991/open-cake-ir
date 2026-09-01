@@ -10,7 +10,6 @@ from pathlib import Path, PurePosixPath
 from typing import Mapping, cast
 
 from open_cake_ir.compiler import Compiler
-from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import (
     CudaLaunchManifest,
     CuptiPortfolioAssay,
@@ -43,6 +42,12 @@ from .providers import (
     required_live_provider_qualification_scope,
 )
 from .runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter
+from .task_package import (
+    TASK_AGENTS_RALPH_V1,
+    build_run_reference_documents,
+    materialize_task_package,
+    render_task_package,
+)
 
 
 def _object(value: object, context: str) -> Mapping[str, object]:
@@ -145,92 +150,8 @@ def _materialize_run_references(
     arm: Mapping[str, object],
 ) -> None:
     references.mkdir(mode=0o755)
-    workload = _object(lock.document["workload"], "campaign_lock.workload")
-    compiler = _object(lock.document["compiler_revision"], "campaign_lock.compiler")
-    scaffold = _object(arm["scaffold"], "arm.scaffold")
-    revision_document = _object(
-        json.loads((root / str(compiler["path"])).read_text(encoding="utf-8")),
-        "compiler_revision",
-    )
-    targets = _object(revision_document["target_definitions"], "target_definitions")
-    target = _object(targets["sm_100a"], "target_definitions.sm_100a")
-    resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
-    run_authority = {
-        "schema_version": 1,
-        "study": lock.document["study"],
-        "workload": lock.document["workload"],
-        "authoring_environment": arm,
-        "budget": resolved["budget"],
-        "run_protocol": resolved["run_protocol"],
-        "evaluation_protocol": lock.document["evaluation_protocol"],
-        "execution": lock.document["execution"],
-    }
-    _write_reference(
-        references / "run-authority.json",
-        json.dumps(run_authority, sort_keys=True, separators=(",", ":")).encode(),
-    )
-    _write_reference(
-        references / "workload.json",
-        (root / str(workload["path"])).read_bytes(),
-    )
-    _write_reference(
-        references / "target.json",
-        (root / str(target["path"])).read_bytes(),
-    )
-    _write_reference(
-        references / "scaffold.md",
-        (root / str(scaffold["path"])).read_bytes(),
-    )
-    if arm.get("environment_kind") == "open_cake":
-        skeleton_ref = _object(arm["schedule_skeleton"], "arm.schedule_skeleton")
-        skeleton = cast(
-            dict[str, object],
-            json.loads((root / str(skeleton_ref["path"])).read_text(encoding="utf-8")),
-        )
-        case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
-        workload_contract = WorkloadContract.load(root / str(workload["path"]))
-        shape = _object(workload_contract.case(case_id)["shape"], "workload.case.shape")
-        buffers = {
-            str(item["name"]): item
-            for item in cast(list[dict[str, object]], skeleton["buffers"])
-        }
-        buffers["tokens"]["shape"] = [shape["B"], shape["N"], shape["D"]]
-        buffers["centroids"]["shape"] = [shape["B"], shape["K"], shape["D"]]
-        buffers["centroid_sq"]["shape"] = [shape["B"], shape["K"]]
-        buffers["assignments"]["shape"] = [shape["B"], shape["N"]]
-        skeleton["schedule_id"] = "open-cake-ir-matched-authoring-skeleton-v1"
-        cast(dict[str, object], skeleton["metadata"])[
-            "workload_contract_sha256"
-        ] = workload_contract.canonical_sha256
-        # Generated from the typed IR at bundle time. Checking a projection in would
-        # make it a second copy of facts the Compiler already owns, and every Turn
-        # prompt embeds these bytes.
-        _write_reference(
-            references / "schedule.schema.json", schedule_schema_bytes()
-        )
-        _write_reference(
-            references / "schedule-authoring.md",
-            (root / "compiler/AUTHORING_CONTRACT.md").read_bytes(),
-        )
-        _write_reference(
-            references / "schedule-skeleton.json",
-            json.dumps(skeleton, sort_keys=True, separators=(",", ":")).encode(),
-        )
-    elif arm.get("environment_kind") == "direct_cuda":
-        launch_contract = _object(arm["launch_contract"], "arm.launch_contract")
-        candidate_skeleton = _object(
-            arm["candidate_skeleton"], "arm.candidate_skeleton"
-        )
-        _write_reference(
-            references / "cuda-launch-abi.json",
-            (root / str(launch_contract["path"])).read_bytes(),
-        )
-        _write_reference(
-            references / "candidate-skeleton.cu",
-            (root / str(candidate_skeleton["path"])).read_bytes(),
-        )
-    else:
-        raise ValueError("Authoring Environment kind differs during reference materialization")
+    for name, payload in build_run_reference_documents(root, lock, arm).items():
+        _write_reference(references / name, payload)
     references.chmod(0o555)
 
 
@@ -480,14 +401,22 @@ def execute_matched_from_config(
         direct_arm["candidate_skeleton"],
         "arm_environments.direct_cuda.candidate_skeleton",
     )
-    prompt_templates = {
-        arm: _raw_reference_path(
-            root,
-            document["prompt_template"],
-            f"arm_environments.{arm}.prompt_template",
-        )
-        for arm, document in (("open_cake", open_arm), ("direct_cuda", direct_arm))
-    }
+    ralph_interface = lock.agent_interface == TASK_AGENTS_RALPH_V1
+    prompt_templates = (
+        {}
+        if ralph_interface
+        else {
+            arm: _raw_reference_path(
+                root,
+                document["prompt_template"],
+                f"arm_environments.{arm}.prompt_template",
+            )
+            for arm, document in (
+                ("open_cake", open_arm),
+                ("direct_cuda", direct_arm),
+            )
+        }
+    )
     compiler_ref = _object(lock.document["compiler_revision"], "compiler_revision")
     compiler = Compiler.load(root, root / str(compiler_ref["path"]))
     compiler_gate = compiler.check_corpus()
@@ -534,22 +463,30 @@ def execute_matched_from_config(
 
     workspace_root = Path(str(provider_config["workspace_root"])).absolute()
     workspace_root.mkdir(mode=0o750, parents=False, exist_ok=False)
-    references_root = workspace_root / "_references"
-    references_root.mkdir(mode=0o755)
+    references_root = workspace_root / "_references" if not ralph_interface else None
+    if references_root is not None:
+        references_root.mkdir(mode=0o755)
     builders = {}
     reference_roots = {}
+    task_packages = {}
     for run_id in lock.run_order:
         workspace = workspace_root / run_id
         workspace.mkdir(mode=0o750)
         arm_name = run_id.rsplit("-", 1)[0]
-        reference_root = references_root / run_id
-        _materialize_run_references(
-            root,
-            reference_root,
-            lock,
-            _object(arms[arm_name], f"arm_environments.{arm_name}"),
-        )
-        reference_roots[run_id] = reference_root
+        if ralph_interface:
+            package = render_task_package(root, lock, run_id)
+            materialize_task_package(workspace, package)
+            task_packages[run_id] = package
+        else:
+            assert references_root is not None
+            reference_root = references_root / run_id
+            _materialize_run_references(
+                root,
+                reference_root,
+                lock,
+                _object(arms[arm_name], f"arm_environments.{arm_name}"),
+            )
+            reference_roots[run_id] = reference_root
         builders[run_id] = CodexInvocationBuilder(
             executable=executable,
             provider_revision=qualification.provider_revision,
@@ -573,13 +510,17 @@ def execute_matched_from_config(
                 if "maximum_candidates_per_turn" in budget
                 else SINGLE_CANDIDATE_V1
             ),
+            cwd_policy=str(provider_authority["cwd_policy"]),
+            reference_visibility=str(provider_authority["reference_visibility"]),
         )
-    references_root.chmod(0o555)
+    if references_root is not None:
+        references_root.chmod(0o555)
     provider = CodexRunProvider(
         qualification=qualification,
         builders=builders,
         reference_roots=reference_roots,
         prompt_templates=prompt_templates,
+        task_packages=task_packages,
         adapter=CodexProviderAdapter(),
     )
     return Lab(root).execute(

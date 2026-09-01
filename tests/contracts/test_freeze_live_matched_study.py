@@ -406,6 +406,140 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             self.assertIn(b"must be replaced together", incomplete.stderr)
             self.assertFalse(incomplete_output.exists())
 
+    def test_ralph_template_freezes_without_reintroducing_prompt_templates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            project = temporary / "open-cake-ir"
+
+            def ignored(path: str, names: list[str]) -> set[str]:
+                omitted = {"__pycache__", ".pytest_cache"}
+                if Path(path).resolve() == ROOT:
+                    omitted |= {"evidence", "migration", "tests"}
+                return omitted & set(names)
+
+            shutil.copytree(ROOT, project, ignore=ignored)
+            executable = project / "codex-fixture"
+            executable.write_bytes(b"qualified Ralph Codex fixture")
+            executable.chmod(0o700)
+            provider_revision = "codex-live-ralph-contract-fixture"
+            invocation = CodexInvocationBuilder(
+                executable=executable,
+                provider_revision=provider_revision,
+                model="gpt-5.6-sol",
+                reasoning_effort="xhigh",
+                service_tier="default",
+                workspace=project,
+                output_schema=(
+                    project / "contracts/providers/codex-turn-output-schema-v1.json"
+                ),
+                removed_environment=("OPENAI_API_KEY", "ANTHROPIC_API_KEY"),
+                submission_contract=CANDIDATE_SET_ENVELOPE_V1,
+                cwd_policy="independent_task_workspace",
+                reference_visibility="workspace_task_files",
+            )
+            qualification = ProviderQualificationReceipt(
+                provider_revision=provider_revision,
+                executable_sha256=sha256(executable.read_bytes()).hexdigest(),
+                configuration_sha256=invocation.configuration_sha256,
+                initial_and_resume_equivalent=True,
+                file_lifecycle_observed=True,
+                usage_observed=True,
+                qualified=True,
+                scope="live_two_turn_current_provider",
+            )
+            qualification_path = project / "contracts/providers/live-ralph-fixture.json"
+            qualification_path.write_bytes(
+                _canonical_json_bytes(qualification.document) + b"\n"
+            )
+            anchor = {
+                "schema_version": 1,
+                "kind": "codex_provider_qualification_evidence_anchor",
+                "run_id": "codex-live-ralph-contract-fixture",
+                "evidence_root": "/external/fixture/evidence",
+                "authority_sha256": "a" * 64,
+                "qualification_receipt_sha256": qualification.canonical_sha256,
+                "immediate_audit_integrity": True,
+                "terminal_seal_sha256": "b" * 64,
+            }
+            anchor_path = project / "contracts/providers/live-ralph-fixture-anchor.json"
+            anchor_path.write_bytes(_canonical_json_bytes(anchor) + b"\n")
+            nvcc = project / "nvcc-fixture"
+            cuobjdump = project / "cuobjdump-fixture"
+            nvcc.write_bytes(b"nvcc")
+            cuobjdump.write_bytes(b"cuobjdump")
+            runtime = {
+                "schema_version": 1,
+                "provider": {
+                    "executable": str(executable),
+                    "workspace_root": str(temporary / "future-workspaces"),
+                },
+                "toolchain": {"nvcc": str(nvcc), "cuobjdump": str(cuobjdump)},
+                "broker": {
+                    "command": [
+                        sys.executable,
+                        str(project / "tools/evaluate_flash_candidate.py"),
+                    ],
+                    "cwd": str(project),
+                    "timeout_seconds": 1800,
+                    "service_user": pwd.getpwuid(os.geteuid()).pw_name,
+                    "service_group": grp.getgrgid(os.getegid()).gr_name,
+                },
+            }
+            runtime_path = temporary / "runtime.json"
+            runtime_path.write_bytes(_canonical_json_bytes(runtime))
+            output = project / "contracts/studies/live-ralph.json"
+            current_executor = json.loads(
+                (project / "inventory/EXECUTOR_REVISIONS.json").read_text()
+            )["current"]["path"]
+            command = [
+                sys.executable,
+                str(project / "tools/freeze_live_matched_study.py"),
+                "--project-root",
+                str(project),
+                "--template",
+                str(
+                    project
+                    / "contracts/studies/matched-search-system-qualification-ralph-template.json"
+                ),
+                "--qualification",
+                str(qualification_path),
+                "--qualification-anchor",
+                str(anchor_path),
+                "--executor",
+                str(project / current_executor),
+                "--runtime-config",
+                str(runtime_path),
+                "--reasoning-effort",
+                "xhigh",
+                "--study-id",
+                "open-cake-ir-live-ralph-contract-fixture",
+                "--output",
+                str(output),
+            ]
+            completed = subprocess.run(
+                command,
+                cwd=project,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            study = json.loads(output.read_text())
+            lock = Lab(project).preflight(output)
+            self.assertEqual(study["schema_version"], 2)
+            self.assertEqual(
+                study["agent_interface"]["kind"], "task_agents_ralph_v1"
+            )
+            self.assertEqual(study["evidence"]["event_vocabulary"], "matched_ralph_v1")
+            self.assertTrue(
+                all("prompt_template" not in arm for arm in study["arms"].values())
+            )
+            self.assertEqual(lock.agent_interface, "task_agents_ralph_v1")
+            self.assertEqual(output.stat().st_mode & 0o444, 0o444)
+
 
 if __name__ == "__main__":
     unittest.main()

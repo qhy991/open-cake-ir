@@ -1,5 +1,9 @@
 # 从一个真实 B200 GPU 例子理解 open-cake-ir
 
+> 这是一个绑定到明确 Schedule、Workload 和历史正确性 Evidence 的教学路径，不是“当前最好结果”或
+> 全仓库状态页。接口变化时可以更新教程；新的实验结果应进入自己的 Evidence/Study Report，而不是
+> 追加到这里。
+
 这是一条面向编译器初学者的 10–15 分钟路径（不含 GPU 排队时间）。你会把一份描述 GPU 执行计划的
 Schedule JSON 交给 Compiler，确定性 Lowering 为 Triton 源码；固定的 Triton toolchain 再把源码编译成
 B200 CUBIN。随后通过 GPUQ 在独占 B200 上加载候选 CUBIN，并恰好启动一次其中的 kernel；独立 oracle 会

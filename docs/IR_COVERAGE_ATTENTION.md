@@ -1,5 +1,9 @@
 # FlashInfer attention: where the static-shape assumption ends
 
+> **Survey snapshot, 2026-08-24.** This records the examined FlashInfer source boundary at
+> that time. It is not a current capability matrix and must not be rewritten after each
+> Compiler release.
+
 Surveyed against the typed IR. Four kernel families that do not share a scheduling
 vocabulary -- FA2 on SM80, FA3 on SM90, a cooperative persistent runner, and a CUTLASS
 SM100 kernel with sixteen warps in six roles. Paths are under `flashinfer-d006-state-tma/`.

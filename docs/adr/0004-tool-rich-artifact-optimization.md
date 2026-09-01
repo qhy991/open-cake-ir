@@ -4,7 +4,8 @@ Status: accepted, 2026-08-23.
 
 ## Context
 
-G7 r4 and G8 r6 deliberately disabled Apps/MCP, browser, shell, plugins, subagents and related Codex features. That
+The closed-provider qualification and bounded system qualification deliberately disabled Apps/MCP, browser, shell,
+plugins, subagents and related Codex features. That
 closed Authoring Environment was necessary to qualify a controlled provider seam and preserve the interpretation of
 scientific comparisons. It is too restrictive for the final engineering optimization loop, where the objective is
 the strongest confirmed artifact rather than a treatment-effect estimate.
@@ -22,8 +23,8 @@ promote only its lowest-latency confirmatory-qualified Candidate, with earliest 
 
 The successor Authoring Environment sets `disabled_features=[]`. This means only that `open-cake-ir` injects no
 `--disable` overrides: the pinned Codex binary's defaults, account capabilities and administrator requirements still
-determine the effective catalog. A distinct live qualification must bind that configuration. G7 r4/G8 r6 retain the
-historical closed denylist and strict event contract.
+determine the effective catalog. A distinct live qualification must bind that configuration. The earlier
+closed-provider and bounded system qualifications retain the historical closed denylist and strict event contract.
 
 The provider seam uses `tool_rich_candidate_v1`: known auxiliary item lifecycles are retained as typed activity and
 raw JSONL, while the final no-follow Candidate postcondition remains the submission Interface. Static output schema

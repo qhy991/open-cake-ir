@@ -176,6 +176,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         feature_policy: str = "closed_research",
         maximum_candidates_per_turn: int | None = None,
         reasoning_effort: str = "max",
+        agent_interface: str = "legacy_prompt_v1",
     ) -> tuple[subprocess.CompletedProcess[bytes], Path, Path, Path]:
         receipt_path = root / "provider-qualification.json"
         anchor_path = root / "provider-qualification-anchor.json"
@@ -210,6 +211,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 reasoning_effort,
                 "--feature-policy",
                 feature_policy,
+                "--agent-interface",
+                agent_interface,
             ]
         if maximum_candidates_per_turn is not None:
             command.extend(
@@ -379,6 +382,38 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 self.assertEqual(envelope["arm"], arm)
                 self.assertEqual(len(envelope["candidates"]), 3)
             self.assertEqual(receipt.scope, "live_two_turn_current_provider")
+
+    def test_ralph_qualification_exposes_only_task_agents_and_candidate_set(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable)
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root,
+                executable,
+                provider_revision="codex-ralph-fixture-v1",
+                run_id="codex-provider-ralph",
+                maximum_candidates_per_turn=2,
+                agent_interface="task_agents_ralph_v1",
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            receipt = ProviderQualificationReceipt.load(receipt_path)
+            self.assertTrue(receipt.qualified)
+            workspace = root / "workspace"
+            for arm in ("open_cake", "direct_cuda"):
+                self.assertEqual(
+                    {path.name for path in (workspace / arm).iterdir()},
+                    {"TASK.md", "AGENTS.md", "candidate-set.json"},
+                )
+                self.assertEqual(
+                    (workspace / arm / "TASK.md").stat().st_mode & 0o222,
+                    0,
+                )
+            evidence = EvidenceStore.open(evidence_root)
+            audit = evidence.audit_run("codex-provider-ralph")
+            self.assertTrue(audit.archive_integrity)
+            self.assertEqual(audit.endpoint_observation, "qualified")
 
     def test_incomplete_two_turn_observation_cannot_issue_a_live_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

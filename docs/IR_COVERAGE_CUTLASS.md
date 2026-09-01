@@ -1,5 +1,9 @@
 # CUTLASS 4.5.2, SM100: what its kernels ask a schedule to say
 
+> **Survey snapshot, 2026-08-24.** The CUTLASS version and examined IR revision bound this
+> report. Later Compiler capabilities belong to successor decisions and derived current
+> views, not edits that erase the original gaps.
+
 Surveyed against the typed IR. Thirty-six distinct schedule-level axes, from the SM100
 collective builders, kernel schedules, tile schedulers, pipelines and epilogue builders.
 Paths are under `cutlass-v4.5.2/include/cutlass/`.

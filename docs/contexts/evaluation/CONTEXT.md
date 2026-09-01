@@ -1,44 +1,39 @@
 # Evaluation context
 
-Evaluation owns the common assay after an Authoring Environment seals a LaunchableCandidate.
+Evaluation owns the common assay after an Authoring Environment seals a Candidate.
+Canonical definitions are in the [`Glossary`](../../GLOSSARY.md#evaluation-terms).
 
-## Language
+## Owned terms
 
-**LaunchableCandidate**:
-A target, entry point, launch manifest and complete role-labelled artifact byte set ready for common evaluation.
-_Avoid_: Arm output, source filename
+- [`LaunchableCandidate`](../../GLOSSARY.md#launchablecandidate)
+- [`Evaluation Protocol`](../../GLOSSARY.md#evaluation-protocol)
+- [`Logical Evaluation Attempt`](../../GLOSSARY.md#logical-evaluation-attempt)
+- [`Evaluation Receipt`](../../GLOSSARY.md#evaluation-receipt)
+- [`Portfolio Artifact`](../../GLOSSARY.md#portfolio-artifact)
+- [`Measurement Quality`](../../GLOSSARY.md#measurement-quality)
 
-**Evaluation Protocol**:
-The frozen case, purpose, correctness-before-timing order and measurement boundary.
-_Avoid_: Runner settings, Study analysis
+## Responsibilities
 
-**Evaluation Receipt**:
-Raw correctness output, launch receipt, samples and derived disposition for one candidate/purpose.
-_Avoid_: Candidate score, endpoint
+- Require both Authoring Environments to cross the same LaunchableCandidate boundary.
+- Materialize Workload cases and apply the external oracle and tolerances.
+- Enforce correctness before timing or profiler collection.
+- Keep search, confirmatory, and profiler purposes as separate Evaluation Receipts.
+- Retain raw timing cohorts, launch/fallback counts, and profiler output needed for replay.
+- Reject unsupported portfolio keys before launch.
 
-**Logical Evaluation Attempt**:
-One immutable candidate evaluation retaining every broker job, with at most one exact zero-work admission
-resubmission.
-_Avoid_: Retry mode, replacement candidate
-
-**Portfolio Artifact**:
-The sole exact semantic-key-to-candidate manifest used by dispatch and replay.
-_Avoid_: Shape table, registry
-
-**Measurement Quality**:
-Stability derived from retained cohorts for one measurement boundary, independent of correctness.
-_Avoid_: Candidate failure, performance claim
+Evaluation does not define the Estimand, Claim Scope, Study inclusion, or Claim View. It
+records what happened at the declared assay boundary.
 
 ## Relationships
 
-- Both Authoring Environments cross the same LaunchableCandidate boundary.
-- Workload Contract supplies case materialization, oracle and tolerances.
-- Correctness precedes timing; search and confirmatory receipts remain distinct.
-- Portfolio dispatch derives keys from Workload cases and rejects unsupported keys before launch.
-- Evidence stores raw receipt/artifact bytes; Evaluation never defines an Estimand or Claim View.
+- The Workload Contract supplies semantics, case materialization, oracle, and tolerances.
+- The CampaignLock supplies exact execution admission.
+- Evidence stores the Candidate and Receipt bytes after Evaluation observes them.
+- Study analysis consumes Run Audits, not an evaluator's headline number.
 
-## Flagged ambiguities
+## Boundary examples
 
-- “source” is split into authored/lowered input, compiler-expanded source, IR, PTX, CUBIN and SASS roles.
-- “unstable candidate” is invalid language when only timing CV failed; correctness and Measurement Quality are
-  orthogonal.
+Timing CV failure is Measurement Quality evidence, not Candidate incorrectness. A
+correctness-qualified profiler launch supplies diagnosis but no profiler-free latency
+sample. “Source” must name its role—authored source, lowered source, expanded source, PTX,
+CUBIN, or SASS—rather than collapse distinct artifacts.

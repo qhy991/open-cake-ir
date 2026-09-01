@@ -126,7 +126,8 @@ def main() -> int:
     else:
         # A matched successor closes the semantic event vocabulary even when its
         # source predates that policy. Frozen source Studies keep their bytes.
-        document["evidence"] = dict(matched_evidence_policy_v1())
+        if document.get("schema_version") == 1:
+            document["evidence"] = dict(matched_evidence_policy_v1())
         arms = _object(document.get("arms"), "Study.arms")
         open_cake = _object(arms.get("open_cake"), "Study.arms.open_cake")
         direct_cuda = _object(arms.get("direct_cuda"), "Study.arms.direct_cuda")
@@ -178,46 +179,47 @@ def main() -> int:
                 evaluation["search_materiality_ratio"] = (
                     arguments.search_materiality_ratio
                 )
-            optimization = document.get("claim_scope") == "artifact_optimization_only"
-            receipt_path = (
-                "contracts/providers/fixture-provider-optimization-candidate-set-v1.json"
-                if optimization
-                else "contracts/providers/fixture-provider-candidate-set-v1.json"
-            )
-            receipt = ProviderQualificationReceipt.load(root / receipt_path)
-            prompt_paths = {
-                "open_cake": (
-                    "src/open_cake_ir/lab/prompts/"
-                    + (
-                        "open_cake_optimization_candidate_set_turn_v1.md"
-                        if optimization
-                        else "open_cake_candidate_set_turn_v1.md"
-                    )
-                ),
-                "direct_cuda": (
-                    "src/open_cake_ir/lab/prompts/"
-                    + (
-                        "direct_cuda_optimization_candidate_set_turn_v1.md"
-                        if optimization
-                        else "direct_cuda_candidate_set_turn_v1.md"
-                    )
-                ),
-            }
-            for arm_name, raw_environment in arms.items():
-                environment = _object(raw_environment, f"Study.arms.{arm_name}")
-                provider = _object(
-                    environment.get("provider"), f"Study.arms.{arm_name}.provider"
+            if document.get("schema_version") == 1:
+                optimization = document.get("claim_scope") == "artifact_optimization_only"
+                receipt_path = (
+                    "contracts/providers/fixture-provider-optimization-candidate-set-v1.json"
+                    if optimization
+                    else "contracts/providers/fixture-provider-candidate-set-v1.json"
                 )
-                provider["revision"] = receipt.provider_revision
-                provider["qualification"] = {
-                    "path": receipt_path,
-                    "canonical_sha256": receipt.canonical_sha256,
+                receipt = ProviderQualificationReceipt.load(root / receipt_path)
+                prompt_paths = {
+                    "open_cake": (
+                        "src/open_cake_ir/lab/prompts/"
+                        + (
+                            "open_cake_optimization_candidate_set_turn_v1.md"
+                            if optimization
+                            else "open_cake_candidate_set_turn_v1.md"
+                        )
+                    ),
+                    "direct_cuda": (
+                        "src/open_cake_ir/lab/prompts/"
+                        + (
+                            "direct_cuda_optimization_candidate_set_turn_v1.md"
+                            if optimization
+                            else "direct_cuda_candidate_set_turn_v1.md"
+                        )
+                    ),
                 }
-                prompt_path = prompt_paths[arm_name]
-                environment["prompt_template"] = {
-                    "path": prompt_path,
-                    "sha256": sha256((root / prompt_path).read_bytes()).hexdigest(),
-                }
+                for arm_name, raw_environment in arms.items():
+                    environment = _object(raw_environment, f"Study.arms.{arm_name}")
+                    provider = _object(
+                        environment.get("provider"), f"Study.arms.{arm_name}.provider"
+                    )
+                    provider["revision"] = receipt.provider_revision
+                    provider["qualification"] = {
+                        "path": receipt_path,
+                        "canonical_sha256": receipt.canonical_sha256,
+                    }
+                    prompt_path = prompt_paths[arm_name]
+                    environment["prompt_template"] = {
+                        "path": prompt_path,
+                        "sha256": sha256((root / prompt_path).read_bytes()).hexdigest(),
+                    }
         elif any(
             value is not None
             for value in (

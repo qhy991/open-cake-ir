@@ -1,9 +1,11 @@
 # Final legacy capability migration matrix
 
-Authority: `cake-repro@2fa79092...`, tree `b02d730b...`, 146-record manifest. “Implemented” means a current owner
-exists behind one public Interface; live qualification is named separately where it has passed.
+This is the final migration snapshot, not a current capability view. Authority:
+`cake-repro@2fa79092...`, tree `b02d730b...`, 146-record manifest. “Implemented” means an
+owner existed behind one public Interface at migration completion; live qualification is
+named separately where it had passed.
 
-| Legacy capability/evidence | Canonical new owner | Current path | Acceptance evidence | State |
+| Legacy capability/evidence | Canonical new owner | Migration target path | Acceptance evidence | State |
 | --- | --- | --- | --- | --- |
 | r16 parametric Schedule and negative drift | Compiler | `Compiler.assess/lower` | compiler contract tests + Corpus cases 1–2 | implemented, verified |
 | r25 full assignment Schedule | Compiler | same Interface, closed imported lowering subset | Corpus cases 3–4 | implemented, verified |
@@ -17,10 +19,10 @@ exists behind one public Interface; live qualification is named separately where
 | r41 clean-card race | Evaluation | `evaluate_with_admission_recovery` | exact zero-work predicate contract test | implemented, contract-verified; no live recovery event |
 | r42 Turn/token/checkpoint control | Lab | `Lab.execute` + `project_checkpoints` | two-Turn zero-GPU test, actual r42 index | implemented, verified without GPU |
 | r42 unavailable Estimand | Analysis Plan | `Lab.audit` | actual r42 103579/329934 fixture | preserved, replayed projection |
-| provider/scaffold/model treatment | Authoring Environment | Campaign Lock + `CodexRunProvider` | G7 r4 closed-feature two-Turn qualification + G8 r6 | implemented, live qualified |
-| provider-default final optimization | Authoring Environment + artifact-only Claim Scope | tool-rich `CodexRunProvider` on the same Lab path | G7F two-Turn shell lifecycle + zero-GPU end-to-end contract | implemented, live qualified; Campaign not run |
-| Open Cake toolchain | Authoring Environment | `TritonToolchainBuilder` | external-anchored remote CUBIN qualification + G8 r6 receipts | implemented, live qualified |
-| direct CUDA toolchain | Authoring Environment | `NvccToolchainBuilder` | closed manifest/artifact contract + G8 r6 receipts | implemented, live qualified |
+| provider/scaffold/model treatment | Authoring Environment | CampaignLock + `CodexRunProvider` | closed-feature two-Turn qualification plus bounded B200 system qualification | implemented, live qualified |
+| provider-default final optimization | Authoring Environment + artifact-only Claim Scope | tool-rich `CodexRunProvider` on the same Lab path | provider-default two-Turn shell lifecycle plus zero-GPU end-to-end contract | implemented, live qualified; Campaign not run |
+| Open Cake toolchain | Authoring Environment | `TritonToolchainBuilder` | external-anchored remote CUBIN qualification plus bounded system-qualification receipts | implemented, live qualified |
+| direct CUDA toolchain | Authoring Environment | `NvccToolchainBuilder` | closed manifest/artifact contract plus bounded system-qualification receipts | implemented, live qualified |
 | r43 frozen seed and three shapes | Lab → Compiler | `KernelSeed.schedule_for` then public Compiler | deterministic three-specialist test | implemented, verified |
 | r43 source-layer custody failure | Candidate artifact contract | lowering and expanded source are distinct roles | regression test | implemented, verified |
 | r44 headline-only tensor gate | Evaluation/Driver | `CudaTensorContract` + `LoadedCudaCandidate` | held-out b32/persistent load tests | implemented, verified without GPU |
@@ -36,7 +38,8 @@ exists behind one public Interface; live qualification is named separately where
 
 - New-source contract suite, Compiler release verification, legacy manifest regeneration and raw r45 semantic replay
   are local acceptance evidence.
-- G7 r4 qualifies the current provider boundary; G8 r6 qualifies the two-arm B200 system path without producing a
-  scientific comparison. G7F restores provider-default feature exposure for artifact-only optimization, and the
-  private GitHub `main` revision completes the G9 sole-owner cutover.
+- The closed-provider qualification covers the authoring boundary; the bounded two-arm B200 system qualification
+  covers the canonical GPU path without producing a scientific comparison. A separate qualification restores
+  provider-default feature exposure for artifact-only optimization, and the private GitHub `main` revision completes
+  sole-source-authority cutover.
 - No legacy `rXX` runner, versioned verifier, registry or success/failure archive path is imported as active code.

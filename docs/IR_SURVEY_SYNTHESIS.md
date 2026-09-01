@@ -1,5 +1,9 @@
 # What four libraries agree the IR is missing
 
+> **Synthesis snapshot, 2026-08-25.** This combines the source surveys as they stood on
+> that date. It is design evidence, not a current capability inventory. Repeated findings
+> may motivate successor ADRs; accepted successors do not rewrite this snapshot.
+
 The paper derives Cake IR bottom-up from CUTLASS, FlashInfer, FlashAttention-4,
 TensorRT-LLM, DeepGEMM, Alpha-MoE and TileLang. This repository skipped that step and grew
 its vocabulary one operator at a time. These are the surveys that step would have produced,
