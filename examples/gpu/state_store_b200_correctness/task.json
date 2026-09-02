@@ -1,0 +1,42 @@
+{
+  "schema": "kernelinfra.task.v1",
+  "task_id": "open-cake-state-store-b8x128-b200-correctness-v1",
+  "description": "Correctness-only B200 validation of the released Open-Cake state-store lowering at fixed shape [8,128]; no timing or broader parent claim.",
+  "workloads": [
+    "zeros-b8x128",
+    "signed-integers-b8x128",
+    "alternating-binary-fractions-b8x128",
+    "seeded-scaled-integers-b8x128"
+  ],
+  "comparison": {
+    "primary_workloads": [
+      "zeros-b8x128",
+      "signed-integers-b8x128",
+      "alternating-binary-fractions-b8x128",
+      "seeded-scaled-integers-b8x128"
+    ],
+    "relative_noise_floor": 0.0
+  },
+  "stages": [
+    {
+      "id": "correctness",
+      "kind": "correctness",
+      "judge": {
+        "identity": "open-cake-state-store-b200-correctness-v1",
+        "cwd": "/home/qinhaiyan/aka-b200-augmentation/gpu-infra-017",
+        "command": [
+          "/home/qinhaiyan/megakernel-exp/.venv-flashinfer/bin/python",
+          "-c",
+          "import os,runpy; runpy.run_path(os.path.join(os.environ['KERNELINFRA_CANDIDATE_DIR'], 'evaluate.py'), run_name='__main__')"
+        ]
+      },
+      "resources": {
+        "mode": "shared",
+        "gpu_count": 1,
+        "estimate_s": 60,
+        "queue_timeout_s": 600,
+        "run_timeout_s": 240
+      }
+    }
+  ]
+}
