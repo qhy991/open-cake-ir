@@ -139,3 +139,60 @@ Neither v1 nor v2 establishes `fixed_instance independent target correctness`.
 Together they provide infrastructure diagnostics only. They do not support arbitrary
 `n`, complete-parent coverage, source-independent semantics, performance, operator,
 model, serving, or training claims.
+
+## V3 stage-directory-fixed successor
+
+The create-only v3 task was
+`open-cake-state-store-b8x128-b200-correctness-v3`. It retained the exact released
+Compiler v40 generated candidate and the same four correctness workloads and
+acceptance boundary. It was neither a retry nor a reroute of v1 or v2. Its fixed route
+was
+`verda-b200x4-state-store/open-cake-state-store-b8x128-b200-correctness-v3-796ec1898a2d`;
+the broker job was `gpuq-dc17a6353a4c`, shared mode on physical GPU 2.
+
+V3 crossed the v2 stage-directory boundary: the node-owned stage directory was
+`0770 qinhaiyan:gpuq-users`, the broker judge exited 0, and it created a stage
+`result.json` plus one complete-output artifact for each of the four workloads. Those
+five judge-owned files were created as `0600 gpuq:gpuq-users`. The daemon identity
+therefore could not read `result.json` to validate and aggregate it, and the collector
+could not read the complete-output artifacts. The node-owned run terminated
+`infra_error`, validity `unknown`, with no frontier eligibility and no stage receipt.
+
+| Workload | V3 observation | Durable correctness fields | Validity |
+| --- | --- | --- | --- |
+| `zeros-b8x128` | Complete-output file exists but is unreadable to daemon/collector | 1,024-element values, mismatch counts, max error, update immutability, state pointer and empty tuple are unavailable | `unknown` |
+| `signed-integers-b8x128` | Complete-output file exists but is unreadable to daemon/collector | Same fields unavailable | `unknown` |
+| `alternating-binary-fractions-b8x128` | Complete-output file exists but is unreadable to daemon/collector | Same fields unavailable | `unknown` |
+| `seeded-scaled-integers-b8x128` | Complete-output file exists but is unreadable to daemon/collector | Same fields unavailable | `unknown` |
+
+The exact deployment was GPU Infra commit
+`41341f8a233f87148ceaab7f0599b346268622bf`, Kernel Infra `0.16.0`, daemon instance
+`warm-sun-begins-fin-03-pid567579-start13537190`, socket
+`/tmp/kernelinfra-open-cake-state-store-b200-v3.sock`, and state root
+`/home/qinhaiyan/open-cake-state-store-b200-v3/state`. It used umask `0027`,
+`KERNELINFRA_RUN_DIR_MODE=750`, and `KERNELINFRA_RUN_FILE_MODE=640`; the state root
+was `2750 qinhaiyan:gpuq-users` and the deployment occupied 1.9 MiB.
+
+The create-only external evidence root is
+`/Users/haiyan-infiniai/.codex/runs/open-cake-state-store-b200-correctness-20260902-v3-41341f8`.
+It retains the route, terminal status/wait, node/broker observations and create-only
+`collection-01`. Direct fetch created no mirror, and collection recorded
+`fetch_failed`, because export encountered the same unreadable complete-output file.
+The task-owned broker job was observed completed with exit 0 and absent from the
+running queue. The exact v3 daemon was stopped gracefully; its process and socket
+disappeared. The shared daemon, shared broker and foreign jobs were not modified, and
+the task-owned remote state was retained without chmod or deletion.
+
+This failure exposed a third, separate cross-identity handoff defect. GPU Infra commit
+`97a2bff` reuses the existing execution guard inside broker stages and, after the judge
+exits, finalizes only that broker UID's task-owned stage directories and regular files
+to the existing `0770` and `KERNELINFRA_RUN_FILE_MODE` boundaries. It adds no new
+permission key, queue or allocator. Focused guard/runner tests passed 7/7, the full
+repository passed 76/76, and an explicit `0027` plus `0750/0640` lifecycle check
+observed the stage result as `0640`. The fix was not deployed and no further GPU
+submission was made.
+
+V3 therefore still does not establish `fixed_instance independent target
+correctness`. V1, v2 and v3 remain three distinct infrastructure-unknown records and
+support no arbitrary-`n`, complete-parent, source-independent semantics, performance,
+coverage, operator, model, serving or training claim.
