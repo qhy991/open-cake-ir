@@ -17,6 +17,7 @@ from tools.audit_aka_corpus import (  # noqa: E402
     load_records,
     projected_case,
     verify_git_snapshot,
+    verify_portable_qualified_snapshot,
 )
 
 
@@ -435,6 +436,237 @@ class AkaChallengeCorpusTests(unittest.TestCase):
         self.assertEqual(summary["record_format"], V2_FORMAT)
         self.assertEqual(summary["artifact_scope_signals"], {})
         self.assertEqual(summary["artifact_lexical_signals"], {})
+
+
+class PortableQualifiedSnapshotTests(unittest.TestCase):
+    SOURCE_REVISION = "387aa7faf521a0b72c994ff15a7638cd7e6a8583"
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.repository = Path(self.temporary.name)
+        subprocess.run(["git", "init", "-q", str(self.repository)], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.repository), "config", "user.name", "Corpus Test"],
+            check=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.repository),
+                "config",
+                "user.email",
+                "corpus@test.invalid",
+            ],
+            check=True,
+        )
+        self.source_root = self.repository / "cuda_kernel_dataset_v1"
+        self.portable_root = self.repository / "cuda_kernel_parent_completions_v6"
+        self.source_relative = "categories/movement/contiguous_copy/analysis.jsonl"
+        self.source_record = {
+            "instruction": "Implement the bounded CUDA operation.",
+            "input": "__global__ void baseline(float *x) { x[0] = 1.0f; }",
+            "reasoning": "Visible-source reasoning.",
+            "output": "Complete response.",
+        }
+        source_path = self.source_root / self.source_relative
+        source_path.parent.mkdir(parents=True)
+        source_path.write_text(
+            json.dumps(self.source_record, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+        self.bundle_relative = "bundles/case-a"
+        self.baseline_relative = f"{self.bundle_relative}/sources/baseline/a.cu"
+        self.reference_relative = f"{self.bundle_relative}/sources/reference/a.hpp"
+        self.harness_relative = f"{self.bundle_relative}/sources/harness/a.cu"
+        self.input_relative = f"{self.bundle_relative}/source/input.json"
+        self.original_relative = f"{self.bundle_relative}/source/ORIGINAL_RESULT.json"
+        self.write_portable(self.baseline_relative, "__global__ void baseline() {}\n")
+        self.write_portable(self.reference_relative, "inline void reference() {}\n")
+        self.write_portable(self.harness_relative, "int main() { return 0; }\n")
+        self.write_portable(
+            self.input_relative,
+            json.dumps({"record": self.source_record}, sort_keys=True) + "\n",
+        )
+        self.write_portable(self.original_relative, "{}\n")
+        self.row: dict[str, object] = {
+            "schema": "aka.portable-kernel-parent.v1",
+            "case_id": "case-a",
+            "derived_parent_id": "parent-a",
+            "outcome": "qualified",
+            "missing_facts": [],
+            "training_eligibility": False,
+            "provenance": {
+                "source_selection": {
+                    "path": self.source_relative,
+                    "line": 1,
+                    "parent_field": "input",
+                }
+            },
+            "original_parent": {
+                "case_path": f"{self.source_relative}:1",
+                "record_field": "input",
+            },
+            "taxonomy": {"category": "movement", "operator": "contiguous_copy"},
+            "semantics": {
+                "inputs": ["One float32 input."],
+                "outputs": ["One float32 output."],
+                "valid_domain": ["The allocation contains one element."],
+                "computation": "Copy the one input value to the output.",
+            },
+            "contract": {
+                "dtypes": ["float32"],
+                "index_types": ["uint32"],
+                "layouts": ["dense contiguous"],
+                "invariants": ["The output equals the input."],
+                "exclusions": ["No aliasing."],
+                "optional_inputs": [],
+                "api": "launch(float *output, const float *input)",
+                "launch_policy": "One block and one thread.",
+            },
+            "qualification": {
+                "authority": "node-owned evidence summarized by portable export",
+                "lifecycle": "completed",
+                "locator": {"node_id": "node-a", "run_id": "run-a"},
+                "validity": "valid",
+                "stages": {
+                    "compile": {"status": "passed", "validity": "valid"},
+                    "correctness": {
+                        "status": "passed",
+                        "validity": "valid",
+                        "summary": "Two complete-output cases passed.",
+                        "workloads": [
+                            {"id": "n1", "correct": True},
+                            {"id": "n2", "correct": True},
+                        ],
+                    },
+                    "sanitize": {
+                        "status": "passed",
+                        "validity": "valid",
+                        "summary": "memcheck and racecheck passed.",
+                    },
+                },
+            },
+            "bundle": {
+                "path": self.bundle_relative,
+                "documents": {},
+                "source_files": {
+                    "ORIGINAL_RESULT.json": self.original_relative,
+                    "input.json": self.input_relative,
+                },
+            },
+            "artifacts": {
+                "baseline": [self.baseline_relative],
+                "reference": [self.reference_relative],
+                "harness": [self.harness_relative],
+            },
+        }
+        self.write_portable_metadata()
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def write_portable(self, relative: str, text: str) -> Path:
+        path = self.portable_root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def write_portable_metadata(self) -> None:
+        self.write_portable(
+            "records.jsonl", json.dumps(self.row, sort_keys=True) + "\n"
+        )
+        self.write_portable(
+            "MERGE_SUMMARY.json",
+            json.dumps(
+                {
+                    "schema": "aka.portable-kernel-parent-merge.v1",
+                    "records": 1,
+                    "outcomes": {"qualified": 1},
+                    "training_eligible": 0,
+                    "unique_locators": 1,
+                },
+                sort_keys=True,
+            )
+            + "\n",
+        )
+
+    def commit(self) -> str:
+        subprocess.run(["git", "-C", str(self.repository), "add", "-A"], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.repository), "commit", "-q", "-m", "snapshot"],
+            check=True,
+        )
+        return subprocess.run(
+            ["git", "-C", str(self.repository), "rev-parse", "HEAD"],
+            check=True,
+            stdout=subprocess.PIPE,
+            text=True,
+        ).stdout.strip()
+
+    def verify_fixture(self):
+        return verify_portable_qualified_snapshot(
+            source_dataset_root=self.source_root,
+            portable_dataset_root=self.portable_root,
+            source_revision=self.commit(),
+            expected_count=1,
+        )
+
+    def test_portable_fixture_admits_every_declared_artifact(self) -> None:
+        snapshot = self.verify_fixture()
+        self.assertEqual(len(snapshot.records), 1)
+        self.assertEqual(snapshot.validation["declared_artifacts"], 5)
+        self.assertEqual(
+            set(snapshot.artifact_paths["case-a"]),
+            {
+                self.baseline_relative,
+                self.reference_relative,
+                self.harness_relative,
+                self.input_relative,
+                self.original_relative,
+            },
+        )
+
+    def test_portable_artifact_escape_is_rejected(self) -> None:
+        self.row["artifacts"]["baseline"] = ["../escape.cu"]  # type: ignore[index]
+        self.write_portable_metadata()
+        with self.assertRaisesRegex(CorpusAuditError, "escapes"):
+            self.verify_fixture()
+
+    def test_portable_symlink_is_rejected(self) -> None:
+        outside = self.repository / "outside.cu"
+        outside.write_text("__global__ void outside() {}\n", encoding="utf-8")
+        baseline = self.portable_root / self.baseline_relative
+        baseline.unlink()
+        baseline.symlink_to(outside)
+        with self.assertRaisesRegex(CorpusAuditError, "not a regular Git blob"):
+            self.verify_fixture()
+
+    def test_portable_malformed_declared_json_is_rejected(self) -> None:
+        malformed = f"{self.bundle_relative}/sources/baseline/malformed.json"
+        self.write_portable(malformed, "{\n")
+        self.row["artifacts"]["baseline"] = [malformed]  # type: ignore[index]
+        self.write_portable_metadata()
+        with self.assertRaisesRegex(CorpusAuditError, "malformed JSON"):
+            self.verify_fixture()
+
+    def test_real_v6_snapshot_admits_all_rows(self) -> None:
+        aka_root = Path("/home/qhy-sol/aka-ir-qualified-20260902-oHurXN/AKA")
+        curated = aka_root / "datasets/curated"
+        if not curated.is_dir():
+            self.skipTest("the frozen AKA v6 checkout is not present")
+        snapshot = verify_portable_qualified_snapshot(
+            source_dataset_root=curated / "cuda_kernel_dataset_v1",
+            portable_dataset_root=curated / "cuda_kernel_parent_completions_v6",
+            source_revision=self.SOURCE_REVISION,
+            expected_count=677,
+        )
+        self.assertEqual(len(snapshot.records), 677)
+        self.assertEqual(snapshot.validation["records"], 677)
+        self.assertEqual(
+            snapshot.validation["allowed_claim"],
+            "qualified_parent_corpus_review_admission_only",
+        )
 
 
 if __name__ == "__main__":

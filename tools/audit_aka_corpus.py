@@ -23,12 +23,13 @@ import argparse
 import json
 import re
 import signal
+import stat
 import subprocess
 import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Iterable, Mapping
+from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
 
@@ -116,6 +117,13 @@ LEXICAL_SIGNALS: Mapping[str, re.Pattern[str]] = {
 KERNEL_DEFINITION = re.compile(r"\b__global__\b")
 LAUNCH_SITE = re.compile(r"<<<")
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+PORTABLE_PARENT_SCHEMA = "aka.portable-kernel-parent.v1"
+PORTABLE_QUALIFICATION_FIELDS = frozenset(
+    {"authority", "lifecycle", "locator", "stages", "validity"}
+)
+PORTABLE_QUALIFICATION_STAGES = frozenset({"compile", "correctness", "sanitize"})
+PORTABLE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class CorpusAuditError(ValueError):
@@ -135,6 +143,25 @@ class GitSnapshot:
     dataset_path: str
     revision: str
     shards: tuple[SnapshotShard, ...]
+
+
+@dataclass(frozen=True)
+class PortableQualifiedSnapshot:
+    """One commit-bound, fully admitted portable qualified-parent snapshot.
+
+    ``records`` and ``record_lines`` retain source order.  Qualification fields are a
+    portable projection of node-owned evidence; this type deliberately does not convert
+    that projection into node custody or an executable-parent claim.
+    """
+
+    dataset_root: Path
+    dataset_path: str
+    source_dataset_path: str
+    revision: str
+    records: tuple[Mapping[str, Any], ...]
+    record_lines: Mapping[str, int]
+    artifact_paths: Mapping[str, tuple[str, ...]]
+    validation: Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -398,6 +425,566 @@ def load_records(snapshot: GitSnapshot, *, record_format: str) -> list[SourceRec
                 )
             )
     return records
+
+
+def _git_blob_bytes(repository: Path, object_id: str) -> bytes:
+    try:
+        return subprocess.run(
+            [
+                "git",
+                "--no-replace-objects",
+                "-C",
+                str(repository),
+                "cat-file",
+                "blob",
+                object_id,
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = getattr(error, "stderr", b"")
+        if isinstance(detail, bytes):
+            detail = detail.decode("utf-8", errors="replace")
+        raise CorpusAuditError(
+            f"cannot read portable Git blob: {str(detail).strip()}"
+        ) from error
+
+
+def _plain_dataset_root(path: Path, label: str) -> Path:
+    try:
+        mode = path.lstat().st_mode
+    except OSError as error:
+        raise CorpusAuditError(f"cannot inspect {label} {path}: {error}") from error
+    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+        raise CorpusAuditError(f"{label} must be a regular non-symlink directory")
+    return path.resolve(strict=True)
+
+
+def _repository_relative(repository: Path, path: Path, label: str) -> PurePosixPath:
+    try:
+        relative = path.resolve(strict=True).relative_to(repository)
+    except ValueError as error:
+        raise CorpusAuditError(f"{label} is outside its Git repository") from error
+    return PurePosixPath(relative.as_posix())
+
+
+def _portable_tree(
+    repository: Path, revision: str, dataset_path: PurePosixPath
+) -> dict[str, str]:
+    listing = _git(
+        repository,
+        [
+            "ls-tree",
+            "-r",
+            "-z",
+            "--full-tree",
+            revision,
+            "--",
+            dataset_path.as_posix(),
+        ],
+    ).stdout
+    tree: dict[str, str] = {}
+    for entry in (value for value in listing.split("\0") if value):
+        try:
+            metadata, repository_path = entry.split("\t", 1)
+            mode, object_type, object_id = metadata.split()
+            relative = PurePosixPath(repository_path).relative_to(dataset_path)
+        except ValueError as error:
+            raise CorpusAuditError(
+                f"cannot parse portable Git tree entry {entry!r}"
+            ) from error
+        if object_type != "blob" or mode not in {"100644", "100755"}:
+            raise CorpusAuditError(
+                f"portable path {repository_path} is not a regular Git blob"
+            )
+        key = relative.as_posix()
+        if key in tree:
+            raise CorpusAuditError(f"portable Git tree repeats {key}")
+        tree[key] = object_id
+    if not tree:
+        raise CorpusAuditError(f"portable dataset {dataset_path} is empty at {revision}")
+    return tree
+
+
+def _portable_relative(value: object, label: str) -> PurePosixPath:
+    if not isinstance(value, str) or not value.strip():
+        raise CorpusAuditError(f"{label} is not a non-empty dataset-relative path")
+    if "\\" in value or any(ord(character) < 32 for character in value):
+        raise CorpusAuditError(f"{label} contains an inadmissible path character")
+    relative = PurePosixPath(value)
+    if (
+        relative.is_absolute()
+        or not relative.parts
+        or ".." in relative.parts
+        or relative.as_posix() != value
+    ):
+        raise CorpusAuditError(f"{label} escapes the portable dataset")
+    return relative
+
+
+def _plain_worktree_file(root: Path, relative: PurePosixPath, label: str) -> Path:
+    current = root
+    for index, part in enumerate(relative.parts):
+        current = current / part
+        try:
+            mode = current.lstat().st_mode
+        except OSError as error:
+            raise CorpusAuditError(f"cannot inspect {label} {current}: {error}") from error
+        if stat.S_ISLNK(mode):
+            raise CorpusAuditError(f"{label} traverses a symlink: {current}")
+        if index + 1 < len(relative.parts):
+            if not stat.S_ISDIR(mode):
+                raise CorpusAuditError(f"{label} parent is not a directory: {current}")
+        elif not stat.S_ISREG(mode):
+            raise CorpusAuditError(f"{label} is not a regular file: {current}")
+    try:
+        current.resolve(strict=True).relative_to(root)
+    except ValueError as error:
+        raise CorpusAuditError(f"{label} resolves outside the portable dataset") from error
+    return current
+
+
+def _portable_object(value: object, label: str) -> Mapping[str, Any]:
+    if not isinstance(value, dict):
+        raise CorpusAuditError(f"{label} must be one JSON object")
+    return value
+
+
+def _portable_nonempty(value: object, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise CorpusAuditError(f"{label} must be a non-empty string")
+    return value
+
+
+def _portable_identifier(value: object, label: str) -> str:
+    identifier = _portable_nonempty(value, label)
+    if PORTABLE_IDENTIFIER.fullmatch(identifier) is None:
+        raise CorpusAuditError(f"{label} is not a path-safe identifier")
+    return identifier
+
+
+def _portable_strings(
+    value: object, label: str, *, allow_empty: bool = False
+) -> list[str]:
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item.strip() for item in value
+    ):
+        raise CorpusAuditError(f"{label} must be an array of non-empty strings")
+    if not allow_empty and not value:
+        raise CorpusAuditError(f"{label} must not be empty")
+    return value
+
+
+def _parse_portable_payload(
+    payload: bytes, relative: PurePosixPath, label: str
+) -> str:
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeError as error:
+        raise CorpusAuditError(f"{label} is not UTF-8: {relative}") from error
+    if relative.suffix.lower() == ".json":
+        try:
+            json.loads(text)
+        except json.JSONDecodeError as error:
+            raise CorpusAuditError(
+                f"{label} is malformed JSON: {relative}: {error.msg}"
+            ) from error
+        return "json"
+    if relative.suffix.lower() == ".jsonl":
+        lines = text.splitlines()
+        if not lines:
+            raise CorpusAuditError(f"{label} JSONL is empty: {relative}")
+        for line_number, line in enumerate(lines, 1):
+            if not line.strip():
+                raise CorpusAuditError(
+                    f"{label} JSONL has a blank line: {relative}:{line_number}"
+                )
+            try:
+                json.loads(line)
+            except json.JSONDecodeError as error:
+                raise CorpusAuditError(
+                    f"{label} has malformed JSONL: "
+                    f"{relative}:{line_number}: {error.msg}"
+                ) from error
+        return "jsonl"
+    return "utf8"
+
+
+def verify_portable_qualified_snapshot(
+    *,
+    source_dataset_root: Path,
+    portable_dataset_root: Path,
+    source_revision: str,
+    expected_count: int | None = None,
+) -> PortableQualifiedSnapshot:
+    """Admit the portable corpus at Cake's independent handoff boundary.
+
+    AKA's ``export_parent_completion_dataset.py`` owns how producer records and bundles
+    are constructed. Importing that mutable cross-repository script would couple Cake to
+    producer execution. This adapter instead checks only the facts Cake consumes: exact
+    commit/path custody, source coordinates, qualification gates, frozen contract fields,
+    uniqueness, and every declared artifact. Portable qualification remains review
+    admission; it is not current GPU custody or an IR, optimization, or training result.
+    """
+
+    if GIT_COMMIT.fullmatch(source_revision) is None:
+        raise CorpusAuditError(
+            "source revision must be one exact lowercase 40-hex Git commit"
+        )
+    source_dataset_root = _plain_dataset_root(source_dataset_root, "source dataset")
+    portable_dataset_root = _plain_dataset_root(
+        portable_dataset_root, "portable dataset"
+    )
+    repository = Path(
+        _git(portable_dataset_root, ["rev-parse", "--show-toplevel"]).stdout.strip()
+    ).resolve(strict=True)
+    source_repository = Path(
+        _git(source_dataset_root, ["rev-parse", "--show-toplevel"]).stdout.strip()
+    ).resolve(strict=True)
+    if repository != source_repository:
+        raise CorpusAuditError(
+            "source and portable datasets belong to different repositories"
+        )
+    resolved = _git(
+        repository, ["rev-parse", "--verify", f"{source_revision}^{{commit}}"]
+    ).stdout.strip()
+    if resolved != source_revision:
+        raise CorpusAuditError(f"source revision {source_revision} does not resolve exactly")
+
+    portable_path = _repository_relative(
+        repository, portable_dataset_root, "portable dataset"
+    )
+    source_path = _repository_relative(repository, source_dataset_root, "source dataset")
+    tree = _portable_tree(repository, source_revision, portable_path)
+    blob_cache: dict[str, bytes] = {}
+
+    def committed_file(value: object, label: str) -> tuple[PurePosixPath, bytes]:
+        relative = _portable_relative(value, label)
+        object_id = tree.get(relative.as_posix())
+        if object_id is None:
+            raise CorpusAuditError(
+                f"{label} is not a regular file in the source commit: {relative}"
+            )
+        working = _plain_worktree_file(portable_dataset_root, relative, label)
+        payload = blob_cache.get(relative.as_posix())
+        if payload is None:
+            payload = _git_blob_bytes(repository, object_id)
+            blob_cache[relative.as_posix()] = payload
+        try:
+            working_payload = working.read_bytes()
+        except OSError as error:
+            raise CorpusAuditError(f"cannot read {label} {working}: {error}") from error
+        if working_payload != payload:
+            raise CorpusAuditError(
+                f"{label} working bytes differ from {source_revision}: {relative}"
+            )
+        return relative, payload
+
+    records_relative, records_payload = committed_file(
+        "records.jsonl", "portable records"
+    )
+    _parse_portable_payload(records_payload, records_relative, "portable records")
+    records: list[Mapping[str, Any]] = []
+    for line_number, line in enumerate(records_payload.decode("utf-8").splitlines(), 1):
+        value = json.loads(line)
+        if not isinstance(value, dict):
+            raise CorpusAuditError(
+                f"portable records line {line_number} is not an object"
+            )
+        records.append(value)
+    if not records:
+        raise CorpusAuditError("portable records contain no rows")
+    if expected_count is not None and len(records) != expected_count:
+        raise CorpusAuditError(
+            f"portable snapshot expected {expected_count} rows, observed {len(records)}"
+        )
+
+    source_snapshot = verify_git_snapshot(source_dataset_root, source_revision)
+    source_records = {
+        (record.relative_path, record.line_number): record
+        for record in load_records(
+            source_snapshot, record_format="aka_v1_operator_sft"
+        )
+    }
+    case_ids: set[str] = set()
+    derived_ids: set[str] = set()
+    source_identities: set[tuple[str, int, str]] = set()
+    locators: set[tuple[str, str]] = set()
+    bundle_paths: set[str] = set()
+    declared_paths: set[str] = set()
+    record_lines: dict[str, int] = {}
+    artifact_paths: dict[str, tuple[str, ...]] = {}
+
+    for line_number, row in enumerate(records, 1):
+        label = f"portable record {line_number}"
+        if row.get("schema") != PORTABLE_PARENT_SCHEMA:
+            raise CorpusAuditError(f"{label} has unsupported schema")
+        if (
+            row.get("outcome") != "qualified"
+            or row.get("missing_facts") != []
+            or row.get("training_eligibility") is not False
+        ):
+            raise CorpusAuditError(f"{label} is not a qualified, complete parent")
+
+        case_id = _portable_identifier(row.get("case_id"), f"{label}.case_id")
+        derived_id = _portable_identifier(
+            row.get("derived_parent_id"), f"{label}.derived_parent_id"
+        )
+        if case_id in case_ids:
+            raise CorpusAuditError(f"duplicate portable case_id: {case_id}")
+        if derived_id in derived_ids:
+            raise CorpusAuditError(f"duplicate portable derived_parent_id: {derived_id}")
+        case_ids.add(case_id)
+        derived_ids.add(derived_id)
+        record_lines[case_id] = line_number
+
+        provenance = _portable_object(row.get("provenance"), f"{label}.provenance")
+        selection = _portable_object(
+            provenance.get("source_selection"),
+            f"{label}.provenance.source_selection",
+        )
+        if set(selection) != {"path", "line", "parent_field"}:
+            raise CorpusAuditError(f"{label} source selection fields are invalid")
+        selected_path = _portable_nonempty(
+            selection.get("path"), f"{label}.source_selection.path"
+        )
+        selected_line = selection.get("line")
+        selected_field = selection.get("parent_field")
+        if (
+            not isinstance(selected_line, int)
+            or isinstance(selected_line, bool)
+            or selected_line < 1
+            or selected_field not in {"input", "output"}
+        ):
+            raise CorpusAuditError(f"{label} source selection coordinate is invalid")
+        identity = (selected_path, selected_line, str(selected_field))
+        if identity in source_identities:
+            raise CorpusAuditError(
+                f"duplicate portable original source identity: {identity}"
+            )
+        source_identities.add(identity)
+        source_record = source_records.get((selected_path, selected_line))
+        if source_record is None or not source_record.fields[str(selected_field)].strip():
+            raise CorpusAuditError(
+                f"{label} source identity is absent or empty in the source commit"
+            )
+        original = _portable_object(
+            row.get("original_parent"), f"{label}.original_parent"
+        )
+        if dict(original) != {
+            "case_path": f"{selected_path}:{selected_line}",
+            "record_field": selected_field,
+        }:
+            raise CorpusAuditError(
+                f"{label} original_parent differs from source_selection"
+            )
+
+        taxonomy = _portable_object(row.get("taxonomy"), f"{label}.taxonomy")
+        for field in ("category", "operator"):
+            _portable_nonempty(taxonomy.get(field), f"{label}.taxonomy.{field}")
+        semantics = _portable_object(row.get("semantics"), f"{label}.semantics")
+        for field in ("inputs", "outputs", "valid_domain"):
+            _portable_strings(semantics.get(field), f"{label}.semantics.{field}")
+        _portable_nonempty(
+            semantics.get("computation"), f"{label}.semantics.computation"
+        )
+        contract = _portable_object(row.get("contract"), f"{label}.contract")
+        for field in (
+            "dtypes",
+            "index_types",
+            "layouts",
+            "invariants",
+            "exclusions",
+        ):
+            _portable_strings(contract.get(field), f"{label}.contract.{field}")
+        _portable_strings(
+            contract.get("optional_inputs"),
+            f"{label}.contract.optional_inputs",
+            allow_empty=True,
+        )
+        for field in ("api", "launch_policy"):
+            _portable_nonempty(contract.get(field), f"{label}.contract.{field}")
+
+        qualification = _portable_object(
+            row.get("qualification"), f"{label}.qualification"
+        )
+        if set(qualification) != PORTABLE_QUALIFICATION_FIELDS:
+            raise CorpusAuditError(f"{label} qualification schema is invalid")
+        if (
+            qualification.get("authority")
+            != "node-owned evidence summarized by portable export"
+            or qualification.get("lifecycle") != "completed"
+            or qualification.get("validity") != "valid"
+        ):
+            raise CorpusAuditError(f"{label} qualification is not completed and valid")
+        locator = _portable_object(
+            qualification.get("locator"), f"{label}.qualification.locator"
+        )
+        if set(locator) != {"node_id", "run_id"}:
+            raise CorpusAuditError(f"{label} fixed locator schema is invalid")
+        locator_key = (
+            _portable_nonempty(locator.get("node_id"), f"{label}.locator.node_id"),
+            _portable_nonempty(locator.get("run_id"), f"{label}.locator.run_id"),
+        )
+        if locator_key in locators:
+            raise CorpusAuditError(f"duplicate portable fixed locator: {locator_key}")
+        locators.add(locator_key)
+        stages = _portable_object(
+            qualification.get("stages"), f"{label}.qualification.stages"
+        )
+        if set(stages) != PORTABLE_QUALIFICATION_STAGES:
+            raise CorpusAuditError(f"{label} qualification stages are incomplete")
+        for stage_name in sorted(PORTABLE_QUALIFICATION_STAGES):
+            stage = _portable_object(stages.get(stage_name), f"{label}.{stage_name}")
+            if stage.get("status") != "passed" or stage.get("validity") != "valid":
+                raise CorpusAuditError(
+                    f"{label} {stage_name} stage did not pass validly"
+                )
+        correctness = _portable_object(stages["correctness"], f"{label}.correctness")
+        summary = _portable_nonempty(
+            correctness.get("summary"), f"{label}.correctness.summary"
+        )
+        if re.search(r"complete[- ]output", summary, re.IGNORECASE) is None:
+            raise CorpusAuditError(
+                f"{label} correctness is not complete-output evidence"
+            )
+        workloads = correctness.get("workloads")
+        if (
+            not isinstance(workloads, list)
+            or len(workloads) < 2
+            or any(
+                not isinstance(workload, dict)
+                or workload.get("correct") is not True
+                or not isinstance(workload.get("id", workload.get("name")), str)
+                or not workload.get("id", workload.get("name"))
+                for workload in workloads
+            )
+        ):
+            raise CorpusAuditError(
+                f"{label} lacks two correct complete-output workloads"
+            )
+        workload_ids = [
+            str(value.get("id", value.get("name"))) for value in workloads
+        ]
+        if len(set(workload_ids)) != len(workload_ids):
+            raise CorpusAuditError(f"{label} repeats a correctness workload id")
+        sanitize_summary = _portable_nonempty(
+            stages["sanitize"].get("summary"), f"{label}.sanitize.summary"
+        ).lower()
+        if "memcheck" not in sanitize_summary or "racecheck" not in sanitize_summary:
+            raise CorpusAuditError(
+                f"{label} sanitizer evidence lacks memcheck or racecheck"
+            )
+
+        bundle = _portable_object(row.get("bundle"), f"{label}.bundle")
+        bundle_path = _portable_relative(bundle.get("path"), f"{label}.bundle.path")
+        if bundle_path.parts[0] != "bundles":
+            raise CorpusAuditError(f"{label}.bundle.path is outside bundles/")
+        if bundle_path.as_posix() in bundle_paths:
+            raise CorpusAuditError(f"duplicate portable bundle path: {bundle_path}")
+        bundle_paths.add(bundle_path.as_posix())
+        artifacts = _portable_object(row.get("artifacts"), f"{label}.artifacts")
+        if not {"baseline", "reference", "harness"} <= set(artifacts):
+            raise CorpusAuditError(f"{label} lacks required artifact roles")
+        row_paths: list[str] = []
+
+        def declare(
+            value: object, artifact_label: str, prefix: PurePosixPath
+        ) -> tuple[PurePosixPath, bytes]:
+            relative = _portable_relative(value, artifact_label)
+            if not relative.is_relative_to(prefix):
+                raise CorpusAuditError(
+                    f"{artifact_label} escapes its declared bundle location"
+                )
+            if relative.as_posix() in declared_paths:
+                raise CorpusAuditError(
+                    f"portable corpus repeats declared artifact {relative}"
+                )
+            relative, payload = committed_file(relative.as_posix(), artifact_label)
+            _parse_portable_payload(payload, relative, artifact_label)
+            declared_paths.add(relative.as_posix())
+            row_paths.append(relative.as_posix())
+            return relative, payload
+
+        for role in sorted(artifacts):
+            _portable_identifier(role, f"{label}.artifacts role")
+            values = artifacts[role]
+            if not isinstance(values, list) or not values:
+                raise CorpusAuditError(f"{label}.artifacts.{role} must not be empty")
+            role_prefix = bundle_path / "sources" / role
+            for index, value in enumerate(values):
+                declare(value, f"{label}.artifacts.{role}[{index}]", role_prefix)
+
+        documents = _portable_object(
+            bundle.get("documents"), f"{label}.bundle.documents"
+        )
+        for name, value in sorted(documents.items()):
+            declare(
+                value,
+                f"{label}.bundle.documents.{name}",
+                bundle_path / "documents",
+            )
+        source_files = _portable_object(
+            bundle.get("source_files"), f"{label}.bundle.source_files"
+        )
+        if set(source_files) != {"ORIGINAL_RESULT.json", "input.json"}:
+            raise CorpusAuditError(f"{label} source-file declaration is incomplete")
+        bundled_input: Mapping[str, Any] | None = None
+        for name, value in sorted(source_files.items()):
+            _, payload = declare(
+                value,
+                f"{label}.bundle.source_files.{name}",
+                bundle_path / "source",
+            )
+            if name == "input.json":
+                parsed = json.loads(payload.decode("utf-8"))
+                if not isinstance(parsed, dict):
+                    raise CorpusAuditError(f"{label} bundled input is not an object")
+                bundled_input = parsed
+        if bundled_input is None or bundled_input.get("record") != dict(
+            source_record.fields
+        ):
+            raise CorpusAuditError(
+                f"{label} bundled source differs from the source commit"
+            )
+        artifact_paths[case_id] = tuple(row_paths)
+
+    _, merge_payload = committed_file("MERGE_SUMMARY.json", "portable merge summary")
+    _parse_portable_payload(
+        merge_payload, PurePosixPath("MERGE_SUMMARY.json"), "portable merge summary"
+    )
+    merge_summary = json.loads(merge_payload.decode("utf-8"))
+    if not isinstance(merge_summary, dict) or any(
+        merge_summary.get(field) != expected
+        for field, expected in (
+            ("schema", "aka.portable-kernel-parent-merge.v1"),
+            ("records", len(records)),
+            ("outcomes", {"qualified": len(records)}),
+            ("training_eligible", 0),
+            ("unique_locators", len(records)),
+        )
+    ):
+        raise CorpusAuditError("portable merge summary disagrees with admitted rows")
+
+    validation: dict[str, Any] = {
+        "records_file": records_relative.as_posix(),
+        "records": len(records),
+        "declared_artifacts": len(declared_paths),
+        "source_revision": source_revision,
+        "allowed_claim": "qualified_parent_corpus_review_admission_only",
+    }
+    return PortableQualifiedSnapshot(
+        dataset_root=portable_dataset_root,
+        dataset_path=portable_path.as_posix(),
+        source_dataset_path=source_path.as_posix(),
+        revision=source_revision,
+        records=tuple(records),
+        record_lines=record_lines,
+        artifact_paths=artifact_paths,
+        validation=validation,
+    )
 
 
 def _sorted_counts(values: Iterable[str]) -> dict[str, int]:
