@@ -80,3 +80,62 @@ The checked-in generator, correctness-only task, candidate-owned judge, catalog,
 CPU/static contract tests remain reusable after the external Kernel Infra candidate-file
 readability boundary is corrected by its owner. This attempt does not repair or
 manufacture that permission state.
+
+## V2 permission-repair successor
+
+The create-only successor task was
+`open-cake-state-store-b8x128-b200-correctness-v2`. It preserved the same released
+Compiler, generated candidate, four `[8,128]` workloads, complete-output oracle,
+bitwise/ABI/in-place acceptance boundary, and correctness-only resource stage. It was
+not a retry of the v1 identity. The fixed route was
+`verda-b200x4-state-store/open-cake-state-store-b8x128-b200-correctness-v2-bd76e612edb0`;
+the broker job was `gpuq-1795099eb4b5`, shared mode on physical GPU 1.
+
+V2 also terminated `infra_error` with validity `unknown` and no frontier eligibility.
+It passed the v1 failure point: the node-owned candidate files were `0640
+qinhaiyan:gpuq-users`, the broker imported `evaluate.py` and the generated Triton
+wrapper, and GPU execution reached the first case's post-compute artifact-write step.
+The next infrastructure boundary failed: the correctness stage directory was `2750
+qinhaiyan:gpuq-users`, so the broker identity could not create either
+`zeros-b8x128.complete-output.json` or the stage `result.json`. The node-owned receipt
+therefore records exit 1 and a missing judge result. No output arrays, mismatch counts,
+or max-error values were durably produced.
+
+| Workload | V2 observation | Validity |
+| --- | --- | --- |
+| `zeros-b8x128` | Wrapper execution reached artifact creation, but no complete output or metrics were retained | `unknown` |
+| `signed-integers-b8x128` | Not reached | `unknown` |
+| `alternating-binary-fractions-b8x128` | Not reached | `unknown` |
+| `seeded-scaled-integers-b8x128` | Not reached | `unknown` |
+
+The exact deployed GPU Infra source was commit
+`6a1dff5b45d286838ab6846a2595409da307a878`, Kernel Infra `0.16.0`, daemon instance
+`warm-sun-begins-fin-03-pid4082710-start13477426`, socket
+`/tmp/kernelinfra-open-cake-state-store-b200-v2-6a1dff5.sock`, and state root
+`/home/qinhaiyan/open-cake-state-store-b200-v2-6a1dff5/state`. The daemon ran with
+umask `0027`, `KERNELINFRA_RUN_DIR_MODE=750`, and
+`KERNELINFRA_RUN_FILE_MODE=640`; the state root was `2750
+qinhaiyan:gpuq-users` and not world-readable. The task deployment occupied 1.9 MiB.
+
+The first infrastructure successor `6a1dff5` corrected a separate defect in
+`a0abba8`: an unset file-mode variable still preserved a fleet-delivered `0600`
+candidate instead of applying the documented broker-safe default. The v2 run then
+exposed that the earlier stage-directory change remained umask-sensitive. GPU Infra
+commit `41341f8` makes each broker-owned stage output directory explicitly `0770` after
+creation and adds a regression assertion. Both permission repairs passed the focused
+candidate/store/runner tests and the full 75-test repository suite. `41341f8` was not
+deployed and no further GPU submission was made.
+
+The create-only external evidence root is
+`/Users/haiyan-infiniai/.codex/runs/open-cake-state-store-b200-correctness-20260902-v2-6a1dff5`.
+It retains the route, terminal status and wait observations, broker/node observations,
+a 72 KiB mirror, and create-only `collection-01`. The task-owned broker job was
+terminal and absent from the running queue before cleanup. The exact task daemon was
+stopped gracefully and its socket and process disappeared; the shared broker, shared
+daemon, foreign jobs, and foreign GPU allocations were not modified. The remote
+task-owned state and local mirrors were retained.
+
+Neither v1 nor v2 establishes `fixed_instance independent target correctness`.
+Together they provide infrastructure diagnostics only. They do not support arbitrary
+`n`, complete-parent coverage, source-independent semantics, performance, operator,
+model, serving, or training claims.

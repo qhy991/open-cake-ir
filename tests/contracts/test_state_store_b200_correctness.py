@@ -62,6 +62,12 @@ class StateStoreB200CorrectnessContractTests(unittest.TestCase):
 
     def test_frozen_task_is_one_broker_correctness_stage(self) -> None:
         task = json.loads((EXAMPLE / "task.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            task["task_id"],
+            "open-cake-state-store-b8x128-b200-correctness-v2",
+        )
+        self.assertIn("successor", task["description"])
+        self.assertIn("not a retry", task["description"])
         self.assertEqual(len(task["stages"]), 1)
         stage = task["stages"][0]
         self.assertEqual(stage["kind"], "correctness")
@@ -77,8 +83,10 @@ class StateStoreB200CorrectnessContractTests(unittest.TestCase):
         node = catalog["nodes"][0]
         self.assertEqual(node["ssh"], "verda-b200x4")
         self.assertEqual(
-            node["socket"], "/tmp/kernelinfra-aka-b200-qhy.sock"
+            node["socket"],
+            "/tmp/kernelinfra-open-cake-state-store-b200-v2-6a1dff5.sock",
         )
+        self.assertIn("state-store-b200-v2-6a1dff5/gpu-infra", node["kernelctl"])
         self.assertEqual(set(node["capabilities"]), {"b200", "cuda", "sm100"})
 
     def test_judge_is_syntax_valid_and_declares_four_full_outputs(self) -> None:
