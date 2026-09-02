@@ -64,9 +64,9 @@ class StateStoreB200CorrectnessContractTests(unittest.TestCase):
         task = json.loads((EXAMPLE / "task.json").read_text(encoding="utf-8"))
         self.assertEqual(
             task["task_id"],
-            "open-cake-state-store-b8x128-b200-correctness-v3",
+            "open-cake-state-store-b8x128-b200-correctness-v4",
         )
-        self.assertIn("Stage-directory-fixed successor", task["description"])
+        self.assertIn("Broker-result-readable successor", task["description"])
         self.assertIn("not a retry", task["description"])
         self.assertEqual(len(task["stages"]), 1)
         stage = task["stages"][0]
@@ -84,9 +84,9 @@ class StateStoreB200CorrectnessContractTests(unittest.TestCase):
         self.assertEqual(node["ssh"], "verda-b200x4")
         self.assertEqual(
             node["socket"],
-            "/tmp/kernelinfra-open-cake-state-store-b200-v3.sock",
+            "/tmp/kernelinfra-open-cake-state-store-b200-v4.sock",
         )
-        self.assertIn("state-store-b200-v3/gpu-infra", node["kernelctl"])
+        self.assertIn("state-store-b200-v4/gpu-infra", node["kernelctl"])
         self.assertEqual(set(node["capabilities"]), {"b200", "cuda", "sm100"})
 
     def test_judge_is_syntax_valid_and_declares_four_full_outputs(self) -> None:

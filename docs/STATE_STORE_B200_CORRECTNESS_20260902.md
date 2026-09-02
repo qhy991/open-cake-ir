@@ -196,3 +196,59 @@ V3 therefore still does not establish `fixed_instance independent target
 correctness`. V1, v2 and v3 remain three distinct infrastructure-unknown records and
 support no arbitrary-`n`, complete-parent, source-independent semantics, performance,
 coverage, operator, model, serving or training claim.
+
+## V4 broker-result-readable successor
+
+The create-only v4 task was
+`open-cake-state-store-b8x128-b200-correctness-v4`. It retained the exact released
+Compiler v40 generated candidate and the same four workloads and acceptance boundary.
+It was neither a retry nor reroute of v1, v2 or v3. Its fixed route was
+`verda-b200x4-state-store/open-cake-state-store-b8x128-b200-correctness-v4-8b5074e1d273`;
+the broker job was `gpuq-2c31d3242c9b`, shared mode on physical GPU 0.
+
+V4 crossed the v3 result-readability boundary. The stage directory was `0770
+qinhaiyan:gpuq-users`; broker-owned result and complete-output files were finalized as
+`0640 gpuq:gpuq-users`; the daemon read and validated the judge result, wrote a valid
+stage receipt, and completed the node-owned run. The run outcome was `completed`,
+validity `valid`, and frontier eligibility false because this task intentionally owns
+no timing stage.
+
+| Workload | Checked state elements | Oracle mismatch | State mismatch | Update mismatch | Max error | Update immutable | State pointer unchanged | Empty tuple | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| `zeros-b8x128` | 1,024 | 0 | 0 | 0 | 0.0 | Yes | Yes | Yes | Correct |
+| `signed-integers-b8x128` | 1,024 | 0 | 0 | 0 | 0.0 | Yes | Yes | Yes | Correct |
+| `alternating-binary-fractions-b8x128` | 1,024 | 0 | 0 | 0 | 0.0 | Yes | Yes | Yes | Correct |
+| `seeded-scaled-integers-b8x128` | 1,024 | 0 | 0 | 0 | 0.0 | Yes | Yes | Yes | Correct |
+
+The mirror was independently checked without importing the judge: every complete-output
+array had exactly 1,024 values; Python standard-library IEEE-754 float32 packing
+recomputed the CPU oracle and compared its bits with expected and actual state; update
+bits were compared before and after. All four cases independently reproduced zero
+oracle, state and update mismatches and zero max error, with the recorded ABI and
+pointer flags true. The target was NVIDIA B200, compute capability 10.0, and
+`performance_measured` was false.
+
+The exact deployment was GPU Infra commit
+`97a2bff2934562a1e416c753565862d4acc9a784`, Kernel Infra `0.16.0`, daemon instance
+`warm-sun-begins-fin-03-pid1333698-start13607677`, socket
+`/tmp/kernelinfra-open-cake-state-store-b200-v4.sock`, and state root
+`/home/qinhaiyan/open-cake-state-store-b200-v4/state`. It used umask `0027`,
+`KERNELINFRA_RUN_DIR_MODE=750`, and `KERNELINFRA_RUN_FILE_MODE=640`; the state root was
+`2750 qinhaiyan:gpuq-users`. The final exact checkout was clean and the task deployment
+occupied 2.3 MiB. One empty-bundle setup failure occurred before daemon startup and was
+retained in the task deployment; it created no run and touched no GPU or shared state.
+
+The create-only external evidence root is
+`/Users/haiyan-infiniai/.codex/runs/open-cake-state-store-b200-correctness-20260902-v4-97a2bff`.
+It retains the route, terminal status/wait, node/broker observations, a validated 292
+KiB mirror, a complete create-only `collection-01`, and the independent mirror check.
+The broker job was observed completed with exit 0 and released before cleanup. The
+exact v4 daemon was stopped gracefully and its process and socket disappeared. Shared
+daemon, shared broker and foreign jobs were not modified; task-owned remote state was
+retained.
+
+V4 establishes only `fixed_instance independent target correctness` for these four
+deterministic `[8,128]` complete-output cases. It does not establish arbitrary-`n` or
+complete-parent coverage, source-independent semantics, performance, corpus coverage,
+operator, model, serving or training qualification. V1, v2 and v3 remain unchanged
+infrastructure-unknown records.

@@ -6,9 +6,9 @@
     {
       "id": "verda-b200x4-state-store",
       "ssh": "verda-b200x4",
-      "kernelctl": "/home/qinhaiyan/open-cake-state-store-b200-v3/gpu-infra/bin/kernelctl",
-      "socket": "/tmp/kernelinfra-open-cake-state-store-b200-v3.sock",
-      "inbox": "/home/qinhaiyan/open-cake-state-store-b200-v3/inbox",
+      "kernelctl": "/home/qinhaiyan/open-cake-state-store-b200-v4/gpu-infra/bin/kernelctl",
+      "socket": "/tmp/kernelinfra-open-cake-state-store-b200-v4.sock",
+      "inbox": "/home/qinhaiyan/open-cake-state-store-b200-v4/inbox",
       "capabilities": ["b200", "cuda", "sm100"]
     }
   ]

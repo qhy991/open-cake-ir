@@ -9,9 +9,9 @@ deterministic exact-FP32 domains, preserves complete before/after artifacts, che
 empty-tuple wrapper ABI, verifies in-place pointer identity, and proves the update input
 is bitwise unchanged.
 
-The checked task is the create-only `v3` stage-directory-fixed successor to the
-preserved `v1` and `v2` infrastructure-unknown runs. It uses the same four workloads
-and acceptance boundary; only the task identity and isolated Kernel Infra
+The checked task is the create-only `v4` broker-result-readable successor to the
+preserved `v1`, `v2`, and `v3` infrastructure-unknown runs. It uses the same four
+workloads and acceptance boundary; only the task identity and isolated Kernel Infra
 permission/deployment boundary differ.
 
 The AKA parent is `contiguous_apply2_add_fp32_u32_block256_v1`, source record

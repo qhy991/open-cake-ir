@@ -1,7 +1,7 @@
 {
   "schema": "kernelinfra.task.v1",
-  "task_id": "open-cake-state-store-b8x128-b200-correctness-v3",
-  "description": "Stage-directory-fixed successor correctness-only B200 validation of the released Open-Cake state-store lowering at fixed shape [8,128]; not a retry, with no timing or broader parent claim.",
+  "task_id": "open-cake-state-store-b8x128-b200-correctness-v4",
+  "description": "Broker-result-readable successor correctness-only B200 validation of the released Open-Cake state-store lowering at fixed shape [8,128]; not a retry, with no timing or broader parent claim.",
   "workloads": [
     "zeros-b8x128",
     "signed-integers-b8x128",
@@ -22,8 +22,8 @@
       "id": "correctness",
       "kind": "correctness",
       "judge": {
-        "identity": "open-cake-state-store-b200-correctness-v3",
-        "cwd": "/home/qinhaiyan/open-cake-state-store-b200-v3/gpu-infra",
+        "identity": "open-cake-state-store-b200-correctness-v4",
+        "cwd": "/home/qinhaiyan/open-cake-state-store-b200-v4/gpu-infra",
         "command": [
           "/home/qinhaiyan/megakernel-exp/.venv-flashinfer/bin/python",
           "-c",
