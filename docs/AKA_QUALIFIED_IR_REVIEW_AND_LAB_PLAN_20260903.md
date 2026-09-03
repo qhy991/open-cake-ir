@@ -1,12 +1,12 @@
 # AKA qualified-parent IR review：现状与 Lab 计划
 
-状态：2026-09-03 Phase A 终态总结；后续 GPU 实验尚未开始。
+状态：2026-09-03 Phase A 已终结；Lab admission 已物化；首个 B200 canary 已通过。
 
 ## 结论
 
 AKA v6 的 677 个 `qualified` parent 已完成一轮逐条 Open-Cake IR 审查：676 条形成模型结果和独立 verifier 记录，1 条在模型运行前遭遇基础设施故障。676 条中，439 条的**分类结论**被接受，237 条因 reviewer 或 schema 问题被拒绝。
 
-“分类被接受”不等于“可在 GPU 上执行”。当前只有 57 条同时满足 `schedule`、`expressible` 和静态 `lower passed`，可以进入 Lab admission；它们仍需通过独立 oracle 的 B200 完整输出正确性和 sanitizer，才能成为动态有效结果。当前 GPU 实验数为 0，所有记录均不可作为性能或训练证据。
+“分类被接受”不等于“可在 GPU 上执行”。当前只有 57 条同时满足 `schedule`、`expressible` 和静态 `lower passed`，可以进入 Lab admission；它们仍需通过独立 oracle 的 B200 完整输出正确性和 sanitizer，才能成为动态有效结果。现已仅对其中 1 条 fixed-instance copy canary 建立该动态证据；它不是 corpus 覆盖率、性能或训练证据。
 
 ## 这项工作的意义
 
@@ -31,13 +31,21 @@ AKA 在这里是 Open-Cake 的外部 challenge corpus，而不是自动进入 Co
 
 57 条 Lab 候选内部还有两个优先级：33 条标记为 optimization eligible，24 条为 optimization ineligible。该标记只用于排队；两组都必须先验证动态正确性。24 条原则上止于 correctness，33 条只有在 correctness、sanitizer 和重复性均通过后才能进入性能实验。
 
+## 远端执行状态
+
+- `admission-v1` 已从 676 条 verifier ledger 中确定性物化 57 条候选：33 条优化优先、24 条 correctness-only；253 个 parent/reference/harness 文件全部存在，自包含输入约 7.2 MiB。
+- GPU Infra 固定为 `97a2bff`，远端部署重新通过 76/76 测试；独立 daemon、socket 和 state 与共享控制面分离。
+- canary v1–v5 分别暴露 judge cwd、home 路径穿越、GPU Infra guard 路径、NumPy 依赖和虚拟环境符号链接解析问题；均保留为 `infra_error/unknown`，没有被重试或改写成 correctness 失败。
+- 唯一成功 successor v6 在 NVIDIA B200/sm100 上完成 correctness、memcheck 和 racecheck，三个阶段均 `passed/valid`。四种固定 n=1024 输入在三个阶段共保留 12 个完整输出 artifact；独立标准库复核了 12,288 个元素，位级输出 mismatch、输入 mutation 和 ABI failure 均为 0。
+- v6 不包含 benchmark，`frontier_eligible=false` 是预期结果；它只证明该 fixed-instance Cake lowering 和当前 Lab 路径有效。
+
 ## 下一步计划
 
 1. **固化 Phase A。** 保留 677 条输入、676 条 ledger、原始 receipts 和失败分类；唯一基础设施失败使用新 identity 恢复，不覆盖旧记录，也不重跑 reviewer/schema 真失败。
 2. **建立 Lab admission manifest。** 对 57 条逐条绑定 AKA item、parent、accepted receipt、Compiler revision 和 lowered artifact；检查工作负载、完整输出、副作用、独立 oracle、容差和 `sm_100a/B200` 目标。缺任一关键事实就退出 Lab 队列。
 3. **去重并按风险分组。** 优先简单 copy/elementwise，其次 reduction，再处理 indexed/atomic/stateful；相同 parent、workload 和 Schedule 语义不重复占用 GPU。
-4. **先做 1 条端到端 canary。** 验证 compile、launch、完整输出对比、sanitizer、结果文件权限、fetch、mirror 和 collection。任何一环未知都停止扩容。
-5. **canary 通过后使用最多 5 并发。** `max_in_flight_items=5` 表示最多五个条目同时处于准备、排队或执行状态，不表示同时占用五张 GPU。B200x4 上 exclusive GPU 阶段最多使用实际可用设备，第五条排队；sanitizer、benchmark 和 profiler 必须 exclusive，GPU 只由 broker 分配。
+4. **端到端 canary（已完成）。** v6 已验证 compile/launch、完整输出、memcheck、racecheck、结果文件权限和独立复核；该结果解除 5 并发的启动门槛。
+5. **使用最多 5 并发。** `max_in_flight_items=5` 表示最多五个条目同时处于准备、排队或执行状态，不表示同时占用五张 GPU。B200x4 上 exclusive GPU 阶段最多使用实际可用设备，第五条排队；sanitizer、benchmark 和 profiler 必须 exclusive，GPU 只由 broker 分配。
 6. **先完成 correctness，再做优化。** 对 admission survivor 运行完整输出 oracle 和 sanitizer；仅其中最多 33 条 optimization 候选进入冻结 baseline 后的稳定性、paired timing 和 profiler 阶段。负结果和基础设施未知分别保留，不自动 retry、reroute 或取消已接受的 sibling。
 7. **并行处理非 Lab 类别。** 聚类 326 个 IR gap，只为重复、源码完整且不可由现有 primitive 组合的最小语义提出 Compiler successor；27 个 composition 任务进入 Program 设计；29 个 evidence 任务先补合同；211+26 个拒绝用于改善 authoring/reviewer，而不是消耗 GPU。
 
