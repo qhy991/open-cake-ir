@@ -1,12 +1,14 @@
 # AKA qualified-parent IR review：现状与 Lab 计划
 
-状态：2026-09-04（JST）更新。Phase A 已终结；Lab admission 已物化；两条 canary 和八批最多 5 并发 B200 任务已执行。
+状态：2026-09-04（JST）更新。Phase A 已终结；Lab admission 已物化；两条 canary 和十一组最多 5 并发 B200 任务已执行，57 条均有终态。
 
 ## 结论
 
 AKA v6 的 677 个 `qualified` parent 已完成一轮逐条 Open-Cake IR 审查：676 条形成模型结果和独立 verifier 记录，1 条在模型运行前遭遇基础设施故障。676 条中，439 条的**分类结论**被接受，237 条因 reviewer 或 schema 问题被拒绝。
 
-“分类被接受”不等于“可在 GPU 上执行”。当前只有 57 条同时满足 `schedule`、`expressible` 和静态 `lower passed`，可以进入 Lab admission；它们仍需通过独立 oracle 的 B200 完整输出正确性和 sanitizer，才能成为动态有效结果。现已对 41 条 fixed-instance 任务建立该动态证据；其余 16 条中，14 条尚未 authoring，1 条 authoring rejection，1 条暴露 backend compile gate 缺陷。这不是 corpus 覆盖率、性能或训练证据。
+“分类被接受”不等于“可在 GPU 上执行”。只有 57 条同时满足 `schedule`、`expressible` 和静态 `lower passed`，进入了 Lab admission；最终 56 条通过独立 oracle 的 B200 完整输出正确性、memcheck、racecheck 和模型外重算，1 条因 authoring schema、runtime custody 和 evidence surface 不合格而保持 GPU `not_run`。这证明 56 个 fixed instance 的当前 Cake lowering 有效，不是 corpus 覆盖率、性能、完整动态 parent 或训练证据。
+
+这 57 条执行中暴露的真实问题均可定位为 reviewer/schema、evaluator/artifact hygiene 或 backend lowering/compile gate；修复后没有留下需要新增 Schedule IR 的动态失败。因此，**不能用这 57 条作为增加 IR 的依据**。是否演进 IR 仍只能由 326 个 `ir_gap` 的独立、源码完整、重复语义聚类决定。
 
 ## 这项工作的意义
 
@@ -49,7 +51,11 @@ AKA 在这里是 Open-Cake 的外部 challenge corpus，而不是自动进入 Co
 - 第六批覆盖 softsign gradient n=257、FP16→FP32 n=63,490、reciprocal gradient n=1,024、token-position embedding 3×5×64 和 GELU-backward n=4,099。五条最终均 `completed/valid`；FP16 条目在首次提交前只补 canonical racecheck 摘要解析。GELU 原 run 的 correctness 通过，但 evaluator 的 PyTorch CUDA cache 在 `--leak-check full` 下产生 2 MiB finding，原 run 保留为 `rejected/invalid`；保留同一 leak gate、只显式释放未使用 cache 的新 identity 通过。统一复核 33 个 artifact、851,406 个输出，所有错误计数为 0。
 - 第七批覆盖 identity n=1、vol2im identity 48 元素、global-average-pool backward 1×7×1、guarded INT32 store n=1,024 和 tanh-GELU n=23。五条最终均 `completed/valid`；GAP 原 run 的 artifact 缺 `performance_measured=false`，原 `completed/valid` 结果保留但未被外部接纳，只补证据字段的新 identity 通过。统一复核 39 个 artifact、28,707 个输出，所有错误计数为 0。
 - 第八批覆盖 strided copy n=30、strided add n=30、scalar pow n=4,097、GELU-backward vec4 n=4,100 和 bias-sum 2×3×259。前四条 `completed/valid`，24 个 artifact 经独立复核 197,790 个输出，所有错误计数为 0。bias-sum 的生成 Triton 使用 `tl.arange(0,6)`，因非二次幂在 GPU compile 失败；node 的 `infra_error/unknown` 结果被细化为 `backend_compile_gate`，没有重试，也不计 IR 语义失败或动态有效。
-- 当前动态有效数量为 41/57。剩余 14 个从未 authoring 的 canonical IDs 已按低风险、状态/数值和 reduction 三组 5/5/4 预留；每条仍需独立 authoring verifier 后才能进入 GPU。另有 l000214 authoring rejection 和上述 bias-sum backend compile unknown，均保持独立终态。
+- 最终 R1 覆盖 bias-sum successor、INT32 identity n=257、GELU-tanh n=4、PReLU 1×3×7 和 variance-affine triplet n=257。bias-sum 由远端 Sol/max 只把六行 reduction pad 到八行并屏蔽两条 lane；真实 GPU-free Triton compile、B200 三阶段和独立重算均通过。R1 五条最终共复核 39 个 artifact、19,974 个输出。
+- 最终 R2 覆盖 probability cross-entropy gradient 3×5、softplus gradient n=524,417、四输出 BN parameter postprocess n=257、BF16 in-place bias-gradient state 和 instance-normalization coefficients n=257。BF16 条目的 v1 reviewer 错把“无 returned tensor”当成缺输出；detail-v2 保留拒绝，reviewer-v3 以完整 mutable `dbias` state 加空 tuple 为 observable，且 authoring/kernel/evaluator/oracle/task 均未修改。五条最终复核 39 个 artifact、6,319,488 个 tensor 输出和 144 个 BF16 mutable-state 元素。
+- 最终 R3 覆盖 gamma/beta backward、paired partial-gradient reduction、warp-sum32、rows8 ordered sum 和 beta-zero addr outer。三条生成 kernel 先在 GPU-free Triton compile 暴露 store block/rank 或 outer broadcast 缺陷；各自由新远端 Sol/max kernel successor 修复，并重新通过 verifier、真实 compile、唯一 GPU 三阶段和独立重算。R3 五条最终复核 27 个 artifact、41,028 个输出；所有错误计数为 0，所有失败 predecessor 原样保留且不计 IR 失败。
+- 唯一非动态有效条目 l000214 的最新 v4 仅为 `model_prepared`：`kernelctl task-check` 拒绝其缺失 `comparison/workloads`；stage 使用旧字段和另一用户 runtime 路径；oracle 使用旧 aliases；evaluator 依赖 `hashlib/base64/zlib` 压缩编码 16M 元素证据。模型外 verifier 将其终结为 `reviewer_schema_and_evidence_surface`、GPU `not_run`、IR gap 未建立。恢复必须使用新 Sol/max authoring，并先满足约 32 GiB 余量下的完整输出磁盘门槛。
+- 当前终态为 56/57 dynamic valid、1/57 authoring rejection、0 unknown，且全部 `performance_measured=false`。
 - 新增代码的 focused 文档/admission 测试为 9/9，远端 GPU Infra 为 76/76。组合 Torch、Triton 和 jsonschema 环境运行 678 个 Open-Cake contract tests，仅历史 G8 replay/custody 测试失败 1 项；本分支未修改该 Lab 实现或测试字节，因此该既有门禁不被本工作掩盖或修复。
 
 ## 下一步计划
@@ -64,8 +70,8 @@ AKA 在这里是 Open-Cake 的外部 challenge corpus，而不是自动进入 Co
 
 ## 为什么选择 5 并发
 
-5 并发在吞吐和可审计性之间更合适：它远低于此前的大规模模型审查并发，便于定位首个动态分歧；在四卡节点上允许最多四个 exclusive GPU 阶段运行并保留一个准备或排队槽，不会把“控制器并发”误当成 GPU 数量；同时限制编译产物、sanitizer 日志和 mirror 对磁盘的增长。为消除对其他用户环境的依赖，远端新增约 5.6 GiB task-owned Torch/Triton runtime；第二批 1M 元素完整输出及 home 证据副本约增加 1.4 GiB，当前状态盘约 98% 已用、约 37 GiB 可用。后续必须继续限制 artifact 体积，只清理可重建缓存和重复临时产物，正式证据不可删除。
+5 并发在吞吐和可审计性之间更合适：它远低于此前的大规模模型审查并发，便于定位首个动态分歧；在四卡节点上允许最多四个 exclusive GPU 阶段运行并保留一个准备或排队槽，不会把“控制器并发”误当成 GPU 数量；同时限制编译产物、sanitizer 日志和 mirror 对磁盘的增长。为消除对其他用户环境的依赖，远端新增约 5.6 GiB task-owned Torch/Triton runtime；第二批 1M 元素完整输出及 home 证据副本约增加 1.4 GiB，当前状态盘约 98% 已用、约 33 GiB 可用。后续必须继续限制 artifact 体积，只清理可重建缓存和重复临时产物，正式证据不可删除。
 
 ## 完成标准
 
-本阶段完成不是“57 条都跑过”，而是每条都有唯一终态：`correctness_valid`、确定的语义/实现失败、明确的基础设施未知，或因合同不完整而未 admission。只有 `correctness_valid + sanitizer_valid + repeatability_valid` 的 optimization 候选，才允许进入性能资格；只有经过独立 IR 审批、完整 Corpus Gate 和目标 GPU 验证的重复 gap，才允许形成新的 Compiler Revision。
+本阶段已达到完成标准：57 条均有唯一终态，56 条为 `correctness_valid + sanitizer_valid + independent_recompute_valid`，1 条为明确的 authoring/reviewer rejection，0 条 unknown。只有其中标记 optimization eligible 且后续再取得 `repeatability_valid` 的条目，才允许进入性能资格；只有经过独立 IR 审批、完整 Corpus Gate 和目标 GPU 验证的重复 gap，才允许形成新的 Compiler Revision。
