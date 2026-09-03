@@ -1,0 +1,28 @@
+{
+  "abi_failure": 0,
+  "artifact_performance_field": "legacy_absent",
+  "case_id": "data_movement_and_layout__gather_scatter__analysis__l000203_b200_v1__directderived_sol_ultra_v2",
+  "complete_output_artifacts": 9,
+  "gpu_rerun": false,
+  "independently_checked_output_elements": 306,
+  "input_mutation": 0,
+  "memcheck_errors": 0,
+  "node_outcome": "completed",
+  "node_validity": "valid",
+  "oracle": "stable FP64 sigmoid equation rounded once to FP32",
+  "oracle_mismatch": 0,
+  "performance_measured": false,
+  "racecheck_hazards": 0,
+  "retained_run_root": "/home/qhy-sol/aka-ir-lab-20260903-TGkxNe/preserved-sigmoid-runtime-v2",
+  "run_id": "open-cake-aka-sigmoid-fp32-n17-b200-canary-v2-runtime-200f0c849144",
+  "run_modified": false,
+  "schema": "open-cake.aka-ir-lab-current-independent-reconstruction.v1",
+  "status": "accepted",
+  "verification_kind": "current_reconstruction_from_retained_artifacts",
+  "verification_timestamp": "2026-09-03T19:57:51.539423+00:00",
+  "workloads": [
+    "correctness-alternating-binary-fractions-n17",
+    "correctness-edge-values-n17",
+    "correctness-modular-scaled-integers-n17"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "authentication": "parent_cli_chatgpt",
+  "automatic_retry": false,
+  "exit_code": 0,
+  "fallback": false,
+  "final_present": true,
+  "gpu": "disabled",
+  "model": "gpt-5.6-sol",
+  "network": "disabled",
+  "permission_profile": "aka_ir_gap_clusterer",
+  "proposal_present": false,
+  "reasoning_effort": "max",
+  "schema": "open-cake.aka-ir-gap-cluster-model-receipt.v1",
+  "shell_environment_inherit": "none",
+  "summary_present": false,
+  "task_id": "aka-qualified-ir-gap-cluster-326-v1"
+}

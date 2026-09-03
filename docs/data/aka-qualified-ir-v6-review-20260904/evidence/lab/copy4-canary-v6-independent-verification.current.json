@@ -1,0 +1,29 @@
+{
+  "abi_failure": 0,
+  "artifact_performance_field": "legacy_absent",
+  "case_id": "data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1__directderived_sol_ultra_v2",
+  "complete_output_artifacts": 12,
+  "gpu_rerun": false,
+  "independently_checked_output_elements": 12288,
+  "input_mutation": 0,
+  "memcheck_errors": 0,
+  "node_outcome": "completed",
+  "node_validity": "valid",
+  "oracle": "bitwise FP32 identity",
+  "oracle_mismatch": 0,
+  "performance_measured": false,
+  "racecheck_hazards": 0,
+  "retained_run_root": "/home/qhy-sol/aka-ir-lab-20260903-TGkxNe/preserved-canary-v4-v6-state/runs/open-cake-aka-copy4-n1024-b200-canary-v6-bbc6a38de092",
+  "run_id": "open-cake-aka-copy4-n1024-b200-canary-v6-bbc6a38de092",
+  "run_modified": false,
+  "schema": "open-cake.aka-ir-lab-current-independent-reconstruction.v1",
+  "status": "accepted",
+  "verification_kind": "current_reconstruction_from_retained_artifacts",
+  "verification_timestamp": "2026-09-03T19:57:51.539423+00:00",
+  "workloads": [
+    "alternating-binary-fractions-n1024",
+    "seeded-scaled-integers-n1024",
+    "signed-integers-n1024",
+    "zeros-n1024"
+  ]
+}

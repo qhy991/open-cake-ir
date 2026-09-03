@@ -1,0 +1,27 @@
+{
+  "approval_granted": false,
+  "deterministic": true,
+  "duplicate_case_ids": [],
+  "gpu_or_performance_claim": false,
+  "implementation_performed": false,
+  "ir_change_status": "proposal_only",
+  "partition_exact": true,
+  "release_performed": false,
+  "schema": "open-cake.aka-ir-gap-cluster-verification.v1",
+  "semantic_clusters": 202,
+  "source_exact_candidate_names": 296,
+  "source_gap_cases": 326,
+  "status": "accepted",
+  "summary": {
+    "conflicted_needs_review_cases": 2,
+    "conflicted_needs_review_clusters": 1,
+    "covered_exact_candidate_names": 296,
+    "covered_gap_cases": 326,
+    "repeated_candidate_cases": 174,
+    "repeated_candidate_clusters": 51,
+    "semantic_clusters": 202,
+    "singleton_or_distinct_cases": 150,
+    "singleton_or_distinct_clusters": 150
+  },
+  "unclustered_case_ids": []
+}

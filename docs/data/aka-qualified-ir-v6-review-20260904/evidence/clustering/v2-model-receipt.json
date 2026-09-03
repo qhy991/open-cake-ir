@@ -1,0 +1,19 @@
+{
+  "authentication": "parent_cli_chatgpt",
+  "automatic_retry": false,
+  "exit_code": 0,
+  "fallback": false,
+  "final_present": true,
+  "gpu": "disabled",
+  "model": "gpt-5.6-sol",
+  "network": "disabled",
+  "permission_profile": "aka_ir_gap_clusterer",
+  "predecessor": "ir-gap-clustering-20260904-pP8NG2",
+  "proposal_present": true,
+  "reasoning_effort": "max",
+  "recovery_mode": "embedded_input_file_edit_only",
+  "schema": "open-cake.aka-ir-gap-cluster-model-receipt.v2",
+  "shell_environment_inherit": "none",
+  "summary_present": true,
+  "task_id": "aka-qualified-ir-gap-cluster-326-v2-embedded"
+}

@@ -1,0 +1,37 @@
+{
+  "cluster_partition_exact": true,
+  "compiler_change_approved": false,
+  "credential_path_scan": "passed",
+  "deterministic": true,
+  "ir_gap_cases": 326,
+  "ir_gap_exact_candidate_names": 296,
+  "ir_gap_semantic_clusters": 202,
+  "lab_rows": 57,
+  "lab_status_counts": {
+    "authoring_rejected": 1,
+    "dynamic_valid": 56
+  },
+  "lab_unique_case_ids": 57,
+  "manifest_artifacts_checked": 34,
+  "performance_measured": false,
+  "phase_a_owner_counts": {
+    "insufficient_evidence": 21,
+    "ir_gap": 326,
+    "program_composition": 27,
+    "schedule": 57,
+    "workload_evidence": 8
+  },
+  "phase_a_rows": 677,
+  "phase_a_status_counts": {
+    "accepted": 439,
+    "infrastructure_failure": 1,
+    "rejected": 237
+  },
+  "phase_a_unique_case_ids": 677,
+  "release_performed": false,
+  "schema": "open-cake.aka-qualified-ir-review-export-verification.v1",
+  "sensitive_findings": 0,
+  "sensitive_pattern_scan": "passed",
+  "sensitive_scan_files": 35,
+  "status": "accepted"
+}

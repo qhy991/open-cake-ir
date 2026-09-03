@@ -1,0 +1,191 @@
+{
+  "schema": "kernelinfra.run-result.v1",
+  "run_id": "open-cake-aka-sigmoid-fp32-n17-b200-canary-v2-runtime-200f0c849144",
+  "task_id": "open-cake-aka-sigmoid-fp32-n17-b200-canary-v2-runtime",
+  "task_sha256": "02e5813ff0e0e0c358ce4f34ccbc96b87137b66f5b8e414734d5070c7971d370",
+  "candidate_sha256": "88b02a49d7a194383d8b246d32447788c7814932ae4ec591fc5017c864146f69",
+  "outcome": "completed",
+  "validity": "valid",
+  "frontier_eligible": false,
+  "terminal_reason": null,
+  "stages": [
+    {
+      "id": "correctness",
+      "kind": "correctness",
+      "status": "passed",
+      "validity": "valid",
+      "summary": "Three fixed n=17 distributions passed two complete-output paths, stable sigmoid tolerances, read-only input, alias, and wrapper ABI checks on NVIDIA B200."
+    },
+    {
+      "id": "sanitize-memcheck",
+      "kind": "sanitize",
+      "status": "passed",
+      "validity": "valid",
+      "summary": "compute-sanitizer memcheck and all fixed n=17 complete-output, side-effect, alias, and ABI checks passed on NVIDIA B200."
+    },
+    {
+      "id": "sanitize-racecheck",
+      "kind": "sanitize",
+      "status": "passed",
+      "validity": "valid",
+      "summary": "compute-sanitizer racecheck and all fixed n=17 complete-output, side-effect, alias, and ABI checks passed on NVIDIA B200."
+    }
+  ],
+  "workloads": [
+    {
+      "correct": true,
+      "id": "correctness-alternating-binary-fractions-n17",
+      "notes": "checked_outputs=34 output_mismatch=0 source_mismatch=0 abi_mismatch=0 complete_output=true"
+    },
+    {
+      "correct": true,
+      "id": "correctness-edge-values-n17",
+      "notes": "checked_outputs=34 output_mismatch=0 source_mismatch=0 abi_mismatch=0 complete_output=true"
+    },
+    {
+      "correct": true,
+      "id": "correctness-modular-scaled-integers-n17",
+      "notes": "checked_outputs=34 output_mismatch=0 source_mismatch=0 abi_mismatch=0 complete_output=true"
+    }
+  ],
+  "fingerprints": {},
+  "metrics": {
+    "correctness": {
+      "absolute_tolerance": 2e-07,
+      "cases": [
+        {
+          "abi_mismatch_count": 0,
+          "checked_output_elements": 34,
+          "correct": true,
+          "default_output_mismatch_count": 0,
+          "id": "correctness-edge-values-n17",
+          "source_mismatch_count": 0,
+          "supplied_output_mismatch_count": 0,
+          "total_mismatch_count": 0
+        },
+        {
+          "abi_mismatch_count": 0,
+          "checked_output_elements": 34,
+          "correct": true,
+          "default_output_mismatch_count": 0,
+          "id": "correctness-alternating-binary-fractions-n17",
+          "source_mismatch_count": 0,
+          "supplied_output_mismatch_count": 0,
+          "total_mismatch_count": 0
+        },
+        {
+          "abi_mismatch_count": 0,
+          "checked_output_elements": 34,
+          "correct": true,
+          "default_output_mismatch_count": 0,
+          "id": "correctness-modular-scaled-integers-n17",
+          "source_mismatch_count": 0,
+          "supplied_output_mismatch_count": 0,
+          "total_mismatch_count": 0
+        }
+      ],
+      "compute_capability": [
+        10,
+        0
+      ],
+      "device_name": "NVIDIA B200",
+      "performance_measured": false,
+      "relative_tolerance": 2e-06,
+      "total_checked_output_elements": 102
+    },
+    "sanitize-memcheck": {
+      "absolute_tolerance": 2e-07,
+      "cases": [
+        {
+          "abi_mismatch_count": 0,
+          "checked_output_elements": 34,
+          "correct": true,
+          "default_output_mismatch_count": 0,
+          "id": "correctness-edge-values-n17",
+          "source_mismatch_count": 0,
+          "supplied_output_mismatch_count": 0,
+          "total_mismatch_count": 0
+        },
+        {
+          "abi_mismatch_count": 0,
+          "checked_output_elements": 34,
+          "correct": true,
+          "default_output_mismatch_count": 0,
+          "id": "correctness-alternating-binary-fractions-n17",
+          "source_mismatch_count": 0,
+          "supplied_output_mismatch_count": 0,
+          "total_mismatch_count": 0
+        },
+        {
+          "abi_mismatch_count": 0,
+          "checked_output_elements": 34,
+          "correct": true,
+          "default_output_mismatch_count": 0,
+          "id": "correctness-modular-scaled-integers-n17",
+          "source_mismatch_count": 0,
+          "supplied_output_mismatch_count": 0,
+          "total_mismatch_count": 0
+        }
+      ],
+      "compute_capability": [
+        10,
+        0
+      ],
+      "compute_sanitizer": {
+        "returncode": 0,
+        "tool": "memcheck"
+      },
+      "device_name": "NVIDIA B200",
+      "performance_measured": false,
+      "relative_tolerance": 2e-06,
+      "total_checked_output_elements": 102
+    },
+    "sanitize-racecheck": {
+      "absolute_tolerance": 2e-07,
+      "cases": [
+        {
+          "abi_mismatch_count": 0,
+          "checked_output_elements": 34,
+          "correct": true,
+          "default_output_mismatch_count": 0,
+          "id": "correctness-edge-values-n17",
+          "source_mismatch_count": 0,
+          "supplied_output_mismatch_count": 0,
+          "total_mismatch_count": 0
+        },
+        {
+          "abi_mismatch_count": 0,
+          "checked_output_elements": 34,
+          "correct": true,
+          "default_output_mismatch_count": 0,
+          "id": "correctness-alternating-binary-fractions-n17",
+          "source_mismatch_count": 0,
+          "supplied_output_mismatch_count": 0,
+          "total_mismatch_count": 0
+        },
+        {
+          "abi_mismatch_count": 0,
+          "checked_output_elements": 34,
+          "correct": true,
+          "default_output_mismatch_count": 0,
+          "id": "correctness-modular-scaled-integers-n17",
+          "source_mismatch_count": 0,
+          "supplied_output_mismatch_count": 0,
+          "total_mismatch_count": 0
+        }
+      ],
+      "compute_capability": [
+        10,
+        0
+      ],
+      "compute_sanitizer": {
+        "returncode": 0,
+        "tool": "racecheck"
+      },
+      "device_name": "NVIDIA B200",
+      "performance_measured": false,
+      "relative_tolerance": 2e-06,
+      "total_checked_output_elements": 102
+    }
+  }
+}

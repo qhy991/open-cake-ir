@@ -1,0 +1,214 @@
+{
+  "artifacts": [
+    {
+      "bytes": 1668,
+      "path": "DATASET.md",
+      "sha256": "33b7505f108f782d6fb07ebf19a1ac85270fbc71c003aab8db0b77abb366c4ee"
+    },
+    {
+      "bytes": 1919,
+      "path": "IR_GAP_CLUSTERS.md",
+      "sha256": "4ea8a100f1c0eda39227117f5b858525a6b18d747dfd65b9d0f2ea9ca7f9e3c0"
+    },
+    {
+      "bytes": 400,
+      "path": "evidence/clustering/v1-model-final.json",
+      "sha256": "acbba048dc486562ac3a6c9d6a2f14457f30411cb07bee2254857ad935333b9b"
+    },
+    {
+      "bytes": 495,
+      "path": "evidence/clustering/v1-model-receipt.json",
+      "sha256": "2e05591c78b7e1183c0afe29a8322003dc7f99c43f64aa313478c8436ecd82fe"
+    },
+    {
+      "bytes": 504,
+      "path": "evidence/clustering/v2-model-final.json",
+      "sha256": "10341135a5ee5059ce16c0f4395abe5cf4526b1244532cafaec13b7af7e03abe"
+    },
+    {
+      "bytes": 608,
+      "path": "evidence/clustering/v2-model-receipt.json",
+      "sha256": "e2f0a55f5f2fb191ca330dc432e84069c836f0495e66d4fa6a0022ba6a44cf11"
+    },
+    {
+      "bytes": 116458,
+      "path": "evidence/lab-admission-manifest.json",
+      "sha256": "175062344dab10f9c4d81f33e4a1592e88756e3608a65f0cfda5caa4ecf03ee0"
+    },
+    {
+      "bytes": 8922,
+      "path": "evidence/lab-progress-ledger.jsonl",
+      "sha256": "75581cb18e480604f85a8a5e3ee325d5b477afe3e1c479c0c0d7330f8dee543e"
+    },
+    {
+      "bytes": 1438,
+      "path": "evidence/lab-progress-summary.json",
+      "sha256": "6037725f8690302417e86aef6a7ae3149495bc64ed44125f61d56358b4f91ea8"
+    },
+    {
+      "bytes": 1149,
+      "path": "evidence/lab/copy4-canary-v6-independent-verification.current.json",
+      "sha256": "a8cd1d0ee70250e3b4c7f60552de9aa95c6e4602c28bf73a533df7dd9c996a34"
+    },
+    {
+      "bytes": 3116,
+      "path": "evidence/lab/gpu-batch1-independent-verification.json",
+      "sha256": "c1318efdef53f633162c5856fe3a13976076a284e6b6eeb01130e651553aa996"
+    },
+    {
+      "bytes": 3019,
+      "path": "evidence/lab/gpu-batch2-independent-verification.json",
+      "sha256": "1aa722a745e621418527c3495c815ea0cc752adc2f5812ae9e922ce2592e691e"
+    },
+    {
+      "bytes": 3106,
+      "path": "evidence/lab/gpu-batch3-independent-verification.json",
+      "sha256": "0f06fb3f3766bd57aac832916bfd47a29c9818254de0fec73e8c4b06744199ff"
+    },
+    {
+      "bytes": 3092,
+      "path": "evidence/lab/gpu-batch4-independent-verification.json",
+      "sha256": "a353771f15b96e08ec6a27c59d0060971a93b69106ad107bdc1d60d57ac96e98"
+    },
+    {
+      "bytes": 3111,
+      "path": "evidence/lab/gpu-batch5-independent-verification.json",
+      "sha256": "6ecf4dbbe87cdfc77371cfca0ff931b99918145207ead5a9a5760c558c1ac458"
+    },
+    {
+      "bytes": 3593,
+      "path": "evidence/lab/gpu-batch6-elementwise-independent-verification.json",
+      "sha256": "7eb417db740b4209502aa4671fd7b189e4f99c3ab6a997b0770fdf88661494b3"
+    },
+    {
+      "bytes": 3630,
+      "path": "evidence/lab/gpu-batch7-correctness-independent-verification.json",
+      "sha256": "94c2d32d9d7a204ccf26f4c871cf18d5baecac0dfe98252a562571d29df1f14a"
+    },
+    {
+      "bytes": 3272,
+      "path": "evidence/lab/gpu-batch8-layout-independent-verification.json",
+      "sha256": "f68717f913e8e39140f45d4d3fccc6c2f65175b83e820b187ce12e6089de5115"
+    },
+    {
+      "bytes": 1035,
+      "path": "evidence/lab/gpu-bias-sum-v2-backend-compile-independent-verification.json",
+      "sha256": "f405ed8420d36c797408c3a752ab91e3b4c0ae5a655468c0dfec37d65b9fd8f5"
+    },
+    {
+      "bytes": 3542,
+      "path": "evidence/lab/gpu-final-r1-independent-verification.json",
+      "sha256": "87e0918939b4099e364c0a7e5c3c833eab583bffa00a640c5db0a752d97c3393"
+    },
+    {
+      "bytes": 5748,
+      "path": "evidence/lab/gpu-final-r2-independent-verification.json",
+      "sha256": "d43cd913bb437b3ad6b8fec27c3eb209dd3b6bf976d3412f2c84dd3f5855aa73"
+    },
+    {
+      "bytes": 2501,
+      "path": "evidence/lab/gpu-final-r3-pass1-independent-verification.json",
+      "sha256": "2a3292e942dc10520904be9258fc2b1550237556816dfd08a5f61b1fef9ba819"
+    },
+    {
+      "bytes": 3646,
+      "path": "evidence/lab/gpu-r3-backend-successors-independent-verification.json",
+      "sha256": "c4da6fb09322849b1ab1bcbaebca68ec0b84fcd9013906ece9e6706b4eee3fab"
+    },
+    {
+      "bytes": 6213,
+      "path": "evidence/lab/preserved-canary-v4-v6-state/runs/open-cake-aka-copy4-n1024-b200-canary-v6-bbc6a38de092/result.json",
+      "sha256": "1357c8ae430669a8f32c8bab1f27d3dfaf01af142cc62ebd3a5c12c2a9a6613c"
+    },
+    {
+      "bytes": 6198,
+      "path": "evidence/lab/preserved-sigmoid-runtime-v2/result.json",
+      "sha256": "700af4243787e62d329070d14623cced388fdc4499abb5eb8cbdb58d225b41d7"
+    },
+    {
+      "bytes": 1135,
+      "path": "evidence/lab/sigmoid-runtime-v2-independent-verification.current.json",
+      "sha256": "fcea3116d8e89f14bd21517d7a349151862f2ec888a6319f9859004425ce6cd8"
+    },
+    {
+      "bytes": 1780,
+      "path": "evidence/phase-a-corpus-manifest.json",
+      "sha256": "42f93f8c6cb7fa5aa87208ceb8cc527de02a7a6652670e38bf1278746ecd2c6a"
+    },
+    {
+      "bytes": 236110,
+      "path": "evidence/phase-a-ledger.jsonl",
+      "sha256": "a291ddc0a33926e09af332cb1b302725ec64bc31cb9f8800363430d68461e49d"
+    },
+    {
+      "bytes": 1253,
+      "path": "evidence/remote-environment-verification.current.json",
+      "sha256": "e3ca803c69418a35d6e4768f8643ddf3100471d57d2e0d58b5e95a0cac2d73ca"
+    },
+    {
+      "bytes": 826,
+      "path": "ir-gap-cluster-verification.json",
+      "sha256": "faf11ff2fc9d2895e87717ce0eb5652f132a425ac40e477032941090ce95827a"
+    },
+    {
+      "bytes": 203120,
+      "path": "ir-gap-clusters.json",
+      "sha256": "1b97b403b45c26b38d3ca1930b2be8d4bcbd244c280ab5f8cfd10d9782c38bd5"
+    },
+    {
+      "bytes": 2264,
+      "path": "l000214-authoring-rejection.json",
+      "sha256": "959765a31c8a8d97812925ee677aebda111344651366fd04205ea2683917d823"
+    },
+    {
+      "bytes": 756998,
+      "path": "lab-terminal-results.jsonl",
+      "sha256": "d69d5c3ccaf99c1911ea1ccd404869a35fd685415cbe7073e0d1a7790b63ad76"
+    },
+    {
+      "bytes": 5948673,
+      "path": "phase-a-review.jsonl",
+      "sha256": "8fb5f8f7c9e50a4b393de227e55d09b7be7115751a512000c59f66ca02b47305"
+    }
+  ],
+  "claim_boundary": {
+    "compiler_change_approved": false,
+    "ir_clusters": "proposal only",
+    "lab": "fixed-instance B200 correctness and sanitizer evidence",
+    "performance_measured": false,
+    "phase_a": "static fixed-instance review",
+    "release_performed": false,
+    "training_authorized": false
+  },
+  "counts": {
+    "accepted": 439,
+    "authoring_rejected": 1,
+    "dynamic_valid": 56,
+    "infrastructure_failure": 1,
+    "ir_gap_cases": 326,
+    "ir_gap_exact_candidate_names": 296,
+    "ir_gap_semantic_clusters": 202,
+    "lab_admission": 57,
+    "lab_unknown": 0,
+    "owner_insufficient_evidence": 21,
+    "owner_ir_gap": 326,
+    "owner_program_composition": 27,
+    "owner_schedule": 57,
+    "owner_workload_evidence": 8,
+    "phase_a_ledger": 676,
+    "qualified_records": 677,
+    "rejected": 237
+  },
+  "schema": "open-cake.aka-qualified-ir-review-export-manifest.v1",
+  "source": {
+    "aka_commit": "387aa7faf521a0b72c994ff15a7638cd7e6a8583",
+    "aka_origin": "git@github.com:qhy991/AKA.git",
+    "lab_admission_manifest_sha256": "175062344dab10f9c4d81f33e4a1592e88756e3608a65f0cfda5caa4ecf03ee0",
+    "lab_progress_ledger_sha256": "75581cb18e480604f85a8a5e3ee325d5b477afe3e1c479c0c0d7330f8dee543e",
+    "open_cake_frozen_commit": "7e212038404ecbb05ccd612381f4ba0328f680cb",
+    "open_cake_origin": "git@github.com:qhy991/open-cake-ir.git",
+    "phase_a_manifest": "corpus-manifest.json",
+    "phase_a_manifest_declared_sha256": "35851732044ae15f72725c384f2f4163d0d0f65b693c5055efb922f14bfeccf7"
+  },
+  "status": "verified_projection"
+}

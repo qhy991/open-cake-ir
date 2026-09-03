@@ -1,0 +1,26 @@
+{
+  "abi_failure": 0,
+  "case_id": "linear_algebra_and_convolution__gemm_matmul__analysis__l000007_b200_v1__directderived_sol_ultra_v2",
+  "compile_gate": "/home/qhy-sol/aka-ir-lab-20260903-TGkxNe/final-r1-successor-20260904-AvNx0d/compile-gate/receipt.json",
+  "complete_output_artifacts": 6,
+  "independently_checked_output_elements": 3108,
+  "input_mutation": 0,
+  "memcheck_errors": 0,
+  "oracle_mismatch": 0,
+  "outcome": "completed",
+  "performance_measured": false,
+  "preserved_predecessor": {
+    "automatic_reroute": false,
+    "automatic_retry": false,
+    "classification": "backend_compile_gate",
+    "counted_as_ir_failure": false,
+    "outcome": "infra_error",
+    "run_id": "open-cake-aka-bias-sum-b2-t3-oc259-b200-fixed-canary-v1-7a2c4247a4d2",
+    "validity": "unknown"
+  },
+  "racecheck_hazards": 0,
+  "run_id": "open-cake-aka-bias-sum-b2-t3-oc259-b200-fixed-canary-v2-backend-compile-bd927292ea05",
+  "schema": "open-cake.aka-ir-lab-gpu-independent-verification.v1",
+  "status": "accepted",
+  "validity": "valid"
+}

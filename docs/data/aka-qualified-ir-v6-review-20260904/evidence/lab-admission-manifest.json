@@ -1,0 +1,1900 @@
+{
+  "canary_case_id": "data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1__directderived_sol_ultra_v2",
+  "claim_boundary": "Admission candidates only: no generated-Cake GPU correctness, sanitizer, performance, training, release, or generalization claim.",
+  "counts": {
+    "correctness_only_priority": 24,
+    "optimization_priority": 33,
+    "phase_a_ledger": 676,
+    "static_candidates": 57
+  },
+  "entries": [
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/baseline/tile_copy.cu",
+          "source_ref": "bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/baseline/tile_copy.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/baseline/tile_copy.h",
+          "source_ref": "bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/baseline/tile_copy.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/harness/qualify.cu",
+          "source_ref": "bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/harness/qualify.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/performance_domain/performance_domain.json",
+          "source_ref": "bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/performance_domain/performance_domain.json"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/reference/tile_copy_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/reference/tile_copy_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/reference/tile_copy_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__copy_tile__generation__l000001_b200_v1/sources/reference/tile_copy_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__copy_tile__generation__l000001_b200_v1__parent_completion_v1",
+      "derived_parent_id": "copy_tile_row_repeat_contiguous_fp32_i64_v1",
+      "entry_point": "copy_tile_case_irregular",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "case_irregular"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1/sources/baseline/copy4_contiguous_fp32.cu",
+          "source_ref": "bundles/data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1/sources/baseline/copy4_contiguous_fp32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1/sources/baseline/copy4_contiguous_fp32.cuh",
+          "source_ref": "bundles/data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1/sources/baseline/copy4_contiguous_fp32.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1/sources/harness/complete_output_test.cu",
+          "source_ref": "bundles/data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1/sources/harness/complete_output_test.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1/sources/reference/copy4_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1/sources/reference/copy4_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": true,
+      "case_id": "data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "contiguous_copy4_fp32_i32_b256_v1",
+      "entry_point": "copy4_contiguous_fp32_n1024",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "n1024"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_vectorized__debug__l000001_b200_v1/sources/baseline/vectorized_copy.cu",
+          "source_ref": "bundles/data_movement_and_layout__copy_vectorized__debug__l000001_b200_v1/sources/baseline/vectorized_copy.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_vectorized__debug__l000001_b200_v1/sources/harness/harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__copy_vectorized__debug__l000001_b200_v1/sources/harness/harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__copy_vectorized__debug__l000001_b200_v1/sources/reference/vectorized_copy_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__copy_vectorized__debug__l000001_b200_v1/sources/reference/vectorized_copy_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__copy_vectorized__debug__l000001_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "vectorized_copy_fp32x4_aligned_block512_v1",
+      "entry_point": "vectorized_copy_fp32x4_n1048576",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "copy-n1048576"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/baseline/selu_baseline.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/baseline/selu_baseline.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/baseline/selu_baseline.h",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/baseline/selu_baseline.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/harness/performance_domain.json",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/harness/performance_domain.json"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/harness/run_stage.sh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/harness/run_stage.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/reference/selu_reference.cc",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/reference/selu_reference.cc"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/reference/selu_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1/sources/reference/selu_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000022_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "selu_contiguous_fp32_int32_block256_v1",
+      "entry_point": "selu_contiguous_fp32_n11",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness_boundary_11"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000031_b200_v1/sources/baseline/channel_shuffle_nchw.cuh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000031_b200_v1/sources/baseline/channel_shuffle_nchw.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000031_b200_v1/sources/harness/channel_shuffle_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000031_b200_v1/sources/harness/channel_shuffle_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000031_b200_v1/sources/reference/channel_shuffle_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000031_b200_v1/sources/reference/channel_shuffle_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000031_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "channel_shuffle_nchw_contiguous_fp32_i32_block256_v1",
+      "entry_point": "channel_shuffle_n1_c6_p8_g2",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness_small_n1_c6_p8_g2"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000034_b200_v1/sources/baseline/softsign_gradient.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000034_b200_v1/sources/baseline/softsign_gradient.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000034_b200_v1/sources/baseline/softsign_gradient.cuh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000034_b200_v1/sources/baseline/softsign_gradient.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000034_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000034_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000034_b200_v1/sources/harness/run_stage.sh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000034_b200_v1/sources/harness/run_stage.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000034_b200_v1/sources/reference/softsign_gradient_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000034_b200_v1/sources/reference/softsign_gradient_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000034_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "softsign_gradient_contiguous_fp32_i32_block256_v1",
+      "entry_point": "softsign_gradient_contiguous_fp32_i32_n257",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "block-tail"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000078_b200_v1/sources/baseline/half_to_float_baseline.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000078_b200_v1/sources/baseline/half_to_float_baseline.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000078_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000078_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000078_b200_v1/sources/reference/half_to_float_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000078_b200_v1/sources/reference/half_to_float_reference.cpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000078_b200_v1__directderived_sol_ultra_v2__parent_completion",
+      "derived_parent_id": "half_to_float_contiguous_fp16_fp32_i32_block256_v1",
+      "entry_point": "half_to_float_n63490",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "all-supported-values-n63490"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/baseline/atan_gradient_baseline.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/baseline/atan_gradient_baseline.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/baseline/atan_gradient_baseline.h",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/baseline/atan_gradient_baseline.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/harness/atan_gradient_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/harness/atan_gradient_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/harness/run_stage.sh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/harness/run_stage.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/reference/atan_gradient_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/reference/atan_gradient_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/reference/atan_gradient_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1/sources/reference/atan_gradient_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000080_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "atan_gradient_contiguous_fp32_i32_v1",
+      "entry_point": "atan_gradient_known_values_n9",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "known_values_n9"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000095_b200_v1/sources/baseline/rowwise_rhs_add_fp32.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000095_b200_v1/sources/baseline/rowwise_rhs_add_fp32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000095_b200_v1/sources/harness/complete_output_test.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000095_b200_v1/sources/harness/complete_output_test.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000095_b200_v1/sources/reference/rowwise_rhs_add_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000095_b200_v1/sources/reference/rowwise_rhs_add_reference.cpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000095_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "rowwise_rhs_add_contiguous_fp32_i32_v1",
+      "entry_point": "rowwise_rhs_add_r1_c37",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness-r1-c37"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000112_b200_v1/sources/baseline/dual_output_tile_copy.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000112_b200_v1/sources/baseline/dual_output_tile_copy.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000112_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000112_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000112_b200_v1/sources/reference/dual_output_tile_copy_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000112_b200_v1/sources/reference/dual_output_tile_copy_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000112_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "dual_output_tile_copy_contiguous_fp32_int32_b256_i4_v1",
+      "entry_point": "dual_output_tile_copy_fp32_n1",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness-n1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000114_b200_v1/sources/baseline/nhwc_channel_affine_mix.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000114_b200_v1/sources/baseline/nhwc_channel_affine_mix.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000114_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000114_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000114_b200_v1/sources/reference/nhwc_channel_affine_mix_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000114_b200_v1/sources/reference/nhwc_channel_affine_mix_reference.cpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000114_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "nhwc_channel_affine_mix_f32_i32_block256_v1",
+      "entry_point": "nhwc_channel_affine_mix_f32_kernel",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness_p1_c1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/baseline/global_average_pool_backward.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/baseline/global_average_pool_backward.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/baseline/global_average_pool_backward.h",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/baseline/global_average_pool_backward.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/harness/main.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/harness/main.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/harness/run_stage.py",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/harness/run_stage.py"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/reference/global_average_pool_backward_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/reference/global_average_pool_backward_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/reference/global_average_pool_backward_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1/sources/reference/global_average_pool_backward_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000142_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "global_average_pool_backward_nchw_f32_i32_contiguous_block256_v1",
+      "entry_point": "global_average_pool_backward_nchw_f32_n1_c1_hw1",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness-n1-c1-hw1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1/sources/baseline/scale2_axpy_scale.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1/sources/baseline/scale2_axpy_scale.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1/sources/baseline/scale2_axpy_scale.cuh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1/sources/baseline/scale2_axpy_scale.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1/sources/harness/main.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1/sources/harness/main.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1/sources/reference/scale2_axpy_scale_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1/sources/reference/scale2_axpy_scale_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1/sources/reference/scale2_axpy_scale_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1/sources/reference/scale2_axpy_scale_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000148_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "scale2_axpy_scale_contiguous_fp32_int32_block256_v1",
+      "entry_point": "scale2_axpy_scale_fp32_n257",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness_block_tail_n257"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000154_b200_v1/sources/baseline/reciprocal_gradient.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000154_b200_v1/sources/baseline/reciprocal_gradient.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000154_b200_v1/sources/harness/main.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000154_b200_v1/sources/harness/main.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000154_b200_v1/sources/reference/reciprocal_gradient_reference.cc",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000154_b200_v1/sources/reference/reciprocal_gradient_reference.cc"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000154_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "reciprocal_gradient_contiguous_fp32_i32_block256_v1",
+      "entry_point": "reciprocal_gradient_n1024",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "n1024"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/baseline/unrolled_contiguous_identity_f32.cuh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/baseline/unrolled_contiguous_identity_f32.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/harness/build_binary.sh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/harness/build_binary.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/harness/compile.sh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/harness/compile.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/harness/main.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/harness/main.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/harness/run_correctness.sh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/harness/run_correctness.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/harness/run_sanitize.sh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/harness/run_sanitize.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/reference/unrolled_contiguous_identity_f32_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1/sources/reference/unrolled_contiguous_identity_f32_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000163_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "unrolled_contiguous_identity_f32_i32_b128x4_v1",
+      "entry_point": "unrolled_contiguous_identity_f32_n1",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "n1_signed_zero"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000179_b200_v1/sources/baseline/scale_f32.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000179_b200_v1/sources/baseline/scale_f32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000179_b200_v1/sources/harness/scale_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000179_b200_v1/sources/harness/scale_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000179_b200_v1/sources/performance_domain/performance_domain.json",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000179_b200_v1/sources/performance_domain/performance_domain.json"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000179_b200_v1/sources/reference/scale_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000179_b200_v1/sources/reference/scale_reference.cpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000179_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "scale_out_of_place_contiguous_fp32_i32_block256_v1",
+      "entry_point": "scale_f32_i32_multi_block_tail",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "multi_block_tail"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000183_b200_v1/sources/baseline/token_position_embedding_add_f32.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000183_b200_v1/sources/baseline/token_position_embedding_add_f32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000183_b200_v1/sources/baseline/token_position_embedding_add_f32.cuh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000183_b200_v1/sources/baseline/token_position_embedding_add_f32.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000183_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000183_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000183_b200_v1/sources/reference/token_position_embedding_add_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000183_b200_v1/sources/reference/token_position_embedding_add_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000183_b200_v1/sources/reference/token_position_embedding_add_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000183_b200_v1/sources/reference/token_position_embedding_add_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000183_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "token_position_embedding_add_contiguous_f32_i32_block256_v1",
+      "entry_point": "token_position_embedding_add_f32",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "multirow"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000196_b200_v1/sources/baseline/baseline.cuh",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000196_b200_v1/sources/baseline/baseline.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000196_b200_v1/sources/harness/harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000196_b200_v1/sources/harness/harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000196_b200_v1/sources/reference/reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000196_b200_v1/sources/reference/reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000196_b200_v1__rsqrt_gradient_parent_completion_v1",
+      "derived_parent_id": "rsqrt_gradient_contiguous_fp32_int32_block512_v1",
+      "entry_point": "rsqrt_gradient_edge_n1",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "edge_n1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000203_b200_v1/sources/baseline/sigmoid_fp32.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000203_b200_v1/sources/baseline/sigmoid_fp32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000203_b200_v1/sources/harness/qualification.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000203_b200_v1/sources/harness/qualification.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000203_b200_v1/sources/reference/sigmoid_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000203_b200_v1/sources/reference/sigmoid_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000203_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "elementwise_sigmoid_contiguous_fp32_i32_block256_v1",
+      "entry_point": "sigmoid_fp32_n17",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness-edge-values-n17"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/baseline/gelu_backward_tanh_fp32.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/baseline/gelu_backward_tanh_fp32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/baseline/gelu_backward_tanh_fp32.h",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/baseline/gelu_backward_tanh_fp32.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/harness/complete_output_test.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/harness/complete_output_test.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/harness/judge.py",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/harness/judge.py"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/performance_domain/performance_domain.json",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/performance_domain/performance_domain.json"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/reference/gelu_backward_tanh_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1/sources/reference/gelu_backward_tanh_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000207_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "gelu_backward_tanh_fp32_i32_contiguous_block256_v1",
+      "entry_point": "gelu_backward_tanh_fp32_ir",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "multiblock-4099"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000208_b200_v1/sources/baseline/gelu_tanh_backward_f32_vec4.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000208_b200_v1/sources/baseline/gelu_tanh_backward_f32_vec4.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000208_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000208_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000208_b200_v1/sources/performance_domain/performance_domain.json",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000208_b200_v1/sources/performance_domain/performance_domain.json"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000208_b200_v1/sources/reference/gelu_tanh_backward_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000208_b200_v1/sources/reference/gelu_tanh_backward_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000208_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "gelu_tanh_backward_f32_vec4_direct_v1",
+      "entry_point": "gelu_tanh_backward_f32_vec4_n4100",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correct-cross-grid-n4100"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000214_b200_v1/sources/baseline/apply_kernel_copy.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000214_b200_v1/sources/baseline/apply_kernel_copy.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000214_b200_v1/sources/harness/complete_output_test.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000214_b200_v1/sources/harness/complete_output_test.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__analysis__l000214_b200_v1/sources/reference/contiguous_copy_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__analysis__l000214_b200_v1/sources/reference/contiguous_copy_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__analysis__l000214_b200_v1__directderived_sol_ultra_v2__parent_completion_v1",
+      "derived_parent_id": "contiguous_copy_fp32_i32_block256_v1",
+      "entry_point": "contiguous_copy_fp32_i32_n16777216",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "n_16777216"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__optimization_neutral__l000001_b200_v1/sources/baseline/store_direct_blocked.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__optimization_neutral__l000001_b200_v1/sources/baseline/store_direct_blocked.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__optimization_neutral__l000001_b200_v1/sources/harness/main.cu",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__optimization_neutral__l000001_b200_v1/sources/harness/main.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__optimization_neutral__l000001_b200_v1/sources/harness/run_stage.py",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__optimization_neutral__l000001_b200_v1/sources/harness/run_stage.py"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__optimization_neutral__l000001_b200_v1/sources/reference/store_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__optimization_neutral__l000001_b200_v1/sources/reference/store_reference.hpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__gather_scatter__optimization_neutral__l000001_b200_v1/sources/workloads/workloads.json",
+          "source_ref": "bundles/data_movement_and_layout__gather_scatter__optimization_neutral__l000001_b200_v1/sources/workloads/workloads.json"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__gather_scatter__optimization_neutral__l000001_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "guarded_direct_blocked_store_i32_b256_i4_v1",
+      "entry_point": "guarded_direct_blocked_store_i32_n1024",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correct-aligned-n1024"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/baseline/kernel.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/baseline/kernel.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/harness/evaluator.py",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/harness/evaluator.py"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/harness/workloads.json",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/harness/workloads.json"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/reference/complex_pair_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/reference/complex_pair_reference.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/workloads/workloads.json",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__analysis__l000007_b200_v1/sources/workloads/workloads.json"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__layout_transform__analysis__l000007_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "complex_pair_ri_to_xy_contiguous_f32_i32_v1",
+      "entry_point": "complex_pair_ri_to_xy_f32_n1",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness-n1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/baseline/gelu_tanh_f32x4.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/baseline/gelu_tanh_f32x4.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/baseline/gelu_tanh_f32x4.h",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/baseline/gelu_tanh_f32x4.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/harness/gelu_tanh_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/harness/gelu_tanh_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/harness/run_stage.py",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/harness/run_stage.py"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/reference/gelu_tanh_reference.cc",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/reference/gelu_tanh_reference.cc"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/reference/gelu_tanh_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1/sources/reference/gelu_tanh_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__layout_transform__optimization_positive__l000005_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "gelu_tanh_f32x4_contiguous_i32_v1",
+      "entry_point": "gelu_tanh_f32x4_n4",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness-n4"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000024_b200_v1/sources/baseline/strided_linear_copy.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000024_b200_v1/sources/baseline/strided_linear_copy.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000024_b200_v1/sources/baseline/strided_linear_copy.cuh",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000024_b200_v1/sources/baseline/strided_linear_copy.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000024_b200_v1/sources/harness/parent_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000024_b200_v1/sources/harness/parent_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000024_b200_v1/sources/reference/strided_linear_copy_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000024_b200_v1/sources/reference/strided_linear_copy_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__layout_transform__optimization_positive__l000024_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "strided_linear_order_copy_fp32_int32_dynamic_rank1to4_block128x8_v1",
+      "entry_point": "strided_linear_copy_n30",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness-mixed-rank-contiguous-n30"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000026_b200_v1/sources/baseline/strided_add_baseline.cuh",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000026_b200_v1/sources/baseline/strided_add_baseline.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000026_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000026_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000026_b200_v1/sources/reference/strided_add_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000026_b200_v1/sources/reference/strided_add_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__layout_transform__optimization_positive__l000026_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "strided_add_rank3_fp32_u32_positive_strides_block256_v1",
+      "entry_point": "strided_add_contiguous_30",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correct-contiguous-30"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000027_b200_v1/sources/baseline/add_contiguous_fp32.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000027_b200_v1/sources/baseline/add_contiguous_fp32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000027_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000027_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000027_b200_v1/sources/reference/add_contiguous_fp32_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000027_b200_v1/sources/reference/add_contiguous_fp32_reference.cpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__layout_transform__optimization_positive__l000027_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "directderived_contiguous_fp32_add_i32_128x4_v1",
+      "entry_point": "contiguous_add_fp32_n1",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correct-n1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000031_b200_v1/sources/baseline/elementwise_pow.cuh",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000031_b200_v1/sources/baseline/elementwise_pow.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000031_b200_v1/sources/harness/elementwise_pow_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000031_b200_v1/sources/harness/elementwise_pow_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000031_b200_v1/sources/reference/elementwise_pow_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000031_b200_v1/sources/reference/elementwise_pow_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__layout_transform__optimization_positive__l000031_b200_v1__elementwise_scalar_pow_parent_a1",
+      "derived_parent_id": "elementwise_scalar_pow_contiguous_f32_i32_v1",
+      "entry_point": "elementwise_scalar_pow_contiguous_f32_n4097_exp3",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness-signed-n4097-exp3"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/baseline/cube_gradient.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/baseline/cube_gradient.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/baseline/cube_gradient.h",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/baseline/cube_gradient.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/harness/main.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/harness/main.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/harness/run_stage.py",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/harness/run_stage.py"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/reference/cube_gradient_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/reference/cube_gradient_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/reference/cube_gradient_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000002_b200_v1/sources/reference/cube_gradient_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__memory_cache__analysis__l000002_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "cube_gradient_f32_i32_contiguous_block256_v1",
+      "entry_point": "cube_gradient_f32_n1",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness-n1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000004_b200_v1/sources/baseline/softsign_baseline.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000004_b200_v1/sources/baseline/softsign_baseline.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000004_b200_v1/sources/baseline/softsign_baseline.h",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000004_b200_v1/sources/baseline/softsign_baseline.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000004_b200_v1/sources/harness/softsign_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000004_b200_v1/sources/harness/softsign_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000004_b200_v1/sources/reference/softsign_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000004_b200_v1/sources/reference/softsign_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000004_b200_v1/sources/reference/softsign_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000004_b200_v1/sources/reference/softsign_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__memory_cache__analysis__l000004_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "softsign_contiguous_fp32_int32_block256_v1",
+      "entry_point": "softsign_fixed_n1",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "softsign-correctness-n1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000009_b200_v1/sources/baseline/same_shape_binary_add.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000009_b200_v1/sources/baseline/same_shape_binary_add.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000009_b200_v1/sources/baseline/same_shape_binary_add.cuh",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000009_b200_v1/sources/baseline/same_shape_binary_add.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000009_b200_v1/sources/harness/main.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000009_b200_v1/sources/harness/main.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000009_b200_v1/sources/reference/same_shape_binary_add_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000009_b200_v1/sources/reference/same_shape_binary_add_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000009_b200_v1/sources/reference/same_shape_binary_add_reference.hpp",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000009_b200_v1/sources/reference/same_shape_binary_add_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__memory_cache__analysis__l000009_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "same_shape_binary_add_contiguous_fp32_int32_block512_v1",
+      "entry_point": "same_shape_binary_add_fp32",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "n1024"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/baseline/kernel.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/baseline/kernel.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/baseline/operator.h",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/baseline/operator.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/harness/harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/harness/harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/harness/run_stage.py",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/harness/run_stage.py"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/reference/reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/reference/reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/reference/reference.h",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000019_b200_v1/sources/reference/reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__memory_cache__analysis__l000019_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "global_average_pool_backward_nhwc_fp32_i32_contiguous_block256_v1",
+      "entry_point": "global_average_pool_backward_nhwc_n1_c7_s1",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "n1-c7-s1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000026_b200_v1/sources/baseline/softplus_gradient_baseline.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000026_b200_v1/sources/baseline/softplus_gradient_baseline.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000026_b200_v1/sources/baseline/softplus_gradient_baseline.h",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000026_b200_v1/sources/baseline/softplus_gradient_baseline.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000026_b200_v1/sources/harness/softplus_gradient_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000026_b200_v1/sources/harness/softplus_gradient_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000026_b200_v1/sources/reference/softplus_gradient_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000026_b200_v1/sources/reference/softplus_gradient_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000026_b200_v1/sources/reference/softplus_gradient_reference.h",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000026_b200_v1/sources/reference/softplus_gradient_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__memory_cache__analysis__l000026_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "softplus_gradient_fp32_contiguous_i32_gridstride_v1",
+      "entry_point": "softplus_gradient_fixed_n524417",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correct_grid_stride_n524417"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000018_b200_v1/sources/baseline/tile_copy_baseline.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000018_b200_v1/sources/baseline/tile_copy_baseline.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000018_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000018_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__layout_transform__optimization_positive__l000018_b200_v1/sources/reference/tile_copy_reference.cpp",
+          "source_ref": "bundles/data_movement_and_layout__layout_transform__optimization_positive__l000018_b200_v1/sources/reference/tile_copy_reference.cpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "data_movement_and_layout__row_replication_tile_copy__l000018_b200_v1__parent_completion_v1",
+      "derived_parent_id": "tile_copy_rows_contiguous_fp32_i32dims_u64index_block256_v1",
+      "entry_point": "tile_copy_rows_contiguous_fp32",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correct_multi_block_irregular"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000013_b200_v1/sources/baseline/vector_add.cu",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000013_b200_v1/sources/baseline/vector_add.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000013_b200_v1/sources/baseline/vector_add.hpp",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000013_b200_v1/sources/baseline/vector_add.hpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000013_b200_v1/sources/harness/harness.cu",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000013_b200_v1/sources/harness/harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000013_b200_v1/sources/reference/vector_add_reference.hpp",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000013_b200_v1/sources/reference/vector_add_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "elementwise_and_activation__elementwise__analysis__l000013_b200_v1__standalone_vector_add_parent_v1",
+      "derived_parent_id": "standalone_vector_add_contiguous_fp32_i32_b256_v1",
+      "entry_point": "vector_add_fixed_n1",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correct-n1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/baseline/kernel.cu",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/baseline/kernel.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/baseline/operator.cuh",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/baseline/operator.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/harness/finish_permissions.sh",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/harness/finish_permissions.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/harness/harness.cu",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/harness/harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/harness/run_stage.sh",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/harness/run_stage.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/reference/reference.cpp",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/reference/reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/reference/reference.h",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000017_b200_v1/sources/reference/reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "elementwise_and_activation__elementwise__analysis__l000017_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "dd_tiled_identity_f32_i32_t256_e4_v1",
+      "entry_point": "tiled_identity_f32_n1",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correct-n1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000020_b200_v1/sources/baseline/asin_gradient_baseline.cu",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000020_b200_v1/sources/baseline/asin_gradient_baseline.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000020_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000020_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__analysis__l000020_b200_v1/sources/reference/asin_gradient_reference.hpp",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__analysis__l000020_b200_v1/sources/reference/asin_gradient_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "elementwise_and_activation__elementwise__analysis__l000020_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "asin_gradient_contiguous_fp32_i32_block256_v1",
+      "entry_point": "asin_gradient_fp32_n1",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness_n1"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__optimization_neutral__l000002_b200_v1/sources/baseline/tanh_gelu_baseline.cu",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__optimization_neutral__l000002_b200_v1/sources/baseline/tanh_gelu_baseline.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__optimization_neutral__l000002_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__optimization_neutral__l000002_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__optimization_neutral__l000002_b200_v1/sources/reference/tanh_gelu_reference.cpp",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__optimization_neutral__l000002_b200_v1/sources/reference/tanh_gelu_reference.cpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "elementwise_and_activation__elementwise__optimization_neutral__l000002_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "tanh_gelu_f32_contiguous_i32_scalar_b256_v1",
+      "entry_point": "tanh_gelu_f32_contiguous_n23_scalar_b256",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness-edge-n23"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__optimization_neutral__l000004_b200_v1/sources/baseline/relu_forward_f32.cu",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__optimization_neutral__l000004_b200_v1/sources/baseline/relu_forward_f32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__optimization_neutral__l000004_b200_v1/sources/baseline/relu_forward_f32.h",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__optimization_neutral__l000004_b200_v1/sources/baseline/relu_forward_f32.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__optimization_neutral__l000004_b200_v1/sources/harness/main.cu",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__optimization_neutral__l000004_b200_v1/sources/harness/main.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__optimization_neutral__l000004_b200_v1/sources/reference/relu_forward_reference.cpp",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__optimization_neutral__l000004_b200_v1/sources/reference/relu_forward_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/elementwise_and_activation__elementwise__optimization_neutral__l000004_b200_v1/sources/reference/relu_forward_reference.h",
+          "source_ref": "bundles/elementwise_and_activation__elementwise__optimization_neutral__l000004_b200_v1/sources/reference/relu_forward_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "elementwise_and_activation__elementwise__optimization_neutral__l000004_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "relu_forward_grid_stride_contiguous_f32_i32_v1",
+      "entry_point": "relu_forward_f32_n17",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness_edge_n17"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__convolution__analysis__l000003_b200_v1/sources/baseline/vol2im3d_baseline.cu",
+          "source_ref": "bundles/linear_algebra_and_convolution__convolution__analysis__l000003_b200_v1/sources/baseline/vol2im3d_baseline.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__convolution__analysis__l000003_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/linear_algebra_and_convolution__convolution__analysis__l000003_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__convolution__analysis__l000003_b200_v1/sources/reference/vol2im3d_reference.cpp",
+          "source_ref": "bundles/linear_algebra_and_convolution__convolution__analysis__l000003_b200_v1/sources/reference/vol2im3d_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__convolution__analysis__l000003_b200_v1/sources/workloads/workloads.json",
+          "source_ref": "bundles/linear_algebra_and_convolution__convolution__analysis__l000003_b200_v1/sources/workloads/workloads.json"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "linear_algebra_and_convolution__convolution__analysis__l000003_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "direct_derived_vol2im3d_overlap_add_contiguous_fp32_i32_b256_v1",
+      "entry_point": "vol2im3d_layout_identity_copy",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "layout_identity"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000007_b200_v1/sources/baseline/baseline.cuh",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000007_b200_v1/sources/baseline/baseline.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000007_b200_v1/sources/harness/harness.cu",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000007_b200_v1/sources/harness/harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000007_b200_v1/sources/reference/reference.hpp",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000007_b200_v1/sources/reference/reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "linear_algebra_and_convolution__gemm_matmul__analysis__l000007_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "bt_oc_bias_sum_contiguous_fp32_int32_block256_v1",
+      "entry_point": "bias_sum_b2_t3_oc259",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "channel_tail"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000010_b200_v1/sources/baseline/fused_params_baseline.cu",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000010_b200_v1/sources/baseline/fused_params_baseline.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000010_b200_v1/sources/harness/fused_params_harness.cu",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000010_b200_v1/sources/harness/fused_params_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000010_b200_v1/sources/reference/fused_params_reference.hpp",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000010_b200_v1/sources/reference/fused_params_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "linear_algebra_and_convolution__gemm_matmul__analysis__l000010_b200_v1__parent_completion_v1",
+      "derived_parent_id": "nhwc_bn_fused_params_postprocess_contiguous_fp32_i32_block256_v1",
+      "entry_point": "fused_params_block_tail_disjoint",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "block_tail_disjoint"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/baseline/bias_grad_accumulate_bf16.cu",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/baseline/bias_grad_accumulate_bf16.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/baseline/bias_grad_accumulate_bf16.cuh",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/baseline/bias_grad_accumulate_bf16.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/harness/main.cu",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/harness/main.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/harness/run_stage.sh",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/harness/run_stage.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/harness/write_stage_result.py",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/harness/write_stage_result.py"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/reference/bias_grad_reference.cpp",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/reference/bias_grad_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/reference/bias_grad_reference.hpp",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1/sources/reference/bias_grad_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "linear_algebra_and_convolution__gemm_matmul__analysis__l000012_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "bias_grad_accumulate_bf16_int32_contiguous_block256_v1",
+      "entry_point": "bias_grad_accumulate_bf16_b1_t1_oc8",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness_minimal_b1_t1_oc8"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/baseline/fused_norm_coefficients.cu",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/baseline/fused_norm_coefficients.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/baseline/fused_norm_coefficients.cuh",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/baseline/fused_norm_coefficients.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/harness/main.cu",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/harness/main.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/harness/performance_domain.json",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/harness/performance_domain.json"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/harness/run_stage.sh",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/harness/run_stage.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/reference/fused_norm_coefficients_reference.cpp",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/reference/fused_norm_coefficients_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/reference/fused_norm_coefficients_reference.hpp",
+          "source_ref": "bundles/linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1/sources/reference/fused_norm_coefficients_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "linear_algebra_and_convolution__gemm_matmul__analysis__l000016_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "instance_norm_backward_coefficients_contiguous_fp32_i32_block256_v1",
+      "entry_point": "instance_norm_coefficients_block_tail_257",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "block_tail_257"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/normalization__normalization_layernorm__analysis__l000005_b200_v1/sources/baseline/variance_affine_triplet.cuh",
+          "source_ref": "bundles/normalization__normalization_layernorm__analysis__l000005_b200_v1/sources/baseline/variance_affine_triplet.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/normalization__normalization_layernorm__analysis__l000005_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/normalization__normalization_layernorm__analysis__l000005_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/normalization__normalization_layernorm__analysis__l000005_b200_v1/sources/reference/variance_affine_triplet_reference.hpp",
+          "source_ref": "bundles/normalization__normalization_layernorm__analysis__l000005_b200_v1/sources/reference/variance_affine_triplet_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "normalization__normalization_layernorm__analysis__l000005_b200_v1__variance_affine_triplet_parent_v1",
+      "derived_parent_id": "variance_affine_triplet_contiguous_f32_i32_block256_v1",
+      "entry_point": "variance_affine_triplet_n257_eps_0p5",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "block_tail_n257"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/baseline/prelu_nchw_fp32.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/baseline/prelu_nchw_fp32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/baseline/prelu_nchw_fp32.cuh",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/baseline/prelu_nchw_fp32.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/harness/build.sh",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/harness/build.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/harness/prelu_complete_output_harness.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/harness/prelu_complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/harness/run_compile.sh",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/harness/run_compile.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/harness/run_correctness.sh",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/harness/run_correctness.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/harness/run_sanitize.sh",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/harness/run_sanitize.sh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/reference/prelu_nchw_reference.cpp",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/reference/prelu_nchw_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/reference/prelu_nchw_reference.hpp",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000014_b200_v1/sources/reference/prelu_nchw_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "reduction_and_selection__reduction__analysis__l000014_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "prelu_nchw_per_channel_contiguous_fp32_i32_block256_v1",
+      "entry_point": "prelu_nchw_n1_c3_d7",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "n1_c3_d7"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000028_b200_v1/sources/baseline/gamma_beta_backward_fp32_i32.cuh",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000028_b200_v1/sources/baseline/gamma_beta_backward_fp32_i32.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000028_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000028_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000028_b200_v1/sources/reference/gamma_beta_backward_reference.hpp",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000028_b200_v1/sources/reference/gamma_beta_backward_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "reduction_and_selection__reduction__analysis__l000028_b200_v1__gamma_beta_backward_contiguous_fp32_i32_tile32x16_v1",
+      "derived_parent_id": "gamma_beta_backward_contiguous_fp32_i32_tile32x16_v1",
+      "entry_point": "gamma_beta_backward_n129_c37_g37",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "n129-c37-g37"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000051_b200_v1/sources/baseline/reduce_pair_fp32.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000051_b200_v1/sources/baseline/reduce_pair_fp32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000051_b200_v1/sources/baseline/reduce_pair_fp32.h",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000051_b200_v1/sources/baseline/reduce_pair_fp32.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000051_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000051_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000051_b200_v1/sources/reference/reduce_pair_reference.cpp",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000051_b200_v1/sources/reference/reduce_pair_reference.cpp"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000051_b200_v1/sources/reference/reduce_pair_reference.h",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000051_b200_v1/sources/reference/reduce_pair_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "reduction_and_selection__reduction__analysis__l000051_b200_v1__paired_partial_grad_row_reduce_parent_v1",
+      "derived_parent_id": "paired_partial_grad_row_reduce_contiguous_fp32_i32i64_block32x8_v1",
+      "entry_point": "paired_partial_grad_row_reduce_p4096_n1024",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "p4096_n1024"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000057_b200_v1/sources/baseline/gelu_tanh_vec4_fp32.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000057_b200_v1/sources/baseline/gelu_tanh_vec4_fp32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000057_b200_v1/sources/baseline/gelu_tanh_vec4_fp32.cuh",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000057_b200_v1/sources/baseline/gelu_tanh_vec4_fp32.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000057_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000057_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000057_b200_v1/sources/harness/run_stage.py",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000057_b200_v1/sources/harness/run_stage.py"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000057_b200_v1/sources/reference/gelu_tanh_reference.hpp",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000057_b200_v1/sources/reference/gelu_tanh_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "reduction_and_selection__reduction__analysis__l000057_b200_v1__gelu_tanh_vec4_parent_v1",
+      "derived_parent_id": "gelu_tanh_vec4_contiguous_fp32_int32_block256_v1",
+      "entry_point": "gelu_tanh_edge_n4",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "edge-n4"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/baseline/gelu_tanh_f32x4.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/baseline/gelu_tanh_f32x4.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/baseline/gelu_tanh_f32x4.h",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/baseline/gelu_tanh_f32x4.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/performance_domain/performance_domain.json",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/performance_domain/performance_domain.json"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/reference/gelu_tanh_reference.cc",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/reference/gelu_tanh_reference.cc"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/reference/gelu_tanh_reference.h",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000058_b200_v1/sources/reference/gelu_tanh_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "reduction_and_selection__reduction__analysis__l000058_b200_v1__directderived_sol_ultra_v2__parent_completion_attempt0001",
+      "derived_parent_id": "gelu_tanh_f32x4_contiguous_fp32_int32_block256_v1",
+      "entry_point": "gelu_tanh_f32x4_n4",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness_n4"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000088_b200_v1/sources/baseline/addr_outer_fp32.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000088_b200_v1/sources/baseline/addr_outer_fp32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000088_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000088_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__analysis__l000088_b200_v1/sources/reference/addr_outer_reference.cpp",
+          "source_ref": "bundles/reduction_and_selection__reduction__analysis__l000088_b200_v1/sources/reference/addr_outer_reference.cpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "reduction_and_selection__reduction__analysis__l000088_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "addr_outer_contiguous_fp32_int32_block256_v1",
+      "entry_point": "addr_outer_beta_zero_3x5",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "beta_zero_nonfinite_self_3x5"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__optimization_neutral__l000002_b200_v1/sources/baseline/warp_sum32_fp32.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__optimization_neutral__l000002_b200_v1/sources/baseline/warp_sum32_fp32.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__optimization_neutral__l000002_b200_v1/sources/baseline/warp_sum32_fp32.h",
+          "source_ref": "bundles/reduction_and_selection__reduction__optimization_neutral__l000002_b200_v1/sources/baseline/warp_sum32_fp32.h"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__optimization_neutral__l000002_b200_v1/sources/harness/complete_output.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__optimization_neutral__l000002_b200_v1/sources/harness/complete_output.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__optimization_neutral__l000002_b200_v1/sources/reference/warp_sum32_reference.h",
+          "source_ref": "bundles/reduction_and_selection__reduction__optimization_neutral__l000002_b200_v1/sources/reference/warp_sum32_reference.h"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "reduction_and_selection__reduction__optimization_neutral__l000002_b200_v1__directderived_sol_ultra_v2__parent_completion_v1",
+      "derived_parent_id": "warp_sum32_contiguous_fp32_int32_block32_v1",
+      "entry_point": "warp_sum32_fp32_ir",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness-257-warps-deterministic"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__optimization_neutral__l000003_b200_v1/sources/baseline/thread_reduce_rows8_sum.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__optimization_neutral__l000003_b200_v1/sources/baseline/thread_reduce_rows8_sum.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__optimization_neutral__l000003_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__optimization_neutral__l000003_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__optimization_neutral__l000003_b200_v1/sources/reference/thread_reduce_rows8_sum_reference.hpp",
+          "source_ref": "bundles/reduction_and_selection__reduction__optimization_neutral__l000003_b200_v1/sources/reference/thread_reduce_rows8_sum_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "reduction_and_selection__reduction__optimization_neutral__l000003_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "thread_reduce_rows8_sum_fp32_i32_block256_v1",
+      "entry_point": "thread_reduce_rows8_sum_rows1025",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "four_blocks_plus_tail"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__optimization_neutral__l000006_b200_v1/sources/baseline/identity_copy.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__optimization_neutral__l000006_b200_v1/sources/baseline/identity_copy.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__optimization_neutral__l000006_b200_v1/sources/harness/identity_copy_harness.cu",
+          "source_ref": "bundles/reduction_and_selection__reduction__optimization_neutral__l000006_b200_v1/sources/harness/identity_copy_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__reduction__optimization_neutral__l000006_b200_v1/sources/reference/identity_copy_reference.hpp",
+          "source_ref": "bundles/reduction_and_selection__reduction__optimization_neutral__l000006_b200_v1/sources/reference/identity_copy_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "reduction_and_selection__reduction__optimization_neutral__l000006_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "contiguous_identity_i32_int32_block256_v1",
+      "entry_point": "contiguous_identity_i32_n257",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness_block_boundary_tail"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__softmax__analysis__l000013_b200_v1/sources/baseline/prob_cross_entropy_gradient_baseline.cuh",
+          "source_ref": "bundles/reduction_and_selection__softmax__analysis__l000013_b200_v1/sources/baseline/prob_cross_entropy_gradient_baseline.cuh"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__softmax__analysis__l000013_b200_v1/sources/harness/complete_output_runner.cu",
+          "source_ref": "bundles/reduction_and_selection__softmax__analysis__l000013_b200_v1/sources/harness/complete_output_runner.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__softmax__analysis__l000013_b200_v1/sources/harness/judge.py",
+          "source_ref": "bundles/reduction_and_selection__softmax__analysis__l000013_b200_v1/sources/harness/judge.py"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__softmax__analysis__l000013_b200_v1/sources/harness/workloads.json",
+          "source_ref": "bundles/reduction_and_selection__softmax__analysis__l000013_b200_v1/sources/harness/workloads.json"
+        },
+        {
+          "materialized": "inputs/parent/bundles/reduction_and_selection__softmax__analysis__l000013_b200_v1/sources/reference/prob_cross_entropy_gradient_reference.hpp",
+          "source_ref": "bundles/reduction_and_selection__softmax__analysis__l000013_b200_v1/sources/reference/prob_cross_entropy_gradient_reference.hpp"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "reduction_and_selection__softmax__analysis__l000013_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "prob_cross_entropy_gradient_contiguous_fp32_i32_v1",
+      "entry_point": "prob_cross_entropy_gradient_unweighted_3x5",
+      "optimization_eligible": false,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "unweighted_non_multiple_3x5"
+    },
+    {
+      "artifacts": [
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000010_b200_v1/sources/baseline/rowwise_broadcast_first_add.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000010_b200_v1/sources/baseline/rowwise_broadcast_first_add.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000010_b200_v1/sources/harness/complete_output_harness.cu",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000010_b200_v1/sources/harness/complete_output_harness.cu"
+        },
+        {
+          "materialized": "inputs/parent/bundles/data_movement_and_layout__memory_cache__analysis__l000010_b200_v1/sources/reference/rowwise_broadcast_first_add_reference.cc",
+          "source_ref": "bundles/data_movement_and_layout__memory_cache__analysis__l000010_b200_v1/sources/reference/rowwise_broadcast_first_add_reference.cc"
+        }
+      ],
+      "assessment_scope": "fixed_instance",
+      "backend": "triton",
+      "canary": false,
+      "case_id": "rowwise_broadcast_first_add_f32_i32_parent_completion_l000010_b200_v1",
+      "derived_parent_id": "rowwise_broadcast_first_add_f32_i32_contiguous_block512_v1",
+      "entry_point": "rowwise_broadcast_first_add_f32_i32",
+      "optimization_eligible": true,
+      "schema": "open-cake.aka-ir-lab-candidate.v1",
+      "target": "sm_100a",
+      "training_eligible": false,
+      "workload_id": "correctness_r2_c257"
+    }
+  ],
+  "policy": {
+    "automatic_reroute": false,
+    "automatic_retry": false,
+    "fixed_target": "sm_100a/B200",
+    "max_in_flight_after_canary": 5,
+    "single_canary_before_scale": true
+  },
+  "schema": "open-cake.aka-ir-lab-admission.v1",
+  "source": {
+    "aka_revision": "387aa7faf521a0b72c994ff15a7638cd7e6a8583",
+    "compiler": {
+      "git_commit": "7fdac036626a4eaf0a0e047dca1565c0a88f19aa",
+      "project_root": "/home/qhy-sol/aka-ir-qualified-20260902-oHurXN/open-cake-ir",
+      "revision_id": "open-cake-ir-sm100a-v40-draft",
+      "revision_path": "compiler/revision.json",
+      "source_set_path": "compiler/source_set.json",
+      "state": "draft"
+    },
+    "phase_a_ledger": "/home/qhy-sol/aka-ir-qualified-20260902-oHurXN/runs/aka-qualified-ir-v6-20260903-oHurXN-embedded-code-mode-v3/ledger.jsonl"
+  },
+  "status": "static_candidates_materialized"
+}

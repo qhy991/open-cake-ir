@@ -8,7 +8,7 @@ AKA v6 的 677 个 `qualified` parent 已完成一轮逐条 Open-Cake IR 审查�
 
 “分类被接受”不等于“可在 GPU 上执行”。只有 57 条同时满足 `schedule`、`expressible` 和静态 `lower passed`，进入了 Lab admission；最终 56 条通过独立 oracle 的 B200 完整输出正确性、memcheck、racecheck 和模型外重算，1 条因 authoring schema、runtime custody 和 evidence surface 不合格而保持 GPU `not_run`。这证明 56 个 fixed instance 的当前 Cake lowering 有效，不是 corpus 覆盖率、性能、完整动态 parent 或训练证据。
 
-这 57 条执行中暴露的真实问题均可定位为 reviewer/schema、evaluator/artifact hygiene 或 backend lowering/compile gate；修复后没有留下需要新增 Schedule IR 的动态失败。因此，**不能用这 57 条作为增加 IR 的依据**。是否演进 IR 仍只能由 326 个 `ir_gap` 的独立、源码完整、重复语义聚类决定。
+这 57 条执行中暴露的真实问题均可定位为 reviewer/schema、evaluator/artifact hygiene 或 backend lowering/compile gate；修复后没有留下需要新增 Schedule IR 的动态失败。因此，**不能用这 57 条作为增加 IR 的依据**。326 个 `ir_gap` 的 proposal-only 语义聚类现已完成，但它只产生待 owner 审议的候选，未批准任何 Compiler 变更。
 
 ## 这项工作的意义
 
@@ -21,7 +21,7 @@ AKA 在这里是 Open-Cake 的外部 challenge corpus，而不是自动进入 Co
 | 类别 | 数量 | 含义 | 下一责任方 |
 | --- | ---: | --- | --- |
 | `schedule / expressible / lower passed` | 57 | 当前 IR 能描述该固定 parent，且生成路径通过静态 assessment/lowering；尚未证明 GPU 正确 | Lab admission |
-| `ir_gap / not_expressible` | 326 | reviewer 判断完成该 parent 需要现有 IR 无法表达的语义；候选 primitive 仍只是提案 | IR owner：先聚类、复核、审批 |
+| `ir_gap / not_expressible` | 326 | reviewer 判断完成该 parent 需要现有 IR 无法表达的语义；296 个 exact names 已被提议归并为 202 个 semantic clusters | IR owner：复核重复簇、冲突簇和来源独立性后审批 |
 | `program_composition` | 27 | 需要多 kernel 顺序、reset 后 accumulate、workspace、host scalar 或统一 ABI 等程序级组合 | Program/Executable 层 |
 | `insufficient_evidence` | 21 | 当前材料不足以完整确定语义、owner 或可表达性 | 补源码或语义证据 |
 | `workload_evidence` | 8 | 缺口已定位在 Workload Contract，例如 shape、dtype、标量、输入域、oracle 或容差不完整 | Workload owner |
@@ -33,14 +33,24 @@ AKA 在这里是 Open-Cake 的外部 challenge corpus，而不是自动进入 Co
 
 57 条 Lab 候选内部还有两个优先级：33 条标记为 optimization eligible，24 条为 optimization ineligible。该标记只用于排队；两组都必须先验证动态正确性。24 条原则上止于 correctness，33 条只有在 correctness、sanitizer 和重复性均通过后才能进入性能实验。
 
+## IR-gap 聚类结果
+
+326 个 verifier-accepted `ir_gap` 最初给出 296 个 exact candidate names，说明名称高度碎片化。远端 Sol/max 基于完整嵌入的 compact evidence 提出 202 个语义簇，模型外 verifier 证明 326 个 case 和 296 个 exact name 都恰好出现一次：
+
+- 51 个 `repeated_candidate` 簇覆盖 174 条；
+- 150 个 `singleton_or_distinct` 簇覆盖 150 条；
+- 1 个 `conflicted_needs_review` 簇覆盖 2 条；冲突来自同名 `segmented_scan` 对边界元素包含规则的相反定义。
+
+较大的重复候选包括 FP32 FMA（12 条）、typed runtime scalar（9 条）、computed FP32 atomic state add（7 条）、INT32-indexed FP32 atomic scatter-add（7 条）、segmented indirect FP32 sum（7 条）和 FP32 natural log（6 条）。这些计数只支持 proposal 排序；它们没有证明来源独立、现有 primitive 不可组合、typed/effect/verifier/lowering 闭包、GPU correctness 或性能，因此 `approval_granted=false`、`implementation_performed=false`、`release_performed=false`。
+
 ## 远端执行状态
 
 - `admission-v1` 已从 676 条 verifier ledger 中确定性物化 57 条候选：33 条优化优先、24 条 correctness-only；253 个 parent/reference/harness 文件全部存在，自包含输入约 7.2 MiB。
 - GPU Infra 固定为 `97a2bff`，远端部署重新通过 76/76 测试；独立 daemon、socket 和 state 与共享控制面分离。
 - canary v1–v5 分别暴露 judge cwd、home 路径穿越、GPU Infra guard 路径、NumPy 依赖和虚拟环境符号链接解析问题；均保留为 `infra_error/unknown`，没有被重试或改写成 correctness 失败。
-- 唯一成功 successor v6 在 NVIDIA B200/sm100 上完成 correctness、memcheck 和 racecheck，三个阶段均 `passed/valid`。四种固定 n=1024 输入在三个阶段共保留 12 个完整输出 artifact；独立标准库复核了 12,288 个元素，位级输出 mismatch、输入 mutation 和 ABI failure 均为 0。
+- 唯一成功 successor v6 在 NVIDIA B200/sm100 上完成 correctness、memcheck 和 racecheck，三个阶段均 `passed/valid`。四种固定 n=1024 输入在三个阶段共保留 12 个完整输出 artifact；独立标准库复核了 12,288 个元素，位级输出 mismatch、输入 mutation 和 ABI failure 均为 0。最初未落盘 standalone verifier JSON，现由保留工件透明重建为 `copy4-canary-v6-independent-verification.current.json`；其 `verification_timestamp=2026-09-03T19:57:51.539423+00:00`、`gpu_rerun=false`、`run_modified=false`，不得倒填为历史已有验证。
 - v6 不包含 benchmark，`frontier_eligible=false` 是预期结果；它只证明该 fixed-instance Cake lowering 和当前 Lab 路径有效。
-- 第二条 sigmoid n=17 由远端 `gpt-5.6-sol/max` 从嵌入的冻结证据生成 evaluator，经模型外语法、字节不变、oracle、task schema 和资源模式审查后提交。task-owned runtime successor 在 B200 上完成 correctness、memcheck、racecheck，均 `passed/valid`；9 个完整输出 artifact 经独立 Python 数学/IEEE-float32 复核 306 个输出，oracle mismatch、输入 mutation 和 ABI failure 均为 0。
+- 第二条 sigmoid n=17 由远端 `gpt-5.6-sol/max` 从嵌入的冻结证据生成 evaluator，经模型外语法、字节不变、oracle、task schema 和资源模式审查后提交。task-owned runtime successor 在 B200 上完成 correctness、memcheck、racecheck，均 `passed/valid`；9 个完整输出 artifact 经独立 Python 数学/IEEE-float32 复核 306 个输出，oracle mismatch、输入 mutation 和 ABI failure 均为 0。对应 standalone JSON 同样是当前从保留工件重建的 `sigmoid-runtime-v2-independent-verification.current.json`，使用相同 `verification_timestamp` 并显式声明未重跑或修改旧 run。
 - 首批 5 并发覆盖 atan-gradient n=9、rowwise add 1×37、global-average-pool backward 1×1×1、rsqrt-gradient n=1 和 GELU-tanh n=4。五条均先通过远端 Sol/max authoring 与外部 verifier，再由 broker 执行；5/5 `completed/valid`，全部 correctness、memcheck、racecheck `passed/valid`。
 - 首批 5 条共保留 57 个完整输出 artifact；独立 Python 复核 1,134 个输出，oracle mismatch、输入 mutation、ABI failure、memcheck error 和 racecheck hazard 均为 0。没有运行 benchmark；`frontier_eligible=false` 是预期。
 - 第二批 5 并发覆盖 copy-tile 3×4×5、vectorized-copy n=1,048,576、row-replication 257×7×37、vector-add n=1 和 bit-preserving identity n=1。原 verifier 因 Codex 自动初始化目录产生 5 条 `filesystem_policy` rejection，均被保留；显式 v2 只允许已证明的 bootstrap 目录、限制模型变更到三个声明文件并修正过长 task ID，没有重跑模型。
@@ -56,6 +66,7 @@ AKA 在这里是 Open-Cake 的外部 challenge corpus，而不是自动进入 Co
 - 最终 R3 覆盖 gamma/beta backward、paired partial-gradient reduction、warp-sum32、rows8 ordered sum 和 beta-zero addr outer。三条生成 kernel 先在 GPU-free Triton compile 暴露 store block/rank 或 outer broadcast 缺陷；各自由新远端 Sol/max kernel successor 修复，并重新通过 verifier、真实 compile、唯一 GPU 三阶段和独立重算。R3 五条最终复核 27 个 artifact、41,028 个输出；所有错误计数为 0，所有失败 predecessor 原样保留且不计 IR 失败。
 - 唯一非动态有效条目 l000214 的最新 v4 仅为 `model_prepared`：`kernelctl task-check` 拒绝其缺失 `comparison/workloads`；stage 使用旧字段和另一用户 runtime 路径；oracle 使用旧 aliases；evaluator 依赖 `hashlib/base64/zlib` 压缩编码 16M 元素证据。模型外 verifier 将其终结为 `reviewer_schema_and_evidence_surface`、GPU `not_run`、IR gap 未建立。恢复必须使用新 Sol/max authoring，并先满足约 32 GiB 余量下的完整输出磁盘门槛。
 - 当前终态为 56/57 dynamic valid、1/57 authoring rejection、0 unknown，且全部 `performance_measured=false`。
+- 可发布数据位于 `docs/data/aka-qualified-ir-v6-review-20260904/`：包含 677-row Phase A index、57-row Lab terminal ledger、202-cluster proposal、manifest、dataset card 和最小证据 receipts。导出 verifier 重新证明 677/57 行唯一性、精确 cluster partition 和敏感模式扫描 0 findings。
 - 新增代码的 focused 文档/admission 测试为 9/9，远端 GPU Infra 为 76/76。组合 Torch、Triton 和 jsonschema 环境运行 678 个 Open-Cake contract tests，仅历史 G8 replay/custody 测试失败 1 项；本分支未修改该 Lab 实现或测试字节，因此该既有门禁不被本工作掩盖或修复。
 
 ## 下一步计划
@@ -66,7 +77,7 @@ AKA 在这里是 Open-Cake 的外部 challenge corpus，而不是自动进入 Co
 4. **端到端 canary（已完成）。** v6 已验证 compile/launch、完整输出、memcheck、racecheck、结果文件权限和独立复核；该结果解除 5 并发的启动门槛。
 5. **使用最多 5 并发（首批已完成）。** `max_in_flight_items=5` 表示最多五个条目同时处于准备、排队或执行状态，不表示同时占用五张 GPU。B200x4 上 exclusive GPU 阶段最多使用实际可用设备，第五条排队；sanitizer、benchmark 和 profiler 必须 exclusive，GPU 只由 broker 分配。
 6. **先完成 correctness，再做优化。** 对 admission survivor 运行完整输出 oracle 和 sanitizer；仅其中最多 33 条 optimization 候选进入冻结 baseline 后的稳定性、paired timing 和 profiler 阶段。负结果和基础设施未知分别保留，不自动 retry、reroute 或取消已接受的 sibling。
-7. **并行处理非 Lab 类别。** 聚类 326 个 IR gap，只为重复、源码完整且不可由现有 primitive 组合的最小语义提出 Compiler successor；27 个 composition 任务进入 Program 设计；29 个 evidence 任务先补合同；211+26 个拒绝用于改善 authoring/reviewer，而不是消耗 GPU。
+7. **审批 proposal-only IR clusters。** 优先复核 51 个 repeated clusters 的来源独立性、源码完整性和现有 primitive 可组合性；150 个 singleton 默认不扩展 IR，`segmented_scan` 冲突簇先解决边界语义。只有通过 typed/effect/verifier/analysis/lowering 与 positive/near-miss Corpus Gate 的 survivor 才能提出 Compiler successor；27 个 composition 任务进入 Program 设计，29 个 evidence 任务先补合同，211+26 个拒绝用于改善 authoring/reviewer。
 
 ## 为什么选择 5 并发
 

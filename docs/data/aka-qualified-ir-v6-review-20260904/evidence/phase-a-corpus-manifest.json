@@ -1,0 +1,45 @@
+{
+  "manifest": {
+    "admission": {
+      "allowed_claim": "qualified_parent_corpus_review_admission_only",
+      "declared_artifacts": 5229,
+      "records": 677,
+      "records_file": "records.jsonl",
+      "source_revision": "387aa7faf521a0b72c994ff15a7638cd7e6a8583"
+    },
+    "canary": {
+      "case_id": "data_movement_and_layout__copy_vectorized__analysis__l000007_b200_v1__directderived_sol_ultra_v2",
+      "derived_parent_id": "contiguous_copy4_fp32_i32_b256_v1",
+      "record_line": 8,
+      "workload_id": "n1024"
+    },
+    "compiler": {
+      "git_commit": "7fdac036626a4eaf0a0e047dca1565c0a88f19aa",
+      "project_root": "/home/qhy-sol/aka-ir-qualified-20260902-oHurXN/open-cake-ir",
+      "revision_id": "open-cake-ir-sm100a-v40-draft",
+      "revision_path": "compiler/revision.json",
+      "source_set_path": "compiler/source_set.json",
+      "state": "draft"
+    },
+    "source": {
+      "git_commit": "387aa7faf521a0b72c994ff15a7638cd7e6a8583",
+      "portable_dataset": "datasets/curated/cuda_kernel_parent_completions_v6",
+      "source_dataset": "datasets/curated/cuda_kernel_dataset_v1"
+    },
+    "treatment": {
+      "authentication": "parent_cli_chatgpt",
+      "gpu": "disabled",
+      "model": "gpt-5.6-sol",
+      "network": "disabled",
+      "permission_overrides": [
+        "permissions.aka_qualified_ir_review.filesystem={\":root\"=\"read\",\"/home/qhy-sol/.codex\"=\"deny\"}",
+        "permissions.aka_qualified_ir_review.network.enabled=false"
+      ],
+      "permission_profile": "aka_qualified_ir_review",
+      "reasoning_effort": "max",
+      "subagents": "disabled"
+    }
+  },
+  "manifest_digest_sha256": "35851732044ae15f72725c384f2f4163d0d0f65b693c5055efb922f14bfeccf7",
+  "schema": "open-cake.aka-qualified-ir-corpus-manifest.v1"
+}

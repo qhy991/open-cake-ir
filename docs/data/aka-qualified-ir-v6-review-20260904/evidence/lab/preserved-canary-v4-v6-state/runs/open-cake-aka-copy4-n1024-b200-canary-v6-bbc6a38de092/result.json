@@ -1,0 +1,200 @@
+{
+  "schema": "kernelinfra.run-result.v1",
+  "run_id": "open-cake-aka-copy4-n1024-b200-canary-v6-bbc6a38de092",
+  "task_id": "open-cake-aka-copy4-n1024-b200-canary-v6",
+  "task_sha256": "e4a0ffea714f15a0fafe5749c8b2ef8256075502779a629b0a098c7d7cd69faa",
+  "candidate_sha256": "45f0f18a69aa1c671b6d4dfc0db733a7ca53a941d1349c15feccd6e0a50ffda5",
+  "outcome": "completed",
+  "validity": "valid",
+  "frontier_eligible": false,
+  "terminal_reason": null,
+  "stages": [
+    {
+      "id": "correctness",
+      "kind": "correctness",
+      "status": "passed",
+      "validity": "valid",
+      "summary": "Four fixed n=1024 complete-output distributions passed bitwise identity, read-only input, supplied-output ABI, and disjoint-pointer checks on B200."
+    },
+    {
+      "id": "sanitize-memcheck",
+      "kind": "sanitize",
+      "status": "passed",
+      "validity": "valid",
+      "summary": "memcheck and complete-output correctness passed on B200."
+    },
+    {
+      "id": "sanitize-racecheck",
+      "kind": "sanitize",
+      "status": "passed",
+      "validity": "valid",
+      "summary": "racecheck and complete-output correctness passed on B200."
+    }
+  ],
+  "workloads": [
+    {
+      "correct": true,
+      "id": "alternating-binary-fractions-n1024",
+      "notes": "checked=1024 output_mismatch=0 source_mismatch=0 returned_out=True disjoint=True bitwise=true"
+    },
+    {
+      "correct": true,
+      "id": "seeded-scaled-integers-n1024",
+      "notes": "checked=1024 output_mismatch=0 source_mismatch=0 returned_out=True disjoint=True bitwise=true"
+    },
+    {
+      "correct": true,
+      "id": "signed-integers-n1024",
+      "notes": "checked=1024 output_mismatch=0 source_mismatch=0 returned_out=True disjoint=True bitwise=true"
+    },
+    {
+      "correct": true,
+      "id": "zeros-n1024",
+      "notes": "checked=1024 output_mismatch=0 source_mismatch=0 returned_out=True disjoint=True bitwise=true"
+    }
+  ],
+  "fingerprints": {},
+  "metrics": {
+    "correctness": {
+      "cases": [
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "zeros-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        },
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "signed-integers-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        },
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "alternating-binary-fractions-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        },
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "seeded-scaled-integers-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        }
+      ],
+      "compute_capability": [
+        10,
+        0
+      ],
+      "device_name": "NVIDIA B200",
+      "performance_measured": false,
+      "total_checked_elements": 4096
+    },
+    "sanitize-memcheck": {
+      "cases": [
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "zeros-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        },
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "signed-integers-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        },
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "alternating-binary-fractions-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        },
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "seeded-scaled-integers-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        }
+      ],
+      "compute_capability": [
+        10,
+        0
+      ],
+      "device_name": "NVIDIA B200",
+      "performance_measured": false,
+      "total_checked_elements": 4096
+    },
+    "sanitize-racecheck": {
+      "cases": [
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "zeros-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        },
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "signed-integers-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        },
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "alternating-binary-fractions-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        },
+        {
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "seeded-scaled-integers-n1024",
+          "input_output_pointers_disjoint": true,
+          "output_mismatch_count": 0,
+          "returned_supplied_output": true,
+          "source_mismatch_count": 0
+        }
+      ],
+      "compute_capability": [
+        10,
+        0
+      ],
+      "device_name": "NVIDIA B200",
+      "performance_measured": false,
+      "total_checked_elements": 4096
+    }
+  }
+}

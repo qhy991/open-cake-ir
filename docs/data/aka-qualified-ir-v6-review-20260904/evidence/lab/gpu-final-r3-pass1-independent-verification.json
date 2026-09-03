@@ -1,0 +1,47 @@
+{
+  "abi_failure": 0,
+  "cases": 2,
+  "complete_output_artifacts": 12,
+  "independently_checked_output_elements": 25464,
+  "input_mutation": 0,
+  "memcheck_errors": 0,
+  "oracle_mismatch": 0,
+  "performance_measured": false,
+  "racecheck_hazards": 0,
+  "rows": [
+    {
+      "abi_failure": 0,
+      "case_id": "reduction_and_selection__reduction__analysis__l000028_b200_v1__gamma_beta_backward_contiguous_fp32_i32_tile32x16_v1",
+      "compile_gate_receipt": "/home/qhy-sol/aka-ir-lab-20260903-TGkxNe/final-r3-reduction-20260904-ZPsovf/compile-gate-r3-v2/reduction_and_selection__reduction__analysis__l000028_b200_v1__gamma_beta_backward_contiguous_fp32_i32_tile32x16_v1/receipt.json",
+      "complete_output_artifacts": 6,
+      "independently_checked_output_elements": 888,
+      "input_mutation": 0,
+      "memcheck_errors": 0,
+      "oracle_mismatch": 0,
+      "outcome": "completed",
+      "performance_measured": false,
+      "racecheck_hazards": 0,
+      "run_id": "open-cake-aka-gamma-beta-backward-n129-c37-g37-fixed-b200-oracle-v1-43b4c4fec6dc",
+      "validity": "valid",
+      "verifier_receipt": "/home/qhy-sol/aka-ir-lab-20260903-TGkxNe/final-r3-reduction-20260904-ZPsovf/cases/reduction_and_selection__reduction__analysis__l000028_b200_v1__gamma_beta_backward_contiguous_fp32_i32_tile32x16_v1/verifier-v3/receipt.json"
+    },
+    {
+      "abi_failure": 0,
+      "case_id": "reduction_and_selection__reduction__analysis__l000051_b200_v1__paired_partial_grad_row_reduce_parent_v1",
+      "compile_gate_receipt": "/home/qhy-sol/aka-ir-lab-20260903-TGkxNe/final-r3-reduction-20260904-ZPsovf/compile-gate-r3-v2/reduction_and_selection__reduction__analysis__l000051_b200_v1__paired_partial_grad_row_reduce_parent_v1/receipt.json",
+      "complete_output_artifacts": 6,
+      "independently_checked_output_elements": 24576,
+      "input_mutation": 0,
+      "memcheck_errors": 0,
+      "oracle_mismatch": 0,
+      "outcome": "completed",
+      "performance_measured": false,
+      "racecheck_hazards": 0,
+      "run_id": "open-cake-aka-paired-partial-grad-row-reduce-p4096-n1024-b200-independent-oracle-v1-0197781c378f",
+      "validity": "valid",
+      "verifier_receipt": "/home/qhy-sol/aka-ir-lab-20260903-TGkxNe/final-r3-reduction-20260904-ZPsovf/cases/reduction_and_selection__reduction__analysis__l000051_b200_v1__paired_partial_grad_row_reduce_parent_v1/verifier/receipt.json"
+    }
+  ],
+  "schema": "open-cake.aka-ir-lab-gpu-batch-independent-verification.v1",
+  "status": "accepted"
+}

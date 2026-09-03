@@ -1,0 +1,30 @@
+{
+  "schema": "open-cake.aka-ir-lab-remote-environment-verification.v1",
+  "verification_timestamp": "2026-09-03T20:13:56Z",
+  "host": "verda-b200x4",
+  "unix_user": "qhy-sol",
+  "codex_cli_version": "0.149.1",
+  "login_status": "Logged in using ChatGPT",
+  "model": {
+    "name": "gpt-5.6-sol",
+    "reasoning_effort": "max",
+    "availability_evidence": "Successful parent-client ChatGPT Codex receipts in this campaign",
+    "enumeration_status": "The installed CLI exposes a generic --model option but no supported model-list command was used."
+  },
+  "quota": {
+    "reported_value": "approximately 99% at campaign start",
+    "authority": "user_reported",
+    "independently_verified": false
+  },
+  "credential_boundary": {
+    "credential_files_read": false,
+    "tokens_read_or_output": false,
+    "model_permission_profiles_denied_qhy_sol_codex_tree": true
+  },
+  "github_remote_check": {
+    "remote": "git@github.com:qhy991/open-cake-ir.git",
+    "status": "blocked",
+    "reason": "Direct qhy-sol ls-remote failed host-key verification; no known-host mutation was authorized or performed.",
+    "github_ref_verified_elsewhere": "The local isolated publishing worktree independently resolved the GitHub branch to the published commit."
+  }
+}

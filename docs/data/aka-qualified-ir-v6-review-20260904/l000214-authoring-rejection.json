@@ -1,0 +1,62 @@
+{
+  "backend_compile_result": "not_run",
+  "case_id": "data_movement_and_layout__gather_scatter__analysis__l000214_b200_v1__directderived_sol_ultra_v2__parent_completion_v1",
+  "error_category": "reviewer_schema_and_evidence_surface",
+  "gpu_eligible": false,
+  "gpu_result": "not_run",
+  "gpu_submitted": false,
+  "ir_gap_established": false,
+  "latest_model_attempt": "authoring-v4 model_prepared only",
+  "owner": "authoring_reviewer",
+  "performance_measured": false,
+  "reasons": [
+    {
+      "category": "task_schema",
+      "expected": "kernelinfra.task.v1 with workloads, comparison, judge identity/command, and resources mode/gpu_count/run_timeout_s",
+      "observed": "kernelctl: task missing fields: comparison, workloads"
+    },
+    {
+      "category": "runtime_custody",
+      "expected": "task-owned /tmp/open-cake-aka-ir-lab-v4-TGkxNe/runtime-v1/bin/python and KERNELINFRA_CANDIDATE_DIR",
+      "observed": [
+        [
+          "/home/qinhaiyan/megakernel-exp/.venv-flashinfer/bin/python",
+          "candidate/evaluate.py"
+        ],
+        [
+          "/home/qinhaiyan/megakernel-exp/.venv-flashinfer/bin/python",
+          "candidate/evaluate.py"
+        ],
+        [
+          "/home/qinhaiyan/megakernel-exp/.venv-flashinfer/bin/python",
+          "candidate/evaluate.py"
+        ]
+      ]
+    },
+    {
+      "category": "oracle_schema_alias",
+      "expected": "derived_parent_id, deterministic_distributions, and complete_output_artifacts=true",
+      "observed": {
+        "complete_output_artifacts_type": "dict",
+        "deterministic_inputs": 2,
+        "parent_id": "contiguous_copy_fp32_i32_block256_v1"
+      }
+    },
+    {
+      "category": "evidence_surface",
+      "expected": "direct complete numeric artifacts without hashes, base64, or compression",
+      "observed": [
+        "base64",
+        "hashlib",
+        "zlib"
+      ]
+    }
+  ],
+  "recovery": {
+    "disk_gate": "A direct complete-output design for two n=16777216 distributions and three stages must be bounded against current approximately 32 GiB free space before launch.",
+    "must_not_reuse_or_relabel_v4": true,
+    "requires_fresh_remote_sol_max_authoring": true
+  },
+  "schema": "open-cake.aka-ir-lab-authoring-verification.v1",
+  "status": "rejected"
+}
