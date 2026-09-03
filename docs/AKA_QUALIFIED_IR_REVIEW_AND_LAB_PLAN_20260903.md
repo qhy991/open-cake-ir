@@ -1,12 +1,12 @@
 # AKA qualified-parent IR review：现状与 Lab 计划
 
-状态：2026-09-04（JST）更新。Phase A 已终结；Lab admission 已物化；两条 canary 和五批 5 并发 B200 任务已通过。
+状态：2026-09-04（JST）更新。Phase A 已终结；Lab admission 已物化；两条 canary 和八批最多 5 并发 B200 任务已执行。
 
 ## 结论
 
 AKA v6 的 677 个 `qualified` parent 已完成一轮逐条 Open-Cake IR 审查：676 条形成模型结果和独立 verifier 记录，1 条在模型运行前遭遇基础设施故障。676 条中，439 条的**分类结论**被接受，237 条因 reviewer 或 schema 问题被拒绝。
 
-“分类被接受”不等于“可在 GPU 上执行”。当前只有 57 条同时满足 `schedule`、`expressible` 和静态 `lower passed`，可以进入 Lab admission；它们仍需通过独立 oracle 的 B200 完整输出正确性和 sanitizer，才能成为动态有效结果。现已对 27 条 fixed-instance 任务建立该动态证据，剩余 30 条仍待逐条 admission/evaluation；这不是 corpus 覆盖率、性能或训练证据。
+“分类被接受”不等于“可在 GPU 上执行”。当前只有 57 条同时满足 `schedule`、`expressible` 和静态 `lower passed`，可以进入 Lab admission；它们仍需通过独立 oracle 的 B200 完整输出正确性和 sanitizer，才能成为动态有效结果。现已对 41 条 fixed-instance 任务建立该动态证据；其余 16 条中，14 条尚未 authoring，1 条 authoring rejection，1 条暴露 backend compile gate 缺陷。这不是 corpus 覆盖率、性能或训练证据。
 
 ## 这项工作的意义
 
@@ -46,7 +46,10 @@ AKA 在这里是 Open-Cake 的外部 challenge corpus，而不是自动进入 Co
 - 第三批 5 并发覆盖 complex-pair layout copy 1×2、cube-gradient n=1、softsign n=1、asin-gradient n=1 和 binary-add n=1。GPU 5/5 `completed/valid`，全部三阶段通过；60 个完整输出 artifact 经独立复核 132 个输出，所有错误计数均为 0。
 - 第四批 5 并发覆盖 SELU n=11、channel-shuffle 1×6×8、channelwise affine 1×1、GELU-tanh n=4 和 ReLU n=17。affine 原 run 因 evaluator 未识别 canonical `RACECHECK SUMMARY` 保留为 `infra_error/unknown`；只修摘要解析的 model-free v2 successor 通过。统一复核 54 个完整输出 artifact、1,854 个输出，所有错误计数为 0。
 - 第五批 5 并发覆盖 dual-output tile copy n=1、same-shape binary add n=1024、scale n=4099、rowwise broadcast-first add 2×257 和 scale2-axpy-scale n=257。旧 v2 verifier 因硬编码 oracle 字段名拒绝 5 条且未提交 GPU；alias-aware v3 只读取语义等价字段，没有放宽必需事实，5/5 accepted。唯一 GPU runs 全部 `completed/valid`，39 个完整输出 artifact 经独立标准库复核 152,199 个输出，oracle、输入 mutation、ABI、memcheck 和 racecheck 错误均为 0。首条提交成功后本地回执解析器把纯文本 run ID 误作 JSON，空旧台账和控制故障均被保留；该 run 没有重提，其余四条各提交一次。
-- 下一批最多 5 条已放行给独立协调任务；每条仍需单独通过 authoring verifier 后才可进入 GPU。当前动态有效数量为 27/57，剩余 30 条。
+- 第六批覆盖 softsign gradient n=257、FP16→FP32 n=63,490、reciprocal gradient n=1,024、token-position embedding 3×5×64 和 GELU-backward n=4,099。五条最终均 `completed/valid`；FP16 条目在首次提交前只补 canonical racecheck 摘要解析。GELU 原 run 的 correctness 通过，但 evaluator 的 PyTorch CUDA cache 在 `--leak-check full` 下产生 2 MiB finding，原 run 保留为 `rejected/invalid`；保留同一 leak gate、只显式释放未使用 cache 的新 identity 通过。统一复核 33 个 artifact、851,406 个输出，所有错误计数为 0。
+- 第七批覆盖 identity n=1、vol2im identity 48 元素、global-average-pool backward 1×7×1、guarded INT32 store n=1,024 和 tanh-GELU n=23。五条最终均 `completed/valid`；GAP 原 run 的 artifact 缺 `performance_measured=false`，原 `completed/valid` 结果保留但未被外部接纳，只补证据字段的新 identity 通过。统一复核 39 个 artifact、28,707 个输出，所有错误计数为 0。
+- 第八批覆盖 strided copy n=30、strided add n=30、scalar pow n=4,097、GELU-backward vec4 n=4,100 和 bias-sum 2×3×259。前四条 `completed/valid`，24 个 artifact 经独立复核 197,790 个输出，所有错误计数为 0。bias-sum 的生成 Triton 使用 `tl.arange(0,6)`，因非二次幂在 GPU compile 失败；node 的 `infra_error/unknown` 结果被细化为 `backend_compile_gate`，没有重试，也不计 IR 语义失败或动态有效。
+- 当前动态有效数量为 41/57。剩余 14 个从未 authoring 的 canonical IDs 已按低风险、状态/数值和 reduction 三组 5/5/4 预留；每条仍需独立 authoring verifier 后才能进入 GPU。另有 l000214 authoring rejection 和上述 bias-sum backend compile unknown，均保持独立终态。
 - 新增代码的 focused 文档/admission 测试为 9/9，远端 GPU Infra 为 76/76。组合 Torch、Triton 和 jsonschema 环境运行 678 个 Open-Cake contract tests，仅历史 G8 replay/custody 测试失败 1 项；本分支未修改该 Lab 实现或测试字节，因此该既有门禁不被本工作掩盖或修复。
 
 ## 下一步计划
@@ -61,7 +64,7 @@ AKA 在这里是 Open-Cake 的外部 challenge corpus，而不是自动进入 Co
 
 ## 为什么选择 5 并发
 
-5 并发在吞吐和可审计性之间更合适：它远低于此前的大规模模型审查并发，便于定位首个动态分歧；在四卡节点上允许最多四个 exclusive GPU 阶段运行并保留一个准备或排队槽，不会把“控制器并发”误当成 GPU 数量；同时限制编译产物、sanitizer 日志和 mirror 对磁盘的增长。为消除对其他用户环境的依赖，远端新增约 5.6 GiB task-owned Torch/Triton runtime；第二批 1M 元素完整输出及 home 证据副本约增加 1.4 GiB，当前状态盘约 98% 已用、约 39 GiB 可用。后续必须继续限制 artifact 体积，只清理可重建缓存和重复临时产物，正式证据不可删除。
+5 并发在吞吐和可审计性之间更合适：它远低于此前的大规模模型审查并发，便于定位首个动态分歧；在四卡节点上允许最多四个 exclusive GPU 阶段运行并保留一个准备或排队槽，不会把“控制器并发”误当成 GPU 数量；同时限制编译产物、sanitizer 日志和 mirror 对磁盘的增长。为消除对其他用户环境的依赖，远端新增约 5.6 GiB task-owned Torch/Triton runtime；第二批 1M 元素完整输出及 home 证据副本约增加 1.4 GiB，当前状态盘约 98% 已用、约 37 GiB 可用。后续必须继续限制 artifact 体积，只清理可重建缓存和重复临时产物，正式证据不可删除。
 
 ## 完成标准
 
