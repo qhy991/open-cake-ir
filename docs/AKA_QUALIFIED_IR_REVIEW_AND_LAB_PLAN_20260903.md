@@ -1,12 +1,12 @@
 # AKA qualified-parent IR review：现状与 Lab 计划
 
-状态：2026-09-04（JST）更新。Phase A 已终结；Lab admission 已物化；两条 canary 和三批 5 并发 B200 任务已通过。
+状态：2026-09-04（JST）更新。Phase A 已终结；Lab admission 已物化；两条 canary 和四批 5 并发 B200 任务已通过。
 
 ## 结论
 
 AKA v6 的 677 个 `qualified` parent 已完成一轮逐条 Open-Cake IR 审查：676 条形成模型结果和独立 verifier 记录，1 条在模型运行前遭遇基础设施故障。676 条中，439 条的**分类结论**被接受，237 条因 reviewer 或 schema 问题被拒绝。
 
-“分类被接受”不等于“可在 GPU 上执行”。当前只有 57 条同时满足 `schedule`、`expressible` 和静态 `lower passed`，可以进入 Lab admission；它们仍需通过独立 oracle 的 B200 完整输出正确性和 sanitizer，才能成为动态有效结果。现已对 17 条 fixed-instance 任务建立该动态证据，剩余 40 条仍待逐条 admission/evaluation；这不是 corpus 覆盖率、性能或训练证据。
+“分类被接受”不等于“可在 GPU 上执行”。当前只有 57 条同时满足 `schedule`、`expressible` 和静态 `lower passed`，可以进入 Lab admission；它们仍需通过独立 oracle 的 B200 完整输出正确性和 sanitizer，才能成为动态有效结果。现已对 22 条 fixed-instance 任务建立该动态证据，剩余 35 条仍待逐条 admission/evaluation；这不是 corpus 覆盖率、性能或训练证据。
 
 ## 这项工作的意义
 
@@ -44,7 +44,8 @@ AKA 在这里是 Open-Cake 的外部 challenge corpus，而不是自动进入 Co
 - 第二批 5 并发覆盖 copy-tile 3×4×5、vectorized-copy n=1,048,576、row-replication 257×7×37、vector-add n=1 和 bit-preserving identity n=1。原 verifier 因 Codex 自动初始化目录产生 5 条 `filesystem_policy` rejection，均被保留；显式 v2 只允许已证明的 bootstrap 目录、限制模型变更到三个声明文件并修正过长 task ID，没有重跑模型。
 - 第二批 GPU 5/5 `completed/valid`，全部 correctness、memcheck、racecheck `passed/valid`；33 个完整输出 artifact 经独立 Python 复核 13,382,418 个输出，oracle mismatch、输入 mutation、ABI failure、memcheck error 和 racecheck hazard 均为 0。
 - 第三批 5 并发覆盖 complex-pair layout copy 1×2、cube-gradient n=1、softsign n=1、asin-gradient n=1 和 binary-add n=1。GPU 5/5 `completed/valid`，全部三阶段通过；60 个完整输出 artifact 经独立复核 132 个输出，所有错误计数均为 0。
-- 下一批最多 5 条已放行给独立协调任务；每条仍需单独通过 authoring verifier 后才可进入 GPU。当前动态有效数量为 17/57。
+- 第四批 5 并发覆盖 SELU n=11、channel-shuffle 1×6×8、channelwise affine 1×1、GELU-tanh n=4 和 ReLU n=17。affine 原 run 因 evaluator 未识别 canonical `RACECHECK SUMMARY` 保留为 `infra_error/unknown`；只修摘要解析的 model-free v2 successor 通过。统一复核 54 个完整输出 artifact、1,854 个输出，所有错误计数为 0。
+- 下一批最多 5 条已放行给独立协调任务；每条仍需单独通过 authoring verifier 后才可进入 GPU。当前动态有效数量为 22/57。
 - 新增代码的 focused 文档/admission 测试为 9/9，远端 GPU Infra 为 76/76。组合 Torch、Triton 和 jsonschema 环境运行 678 个 Open-Cake contract tests，仅历史 G8 replay/custody 测试失败 1 项；本分支未修改该 Lab 实现或测试字节，因此该既有门禁不被本工作掩盖或修复。
 
 ## 下一步计划
