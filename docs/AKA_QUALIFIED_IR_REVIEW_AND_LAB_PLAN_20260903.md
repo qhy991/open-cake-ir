@@ -43,6 +43,8 @@ AKA 在这里是 Open-Cake 的外部 challenge corpus，而不是自动进入 Co
 
 较大的重复候选包括 FP32 FMA（12 条）、typed runtime scalar（9 条）、computed FP32 atomic state add（7 条）、INT32-indexed FP32 atomic scatter-add（7 条）、segmented indirect FP32 sum（7 条）和 FP32 natural log（6 条）。这些计数只支持 proposal 排序；它们没有证明来源独立、现有 primitive 不可组合、typed/effect/verifier/lowering 闭包、GPU correctness 或性能，因此 `approval_granted=false`、`implementation_performed=false`、`release_performed=false`。
 
+后续的逐簇设计裁决由 [2026-09-04 IR owner review](AKA_IR_OWNER_REVIEW_20260904.md) 记录；它不改写上述历史 proposal，也不替代外部 Compiler release approval。
+
 ## 远端执行状态
 
 - `admission-v1` 已从 676 条 verifier ledger 中确定性物化 57 条候选：33 条优化优先、24 条 correctness-only；253 个 parent/reference/harness 文件全部存在，自包含输入约 7.2 MiB。
