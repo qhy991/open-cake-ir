@@ -36,6 +36,7 @@ from .ir import (
     MemorySpace,
     Operation,
     DType,
+    ElementwiseOp,
     OperationKind,
     Schedule,
 )
@@ -633,22 +634,26 @@ def _verify_instruction_commitments(
             )
 
         if operation.kind is OperationKind.ELEMENTWISE:
-            expected = _ELEMENTWISE_INSTRUCTION_DTYPES.get(
+            contract_semantics = _ELEMENTWISE_INSTRUCTIONS.get(
                 instruction.contract if instruction is not None else ""
             )
             if (
                 instruction is not None
                 and instruction.contract in target.instruction_contracts
-                and expected is None
+                and (
+                    contract_semantics is None
+                    or contract_semantics[0] is not operation.parameters.op
+                )
             ):
                 out.add(
                     "ELEMENTWISE_INSTRUCTION_KIND_DIFFERS",
                     f"{path}.instruction.contract",
                     f"contract {instruction.contract!r} is admitted by the Target but "
-                    "does not implement an elementwise operation",
+                    f"does not implement elementwise {operation.parameters.op.value}",
                     category,
                 )
-            elif expected is not None:
+            elif contract_semantics is not None:
+                expected = contract_semantics[1]
                 for name in (*operation.reads, *operation.writes):
                     buffer = buffers.get(name)
                     if buffer is not None and buffer.dtype is not expected:
@@ -956,8 +961,9 @@ _CONTRACT_DTYPES = {
 
 _BLOCK_SCALE_MMA_CONTRACT = "triton.dot.fp8e4m3_block_scale_fp32"
 
-_ELEMENTWISE_INSTRUCTION_DTYPES = {
-    "libdevice.tanh.f32": DType.FP32,
+_ELEMENTWISE_INSTRUCTIONS = {
+    "libdevice.tanh.f32": (ElementwiseOp.TANH, DType.FP32),
+    "ptx.fma.rn.f32": (ElementwiseOp.FMA, DType.FP32),
 }
 
 
@@ -2399,6 +2405,20 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
     # for arithmetic whose operands are not all named.
     if operation.kind is OperationKind.ELEMENTWISE:
         parameters = operation.parameters
+        if parameters.op is ElementwiseOp.FMA:
+            if len(operation.writes) != 1:
+                out.add(
+                    "ELEMENTWISE_FMA_RESULT_COUNT", f"{path}.writes",
+                    "fma writes exactly one FP32 register result", category,
+                )
+            for name in (*operation.reads, *operation.writes):
+                buffer = buffers.get(name)
+                if buffer is not None and buffer.space is not MemorySpace.REGISTER:
+                    out.add(
+                        "ELEMENTWISE_FMA_SPACE", path,
+                        f"fma operand/result {name!r} must be register-resident",
+                        FindingCategory.HARDWARE_CONFORMANCE,
+                    )
         supplied = len(operation.reads) + (parameters.scalar is not None)
         if supplied != parameters.arity_needed:
             out.add(

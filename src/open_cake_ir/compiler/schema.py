@@ -240,6 +240,12 @@ _PARAMETERS = {
         "oneOf": [
             _object(
                 {
+                    "op": {"const": ElementwiseOp.FMA.value},
+                    "instruction": _object({"contract": {"type": "string"}}),
+                }
+            ),
+            _object(
+                {
                     "op": {"const": ElementwiseOp.TANH.value},
                     "instruction": _object({"contract": {"type": "string"}}),
                 },
@@ -254,7 +260,7 @@ _PARAMETERS = {
                         "enum": [
                             member.value
                             for member in ElementwiseOp
-                            if member is not ElementwiseOp.TANH
+                            if member not in (ElementwiseOp.TANH, ElementwiseOp.FMA)
                         ]
                     }
                 },

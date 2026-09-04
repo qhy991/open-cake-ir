@@ -29,6 +29,15 @@ its role, loop, pipeline, operation-count, load-movement or descriptor requireme
 Logical register-Buffer pressure is an uncalibrated structural feature, never a physical
 register bound or legality gate. `residency.registers_per_thread` reaches the backend as
 `maxnreg`; compiled-artifact evidence owns actual allocation and spills.
+FP32 `elementwise fma` reads exactly three same-shaped register Buffers in a, b, c order
+and writes one same-shaped FP32 register result. Its required instruction contract is
+`ptx.fma.rn.f32`: one RN-even rounding of a*b+c, without FTZ, saturation, reassociation
+or a rounded intermediate product. Scalar and broadcast fields are not admitted.
+The Triton emitter uses an explicit instruction; unsupported backends refuse before
+lowering. NaN payload identity is not promised. Preceding rounded producers and nested
+FMA dependencies remain explicit. Work counts two arithmetic operations per result;
+register pressure reuses the existing all-read dataflow model, not a physical-register
+or latency estimate.
 A block scale is an FP32 Buffer with one `scale_of` relation. `granularity` is written in
 the FP8 data buffer's axis order; `axis_order` is the full permutation that gives the
 scale buffer's physical grouped-axis order. The Compiler derives the scale shape and

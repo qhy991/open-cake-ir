@@ -1033,7 +1033,22 @@ class _TritonEmitter:
         operands = [self._operand(name, operation) for name in operation.reads]
         if parameters.scalar is not None:
             operands.append(repr(parameters.scalar))
-        if parameters.op is ElementwiseOp.TANH:
+        if parameters.op is ElementwiseOp.FMA:
+            instruction = parameters.instruction
+            _require(
+                instruction is not None
+                and instruction.contract == "ptx.fma.rn.f32",
+                "the Triton fma body requires ptx.fma.rn.f32",
+            )
+            # Opaque operands preserve preceding rounded producers and nested FMA
+            # boundaries. No .ftz or .sat modifier may alter the declared contract.
+            expression = (
+                'tl.inline_asm_elementwise("fma.rn.f32 $0, $1, $2, $3;", '
+                'constraints="=f,f,f,f", '
+                f'args=[{", ".join(operands)}], dtype=tl.float32, '
+                'is_pure=True, pack=1)'
+            )
+        elif parameters.op is ElementwiseOp.TANH:
             instruction = parameters.instruction
             _require(
                 instruction is not None

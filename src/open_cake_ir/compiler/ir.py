@@ -208,9 +208,12 @@ class ElementwiseOp(str, Enum):
     SUB = "sub"
     MUL = "mul"
     DIV = "div"
+    FMA = "fma"
 
     @property
     def arity(self) -> int:
+        if self is ElementwiseOp.FMA:
+            return 3
         return (
             1
             if self
@@ -1210,8 +1213,9 @@ class ElementwiseInstruction:
     """The target instruction selected for arithmetic with multiple realizations.
 
     Most elementwise primitives have no separately admitted instruction in the current
-    vocabulary. Tanh does: the KDA corpus relies on the approximate PTX instruction, whose
-    cost and numerical behaviour differ from a libdevice call. Leaving it to the backend
+    vocabulary. FMA binds one RN-even, non-FTZ ternary operation. Tanh's approximate
+    PTX instruction differs in cost and numerical behaviour from a libdevice call.
+    Leaving it to the backend
     would make those two physical schedules have one spelling.
     """
 
@@ -1229,6 +1233,7 @@ class ElementwiseParameters:
 
     A binary op may name a `scalar` instead of a second read, which is what lets a
     Schedule write `x * 2.0` or `x + eps` without declaring a buffer to hold a constant.
+    FMA instead requires three same-shaped register reads and an instruction contract.
     """
 
     op: ElementwiseOp
@@ -1506,14 +1511,19 @@ def _operation_parameters(
         )
         op = _enum(ElementwiseOp, obj["op"], f"{context}.op")
         instruction = obj.get("instruction")
-        if op is ElementwiseOp.TANH and instruction is None:
+        if op in (ElementwiseOp.TANH, ElementwiseOp.FMA) and instruction is None:
             raise ScheduleParseError(
-                f"{context}.instruction is required for tanh so the backend does not "
+                f"{context}.instruction is required for {op.value} so the backend does not "
                 "choose its numerical and performance contract"
             )
-        if op is not ElementwiseOp.TANH and instruction is not None:
+        if op not in (ElementwiseOp.TANH, ElementwiseOp.FMA) and instruction is not None:
             raise ScheduleParseError(
                 f"{context}.instruction has no defined effect for {op.value}"
+            )
+        if op is ElementwiseOp.FMA and ({"scalar", "broadcast_axis"} & obj.keys()):
+            raise ScheduleParseError(
+                f"{context}: fma requires three same-shaped register operands; "
+                "scalar and broadcast_axis are not admitted"
             )
         scalar = obj.get("scalar")
         if scalar is not None and (

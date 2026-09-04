@@ -413,6 +413,9 @@ def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
             return None
         if parameters.op in _TRANSCENDENTAL:
             return None
+        if parameters.op is ElementwiseOp.FMA:
+            elements = _elements(schedule, operation.writes[0])
+            return None if elements is None else MULTIPLY_ADD_FLOPS * elements
         # One arithmetic operation per element written, whatever the arity: a broadcast
         # operand is narrower than the result and the result is what got computed.
         return _elements(schedule, operation.writes[0])

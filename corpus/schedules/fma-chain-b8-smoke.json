@@ -1,0 +1,332 @@
+{
+  "schema_version": 1,
+  "schedule_id": "fma-chain-b8-smoke",
+  "target": "sm_100a",
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "a",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        8,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "b",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        8,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "c",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        8,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "y",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        8,
+        128
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "a_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "b_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "c_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "y_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "product",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "inner",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_a",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "a"
+      ],
+      "writes": [
+        "a_tile"
+      ],
+      "parameters": {
+        "movement": "global",
+        "reuse": "streamed"
+      }
+    },
+    {
+      "id": "load_b",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "b"
+      ],
+      "writes": [
+        "b_tile"
+      ],
+      "parameters": {
+        "movement": "global",
+        "reuse": "streamed"
+      }
+    },
+    {
+      "id": "load_c",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "c"
+      ],
+      "writes": [
+        "c_tile"
+      ],
+      "parameters": {
+        "movement": "global",
+        "reuse": "streamed"
+      }
+    },
+    {
+      "id": "mul",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "a_tile",
+        "b_tile"
+      ],
+      "writes": [
+        "product"
+      ],
+      "depends_on": [
+        "load_a",
+        "load_b"
+      ],
+      "parameters": {
+        "op": "mul"
+      }
+    },
+    {
+      "id": "inner_fma",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "a_tile",
+        "b_tile",
+        "c_tile"
+      ],
+      "writes": [
+        "inner"
+      ],
+      "depends_on": [
+        "load_a",
+        "load_b",
+        "load_c"
+      ],
+      "parameters": {
+        "op": "fma",
+        "instruction": {
+          "contract": "ptx.fma.rn.f32"
+        }
+      }
+    },
+    {
+      "id": "fma",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "inner",
+        "c_tile",
+        "product"
+      ],
+      "writes": [
+        "y_tile"
+      ],
+      "depends_on": [
+        "mul",
+        "inner_fma",
+        "load_c"
+      ],
+      "parameters": {
+        "op": "fma",
+        "instruction": {
+          "contract": "ptx.fma.rn.f32"
+        }
+      }
+    },
+    {
+      "id": "store_y",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "y_tile"
+      ],
+      "writes": [
+        "y"
+      ],
+      "depends_on": [
+        "fma"
+      ],
+      "parameters": {
+        "coalesced": true
+      }
+    }
+  ],
+  "outputs": [
+    "y"
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "batch",
+        "axis": 0,
+        "buffer": "a",
+        "dimension": 0,
+        "tile": 1
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_a",
+      "buffer": "a",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_b",
+      "buffer": "b",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_c",
+      "buffer": "c",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_y",
+      "buffer": "y",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {},
+  "residency": {
+    "ctas_per_multiprocessor": 4,
+    "registers_per_thread": 64
+  },
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_fma_chain_b8_smoke"
+  }
+}

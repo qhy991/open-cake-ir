@@ -49,7 +49,8 @@
     "triton.dot.fp32_tf32",
     "triton.dot.fp8e4m3_block_scale_fp32",
     "triton.atomic_add.i32.relaxed.gpu",
-    "libdevice.tanh.f32"
+    "libdevice.tanh.f32",
+    "ptx.fma.rn.f32"
   ],
   "synchronization_contracts": [
     "mbarrier",
