@@ -1,0 +1,17 @@
+{
+  "schema": "kernelinfra.stage-receipt.v1",
+  "run_id": "open-cake-fma-v41-b8x128-b200-correctness-v1-7f305cec31e1",
+  "stage_id": "correctness",
+  "stage_kind": "correctness",
+  "execution": "broker",
+  "judge_identity": "open-cake-fma-integer-oracle-v1",
+  "started_at": "2026-09-04T02:55:39.776152+00:00",
+  "finished_at": "2026-09-04T02:55:43.622908+00:00",
+  "exit_code": 0,
+  "broker_job_id": "gpuq-097fc02cdbcc",
+  "gpu_ids": [
+    0
+  ],
+  "judge_result_valid": true,
+  "error": null
+}

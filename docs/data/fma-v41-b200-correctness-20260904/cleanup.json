@@ -1,0 +1,12 @@
+{
+  "daemon_pid": 726597,
+  "signal": "SIGTERM",
+  "socket_removed": true,
+  "process_exists": false,
+  "process_state": null,
+  "active_runs_before_stop": 0,
+  "own_broker_jobs_running_before_stop": 0,
+  "shared_control_plane_modified": false,
+  "node_state_preserved": true,
+  "gpu_rerun": false
+}

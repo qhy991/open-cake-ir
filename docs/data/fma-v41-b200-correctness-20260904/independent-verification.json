@@ -1,0 +1,21 @@
+{
+  "artifacts_checked": 36,
+  "case_counts": {
+    "nested-cancellation": 3,
+    "nested-overflow": 3,
+    "nested-seeded-bits": 3,
+    "nested-signed-zero": 3,
+    "nested-special-values": 3,
+    "nested-subnormals": 3,
+    "ordinary-cancellation": 3,
+    "ordinary-overflow": 3,
+    "ordinary-seeded-bits": 3,
+    "ordinary-signed-zero": 3,
+    "ordinary-special-values": 3,
+    "ordinary-subnormals": 3
+  },
+  "gpu_rerun": false,
+  "output_elements_recomputed": 36864,
+  "performance_measured": false,
+  "status": "passed"
+}

@@ -1,0 +1,408 @@
+{
+  "schema": "kernelinfra.run-result.v1",
+  "run_id": "open-cake-fma-v41-b8x128-b200-correctness-v1-7f305cec31e1",
+  "task_id": "open-cake-fma-v41-b8x128-b200-correctness-v1",
+  "task_sha256": "c01040e28a1879d2bc825dd6c3457e6202794029d98524c3c9ea88fc023b892d",
+  "candidate_sha256": "4422cead9ea60a7e512e136513341e692a8fd4a00267bb6b55f40942ba004dc9",
+  "outcome": "completed",
+  "validity": "valid",
+  "frontier_eligible": false,
+  "terminal_reason": null,
+  "stages": [
+    {
+      "id": "correctness",
+      "kind": "correctness",
+      "status": "passed",
+      "validity": "valid",
+      "summary": "Fixed-shape FMA bitwise/non-payload-NaN, input and ABI checks completed."
+    },
+    {
+      "id": "sanitize-memcheck",
+      "kind": "sanitize",
+      "status": "passed",
+      "validity": "valid",
+      "summary": "memcheck and complete-output oracle passed."
+    },
+    {
+      "id": "sanitize-racecheck",
+      "kind": "sanitize",
+      "status": "passed",
+      "validity": "valid",
+      "summary": "racecheck and complete-output oracle passed."
+    }
+  ],
+  "workloads": [
+    {
+      "correct": true,
+      "id": "nested-cancellation",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    },
+    {
+      "correct": true,
+      "id": "nested-overflow",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    },
+    {
+      "correct": true,
+      "id": "nested-seeded-bits",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    },
+    {
+      "correct": true,
+      "id": "nested-signed-zero",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    },
+    {
+      "correct": true,
+      "id": "nested-special-values",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    },
+    {
+      "correct": true,
+      "id": "nested-subnormals",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    },
+    {
+      "correct": true,
+      "id": "ordinary-cancellation",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    },
+    {
+      "correct": true,
+      "id": "ordinary-overflow",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    },
+    {
+      "correct": true,
+      "id": "ordinary-seeded-bits",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    },
+    {
+      "correct": true,
+      "id": "ordinary-signed-zero",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    },
+    {
+      "correct": true,
+      "id": "ordinary-special-values",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    },
+    {
+      "correct": true,
+      "id": "ordinary-subnormals",
+      "notes": "complete=1024 mismatch=0 mutation=0 abi=True"
+    }
+  ],
+  "fingerprints": {},
+  "metrics": {
+    "correctness": {
+      "cases": [
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-cancellation",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-signed-zero",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-subnormals",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-overflow",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-special-values",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-seeded-bits",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-cancellation",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-signed-zero",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-subnormals",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-overflow",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-special-values",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-seeded-bits",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        }
+      ],
+      "device_name": "NVIDIA B200",
+      "performance_measured": false,
+      "total_checked_elements": 12288
+    },
+    "sanitize-memcheck": {
+      "cases": [
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-cancellation",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-signed-zero",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-subnormals",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-overflow",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-special-values",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-seeded-bits",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-cancellation",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-signed-zero",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-subnormals",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-overflow",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-special-values",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-seeded-bits",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        }
+      ],
+      "device_name": "NVIDIA B200",
+      "performance_measured": false,
+      "total_checked_elements": 12288
+    },
+    "sanitize-racecheck": {
+      "cases": [
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-cancellation",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-signed-zero",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-subnormals",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-overflow",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-special-values",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "ordinary-seeded-bits",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-cancellation",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-signed-zero",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-subnormals",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-overflow",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-special-values",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        },
+        {
+          "abi_valid": true,
+          "checked_elements": 1024,
+          "correct": true,
+          "id": "nested-seeded-bits",
+          "mutated_input_count": 0,
+          "output_mismatch_count": 0
+        }
+      ],
+      "device_name": "NVIDIA B200",
+      "performance_measured": false,
+      "total_checked_elements": 12288
+    }
+  }
+}
