@@ -1,5 +1,9 @@
 # Bounded FP32 FMA implementation — 2026-09-04
 
+This document preserves the implementation checkpoint. The subsequent completed
+v41 release and its 252-test verification are recorded in
+[the release review](AKA_FMA_RELEASE_REVIEW_20260904.md).
+
 ## Result
 
 The [approved FMA design](AKA_IR_OWNER_REVIEW_20260904.md) is implemented in

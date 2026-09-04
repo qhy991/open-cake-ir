@@ -75,6 +75,35 @@ The primary task separately exercised 36 boundary inputs, including legal operan
 reuse and order, with no unexpected outcome. These are supplementary checks, not
 added to the independent review's counts because their coverage overlaps.
 
+## Post-release verification
+
+Released commit `2ceb5b7b2ad4928b552e8941ce5d30d7d050c7dd` was transferred into a
+new remote worktree, preserving both the pre-release and previous test snapshots.
+As `qhy-sol` on `verda-b200x4`, the complete relevant suite passed **252/252 tests,
+with no exclusions**. This includes the 16 FMA tests, the previous 197 shared tests,
+and 39 Compiler/release contract tests. The five observation tests that required a
+valid released identity now pass against v41 itself, rather than only the v40 baseline.
+
+The existing Python 3.12.3 / Torch 2.12.1+cu130 / Triton 3.7.1 environment was reused,
+with `CUDA_VISIBLE_DEVICES=""`. Both real GPU-free compilation cases passed again:
+ordinary FMA emitted one `fma.rn.f32` and a 9,560-byte cubin; the nested case emitted
+two FMA instructions, retained the separate multiplication, and produced a 9,824-byte
+cubin. No GPU was allocated or executed.
+
+Remote evidence root:
+`/home/qhy-sol/aka-fma-v41-release-20260904-ba6kOC/`.
+The tested worktree is `released-v41/`, the durable test log is
+`v41-release-contracts.log`, and compiler outputs are in `released-triton-cache/`.
+The original release tool's full `--verify` passed on this remote snapshot; its
+worktree remained clean.
+
+The independent reviewer subsequently returned **verified-release** for the same
+commit: `build_release(...).verify(root)` returned true, released `Compiler.load`
+and the 72-case Gate passed, and the lock correctly bound the approved canonical Gate,
+approval and all 91 sources. Source, manifest, Target, proposal, Gate, v40 archive and
+long-term AGENTS rules were unchanged by the release. That advisory is independent
+of the primary task's remote test counts.
+
 ## Corpus adoption
 
 The existing manifest is the sole Corpus authority. This change appends two positive
@@ -97,7 +126,7 @@ subnormal, Inf/NaN, nested FMA and rounded-producer numerical outputs still requ
 independent on-device checks under a frozen Workload contract.
 
 The existing cycle consumed the explicitly authorized approval for the canonical Gate
-above. The release builder's verification and a fresh `Compiler.load` of the released
-lock both passed, with 72/72 cases and 91 bound sources. No main merge or GPU run was
-performed. Next, verify the exact released snapshot on the remote host and retain the
-numerical-GPU checks above as a separate frozen-Workload task.
+above. Local and remote release verification are complete, with 72/72 cases and 91
+bound sources. No main merge or GPU run was performed. The remaining numerical-GPU
+checks are a separate frozen-Workload task; log and cosine remain approved designs,
+not features included in v41.
