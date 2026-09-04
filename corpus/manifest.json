@@ -945,6 +945,60 @@
         "schedule_sha256": "24b04b663f77433ec43b9bdf178497c57eaa5bf2dad555260c6bc73adb81ab5b",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "fma-b8-smoke",
+      "schedule": "corpus/schedules/fma-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "66a1b97fe4f0e5d255722810053c1bdb8199abc68f55cf2e1cbb3bb8da3c7e4c",
+        "lowering_source_sha256": "e9eaa09a23a135842566d6cc4a4d2a406b2bd38d39e8cf606bdc4ee732391576"
+      }
+    },
+    {
+      "case_id": "fma-chain-b8-smoke",
+      "schedule": "corpus/schedules/fma-chain-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "8db892766014ed87b45d93c72393ccb9568292327958420042378712c90b496d",
+        "lowering_source_sha256": "a48ade857b2efb914166a8bd73f7eb389e70670d5d4656e81610c3b9c71eb9d5"
+      }
+    },
+    {
+      "case_id": "fma-b8-smoke-arity-drift",
+      "schedule": "corpus/schedules/fma-b8-smoke-arity-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "ELEMENTWISE_ARITY",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "678f88b824da46037d6ea608854e8d4b1771d370fad1aabf9af015f1aa512d0c",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "fma-b8-smoke-instruction-drift",
+      "schedule": "corpus/schedules/fma-b8-smoke-instruction-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "ELEMENTWISE_INSTRUCTION_KIND_DIFFERS",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "804b50a7d4bf609a4bfb5e42d90458611b396306ca1f6ea2e631adade49892a9",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }
