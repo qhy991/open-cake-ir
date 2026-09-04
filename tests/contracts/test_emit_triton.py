@@ -448,8 +448,8 @@ class ElementwiseArityTest(unittest.TestCase):
         self.assertEqual(set(templates) | {ElementwiseOp.TANH}, set(ElementwiseOp))
         for op, template in templates.items():
             with self.subTest(op=op.value):
-                self.assertIn("{a}", template)
-                self.assertEqual("{b}" in template, op.arity == 2)
+                for index, operand in enumerate(("a", "b", "c"), start=1):
+                    self.assertEqual("{" + operand + "}" in template, op.arity >= index)
 
     def test_tanh_is_emitted_only_when_the_schedule_declares_it(self) -> None:
         swiglu = emit(

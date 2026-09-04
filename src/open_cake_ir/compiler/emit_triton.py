@@ -1019,6 +1019,13 @@ class _TritonEmitter:
         # multiply a fast kernel uses declares `rsqrt`-style reciprocal and `mul`, which
         # is a different Schedule with different numerics -- and says so.
         ElementwiseOp.DIV: "{a} / {b}",
+        # Opaque inputs preserve producer rounding and nested FMA boundaries.
+        # No .ftz or .sat modifier may alter the declared contract.
+        ElementwiseOp.FMA: (
+            'tl.inline_asm_elementwise("fma.rn.f32 $0, $1, $2, $3;", '
+            'constraints="=f,f,f,f", args=[{a}, {b}, {c}], dtype=tl.float32, '
+            'is_pure=True, pack=1)'
+        ),
     }
 
     def _emit_elementwise(self, operation, pad: str) -> None:
@@ -1040,15 +1047,7 @@ class _TritonEmitter:
                 and instruction.contract == "ptx.fma.rn.f32",
                 "the Triton fma body requires ptx.fma.rn.f32",
             )
-            # Opaque operands preserve preceding rounded producers and nested FMA
-            # boundaries. No .ftz or .sat modifier may alter the declared contract.
-            expression = (
-                'tl.inline_asm_elementwise("fma.rn.f32 $0, $1, $2, $3;", '
-                'constraints="=f,f,f,f", '
-                f'args=[{", ".join(operands)}], dtype=tl.float32, '
-                'is_pure=True, pack=1)'
-            )
-        elif parameters.op is ElementwiseOp.TANH:
+        if parameters.op is ElementwiseOp.TANH:
             instruction = parameters.instruction
             _require(
                 instruction is not None
@@ -1059,7 +1058,9 @@ class _TritonEmitter:
         else:
             template = self._ELEMENTWISE_TEXT[parameters.op]
             expression = template.format(
-                a=operands[0], b=operands[1] if len(operands) > 1 else ""
+                a=operands[0],
+                b=operands[1] if len(operands) > 1 else "",
+                c=operands[2] if len(operands) > 2 else "",
             )
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}{operation.writes[0]} = {expression}")
