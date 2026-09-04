@@ -7,18 +7,19 @@ The four reviewed FMA cases are now admitted to the canonical Corpus manifest, a
 complete Gate matches **72/72 cases with 91 bound sources**. There are no identified
 static release-blocking code defects.
 
-Formal release has **not** been performed. The repository prohibits this automation
-from writing `compiler/release-approval.json`; the user was asked whether their request
-to publish grants a one-time exception after independent review. Until that explicit
-answer or an externally written approval arrives, the old approval and v40 lock remain
-unchanged. This document is technical review evidence, not a substitute approval file.
+Formal static Compiler release is now **completed**: `open-cake-ir-sm100a-v41`.
+The user explicitly granted the requested one-time permission to record the reviewed
+Gate approval and publish v41. The approval was recorded separately from the unchanged
+release cycle, which then exited 0 and produced a verified released lock. Long-term
+AGENTS rules were not changed; the v40 archive remains intact. This document is review
+evidence, not a substitute for `compiler/release-approval.json`.
 
 Exact approval boundary:
 
 - Compiler proposal: `open-cake-ir-sm100a-v41-draft`.
 - Gate: `compiler/corpus-gate-report.json`.
 - Canonical Gate SHA256:
-  `e0b15f2c63157cd3b4f470807208e3cc91a341432cc8b8a9838ec70218ad63fb`.
+  `372f3c182a06374cbb743eb9c5388fc0103b36a6faa323c2d291fef74628f56c`.
 - Reviewed implementation: `c3304a59439704c3656c96c0e3d3e4a5a86dada8`,
   relative to `ff8903d9c7b085ed9439cd1a34ea00e69e8bfd41`.
 - Subsequent Compiler-bound change: only canonical manifest admission of the exact
@@ -26,6 +27,15 @@ Exact approval boundary:
 
 The digest above is recorded once for the new external approval boundary, not as a
 claim of semantic or GPU correctness.
+
+Digest-record correction: the first review mislabeled the serialized file's SHA256
+(starting `e0b15f2c`) as the canonical Gate digest. The file includes a trailing newline;
+the release builder's canonical JSON does not. The first authorized release attempt
+therefore correctly exited 3 without replacing the v40 lock. The independent reviewer
+rechecked `build_gate_report(...).canonical_sha256`, confirmed that the Gate file,
+source, Target, manifest and proposal were unchanged from `1f2152f`, and reaffirmed
+`recommend-static-release` for the same 72-case Gate. Only the digest record was
+corrected; no semantic evidence or expected result was changed to make release pass.
 
 ## Independent review
 
@@ -86,7 +96,8 @@ expressibility or end-to-end framework acceptance. Cancellation, signed zero,
 subnormal, Inf/NaN, nested FMA and rounded-producer numerical outputs still require
 independent on-device checks under a frozen Workload contract.
 
-Once an explicit permitted writer records approval for the exact Gate above, rerun the
-existing release cycle and verify the released lock before publishing the released
-Compiler. Do not change long-term AGENTS rules or invent a reviewer identity. No main
-merge or GPU run has been performed by this release-preparation change.
+The existing cycle consumed the explicitly authorized approval for the canonical Gate
+above. The release builder's verification and a fresh `Compiler.load` of the released
+lock both passed, with 72/72 cases and 91 bound sources. No main merge or GPU run was
+performed. Next, verify the exact released snapshot on the remote host and retain the
+numerical-GPU checks above as a separate frozen-Workload task.
