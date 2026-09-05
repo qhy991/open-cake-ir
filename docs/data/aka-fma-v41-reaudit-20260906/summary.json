@@ -1,0 +1,23 @@
+{
+  "schema": "open-cake.aka-fma-v41-reaudit-summary.v1",
+  "status": "terminal",
+  "cases": 12,
+  "counts": {
+    "remaining_schedule_ir_gap": 5,
+    "authoring_rejected": 2,
+    "candidate_lowered_compiled": 4,
+    "candidate_semantic_review_rejected": 1
+  },
+  "open_cake_commit": "d9d56e835cf96eecf70e0259b65bc1b20c4f6f0d",
+  "compiler_revision_id": "open-cake-ir-sm100a-v41",
+  "aka_commit": "387aa7faf521a0b72c994ff15a7638cd7e6a8583",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "max",
+  "gpu_test": "not_run",
+  "performance_measured": false,
+  "semantic_survivor_count": 4,
+  "runtime_scalar_blocked_count": 5,
+  "backend_compile_gap_count": 1,
+  "authoring_rejected_count": 2,
+  "semantic_review_rejected_count": 1
+}

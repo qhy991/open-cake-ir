@@ -1,0 +1,16 @@
+{
+  "cases": 12,
+  "counts": {
+    "authoring_rejected": 2,
+    "candidate_lowered_compiled": 4,
+    "candidate_semantic_review_rejected": 1,
+    "remaining_schedule_ir_gap": 5
+  },
+  "gpu_test": "not_run",
+  "performance_measured": false,
+  "runtime_scalar_blocked": 5,
+  "schema": "open-cake.aka-fma-v41-reaudit-verification.v1",
+  "semantic_survivors": 4,
+  "status": "accepted",
+  "unique_cases": 12
+}
