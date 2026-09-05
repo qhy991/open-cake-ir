@@ -530,6 +530,14 @@ def _validate_kda_decode_megaop_b200_contract(
         "local_output",
     }:
         raise ValueError("KDA B200 megaop candidate ABI and tensors differ")
+    bf16_tensors = {
+        "hidden_states", "qkvg_weight", "bfa_weight", "f_b_weight",
+        "conv_states", "o_proj_weight", "local_output",
+    }
+    for name, raw_tensor in tensors.items():
+        dtype = "int32" if name == "cache_indices" else "bf16" if name in bf16_tensors else "fp32"
+        if _object(raw_tensor, f"KDA B200 tensor {name}").get("dtype") != dtype:
+            raise ValueError(f"KDA B200 megaop tensor {name} dtype differs")
     expected_shapes = {
         "hidden_states": [18, 7168], "qkvg_weight": [6144, 7168],
         "bfa_weight": [144, 7168], "f_b_weight": [1536, 128],
@@ -554,6 +562,60 @@ def _validate_kda_decode_megaop_b200_contract(
     )
     if scalar_values != (0.08838834764831843, 1e-5, -5.0):
         raise ValueError("KDA B200 megaop scalar contract differs")
+    if semantics.get("state_and_padding") != {
+        "negative_row_output": "exact_zero",
+        "negative_row_state_effect": "none",
+        "selected_slots": "updated_exactly_once_per_call",
+        "inactive_and_ghost_slots": "bitwise_unchanged",
+        "same_slot_sequential_reuse": "continues_from_prior_conv_and_ssm_state",
+    }:
+        raise ValueError("KDA B200 megaop state and padding contract differs")
+    if semantics.get("output_storage") != {
+        "fresh": True, "contiguous": True, "exact_sized": True,
+        "zero_offset": True, "input_aliasing": "forbidden",
+    }:
+        raise ValueError("KDA B200 megaop output storage contract differs")
+    if (
+        semantics.get("model") != "Kimi-K3"
+        or semantics.get("stage") != "one_token_rank_local_decode"
+        or semantics.get("parallelism") != {
+            "tensor_parallel_size": 8,
+            "timed_communication": "none",
+            "first_excluded_node": "BF16 TP AllReduce",
+        }
+    ):
+        raise ValueError("KDA B200 megaop rank-local boundary differs")
+    oracle = _object(document.get("oracle"), "KDA B200 megaop oracle")
+    required_oracle = {
+        "kind": "independent_unfused_high_level_oracle_with_black_box_module_baseline",
+        "revision": (
+            "ff68211690d0d896c2bf9a6800a19424e14b591a"
+            if identity[1] == "1"
+            else "6f51fa40466ef3c88ee87ddd4160f70667f7eea6"
+        ),
+        "callable": "bench_kimi_k3_kda_decode_megaop_b200_standalone.reference_megaop",
+        "named_endpoints": [
+            "qkvg", "bfa", "mixed_qkv", "onorm_gate", "f_a", "beta",
+            "forget_gate", "core_output", "local_output",
+            "complete_post_call_conv_states", "complete_post_call_ssm_states",
+        ],
+        "timing_baseline": "source_derived_module_qualified_on_B200_execute_only",
+    }
+    if any(oracle.get(name) != value for name, value in required_oracle.items()):
+        raise ValueError("KDA B200 megaop correctness oracle differs")
+    required_validation = {
+        "canonical": "all_named_endpoints_complete_pools_storage_and_sequential_reuse_before_timing",
+        "atol": 0.02,
+        "rtol": 0.02,
+        "minimum_match_fraction": 1.0,
+        "claim_boundary": "standalone_rank_local_B200_module_only_not_B300_model_forward_or_serving",
+    }
+    if (
+        any(validation.get(name) != value for name, value in required_validation.items())
+        or isinstance(validation.get("minimum_match_fraction"), bool)
+        or validation.get("all_cases_required") is not True
+    ):
+        raise ValueError("KDA B200 megaop correctness or claim boundary differs")
     if hardware != {
         "gpu": "NVIDIA B200", "compute_capability": [10, 0],
         "multiprocessor_count": 148, "total_memory_bytes": 191490555904,

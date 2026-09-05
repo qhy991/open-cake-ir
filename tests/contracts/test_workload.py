@@ -230,6 +230,62 @@ class WorkloadContractTest(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError, "KDA B200 megaop case shape"):
                             WorkloadContract.load(path)
 
+    def test_megaop_required_semantic_boundaries_reject_drift_and_omission(self) -> None:
+        for source in (self.kda_megaop_b200_v1_path, self.kda_megaop_b200_path):
+            original = json.loads(source.read_text(encoding="utf-8"))
+            mutations = [
+                (("tensors", name, "dtype"), "int8") for name in original["tensors"]
+            ] + [
+                (("semantics", "state_and_padding", field), "ignored")
+                for field in original["semantics"]["state_and_padding"]
+            ] + [
+                (("semantics", "state_and_padding"), {}),
+                (("semantics", "model"), "other_model"),
+                (("semantics", "stage"), "model_forward"),
+                (("semantics", "parallelism", "tensor_parallel_size"), 1),
+                (("semantics", "parallelism", "timed_communication"), "included"),
+                (("semantics", "parallelism", "first_excluded_node"), "none"),
+            ] + [
+                (("semantics", "output_storage", field), False)
+                for field in original["semantics"]["output_storage"]
+            ] + [
+                (("oracle", field), None)
+                for field in ("kind", "revision", "callable", "named_endpoints", "timing_baseline")
+            ] + [
+                (("validation", "canonical"), "output_only"),
+                (("validation", "atol"), 0.2),
+                (("validation", "rtol"), 0.2),
+                (("validation", "minimum_match_fraction"), 0),
+                (("validation", "all_cases_required"), False),
+                (("validation", "claim_boundary"), "full_model_and_serving"),
+            ]
+            for fields, replacement in mutations:
+                for omit in (False, True):
+                    with self.subTest(
+                        version=source.name, field=".".join(fields), omit=omit
+                    ), tempfile.TemporaryDirectory() as directory:
+                        document = json.loads(json.dumps(original))
+                        owner = document
+                        for field in fields[:-1]:
+                            owner = owner[field]
+                        if omit:
+                            owner.pop(fields[-1])
+                        else:
+                            owner[fields[-1]] = replacement
+                        path = Path(directory) / "workload.json"
+                        path.write_text(json.dumps(document), encoding="utf-8")
+                        with self.assertRaisesRegex(ValueError, "KDA B200 megaop"):
+                            WorkloadContract.load(path)
+
+    def test_megaop_provenance_explanation_is_not_a_semantic_field(self) -> None:
+        for source in (self.kda_megaop_b200_v1_path, self.kda_megaop_b200_path):
+            with self.subTest(version=source.name), tempfile.TemporaryDirectory() as directory:
+                document = json.loads(source.read_text(encoding="utf-8"))
+                document["provenance"][0]["scope"] += "; clarified source description"
+                path = Path(directory) / "workload.json"
+                path.write_text(json.dumps(document), encoding="utf-8")
+                self.assertEqual(WorkloadContract.load(path).workload_id, document["workload_id"])
+
     def test_structural_cross_field_inconsistencies_fail_closed(self) -> None:
         cases = (
             (self.dsa_path, lambda d: d["semantics"]["case_matrix"].update(total_rows=31), "DSA case matrix"),
