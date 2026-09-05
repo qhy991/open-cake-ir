@@ -501,6 +501,145 @@ def _validate_kda_fused_decode_contract(document: Mapping[str, object]) -> None:
         if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
             raise ValueError(f"KDA measurement {name} is invalid")
 
+
+def _validate_kda_decode_megaop_b200_contract(
+    document: Mapping[str, object],
+) -> None:
+    """Validate the separately named Kimi-K3 B200 rank-local megaop."""
+
+    identity = (document.get("workload_id"), document.get("revision"))
+    if identity not in {
+        ("kimi-k3-kda-decode-megaop-b200-v1", "1"),
+        ("kimi-k3-kda-decode-megaop-b200-v2", "2"),
+    }:
+        raise ValueError("KDA B200 megaop workload identity or revision differs")
+    tensors = _object(document.get("tensors"), "KDA B200 megaop tensors")
+    semantics = _object(document.get("semantics"), "KDA B200 megaop semantics")
+    geometry = _object(semantics.get("geometry"), "KDA B200 megaop geometry")
+    hardware = _object(semantics.get("hardware"), "KDA B200 megaop hardware")
+    validation = _object(document.get("validation"), "KDA B200 megaop validation")
+    measurement = _object(validation.get("measurement"), "KDA B200 megaop measurement")
+    expected_abi = [
+        "hidden_states", "qkvg_weight", "bfa_weight", "f_b_weight",
+        "conv_states", "w_q_t", "w_k_t", "w_v_t", "conv_bias", "A_log",
+        "dt_bias", "onorm_weight", "ssm_states", "cache_indices",
+        "o_proj_weight", "scale", "onorm_eps", "lower_bound",
+    ]
+    if semantics.get("candidate_abi") != expected_abi or set(tensors) != {
+        *expected_abi,
+        "local_output",
+    }:
+        raise ValueError("KDA B200 megaop candidate ABI and tensors differ")
+    expected_shapes = {
+        "hidden_states": [18, 7168], "qkvg_weight": [6144, 7168],
+        "bfa_weight": [144, 7168], "f_b_weight": [1536, 128],
+        "conv_states": [49, 3, 4608], "w_q_t": [4, 1536],
+        "w_k_t": [4, 1536], "w_v_t": [4, 1536], "conv_bias": [4608],
+        "A_log": [12], "dt_bias": [1536], "onorm_weight": [128],
+        "ssm_states": [49, 12, 128, 128], "cache_indices": [18],
+        "o_proj_weight": [7168, 1536], "local_output": [18, 7168],
+    }
+    for name, shape in expected_shapes.items():
+        if _object(tensors.get(name), f"KDA B200 tensor {name}").get("shape") != shape:
+            raise ValueError(f"KDA B200 megaop tensor {name} shape differs")
+    if _object(tensors.get("conv_states"), "KDA B200 conv state").get(
+        "strides"
+    ) != [13824, 4608, 1] or _object(
+        tensors.get("ssm_states"), "KDA B200 SSM state"
+    ).get("strides") != [196608, 16384, 128, 1]:
+        raise ValueError("KDA B200 megaop state strides differ")
+    scalar_values = tuple(
+        _object(tensors.get(name), f"KDA B200 scalar {name}").get("value")
+        for name in ("scale", "onorm_eps", "lower_bound")
+    )
+    if scalar_values != (0.08838834764831843, 1e-5, -5.0):
+        raise ValueError("KDA B200 megaop scalar contract differs")
+    if hardware != {
+        "gpu": "NVIDIA B200", "compute_capability": [10, 0],
+        "multiprocessor_count": 148, "total_memory_bytes": 191490555904,
+    }:
+        raise ValueError("KDA B200 megaop hardware differs")
+    if geometry != {
+        "graph_rows": 18, "rank_local_heads": 12, "global_heads": 96,
+        "head_dim": 128, "hidden_size": 7168, "pool_slots": 49,
+        "ghost_slot": 0, "conv_width": 4, "conv_history_width": 3,
+    }:
+        raise ValueError("KDA B200 megaop geometry differs")
+    case_shape = {
+        "graph_rows": geometry["graph_rows"],
+        "num_heads": geometry["rank_local_heads"],
+        "head_dim": geometry["head_dim"],
+        "hidden_size": geometry["hidden_size"],
+        "pool_slots": geometry["pool_slots"],
+        "tokens_per_request": 1,
+    }
+    cases = cast(list[Mapping[str, object]], document["cases"])
+    observed_cases = tuple(
+        (
+            case.get("case_id"),
+            _object(case.get("shape"), "KDA B200 megaop case shape"),
+            case.get("mode"),
+        )
+        for case in cases
+    )
+    if observed_cases != (
+        (
+            "m18-h12-synthetic-all-active",
+            {**case_shape, "active_rows": geometry["graph_rows"]},
+            "synthetic_all_active_at_trace_proved_graph_bucket",
+        ),
+        (
+            "m18-h12-one-padded-row",
+            {**case_shape, "active_rows": geometry["graph_rows"] - 1},
+            "interior_row_7_negative_cuda_graph_padding",
+        ),
+    ):
+        raise ValueError("KDA B200 megaop case shape, identity, or mode differs")
+    required_measurement = (
+        {
+            "correctness_warmup_iterations": 5,
+            "correctness_samples_per_trial": 20,
+            "correctness_trials": 5,
+            "benchmark_warmup_iterations": 5,
+            "benchmark_samples_per_trial": 20,
+            "benchmark_trials": 25,
+            "maximum_median_aba_drift": 0.05,
+            "maximum_p90_aba_drift": 0.1,
+            "maximum_trial_median_cv": 0.05,
+            "minimum_paired_wins": 20,
+            "minimum_speedup_each_case": 1.0526315789473684,
+        }
+        if identity[1] == "1"
+        else {
+            "correctness_warmup_iterations": 5,
+            "correctness_samples_per_trial": 20,
+            "correctness_trials": 5,
+            "benchmark_warmup_iterations": 5,
+            "benchmark_samples_per_trial": 20,
+            "benchmark_trials": 25,
+            "maximum_order_effect": 0.05,
+            "maximum_trial_median_cv": 0.05,
+            "minimum_paired_wins": 20,
+            "minimum_speedup_each_case": 1.0526315789473684,
+            "median_confidence_interval": "exact_nonparametric_at_least_95_percent",
+            "baseline_control_acceptance": "interval_contains_1",
+            "candidate_promotion_acceptance": "interval_lower_bound_at_least_minimum_speedup",
+            "retain_all_raw_samples": True,
+            "raw_sample_cv": "report_only",
+            "unstable_measurement": "valid negative evidence, not promotion eligible",
+        }
+    )
+    if any(measurement.get(name) != value for name, value in required_measurement.items()):
+        raise ValueError("KDA B200 megaop measurement contract differs")
+    expected_order = (
+        ["baseline_before", "candidate", "baseline_after"]
+        if identity[1] == "1"
+        else {"baseline_candidate": 13, "candidate_baseline": 12}
+    )
+    order_field = "trial_order" if identity[1] == "1" else "paired_trial_order"
+    if measurement.get(order_field) != expected_order:
+        raise ValueError("KDA B200 megaop trial order differs")
+
 class WorkloadContract:
     """Canonical operator semantics, cases and correctness authority."""
 
@@ -584,6 +723,8 @@ class WorkloadContract:
             _validate_dsa_contract(document)
         elif document.get("operator") == "kda_fused_decode":
             _validate_kda_fused_decode_contract(document)
+        elif document.get("operator") == "kimi_k3_kda_decode_megaop_b200":
+            _validate_kda_decode_megaop_b200_contract(document)
         else:
             raise ValueError("workload operator is unsupported")
         return cls(document, source)

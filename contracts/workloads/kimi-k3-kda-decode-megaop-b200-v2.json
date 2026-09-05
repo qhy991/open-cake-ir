@@ -1,0 +1,292 @@
+{
+  "schema_version": 1,
+  "workload_id": "kimi-k3-kda-decode-megaop-b200-v2",
+  "revision": "2",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "task_contract_source",
+      "repository": "KDA-internal",
+      "revision": "6f51fa40466ef3c88ee87ddd4160f70667f7eea6",
+      "path": "src/kda/tasks/kimi_k3_kda_decode_megaop_b200/TASK.md",
+      "scope": "B200 successor identity, 18-argument ABI, state effects, correctness, timing, materiality, and claim boundary"
+    },
+    {
+      "kind": "task_definition_source",
+      "repository": "KDA-internal",
+      "revision": "6f51fa40466ef3c88ee87ddd4160f70667f7eea6",
+      "path": "src/kda/resources/flashinfer_benchmarks/flashinfer_trace/definitions/kda/kimi_k3_kda_decode_megaop_b200_bf16.json",
+      "scope": "tensor, scalar, output, state-pool, hardware-tag, and generated-input contract"
+    },
+    {
+      "kind": "task_workload_source",
+      "repository": "KDA-internal",
+      "revision": "6f51fa40466ef3c88ee87ddd4160f70667f7eea6",
+      "path": "src/kda/resources/flashinfer_benchmarks/flashinfer_trace/workloads/kda/kimi_k3_kda_decode_megaop_b200_bf16.jsonl",
+      "scope": "ordered all-active and interior-negative M18 workload rows"
+    },
+    {
+      "kind": "task_evaluator_source",
+      "repository": "KDA-internal",
+      "revision": "6f51fa40466ef3c88ee87ddd4160f70667f7eea6",
+      "path": "src/kda/resources/flashinfer_benchmarks/benchmarks/bench_kimi_k3_kda_decode_megaop_b200_standalone.py",
+      "scope": "independent high-level oracle, named endpoints, complete state pools, sequential reuse, symmetric isolated workers, and alternating raw CUPTI pairs"
+    },
+    {
+      "kind": "repository_owner_authorization",
+      "authority": "user_approval_2026-08-30",
+      "scope": "create and continuously optimize a separately named B200 successor without changing the original B300 task"
+    }
+  ],
+  "operator": "kimi_k3_kda_decode_megaop_b200",
+  "cases": [
+    {
+      "case_id": "m18-h12-synthetic-all-active",
+      "shape": {
+        "graph_rows": 18,
+        "active_rows": 18,
+        "num_heads": 12,
+        "head_dim": 128,
+        "hidden_size": 7168,
+        "pool_slots": 49,
+        "tokens_per_request": 1
+      },
+      "seed": null,
+      "mode": "synthetic_all_active_at_trace_proved_graph_bucket"
+    },
+    {
+      "case_id": "m18-h12-one-padded-row",
+      "shape": {
+        "graph_rows": 18,
+        "active_rows": 17,
+        "num_heads": 12,
+        "head_dim": 128,
+        "hidden_size": 7168,
+        "pool_slots": 49,
+        "tokens_per_request": 1
+      },
+      "seed": null,
+      "mode": "interior_row_7_negative_cuda_graph_padding"
+    }
+  ],
+  "tensors": {
+    "hidden_states": {
+      "shape": [18, 7168],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "qkvg_weight": {
+      "shape": [6144, 7168],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "bfa_weight": {
+      "shape": [144, 7168],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "value_contract": "rows_140_144_exact_zero_padding"
+    },
+    "f_b_weight": {
+      "shape": [1536, 128],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "conv_states": {
+      "shape": [49, 3, 4608],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "strides": [13824, 4608, 1],
+      "side_effect": "selected positive slots updated in place"
+    },
+    "w_q_t": {
+      "shape": [4, 1536],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major"
+    },
+    "w_k_t": {
+      "shape": [4, 1536],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major"
+    },
+    "w_v_t": {
+      "shape": [4, 1536],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major"
+    },
+    "conv_bias": {
+      "shape": [4608],
+      "dtype": "fp32",
+      "layout": "contiguous",
+      "value": 0.0
+    },
+    "A_log": {
+      "shape": [12],
+      "dtype": "fp32",
+      "layout": "contiguous"
+    },
+    "dt_bias": {
+      "shape": [1536],
+      "dtype": "fp32",
+      "layout": "contiguous"
+    },
+    "onorm_weight": {
+      "shape": [128],
+      "dtype": "fp32",
+      "layout": "contiguous"
+    },
+    "ssm_states": {
+      "shape": [49, 12, 128, 128],
+      "dtype": "fp32",
+      "layout": "v_first_contiguous",
+      "strides": [196608, 16384, 128, 1],
+      "side_effect": "selected positive slots updated in place"
+    },
+    "cache_indices": {
+      "shape": [18],
+      "dtype": "int32",
+      "layout": "contiguous",
+      "value_contract": "positive entries unique in [1,48], negative entries padded, slot 0 ghost"
+    },
+    "o_proj_weight": {
+      "shape": [7168, 1536],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "scale": {
+      "shape": null,
+      "dtype": "fp32",
+      "value": 0.08838834764831843
+    },
+    "onorm_eps": {
+      "shape": null,
+      "dtype": "fp32",
+      "value": 0.00001
+    },
+    "lower_bound": {
+      "shape": null,
+      "dtype": "fp32",
+      "value": -5.0
+    },
+    "local_output": {
+      "shape": [18, 7168],
+      "dtype": "bf16",
+      "layout": "fresh_contiguous_dedicated_exact_sized_zero_offset"
+    }
+  },
+  "semantics": {
+    "model": "Kimi-K3",
+    "stage": "one_token_rank_local_decode",
+    "candidate_abi": [
+      "hidden_states",
+      "qkvg_weight",
+      "bfa_weight",
+      "f_b_weight",
+      "conv_states",
+      "w_q_t",
+      "w_k_t",
+      "w_v_t",
+      "conv_bias",
+      "A_log",
+      "dt_bias",
+      "onorm_weight",
+      "ssm_states",
+      "cache_indices",
+      "o_proj_weight",
+      "scale",
+      "onorm_eps",
+      "lower_bound"
+    ],
+    "definition": "normalized hidden_states -> qkvg projection plus bfa/f_b projection -> stateful convolution -> FP32 V-first KDA recurrence -> sigmoid-gated RMSNorm -> local o_proj",
+    "geometry": {
+      "graph_rows": 18,
+      "rank_local_heads": 12,
+      "global_heads": 96,
+      "head_dim": 128,
+      "hidden_size": 7168,
+      "pool_slots": 49,
+      "ghost_slot": 0,
+      "conv_width": 4,
+      "conv_history_width": 3
+    },
+    "state_and_padding": {
+      "negative_row_output": "exact_zero",
+      "negative_row_state_effect": "none",
+      "selected_slots": "updated_exactly_once_per_call",
+      "inactive_and_ghost_slots": "bitwise_unchanged",
+      "same_slot_sequential_reuse": "continues_from_prior_conv_and_ssm_state"
+    },
+    "output_storage": {
+      "fresh": true,
+      "contiguous": true,
+      "exact_sized": true,
+      "zero_offset": true,
+      "input_aliasing": "forbidden"
+    },
+    "hardware": {
+      "gpu": "NVIDIA B200",
+      "compute_capability": [10, 0],
+      "multiprocessor_count": 148,
+      "total_memory_bytes": 191490555904
+    },
+    "parallelism": {
+      "tensor_parallel_size": 8,
+      "timed_communication": "none",
+      "first_excluded_node": "BF16 TP AllReduce"
+    },
+    "unsupported_behavior": "fail_closed_without_fallback_or_contiguous_copy",
+    "physical_kernel_count": "unconstrained"
+  },
+  "oracle": {
+    "kind": "independent_unfused_high_level_oracle_with_black_box_module_baseline",
+    "revision": "6f51fa40466ef3c88ee87ddd4160f70667f7eea6",
+    "callable": "bench_kimi_k3_kda_decode_megaop_b200_standalone.reference_megaop",
+    "named_endpoints": [
+      "qkvg",
+      "bfa",
+      "mixed_qkv",
+      "onorm_gate",
+      "f_a",
+      "beta",
+      "forget_gate",
+      "core_output",
+      "local_output",
+      "complete_post_call_conv_states",
+      "complete_post_call_ssm_states"
+    ],
+    "timing_baseline": "source_derived_module_qualified_on_B200_execute_only"
+  },
+  "validation": {
+    "canonical": "all_named_endpoints_complete_pools_storage_and_sequential_reuse_before_timing",
+    "atol": 0.02,
+    "rtol": 0.02,
+    "minimum_match_fraction": 1.0,
+    "all_cases_required": true,
+    "measurement": {
+      "hardware": "one broker-exclusive NVIDIA B200",
+      "timer": "CUPTI 13 or newer",
+      "cold_l2": true,
+      "cuda_graph": false,
+      "paired_trial_order": {
+        "baseline_candidate": 13,
+        "candidate_baseline": 12
+      },
+      "correctness_warmup_iterations": 5,
+      "correctness_samples_per_trial": 20,
+      "correctness_trials": 5,
+      "benchmark_warmup_iterations": 5,
+      "benchmark_samples_per_trial": 20,
+      "benchmark_trials": 25,
+      "maximum_order_effect": 0.05,
+      "maximum_trial_median_cv": 0.05,
+      "minimum_paired_wins": 20,
+      "minimum_speedup_each_case": 1.0526315789473684,
+      "median_confidence_interval": "exact_nonparametric_at_least_95_percent",
+      "baseline_control_acceptance": "interval_contains_1",
+      "candidate_promotion_acceptance": "interval_lower_bound_at_least_minimum_speedup",
+      "retain_all_raw_samples": true,
+      "raw_sample_cv": "report_only",
+      "unstable_measurement": "valid negative evidence, not promotion eligible"
+    },
+    "claim_boundary": "standalone_rank_local_B200_module_only_not_B300_model_forward_or_serving"
+  }
+}
