@@ -159,6 +159,41 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         if not condition:
             findings.append(BackendPrecondition(code, path, message))
 
+    def arange(start: int, end: int, path: str) -> None:
+        # Match the arange emitted below. Triton 3.7.1 checks end-start, so a
+        # nonzero start is legal when the span is a power of two. block_type
+        # limits this one-dimensional value to 2**20 elements.
+        span = end - start
+        add(
+            0 <= start < end < (1 << 32)
+            and span <= (1 << 20)
+            and span & (span - 1) == 0,
+            "TRITON_ARANGE_RANGE_UNSUPPORTED",
+            path,
+            f"Triton arange [{start}, {end}) requires 32-bit endpoints and a "
+            "positive power-of-two span no larger than 1048576",
+        )
+
+    if schedule.program_map is not None:
+        for index, axis in enumerate(schedule.program_map.axes):
+            if axis.is_tiled:
+                arange(0, axis.tile, f"program_map.axes[{index}].tile")
+    for index, loop in enumerate(schedule.tile_loops):
+        arange(0, loop.tile, f"tile_loops[{index}].tile")
+    for index, access in enumerate(schedule.access_maps):
+        buffer = schedule.buffer(access.buffer)
+        if buffer is None:
+            continue  # The common Verifier owns unknown references.
+        for position, component in enumerate(access.indices):
+            if (
+                component.source is AccessIndexKind.DIMENSION
+                and component.dimension is not None
+                and component.dimension < len(buffer.shape)
+            ):
+                start = component.offset if component.extent is None else 0
+                end = buffer.shape[component.dimension] if component.extent is None else component.extent
+                arange(start, end, f"access_maps[{index}].indices[{position}]")
+
     add(
         schedule.program_map is not None,
         "TRITON_PROGRAM_MAP_REQUIRED",

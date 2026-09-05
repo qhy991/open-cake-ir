@@ -2631,6 +2631,21 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                             f"{component.dimension}; omit it to name the same range",
                             category,
                         )
+                    if (
+                        position < len(buffer.shape)
+                        and component.dimension != position
+                        and component.offset < size
+                        and component.offset + component.span(size) <= size
+                        and component.offset + component.span(size) > buffer.shape[position]
+                    ):
+                        out.add(
+                            "ACCESS_DIMENSION_COORDINATE_RANGE",
+                            component_path,
+                            f"dimension vector reaches {component.offset + component.span(size)}, "
+                            f"but addressed dimension {position} of {buffer.name!r} "
+                            f"has extent {buffer.shape[position]}",
+                            category,
+                        )
             elif component.source is AccessIndexKind.LOOP_TILE:
                 if component.name not in loop_iterators:
                     out.add(
@@ -3077,10 +3092,8 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
             for component in access.indices
         ):
             continue
-        if len(staged.shape) != sum(1 for c in access.indices if c.is_vector):
-            continue
-        position = 0
-        for component in access.indices:
+        vectors = []
+        for component_index, component in enumerate(access.indices):
             if not component.is_vector:
                 continue
             if component.source is AccessIndexKind.PROGRAM_TILE:
@@ -3100,18 +3113,42 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                 # axis size here would demand a tile the access never addresses.
                 expected = (
                     component.span(source.shape[component.dimension])
-                    if component.dimension is not None
+                    if component.dimension is not None and component.dimension < len(source.shape)
                     else None
                 )
-            if expected is not None and staged.shape[position] != expected:
+            vectors.append((component_index, component, expected))
+        # A direct register load produces exactly the vector axes in its address.
+        # Scalar addresses use the canonical one-value register shape (1,).
+        # A rank mismatch must not bypass this relation: otherwise a scalar can be
+        # mislabeled as a vector and silently broadcast by a later FMA.
+        shape_known = all(extent is not None for _, _, extent in vectors)
+        expected_shape = tuple(extent for _, _, extent in vectors) or (1,)
+        if (
+            operation.kind is OperationKind.LOAD
+            and operation.parameters.movement is LoadMovement.GLOBAL
+            and staged.space is MemorySpace.REGISTER
+            and shape_known
+            and (not vectors or len(staged.shape) != len(vectors))
+            and staged.shape != expected_shape
+        ):
+            out.add(
+                "LOAD_ACCESS_SHAPE_MISMATCH",
+                f"operations[{schedule.operations.index(operation)}].writes[0]",
+                f"load address produces register shape {list(expected_shape)}, but "
+                f"{staged.name!r} declares {list(staged.shape)}; a load does not splat or reshape",
+                category,
+            )
+        if len(staged.shape) != len(vectors):
+            continue
+        for staged_dimension, (component_index, component, expected) in enumerate(vectors):
+            if expected is not None and staged.shape[staged_dimension] != expected:
                 out.add(
                     "ACCESS_TILE_MISMATCH",
-                    f"access_maps[{index}].indices[{position}]",
+                    f"access_maps[{index}].indices[{component_index}]",
                     f"tile axis {component.name or component.dimension} carries "
-                    f"{expected} but {staged.name!r} stages {staged.shape[position]}",
+                    f"{expected} but {staged.name!r} stages {staged.shape[staged_dimension]}",
                     category,
                 )
-            position += 1
 
     # Every global buffer an operation touches needs an addressing rule, otherwise
     # lowering has to invent one.

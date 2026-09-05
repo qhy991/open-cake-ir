@@ -61,6 +61,17 @@ a same-domain unit atomic increment jointly identify its destination. It require
 same-role register ownership and bounded one-execution-per-program domain checked by
 the verifier; a caller's uniqueness assertion is insufficient. Other indexed stores are
 refused before lowering.
+A direct global load into registers preserves the vector shape of its AccessMap.
+Each program-tile, loop-tile and dimension component contributes its declared extent;
+scalar program coordinates contribute no axis. An all-scalar address uses the canonical
+one-value register shape [1]. A load cannot implicitly splat or reshape that result.
+Dimension vectors must also fit the physical dimension they address, not merely the
+dimension used to define their range. Invalid dimension references return Findings.
+Triton preflight checks the arange intervals emitted for program tiles, loop tiles and
+dimension walks. Their span must be a positive power of two within the backend's tensor
+limit; a non-power-of-two global extent is still legal when power-of-two tiles and masks
+cover it. This is a backend requirement, not a new arithmetic primitive or a guarantee
+of toolchain compilation for every otherwise eligible program.
 `state` is caller-owned global memory that an operation both reads and writes; read-only
 and write-only Buffers remain `input` and `output`. The admitted `atomic_rmw` reads one
 INT32 state target followed by its one runtime INT32 index, writes that same target and

@@ -999,6 +999,78 @@
         "schedule_sha256": "804b50a7d4bf609a4bfb5e42d90458611b396306ca1f6ea2e631adade49892a9",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "fma-scalar-load-b8-smoke",
+      "schedule": "corpus/schedules/fma-scalar-load-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "d4444e0c29163f37e98573a29c0ce136c87b05b4e0f1d63757a15f93167ef334",
+        "lowering_source_sha256": "e25ef227c30042139f814ad37da43a521c875876cd784a62180b32339d00cb4d"
+      }
+    },
+    {
+      "case_id": "fma-b8-smoke-load-shape-drift",
+      "schedule": "corpus/schedules/fma-b8-smoke-load-shape-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "LOAD_ACCESS_SHAPE_MISMATCH",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "95f68934d2d4a704e5fed3edeedd1c15c9e8e5c428f5183fd27633073416e54a",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "fma-b8-smoke-access-dimension-drift",
+      "schedule": "corpus/schedules/fma-b8-smoke-access-dimension-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "ACCESS_DIMENSION_MISMATCH",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "e05726b3fc493cb0dfefddf23258f94e94a972c82a6a4f04357a3b49a6bbea1c",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "fma-b8-smoke-cross-dimension-drift",
+      "schedule": "corpus/schedules/fma-b8-smoke-cross-dimension-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "ACCESS_DIMENSION_COORDINATE_RANGE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "5587f64ba209518a181955798f97a4856516007e0d6ac27ea0b65b708581a3fb",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "fma-b8-smoke-vector-span-drift",
+      "schedule": "corpus/schedules/fma-b8-smoke-vector-span-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "TRITON_ARANGE_RANGE_UNSUPPORTED",
+          "TRITON_ARANGE_RANGE_UNSUPPORTED",
+          "TRITON_ARANGE_RANGE_UNSUPPORTED",
+          "TRITON_ARANGE_RANGE_UNSUPPORTED"
+        ],
+        "schedule_sha256": "2fff703865da06f77dd340df69bb5417adc823e929cb2da32f9ec5c5f6aa4e82",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

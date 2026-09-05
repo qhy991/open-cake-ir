@@ -16,6 +16,7 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 | 文档怎样避免重复维护事实 | [0047](0047-documentation-separates-stable-history-and-current-views.md) |
 | AI 怎样读取任务并受预算约束 | [0048](0048-agent-runs-use-task-agents-and-ralph-control.md) |
 | 已发布身份怎样保留 | [Executor：0049](0049-released-executor-descriptors-reserve-their-identities.md)、[Compiler：0050](0050-released-compiler-locks-reserve-their-identities.md) |
+| 为什么读取不能隐式复制成一组数 | [0051](0051-load-values-follow-the-access-domain.md) |
 
 其余记录按本目录文件名查阅。状态含义：
 

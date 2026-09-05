@@ -47,6 +47,9 @@
 | `TARGET_UNSUPPORTED` | 当前发布不接受这个硬件目标 | 核对目标，不要偷偷换成另一张卡 |
 | FMA arity / instruction 诊断 | 输入个数或数值指令合同不符合要求 | 对照完整 FMA 示例和原始诊断 |
 | `STORE_EDGE_COUNT` | 写操作的读写边不完整或多余 | 检查每个值和目标是否正确连接 |
+| `LOAD_ACCESS_SHAPE_MISMATCH` | 实际读出的值形状与寄存器声明不同 | 核对坐标产生几个数，不依赖隐式复制或改形状 |
+| `ACCESS_DIMENSION_COORDINATE_RANGE` | 定义向量的长度超过了实际被访问的维度 | 核对每个下标真正访问哪一维 |
+| `TRITON_ARANGE_RANGE_UNSUPPORTED` | 所选向量区间不符合后端限制 | 选择合法向量长度并正确处理尾部；全局尺寸本身不必是二次幂 |
 | `STATE_STORE_PROGRAM_OWNER` | 工作编号不能证明写入者拥有该状态位置 | 核对 ProgramMap 与状态维度 |
 | `STATE_STORE_PROGRAM_AXIS_COVERAGE` | 状态写没有恰好覆盖所需工作坐标 | 核对是否遗漏或重复了轴 |
 | `Executor Revision file ... differs` | 实际源码与固定 Executor 不同 | 回到对应完整版本，或走后继发布流程 |

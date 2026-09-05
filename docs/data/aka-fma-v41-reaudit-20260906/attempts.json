@@ -1,0 +1,69 @@
+{
+  "schema": "open-cake.aka-fma-v41-reaudit-attempts.v1",
+  "treatment": {
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "max",
+    "authentication": "qhy-sol ChatGPT subscription",
+    "network": "disabled for model tools",
+    "gpu": "disabled",
+    "credential_files_read": false,
+    "model_tool_calls": 0
+  },
+  "attempts": [
+    {
+      "name": "v1",
+      "scope": "one canary",
+      "outcome": "schema_transport_rejected",
+      "reason": "The response schema used const without an explicit type; the provider rejected it before model output."
+    },
+    {
+      "name": "v2",
+      "scope": "one canary",
+      "outcome": "discarded_scope_violation",
+      "reason": "The prompt incorrectly broadened fixed_instance to the dynamic ABI and every workload; its model output is not comparable to the frozen Phase A scope. The controller also misclassified an existing final file because it called the failure classifier on success."
+    },
+    {
+      "name": "v3",
+      "scope": "one fixed-instance canary with complete evidence",
+      "outcome": "model_schedule_rejected_then_bounded_normalization_accepted",
+      "reason": "The model declared illegal register Allocations. Removing only those Allocations and matching Buffer references produced an accepted, lowerable, GPU-free compiled successor."
+    },
+    {
+      "name": "v4",
+      "scope": "the remaining eleven fixed-instance cases after one new canary",
+      "outcome": "terminal",
+      "verified_model_results": 8,
+      "model_schedule_rejections": 3,
+      "max_workers_after_canary": 5
+    },
+    {
+      "name": "finalize-v1",
+      "scope": "GPU-free backend compile projection",
+      "outcome": "invocation_error",
+      "reason": "The projection used a nonexistent Lowering.toolchain field; no terminal dataset was written."
+    },
+    {
+      "name": "finalize-v2",
+      "scope": "first complete twelve-case projection",
+      "outcome": "superseded_by_semantic_review",
+      "reason": "It exposed one hidden scalar-to-vector broadcast admitted by the v41 verifier."
+    },
+    {
+      "name": "finalize-v3",
+      "scope": "first semantic-reviewed twelve-case projection",
+      "outcome": "superseded_by_strict_load_shape_verifier",
+      "reason": "A second scalar-to-vector hidden broadcast was found in the normalized GroupNorm schedule."
+    },
+    {
+      "name": "finalize-v4",
+      "scope": "strict semantic-reviewed twelve-case terminal projection",
+      "outcome": "terminal",
+      "cases": 12
+    }
+  ],
+  "raw_evidence": {
+    "local_archive": "external raw archive retained by the publisher",
+    "remote_roots_preserved": true,
+    "published_projection_excludes_model_event_trajectories": true
+  }
+}
