@@ -1,245 +1,102 @@
-# Architecture
+# 系统全貌：怎样把一个想法变成可验证的 GPU 程序
 
-This document owns the stable system map. It describes supported boundaries and dataflow,
-not the latest release id, migration checkpoint, or experimental result. Current released
-authorities are projected in [`../reports/current/STATUS.md`](../reports/current/STATUS.md),
-and canonical vocabulary lives in [`GLOSSARY.md`](GLOSSARY.md).
+open-cake-ir 解决的问题是：**让计算方法写得明确，让错误能定位，让改进有证据。**
+这份文档解释稳定的职责；当前版本和数量只看 [发布状态](../reports/current/STATUS.md)。
 
-## 1. Product and dependency boundary
+[返回 Wiki](wiki/README.md) · [术语查询](GLOSSARY.md)
 
-The Open Cake Compiler is independently usable. The Research Lab freezes a Compiler
-Revision and coordinates Authoring Environments, Evaluation, and Evidence. No dependency
-points back from the Compiler into experimental machinery.
+## 1. 为什么不直接让 AI 写最快的代码
 
-```mermaid
-graph LR
-    W["Workload Contract<br/>semantics · oracle · cases"]
-    S["Study Contract<br/>treatment · budget · analysis"]
-    L["Research Lab<br/>preflight · Runs · Turns"]
-    C["Open Cake Compiler<br/>assess · analyze · lower"]
-    V["Evaluation<br/>correctness · timing · profiler"]
-    E["Evidence<br/>objects · ledger · audit · reports"]
+比如把一张表的每行求和，数学很简单，GPU 上却有多种做法：一组线程处理一行，还是分成几块？
+数据读一次后能否复用？两组线程会不会同时改一个答案？
 
-    W --> L
-    S --> L
-    L --> C
-    L --> V
-    V --> E
-    E --> L
-```
+只说“更快”没有给出这些选择。直接看最终机器代码，又很难发现改动的原因。
+本项目在两者中间放一份执行计划（Schedule），把数据、分工、顺序和资源写出来。
+编译器据此检查并生成代码；真实机器上的测量决定它到底对不对、快不快。
 
-The Workload Contract owns what must be computed. The Study Contract owns the question
-asked about Authoring Environments. The Compiler owns Schedule meaning. Evaluation owns
-observations after a Candidate crosses the sealed boundary. Evidence owns durable bytes
-and replay.
+它的研究价值在于能复查的过程：哪项选择变了，为什么被接受或拒绝，哪个结果支持改进。
+项目规模、AI 忙了多久、写了多少代码，都不是性能证据。
 
-## 2. Compiler pipeline
+## 2. 四部分各做一件事
 
-```text
-Schedule + exact Target + Compiler Revision
-                    |
-                    v
-             construction checks
-                    |
-                    v
-       verifier rules + modeled analysis
-                    |
-                    v
-               Assessment
-          / eligible       \ blocked
-         v                  v
- deterministic          localized
- Lowering               Findings
-         |
-         v
- inspectable target source or checked source asset
-```
+| 部分 | 用普通话说 | 输入与输出 |
+| --- | --- | --- |
+| Compiler，编译器 | 读懂并检查执行计划，再翻译成源码 | Schedule → Assessment → Lowering |
+| Research Lab，实验系统 | 按约定安排 AI 修改候选、分配预算、决定何时停止 | Workload + Study → 一次实验 |
+| Evaluation，评测 | 先核对答案，再按相同规则计时和分析瓶颈 | 固定候选 → 检查与测量记录 |
+| Evidence，证据存储 | 保存事实，并让别人从记录重建结论 | 原始产物 → 审计 → 报告 |
 
-An Assessment can say that a Schedule is structurally accepted while a selected backend
-cannot lower it. Backend preconditions therefore appear as lowering-blocking Findings
-before source emission.
-
-The generated lowering mechanisms are `triton` and `cutlass_cute_dsl`. The one retained
-closed source-asset entry point is `cake_tinygemm2_stage4_split_k`. These are mechanisms,
-not workload profiles: the Schedule declares its lowering route, while Workload semantics
-and the oracle remain outside the Compiler.
-
-Lowering produces source; it does not compile a CUBIN, allocate a GPU, run an oracle, or
-measure latency. Those are later Evaluation boundaries.
-
-## 3. What a Schedule commits to
-
-A Schedule exposes performance-relevant hardware decisions while leaving mechanical
-derivations to the Compiler.
-
-```mermaid
-graph TB
-    subgraph declarations["Schedule declarations"]
-        R["roles and warp groups"]
-        A["allocations and Buffer placement"]
-        P["pipelines and barriers"]
-        M["ProgramMap · TileLoop · AccessMap"]
-        O["typed operations and dependencies"]
-        LR["lowering route"]
-    end
-
-    subgraph derived["Compiler derives and verifies"]
-        D1["warp identity and dispatch"]
-        D2["storage offsets and resource bounds"]
-        D3["barrier counts and phases"]
-        D4["loop and access coordinates"]
-        D5["operation order and target source"]
-    end
-
-    R --> D1
-    A --> D2
-    P --> D3
-    M --> D4
-    O --> D5
-    LR --> D5
-```
-
-Layout is deliberately not a first-class algebra. A Schedule records concrete storage and
-access commitments; the Compiler checks their consistency. A missing primitive is added
-only when a real supported Workload needs a fact that existing primitives cannot compose.
-
-Static analysis blocks only within its modeled domain. Exact declared resources may
-support hard capacity checks; compiler-created allocation and microarchitectural behavior
-require compiled-artifact or on-device evidence.
-
-## 4. One Study execution
-
-Preflight resolves stable templates and released authorities into one exact CampaignLock.
-The CampaignLock authorizes execution but does not redefine Workload or Study semantics.
-
-New matched-search Runs use the `task_agents_ralph_v1` Agent interface. Before the first
-Turn, Lab renders exactly two read-only files in each independent workspace:
-
-```text
-TASK.md    complete task, ABI, Workload, Evaluation, budget and frozen references
-AGENTS.md  stable ownership, tool, evidence and single-writer rules
-```
-
-The provider invocation is a minimal instruction to read both files plus a derived
-StateCard. The external Ralph Controller—not the Agent—owns provider-token, wall-time,
-active-authoring, Turn, search, confirmatory and profiler budgets. Frozen schema-v1
-Studies retain their embedded Prompt templates only for historical replay.
-
-```mermaid
-stateDiagram-v2
-    [*] --> preflight
-    preflight --> run_started: exact CampaignLock
-    run_started --> author: Ralph iteration + StateCard
-    author --> seal: ordered candidate set
-    seal --> filter: build + assess + deduplicate
-    filter --> evaluate: launchable survivors
-    filter --> feedback: all refused
-    evaluate --> confirm: correctness then search timing
-    evaluate --> fault: external or protocol failure
-    confirm --> profile: Study requests attribution
-    confirm --> checkpoint: endpoint observation
-    profile --> checkpoint: no-timing profiler receipt
-    feedback --> checkpoint
-    fault --> checkpoint
-    checkpoint --> author: budget remains
-    checkpoint --> archive: terminal condition
-    archive --> [*]
-```
-
-The primary author is the sole Candidate submission writer. Auxiliary investigation may
-be read-only, but it cannot become a second Candidate authority. The external evaluator,
-not provider narration or a local probe, owns correctness and measurement disposition.
-
-The Lab has two closed Study variants:
-
-- `matched_search` evolves fixed-shape Candidates under a declared Claim Scope;
-- `portfolio` starts from a qualified fixed-cell KernelSeed and validates a predeclared
-  exact-shape specialist/dispatcher domain.
-
-Artifact optimization is a non-scientific Claim Scope on `matched_search`, not a third
-execution mode. Serving is a later integration and evidence boundary, not a Lab runtime
-mode.
-
-Every Ralph iteration retains the exact TASK.md, AGENTS.md and StateCard bytes supplied to
-the provider. Budget exhaustion is a normal terminal reason; Provider, Environment and
-Evaluation failures retain their distinct fault classifications.
-
-## 5. Evidence and claim flow
-
-```text
-Candidate bytes
-  -> Evaluation Receipt
-  -> Evidence Object + Event Ledger
-  -> Terminal Archive
-  -> Run Audit
-  -> Study Report
-  -> derived Claim View
-```
-
-Each arrow narrows interpretation rather than silently strengthening it:
-
-- archive Integrity does not imply Protocol Adherence;
-- Protocol Adherence does not imply Candidate correctness;
-- correctness does not imply stable timing;
-- timing does not imply profiler attribution;
-- an operator or complete-Program result does not imply model-forward or serving behavior;
-- a system qualification does not produce a treatment estimate;
-- per-Run Artifact Promotion does not form an arm comparison.
-
-Evidence and terminal outcomes are append-only. Run Audits, Study Reports, and Claim Views
-are derived. A corrected interpretation creates an erratum or successor report; it never
-rewrites the original observation.
-
-## 6. Compiler evolution
-
-Kernel and Compiler evolution occur on different timescales.
+编译器能独立工作。Lab 会调用编译器、评测和证据存储；编译器不反过来依赖 AI、实验或报告。
 
 ```mermaid
 flowchart LR
-    CR["released Compiler Revision"] --> CA["Campaigns freeze it"]
-    CA --> O["recurring evidence-backed gap"]
-    O --> ADR["accepted design decision"]
-    ADR --> I["primitive + verifier + analysis + lowering"]
-    I --> CG["full Corpus Gate"]
-    CG --> HR["external repository-owner approval"]
-    HR --> NR["released successor Revision"]
+    W["Workload：要算什么、怎样判对"] --> L["Lab：组织实验"]
+    S["Study：比较什么、花多少预算"] --> L
+    L --> C["Compiler：检查与翻译"]
+    L --> V["Evaluation：核对与测量"]
+    V --> E["Evidence：保存与复查"]
+    E --> L
 ```
 
-A campaign cannot mutate its Compiler Revision. A proposal may authorize implementation
-and Corpus Gate preparation, but it is not a release. The release automation cannot write
-its own approval. Expected Corpus output is never regenerated merely to make a proposed
-change pass.
+## 3. 三份说明不能混为一份
 
-## 7. Documentation and experiment evolution
+以“对每行数值做归一化”为例：
 
-Stable architecture changes only when the supported system contract changes. Ordinary
-experimental activity follows the append-only path:
+- **Workload，任务约定：** 输入有几行、每行几个数，怎样算标准答案，容许多少误差。
+- **Schedule，执行计划：** 哪组线程处理哪一行，数据放在哪里，先做什么再做什么。
+- **Study，实验约定：** 比较哪些写程序的环境，每组运行几次，预算多少，怎样解释结果。
+
+数学任务可以不变，而执行计划改变。实验约定也必须预先固定，否则结果出来后再换标准就失去可比性。
+正式含义和负责者见 [术语表](GLOSSARY.md)。
+
+## 4. 编译器怎样处理计划
 
 ```text
-new experiment
-  -> new CampaignLock outside the checkout
-  -> new Evidence and terminal archive
-  -> new Run Audit / Study Report
-  -> regenerate current Claim View when accepted
-  -X-> rewrite glossary, architecture, or prior snapshots
+检查格式与类型
+  → 检查依赖、地址、资源和硬件规则
+  → 给出 Assessment（检查结果）和 Finding（具体诊断）
+  → 如果允许，生成目标源码
 ```
 
-Current release status is generated from canonical locks and indexes. Historical surveys,
-audits, and migration inventories are snapshots and must name their date or bound
-revision. [ADR 0047](adr/0047-documentation-separates-stable-history-and-current-views.md)
-defines this documentation lifecycle.
+计划还会说明生成方式：Triton、CuTe DSL，或一个已经核验的固定 CUDA 源码。
+最后一种不是从任意计划生成任意 CUDA；输出中的 `generated` 字段会说明来源。
 
-## 8. Relationship to the paper
+检查只覆盖模型中已经写明的规则。例如，声明了多少共享内存可以被检查；
+后端后来额外分配多少寄存器或共享内存，需要看编译产物和实际机器。
+因此，“结构合法”仍可能“后端无法生成”；“能生成”也不等于“已经编译或运行”。
 
-This repository implements an independent Cake-like Compiler and research apparatus. It
-uses the paper's public architecture and protocol as a source contract but does not claim
-the unpublished implementation, raw trajectories, exact compiler, or reported result has
-been reproduced.
+## 5. AI 怎样参与
 
-A matched Cake IR versus direct CUDA/PTX claim requires the same Workload, oracle, shape,
-Target, timing protocol, profiler policy, provider, scaffold, reasoning effort, budget,
-reference-access policy, and stopping rule. Direct Triton source is neither a Cake IR arm
-nor a substitute for that matched comparison.
+Lab 为每次独立尝试准备两个文件：
 
-See [`PAPER_CONTRACT.md`](PAPER_CONTRACT.md) for frozen paper-reported facts, explicit
-unknowns, and local reconstruction boundaries.
+- `TASK.md`：题目、输入输出、评测方法、预算和固定参考。
+- `AGENTS.md`：工具与行为规则。
+
+AI 提交候选，外部控制器 Ralph 记录预算和当前状态，再决定继续还是停止。
+评测器单独核对候选；AI 自己说“通过”不能替代评测记录。
+不同候选有各自固定的内容，旧结果不会被后来编辑覆盖。
+
+一次固定任务搜索叫 `matched_search`。从已验证的小范围方案组合成多个专用方案，叫 `portfolio`。
+只想优化一个产物，可以在同一搜索路径中选择对应的声明范围，不需要第三套运行系统。
+完整服务部署属于之后的接入与评测工作。见 [实验流程](wiki/experiments.md)。
+
+## 6. 结果怎样形成结论
+
+```text
+固定候选 → 答案与测量记录 → 保存原始文件 → 审计 → 按实验约定生成报告
+```
+
+正确率和速度是两件事。速度测量不稳定，也不能简单把正确候选说成“算错了”。
+一个小算子更快，还不能说明模型生成文字更快：模型还有其他算子、数据搬运和调度开销。
+见 [怎样读结果](wiki/results.md)。
+
+## 7. 怎样改进系统
+
+修改候选时，实验使用的编译器保持固定，避免每轮连“尺子”也变了。
+遇到已有操作拼不出的真实需求，才讨论新的 IR 能力；对应的类型、规则、分析和代码生成一起完善。
+最后运行完整语料检查，按发布流程生成新的 Compiler。
+
+Executor 固定的是 Lab、评测、证据工具和机器环境。它与 Compiler 是不同版本。
+已发布 Executor 的身份不重复使用，见 [ADR 0049](adr/0049-released-executor-descriptors-reserve-their-identities.md)。
+
+文档、代码、合同与历史记录分别维护，具体做法见 [文档维护](wiki/maintaining.md)。

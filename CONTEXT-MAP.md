@@ -63,10 +63,10 @@ release approval, and a released successor can change Compiler semantics.
 
 ### New user
 
-1. [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)
-2. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-3. [`docs/GLOSSARY.md`](docs/GLOSSARY.md)
-4. [`compiler/AUTHORING_CONTRACT.md`](compiler/AUTHORING_CONTRACT.md)
+1. [中文 Wiki](docs/wiki/README.md)
+2. [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)
+3. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+4. [`docs/GLOSSARY.md`](docs/GLOSSARY.md) and [`compiler/AUTHORING_CONTRACT.md`](compiler/AUTHORING_CONTRACT.md)
 
 ### Researcher or experiment operator
 

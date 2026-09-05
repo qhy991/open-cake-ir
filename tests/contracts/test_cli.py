@@ -4,7 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from hashlib import sha256
 from io import StringIO
 from pathlib import Path
@@ -20,6 +20,82 @@ from open_cake_ir.lab import CampaignLock, StudyReport  # noqa: E402
 
 
 class CliContractTests(unittest.TestCase):
+    def test_compiler_text_keeps_acceptance_lowering_and_diagnostic_impact_separate(self) -> None:
+        cases = (
+            ("fma-b8-smoke.json", 0, "通过", "允许", "[提示] RESIDENCY_BOUND"),
+            ("fma-b8-smoke-arity-drift.json", 2, "未通过", "不允许", "[阻止接受]"),
+            ("flash-kmeans-b32-warp-specialized-argmin.json", 0, "通过", "不允许",
+             "[阻止生成] TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED"),
+        )
+        for schedule, expected_code, accepted, eligible, diagnostic in cases:
+            with self.subTest(schedule=schedule), redirect_stdout(StringIO()) as output:
+                code = main([
+                    "--project-root", str(ROOT), "compiler", "assess", "--format", "text",
+                    "--revision", str(ROOT / "compiler/revision.lock.json"),
+                    str(ROOT / "corpus/schedules" / schedule),
+                ])
+            text = output.getvalue()
+            self.assertEqual(code, expected_code)
+            self.assertIn(f"结构检查：{accepted}\n", text)
+            self.assertIn(f"生成代码：{eligible}\n", text)
+            self.assertIn(diagnostic, text)
+            self.assertIn("未运行 GPU", text)
+
+    def test_compiler_text_lower_preserves_generated_and_checked_source_origins(self) -> None:
+        for schedule, origin in (
+            ("fma-b8-smoke.json", "由执行计划生成"),
+            ("tinygemm2-stage4-split-k.json", "已核验的固定源码"),
+        ):
+            with self.subTest(schedule=schedule), tempfile.TemporaryDirectory() as directory:
+                target = Path(directory) / "source.txt"
+                arguments = [
+                    "--project-root", str(ROOT), "compiler", "lower", "--format", "text",
+                    "--revision", str(ROOT / "compiler/revision.lock.json"),
+                    str(ROOT / "corpus/schedules" / schedule), "--output", str(target),
+                ]
+                with redirect_stdout(StringIO()) as output:
+                    self.assertEqual(main(arguments), 0)
+                self.assertIn(f"来源：{origin}", output.getvalue())
+                self.assertIn(str(target), output.getvalue())
+                self.assertTrue(target.read_bytes())
+                original = target.read_bytes()
+                with redirect_stderr(StringIO()) as error:
+                    self.assertEqual(main(arguments), 2)
+                self.assertIn("命令未完成", error.getvalue())
+                self.assertEqual(target.read_bytes(), original)
+
+    def test_compiler_text_reports_input_errors_without_a_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            malformed = root / "malformed.json"
+            malformed.write_text("{broken", encoding="utf-8")
+            for project_root, schedule in (
+                (ROOT, root / "missing.json"),
+                (ROOT, malformed),
+                (root / "missing-root", malformed),
+            ):
+                arguments = [
+                    "--project-root", str(project_root), "compiler", "assess", "--format", "text",
+                    "--revision", str(ROOT / "compiler/revision.lock.json"), str(schedule),
+                ]
+                with self.subTest(schedule=schedule, root=project_root), \
+                     redirect_stdout(StringIO()) as output, redirect_stderr(StringIO()) as error:
+                    self.assertEqual(main(arguments), 2)
+                self.assertEqual(output.getvalue(), "")
+                self.assertIn("命令未完成", error.getvalue())
+                self.assertNotIn("Traceback", error.getvalue())
+
+    def test_compiler_text_corpus_reports_expectation_matches_not_gpu_acceptance(self) -> None:
+        with redirect_stdout(StringIO()) as output:
+            code = main([
+                "--project-root", str(ROOT), "compiler", "check-corpus", "--format", "text",
+                "--revision", str(ROOT / "compiler/revision.lock.json"),
+            ])
+        count = len(json.loads((ROOT / "corpus/manifest.json").read_text())["cases"])
+        self.assertEqual(code, 0)
+        self.assertIn(f"{count}/{count} 项符合预期", output.getvalue())
+        self.assertIn("不是 GPU 正确性检查", output.getvalue())
+
     def test_lab_execute_refuses_evidence_inside_the_checkout_before_loading_inputs(
         self,
     ) -> None:

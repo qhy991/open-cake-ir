@@ -10,7 +10,7 @@ from dataclasses import asdict, fields, is_dataclass
 from pathlib import Path
 from typing import Sequence
 
-from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler import Compiler, CompilerError
 from open_cake_ir.lab import (
     CampaignLock,
     Lab,
@@ -45,11 +45,50 @@ def _emit(value: object) -> None:
     )
 
 
+def _emit_compiler(value: Mapping[str, object], args: argparse.Namespace) -> None:
+    """Render the same public result for a reader or a JSON consumer."""
+
+    if args.output_format == "json":
+        _emit(value)
+        return
+    if args.compiler_command == "assess":
+        print(f"执行计划：{value['schedule_id']}")
+        print(f"编译器：{value['compiler_revision_id']}")
+        print(f"目标：{value['target']}")
+        print("结构检查：" + ("通过" if value['accepted'] else "未通过"))
+        print("生成代码：" + ("允许" if value['lowering_eligible'] else "不允许"))
+        route = value['lowering']
+        if route is not None:
+            print(f"生成方式：{route['backend']}")
+        findings = value['findings']
+        print(f"诊断：{len(findings)} 条")
+        for finding in findings:
+            impact = (
+                "阻止接受" if finding['blocks_acceptance'] else
+                "阻止生成" if finding['blocks_lowering'] else "提示"
+            )
+            print(f"- [{impact}] {finding['code']} | {finding['path']}")
+        print("这一步未运行 GPU；诊断原文和完整分析可用默认 JSON 输出查看。")
+    elif args.compiler_command == "check-corpus":
+        matched = sum(case['matched'] for case in value['cases'])
+        print(f"编译器：{value['compiler_revision_id']}")
+        print(f"语料检查：{matched}/{value['case_count']} 项符合预期")
+        for case in value['cases']:
+            if not case['matched']:
+                print(f"- 不符合预期：{case['case_id']} | {case['schedule_path']}")
+        print("预期拒绝的反例也算通过；这不是 GPU 正确性检查。")
+    else:
+        print(f"代码文件：{value['output']}")
+        print(f"入口函数：{value['entry_point']}")
+        print("来源：" + ("由执行计划生成" if value['generated'] else "已核验的固定源码"))
+        print("已写出源码；尚未编译成 GPU 二进制，也未运行 GPU。")
+
+
 def _compiler(args: argparse.Namespace) -> int:
     compiler = Compiler.load(args.project_root, args.revision)
     if args.compiler_command == "assess":
         assessment = compiler.assess_file(args.schedule)
-        _emit(
+        _emit_compiler(
             {
                 "compiler_revision_id": assessment.compiler_revision_id,
                 "compiler_revision_sha256": assessment.compiler_revision_sha256,
@@ -68,12 +107,13 @@ def _compiler(args: argparse.Namespace) -> int:
                 "lowering_eligible": assessment.lowering_eligible,
                 "findings": [asdict(finding) for finding in assessment.findings],
                 "analysis": dict(assessment.analysis),
-            }
+            },
+            args,
         )
         return 0 if assessment.accepted else 2
     if args.compiler_command == "check-corpus":
         report = compiler.check_corpus()
-        _emit(
+        _emit_compiler(
             {
                 "corpus_id": report.corpus_id,
                 "compiler_revision_id": report.compiler_revision_id,
@@ -81,7 +121,8 @@ def _compiler(args: argparse.Namespace) -> int:
                 "passed": report.passed,
                 "case_count": report.case_count,
                 "cases": [asdict(case) for case in report.cases],
-            }
+            },
+            args,
         )
         return 0 if report.passed else 2
     assessment = compiler.assess_file(args.schedule)
@@ -89,14 +130,15 @@ def _compiler(args: argparse.Namespace) -> int:
     output = args.output.absolute()
     with output.open("x", encoding="utf-8") as stream:
         stream.write(lowering.source)
-    _emit(
+    _emit_compiler(
         {
             "schedule_sha256": lowering.schedule_sha256,
             "source_sha256": lowering.source_sha256,
             "generated": lowering.generated,
             "entry_point": lowering.route.entry_point,
             "output": str(output),
-        }
+        },
+        args,
     )
     return 0
 
@@ -186,11 +228,19 @@ def build_parser() -> argparse.ArgumentParser:
     compiler_commands = compiler.add_subparsers(dest="compiler_command", required=True)
     for name in ("assess", "lower"):
         command = compiler_commands.add_parser(name)
+        command.add_argument(
+            "--format", dest="output_format", choices=("json", "text"), default="json",
+            help="JSON for tools (default), or a concise Chinese explanation",
+        )
         command.add_argument("--revision", type=Path, required=True)
         command.add_argument("schedule", type=Path)
         if name == "lower":
             command.add_argument("--output", type=Path, required=True)
     check = compiler_commands.add_parser("check-corpus")
+    check.add_argument(
+        "--format", dest="output_format", choices=("json", "text"), default="json",
+        help="JSON for tools (default), or a concise Chinese explanation",
+    )
     check.add_argument("--revision", type=Path, required=True)
 
     lab = commands.add_parser("lab")
@@ -212,10 +262,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run one public Compiler or Lab command."""
 
     args = build_parser().parse_args(argv)
-    args.project_root = args.project_root.resolve(strict=True)
-    if args.command == "compiler":
-        return _compiler(args)
-    return _lab(args)
+    try:
+        args.project_root = args.project_root.resolve(strict=True)
+        if args.command == "compiler":
+            return _compiler(args)
+        return _lab(args)
+    except (CompilerError, OSError, json.JSONDecodeError) as error:
+        if args.command != "compiler" or args.output_format != "text":
+            raise
+        print(f"命令未完成：{error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

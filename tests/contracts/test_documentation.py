@@ -5,6 +5,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from urllib.parse import unquote
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +17,7 @@ STABLE_ENTRY_DOCUMENTS = (
     ROOT / "docs" / "TOP_LEVEL_DESIGN.md",
     ROOT / "docs" / "ACCEPTANCE_GATES.md",
     ROOT / "docs" / "RUNBOOK.md",
+    ROOT / "docs" / "GETTING_STARTED.md",
     ROOT / "docs" / "MIGRATION_PLAN.md",
     ROOT / "migration" / "CAPABILITY_MATRIX.md",
     ROOT / "docs" / "contexts" / "compiler" / "CONTEXT.md",
@@ -26,6 +28,28 @@ STABLE_ENTRY_DOCUMENTS = (
 
 
 class DocumentationContractTests(unittest.TestCase):
+    def test_wiki_documents_each_ir_operation_and_workload_contract(self) -> None:
+        sys.path.insert(0, str(ROOT / "src"))
+        from open_cake_ir.compiler.ir import ElementwiseOp, OperationKind
+
+        primitives = (ROOT / "docs/wiki/primitives.md").read_text(encoding="utf-8")
+        kinds = set(re.findall(r"^## (\w+)$", primitives, re.MULTILINE))
+        self.assertEqual(kinds, {kind.value for kind in OperationKind})
+        arithmetic = set(re.findall(r"^\| `(\w+)` \|", primitives, re.MULTILINE)) - {"op"}
+        self.assertEqual(arithmetic, {op.value for op in ElementwiseOp})
+        workloads = (ROOT / "docs/wiki/workloads.md").read_text(encoding="utf-8")
+        linked = set(re.findall(r"\.\./\.\./contracts/workloads/([^/)]+\.json)", workloads))
+        self.assertEqual(linked, {path.name for path in (ROOT / "contracts/workloads").glob("*.json")})
+
+    def test_wiki_index_links_every_reading_page(self) -> None:
+        wiki = ROOT / "docs/wiki"
+        index = (wiki / "README.md").read_text(encoding="utf-8")
+        for path in wiki.glob("*.md"):
+            if path.name != "README.md":
+                with self.subTest(page=path.name):
+                    self.assertIn(f"]({path.name})", index)
+        self.assertIn("docs/wiki/README.md", (ROOT / "README.md").read_text())
+
     def test_current_release_view_is_regenerated_from_authorities(self) -> None:
         result = subprocess.run(
             [sys.executable, "tools/render_current_status.py", "--check"],
@@ -74,16 +98,25 @@ class DocumentationContractTests(unittest.TestCase):
             ROOT / "reports" / "current" / "STATUS.md",
             ROOT / "inventory" / "CURRENT_STATE.md",
             ROOT / "contracts" / "workloads" / "README.md",
+            *(ROOT / "docs/wiki").glob("*.md"),
         )
         for path in paths:
             for target in markdown_link.findall(path.read_text(encoding="utf-8")):
-                if target.startswith(("http://", "https://", "mailto:", "#")):
+                if target.startswith(("http://", "https://", "mailto:")):
                     continue
-                relative = target.split("#", 1)[0]
-                if not relative:
+                relative, _, fragment = target.partition("#")
+                if not relative and not fragment:
                     continue
                 with self.subTest(path=path.relative_to(ROOT), target=target):
-                    self.assertTrue((path.parent / relative).exists())
+                    destination = path.parent / unquote(relative) if relative else path
+                    self.assertTrue(destination.exists())
+                    if fragment and destination.suffix == ".md":
+                        headings = re.findall(r"^#{1,6}\s+(.+?)\s*$", destination.read_text(), re.MULTILINE)
+                        anchors = {
+                            re.sub(r"\s", "-", re.sub(r"[^\w\-\s]", "", heading.lower()))
+                            for heading in headings
+                        }
+                        self.assertIn(unquote(fragment), anchors)
 
 
 if __name__ == "__main__":
