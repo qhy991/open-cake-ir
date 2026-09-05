@@ -84,6 +84,17 @@ generated source, route and mirror inventory remain outside Git.
   It was retained as `fetch_failed`, not repaired or mislabeled successful.
   A later read of the same terminal locator with a 120-second transport limit
   succeeded. No GPU work was repeated.
+- An optional recursive remote backup was too slow and was stopped without changing
+  the verified local mirror. Its partial destination was preserved. A first tar backup
+  restored macOS AppleDouble companion files on GNU tar; the strict verifier rejected
+  those binary `._*.complete-output.json` files even though all real JSON remained
+  intact. The failed extraction and an empty wrong-filename invocation directory were
+  preserved. A create-only v2 archive suppressed AppleDouble materialization, matched
+  its local and remote transfer identity, restored with zero `._*` files, and passed
+  the complete 36-artifact verification again at
+  `/home/qhy-sol/open-cake-fma-b200-rh7Qi8/verified-backup-v2-02/`.
+  The v2 archive is `evidence-backup-v2.tar.gz`; its one handoff SHA256 is
+  `69f1ecd5a6f7f81bfaabcba691fa18c556d997574d19c81fbf904e636415ee02`.
 
 The isolated GPU Infra deployment passed 76/76 tests; task and fleet checks passed
 before submission. Existing home-directory ACLs already allowed the broker user to
