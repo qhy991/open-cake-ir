@@ -60,6 +60,8 @@ flowchart LR
 
 计划还会说明生成方式：Triton、CuTe DSL，或一个已经核验的固定 CUDA 源码。
 最后一种不是从任意计划生成任意 CUDA；输出中的 `generated` 字段会说明来源。
+代码中的名称分别是 `triton`、`cutlass_cute_dsl` 和 `checked_cuda_asset`。
+固定源码路线目前的入口是 `cake_tinygemm2_stage4_split_k`，对应 TinyGEMM2 的固定线性层任务。
 
 检查只覆盖模型中已经写明的规则。例如，声明了多少共享内存可以被检查；
 后端后来额外分配多少寄存器或共享内存，需要看编译产物和实际机器。

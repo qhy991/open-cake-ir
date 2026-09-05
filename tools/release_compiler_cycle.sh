@@ -10,10 +10,9 @@
 # that exact artifact, releases, and verifies. Frozen Study Contracts are never
 # re-stamped; a new release is consumed by a successor contract.
 #
-# The id is derived, not passed. A Revision that some sealed evidence run was produced
-# under is history and its bytes are immutable, so an edit after one of those must bump.
-# A Revision nothing was ever run under is a working artifact: bumping past it on every
-# edit manufactures a version history that records no fact, so it is replaced in place.
+# The id is derived, not passed. A released lock reserves its identity even when its
+# consumers live outside this checkout. A changed release gets a successor; repeated
+# preparation keeps that draft id, and verifying an unchanged release does not bump it.
 # Expectations are never regenerated here — see tools/refresh_corpus_expectations.py.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -22,12 +21,19 @@ if [ "$#" -ne 0 ]; then
   echo "usage: release_compiler_cycle.sh" >&2
   exit 2
 fi
+if [ -f compiler/revision.lock.json ] && python3 tools/release_compiler.py --project-root . \
+    --proposal compiler/revision.json --source-set compiler/source_set.json \
+    --gate-report compiler/corpus-gate-report.json --approval compiler/release-approval.json \
+    --output compiler/revision.lock.json --verify >/dev/null 2>&1; then
+  echo "--- released Compiler already matches; no successor is needed ---"
+  exit 0
+fi
 COMPILER_RELEASE_TMP=$(mktemp -d compiler/.release-cycle.XXXXXX)
 export COMPILER_RELEASE_TMP
 trap 'rm -r -- "$COMPILER_RELEASE_TMP"' EXIT
 
 REVISION_ASSIGNMENTS=$(python3 - <<'PY'
-import json, pathlib, re, shlex
+import json, pathlib, re
 
 from tools.compiler_revision_witnesses import compiler_revision_witnesses
 
@@ -35,11 +41,11 @@ from tools.compiler_revision_witnesses import compiler_revision_witnesses
 # fallback when no released lock exists.
 locked = pathlib.Path("compiler/revision.lock.json")
 source = locked if locked.exists() else pathlib.Path("compiler/revision.json")
-current = json.loads(source.read_text())["revision_id"].removesuffix("-draft").rsplit("-", 1)[-1]
+document = json.loads(source.read_text())
+current = document["revision_id"].removesuffix("-draft").rsplit("-", 1)[-1]
 
-# Study Contracts, evidence, and inventory observations are all frozen witnesses. The
-# helper is the sole owner of that discovery rule, so release and verification cannot
-# silently disagree about what makes an id historical.
+# Frozen references also reserve historical ids whose locks are no longer available.
+# Missing local references cannot authorize reclaiming the current released lock.
 witnessed = {
     item.revision_id.rsplit("-", 1)[-1]
     for item in compiler_revision_witnesses(pathlib.Path("."))
@@ -48,25 +54,20 @@ witnessed = {
 ordinal = lambda value: int(m.group(1)) if (m := re.fullmatch(r"v(\d+)", value)) else 0
 history = max((ordinal(value) for value in witnessed), default=0)
 
-print("STALE=")
-if current in witnessed:
-    print(f"NEXT=v{history + 1}")
+if locked.exists():
+    if document.get("state") != "released" or not ordinal(current):
+        raise SystemExit("the current Compiler lock is not a valid released identity")
+    print(f"NEXT=v{max(history, ordinal(current)) + 1}")
     print(f"ARCHIVE={current}")
 else:
-    # The working Revision's number carries no fact, so it sits directly above witnessed
-    # history rather than climbing once per edit. Numbers stranded there by earlier
-    # unwitnessed releases are reclaimed, so repeated edits keep releasing the same id.
-    stale = sorted(p.name for p in pathlib.Path("compiler/releases").glob("v*")
-                   if ordinal(p.name) > history)
     print(f"NEXT=v{history + 1}")
     print("ARCHIVE=")
-    print(f"STALE={shlex.quote(chr(32).join(stale))}")
 PY
 )
 eval "$REVISION_ASSIGNMENTS"
 
 if [ -n "$ARCHIVE" ]; then
-  echo "--- ${ARCHIVE} is witnessed by sealed evidence; archiving and bumping to ${NEXT} ---"
+  echo "--- preserve released ${ARCHIVE}; prepare successor ${NEXT} ---"
   if [ -e "compiler/releases/${ARCHIVE}" ]; then
     python3 - "$ARCHIVE" <<'PY'
 import hashlib, json, pathlib, sys
@@ -111,11 +112,7 @@ archive.joinpath("source_set.json").write_text(json.dumps({
 PY
   fi
 else
-  echo "--- no sealed evidence witnesses the working Revision; releasing it as ${NEXT} ---"
-  for stale in $STALE; do
-    echo "    reclaiming unwitnessed ${stale}"
-    rm -rf "compiler/releases/${stale}"
-  done
+  echo "--- no current released lock; prepare working draft ${NEXT} ---"
 fi
 
 python3 - "$NEXT" <<'PY'

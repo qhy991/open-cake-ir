@@ -375,7 +375,7 @@ class CompilerContractTests(unittest.TestCase):
             def ignored(path: str, names: list[str]) -> set[str]:
                 omitted = {".git", "__pycache__", ".pytest_cache"}
                 if Path(path).resolve() == ROOT:
-                    omitted |= {"evidence", "migration", "runtime", "tests"}
+                    omitted |= {"evidence", "migration", "runtime", "tests", "contracts", "inventory"}
                 return omitted & set(names)
 
             shutil.copytree(ROOT, project, ignore=ignored)
@@ -383,6 +383,12 @@ class CompilerContractTests(unittest.TestCase):
             lock_path = project / "compiler/revision.lock.json"
             prior_approval = approval_path.read_bytes()
             prior_lock = lock_path.read_bytes()
+            prior = json.loads(prior_lock)
+            prior_id = prior["revision_id"]
+            prior_gate = (project / "compiler/corpus-gate-report.json").read_bytes()
+            prior_sources = (project / "compiler/source_set.json").read_bytes()
+            from tools.compiler_revision_witnesses import compiler_revision_witnesses
+            self.assertNotIn(prior_id, {item.revision_id for item in compiler_revision_witnesses(project)})
             authoring_contract = project / "compiler/AUTHORING_CONTRACT.md"
             authoring_contract.write_text(
                 authoring_contract.read_text(encoding="utf-8")
@@ -404,6 +410,21 @@ class CompilerContractTests(unittest.TestCase):
             gate_path = project / "compiler/corpus-gate-report.json"
             gate = json.loads(gate_path.read_text(encoding="utf-8"))
             self.assertEqual(gate["matched_case_count"], gate["case_count"])
+            draft_id = gate["compiler_revision_id"]
+            self.assertNotEqual(draft_id.removesuffix("-draft"), prior_id)
+            archive = project / "compiler/releases" / prior_id.rsplit("-", 1)[-1]
+            self.assertEqual((archive / "revision.lock.json").read_bytes(), prior_lock)
+            self.assertEqual((archive / "corpus-gate-report.json").read_bytes(), prior_gate)
+            self.assertEqual((archive / "release-approval.json").read_bytes(), prior_approval)
+            self.assertEqual(json.loads((archive / "source_set.json").read_text()), json.loads(prior_sources))
+            repeat = subprocess.run(
+                ["bash", "tools/release_compiler_cycle.sh"], cwd=project,
+                capture_output=True, text=True,
+            )
+            self.assertEqual(repeat.returncode, 3, repeat.stdout + repeat.stderr)
+            self.assertEqual(json.loads(gate_path.read_text())["compiler_revision_id"], draft_id)
+            self.assertEqual(lock_path.read_bytes(), prior_lock)
+            self.assertEqual(approval_path.read_bytes(), prior_approval)
             gate_sha256 = sha256(
                 json.dumps(
                     gate,
@@ -436,6 +457,7 @@ class CompilerContractTests(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
             released = json.loads(lock_path.read_text(encoding="utf-8"))
             self.assertEqual(released["state"], "released")
+            self.assertEqual(released["revision_id"], draft_id.removesuffix("-draft"))
             self.assertEqual(
                 released["release_approval"]["canonical_sha256"],
                 sha256(
@@ -447,6 +469,15 @@ class CompilerContractTests(unittest.TestCase):
                     ).encode()
                 ).hexdigest(),
             )
+            released_lock = lock_path.read_bytes()
+            unchanged = subprocess.run(
+                ["bash", "tools/release_compiler_cycle.sh"], cwd=project,
+                capture_output=True, text=True,
+            )
+            self.assertEqual(unchanged.returncode, 0, unchanged.stdout + unchanged.stderr)
+            self.assertIn("no successor is needed", unchanged.stdout)
+            self.assertEqual(lock_path.read_bytes(), released_lock)
+            self.assertEqual((archive / "revision.lock.json").read_bytes(), prior_lock)
 
     def test_the_architecture_map_names_the_lowering_mechanisms(self) -> None:
         """The architecture documents mechanisms, not a growing use-case registry."""

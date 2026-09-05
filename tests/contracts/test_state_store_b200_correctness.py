@@ -27,49 +27,6 @@ def _generator():
 
 
 class StateStoreB200CorrectnessContractTests(unittest.TestCase):
-    def test_create_only_bundle_uses_the_released_compiler_path(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "bundle"
-            preflight = _generator().prepare(output)
-            source = (output / "candidate/kernel.py").read_text(encoding="utf-8")
-            provenance = json.loads(
-                (output / "candidate/provenance.json").read_text(encoding="utf-8")
-            )
-
-            self.assertEqual(
-                preflight["compiler_revision_id"], "open-cake-ir-sm100a-v41"
-            )
-            self.assertTrue(preflight["positive"]["accepted"])
-            self.assertTrue(preflight["positive"]["lowering_eligible"])
-            self.assertEqual(
-                preflight["negative"]["state-store-b8-smoke-owner-drift.json"][
-                    "decisive_findings"
-                ],
-                [("STATE_STORE_PROGRAM_OWNER", "access_maps[2].indices[0]")],
-            )
-            self.assertEqual(
-                preflight["negative"]["state-store-b8-smoke-axis-drift.json"][
-                    "decisive_findings"
-                ],
-                [("STATE_STORE_PROGRAM_AXIS_COVERAGE", "program_map.axes[1]")],
-            )
-            compile(source, "<generated-state-store>", "exec")
-            self.assertIn(
-                "tl.store(\n        state + batch * D_STATE_1 + state_d1_offsets,",
-                source,
-            )
-            self.assertNotIn("torch.empty((8, 128)", source)
-            self.assertIn("return out", source)
-            self.assertEqual(provenance["shape"], [8, 128])
-            self.assertEqual(
-                provenance["compiler_source_commit"],
-                "ee32b76870c4166c8143e8774c37c1212a0b6e1c",
-            )
-            self.assertNotIn("source_base_commit", provenance)
-            self.assertIn("no arbitrary-n", provenance["claim_boundary"])
-            with self.assertRaises(FileExistsError):
-                _generator().prepare(output)
-
     def test_compiler_release_drift_is_refused_before_creating_output(self) -> None:
         generator = _generator()
         with tempfile.TemporaryDirectory() as directory:

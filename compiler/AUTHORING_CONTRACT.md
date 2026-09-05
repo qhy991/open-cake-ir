@@ -4,9 +4,10 @@ Submit one complete JSON document conforming to `schedule.schema.json`. The Comp
 acceptance. Names are unique within each declaration list; operation dependencies refer only backward; every output
 must be written; buffer allocation extents and role warps must fit the exact Target. `program_map` and `grid` are
 mutually exclusive. Each role owns one ascending contiguous warp interval, and no warp belongs to two roles.
-Findings carry a stable code and path. A blocking Finding is a reason an Assessment is not
-lowering-eligible and no candidate reaches the toolchain; a non-blocking Finding accompanies an Assessment that is,
-and reports what the declared Schedule implies — such as which declared resource bounds its residency. Unsupported
+Findings carry a stable code and path. Each Finding independently declares whether it
+blocks acceptance or lowering. A non-blocking Finding reports what the Schedule implies,
+such as a declared residency bound; another Finding in the same Assessment may still
+block it. Acceptance and lowering eligibility are the aggregate decisions. Unsupported
 shapes, operations, instructions, memory spaces or uncalibrated analyses are explicit.
 An otherwise-lowerable `mma` in a generated backend names the Target instruction contract that determines its
 lowering; omitting it is a lowering-blocking candidate Finding rather than a late emitter failure. Instruction-free
@@ -53,8 +54,13 @@ An AccessMap index with `source: buffer` names a rank-one register INT32 Buffer 
 operation also reads. Multiple such coordinates share one shape and are zipped into one
 runtime-index domain; they are not a Cartesian product. `mask_tiled_axes` bounds both
 sides of each runtime coordinate, and an invalid indexed load yields zero. The admitted
-subset is a direct global load plus the atomic state transition below: TMA and indexed
-stores remain explicitly unlowerable.
+subset permits a direct global load and the atomic state transition below. Runtime-indexed
+TMA is not admitted. An indexed store is admitted only when its coordinates are proved
+unique by the reservation-owned store rule: the target index and returned old value of
+a same-domain unit atomic increment jointly identify its destination. It requires the
+same-role register ownership and bounded one-execution-per-program domain checked by
+the verifier; a caller's uniqueness assertion is insufficient. Other indexed stores are
+refused before lowering.
 `state` is caller-owned global memory that an operation both reads and writes; read-only
 and write-only Buffers remain `input` and `output`. The admitted `atomic_rmw` reads one
 INT32 state target followed by its one runtime INT32 index, writes that same target and

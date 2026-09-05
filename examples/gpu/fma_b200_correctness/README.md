@@ -21,6 +21,10 @@ negative controls reject unfused, FTZ and incorrect NaN/zero outcomes.
 
 `prepare.py` loads and verifies the released v41 lock, lowers the two canonical
 Schedules, and creates a new package. Preserve the supplied virtualenv entry path.
+Run this historical task from its complete source at
+`d9d56e835cf96eecf70e0259b65bc1b20c4f6f0d`; a newer Compiler in main is not a substitute.
+The [replay guide](../../../docs/wiki/replay.md) explains the separate source and
+output directories. Preparing again does not rerun or replace the retained GPU evidence.
 The task runs correctness with broker shared capacity, then memcheck and racecheck
 with exclusive capacity. Only the broker chooses a GPU; no retry or reroute is implicit.
 The judge requires B200/sm100 and explicit clean sanitizer summaries. Infrastructure

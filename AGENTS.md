@@ -169,11 +169,11 @@ invalidates the comparison, not just the run.
   `runtime/executors/*.json` closure or a `contracts/calibrations/*.json` plan pins its bytes. Editing a pinned file
   breaks the replay of whatever that digest supports; the answer is a successor, not an edit. If you already edited
   one, restore it and re-verify the digest before doing anything else.
-- A Revision id is derived by its cycle script, never chosen by hand. For Compiler Revisions, an id some frozen
-  artifact names is history and its bytes are immutable; an id nothing names is a working artifact and is
-  re-released in place. Executor ids are reserved by every `state=released` descriptor, including archived ones;
-  never delete or reuse one based on an absence of local witnesses. The Executor cycle derives a successor from
-  the largest released ordinal ([ADR 0049](docs/adr/0049-released-executor-descriptors-reserve-their-identities.md)).
+- A Revision id is derived by its cycle script, never chosen by hand. Released Compiler locks and Executor
+  descriptors reserve their identities even without local consumers; never delete or reuse one based on an
+  absence of local witnesses. Compiler preparation reuses its pending draft until release, and an unchanged
+  verified release is a no-op. See [ADR 0049](docs/adr/0049-released-executor-descriptors-reserve-their-identities.md)
+  and [ADR 0050](docs/adr/0050-released-compiler-locks-reserve-their-identities.md).
 - Never regenerate Corpus Gate expectations to make the gate pass — that reports a match it just manufactured. Adopt
   new expectations as a separate, reviewed act (`tools/refresh_corpus_expectations.py --write`). State the reason to
   the reviewer who writes the approval; do not write that basis yourself.

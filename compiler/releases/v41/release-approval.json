@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "372f3c182a06374cbb743eb9c5388fc0103b36a6faa323c2d291fef74628f56c"
+  },
+  "reviewer": "repository owner; recorded by Codex under explicit one-time authorization",
+  "approval_basis": "On 2026-09-04 the repository owner explicitly permitted this one-time update of compiler/release-approval.json and publication of v41 after independent review, without changing long-term repository rules. This approval binds the exact 72-case Gate prepared at commit 1f2152fec5f9636dd27eb7426e6841ae17cfeca3. The read-only fma_release_review reviewer returned approve-for-corpus-admission and then recommend-static-release, independently rebuilt this Gate with the existing release tool, confirmed 72/72 matches and 91 bound sources, and verified that the prior 68 expectations were unchanged and the four appended entries exactly matched the reviewed FMA proposal. Its independent checks included 15 CPU contract tests, 89 public API probes and seven dependency/lifetime variants with no static blocker. The primary implementation verification separately passed 208 draft-compatible tests and real GPU-free Triton 3.7.1 compilation; the five released-identity tests passed on the preserved v40 snapshot. The bounded change adds same-shaped FP32 three-input elementwise FMA with explicit non-FTZ RN-even instruction semantics, aligned verifier and lowering checks, and two-operation work accounting. See docs/AKA_FMA_RELEASE_REVIEW_20260904.md for the review evidence. This grants only the exact static Compiler release workflow. It does not grant GPU numerical correctness, special-value validation, sanitizer, performance, profiler, framework end-to-end, serving, coverage or training claims, and does not authorize a main merge."
+}

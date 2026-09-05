@@ -14,7 +14,12 @@ is refused before creating the output directory; preparing another Compiler requ
 an explicit task successor. `candidate/provenance.json` records the verified
 `compiler_source_commit`.
 
-From this checkout, prepare an unused output directory outside the repository:
+Use the complete task checkout at
+`c40bb399c7bebe026bcd30e27255dfc15ad23f5c`, which includes the required v41 Compiler.
+Current main may have a newer Compiler and is then deliberately refused. The
+[replay guide](../../../docs/wiki/replay.md) shows how to create a separate checkout
+without changing the current workspace. From that frozen checkout, prepare an
+unused output directory outside the repository:
 
 ```bash
 python3 examples/gpu/state_store_b200_correctness/prepare_candidate.py \
