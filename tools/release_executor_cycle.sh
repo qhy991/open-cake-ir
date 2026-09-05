@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
 # Release the Executor Revision that matches the current runtime sources.
 #
-#   release_executor_cycle.sh
+#   release_executor_cycle.sh [--host-environment /verified/host-environment.json]
 #
 # An Executor Revision binds every Lab, Evaluation, and Evidence source byte, so any edit
 # to that closure invalidates the released descriptor. This settles and releases the id;
 # templates resolve it during preflight, while frozen Study Contracts remain unchanged.
 #
-# The id is derived, not passed, on the same rule the Compiler cycle uses: a Revision that
-# any frozen artifact names is history and immutable, and one nothing names is a working
-# artifact that is replaced in place rather than bumped past on every edit. For an
-# Executor "names it" is broader than a sealed evidence run, because a Study Contract
-# pins an Executor id directly.
+# Every released descriptor reserves its id, including releases used outside this
+# checkout. The next id follows the largest released ordinal; no witness scan can
+# authorize deleting or reusing a released descriptor.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONPATH=src
@@ -19,61 +17,50 @@ EXECUTOR_RELEASE_TMP=$(mktemp -d)
 export EXECUTOR_RELEASE_TMP
 trap 'rm -r -- "$EXECUTOR_RELEASE_TMP"' EXIT
 
-python3 - <<'PY'
-import hashlib, json, os, pathlib, re, subprocess
+python3 - "$@" <<'PY'
+import argparse, hashlib, json, os, pathlib, re, subprocess
 
-runtime = pathlib.Path("runtime/executors")
+from open_cake_ir.lab.executor import ExecutorRevision
+from tools.release_executor import _released_executor_paths
+
+parser = argparse.ArgumentParser(description="Release a new B200 Executor successor")
+parser.add_argument(
+    "--host-environment", type=pathlib.Path,
+    help="host-environment JSON already verified against the executor host",
+)
+arguments = parser.parse_args()
+
 temporary = pathlib.Path(os.environ["EXECUTOR_RELEASE_TMP"])
 
 
 def ordinal(value: str) -> int:
-    match = re.search(r"-v(\d+)$", value)
+    match = re.fullmatch(r"open-cake-ir-b200-v([1-9][0-9]*)", value)
     return int(match.group(1)) if match else 0
 
 
-# An id is history if any frozen artifact names it: a sealed evidence run or any frozen
-# Study Contract. Repository history is not the authority for whether a frozen file may
-# be rewritten.
-witnessed = {path.parent.parent.name.rsplit("-", 1)[0]
-             for path in pathlib.Path("evidence/executors").glob("*/runtime/executor.json")}
-for path in pathlib.Path("evidence").rglob("authority.json"):
-    witnessed.update(re.findall(r"open-cake-ir-b200-v\d+", path.read_text()))
-for path in pathlib.Path("contracts/studies").glob("*.json"):
-    witnessed.update(re.findall(r"open-cake-ir-b200-v\d+", path.read_text()))
-# An inventory observation plan that binds a descriptor's raw bytes witnesses that
-# Executor even before it becomes a sealed Study or Evidence run. Without this boundary,
-# a later release could reclaim the id while retaining a plan that names the old bytes.
-for path in pathlib.Path("inventory").glob("*.json"):
-    text = path.read_text()
-    if "executor_descriptor_raw_sha256" in text:
-        witnessed.update(re.findall(r"open-cake-ir-b200-v\d+", text))
-
-history = max((ordinal(value) for value in witnessed), default=0)
+released = []
+for path in _released_executor_paths(pathlib.Path.cwd()):
+    document = json.loads(path.read_text())
+    if document.get("state") == "released" and ordinal(document["executor_id"]):
+        released.append(document)
+released.sort(key=lambda document: ordinal(document["executor_id"]))
+history = max((ordinal(document["executor_id"]) for document in released), default=0)
 keep = f"open-cake-ir-b200-v{history + 1}"
-
-available = sorted(
-    runtime.glob("*.json"),
-    key=lambda path: ordinal(json.loads(path.read_text())["executor_id"]),
-)
-stale = [
-    path
-    for path in available
-    if ordinal(json.loads(path.read_text())["executor_id"]) > history
-]
-if not available:
-    raise SystemExit("no Executor descriptor provides the host environment")
-print(f"--- history ends at v{history}; releasing the working Executor as {keep} ---")
-for path in stale:
-    print(f"    reclaiming unwitnessed {path.name}")
-
-document = json.loads((stale[-1] if stale else available[-1]).read_text())
-host = document["host_environment"]
+print(f"--- released history ends at v{history}; releasing {keep} ---")
+if arguments.host_environment is not None:
+    host = json.loads(arguments.host_environment.read_text())
+elif released:
+    host = released[-1]["host_environment"]
+else:
+    raise SystemExit("no released Executor provides a host environment; pass --host-environment")
 # Resolve the profiler only during an explicit release. The released descriptor, not
 # this discovery rule, is the authority used by every attribution assay.
-candidates = list(pathlib.Path("/opt/nvidia/nsight-compute").glob(
+candidates = [] if arguments.host_environment is not None else list(pathlib.Path("/opt/nvidia/nsight-compute").glob(
     "*/target/linux-desktop-glibc_2_11_3-x64/ncu"
 ))
-if not candidates:
+if arguments.host_environment is not None:
+    print("    using supplied verified host environment")
+elif not candidates:
     if os.environ.get("OPEN_CAKE_REUSE_VERIFIED_HOST") != "1":
         raise SystemExit(
             "no x86_64 Nsight Compute executable is installed; set "
@@ -99,6 +86,9 @@ else:
         "sha256": hashlib.sha256(ncu_payload).hexdigest(),
         "size_bytes": len(ncu_payload),
     }
+if not isinstance(host, dict):
+    raise ValueError("Executor host environment must be an object")
+ExecutorRevision._validate_host_document(host)
 temporary.joinpath("proposal.json").write_text(json.dumps({
     "schema_version": 1,
     "executor_id": keep,
@@ -106,8 +96,6 @@ temporary.joinpath("proposal.json").write_text(json.dumps({
     "sources": [],
     "host_environment": host,
 }))
-for path in stale:
-    path.unlink()
 temporary.joinpath("keep").write_text(keep)
 PY
 
@@ -144,10 +132,6 @@ inventory_path = pathlib.Path("inventory/EXECUTOR_REVISIONS.json")
 inventory = json.loads(inventory_path.read_text())
 previous = inventory.get("current")
 inventory["current"] = record
-# Reclaimed ids were never history, so they leave no supersession behind.
-inventory["superseded"] = [entry for entry in inventory["superseded"]
-                           if entry["path"] != record["path"]
-                           and pathlib.Path(entry["path"]).exists()]
 if (
     isinstance(previous, dict)
     and previous.get("path") != record["path"]

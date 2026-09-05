@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -186,6 +188,70 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             )
             self.assertNotEqual(collision.returncode, 0)
             self.assertFalse(collision_output.exists())
+
+    def test_release_cycle_preserves_released_ids_without_local_run_witnesses(self) -> None:
+        from tools.release_executor import _SOURCE_FILES
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(ROOT / "src", root / "src", ignore=shutil.ignore_patterns("__pycache__"))
+            for relative in (*_SOURCE_FILES, "tools/release_executor.py", "tools/release_executor_cycle.sh"):
+                destination = root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / relative, destination)
+            runtime = root / "runtime/executors"
+            runtime.mkdir(parents=True)
+            preserved = {}
+            for version in (41, 42):
+                path = runtime / f"open-cake-ir-b200-v{version}.json"
+                raw = (ROOT / path.relative_to(root)).read_bytes()
+                path.write_bytes(raw)
+                preserved[path] = raw
+            archived = root / "evidence/executors/open-cake-ir-b200-v46-review/runtime/executor.json"
+            archived.parent.mkdir(parents=True)
+            document = json.loads(CURRENT_EXECUTOR.read_text())
+            document["executor_id"] = "open-cake-ir-b200-v46"
+            archived.write_text(json.dumps(document))
+            preserved[archived] = archived.read_bytes()
+            inventory_path = root / "inventory/EXECUTOR_REVISIONS.json"
+            inventory_path.parent.mkdir()
+            previous = next(
+                entry for entry in (_INVENTORY["current"], *_INVENTORY["superseded"])
+                if entry["executor_id"] == "open-cake-ir-b200-v42"
+            )
+            inventory_path.write_text(json.dumps({
+                "current": previous, "archives": [], "superseded": [],
+            }))
+            host = document["host_environment"]
+            host["python"]["invocation_path"] = "/verified/executor/python"
+            host_path = root / "verified-host.json"
+            host_path.write_text(json.dumps(host))
+            environment = dict(os.environ)
+            environment["PATH"] = str(Path(sys.executable).parent) + os.pathsep + environment["PATH"]
+            environment.pop("OPEN_CAKE_REUSE_VERIFIED_HOST", None)
+            command = [
+                "bash", str(root / "tools/release_executor_cycle.sh"),
+                "--host-environment", str(host_path),
+            ]
+            for version in (47, 48):
+                completed = subprocess.run(
+                    command, cwd=root, env=environment, capture_output=True, text=True,
+                    check=False, timeout=30,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                released = runtime / f"open-cake-ir-b200-v{version}.json"
+                executor = ExecutorRevision.load(root, released)
+                self.assertEqual(executor.executor_id, f"open-cake-ir-b200-v{version}")
+                self.assertEqual(json.loads(released.read_text())["host_environment"], host)
+                for path, raw in preserved.items():
+                    self.assertEqual(path.read_bytes(), raw)
+                preserved[released] = released.read_bytes()
+            inventory = json.loads(inventory_path.read_text())
+            self.assertEqual(inventory["current"]["executor_id"], "open-cake-ir-b200-v48")
+            self.assertEqual(
+                {entry["executor_id"] for entry in inventory["superseded"]},
+                {"open-cake-ir-b200-v42", "open-cake-ir-b200-v47"},
+            )
 
 if __name__ == "__main__":
     unittest.main()
