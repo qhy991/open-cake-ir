@@ -1,0 +1,15 @@
+{
+  "schema": "kernelinfra.fleet.v1",
+  "connect_timeout_s": 8,
+  "command_timeout_s": 30,
+  "nodes": [
+    {
+      "id": "verda-b200x4-state-store",
+      "ssh": "verda-b200x4",
+      "kernelctl": "/home/qinhaiyan/open-cake-state-store-b200-v5/gpu-infra/bin/kernelctl",
+      "socket": "/tmp/kernelinfra-open-cake-state-store-b200-v5.sock",
+      "inbox": "/home/qinhaiyan/open-cake-state-store-b200-v5/inbox",
+      "capabilities": ["b200", "cuda", "sm100"]
+    }
+  ]
+}
