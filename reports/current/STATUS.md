@@ -7,21 +7,21 @@ performance claim and does not authorize a Campaign.
 
 ## Compiler
 
-- Revision: `open-cake-ir-sm100a-v40`
+- Revision: `open-cake-ir-sm100a-v41`
 - State: `released`
 - Targets: `sm_100a`
-- Corpus Gate: `68/68` cases matched
-- Released source closure: `87` files
+- Corpus Gate: `72/72` cases matched
+- Released source closure: `91` files
 - Calibration coverage: `none released`
 - Authority: [`compiler/revision.lock.json`](../../compiler/revision.lock.json)
 
 ## Executor
 
-- Revision: `open-cake-ir-b200-v42`
+- Revision: `open-cake-ir-b200-v43`
 - State: `released`
 - Released source closure: `45` files
 - Authority: [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
-- Descriptor: [`runtime/executors/open-cake-ir-b200-v42.json`](../../runtime/executors/open-cake-ir-b200-v42.json)
+- Descriptor: [`runtime/executors/open-cake-ir-b200-v43.json`](../../runtime/executors/open-cake-ir-b200-v43.json)
 
 ## Claim boundary
 
