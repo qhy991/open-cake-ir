@@ -64,6 +64,28 @@ class EmpiricalCostTest(unittest.TestCase):
             self.assertEqual(cost["predicted_kernel_us"], 14)
             self.assertEqual(cost["empirical_range_us"], [12.6, 15.400000000000002])
 
+    def test_single_point_covers_only_its_exact_extent(self):
+        document = self.model_document()
+        for curve in document["curves"]:
+            # The template's varying extent remains a placeholder, not a point.
+            curve["points"] = curve["points"][1:2]
+        model = EmpiricalCostModel(document)
+        for name, extent, multiple in [("fma-b8-smoke.json", 16, 8), ("gemm-bias-b1-smoke.json", 1024, 512)]:
+            with self.subTest(schedule=name):
+                schedule = self.schedule(name, extent)
+                schedule["schedule_id"] = "display-name-only"
+                base = self.profile(schedule)
+                modeled = self.profile(schedule, model)
+                cost = modeled.pop("empirical_cost")
+                self.assertEqual(modeled, base)
+                self.assertTrue(cost["covered"])
+                self.assertEqual(cost["predicted_kernel_us"], 18)
+                self.assertEqual(cost["empirical_range_us"], [16.2, 19.8])
+                for outside in [extent - multiple, extent - multiple // 2, extent + multiple]:
+                    cost = self.profile(self.schedule(name, outside), model)["empirical_cost"]
+                    self.assertFalse(cost["covered"])
+                    self.assertIsNone(cost["predicted_kernel_us"])
+
     def test_default_profile_and_qualified_rank_are_unchanged(self):
         schedule = self.schedule("fma-b8-smoke.json")
         base = self.profile(schedule)
@@ -102,11 +124,14 @@ class EmpiricalCostTest(unittest.TestCase):
         self.assertTrue(self.profile(changed, model)["empirical_cost"]["covered"])
 
     def test_overlapping_curves_abstain_without_picking_an_id(self):
-        document = self.model_document()
-        document["curves"].append(copy.deepcopy(document["curves"][0]))
-        cost = self.profile(self.schedule("fma-b8-smoke.json"), EmpiricalCostModel(document))["empirical_cost"]
-        self.assertFalse(cost["covered"])
-        self.assertIn("ambiguous", cost["reason"])
+        for point_count in (1, 3):
+            document = self.model_document()
+            document["curves"][0]["points"] = document["curves"][0]["points"][:point_count]
+            document["curves"].append(copy.deepcopy(document["curves"][0]))
+            with self.subTest(point_count=point_count):
+                cost = self.profile(self.schedule("fma-b8-smoke.json"), EmpiricalCostModel(document))["empirical_cost"]
+                self.assertFalse(cost["covered"])
+                self.assertIn("ambiguous", cost["reason"])
 
     def test_equal_numbers_with_different_json_types_do_not_match(self):
         model = EmpiricalCostModel(self.model_document())

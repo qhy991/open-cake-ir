@@ -144,7 +144,8 @@ Python 接口使用 `EmpiricalCostModel.load(path)`，然后调用
 模型用一个通用表示覆盖不同算子：每条曲线固定一个完整 Schedule 模板，明确列出
 共同变化的 Buffer 维度、允许的整数对齐和测量区间，再按维度大小插值。这里没有
 按算子名称分派的成本公式。模板比较保留 JSON 的值类型；只允许显示名称与模型
-明确绑定的尺寸变化。不同 Revision 内容身份、不同目标、范围外或未对齐的尺寸、模板差异，
+明确绑定的尺寸变化。模板中这些尺寸是占位值，不必等于某个测量点的尺寸。
+不同 Revision 内容身份、不同目标、范围外或未对齐的尺寸、模板差异，
 以及同时命中多条曲线都会返回未覆盖原因。已提供编译资源时，后端编译器版本
 与模型声明不一致也会拒绝估算。
 
@@ -154,6 +155,8 @@ Python 接口使用 `EmpiricalCostModel.load(path)`，然后调用
 `runtime`（至少有 `compiler_version`）及 `input_scope`。每条曲线包含 `template`、
 `varying_dimensions`（`buffer` 和零起始 `dimension`）、`extent_multiple`、按 extent
 严格递增的 `points`（`extent`、`kernel_us`）和 `relative_error_envelope`。
+`points` 至少包含一个测量点。只有一个点时，仅覆盖该点的精确尺寸，返回该点的
+耗时及既有误差范围，不做插值或外推；多个点时仍在测量区间内插值。
 模型内容在读取时复制为不可变数据，后续修改输入对象不会改变预测。
 
 JSON 中的 `empirical_cost` 给出 `predicted_kernel_us`、`empirical_range_us`、覆盖状态、

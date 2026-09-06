@@ -1,4 +1,4 @@
-"""CPU interpolation over explicitly supplied, revision-bound calibration curves.
+"""CPU estimates over explicitly supplied, revision-bound calibration curves.
 
 The Compiler checks coverage and arithmetic, not the authenticity of the external
 measurements. This advisory input never changes released ranking qualification.
@@ -82,8 +82,8 @@ class _Curve:
         if len(set(extents)) != 1:
             raise ValueError("varying dimensions must share one scalar extent")
         multiple = _integer(row["extent_multiple"], "extent_multiple")
-        if not isinstance(row["points"], list) or len(row["points"]) < 2:
-            raise ValueError("curve requires at least two measured points")
+        if not isinstance(row["points"], list) or not row["points"]:
+            raise ValueError("curve requires at least one measured point")
         points = []
         for item in row["points"]:
             item = _object(item, {"extent", "kernel_us"}, "curve point")
