@@ -115,26 +115,39 @@ class IsolatedTritonCompiler:
                 record['threads_per_cta'], record['dynamic_shared_bytes'], record['compiler_version'])
 
 
-def _is_candidate_compile_error(error: Exception) -> bool:
-    """Only known source/resource refusals are candidate outcomes.
+def _compile_failure(error: Exception) -> tuple[bool, str]:
+    """Classify one failure and retain every linked exception's type and message.
 
-    Dependency, OS and subprocess failures (including an explicit wrapped cause)
-    are external faults. Unknown compiler-internal exceptions also fail as faults;
-    a failed build alone cannot establish a candidate rejection.
+    Infrastructure anywhere in the cause/context chain overrides a candidate-looking
+    wrapper. Inspect both links, including suppressed display context, once per object.
     """
     external = (ImportError, OSError, subprocess.SubprocessError)
-    if isinstance(error, external) or isinstance(error.__cause__, external):
-        return False
+    pending: list[BaseException] = [error]
+    seen: set[int] = set()
+    messages: list[str] = []
+    infrastructure_failure = False
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        messages.append(f'{type(current).__name__}: {current}')
+        infrastructure_failure |= isinstance(current, external)
+        # Stack order keeps the explicit cause before the implicit context.
+        pending.extend(link for link in (current.__context__, current.__cause__) if link is not None)
+    diagnostic = '\n'.join(messages)
+    if infrastructure_failure:
+        return False, diagnostic
     if isinstance(error, (ValueError, SyntaxError)):
-        return True
+        return True, diagnostic
     # These optional runtime types are consulted only after a compilation error.
     # Import failure never selects a fallback compiler or changes the diagnostic.
     try:
         from triton.compiler.errors import CompilationError
         from triton.runtime.errors import OutOfResources
     except (ImportError, OSError):
-        return False
-    return isinstance(error, (CompilationError, OutOfResources))
+        return False, diagnostic
+    return isinstance(error, (CompilationError, OutOfResources)), diagnostic
 
 
 def _worker(path: str) -> int:
@@ -148,8 +161,9 @@ def _worker(path: str) -> int:
     try:
         result = compile_triton(source, request['requirements'])
     except Exception as error:
-        print(f'{type(error).__name__}: {error}', file=sys.stderr)
-        return 2 if _is_candidate_compile_error(error) else 1
+        candidate_rejection, diagnostic = _compile_failure(error)
+        print(diagnostic, file=sys.stderr)
+        return 2 if candidate_rejection else 1
     Path('/build/compilation.json').write_text(json.dumps({
         'target': result.target, 'entry_point': result.entry_point,
         'artifacts': {k: base64.b64encode(v).decode() for k, v in result.artifacts.items()},

@@ -283,12 +283,25 @@ class NativePairingContractTests(unittest.TestCase):
         from open_cake_ir.lab import triton_build
         wrapped = ValueError('compile wrapper failed')
         wrapped.__cause__ = ImportError('fixture missing compiler dependency')
+        middle = RuntimeError('backend loading wrapper')
+        middle.__cause__ = ImportError('fixture missing compiler dependency')
+        deep = ValueError('deep compile wrapper failed')
+        deep.__cause__ = middle
+        try:
+            try:
+                raise ImportError('fixture missing compiler dependency')
+            except ImportError:
+                raise ValueError('implicit compile wrapper failed')
+        except ValueError as caught:
+            implicit = caught
         cases = (
             (ImportError('libtriton.so: libstdc++.so.6: cannot open shared object file'), False),
             (FileNotFoundError(2, 'No such file or directory', '/runtime/bin/ptxas'), False),
             (subprocess.CalledProcessError(127, ['ptxas']), False),
             (RuntimeError('compiler internal failure'), False),
             (wrapped, False),
+            (deep, False),
+            (implicit, False),
             (ValueError('fixture candidate compile rejection'), True),
             (SyntaxError('fixture candidate syntax rejection'), True),
         )
@@ -335,11 +348,25 @@ class NativePairingContractTests(unittest.TestCase):
                         self.assertEqual(returncodes, [2 if candidate_rejection else 1])
                         self.assertEqual(artifacts['toolchain_stdout'], b'fixture build stdout\n')
                         self.assertIn(str(error).encode(), artifacts['toolchain_stderr'])
+                        if error in (wrapped, deep, implicit):
+                            self.assertIn(b'ImportError: fixture missing compiler dependency', artifacts['toolchain_stderr'])
                 with mock.patch.object(triton_build, 'run_supervised', side_effect=FileNotFoundError('fixture bwrap disappeared')):
                     with self.assertRaises(RunProtocolFault) as caught:
                         environment.build(CandidateSubmission.seal(environment.media_type, encoded(payload)))
                     self.assertEqual(caught.exception.protocol_adherence, 'harness_fault')
                     self.assertIn(b'fixture bwrap disappeared', caught.exception.artifact_payloads['toolchain_stderr'])
+
+    def test_compile_failure_follows_both_links_and_terminates_on_a_cycle(self):
+        from open_cake_ir.lab.triton_build import _compile_failure
+        outer = ValueError('cyclic outer wrapper')
+        outer.__cause__ = ValueError('candidate-looking cause')
+        outer.__context__ = ImportError('cyclic runtime dependency')
+        outer.__context__.__cause__ = outer
+        rejected, diagnostic = _compile_failure(outer)
+        self.assertFalse(rejected)
+        self.assertEqual(diagnostic.count('ValueError: cyclic outer wrapper'), 1)
+        self.assertEqual(diagnostic.count('ValueError: candidate-looking cause'), 1)
+        self.assertEqual(diagnostic.count('ImportError: cyclic runtime dependency'), 1)
 
     def test_provider_projects_native_and_python_members_without_executing_source(self):
         for arm, member in [('native_triton', self.native), ('open_cake', {'python_source': 'not executed'})]:
