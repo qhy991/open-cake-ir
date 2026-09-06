@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence, cast
 
 from . import emit_cutedsl, emit_triton
+from .frontend import read_schedule
 from .emit_cutedsl import EmitError
 from .ir import (
     _SCHEDULE_OPTIONAL,
@@ -742,11 +743,9 @@ class Compiler:
         )
 
     def assess_file(self, path: str | Path) -> Assessment:
-        """Assess one Schedule JSON file without provider, GPU or evidence side effects."""
+        """Assess a JSON or Python Schedule without executing authored Python."""
 
-        schedule_path = Path(path).resolve(strict=True)
-        value = json.loads(schedule_path.read_text(encoding="utf-8"))
-        return self.assess(_object(value, "schedule"))
+        return self.assess(_object(read_schedule(path).document, "schedule"))
 
     def assess(self, schedule: Mapping[str, object]) -> Assessment:
         """Assess one parsed Schedule document."""

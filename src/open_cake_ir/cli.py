@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Sequence
 
 from open_cake_ir.compiler import Compiler, CompilerError
+from open_cake_ir.compiler.frontend import FrontendError, read_schedule
 from open_cake_ir.lab import (
     CampaignLock,
     Lab,
@@ -51,7 +52,7 @@ def _emit_compiler(value: Mapping[str, object], args: argparse.Namespace) -> Non
     if args.output_format == "json":
         _emit(value)
         return
-    if args.compiler_command == "assess":
+    if "accepted" in value:
         print(f"执行计划：{value['schedule_id']}")
         print(f"编译器：{value['compiler_revision_id']}")
         print(f"目标：{value['target']}")
@@ -67,7 +68,10 @@ def _emit_compiler(value: Mapping[str, object], args: argparse.Namespace) -> Non
                 "阻止接受" if finding['blocks_acceptance'] else
                 "阻止生成" if finding['blocks_lowering'] else "提示"
             )
-            print(f"- [{impact}] {finding['code']} | {finding['path']}")
+            source = finding.get("source")
+            location = (f"{source['filename']}:{source['line']}:{source['column']} | "
+                        if source is not None else "")
+            print(f"- [{impact}] {finding['code']} | {location}{finding['path']}")
         print("这一步未运行 GPU；诊断原文和完整分析可用默认 JSON 输出查看。")
     elif args.compiler_command == "check-corpus":
         matched = sum(case['matched'] for case in value['cases'])
@@ -86,8 +90,20 @@ def _emit_compiler(value: Mapping[str, object], args: argparse.Namespace) -> Non
 
 def _compiler(args: argparse.Namespace) -> int:
     compiler = Compiler.load(args.project_root, args.revision)
-    if args.compiler_command == "assess":
-        assessment = compiler.assess_file(args.schedule)
+    authored = (read_schedule(args.schedule)
+                if args.compiler_command != "check-corpus" and args.schedule.suffix == ".py" else None)
+    assessment = (compiler.assess(authored.document) if authored is not None else
+                  compiler.assess_file(args.schedule) if args.compiler_command != "check-corpus" else None)
+    finding_rows = []
+    if assessment is not None:
+        for finding in assessment.findings:
+            row = asdict(finding)
+            location = authored.location_for(finding.path) if authored is not None else None
+            if location is not None:
+                row["source"] = asdict(location)
+            finding_rows.append(row)
+    if (args.compiler_command == "assess"
+            or (authored is not None and authored.locations and not assessment.lowering_eligible)):
         _emit_compiler(
             {
                 "compiler_revision_id": assessment.compiler_revision_id,
@@ -105,12 +121,12 @@ def _compiler(args: argparse.Namespace) -> int:
                 ),
                 "accepted": assessment.accepted,
                 "lowering_eligible": assessment.lowering_eligible,
-                "findings": [asdict(finding) for finding in assessment.findings],
+                "findings": finding_rows,
                 "analysis": dict(assessment.analysis),
             },
             args,
         )
-        return 0 if assessment.accepted else 2
+        return 0 if args.compiler_command == "assess" and assessment.accepted else 2
     if args.compiler_command == "check-corpus":
         report = compiler.check_corpus()
         _emit_compiler(
@@ -125,7 +141,6 @@ def _compiler(args: argparse.Namespace) -> int:
             args,
         )
         return 0 if report.passed else 2
-    assessment = compiler.assess_file(args.schedule)
     lowering = compiler.lower(assessment)
     output = args.output.absolute()
     with output.open("x", encoding="utf-8") as stream:
@@ -233,7 +248,7 @@ def build_parser() -> argparse.ArgumentParser:
             help="JSON for tools (default), or a concise Chinese explanation",
         )
         command.add_argument("--revision", type=Path, required=True)
-        command.add_argument("schedule", type=Path)
+        command.add_argument("schedule", type=Path, help="Schedule JSON or restricted Python source")
         if name == "lower":
             command.add_argument("--output", type=Path, required=True)
     check = compiler_commands.add_parser("check-corpus")
@@ -267,6 +282,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "compiler":
             return _compiler(args)
         return _lab(args)
+    except FrontendError as error:
+        if args.command != "compiler":
+            raise
+        if args.output_format == "text":
+            print(f"命令未完成：{error}", file=sys.stderr)
+        else:
+            _emit({"accepted": False, "lowering_eligible": False,
+                   "findings": [{"code": error.code, "path": "source", "message": str(error),
+                                 "blocks_acceptance": True, "blocks_lowering": True,
+                                 "source": asdict(error.location)}]})
+        return 2
     except (CompilerError, OSError, json.JSONDecodeError) as error:
         if args.command != "compiler" or args.output_format != "text":
             raise
