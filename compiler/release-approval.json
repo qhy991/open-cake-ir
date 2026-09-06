@@ -3,7 +3,7 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "cd2abe4b91402ed53cb86ff417e03cdad4da2a9b84ae7a3603f92c53ac137db8"
+    "canonical_sha256": "43555c5b42517fcfc3c396963f3fe6b7208ded5f554140a442966c127c4c7c88"
   },
   "reviewer": {
     "kind": "agent_session",
@@ -11,5 +11,5 @@
     "session_id": "01a074bc-2bb0-7371-8e2e-4d6b66cf016a",
     "author_session_id": "01a074ae-45d0-7ec2-993a-85551751aae3"
   },
-  "approval_basis": "Independent review of 6968a930fba82ede5c2cf322e8102893207936d0 against 26715d3. Current-turn actual model gpt-6-astra and reviewer session 01a074bc-2bb0-7371-8e2e-4d6b66cf016a verified from session metadata, distinct from author 01a074ae-45d0-7ec2-993a-85551751aae3. Full v48-draft Gate rebuilt and matched: 77/77, 109 sources; Corpus expectations unchanged. Python 3.14.6: 53 work/profile/QSA/documentation tests passed. Independent public Compiler.profile probes verified repeated alias loads and scalar payload; public work_bound probes verified unknown nested dynamic repetition and ambiguous multiple-global-edge abstention. CLI displays scoped IR read MiB upper bound. Explicit unmasked logical LOAD/STORE payload only; global dtype units and operation repetitions retained, no staging multiplier, physical traffic or latency claim. No GPU execution or performance qualification; broader latency/calibration goal remains ongoing. Report: /Users/haiyan-infiniai/Documents/Codex/2026-09-06/open-cake-cost-model/traffic-review/review.md."
+  "approval_basis": "Independent gpt-6-astra review of eedfc29db689b298aabb006faa5cf1cd359cdfa4 against d5451dfd832aab1d534154e59d6f5ddbe9044a31. Current-turn runtime metadata confirms gpt-6-astra; reviewer session 01a074bc-2bb0-7371-8e2e-4d6b66cf016a differs from author 01a074ae-45d0-7ec2-993a-85551751aae3. Full v49-draft Gate independently matches persisted report: 77/77, 110 sources; Corpus expectations unchanged. Python3.14.6: 72 empirical-cost/profile/compiled-resource/work/QSA/documentation tests passed. Additional public profile probes verify observed compiler-version refusal, strict JSON-type drift refusal, jointly varying extent mismatch, and detached result metadata. P1-P8 reviewed: no new IR semantics or operator-specific coefficients; Compiler owns immutable model parsing/matching/interpolation while external context and evidence remain declarations. Canonical Assessment replay remains first; default profile and public rank/calibration_coverage unchanged. No GPU run, new model qualification or historical FMA model promotion. Released-lock-dependent ranking tests remain pending actual successor release, not represented as passed. Report: /Users/haiyan-infiniai/Documents/Codex/2026-09-06/open-cake-cost-model/native-cost-model-integration/independent-review.md."
 }
