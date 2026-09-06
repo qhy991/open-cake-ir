@@ -123,6 +123,19 @@ class NativePairingContractTests(unittest.TestCase):
                 self.assertEqual(projected['compile_options'], lowering.toolchain_requirements['compile_options'])
                 self.assertEqual(projected['grid'], lowering.toolchain_requirements['grid'])
 
+    def test_native_environment_accepts_the_compiler_pointer_types_for_every_workload(self):
+        for name in ('rmsnorm-fp32-v1', 'gemm-bias-bf16-fp32-v1', 'indexed-gather-bf16-v1'):
+            with self.subTest(workload=name):
+                workload = WorkloadContract.load(ROOT / f'contracts/workloads/{name}.json')
+                lowering = self.compiler.lower(self.compiler.assess(baseline(workload)))
+                fixture = CompilationFixture()
+                builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=fixture)
+                environment = NativeTritonEnvironment(builder, workload=workload, case_id='primary',
+                    toolchain_requirements=lowering.toolchain_requirements, authority_document={})
+                result = environment.build(CandidateSubmission.seal(environment.media_type, encoded(native_baseline(lowering))))
+                self.assertEqual(result.disposition, 'launchable')
+                self.assertEqual(fixture.requests[0][1]['signature'], lowering.toolchain_requirements['signature'])
+
     def test_both_submission_paths_share_manifest_and_compilation_contract(self):
         open_env, native_env, fixture = self.environments()
         ir = open_env.build(CandidateSubmission.seal(open_env.media_type, encoded(self.schedule)))

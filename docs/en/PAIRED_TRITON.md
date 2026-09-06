@@ -109,8 +109,12 @@ executes candidate host wrappers. Outputs begin with poison values so an unwritt
 cannot pass merely because allocation returned zeros. The existing evaluator command at
 `tools/evaluate_flash_candidate.py` also accepts `workload_tensors_v1`; its historical name
 remains the command boundary for existing frozen consumers. A `LoadedTorchTensorCandidate`
-keeps the same argument set and CUBIN across preflight, CUPTI cohorts and postflight.
-Postflight repeats the common oracle and input-immutability check. Correctness and timing
+keeps the CUBIN and inputs loaded across preflight, CUPTI cohorts and postflight. Each
+timing callback receives a separate poisoned output, prepared and synchronized before
+timing; every output is checked afterward by the common oracle. This prevents an early
+correct result from hiding later calls that do no work. Postflight poisons the output again
+and repeats the common oracle and input-immutability check. Interrupted timing retains the
+actual launch count and any already returned samples. Correctness and timing
 quality remain separate facts, and the raw counters retain all launches. Launch observations
 become the ordinary EvaluationReceipt;
 search, fresh confirmation, timing and attribution still use the existing RunEvaluator and

@@ -552,25 +552,9 @@ def parse_launch_manifest(document: object):
     return CudaLaunchManifest.from_dict(document)
 
 
-def evaluate_tile_workload(candidate: LaunchableCandidate, workload: WorkloadContract,
-                           protocol: EvaluationProtocol, launcher) -> EvaluationReceipt:
-    """Common correctness assay: Workload data/oracle, sealed launch, every output.
-
-    launcher.launch_tensors returns (flat output mapping, unchanged input mapping,
-    raw launch receipt). Timing/profiling are separate retained assays as elsewhere.
-    """
+def compare_tile_outputs(workload, before, expected, observed, after):
+    """One comparison owner for fresh and already-recorded tensor launches."""
     import struct
-    from .tile_workloads import materialize_case, reference_outputs
-    if protocol.workload_sha256 != workload.canonical_sha256 or protocol.timing != 'none' or protocol.purpose == 'attribution':
-        raise ValueError('tile correctness Evaluation protocol differs')
-    manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
-    manifest.check_workload(workload, protocol.case_id)
-    if candidate.launch_spec_sha256 != manifest.canonical_sha256:
-        raise ValueError('sealed tensor manifest differs')
-    inputs = materialize_case(workload, protocol.case_id)
-    before = {name: list(values) for name, values in inputs.items()}
-    expected = reference_outputs(workload, protocol.case_id, before)
-    observed, after, launch = launcher.launch_tensors(candidate, manifest, inputs)
     validation = workload.document['validation']
     mismatch = 0
     maximum_error = 0.0
@@ -598,11 +582,28 @@ def evaluate_tile_workload(candidate: LaunchableCandidate, workload: WorkloadCon
         struct.pack('>d', float(a)) == struct.pack('>d', float(b))
         for name in before for a, b in zip(after[name], before[name], strict=True)
     )
+    metrics = {'output_mismatches': mismatch, 'max_abs_error': maximum_error, 'inputs_unchanged': unchanged}
+    return mismatch == 0 and unchanged, metrics
+
+
+def evaluate_tile_workload(candidate: LaunchableCandidate, workload: WorkloadContract,
+                           protocol: EvaluationProtocol, launcher) -> EvaluationReceipt:
+    """Common correctness assay: Workload data/oracle, sealed launch, every output."""
+    from .tile_workloads import materialize_case, reference_outputs
+    if protocol.workload_sha256 != workload.canonical_sha256 or protocol.timing != 'none' or protocol.purpose == 'attribution':
+        raise ValueError('tile correctness Evaluation protocol differs')
+    manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
+    manifest.check_workload(workload, protocol.case_id)
+    if candidate.launch_spec_sha256 != manifest.canonical_sha256:
+        raise ValueError('sealed tensor manifest differs')
+    inputs = materialize_case(workload, protocol.case_id)
+    before = {name: list(values) for name, values in inputs.items()}
+    expected = reference_outputs(workload, protocol.case_id, before)
+    observed, after, launch = launcher.launch_tensors(candidate, manifest, inputs)
+    passed, metrics = compare_tile_outputs(workload, before, expected, observed, after)
     if (not isinstance(launch, Mapping) or launch.get('candidate_sha256') != candidate.candidate_sha256
         or launch.get('kernel_calls') != 1 or launch.get('fallback_calls') != 0):
         raise ValueError('tile launch receipt differs')
-    passed = mismatch == 0 and unchanged
-    metrics = {'output_mismatches': mismatch, 'max_abs_error': maximum_error, 'inputs_unchanged': unchanged}
     launch_bytes = _canonical_json_bytes(launch)
     return EvaluationReceipt(candidate.candidate_sha256, workload.canonical_sha256,
         protocol.canonical_sha256, protocol.purpose, protocol.case_id, passed, metrics,
@@ -631,10 +632,30 @@ class LoadedTorchTensorCandidate:
         ]
         self.loaded = LoadedCudaCandidate.load(candidate, candidate.artifact_payloads['cubin'], manifest, admission)
 
-    def launch(self):
+    def fresh_argument_sets(self, count):
+        """Prepare non-reusable outputs and finish their initialization outside timing."""
         import torch
-        self.loaded.launch(self.arguments, tensor_contract=self.manifest,
+        if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+            raise ValueError('fresh tensor argument count differs')
+        sets = [[argument if mode == 'input' else torch.full_like(argument,
+                    float('nan') if dtype != 'int32' else -(2**31))
+                 for (_, _, dtype, mode), argument in zip(self.manifest.tensor_abi, self.arguments, strict=True)]
+                for _ in range(count)]
+        torch.cuda.synchronize()
+        return sets
+
+    def launch(self, arguments=None):
+        import torch
+        self.loaded.launch(self.arguments if arguments is None else arguments, tensor_contract=self.manifest,
                            stream=torch.cuda.current_stream().cuda_stream)
+
+    def snapshot(self, arguments=None):
+        arguments = self.arguments if arguments is None else arguments
+        observed = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
+                    in zip(self.manifest.tensor_abi, arguments, strict=True) if mode == 'output'}
+        after = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
+                 in zip(self.manifest.tensor_abi, arguments, strict=True) if mode == 'input'}
+        return observed, after
 
     def launch_tensors(self, candidate, manifest, inputs):
         from dataclasses import asdict
@@ -642,12 +663,12 @@ class LoadedTorchTensorCandidate:
             or manifest.canonical_sha256 != self.manifest.canonical_sha256
             or inputs != self.inputs):
             raise ValueError('loaded tensor assay input or candidate differs')
+        for (_, _, dtype, mode), argument in zip(manifest.tensor_abi, self.arguments, strict=True):
+            if mode == 'output':
+                argument.fill_(float('nan') if dtype != 'int32' else -(2**31))
         before = self.loaded.launch_calls
         self.launch()
-        observed = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
-                    in zip(manifest.tensor_abi, self.arguments, strict=True) if mode == 'output'}
-        after = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
-                 in zip(manifest.tensor_abi, self.arguments, strict=True) if mode == 'input'}
+        observed, after = self.snapshot()
         return observed, after, {'candidate_sha256': candidate.candidate_sha256,
             'kernel_calls': self.loaded.launch_calls - before, 'fallback_calls': 0,
             'manifest_sha256': manifest.canonical_sha256, 'device_admission': asdict(self.admission),

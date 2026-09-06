@@ -39,9 +39,9 @@ from open_cake_ir.evaluation import (  # noqa: E402
 from open_cake_ir.lab.executor import ExecutorRevision  # noqa: E402
 from open_cake_ir.evaluation.core import (  # noqa: E402
     EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest,
-    evaluate_tile_workload, parse_launch_manifest,
+    compare_tile_outputs, evaluate_tile_workload, parse_launch_manifest,
 )
-from open_cake_ir.evaluation.tile_workloads import materialize_case  # noqa: E402
+from open_cake_ir.evaluation.tile_workloads import materialize_case, reference_outputs  # noqa: E402
 from open_cake_ir.lab.process import (  # noqa: E402
     SupervisedProcessOutputLimit,
     SupervisedProcessTimeout,
@@ -181,26 +181,57 @@ def _evaluate_tile_candidate(authority, result, helper, admission, collect_timin
     purpose = 'confirmatory' if authority.request['purpose'] == 'attribution' else authority.request['purpose']
     protocol = EvaluationProtocol('workload-tensor-worker-correctness', purpose,
         authority.workload.canonical_sha256, authority.case_id, 'none')
+    cohorts = []
+    timed_checks = []
     try:
         preflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded)
         counters['preflight_calls'] = 1
         passed = preflight.correctness_passed
         metrics = dict(preflight.correctness)
-        cohorts = []
         timing = None
         correctness_calls = 1
         if collect_timing and passed:
             strict_cupti = StrictCuptiBenchmark(helper)
+            expected = reference_outputs(authority.workload, authority.case_id, inputs)
             for _ in range(5):
-                samples = [float(value) for value in strict_cupti(loaded.launch,
+                # The retained FlashInfer helper makes six untimed estimation calls,
+                # then eleven warmups and twenty-five timed calls. Prepare every
+                # output before entering it; the callback contains only the CUBIN.
+                arguments = loaded.fresh_argument_sets(6 + 11 + 25)
+                used = 0
+                def launch_fresh():
+                    nonlocal used
+                    if used >= len(arguments):
+                        raise RuntimeError('CUPTI invocation budget exceeded; output reuse is forbidden')
+                    loaded.launch(arguments[used])
+                    used += 1
+                samples = [float(value) for value in strict_cupti(launch_fresh,
                     dry_run_iters=11, repeat_iters=25, cold_l2_cache=True, use_cuda_graph=False)]
+                cohorts.append(samples)
                 if len(samples) != 25:
                     raise ValueError('worker CUPTI sample count differs')
-                cohorts.append(samples)
+                if used != len(arguments):
+                    raise RuntimeError('retained CUPTI helper invocation count differs')
+                check = {'checked_launches': used, 'passed': True, 'output_mismatches': 0,
+                         'max_abs_error': 0.0, 'inputs_unchanged': True}
+                for values in arguments:
+                    observed, after = loaded.snapshot(values)
+                    correct, observation = compare_tile_outputs(authority.workload, inputs, expected, observed, after)
+                    check['passed'] = check['passed'] and correct
+                    check['output_mismatches'] += observation['output_mismatches']
+                    check['max_abs_error'] = max(check['max_abs_error'], observation['max_abs_error'])
+                    check['inputs_unchanged'] = check['inputs_unchanged'] and observation['inputs_unchanged']
+                timed_checks.append(check)
+                passed = passed and check['passed']
+                metrics['output_mismatches'] += check['output_mismatches']
+                metrics['max_abs_error'] = max(metrics['max_abs_error'], check['max_abs_error'])
+                metrics['inputs_unchanged'] = metrics['inputs_unchanged'] and check['inputs_unchanged']
             postflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded)
             correctness_calls += 1
             passed = passed and postflight.correctness_passed
-            metrics = dict(postflight.correctness)
+            metrics['output_mismatches'] += postflight.correctness['output_mismatches']
+            metrics['max_abs_error'] = max(metrics['max_abs_error'], postflight.correctness['max_abs_error'])
+            metrics['inputs_unchanged'] = metrics['inputs_unchanged'] and postflight.correctness['inputs_unchanged']
             timing = {
                 'measurement_quality_passed': all(summarize_cohort(s)['cv'] <= 0.05 for s in cohorts),
                 'pooled_median_ms': statistics.median(v for s in cohorts for v in s),
@@ -209,7 +240,8 @@ def _evaluate_tile_candidate(authority, result, helper, admission, collect_timin
         correctness_path = authority.request_root / 'correctness-output.json'
         launch_path = authority.request_root / 'launch-receipt.json'
         _write_new(correctness_path, {'passed': passed, 'metrics': metrics,
-            'preflight': dict(preflight.correctness), 'correctness_launches': correctness_calls})
+            'preflight': dict(preflight.correctness), 'correctness_launches': correctness_calls,
+            'timed_output_checks': timed_checks})
         _write_new(launch_path, {'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
             'candidate_sha256': authority.candidate.candidate_sha256,
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
@@ -219,13 +251,13 @@ def _evaluate_tile_candidate(authority, result, helper, admission, collect_timin
             timing_path = authority.request_root / 'timing-samples.json'
             _write_new(timing_path, {'cohorts_ms': cohorts} if cohorts else {'not_measured': 'correctness_rejected'})
             artifacts['timing_samples'] = timing_path.name
-        counters['kernel_calls'] = loaded.loaded.launch_calls
-        counters['timing_samples'] = sum(len(s) for s in cohorts)
         # The common receipt describes the final correctness launch; counters and
         # the raw launch artifact retain the separate preflight and timing work.
         result['receipt'] = {'correctness_passed': passed, 'correctness': metrics,
             'kernel_calls': 1, 'fallback_calls': 0, 'timing': timing, 'artifacts': artifacts}
     finally:
+        counters['kernel_calls'] = loaded.loaded.launch_calls
+        counters['timing_samples'] = sum(len(s) for s in cohorts)
         loaded.close()
 
 
@@ -568,6 +600,7 @@ def main() -> int:
         result["error"] = "evaluator_failed"
         result["failure_class"] = type(error).__name__
         result["receipt"] = None
+        print(f'{type(error).__name__}: {error}', file=sys.stderr)
     _write_new(args.output, result)
     return 0
 
