@@ -13,12 +13,16 @@ The IR is the single owner of Schedule structure. These tests fix three properti
 from __future__ import annotations
 
 import copy
+import dataclasses
 import json
+import sys
 import unittest
 from pathlib import Path
+from typing import get_args, get_type_hints
 
 from jsonschema import Draft202012Validator
 
+from open_cake_ir.compiler import ir
 from open_cake_ir.compiler.ir import (
     PLACED_CONTRACT_PREFIXES,
     AccessIndexKind,
@@ -78,6 +82,36 @@ def _op(document: dict, op_id: str) -> dict:
     """
 
     return next(o for o in document["operations"] if o["id"] == op_id)
+
+
+class PublicIrBoundaryTest(unittest.TestCase):
+    def test_public_types_resolve_to_the_same_ir_objects(self) -> None:
+        """Moving a definition must not strand its public name or type annotations."""
+        from open_cake_ir.compiler import Schedule as PublicSchedule
+
+        self.assertIs(PublicSchedule, ir.Schedule)
+
+        def check_annotation(annotation):
+            if isinstance(annotation, type) and annotation.__module__.startswith(ir.__name__):
+                self.assertIs(getattr(ir, annotation.__name__), annotation)
+            for argument in get_args(annotation):
+                check_annotation(argument)
+
+        for name, value in vars(ir).items():
+            if dataclasses.is_dataclass(value):
+                with self.subTest(type=name):
+                    hints = get_type_hints(value)
+                    self.assertEqual(set(hints), {field.name for field in dataclasses.fields(value)})
+                    for annotation in hints.values():
+                        check_annotation(annotation)
+
+    def test_compiler_source_set_covers_imported_ir_code(self) -> None:
+        """A new IR module must remain inside the frozen Compiler source closure."""
+        paths = set(json.loads((ROOT / "compiler/source_set.json").read_text())["paths"])
+        for name, module in tuple(sys.modules.items()):
+            if name == ir.__name__ or name.startswith(ir.__name__ + "."):
+                with self.subTest(module=name):
+                    self.assertIn(Path(module.__file__).resolve().relative_to(ROOT).as_posix(), paths)
 
 
 class RetainedScheduleTest(unittest.TestCase):

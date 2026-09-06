@@ -5,7 +5,7 @@
 这些是执行计划的基本操作，不是一张“所有 GPU 算子已经支持”的清单。
 同一个操作仍受类型、形状、访问方式、目标和后端限制；请对完整计划运行 `assess`。
 
-[返回 Wiki](README.md) · [组合成常见算子](operators.md) · [代码中的操作定义](../../src/open_cake_ir/compiler/ir.py)
+[返回 Wiki](README.md) · [组合成常见算子](operators.md) · [代码中的操作定义](../../src/open_cake_ir/compiler/ir/operations.py)
 
 | 需要做什么 | 操作 |
 | --- | --- |
