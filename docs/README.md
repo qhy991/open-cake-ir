@@ -33,6 +33,9 @@ Reading companions explain the material in simpler language. Detailed tables and
 | 怎样读结果，也怎样排错 | [阅读](wiki/results.md) | [Read](en/wiki/results.md) |
 | 读懂一份执行计划 | [阅读](wiki/schedule.md) | [Read](en/wiki/schedule.md) |
 | Workload 目录：项目里有哪些完整任务定义 | [阅读](wiki/workloads.md) | [Read](en/wiki/workloads.md) |
+| 独立 Tile Workload：共用 ABI、CPU oracle 与匹配基线 | [阅读](TILE_WORKLOADS.md) | [Read](en/TILE_WORKLOADS.md) |
+| Triton TileLoop：两层循环的作用域、累积与写回 | [阅读](TRITON_LOOP_SCOPES.md) | [Read](en/TRITON_LOOP_SCOPES.md) |
+| 同后端 Triton 配对：共同基线、隔离构建与 Evaluation | [阅读](PAIRED_TRITON.md) | [Read](en/PAIRED_TRITON.md) |
 
 ## 模块职责 / Contexts
 

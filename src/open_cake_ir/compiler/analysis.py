@@ -143,8 +143,8 @@ def top_k_selection_structure(
 
 
 def _containing_loop(schedule: Schedule, operation: Operation):
-    matches = tuple(loop for loop in schedule.tile_loops if operation.op_id in loop.body)
-    return matches[0] if len(matches) == 1 else None
+    chain = schedule.enclosing_loops(operation)
+    return chain[-1] if chain else None
 
 
 def top_k_merge_structure(
@@ -240,26 +240,6 @@ def top_k_merge_structure(
     )
 
 
-def _loop_operation_ids(schedule: Schedule, loop_name: str) -> frozenset[str]:
-    loops = {loop.name: loop for loop in schedule.tile_loops}
-    operation_ids = {operation.op_id for operation in schedule.operations}
-    found: set[str] = set()
-    seen: set[str] = set()
-
-    def visit(name: str) -> None:
-        if name in seen or name not in loops:
-            return
-        seen.add(name)
-        for entry in loops[name].body:
-            if entry in operation_ids:
-                found.add(entry)
-            elif entry in loops:
-                visit(entry)
-
-    visit(loop_name)
-    return frozenset(found)
-
-
 def _pending_top_k_bytes_by_operation(schedule: Schedule) -> dict[str, int]:
     pending: dict[str, int] = {}
     for operation in schedule.operations:
@@ -269,8 +249,10 @@ def _pending_top_k_bytes_by_operation(schedule: Schedule) -> dict[str, int]:
         loop = _containing_loop(schedule, operation)
         if loop is None:
             continue
-        for op_id in _loop_operation_ids(schedule, loop.name):
-            pending[op_id] = pending.get(op_id, 0) + structure.pending_source_state_bytes
+        for scoped in schedule.loop_operations(loop):
+            pending[scoped.op_id] = (
+                pending.get(scoped.op_id, 0) + structure.pending_source_state_bytes
+            )
     return pending
 
 

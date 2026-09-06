@@ -27,9 +27,12 @@ GPU 是擅长让很多小组同时算题的处理器。算子是一道明确的�
 | --- | --- |
 | load、FMA、矩阵乘和前缀和分别做什么 | [基本操作](../wiki/primitives.md) |
 | 项目有哪些完整任务 | [任务目录](../wiki/workloads.md) |
+| 三个独立 Tile Workload 的 ABI、CPU 参考和匹配基线 | [Tile Workload 指南](../TILE_WORKLOADS.md) |
 | 用 Python 变量和表达式写执行计划 | [Python 入门](PYTHON_FRONTEND.md) |
 | 在 Apple M2 上运行与测量逐元素计算、行归约和加权 RMSNorm | [Metal 入门](../metal.zh-CN.md) |
 | 理解 IR 对象、代码组织与扩展位置 | [当前 IR 详解](../IR_GUIDE.md) |
+| 两层 TileLoop 怎样初始化、累积和写回 | [Triton 循环作用域](../TRITON_LOOP_SCOPES.md) |
+| IR 与原生 Triton 怎样从同一基线进行配对优化 | [Triton 配对流程](../PAIRED_TRITON.md) |
 | 从准备到真实实验应该按什么顺序 | [执行手册](RUNBOOK.md) |
 | 什么证据足够进入下一步 | [验收规则](ACCEPTANCE_GATES.md) |
 | 论文结果与本地结果有什么区别 | [论文对照约定](PAPER_CONTRACT.md) |

@@ -4,6 +4,18 @@
 
 A Workload fixes inputs, required outputs, correctness, and measurement. A shared operator name does not make different shapes or precision the same problem. This list is a contract catalog, not a claim that every task has a Lab evaluator, GPU qualification, or best performance. The Study selects the version.
 
+## Standalone tile Workloads: normalization, GEMM and indexed reads
+
+These contracts turn existing Corpus examples into standalone operators with explicit input domains, tensor ABI, mathematical references and all-element correctness rules.
+
+| Contract | Computation and output |
+| --- | --- |
+| [RMSNorm FP32 v1](../../../contracts/workloads/rmsnorm-fp32-v1.json) | Normalize the last dimension and scale by gamma, with FP32 inputs and output. |
+| [GEMM+bias BF16/FP32 v1](../../../contracts/workloads/gemm-bias-bf16-fp32-v1.json) | Compute `A @ B.T + bias` from BF16 A and B, with FP32 bias and output. |
+| [Indexed gather BF16 v1](../../../contracts/workloads/indexed-gather-bf16-v1.json) | Select BF16 rows with paired expert/row IDs; either invalid ID produces positive zero for the whole row, and negative IDs never wrap. |
+
+The [tile Workload guide](../TILE_WORKLOADS.md) explains shapes, tolerances, the shared ABI and independent CPU oracle. [Baseline preparation](../../../examples/paired_triton/README.md) generates the paired native Triton source from the same IR as a declared common optimization starting point. The current delivery covers contracts, CPU references and source preparation; GPU compilation, correctness, timing, profiling and target-framework acceptance remain R2 pending.
+
 ## Flash-KMeans
 
 BF16 points and centroids produce the nearest-centroid index under the FP32 distance/accumulation contract. The independent reference and tie-aware rule own acceptance; do not impose another tie policy afterward.
@@ -36,4 +48,4 @@ Contract loading and boundary validation do not supply a complete megaop Lab eva
 
 ## Why some examples are not listed as Workloads
 
-RMSNorm, softmax, and RoPE also appear as [Corpus cases](../../../corpus/manifest.json) or independent measurements. [State update](../../../examples/gpu/state_store_b200_correctness/README.md) and [FMA](../../../examples/gpu/fma_b200_correctness/README.md) have fixed GPU tasks. A JSON file or README does not automatically make them a complete Workload callable by arbitrary Studies; task semantics, evaluator, and evidence each need delivery.
+Softmax and RoPE also appear as [Corpus cases](../../../corpus/manifest.json) or independent measurements. [State update](../../../examples/gpu/state_store_b200_correctness/README.md) and [FMA](../../../examples/gpu/fma_b200_correctness/README.md) have fixed GPU tasks. A JSON file or README does not automatically make them a complete Workload callable by arbitrary Studies; task semantics, evaluator, and evidence each need delivery.

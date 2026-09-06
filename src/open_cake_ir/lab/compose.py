@@ -27,6 +27,7 @@ from .environments import (
     DirectCudaEnvironment,
     NvccToolchainBuilder,
     OpenCakeEnvironment,
+    NativeTritonEnvironment,
     TritonToolchainBuilder,
 )
 from .executor import ExecutorRevision
@@ -41,6 +42,8 @@ from .providers import (
     ProviderQualificationReceipt,
     required_live_provider_qualification_scope,
 )
+from .pairing import comparison_arm, bind_baseline
+from .triton_build import IsolatedTritonCompiler
 from .runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter
 from .task_package import (
     TASK_AGENTS_RALPH_V1,
@@ -326,21 +329,18 @@ def execute_matched_from_config(
     provider_config = _object(config["provider"], "runtime_config.provider")
     toolchain_config = _object(config["toolchain"], "runtime_config.toolchain")
     broker_config = _object(config["broker"], "runtime_config.broker")
-    if set(provider_config) != {"executable", "workspace_root"} or set(
-        toolchain_config
-    ) != {"nvcc", "cuobjdump"} or set(broker_config) != {
-        "command",
-        "cwd",
-        "timeout_seconds",
-        "service_user",
-        "service_group",
-    }:
-        raise ValueError("runtime configuration section fields differ")
-
     resolved = _object(lock.document["resolved_inputs"], "campaign_lock.resolved_inputs")
     arms = _object(resolved["arm_environments"], "arm_environments")
+    comparison = comparison_arm(arms)
+    paired_triton = comparison == "native_triton"
+    toolchain_fields = ({"python", "bubblewrap", "runtime_roots", "triton_version", "timeout_seconds"}
+                        if paired_triton else {"nvcc", "cuobjdump"})
+    if set(provider_config) != {"executable", "workspace_root"} or set(toolchain_config) != toolchain_fields or set(broker_config) != {
+        "command", "cwd", "timeout_seconds", "service_user", "service_group",
+    }:
+        raise ValueError("runtime configuration section fields differ")
     open_arm = _object(arms["open_cake"], "arm_environments.open_cake")
-    direct_arm = _object(arms["direct_cuda"], "arm_environments.direct_cuda")
+    direct_arm = _object(arms[comparison], f"arm_environments.{comparison}")
     provider_authority = _object(open_arm["provider"], "arm_environments.provider")
     budget = _object(resolved["budget"], "campaign_lock.resolved_inputs.budget")
     qualification_ref = _object(
@@ -359,12 +359,13 @@ def execute_matched_from_config(
     executable = Path(str(provider_config["executable"])).resolve(strict=True)
     if sha256(executable.read_bytes()).hexdigest() != provider_authority["executable_sha256"]:
         raise ValueError("runtime provider executable differs from the Campaign Lock")
-    nvcc_builder = NvccToolchainBuilder(
-        nvcc=str(toolchain_config["nvcc"]),
-        cuobjdump=str(toolchain_config["cuobjdump"]),
-    )
-    if nvcc_builder.canonical_sha256 != direct_arm["toolchain_sha256"]:
-        raise ValueError("runtime CUDA toolchain differs from the Campaign Lock")
+    toolchain = (IsolatedTritonCompiler(**toolchain_config) if paired_triton else
+                 NvccToolchainBuilder(nvcc=str(toolchain_config["nvcc"]), cuobjdump=str(toolchain_config["cuobjdump"])))
+    if paired_triton:
+        toolchain.check_executor(executor, author_workspace=str(provider_config["workspace_root"]))
+    if toolchain.canonical_sha256 != direct_arm["toolchain_sha256"] or (
+        paired_triton and open_arm["toolchain_sha256"] != direct_arm["toolchain_sha256"]):
+        raise ValueError("runtime toolchain differs from the Campaign Lock")
     command_value = broker_config["command"]
     command = (
         tuple(str(value) for value in command_value)
@@ -393,14 +394,15 @@ def execute_matched_from_config(
         root, output_schema, "arm_environments.provider.output_schema"
     )
     _raw_reference_path(root, open_arm["scaffold"], "arm_environments.scaffold")
-    _raw_reference_path(
-        root, direct_arm["launch_contract"], "arm_environments.direct_cuda.launch_contract"
-    )
-    _raw_reference_path(
-        root,
-        direct_arm["candidate_skeleton"],
-        "arm_environments.direct_cuda.candidate_skeleton",
-    )
+    if not paired_triton:
+        _raw_reference_path(
+            root, direct_arm["launch_contract"], "arm_environments.direct_cuda.launch_contract"
+        )
+        _raw_reference_path(
+            root,
+            direct_arm["candidate_skeleton"],
+            "arm_environments.direct_cuda.candidate_skeleton",
+        )
     ralph_interface = lock.agent_interface == TASK_AGENTS_RALPH_V1
     prompt_templates = (
         {}
@@ -413,7 +415,7 @@ def execute_matched_from_config(
             )
             for arm, document in (
                 ("open_cake", open_arm),
-                ("direct_cuda", direct_arm),
+                (comparison, direct_arm),
             )
         }
     )
@@ -431,19 +433,21 @@ def execute_matched_from_config(
     workload_contract = WorkloadContract.load(root / str(workload["path"]))
     if workload_contract.canonical_sha256 != workload["canonical_sha256"]:
         raise ValueError("runtime Workload differs from the Campaign Lock")
+    if paired_triton:
+        skeleton = _object(open_arm["schedule_skeleton"], "schedule_skeleton")
+        baseline = bind_baseline(json.loads((root / str(skeleton["path"])).read_text()), workload_contract, str(protocol["case_id"]))
+        lowering = compiler.lower(compiler.assess(baseline))
+        builder = TritonToolchainBuilder(workload=workload_contract, case_id=str(protocol["case_id"]), isolated_compiler=toolchain)
+        direct_environment = NativeTritonEnvironment(builder, toolchain_requirements=lowering.toolchain_requirements,
+            authority_document=direct_arm, workload=workload_contract, case_id=str(protocol["case_id"]))
+    else:
+        builder = TritonToolchainBuilder()
+        direct_environment = DirectCudaEnvironment(toolchain,
+            toolchain_requirements={"compiler": "nvcc", "target": "sm_100a"}, authority_document=direct_arm)
     environments = {
-        "open_cake": OpenCakeEnvironment(
-            compiler,
-            TritonToolchainBuilder(),
-            authority_document=open_arm,
-            workload=workload_contract,
-            case_id=str(protocol["case_id"]),
-        ),
-        "direct_cuda": DirectCudaEnvironment(
-            nvcc_builder,
-            toolchain_requirements={"compiler": "nvcc", "target": "sm_100a"},
-            authority_document=direct_arm,
-        ),
+        "open_cake": OpenCakeEnvironment(compiler, builder, authority_document=open_arm,
+            workload=workload_contract, case_id=str(protocol["case_id"])),
+        comparison: direct_environment,
     }
     protocol_sha256 = sha256(
         json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()

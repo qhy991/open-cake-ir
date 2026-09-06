@@ -28,6 +28,9 @@ from open_cake_ir.lab import (  # noqa: E402
     scientific_matched_analysis_plan_v2,
 )
 
+from open_cake_ir.lab.pairing import comparison_arm, triton_optimization_analysis_plan
+from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
+
 
 def _canonical_json_bytes(value: object) -> bytes:
     return json.dumps(
@@ -146,8 +149,13 @@ def main() -> int:
         or study.get("state") not in {"template", "frozen"}
     ):
         raise ValueError("live matched Study template policy differs")
+    comparison = comparison_arm(_object(study["arms"], "study.arms"))
+    paired_triton = comparison == "native_triton"
     if study.get("claim_scope") == "scientific_matched_search":
-        study["analysis_plan"] = dict(scientific_matched_analysis_plan_v2())
+        expected_analysis = triton_optimization_analysis_plan() if paired_triton else dict(scientific_matched_analysis_plan_v2())
+        if paired_triton and study.get("analysis_plan") != expected_analysis:
+            raise ValueError("paired Triton scientific analysis differs")
+        study["analysis_plan"] = expected_analysis
     if study.get("schema_version") == 1:
         study["evidence"] = dict(matched_evidence_policy_v1())
     _replace_artifact_feedback_budget(
@@ -185,7 +193,8 @@ def main() -> int:
     broker_config = _object(config["broker"], "runtime_config.broker")
     if (
         set(provider_config) != {"executable", "workspace_root"}
-        or set(toolchain_config) != {"nvcc", "cuobjdump"}
+        or set(toolchain_config) != ({"python", "bubblewrap", "runtime_roots", "triton_version", "timeout_seconds"}
+                                      if paired_triton else {"nvcc", "cuobjdump"})
         or set(broker_config)
         != {
             "command",
@@ -211,7 +220,7 @@ def main() -> int:
         "path": "compiler/revision.lock.json",
         "canonical_sha256": gate.compiler_revision_sha256,
     }
-    for arm_name in ("open_cake", "direct_cuda"):
+    for arm_name in arms:
         arm = _object(arms[arm_name], f"study.arms.{arm_name}")
         provider = _object(arm["provider"], f"study.arms.{arm_name}.provider")
         provider["revision"] = qualification.provider_revision
@@ -235,13 +244,18 @@ def main() -> int:
     skeleton["canonical_sha256"] = sha256(
         _canonical_json_bytes(skeleton_document)
     ).hexdigest()
-    direct_arm = _object(arms["direct_cuda"], "study.arms.direct_cuda")
-    _refresh_raw_reference(root, direct_arm["launch_contract"], "direct.launch_contract")
-    _refresh_raw_reference(root, direct_arm["candidate_skeleton"], "direct.candidate_skeleton")
-    direct_arm["toolchain_sha256"] = NvccToolchainBuilder(
-        nvcc=str(toolchain_config["nvcc"]),
-        cuobjdump=str(toolchain_config["cuobjdump"]),
-    ).canonical_sha256
+    direct_arm = _object(arms[comparison], f"study.arms.{comparison}")
+    if paired_triton:
+        isolated_toolchain = IsolatedTritonCompiler(**toolchain_config)
+        identity = isolated_toolchain.canonical_sha256
+        direct_arm["toolchain_sha256"] = identity
+        open_arm["toolchain_sha256"] = identity
+    else:
+        _refresh_raw_reference(root, direct_arm["launch_contract"], "direct.launch_contract")
+        _refresh_raw_reference(root, direct_arm["candidate_skeleton"], "direct.candidate_skeleton")
+        direct_arm["toolchain_sha256"] = NvccToolchainBuilder(
+            nvcc=str(toolchain_config["nvcc"]), cuobjdump=str(toolchain_config["cuobjdump"]),
+        ).canonical_sha256
 
     command_value = broker_config["command"]
     command = (
@@ -251,6 +265,8 @@ def main() -> int:
     )
     execution = _object(study["execution"], "study.execution")
     executor = ExecutorRevision.load(root, arguments.executor)
+    if paired_triton:
+        isolated_toolchain.check_executor(executor, author_workspace=str(provider_config["workspace_root"]))
     execution["executor_revision"] = dict(executor.reference)
     execution["broker_execution_sha256"] = broker_execution_sha256(
         command,

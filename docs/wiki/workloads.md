@@ -10,6 +10,22 @@ Workload 是一道题的完整约定：给什么输入，必须输出什么，�
 **这里列出的是合同，不是“所有任务都已接通 Lab、通过 GPU 或达到最佳性能”的排行榜。**
 选择哪一版由具体 Study 决定，不能只看文件名里最大的版本号。
 
+## 独立 Tile Workload：归一化、矩阵乘与索引读取
+
+这三个合同把已有 Corpus 示例明确为独立算子，分别固定输入域、tensor ABI、
+数学参考与逐元素判对规则。
+
+| 合同 | 计算与输出 |
+| --- | --- |
+| [RMSNorm FP32 v1](../../contracts/workloads/rmsnorm-fp32-v1.json) | 沿最后一维归一化并乘 gamma，输入与输出为 FP32。 |
+| [GEMM+bias BF16/FP32 v1](../../contracts/workloads/gemm-bias-bf16-fp32-v1.json) | BF16 的 A、B 按 `A @ B.T + bias` 计算，bias 和输出为 FP32。 |
+| [Indexed gather BF16 v1](../../contracts/workloads/indexed-gather-bf16-v1.json) | expert/row ID 成对选择 BF16 行；任一 ID 越界时输出整行正零，负数不回绕。 |
+
+形状、容差、共用 ABI 和独立 CPU oracle 见 [Tile Workload 指南](../TILE_WORKLOADS.md)。
+[基线准备入口](../../examples/paired_triton/README.md)从同一 IR 生成对应的原生 Triton
+源码，供明确声明的共同优化起点使用。当前交付范围是合同、CPU 参考与源码准备；
+GPU 编译、正确性、计时、profiler 和框架验收仍待 R2 验证。
+
 ## Flash-KMeans
 
 - **输入：** 一批点和聚类中心，BF16 存储；距离计算与累加遵守 FP32 约定。
@@ -75,7 +91,7 @@ v2 是后继合同，旧实验继续使用它原来固定的版本。学习 Comp
 
 ## 为什么有些示例不在这张合同表里
 
-RMSNorm、Softmax、RoPE 等还以 [Corpus Schedule](../../corpus/manifest.json)或独立测量任务出现。
+Softmax、RoPE 等还以 [Corpus Schedule](../../corpus/manifest.json)或独立测量任务出现。
 [状态更新](../../examples/gpu/state_store_b200_correctness/README.md)和 [FMA](../../examples/gpu/fma_b200_correctness/README.md)
 也有自己的固定 GPU 任务。
 
