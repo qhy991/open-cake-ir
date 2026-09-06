@@ -33,8 +33,9 @@ The paper states eight. They bind IR changes here; the global doctrine covers th
   bit, or one latency number, is the failure mode this harness exists to avoid.
 - Timing-model coverage is evidence-gated per target. A target without its own calibration
   reports a coverage limitation; it never inherits another target's estimates.
-- Human judgement gates compiler evolution. An automatic estimate does not authorize a
-  Revision.
+- The paper uses human judgement to gate compiler evolution. This project's owner now
+  permits an independent agent reviewer under ADR 0052; an automatic estimate still
+  does not authorize a Revision.
 
 ## What the harness must do (S3)
 
@@ -89,7 +90,8 @@ things to do because the rules above did not stop either one.
   performance-transparent and verification-friendly.
 - A primitive and its analyses evolve together. Syntax without effects and legality rules
   makes the IR less analyzable, which is a reason to refuse it, not to defer them.
-- Changes are test-gated across the kernel corpus, and merged by human judgement.
+- Changes are test-gated across the kernel corpus and require independent review under
+  ADR 0052 before release or merge.
 - Recurring failures are what become new verifier rules, IR primitives, cost-model
   calibrations and reusable tactics. A one-off failure is not evidence for a rule.
 
@@ -160,10 +162,13 @@ invalidates the comparison, not just the run.
   operation body is a backend capability Finding before lowering, not a name lookup. A new operator that composes
   existing primitives therefore needs a Workload Contract, not a Compiler change; if it needs a Compiler change, say
   which primitive is missing rather than widening a route.
-- Compiler changes require a full Corpus Gate and an approval written outside this automation before producing a new
-  Compiler Revision. You may prepare a release — derive the id, run the Gate — but you may never create or modify
-  `compiler/release-approval.json`. A missing, malformed or stale approval exits 3 and leaves the prior lock and
-  approval bytes untouched; that is the gate working, not an obstacle to route around (ADR 0030).
+- Compiler changes require a full Corpus Gate and independent approval before producing a new Compiler Revision.
+  The author and release cycle may prepare a release but may not write `compiler/release-approval.json`.
+  A human reviewer or a distinct agent session may write it after reviewing the exact change and Gate. An agent
+  reviewer must use a model in `ALLOWED_REVIEW_MODELS` in `src/open_cake_ir/compiler/release.py`; record the actual
+  model and distinct author/reviewer session ids, with no silent model substitution or author self-approval.
+  Missing, malformed, stale, disallowed-model or same-session approval exits 3 and preserves the prior lock and
+  approval bytes. See ADR 0052, which supersedes ADR 0030's human-only interpretation.
 - A file can be frozen by being named with a digest somewhere else, not only by living under `evidence/`. Before
   editing anything under `tools/`, `src/`, `examples/` or `corpus/`, check whether `compiler/source_set.json`, a
   `runtime/executors/*.json` closure or a `contracts/calibrations/*.json` plan pins its bytes. Editing a pinned file

@@ -41,8 +41,13 @@ python tools/release_compiler.py --project-root . \
 For a proposed successor, `bash tools/release_compiler_cycle.sh` derives the revision id
 and prepares the full Corpus Gate. The cycle never writes
 `compiler/release-approval.json`. Missing, malformed, or stale approval exits with status
-3 and leaves the prior release untouched. A reviewer outside that automation inspects the
-exact Gate diff and writes the approval that binds it.
+3 and leaves the prior release untouched. A human or an independent agent session outside
+that automation inspects the exact source and Gate diff and writes a schema-version-2
+approval. Agent reviewers must use an allowed model and a session distinct from the author;
+the author may not write the approval. The schema, canonical model policy, and session
+verification procedure are in [ADR 0052](adr/0052-independent-agent-release-review.md).
+Historical releases replay through their pinned source revisions with their original
+approval bytes; do not convert old approvals to the new schema.
 
 Changing a Target definition is not an ordinary source edit. Update its explicit proposal
 pin and review the hardware contract. Never regenerate Corpus expectations merely to make
