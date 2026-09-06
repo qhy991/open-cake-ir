@@ -17,6 +17,7 @@ from open_cake_ir.compiler import (  # noqa: E402
     Target,
     profile_envelope,
 )
+from open_cake_ir.compiler.compiled_resources import load_compiled_resources  # noqa: E402
 from open_cake_ir.lab import (  # noqa: E402
     qsa_compiler_feedback,
     qsa_evaluation_feedback,
@@ -43,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     compiler = commands.add_parser("compiler")
     compiler.add_argument("--revision", type=Path, required=True)
+    compiler.add_argument("--compiled-report", type=Path)
     compiler.add_argument("schedule", type=Path)
     evaluation = commands.add_parser("evaluation")
     evaluation.add_argument("--arm", choices=("open_cake", "direct_cuda"), required=True)
@@ -64,14 +66,18 @@ def main(argv: list[str] | None = None) -> int:
         compiler = Compiler.load(ROOT, arguments.revision.resolve(strict=True))
         schedule_path = arguments.schedule.resolve(strict=True)
         assessment = compiler.assess_file(schedule_path)
-        schedule = Schedule.load(schedule_path)
+        schedule = Schedule.from_dict(json.loads(assessment.schedule_bytes))
         target = Target.load(ROOT / f"compiler/targets/{schedule.target}.json")
         lowering = compiler.lower(assessment) if assessment.lowering_eligible else None
-        profile = profile_envelope(
-            schedule,
-            target,
-            lowered_source=lowering.source if lowering is not None else None,
-        ).as_dict()
+        if lowering is not None:
+            resources = None
+            if arguments.compiled_report is not None:
+                resources = load_compiled_resources(arguments.compiled_report).get(lowering.source_sha256)
+                if resources is None:
+                    raise ValueError("compiled report has no observation for this current QSA source")
+            profile = compiler.profile(assessment, compiled_resources=resources).as_dict()
+        else:
+            profile = profile_envelope(schedule, target).as_dict()
         _emit(qsa_compiler_feedback(assessment, static_profile=profile))
         return 0
     result = json.loads(arguments.result.resolve(strict=True).read_text(encoding="utf-8"))

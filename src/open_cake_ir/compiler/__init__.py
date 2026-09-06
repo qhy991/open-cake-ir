@@ -22,6 +22,7 @@ from .core import (
     Lowering,
 )
 from .emit_cutedsl import EmitError, Emission, emit
+from .compiled_resources import CompiledResources
 from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
 from .profile_model import MetricEstimate, ProfileEnvelope, profile_envelope
 from .target import Target, TargetParseError
@@ -31,6 +32,7 @@ __all__ = [
     "Assessment",
     "Compiler",
     "CompilerError",
+    "CompiledResources",
     "CorpusCaseReport",
     "CorpusGateReport",
     "EmitError",

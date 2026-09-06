@@ -95,7 +95,9 @@
     "corpus/schedules/fma-b8-smoke-cross-dimension-drift.json",
     "corpus/schedules/fma-b8-smoke-load-shape-drift.json",
     "corpus/schedules/fma-b8-smoke-vector-span-drift.json",
-    "corpus/schedules/fma-scalar-load-b8-smoke.json"
+    "corpus/schedules/fma-scalar-load-b8-smoke.json",
+    "src/open_cake_ir/compiler/compiled_resources.py",
+    "src/open_cake_ir/compiler/toolchain.py"
   ],
   "schema_version": 1
 }

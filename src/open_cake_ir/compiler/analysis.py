@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .compiled_resources import CompiledResources
 from .ir import MemorySpace, Operation, OperationKind, Schedule, TopKParameters
 from .target import Target
 from .work import loop_trip_distribution, program_tiles
@@ -45,6 +46,7 @@ class ResidencyBound:
     def unit(self) -> str:
         return {
             "threads": "threads",
+            "registers": "registers",
         }.get(self.resource, "bytes")
 
 
@@ -378,15 +380,24 @@ def _allocation_bytes(schedule: Schedule, space: MemorySpace) -> int:
 
 
 def residency_upper_bound(
-    schedule: Schedule, target: Target
+    schedule: Schedule, target: Target, *, compiled_resources: CompiledResources | None = None
 ) -> ResidencyUpperBound | None:
-    """Static resident-CTA upper bounds, or None without Target capacity facts."""
+    """Resource upper bounds; a compiled observation can replace logical declarations.
+
+    Allocation granularity, barriers, carveout, and backend tensor-memory use may tighten
+    these ceilings further. Physical registers are admitted only from compiled facts.
+    """
 
     facts = target.occupancy
     if facts is None:
         return None
 
-    threads = schedule.total_warp_extent * target.warp_size
+    if compiled_resources is not None and compiled_resources.target != target.target_id:
+        raise ValueError("compiled resource target differs from residency Target")
+    threads = (
+        compiled_resources.threads_per_cta if compiled_resources is not None
+        else schedule.total_warp_extent * target.warp_size
+    )
     bounds: list[ResidencyBound] = []
 
     if threads:
@@ -399,7 +410,16 @@ def residency_upper_bound(
             )
         )
 
-    shared = _allocation_bytes(schedule, MemorySpace.SHARED)
+    if compiled_resources is not None:
+        registers = compiled_resources.registers_per_thread * threads
+        bounds.append(ResidencyBound(
+            "registers", registers, facts.registers_per_multiprocessor,
+            facts.registers_per_multiprocessor // registers,
+        ))
+    shared = (
+        compiled_resources.shared_bytes if compiled_resources is not None
+        else _allocation_bytes(schedule, MemorySpace.SHARED)
+    )
     if shared:
         bounds.append(
             ResidencyBound(

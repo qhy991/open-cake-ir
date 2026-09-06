@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import tempfile
 from dataclasses import dataclass, field
@@ -13,6 +12,7 @@ from typing import Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Assessment, Compiler, CompilerError
 from open_cake_ir.compiler.ranking import Cost
+from open_cake_ir.compiler.toolchain import compile_triton
 from open_cake_ir.evaluation import (
     CudaLaunchManifest,
     LaunchableCandidate,
@@ -79,14 +79,6 @@ class ToolchainBuilder(Protocol):
         """Build with the Campaign-pinned toolchain and retain artifact roles."""
 
 
-def _artifact_bytes(value: object, role: str) -> bytes:
-    if isinstance(value, str):
-        return value.encode()
-    if isinstance(value, bytes):
-        return value
-    raise ValueError(f"toolchain artifact {role!r} has unsupported bytes")
-
-
 class TritonToolchainBuilder:
     """Compile the canonical parametric Triton lowering to an exact sm_100a CUBIN."""
 
@@ -98,48 +90,12 @@ class TritonToolchainBuilder:
             or requirements.get("target") != request.target
         ):
             raise ValueError("Triton toolchain requirements differ")
-        kernel_name = requirements.get("kernel_entry_point")
-        signature = requirements.get("signature")
-        constants = requirements.get("compile_constants")
-        options = requirements.get("compile_options")
         grid = requirements.get("grid")
-        if (
-            not isinstance(kernel_name, str)
-            or not isinstance(signature, Mapping)
-            or not isinstance(constants, Mapping)
-            or not isinstance(options, Mapping)
-            or not isinstance(grid, list)
-            or len(grid) != 3
-        ):
-            raise ValueError("Triton compile contract differs")
-        with tempfile.TemporaryDirectory(prefix="open-cake-triton-") as directory:
-            source_path = Path(directory) / "lowered.py"
-            source_path.write_bytes(request.source)
-            module_spec = importlib.util.spec_from_file_location(
-                f"open_cake_lowering_{request.source_sha256[:16]}", source_path
-            )
-            if module_spec is None or module_spec.loader is None:
-                raise ValueError("Triton lowering module specification failed")
-            module = importlib.util.module_from_spec(module_spec)
-            module_spec.loader.exec_module(module)
-            kernel = getattr(module, kernel_name, None)
-            if kernel is None:
-                raise ValueError("Triton lowering kernel entry point is missing")
-            from triton.backends.compiler import GPUTarget
-            from triton.compiler import ASTSource
-            from triton.compiler import compile as triton_compile
-
-            compiled = triton_compile(
-                ASTSource(kernel, dict(signature), dict(constants)),
-                target=GPUTarget("cuda", 100, 32),
-                options=dict(options),
-            )
-            stages = {
-                role: _artifact_bytes(compiled.asm[role], role)
-                for role in ("source", "ttir", "ttgir", "llir", "ptx", "cubin")
-            }
-        if not stages["cubin"].startswith(b"\x7fELF"):
-            raise ValueError("Triton did not produce an ELF CUBIN")
+        if not isinstance(grid, list) or len(grid) != 3:
+            raise ValueError("Triton launch grid differs")
+        compilation = compile_triton(request.source, requirements)
+        stages = compilation.artifacts
+        kernel_name = compilation.entry_point
         manifest = CudaLaunchManifest.from_dict(
             {
                 "schema_version": 1,
@@ -147,8 +103,8 @@ class TritonToolchainBuilder:
                 "target": request.target,
                 "kernel_name": kernel_name,
                 "grid": grid,
-                "block": [int(options["num_warps"]) * 32, 1, 1],
-                "dynamic_shared_memory_bytes": int(compiled.metadata.shared),
+                "block": [compilation.threads_per_cta, 1, 1],
+                "dynamic_shared_memory_bytes": compilation.dynamic_shared_bytes,
                 "hidden_null_pointer_parameters": 2,
             }
         )

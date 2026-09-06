@@ -9,7 +9,12 @@ unknown or qualitative risk until a target-specific calibration covers them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, TYPE_CHECKING
+
+from .compiled_resources import CompiledResources
+
+if TYPE_CHECKING:
+    from .core import Lowering
 
 from .analysis import (
     logical_register_pressure_per_thread,
@@ -89,6 +94,7 @@ class ProfileEnvelope:
     lowering: Mapping[str, object]
     ncu_metrics: tuple[MetricEstimate, ...]
     abstentions: tuple[str, ...]
+    compiled_resources: CompiledResources | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -101,6 +107,9 @@ class ProfileEnvelope:
             "lowering": dict(self.lowering),
             "ncu_metrics": [metric.as_dict() for metric in self.ncu_metrics],
             "abstentions": list(self.abstentions),
+            "compiled_resources": (
+                None if self.compiled_resources is None else self.compiled_resources.as_dict()
+            ),
         }
 
 
@@ -135,13 +144,15 @@ def _work_document(bound: WorkBound | None) -> Mapping[str, object] | None:
     }
 
 
-def _residency_document(schedule: Schedule, target: Target) -> Mapping[str, object] | None:
-    envelope = residency_upper_bound(schedule, target)
+def _residency_document(schedule: Schedule, target: Target,
+                        compiled_resources: CompiledResources | None = None) -> Mapping[str, object] | None:
+    envelope = residency_upper_bound(schedule, target, compiled_resources=compiled_resources)
     if envelope is None:
         return None
     return {
         "ctas_per_sm_upper_bound": envelope.ctas_per_multiprocessor,
         "binding_resource": envelope.binding.resource if envelope.binding else None,
+        "coverage": "compiled allocation" if compiled_resources else "Schedule declarations",
         "logical_register_pressure_per_thread": logical_register_pressure_per_thread(
             schedule, target
         ),
@@ -158,8 +169,9 @@ def _residency_document(schedule: Schedule, target: Target) -> Mapping[str, obje
     }
 
 
-def _bound_ctas(schedule: Schedule, target: Target, resource: str) -> int | None:
-    envelope = residency_upper_bound(schedule, target)
+def _bound_ctas(schedule: Schedule, target: Target, resource: str,
+                compiled_resources: CompiledResources | None = None) -> int | None:
+    envelope = residency_upper_bound(schedule, target, compiled_resources=compiled_resources)
     if envelope is None:
         return None
     match = next((bound for bound in envelope.bounds if bound.resource == resource), None)
@@ -375,15 +387,37 @@ def profile_envelope(
     target: Target,
     *,
     lowered_source: str | None = None,
+    lowering: "Lowering | None" = None,
+    compiled_resources: CompiledResources | None = None,
 ) -> ProfileEnvelope:
     """Derive one NCU-aligned report without inventing measured percentages."""
 
+    if lowering is not None:
+        if lowered_source is not None:
+            raise ValueError("provide one lowering authority, not two source representations")
+        if lowering.schedule_id != schedule.schedule_id or lowering.target != target.target_id:
+            raise ValueError("profile lowering context differs from Schedule or Target")
+        lowered_source = lowering.source
+    if compiled_resources is not None:
+        if lowering is None:
+            raise ValueError("compiled resource feedback requires its complete Lowering context")
+        requirements = lowering.toolchain_requirements
+        options = requirements.get("compile_options", {})
+        compiled_resources.require_context(
+            source=lowering.source, target=target.target_id,
+            entry_point=str(requirements.get("kernel_entry_point", "")),
+            threads_per_cta=int(options.get("num_warps", 0)) * target.warp_size,
+        )
     work = work_bound(schedule)
-    residency = residency_upper_bound(schedule, target)
+    residency = residency_upper_bound(schedule, target, compiled_resources=compiled_resources)
     register_pressure = logical_register_pressure_per_thread(schedule, target)
-    shared_bytes = _explicit_allocation_bytes(schedule, MemorySpace.SHARED)
-    shared_ctas = _bound_ctas(schedule, target, "shared_memory")
-    warp_ctas = _bound_ctas(schedule, target, "threads")
+    shared_bytes = (
+        compiled_resources.shared_bytes if compiled_resources
+        else _explicit_allocation_bytes(schedule, MemorySpace.SHARED)
+    )
+    shared_ctas = _bound_ctas(schedule, target, "shared_memory", compiled_resources)
+    warp_ctas = _bound_ctas(schedule, target, "threads", compiled_resources)
+    register_ctas = _bound_ctas(schedule, target, "registers", compiled_resources)
     top_k = _top_k_features(schedule)
     synchronization = _synchronization_risk(schedule, top_k)
     runtime_indexed = _runtime_indexed_buffers(schedule)
@@ -454,8 +488,8 @@ def profile_envelope(
     metrics = (
         MetricEstimate(
             "launch__registers_per_thread",
-            "unknown",
-            None,
+            "exact" if compiled_resources else "unknown",
+            compiled_resources.registers_per_thread if compiled_resources else None,
             "register/thread",
             "compiled backend allocation",
             reasons=(
@@ -463,12 +497,12 @@ def profile_envelope(
                 if register_pressure
                 else ()
             ),
-            missing=("compiled-kernel register allocation",),
+            missing=() if compiled_resources else ("compiled-kernel register allocation",),
         ),
         MetricEstimate(
             "launch__occupancy_limit_registers",
-            "unknown",
-            None,
+            "upper_bound" if register_ctas is not None else "unknown",
+            register_ctas,
             "CTA/SM",
             "compiled backend allocation",
             reasons=(
@@ -476,16 +510,16 @@ def profile_envelope(
                 if register_pressure
                 else ()
             ),
-            missing=("ptxas register allocation",),
+            missing=("register allocation granularity",) if compiled_resources else ("ptxas register allocation",),
         ),
         MetricEstimate(
             "launch__occupancy_limit_shared_mem",
             "upper_bound" if shared_ctas is not None else "unknown",
             shared_ctas,
             "CTA/SM",
-            "explicit Schedule shared-memory allocations",
-            reasons=((f"{shared_bytes} explicit shared bytes/CTA",) if shared_bytes else ()),
-            missing=("backend implicit shared memory",),
+            "compiled static plus launch dynamic allocation" if compiled_resources else "explicit Schedule shared-memory allocations",
+            reasons=((f"{shared_bytes} shared bytes/CTA",) if shared_bytes else ()),
+            missing=("allocation granularity and driver reservation",) if compiled_resources else ("backend implicit shared memory",),
         ),
         MetricEstimate(
             "launch__occupancy_limit_blocks",
@@ -564,19 +598,26 @@ def profile_envelope(
     )
 
     abstentions = [
-        "physical register allocation requires a compiled artifact",
         "throughput percentages require a measured or calibrated duration and target rate",
         "L2 behavior requires a cache/transaction calibration",
         "stall percentages remain qualitative until B200 NCU coverage exists",
     ]
+    if compiled_resources is None:
+        abstentions.insert(0, "physical register allocation requires a compiled artifact")
+    else:
+        abstentions.extend((
+            "residency remains an upper bound without allocation granularity, carveout, barriers and implicit tensor memory",
+            "stack and local allocation are static bytes, not dynamic spill traffic",
+        ))
     if backend_intrinsics:
         abstentions.extend(backend_intrinsics)
     return ProfileEnvelope(
         schedule.schedule_id,
         target.target_id,
         _work_document(work),
-        _residency_document(schedule, target),
+        _residency_document(schedule, target, compiled_resources),
         _lowering_document(schedule, lowered_source),
         metrics,
         tuple(abstentions),
+        compiled_resources,
     )

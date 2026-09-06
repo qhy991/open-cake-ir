@@ -1249,6 +1249,23 @@ class Compiler:
                 )
         return findings
 
+    def profile(self, assessment: Assessment, *, compiled_resources=None):
+        """Profile the canonical assessed program without executing a kernel.
+
+        Reuse lower's full Assessment replay so compiled facts cannot be paired with a
+        changed Schedule that happens to retain its display name.
+        """
+        from .profile_model import profile_envelope
+
+        lowering = self.lower(assessment)
+        schedule = Schedule.from_dict(
+            _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
+        )
+        target = Target.from_dict(dict(self._target_definitions[assessment.target].document))
+        return profile_envelope(
+            schedule, target, lowering=lowering, compiled_resources=compiled_resources,
+        )
+
     def rank(
         self, assessments: Sequence[Assessment]
     ) -> tuple[tuple["Cost", ...], tuple[str, ...]]:

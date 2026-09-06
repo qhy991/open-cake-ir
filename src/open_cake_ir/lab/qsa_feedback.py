@@ -125,6 +125,7 @@ def _bounded_profile(profile: Mapping[str, object]) -> Mapping[str, object]:
             retained_metrics.append(dict(metric))
     return {
         "work": None if work is None else dict(work),
+        "compiled_resources": profile.get("compiled_resources"),
         "residency": None if residency is None else {
             key: residency.get(key)
             for key in (
