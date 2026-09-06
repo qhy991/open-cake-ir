@@ -35,6 +35,11 @@ jobs:
           tests.contracts.test_python_frontend
           tests.contracts.test_cli
           tests.contracts.test_documentation
+          tests.contracts.test_lab
+          tests.contracts.test_authoring_environment
+          tests.contracts.test_qsa_feedback
+          tests.contracts.test_qsa_component_timing
+          tests.contracts.test_routing
           tests.contracts.test_release_approval
           tests.contracts.test_compiled_resources
           tests.contracts.test_empirical_cost

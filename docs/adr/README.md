@@ -19,6 +19,7 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 | AI 怎样读取任务并受预算约束 | [0048](../zh-CN/adr/0048-agent-runs-use-task-agents-and-ralph-control.md) |
 | 已发布身份怎样保留 | [Executor：0049](../zh-CN/adr/0049-released-executor-descriptors-reserve-their-identities.md)、[Compiler：0050](../zh-CN/adr/0050-released-compiler-locks-reserve-their-identities.md) |
 | 为什么读取不能隐式复制成一组数 | [0051](../zh-CN/adr/0051-load-values-follow-the-access-domain.md) |
+| Study 怎样显式使用外部模型给候选排序 | [0053](0053-study-bound-advisory-cost-selection.md) |
 
 [完整的 54 份中文设计记录](../zh-CN/adr/README.md)逐条对应英文原文。历史中重复的编号按完整文件名区分。状态含义：
 

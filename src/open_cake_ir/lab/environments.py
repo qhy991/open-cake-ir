@@ -13,6 +13,7 @@ from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Assessment, Compiler, CompilerError
+from open_cake_ir.compiler.empirical_cost import EmpiricalCostModel
 from open_cake_ir.compiler.ranking import Cost
 from open_cake_ir.compiler.toolchain import compile_triton, project_triton_kernel, validate_triton_kernel
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule, FrontendError
@@ -25,12 +26,83 @@ from open_cake_ir.evaluation import (
 )
 
 from .faults import CandidateCompileRejected, RunProtocolFault
+from .executor import ExecutorRevision
 from .process import (
     SupervisedProcessOutputLimit,
     SupervisedProcessTimeout,
     run_supervised,
     sanitized_environment,
 )
+
+
+_EMPIRICAL_SELECTION = "external_empirical_advisory_v1"
+
+
+def _empirical_context(
+    executor: ExecutorRevision, *, workload_sha256: str, case_id: str
+) -> dict[str, object]:
+    """Reference the actual Flash assay and its admitted, frozen runtime owner.
+
+    The Executor content identity binds the helper, assay source and host closure;
+    this projection does not infer equivalence between suppliers' free-text contexts.
+    """
+    packages = executor.document["host_environment"]["packages"]
+    return {
+        "timer": "flashinfer.testing.utils.bench_gpu_time_with_cupti;use_cuda_graph=false",
+        "cache_protocol": "cold_l2_cache=true",
+        "runtime": {
+            "compiler_version": packages.get("triton"),
+            "executor_revision": executor.canonical_sha256,
+        },
+        "input_scope": json.dumps(
+            {"workload_contract_sha256": workload_sha256, "case_id": case_id},
+            sort_keys=True, separators=(",", ":"),
+        ),
+    }
+
+
+class _EmpiricalSelection:
+    """One Study-bound advisory model, shared by execution and CPU replay."""
+
+    def __init__(
+        self, binding: Mapping[str, object], *, context: Mapping[str, object],
+        compiler_revision_id: str, compiler_revision_sha256: str, target: str,
+    ) -> None:
+        if set(binding) != {"kind", "model"} or binding.get("kind") != _EMPIRICAL_SELECTION:
+            raise ValueError("empirical selection binding differs")
+        self.model = EmpiricalCostModel(binding["model"])
+        self._context_differences = tuple(
+            key for key in ("timer", "cache_protocol", "runtime", "input_scope")
+            if binding["model"]["context"].get(key) != context.get(key)
+        ) + (("fields",) if set(binding["model"]["context"]) != set(context) else ())
+        self._compiler_revision_id = compiler_revision_id
+        self._compiler_revision_sha256 = compiler_revision_sha256
+        self._target = target
+
+    def estimate(self, schedule: dict) -> dict[str, object]:
+        result = self.model.estimate(
+            schedule, compiler_revision_id=self._compiler_revision_id,
+            compiler_revision_sha256=self._compiler_revision_sha256,
+            target=self._target,
+        )
+        reason = None
+        if self._context_differences:
+            reason = "model context differs in " + ", ".join(self._context_differences) + "; exact Workload/case/assay/Executor binding required"
+        elif result["covered"] and (
+            not math.isfinite(result["predicted_kernel_us"])
+            or result["predicted_kernel_us"] <= 0
+            or any(not math.isfinite(value) for value in result["empirical_range_us"])
+        ):
+            reason = "model prediction or empirical range is not finite and positive"
+        if reason is not None:
+            result.update(covered=False, predicted_kernel_us=None, empirical_range_us=None, reason=reason)
+        # The full supplier document is already frozen in the CampaignLock. Arbitrary
+        # context/provenance maps (including raw observations) are not agent feedback.
+        return {key: result[key] for key in (
+            "kind", "model_id", "model_compiler_revision_id",
+            "model_compiler_revision_sha256", "target", "covered",
+            "predicted_kernel_us", "empirical_range_us", "reason",
+        )}
 
 
 @dataclass(frozen=True)
@@ -332,6 +404,9 @@ class EnvironmentResult:
     environment owns the Compiler, and this is the Compiler's own semantic digest.
     """
 
+    empirical_cost: Mapping[str, object] | None = None
+    """Conditional point estimate, separate from calibrated Compiler ranking."""
+
     def __post_init__(self) -> None:
         if self.disposition not in {"launchable", "rejected"}:
             raise ValueError("Authoring Environment disposition differs")
@@ -370,6 +445,7 @@ class OpenCakeEnvironment:
         authority_document: Mapping[str, object],
         workload: WorkloadContract,
         case_id: str,
+        executor: ExecutorRevision | None = None,
     ) -> None:
         if compiler.state != "released":
             raise ValueError("Open Cake Environment requires a released Compiler Revision")
@@ -409,6 +485,21 @@ class OpenCakeEnvironment:
                 self.authority_document, sort_keys=True, separators=(",", ":")
             ).encode()
         ).hexdigest()
+        self._empirical_selection = None
+        selection = self.authority_document.get("candidate_selection")
+        if selection is not None:
+            if self._python_enabled or self._explicit_abi:
+                raise ValueError("empirical selection requires the Flash/direct-CUDA assay")
+            if executor is None:
+                raise ValueError("empirical selection requires the bound Executor")
+            compiler_ref = self.authority_document["compiler_revision"]
+            self._empirical_selection = _EmpiricalSelection(
+                selection,
+                context=_empirical_context(executor, workload_sha256=workload.canonical_sha256, case_id=case_id),
+                compiler_revision_id=compiler_ref["revision_id"],
+                compiler_revision_sha256=compiler_ref["canonical_sha256"],
+                target="sm_100a",
+            )
 
     @staticmethod
     def _finding_rows(assessment: Assessment, source=None) -> list[dict[str, object]]:
@@ -486,6 +577,12 @@ class OpenCakeEnvironment:
             ):
                 raise ValueError("Schedule external tensor contract differs from the Workload")
             assessment = self._compiler.assess(cast(Mapping[str, object], parsed))
+            if self._empirical_selection is not None and (
+                assessment.compiler_revision_id != self._empirical_selection._compiler_revision_id
+                or assessment.compiler_revision_sha256 != self._empirical_selection._compiler_revision_sha256
+                or assessment.target != self._empirical_selection._target
+            ):
+                raise ValueError("assessment Compiler Revision or target differs from the bound Environment")
         except (UnicodeError, json.JSONDecodeError, CompilerError, ValueError) as error:
             return EnvironmentResult(
                 "rejected",
@@ -543,6 +640,10 @@ class OpenCakeEnvironment:
                 digest
                 if isinstance(digest := assessment.analysis.get("semantic_sha256"), str)
                 else None
+            ),
+            empirical_cost=(
+                self._empirical_selection.estimate(json.loads(assessment.schedule_bytes))
+                if self._empirical_selection is not None else None
             ),
         )
 

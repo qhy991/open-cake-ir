@@ -242,11 +242,13 @@ def _compile_open_cake(
                 f"Open Cake node {node_id!r} rejected: {codes}", feedback
             )
         lowering = compiler.lower(assessment)
-        node_profiles[node_id] = profile_envelope(
+        node_profile = profile_envelope(
             candidate_schedule,
             target,
             lowered_source=lowering.source,
         ).as_dict()
+        node_profile["findings"] = qsa_compiler_feedback(assessment)["findings"]
+        node_profiles[node_id] = node_profile
         request = BuildRequest(
             candidate_sha256=lowering.schedule_sha256,
             source=lowering.source.encode("utf-8"),

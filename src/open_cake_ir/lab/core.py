@@ -14,6 +14,7 @@ from types import MappingProxyType
 from typing import Callable, Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Compiler, CorpusGateReport
+from open_cake_ir.compiler.empirical_cost import EmpiricalCostModel
 from open_cake_ir.evaluation import (
     CudaLaunchManifest,
     EvaluationReceipt,
@@ -28,7 +29,10 @@ from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from .checkpoints import TurnObservation, project_checkpoints
 from .custody import admit_new_campaign_path
-from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
+from .environments import (
+    AuthoringEnvironment, CandidateSubmission, EnvironmentResult,
+    _EMPIRICAL_SELECTION, _EmpiricalSelection, _empirical_context,
+)
 from .executor import ExecutorRevision
 from .faults import RunProtocolFault
 from .routing import CANDIDATE, COST_MODEL, route_rejection
@@ -1078,6 +1082,35 @@ def _matched_search_decision(
     }
 
 
+def _empirical_filter(
+    rows: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Apply one complete advisory order; callers supply original provider order."""
+    launchable = [row for row in rows if row["disposition"] == "launchable"]
+    for row in launchable:
+        estimate = _object(row.get("empirical_cost"), "candidate empirical cost")
+        if estimate.get("covered") is True:
+            value = estimate.get("predicted_kernel_us")
+            if type(value) not in (float, int) or not math.isfinite(value) or value <= 0:
+                raise ValueError("candidate empirical prediction differs")
+        elif estimate.get("covered") is not False:
+            raise ValueError("candidate empirical coverage differs")
+    applied = bool(launchable) and all(row["empirical_cost"]["covered"] for row in launchable)
+    if applied:
+        launchable.sort(key=lambda row: row["empirical_cost"]["predicted_kernel_us"])
+    return (
+        launchable + [row for row in rows if row["disposition"] != "launchable"],
+        {
+            "kind": _EMPIRICAL_SELECTION,
+            "order_applied": applied,
+            "reason": (
+                "complete comparable point estimates; advisory only"
+                if applied else "incomplete coverage or no launchable candidates; provider order retained"
+            ),
+        },
+    )
+
+
 def _expected_matched_diagnoses_v1(
     *,
     filters: Mapping[int, Mapping[str, object]],
@@ -1102,10 +1135,12 @@ def _expected_matched_diagnoses_v1(
             _, _, cost_diagnosis = _matched_search_decision(
                 turn,
                 [(key[2], receipts[key]) for key in search_keys],
-                cost_order_applied=all(
-                    row["cost"] is not None
-                    for row in rows
-                    if row["disposition"] == "launchable"
+                cost_order_applied=(
+                    payload["candidate_selection"]["order_applied"]
+                    if "candidate_selection" in payload else all(
+                        row["cost"] is not None
+                        for row in rows if row["disposition"] == "launchable"
+                    )
                 ),
                 materiality_ratio=materiality_ratio,
             )
@@ -1418,15 +1453,38 @@ class CampaignLock:
             budget = _object(
                 resolved.get("budget"), "campaign_lock.resolved_inputs.budget"
             )
+            selection = arms["open_cake"].get("candidate_selection")
+            if "candidate_selection" in arms[comparison]:
+                raise ValueError(f"{comparison} empirical selection is unsupported")
+            if "candidate_selection" in arms["open_cake"]:
+                if (
+                    comparison != "direct_cuda"
+                    or "input_format" in arms["open_cake"]
+                    or arms["open_cake"].get("lowering_route") != {
+                        "backend": "triton", "entry_point": "cake_flash_kmeans_assign",
+                    }
+                ):
+                    raise ValueError("empirical selection requires the Flash/direct-CUDA assay")
+                if (
+                    claim_scope != "artifact_optimization_only"
+                    or "maximum_candidates_per_turn" not in budget
+                    or not isinstance(selection, Mapping)
+                    or set(selection) != {"kind", "model"}
+                    or selection.get("kind") != _EMPIRICAL_SELECTION
+                ):
+                    raise ValueError("Campaign Lock empirical selection policy differs")
+                EmpiricalCostModel(selection["model"])
             _object(resolved.get("run_protocol"), "campaign_lock.resolved_inputs.run_protocol")
             evidence_policy = _object(
                 resolved.get("evidence_policy"),
                 "campaign_lock.resolved_inputs.evidence_policy",
             )
-            _matched_evidence_policy_version(
+            matched_policy = _matched_evidence_policy_version(
                 evidence_policy,
                 "campaign_lock.resolved_inputs.evidence_policy",
             )
+            if selection is not None and matched_policy == "legacy_open":
+                raise ValueError("empirical selection requires the closed matched event vocabulary")
             expected_arms = (
                 sorted([comparison, "open_cake"])
                 if claim_scope in _ONE_RUN_PER_ARM_SCOPES
@@ -1670,11 +1728,15 @@ class Lab:
         self._root = Path(project_root).resolve(strict=True)
         self._clock = clock
 
-    def preflight(self, study_path: str | Path) -> CampaignLock:
+    def preflight(
+        self, study_path: str | Path, *, empirical_cost_model_path: str | Path | None = None
+    ) -> CampaignLock:
         """Resolve one Study Contract without provider, GPU or evidence side effects."""
 
         study = StudyContract.load(study_path)
         if study.document["kind"] == "portfolio":
+            if empirical_cost_model_path is not None:
+                raise ValueError("empirical selection requires artifact_optimization_only matched search")
             return self._preflight_portfolio(study)
         ralph_interface = study.schema_version == 2
         workload_ref = _object(study.document.get("workload"), "study.workload")
@@ -1694,6 +1756,18 @@ class Lab:
         paired_triton = comparison == "native_triton"
         open_cake = _object(arms.get("open_cake"), "study.arms.open_cake")
         direct_cuda = _object(arms.get(comparison), f"study.arms.{comparison}")
+        empirical_policy = open_cake.get("candidate_selection")
+        has_empirical_policy = "candidate_selection" in open_cake
+        if has_empirical_policy or empirical_cost_model_path is not None:
+            if paired_triton or workload.document.get("operator") != "flash_kmeans_assign":
+                raise ValueError("empirical selection requires the Flash/direct-CUDA assay")
+            if (
+                study.document["claim_scope"] != "artifact_optimization_only"
+                or empirical_policy != {"kind": _EMPIRICAL_SELECTION}
+                or empirical_cost_model_path is None
+                or "maximum_candidates_per_turn" not in study.document["budget"]
+            ):
+                raise ValueError("empirical selection requires artifact_optimization_only candidate-set policy and an explicit model")
         open_cake_fields = {
             "environment_kind",
             "provider",
@@ -1704,6 +1778,8 @@ class Lab:
             "tool_surface",
             "feedback",
         }
+        if has_empirical_policy:
+            open_cake_fields.add("candidate_selection")
         direct_cuda_fields = {
             "environment_kind",
             "provider",
@@ -2254,6 +2330,8 @@ class Lab:
             evidence_version == _MATCHED_RALPH_EVENT_VOCABULARY_V1
         ):
             raise ValueError("Study agent interface and Evidence policy differ")
+        if has_empirical_policy and evidence_version == "legacy_open":
+            raise ValueError("empirical selection requires the closed matched event vocabulary")
 
         resolved_arms = cast(
             dict[str, object], json.loads(_canonical_json_bytes(arms))
@@ -2261,6 +2339,15 @@ class Lab:
         _object(
             resolved_arms["open_cake"], "resolved open_cake arm"
         )["compiler_revision"] = compiler_reference
+        if has_empirical_policy:
+            model_path = Path(empirical_cost_model_path).resolve(strict=True)
+            if self._root in model_path.parents:
+                raise ValueError("external empirical model must stay outside the project checkout")
+            model_document = json.loads(model_path.read_text(encoding="utf-8"))
+            EmpiricalCostModel(model_document)
+            resolved_arms["open_cake"]["candidate_selection"] = {
+                "kind": _EMPIRICAL_SELECTION, "model": model_document,
+            }
         resolved_execution = cast(
             dict[str, object], json.loads(_canonical_json_bytes(execution))
         )
@@ -2680,6 +2767,7 @@ class Lab:
             run_started_at = self._clock() if record_confirmation_time else None
             arm = run_id.rsplit("-", 1)[0]
             environment = environments[arm]
+            empirical_enabled = "candidate_selection" in arms[arm]
             ledger = evidence.start_run(
                 run_id,
                 authority_sha256=lock.canonical_sha256,
@@ -2860,7 +2948,7 @@ class Lab:
                         built[index][1].cost is not None
                         for index in launchable_first
                     )
-                    if cost_order_applied:
+                    if cost_order_applied and not empirical_enabled:
                         def complete_cost_order(index: int) -> tuple[tuple, int]:
                             cost = built[index][1].cost
                             assert cost is not None
@@ -2889,9 +2977,19 @@ class Lab:
                                 else None
                             ),
                             "semantic_sha256": built[index][1].semantic_sha256,
+                            **({"empirical_cost": (
+                                dict(built[index][1].empirical_cost)
+                                if built[index][1].empirical_cost is not None else None
+                            )} if empirical_enabled else {}),
                         }
-                        for index in launchable_first
+                        for index in (range(len(built)) if empirical_enabled else launchable_first)
                     ]
+                    selection_summary = None
+                    if empirical_enabled:
+                        filter_rows, selection_summary = _empirical_filter(filter_rows)
+                        cost_order_applied = selection_summary["order_applied"]
+                        by_submission = {entry.sha256: index for index, (entry, _) in enumerate(built)}
+                        launchable_first = [by_submission[row["candidate_sha256"]] for row in filter_rows]
                     ledger.append(
                         "candidate_set_filtered",
                         {
@@ -2917,6 +3015,7 @@ class Lab:
                                     for row in filter_rows
                                 ]
                             ),
+                            **({"candidate_selection": selection_summary} if empirical_enabled else {}),
                         },
                     )
                     # A rejected member remains evidence even when another member is
@@ -3277,6 +3376,11 @@ class Lab:
                                 else None
                             )
                         feedback = MappingProxyType(feedback_document)
+                    if empirical_enabled:
+                        feedback = MappingProxyType({
+                            **feedback,
+                            "candidate_selection": {**selection_summary, "order": filter_rows},
+                        })
                     if cumulative_tokens >= cast(int, budget["limit"]):
                         break
             except Exception as error:
@@ -3819,6 +3923,7 @@ class Lab:
         threads: set[str] = set()
         cumulative_by_turn: dict[int, int] = {}
         provider_candidates_by_turn: dict[int, tuple[str, ...]] = {}
+        provider_candidate_bytes: dict[tuple[int, str], bytes] = {}
         candidate_set_turns: set[int] = set()
         prior_cumulative = 0
         replay_budget = _object(resolved_inputs["budget"], "resolved_inputs.budget")
@@ -3829,6 +3934,21 @@ class Lab:
         arm_environments = _object(
             resolved_inputs["arm_environments"], "resolved_inputs.arm_environments"
         )
+        empirical_selection = None
+        selection_binding = arm_environments[arm].get("candidate_selection")
+        if selection_binding is not None:
+            executor = _validate_executor_revision(self._root, lock.document["execution"], "execution")
+            compiler_ref = lock.document["compiler_revision"]
+            empirical_selection = _EmpiricalSelection(
+                selection_binding,
+                context=_empirical_context(
+                    executor, workload_sha256=lock.document["workload"]["canonical_sha256"],
+                    case_id=lock.document["evaluation_protocol"]["case_id"],
+                ),
+                compiler_revision_id=compiler_ref["revision_id"],
+                compiler_revision_sha256=compiler_ref["canonical_sha256"],
+                target=lock.document["execution"]["target"],
+            )
         provider_authority = _object(
             _object(arm_environments[arm], f"arm_environments.{arm}")["provider"],
             f"arm_environments.{arm}.provider",
@@ -4068,6 +4188,9 @@ class Lab:
             threads.add(thread_id)
             cumulative_by_turn[expected_turn] = cumulative
             provider_candidates_by_turn[expected_turn] = candidate_digests
+            provider_candidate_bytes.update(
+                ((expected_turn, digest), payload) for digest, payload in zip(candidate_digests, candidates)
+            )
             prior_cumulative = cumulative
         if len(threads) != 1 or list(cumulative_by_turn.values()) != sorted(
             cumulative_by_turn.values()
@@ -4394,7 +4517,9 @@ class Lab:
             turn = payload.get("turn")
             order = payload.get("order")
             if (
-                set(payload) != {"turn", "submitted", "launchable", "order"}
+                set(payload) != {"turn", "submitted", "launchable", "order"} | (
+                    {"candidate_selection"} if empirical_selection is not None else set()
+                )
                 or not isinstance(turn, int)
                 or isinstance(turn, bool)
                 or turn in filters
@@ -4412,6 +4537,8 @@ class Lab:
                 }
                 if strict_events:
                     expected_row_fields.add("semantic_sha256")
+                if empirical_selection is not None:
+                    expected_row_fields.add("empirical_cost")
                 if not isinstance(row, Mapping) or set(row) != expected_row_fields:
                     return False
                 candidate_sha256 = row.get("candidate_sha256")
@@ -4458,6 +4585,24 @@ class Lab:
                 != sum(value == "launchable" for value in dispositions.values())
             ):
                 return False
+            if empirical_selection is not None:
+                rows_by_candidate = {row["candidate_sha256"]: row for row in order}
+                expected_rows = []
+                for candidate_sha256 in provider_candidates:
+                    retained = rows_by_candidate[candidate_sha256]
+                    expected = dict(retained)
+                    expected["empirical_cost"] = (
+                        empirical_selection.estimate(json.loads(provider_candidate_bytes[(turn, candidate_sha256)]))
+                        if retained["disposition"] == "launchable" else None
+                    )
+                    expected_rows.append(expected)
+                expected_rows, expected_selection = _empirical_filter(expected_rows)
+                if (
+                    _canonical_json_bytes(order) != _canonical_json_bytes(expected_rows)
+                    or _canonical_json_bytes(payload["candidate_selection"])
+                    != _canonical_json_bytes(expected_selection)
+                ):
+                    return False
             filters[turn] = payload
             filter_order[turn] = tuple(candidates)
             filter_disposition[turn] = dispositions

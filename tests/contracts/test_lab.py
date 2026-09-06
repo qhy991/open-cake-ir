@@ -3685,3 +3685,329 @@ class RuntimeReferenceCustodyTest(unittest.TestCase):
 
                 with self.assertRaisesRegex(ValueError, "fields differ"):
                     _raw_reference_path(root, {"path": "inner/runtime.json"}, "reference")
+
+
+class EmpiricalSelectionContractTests(unittest.TestCase):
+    """Actual CPU Lab path with a prospective fixture closure, never a host admission."""
+
+    @classmethod
+    def setUpClass(cls):
+        from open_cake_ir.compiler import Compiler
+        from open_cake_ir.evaluation import WorkloadContract
+        from open_cake_ir.lab.environments import _empirical_context
+        from tests.contracts.test_authoring_environment import _headline_schedule, _synthetic_flash_model
+
+        cls.temporary = tempfile.TemporaryDirectory(prefix="empirical-selection-contract-")
+        cls.parent = Path(cls.temporary.name).resolve()
+        cls.root = cls.parent / "prospective-project"
+        shutil.copytree(ROOT, cls.root, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+        # Exercise the current event branch with a cycle-derived prospective Revision
+        # in this disposable project. The copied host document is a synthetic contract
+        # fixture: no host admission or provider/GPU qualification is performed.
+        inventory_path = cls.root / "inventory/EXECUTOR_REVISIONS.json"
+        inventory = json.loads(inventory_path.read_text())
+        descriptor = json.loads((cls.root / inventory["current"]["path"]).read_text())
+        host_fixture = cls.parent / "synthetic-host-environment.json"
+        host_fixture.write_text(json.dumps(descriptor["host_environment"]))
+        prepared = subprocess.run(
+            ["bash", str(cls.root / "tools/release_executor_cycle.sh"), "--host-environment", str(host_fixture)],
+            cwd=cls.root, env={**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"], "PYTHONDONTWRITEBYTECODE": "1"},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        if prepared.returncode:
+            raise RuntimeError(prepared.stdout.decode() + prepared.stderr.decode())
+        inventory = json.loads(inventory_path.read_text())
+        cls.executor = ExecutorRevision.load(cls.root, cls.root / inventory["current"]["path"])
+        cls.lab = Lab(cls.root)
+        cls.workload = WorkloadContract.load(cls.root / "contracts/workloads/flash-kmeans-assign-v2.json")
+        cls.compiler = Compiler.load(cls.root, cls.root / "compiler/revision.lock.json")
+        cls.study = json.loads((cls.root / "contracts/studies/artifact-optimization-template.json").read_text())
+        cls.study["arms"]["open_cake"]["candidate_selection"] = {"kind": "external_empirical_advisory_v1"}
+        cls.study["evaluation_protocol"].pop("attribution_evaluation")
+        cls.study["evaluation_protocol"].pop("search_materiality_ratio")
+        cls.study["evaluation_protocol"]["searches_per_turn"] = 1
+        for arm in cls.study["arms"].values():
+            arm["feedback"].remove("profile")
+        assessment = cls.compiler.assess(_headline_schedule(cls.workload))
+        cls.compiler_ref = {"revision_id": assessment.compiler_revision_id, "canonical_sha256": assessment.compiler_revision_sha256}
+        cls.context = _empirical_context(cls.executor, workload_sha256=cls.workload.canonical_sha256, case_id="headline_b32")
+        cls.model = _synthetic_flash_model(cls.workload, cls.compiler_ref, cls.context)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temporary.cleanup()
+
+    def preflight(self, *, model=None, study=None):
+        directory = Path(tempfile.mkdtemp(dir=self.parent))
+        study_path = directory / "study.json"
+        model_path = directory / "model.json"
+        study_path.write_text(json.dumps(self.study if study is None else study))
+        model_path.write_text(json.dumps(self.model if model is None else model))
+        lock = self.lab.preflight(study_path, empirical_cost_model_path=model_path)
+        return lock, directory, model_path
+
+    def test_policy_admission_and_model_freeze(self):
+        lock, directory, model_path = self.preflight()
+        self.assertEqual(lock.document["resolved_inputs"]["arm_environments"]["open_cake"]["candidate_selection"]["model"], self.model)
+        self.assertEqual(self.study["arms"]["open_cake"]["candidate_selection"], {"kind": "external_empirical_advisory_v1"})
+        model_path.write_text("not the model anymore")
+        lock_path = directory / "lock.json"
+        lock_path.write_text(json.dumps(lock.document))
+        self.assertEqual(CampaignLock.load(lock_path).document, lock.document)
+        for scope in ("scientific_matched_search", "system_qualification_only"):
+            study = json.loads(json.dumps(self.study))
+            study["claim_scope"] = scope
+            path = directory / (scope + ".json")
+            path.write_text(json.dumps(study))
+            with self.subTest(scope=scope), self.assertRaisesRegex(ValueError, "artifact_optimization_only"):
+                self.lab.preflight(path, empirical_cost_model_path=model_path)
+        with self.assertRaisesRegex(ValueError, "explicit model"):
+            self.lab.preflight(directory / "study.json")
+        no_policy = json.loads(json.dumps(self.study))
+        del no_policy["arms"]["open_cake"]["candidate_selection"]
+        path = directory / "no-policy.json"
+        path.write_text(json.dumps(no_policy))
+        with self.assertRaisesRegex(ValueError, "explicit model"):
+            self.lab.preflight(path, empirical_cost_model_path=model_path)
+        legacy = json.loads(json.dumps(self.study))
+        del legacy["evidence"]["event_vocabulary"]
+        with self.assertRaisesRegex(ValueError, "closed matched event"):
+            self.preflight(study=legacy)
+        path = self.root / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-template.json"
+        with self.assertRaisesRegex(ValueError, "artifact_optimization_only"):
+            self.lab.preflight(path, empirical_cost_model_path=model_path)
+
+    def test_context_and_revision_matching_is_exact(self):
+        from open_cake_ir.lab.environments import _EmpiricalSelection
+        mutations = [
+            ("timer", "different timer"), ("cache_protocol", "different cache"),
+            ("input_scope", "different workload or case"),
+            ("runtime", {"compiler_version": "different", "executor_revision": self.executor.canonical_sha256}),
+            ("runtime", {"compiler_version": self.context["runtime"]["compiler_version"]}),
+            ("runtime", {**self.context["runtime"], "unmapped": "runtime"}),
+            ("runtime", {**self.context["runtime"], "executor_revision": "b" * 64}),
+        ]
+        for field, value in mutations:
+            model = json.loads(json.dumps(self.model))
+            model["context"][field] = value
+            with self.subTest(context=field, value=value):
+                selection = _EmpiricalSelection({"kind": "external_empirical_advisory_v1", "model": model}, context=self.context, compiler_revision_id=self.compiler_ref["revision_id"], compiler_revision_sha256=self.compiler_ref["canonical_sha256"], target="sm_100a")
+                result = selection.estimate(model["curves"][0]["template"])
+                self.assertFalse(result["covered"])
+                self.assertIsNone(result["predicted_kernel_us"])
+                self.assertIn("context differs", result["reason"])
+        for field, value in (("compiler_revision_id", "different"), ("compiler_revision_sha256", "0" * 64), ("target", "different")):
+            arguments = {"compiler_revision_id": self.compiler_ref["revision_id"], "compiler_revision_sha256": self.compiler_ref["canonical_sha256"], "target": "sm_100a", field: value}
+            selection = _EmpiricalSelection({"kind": "external_empirical_advisory_v1", "model": self.model}, context=self.context, **arguments)
+            self.assertFalse(selection.estimate(self.model["curves"][0]["template"])["covered"])
+
+    def test_policy_refuses_unproven_native_and_tile_assays(self):
+        from open_cake_ir.evaluation import WorkloadContract
+        from open_cake_ir.lab import OpenCakeEnvironment
+
+        paired = json.loads((self.root / "contracts/studies/matched-search-triton-optimization-template.json").read_text())
+        paired["claim_scope"] = "artifact_optimization_only"
+        paired["arms"]["open_cake"]["candidate_selection"] = {"kind": "external_empirical_advisory_v1"}
+        with self.assertRaisesRegex(ValueError, "Flash/direct-CUDA assay"):
+            self.preflight(study=paired)
+
+        workload_path = "contracts/workloads/rmsnorm-fp32-v1.json"
+        workload = WorkloadContract.load(self.root / workload_path)
+        direct_tile = json.loads(json.dumps(self.study))
+        direct_tile["workload"] = {"path": workload_path, "canonical_sha256": workload.canonical_sha256}
+        with self.assertRaisesRegex(ValueError, "Flash/direct-CUDA assay"):
+            self.preflight(study=direct_tile)
+
+        authority = {**paired["arms"]["open_cake"], "candidate_selection": {
+            "kind": "external_empirical_advisory_v1", "model": self.model,
+        }}
+        for python_input in (True, False):
+            environment_authority = dict(authority)
+            if not python_input:
+                environment_authority.pop("input_format")
+            with self.subTest(python_input=python_input), self.assertRaisesRegex(ValueError, "Flash/direct-CUDA assay"):
+                OpenCakeEnvironment(self.compiler, object(), authority_document=environment_authority,
+                    workload=workload, case_id="primary", executor=self.executor)
+
+        lock, _, _ = self.preflight()
+        changed = json.loads(json.dumps(lock.document))
+        arms = changed["resolved_inputs"]["arm_environments"]
+        arms["native_triton"] = arms.pop("direct_cuda")
+        arms["native_triton"]["environment_kind"] = "native_triton"
+        changed["resolved_inputs"]["arm_environment_sha256"] = {
+            name: sha256(json.dumps(arm, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            for name, arm in arms.items()
+        }
+        with self.assertRaisesRegex(ValueError, "Flash/direct-CUDA assay"):
+            CampaignLock.from_dict(changed)
+
+    def test_both_author_interfaces_keep_full_model_only_in_the_lock(self):
+        from open_cake_ir.lab.task_package import build_run_reference_documents
+        model = json.loads(json.dumps(self.model))
+        model["reported_evidence"]["raw_observations"] = list(range(10000))
+        model["reported_evidence"]["unbounded_report"] = "private supplier report" * 10000
+        for interface in ("legacy", "ralph"):
+            study = json.loads(json.dumps(self.study))
+            if interface == "ralph":
+                study = json.loads((self.root / "contracts/studies/artifact-optimization-ralph-template.json").read_text())
+                study["arms"]["open_cake"]["candidate_selection"] = {"kind": "external_empirical_advisory_v1"}
+            with self.subTest(interface=interface):
+                lock, _, _ = self.preflight(model=model, study=study)
+                arm = lock.document["resolved_inputs"]["arm_environments"]["open_cake"]
+                documents = build_run_reference_documents(self.root, lock, arm)
+                authority = json.loads(documents["run-authority.json"])
+                projected = authority["authoring_environment"]["candidate_selection"]
+                self.assertEqual(projected, {
+                    "kind": "external_empirical_advisory_v1",
+                    "model": {key: model[key] for key in (
+                        "model_id", "compiler_revision_id", "compiler_revision_sha256", "target",
+                    )},
+                })
+                self.assertLess(len(documents["run-authority.json"]), 10000)
+                visible = b"\n".join(documents.values()).decode()
+                if interface == "ralph":
+                    package = render_task_package(self.root, lock, "open_cake-1")
+                    visible += package.task_markdown + package.agents_markdown
+                for forbidden in ("raw_observations", "unbounded_report", "private supplier report", "varying_dimensions"):
+                    self.assertNotIn(forbidden, visible)
+                self.assertEqual(arm["candidate_selection"]["model"], model)
+
+    def run_campaign(self, *, model=None, include_rejected=False, via_cli=False):
+        from open_cake_ir.lab import OpenCakeEnvironment
+        lock, directory, model_path = self.preflight(model=model)
+        if via_cli:
+            cli_lock = directory / "cli-campaign.lock.json"
+            completed = subprocess.run(
+                [sys.executable, "-m", "open_cake_ir.cli", "--project-root", str(self.root),
+                 "lab", "preflight", str(directory / "study.json"),
+                 "--empirical-cost-model", str(model_path), "--output", str(cli_lock)],
+                cwd=self.root, env={**os.environ, "PYTHONPATH": str(self.root / "src"), "PYTHONDONTWRITEBYTECODE": "1"},
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertEqual(CampaignLock.load(cli_lock).document, lock.document)
+            lock = CampaignLock.load(cli_lock)
+        arms = lock.document["resolved_inputs"]["arm_environments"]
+        source_model = self.model
+
+        class Provider(FakeProvider):
+            provider_revision = arms["open_cake"]["provider"]["revision"]
+            qualification_sha256 = arms["open_cake"]["provider"]["qualification"]["canonical_sha256"]
+            configuration = {**FakeProvider.configuration, "disabled_features": [], "event_contract": "tool_rich_candidate_v1", "output_schema_sha256": arms["open_cake"]["provider"]["output_schema"]["sha256"]}
+
+            def turn(self, request):
+                observed = super().turn(request)
+                events = [json.loads(line) for line in observed.raw_events.splitlines()]
+                terminal = json.loads(events[-2]["item"]["text"])
+                terminal.pop("tool_calls")
+                events[-2]["item"]["text"] = json.dumps(terminal, sort_keys=True, separators=(",", ":"))
+                raw = b"".join(json.dumps(event).encode() + b"\n" for event in events)
+                payloads = observed.candidates
+                if request.arm == "open_cake":
+                    schedules = [json.loads(json.dumps(curve["template"])) for curve in source_model["curves"]]
+                    for i, schedule in enumerate(schedules):
+                        schedule["schedule_id"] = f"synthetic-{i}-turn-{request.turn}"
+                    if include_rejected:
+                        invalid = json.loads(json.dumps(schedules[0]))
+                        invalid["buffers"][0]["dtype"] = "fp32"
+                        schedules.append(invalid)
+                    payloads = tuple(json.dumps(schedule).encode() for schedule in schedules)
+                return dataclasses.replace(observed, candidates=payloads, candidate_sha256s=tuple(sha256(value).hexdigest() for value in payloads), raw_events=raw, raw_events_sha256=sha256(raw).hexdigest(), terminal_message=events[-2]["item"]["text"], tool_activity=(ProviderAuxiliaryActivity(item_id=f"file-{request.turn}", item_type="file_change", status="completed"),))
+
+        class Toolchain:
+            def __init__(self):
+                self.requests = []
+
+            def build(self, request):
+                self.requests.append(request)
+                manifest = json.dumps({"schema_version": 1, "abi": "flash_kmeans_assign_v1", "target": "sm_100a", "kernel_name": "open_cake_turn_1", "grid": [1, 1, 1], "block": [32, 1, 1], "dynamic_shared_memory_bytes": 0}, sort_keys=True, separators=(",", ":")).encode()
+                payloads = {"lowered_source": request.source, "compiler_expanded_source": b"synthetic expanded", "ptx": b"synthetic ptx", "cubin": b"synthetic cubin", "launch_manifest": manifest}
+                roles = {role: sha256(value).hexdigest() for role, value in payloads.items()}
+                return LaunchableCandidate(candidate_sha256=request.candidate_sha256, target=request.target, entry_point="open_cake_turn_1", artifact_roles=roles, launch_spec_sha256=roles["launch_manifest"], artifact_payloads=payloads)
+
+        provider = Provider()
+        toolchain = Toolchain()
+        environment = OpenCakeEnvironment(self.compiler, toolchain, authority_document=arms["open_cake"], workload=self.workload, case_id="headline_b32", executor=self.executor)
+        model_path.unlink()  # Runtime and replay must depend on the lock, not this file.
+        campaign = self.lab.execute(lock, directory / "evidence", provider=provider, environments={"open_cake": environment, "direct_cuda": FakeEnvironment("direct_cuda", arms["direct_cuda"])}, evaluator=FakeEvaluator(lock.document["evaluation_protocol"], sha256(json.dumps(lock.document["evaluation_protocol"], sort_keys=True, separators=(",", ":")).encode()).hexdigest(), lock.document["workload"]["canonical_sha256"]))
+        return campaign, provider, toolchain
+
+    def test_actual_search_feedback_and_fresh_process_replay(self):
+        model = json.loads(json.dumps(self.model))
+        model["reported_evidence"]["raw_observations"] = list(range(10000))
+        campaign, provider, toolchain = self.run_campaign(model=model, include_rejected=True, via_cli=True)
+        report = self.lab.audit(campaign)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertTrue(report.archive_integrity_passed)
+        store = EvidenceStore.open(campaign.evidence_root)
+        events = store.replay_events("open_cake-1")
+        filters = [event["payload"] for event in events if event["kind"] == "candidate_set_filtered"]
+        searches = [event["payload"] for event in events if event["kind"] == "candidate_evaluated" and event["payload"]["purpose"] == "search"]
+        self.assertEqual(len(toolchain.requests), 2 * len(filters))
+        for filtered, search in zip(filters, searches):
+            self.assertEqual([row["empirical_cost"]["predicted_kernel_us"] if row["empirical_cost"] else None for row in filtered["order"]], [10, 20, None])
+            self.assertTrue(filtered["candidate_selection"]["order_applied"])
+            self.assertEqual(search["candidate_sha256"], filtered["order"][0]["candidate_sha256"])
+            self.assertEqual(filtered["order"][-1]["disposition"], "rejected")
+        request = next(item for item in provider.requests if item.arm == "open_cake" and item.turn == 2)
+        self.assertEqual(request.feedback["candidate_selection"], {**filters[0]["candidate_selection"], "order": filters[0]["order"]})
+        self.assertNotIn("raw_observations", json.dumps(request.feedback["candidate_selection"]))
+        self.assertLess(len(json.dumps(request.feedback["candidate_selection"])), 4000)
+        self.assertEqual(campaign.lock.document["resolved_inputs"]["arm_environments"]["open_cake"]["candidate_selection"]["model"]["reported_evidence"]["raw_observations"], list(range(10000)))
+        self.assertEqual(request.thread_id, provider.threads["open_cake-1"])
+        lock_path = campaign.evidence_root.parent / "lock.json"
+        lock_path.write_text(json.dumps(campaign.lock.document))
+        completed = subprocess.run([sys.executable, "-m", "open_cake_ir.cli", "--project-root", str(self.root), "lab", "audit", "--lock", str(lock_path), "--evidence-root", str(campaign.evidence_root)], cwd=self.root, env={**os.environ, "PYTHONPATH": str(self.root / "src"), "PYTHONDONTWRITEBYTECODE": "1"}, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+        self.assertTrue(json.loads(completed.stdout)["semantic_replay_passed"])
+        audit = store.audit_run("open_cake-1")
+        for mutation in ("prediction", "order", "coverage", "selection", "omit"):
+            class Tampered:
+                def replay_events(self, run_id):
+                    changed = json.loads(json.dumps(events))
+                    item = next(event["payload"] for event in changed if event["kind"] == "candidate_set_filtered")
+                    if mutation == "prediction": item["order"][0]["empirical_cost"]["predicted_kernel_us"] += 1
+                    elif mutation == "order": item["order"][:2] = reversed(item["order"][:2])
+                    elif mutation == "coverage": item["order"][0]["empirical_cost"]["covered"] = False
+                    elif mutation == "selection": item["candidate_selection"]["order_applied"] = False
+                    else: item["order"].pop()
+                    return tuple(changed)
+                def read_object(self, reference):
+                    return store.read_object(reference)
+            with self.subTest(tamper=mutation):
+                self.assertFalse(self.lab._replay_matched_run(Tampered(), audit, campaign.lock))
+        for mutation in ("coefficients", "context"):
+            changed = json.loads(json.dumps(campaign.lock.document))
+            arm = changed["resolved_inputs"]["arm_environments"]["open_cake"]
+            model = arm["candidate_selection"]["model"]
+            if mutation == "coefficients": model["curves"][0]["points"][0]["kernel_us"] += 1
+            else: model["context"]["runtime"]["executor_revision"] = "0" * 64
+            changed["resolved_inputs"]["arm_environment_sha256"]["open_cake"] = sha256(json.dumps(arm, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            with self.subTest(frozen_model_tamper=mutation):
+                self.assertFalse(self.lab._replay_matched_run(store, audit, CampaignLock.from_dict(changed)))
+
+    def test_partial_coverage_and_ties_preserve_provider_order(self):
+        for condition in ("partial", "tie", "context"):
+            model = json.loads(json.dumps(self.model))
+            if condition == "partial": model["curves"] = model["curves"][1:]
+            elif condition == "tie": model["curves"][0]["points"] = json.loads(json.dumps(model["curves"][1]["points"]))
+            else: model["context"]["timer"] = "incompatible timer"
+            with self.subTest(condition=condition):
+                campaign, _, _ = self.run_campaign(model=model)
+                store = EvidenceStore.open(campaign.evidence_root)
+                events = store.replay_events("open_cake-1")
+                first = next(event["payload"] for event in events if event["kind"] == "candidate_set_filtered")
+                authored = next(event["payload"] for event in events if event["kind"] == "provider_turn_completed")
+                original = [item["sha256"] for item in authored["objects"] if item["role"].startswith("candidate_submission_")]
+                self.assertEqual([row["candidate_sha256"] for row in first["order"]], original)
+                self.assertEqual(first["candidate_selection"]["order_applied"], condition == "tie")
+                self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
+                class Reordered:
+                    def replay_events(self, run_id):
+                        changed = json.loads(json.dumps(events))
+                        row = next(event["payload"] for event in changed if event["kind"] == "candidate_set_filtered")
+                        row["order"].reverse()
+                        return tuple(changed)
+                    def read_object(self, reference):
+                        return store.read_object(reference)
+                self.assertFalse(self.lab._replay_matched_run(Reordered(), store.audit_run("open_cake-1"), campaign.lock))
