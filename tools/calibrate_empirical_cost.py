@@ -35,6 +35,13 @@ def _write(path, value):
     Path(path).write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
 
 
+def _external(path):
+    path = Path(path).resolve()
+    if path == ROOT or ROOT in path.parents:
+        raise ValueError("calibration outputs must remain outside the checkout")
+    return path
+
+
 def _cpu_case(case, document, torch, distribution):
     """Independent CPU references; no generated implementation is inspected."""
     shapes = {buffer["name"]: buffer["shape"] for buffer in document["buffers"] if buffer["space"] == "global"}
@@ -102,8 +109,10 @@ def _trace_samples(stage, repetition, plan, rows):
 def _collect():
     import importlib.metadata
 
-    stage = Path(os.environ["KERNELINFRA_STAGE_DIR"])
-    candidate = Path(os.environ["KERNELINFRA_CANDIDATE_DIR"])
+    stage = _external(os.environ["KERNELINFRA_STAGE_DIR"])
+    if _external(os.environ["KERNELINFRA_RESULT"]) != stage / "result.json":
+        raise ValueError("result must belong to the current stage")
+    candidate = Path(os.environ["KERNELINFRA_CANDIDATE_DIR"]).resolve()
     plan = _read(candidate / "plan.json")
     if sha256(Path(__file__).read_bytes()).hexdigest() != plan["collector_sha256"]:
         raise ValueError("collector differs from frozen plan")
@@ -134,7 +143,10 @@ def _collect():
     for index, case in enumerate(plan["cases"]):
         directory = stage / f"{index:04d}"
         directory.mkdir()
-        document = _read(candidate / case["schedule"])
+        schedule_path = (candidate / case["schedule"]).resolve()
+        if candidate not in schedule_path.parents:
+            raise ValueError("Schedule must belong to the candidate snapshot")
+        document = _read(schedule_path)
         assessment = compiler.assess(document)
         if assessment.compiler_revision_id != plan["compiler_revision_id"]:
             raise ValueError("Compiler Revision differs")
@@ -225,6 +237,7 @@ def _collect():
 
 
 def _fit(run, output):
+    output = _external(output)
     run_result = _read(run / "result.json")
     if run_result["outcome"] != "completed" or run_result["validity"] != "valid":raise ValueError("whole collection did not pass")
     stage = run / "stages/collection"
@@ -312,7 +325,7 @@ def main():
         return 0
     except Exception as error:
         traceback.print_exc()
-        result = Path(os.environ["KERNELINFRA_RESULT"])
+        result = _external(os.environ["KERNELINFRA_RESULT"])
         if not result.exists():_write(result, {"schema": "kernelinfra.stage-result.v1", "status": "failed", "validity": "unknown", "summary": str(error), "workloads": [], "artifacts": {}, "metrics": {}})
         return 1
 

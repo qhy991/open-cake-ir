@@ -13,7 +13,6 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import (  # noqa: E402
     Compiler,
-    EmpiricalCostModel,
     Schedule,
     Target,
     profile_envelope,
@@ -46,7 +45,6 @@ def build_parser() -> argparse.ArgumentParser:
     compiler = commands.add_parser("compiler")
     compiler.add_argument("--revision", type=Path, required=True)
     compiler.add_argument("--compiled-report", type=Path)
-    compiler.add_argument("--cost-model", type=Path)
     compiler.add_argument("schedule", type=Path)
     evaluation = commands.add_parser("evaluation")
     evaluation.add_argument("--arm", choices=("open_cake", "direct_cuda"), required=True)
@@ -77,8 +75,7 @@ def main(argv: list[str] | None = None) -> int:
                 resources = load_compiled_resources(arguments.compiled_report).get(lowering.source_sha256)
                 if resources is None:
                     raise ValueError("compiled report has no observation for this current QSA source")
-            cost_model = EmpiricalCostModel.load(arguments.cost_model) if arguments.cost_model else None
-            profile = compiler.profile(assessment, compiled_resources=resources, cost_model=cost_model).as_dict()
+            profile = compiler.profile(assessment, compiled_resources=resources).as_dict()
         else:
             profile = profile_envelope(schedule, target).as_dict()
         _emit(qsa_compiler_feedback(assessment, static_profile=profile))

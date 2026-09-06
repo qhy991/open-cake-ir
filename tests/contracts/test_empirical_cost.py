@@ -142,7 +142,7 @@ class EmpiricalCostTest(unittest.TestCase):
             mutation(document)
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):EmpiricalCostModel(document)
 
-    def test_cli_json_and_agent_feedback_accept_explicit_model_without_gpu(self):
+    def test_cli_json_and_python_agent_feedback_accept_explicit_model_without_gpu(self):
         document = self.model_document()
         with tempfile.TemporaryDirectory() as directory:
             model_path = Path(directory) / "model.json"
@@ -159,9 +159,10 @@ runpy.run_path(script,run_name='__main__')
             result = subprocess.run(args, cwd=ROOT, text=True, capture_output=True, check=True)
             profile = json.loads(result.stdout)["rows"][0]["profile"]
             self.assertEqual(profile["empirical_cost"]["predicted_kernel_us"], 10)
-            args = [sys.executable, "-c", guard, str(ROOT / "tools/project_qsa_feedback.py"), "compiler", "--revision", str(ROOT / "compiler/revision.json"), "--cost-model", str(model_path), str(ROOT / "corpus/schedules/fma-b8-smoke.json")]
-            result = subprocess.run(args, cwd=ROOT, text=True, capture_output=True, check=True)
-            self.assertIn('"empirical_cost"', result.stdout)
+            from open_cake_ir.lab import qsa_compiler_feedback
+            assessment = self.compiler.assess(self.schedule("fma-b8-smoke.json"))
+            feedback = qsa_compiler_feedback(assessment, static_profile=profile)
+            self.assertIn("empirical_cost", str(feedback))
 
 
 if __name__ == "__main__":unittest.main()

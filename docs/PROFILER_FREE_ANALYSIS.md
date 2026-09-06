@@ -104,8 +104,9 @@ python3 tools/report_schedule_profile.py --json \
 ```
 
 Python 接口使用 `EmpiricalCostModel.load(path)`，然后调用
-`compiler.profile(assessment, cost_model=model)`。已有 agent 反馈工具
-`tools/project_qsa_feedback.py compiler` 也接受 `--cost-model`。
+`compiler.profile(assessment, cost_model=model)`。现有 Python agent 反馈接口可以直接
+消费该结果：`qsa_compiler_feedback(assessment, static_profile=profile.as_dict())`。
+`tools/project_qsa_feedback.py` 属于历史 Executor 的冻结闭包，其命令参数保持不变。
 
 模型用一个通用表示覆盖不同算子：每条曲线固定一个完整 Schedule 模板，明确列出
 共同变化的 Buffer 维度、允许的整数对齐和测量区间，再按维度大小插值。这里没有
