@@ -1,10 +1,6 @@
 {
   "paths": [
     "compiler/AUTHORING_CONTRACT.md",
-    "docs/PYTHON_FRONTEND.md",
-    "examples/python/fma.py",
-    "examples/python/softmax.py",
-    "examples/python/kmeans_pipeline.py",
     "compiler/targets/sm_100a.json",
     "corpus/manifest.json",
     "corpus/schedules/fma-b8-smoke.json",
@@ -83,7 +79,6 @@
     "src/open_cake_ir/compiler/analysis.py",
     "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
     "src/open_cake_ir/compiler/core.py",
-    "src/open_cake_ir/compiler/frontend.py",
     "src/open_cake_ir/compiler/emit.py",
     "src/open_cake_ir/compiler/emit_cutedsl.py",
     "src/open_cake_ir/compiler/emit_triton.py",

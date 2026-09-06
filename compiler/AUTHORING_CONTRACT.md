@@ -1,6 +1,8 @@
 # Open Cake Schedule authoring contract
 
-Submit one complete JSON document conforming to `schedule.schema.json`. The Compiler—not the prompt—owns semantic
+Author one complete Schedule as JSON or the restricted Python surface documented in
+`docs/PYTHON_FRONTEND.md`. Python elaborates to the same JSON document conforming to
+`schedule.schema.json`; it does not widen the semantic or backend contract. The Compiler—not the prompt—owns semantic
 acceptance. Names are unique within each declaration list; operation dependencies refer only backward; every output
 must be written; buffer allocation extents and role warps must fit the exact Target. `program_map` and `grid` are
 mutually exclusive. Each role owns one ascending contiguous warp interval, and no warp belongs to two roles.

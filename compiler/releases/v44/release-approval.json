@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "e57be54282a75297a10e6ba6d0875433156d919c7adfa6e3c8acbe6b0320d5c4"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a074bc-2bb0-7371-8e2e-4d6b66cf016a",
+    "author_session_id": "01a074ae-45d0-7ec2-993a-85551751aae3"
+  },
+  "approval_basis": "Independent review of commit 4265f76c07ac3fd89eaf340d97b1260be07b8f65 against 13696c2. Actual reviewer model gpt-6-astra and distinct session id verified from session_meta/turn_context, without accessing credentials. Rebuilt exact v44-draft Gate: 77/77 cases, 96 sources; Corpus expectations unchanged. Public build_release approval tests (6) and documentation tests (8) passed. Independent temporary-fixture public cycle probes (10) verified exit 3 and lock/approval preservation for invalid approvals, successful independent approval, and unchanged-release no-op. Existing cycle unit test stops at its unarchived-current-version precondition because this prepared commit retains v43 archive; it was not repaired or represented as passing. JSON reviewer fields validate declarations, not platform authentication; session provenance is checked by this workflow. No GPU/performance qualification or merge authorization is asserted. Report: /Users/haiyan-infiniai/Documents/Codex/2026-09-06/open-cake-independent-review/review.md"
+}
