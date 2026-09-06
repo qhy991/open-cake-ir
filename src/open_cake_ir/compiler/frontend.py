@@ -210,10 +210,8 @@ class _Builder:
                 and node.func.value.id == owner and node.func.attr == method)
 
     def reference(self, value, node, collection="buffers"):
-        if isinstance(value, _Access):
-            value = value.buffer
         if not isinstance(value, _Ref) or value.collection != collection:
-            self.fail(node, f"expected a declared {collection} value")
+            self.fail(node, f"expected a declared {collection} name; indexed views cannot be used here")
         return value
 
     def record(self, ref):
@@ -401,7 +399,7 @@ class _Builder:
                     self.fail(node, "a literal is supported only as the second binary arithmetic operand")
                 parameters["scalar"] = value
                 continue
-            ref = self.reference(value, node)
+            ref = self.reference(value.buffer if isinstance(value, _Access) else value, node)
             if isinstance(value, _Access):
                 accesses.append(value)
             reads.append(ref)
@@ -434,7 +432,7 @@ class _Builder:
             self.fail(node, "an operation with out updates its declared buffer; do not rebind it")
         if not outputs:
             self.fail(node, "out requires at least one result buffer")
-        writes = [self.reference(value, node) for value in outputs]
+        writes = [self.reference(value.buffer if isinstance(value, _Access) else value, node) for value in outputs]
         accesses.extend(value for value in outputs if isinstance(value, _Access))
         op_id = controls.pop("id", target or f"{kind}_{writes[0].name}")
         if not isinstance(op_id, str) or op_id in self.ancestors:

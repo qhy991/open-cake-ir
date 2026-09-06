@@ -129,6 +129,27 @@ class PythonFrontendTests(unittest.TestCase):
             with self.subTest(source=source[-180:]), self.assertRaises(FrontendError):
                 parse(source)
 
+    def test_indexed_views_are_not_erased_at_buffer_identity_boundaries(self):
+        softmax = (EXAMPLES / "softmax.py").read_text()
+        pipeline = (EXAMPLES / "kmeans_pipeline.py").read_text()
+        cases = (
+            FMA.replace('a[batch, :]', 'a[batch, :64][batch, :]'),
+            FMA.replace('a[batch, :]', 'a[:, :64][batch, :]'),
+            FMA.replace('lm.program(a,', 'lm.program(a[:, :64],'),
+            softmax.replace('lm.broadcast(rowmax,', 'lm.broadcast(rowmax[:1],'),
+            pipeline.replace('lm.range(centroids,', 'lm.range(centroids[:, :64],'),
+        )
+        for source in cases:
+            with self.subTest(source=source[-150:]), self.assertRaises(FrontendError) as caught:
+                parse(source, filename="view.py")
+            self.assertIn("indexed views cannot be used here", str(caught.exception))
+            self.assertEqual(caught.exception.code, "PYTHON_SYNTAX")
+        # Ordinary operation addresses retain the view for the existing Verifier.
+        doc = parse(FMA.replace('lm.fma(a_tile,', 'lm.fma(a_tile[:64],')).document
+        result = self.compiler.assess(doc)
+        self.assertFalse(result.accepted)
+        self.assertIn("ACCESS_BUFFER_LOCAL", [finding.code for finding in result.findings])
+
     def test_resource_ownership_fields_cannot_be_silently_overridden(self):
         original = (EXAMPLES / "kmeans_pipeline.py").read_text()
         for old, new in (

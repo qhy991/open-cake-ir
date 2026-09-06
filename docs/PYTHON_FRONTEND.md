@@ -56,6 +56,8 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 读取使用 `lm.load(x[program, :], ...)`。一个下标对应一个维度：程序坐标、循环 tile，
 或连续的静态切片。首版不接受整数坐标、间隔切片、动态间接索引或省略维度，
 也不把它们近似成现有 AccessMap。TMA 的显式结果、descriptor_box 和同步信息仍须写明。
+下标表达式只作为操作地址使用；不能再对它进行嵌套索引，或把它当作 `lm.program`、`lm.range`、
+`lm.broadcast` 所需的 Buffer 名称。这些位置会明确拒绝切片，不会丢弃其范围。
 
 算术可写 `a * b + c`、`x * 2.0`，或现有数学原语调用，例如 `lm.exp(x)`、`lm.fma(a, b, c)`。
 有广播时在第二操作数上写 `lm.broadcast(row_value, axis=0)`，或在数学调用中明确 `broadcast_axis`。
