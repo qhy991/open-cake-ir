@@ -243,6 +243,57 @@ def candidate(lm, x: cake.Tensor((2,3,5), "fp32"), out: cake.Tensor((2,5), "fp32
                 with self.assertRaises(emit_metal.EmitError):
                     emit_metal.emit(Schedule.from_dict(document), self.target)
 
+    def test_missing_access_maps_are_refused_at_the_public_boundary(self):
+        for absent in (False, True):
+            document = make_document()
+            if absent:
+                document.pop("access_maps")
+            else:
+                document["access_maps"] = []
+            with self.subTest(absent=absent):
+                result = self.compiler.assess(document)
+                self.assertTrue(result.accepted)
+                self.assertFalse(result.lowering_eligible)
+                missing = [f.path for f in result.findings if f.code == "METAL_ACCESS_MAP_REQUIRED"]
+                self.assertEqual(missing, ["operations[0].reads[0]", "operations[1].reads[0]", "operations[4].writes[0]"])
+                with self.assertRaisesRegex(CompilerError, "METAL_ACCESS_MAP_REQUIRED"):
+                    self.compiler.lower(result)
+                with self.assertRaisesRegex(emit_metal.EmitError, "exactly one access map"):
+                    emit_metal.emit(Schedule.from_dict(document), self.target)
+
+    def test_store_address_domain_cannot_discard_or_invent_private_axes(self):
+        for component_index, component in (
+            (1, {"source": "program", "name": "row"}),
+            (0, {"source": "dimension", "dimension": 0}),
+        ):
+            document = make_document()
+            document["access_maps"][-1]["indices"][component_index] = component
+            with self.subTest(component=component):
+                result = self.compiler.assess(document)
+                self.assertFalse(result.lowering_eligible)
+                findings = [f for f in result.findings if f.code == "METAL_ACCESS_VALUE_SHAPE"]
+                self.assertEqual([f.path for f in findings], ["access_maps[2].indices"])
+                with self.assertRaisesRegex(CompilerError, "METAL_ACCESS_VALUE_SHAPE"):
+                    self.compiler.lower(result)
+                with self.assertRaisesRegex(emit_metal.EmitError, "access has value shape"):
+                    emit_metal.emit(Schedule.from_dict(document), self.target)
+
+    def test_source_map_ids_cannot_continue_the_generated_comment_line(self):
+        for suffix in ("\\", "??/"):
+            document = make_document()
+            operation = document["operations"][-1]
+            operation["id"] += suffix
+            document["access_maps"][-1]["operation"] = operation["id"]
+            with self.subTest(suffix=suffix):
+                result = self.compiler.assess(document)
+                self.assertFalse(result.lowering_eligible)
+                findings = [f for f in result.findings if f.code == "METAL_OPERATION_ID_UNSUPPORTED"]
+                self.assertEqual([f.path for f in findings], ["operations[4].id"])
+                with self.assertRaisesRegex(CompilerError, "METAL_OPERATION_ID_UNSUPPORTED"):
+                    self.compiler.lower(result)
+                with self.assertRaisesRegex(emit_metal.EmitError, "lexical line continuation"):
+                    emit_metal.emit(Schedule.from_dict(document), self.target)
+
     def test_unsupported_tile_dtype_and_instruction_do_not_fall_back(self):
         tiled = frontend.parse(make_source().replace('tile=1', 'tile=2')).document
         self.assertIn("METAL_PROGRAM_TILE_UNSUPPORTED", [f.code for f in self.compiler.assess(tiled).findings])

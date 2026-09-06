@@ -103,8 +103,9 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         path = f"operations[{index}]"
         check(not any(ord(c) < 32 or ord(c) == 127 for c in operation.op_id)
               and "CAKE_OP:" not in operation.op_id and "CAKE_KERNEL_END" not in operation.op_id
-              and operation.op_id.strip() == operation.op_id,
-              "METAL_OPERATION_ID_UNSUPPORTED", path + ".id", "operation id contains a source-map delimiter")
+              and operation.op_id.strip() == operation.op_id
+              and not operation.op_id.endswith(("\\", "??/")),
+              "METAL_OPERATION_ID_UNSUPPORTED", path + ".id", "operation id contains a source-map delimiter or lexical line continuation")
         check(operation.kind in SUPPORTED_OPERATION_KINDS, "BACKEND_OPERATION_UNEMITTABLE", path + ".kind", "operation has no Metal body")
         check(not operation.waits and not operation.signals and operation.pipeline is None,
               "METAL_SYNCHRONIZATION_UNSUPPORTED", path, "Metal serial operations do not implement synchronization or pipelines")
@@ -143,6 +144,39 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         elif operation.kind is OperationKind.REDUCE:
             check(parameters.scope is ReductionScope.CTA and not parameters.across_loop,
                   "METAL_REDUCTION_UNSUPPORTED", path + ".parameters", "Metal folds one private tile in CTA scope without loop-carried state")
+        if operation.kind in {OperationKind.LOAD, OperationKind.STORE} and len(operation.reads) == len(operation.writes) == 1:
+            global_name, private_name = (
+                (operation.reads[0], operation.writes[0])
+                if operation.kind is OperationKind.LOAD
+                else (operation.writes[0], operation.reads[0])
+            )
+            matches = [(i, access) for i, access in enumerate(schedule.access_maps)
+                       if (access.operation, access.buffer) == (operation.op_id, global_name)]
+            edge = "reads" if operation.kind is OperationKind.LOAD else "writes"
+            check(len(matches) == 1, "METAL_ACCESS_MAP_REQUIRED", f"{path}.{edge}[0]",
+                  f"Metal requires exactly one access map for global buffer {global_name!r}")
+            if len(matches) != 1:
+                continue
+            access_index, access = matches[0]
+            global_buffer, private_buffer = schedule.buffer(global_name), schedule.buffer(private_name)
+            # Common verification owns coordinate validity and duplicate maps. The Metal
+            # body additionally needs the complete value domain: it cannot reshape,
+            # broadcast, or discard a private axis when visiting global addresses.
+            if global_buffer is not None and private_buffer is not None and all(
+                component.source is AccessIndexKind.PROGRAM or (
+                    component.source is AccessIndexKind.DIMENSION
+                    and component.dimension is not None
+                    and component.dimension < len(global_buffer.shape)
+                ) for component in access.indices
+            ):
+                shape = tuple(component.span(global_buffer.shape[component.dimension])
+                              for component in access.indices
+                              if component.source is AccessIndexKind.DIMENSION) or (1,)
+                check(private_buffer.shape == shape, "METAL_ACCESS_VALUE_SHAPE",
+                      f"access_maps[{access_index}].indices",
+                      f"access has value shape {list(shape)}, but private buffer "
+                      f"{private_name!r} has shape {list(private_buffer.shape)}; Metal "
+                      "loads/stores do not reshape, broadcast or truncate values")
     return tuple(findings)
 
 
