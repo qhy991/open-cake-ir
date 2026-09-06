@@ -99,7 +99,7 @@ class _Curve:
             raise ValueError("curve empirical interval is not finite")
         return cls(_canonical(template), tuple(dimensions), multiple, tuple(points), envelope)
 
-    def predict(self, query: dict) -> tuple[float, tuple[float, float]] | None:
+    def predict(self, query: dict, query_bytes: bytes) -> tuple[float, tuple[float, float]] | None:
         expected = json.loads(self.template)
         buffers = {buffer["name"]: buffer for buffer in query["buffers"]}
         if any(name not in buffers or axis >= len(buffers[name]["shape"]) for name, axis in self.dimensions):
@@ -115,7 +115,7 @@ class _Curve:
             for name, axis in self.dimensions:
                 if buffer["name"] == name:
                     buffer["shape"][axis] = extent
-        if _canonical(expected) != _canonical(query):
+        if _canonical(expected) != query_bytes:
             return None
         upper = bisect.bisect_left([point[0] for point in self.points], extent)
         if self.points[upper][0] == extent:
@@ -185,7 +185,8 @@ class EmpiricalCostModel:
             return result
         # Public callers get the same construction/type checks as the Compiler.
         Schedule.from_dict(schedule)
-        predictions = [prediction for curve in self._curves if (prediction := curve.predict(schedule)) is not None]
+        query_bytes = _canonical(schedule)
+        predictions = [prediction for curve in self._curves if (prediction := curve.predict(schedule, query_bytes)) is not None]
         if len(predictions) != 1:
             result["reason"] = "ambiguous overlapping cost curves" if predictions else "no curve covers this exact Schedule and extent"
             return result

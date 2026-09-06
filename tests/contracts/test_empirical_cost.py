@@ -108,6 +108,18 @@ class EmpiricalCostTest(unittest.TestCase):
         self.assertFalse(cost["covered"])
         self.assertIn("ambiguous", cost["reason"])
 
+    def test_equal_numbers_with_different_json_types_do_not_match(self):
+        model = EmpiricalCostModel(self.model_document())
+        for version in (True, 1.0):
+            schedule = self.schedule("fma-b8-smoke.json")
+            schedule["schema_version"] = version
+            with self.subTest(version=version):
+                cost = model.estimate(schedule, compiler_revision_id=self.revision_id,
+                                      compiler_revision_sha256=self.revision_sha256, target="sm_100a")
+                self.assertFalse(cost["covered"])
+                self.assertIsNone(cost["predicted_kernel_us"])
+                self.assertEqual(cost["reason"], "no curve covers this exact Schedule and extent")
+
     def test_assessment_tampering_cannot_reach_cost_prediction(self):
         assessment = self.compiler.assess(self.schedule("fma-b8-smoke.json"))
         with self.assertRaises(CompilerError):
