@@ -43,6 +43,15 @@ python3 tools/report_schedule_profile.py --json \
   corpus/schedules/gemm-bias-b1-smoke.json
 ```
 
+终端报告在每个 Schedule 的数值行下面展示驻留上界的约束资源、已分析范围、
+Finding 的代码、位置、消息及阻止阶段，以及已有的 barrier／scoreboard 定性风险原因。
+风险标签保持 `uncalibrated_risk`，不代表测得的 stall 比例或瓶颈排序。
+
+JSON 外层仍为 `schema_version=1`；`rows` 和 `skipped` 中的 `findings` 现在保留
+Compiler 的完整 Finding 对象，而非只有代码字符串。需要代码列表的消费者应显式
+读取每个对象的 `code`，不能再把对象当字符串。`profile` 保持其原有结构与数值；
+已保留编译报告的复用只读取原有编译资源与产物字段，因此既有报告仍可用于该路径。
+
 在具备工具链的 Linux 环境中编译和检查；输出目录必须是仓库外的新目录：
 
 ```bash
@@ -90,3 +99,53 @@ Python 调用通过 `compiler.profile(assessment, compiled_resources=resources)`
 耗时、吞吐率和 stall 比例的数值预测需要独立的目标校准；最终候选仍由外部正确性及
 匹配实测验收。当前工作继续推进有适用范围和误差证据的性能估算，而不把资源上界
 直接作为运行时间。
+
+## 显式传入经验耗时模型
+
+`Compiler.profile` 现在可以通过同一入口接收外部经验模型。模型查询只使用 CPU，
+不会加载 GPU 库或隐式采样，也不会修改已发布的 `calibration_coverage` 或
+`Compiler.rank`。静态资源、编译资源和条件耗时预测可以在同一份反馈中查看：
+
+```bash
+python3 tools/report_schedule_profile.py --json \
+  --cost-model /external/calibration/model.json \
+  /external/candidates/schedule.json
+```
+
+Python 接口使用 `EmpiricalCostModel.load(path)`，然后调用
+`compiler.profile(assessment, cost_model=model)`。现有 Python agent 反馈接口可以直接
+消费该结果：`qsa_compiler_feedback(assessment, static_profile=profile.as_dict())`。
+`tools/project_qsa_feedback.py` 属于历史 Executor 的冻结闭包，其命令参数保持不变。
+
+模型用一个通用表示覆盖不同算子：每条曲线固定一个完整 Schedule 模板，明确列出
+共同变化的 Buffer 维度、允许的整数对齐和测量区间，再按维度大小插值。这里没有
+按算子名称分派的成本公式。模板比较保留 JSON 的值类型；只允许显示名称与模型
+明确绑定的尺寸变化。不同 Revision 内容身份、不同目标、范围外或未对齐的尺寸、模板差异，
+以及同时命中多条曲线都会返回未覆盖原因。已提供编译资源时，后端编译器版本
+与模型声明不一致也会拒绝估算。
+
+模型根对象为 schema_version=2，包含 `model_id`、`compiler_revision_id`、
+`compiler_revision_sha256`（来自 Assessment 的现有内容身份）、`target`、
+`context`、`reported_evidence` 和 `curves`。`context` 声明 `timer`、`cache_protocol`、
+`runtime`（至少有 `compiler_version`）及 `input_scope`。每条曲线包含 `template`、
+`varying_dimensions`（`buffer` 和零起始 `dimension`）、`extent_multiple`、按 extent
+严格递增的 `points`（`extent`、`kernel_us`）和 `relative_error_envelope`。
+模型内容在读取时复制为不可变数据，后续修改输入对象不会改变预测。
+
+JSON 中的 `empirical_cost` 给出 `predicted_kernel_us`、`empirical_range_us`、覆盖状态、
+原因、上下文及外部报告的证据。它是 **external empirical cost**：Compiler 校验匹配
+关系和插值计算，外部采集者仍负责实测、误差验证和来源真实性。模型声明的环境
+不等于当前机器环境已经准入；缺少编译观察时，输出完全以声明的编译环境为条件。
+经验残差范围不是置信区间，也不保证全部未测尺寸。该输入不会补写 NCU 的利用率
+或 stall 百分比，更不会决定候选接受与发布。
+
+终端同时显示条件估算的经验范围；未覆盖时保留具体拒绝原因，不用空白数值掩盖
+目标、Revision、模板或范围的差异。完整上下文和来源仍由 JSON 中的既有字段提供。
+
+校准必须在模型绑定的冻结 Compiler Revision 上完成。早期独立 FMA 原型的旧 schema
+与 v46 测量不能仅改写版本名称后充当新 Revision 的模型；需要新的采集或经过明确
+审查的兼容证据。本接口不内置未验证的系数。
+
+并行分支曾产生同名 v49 而内容不同的 Compiler；模型因此必须同时绑定编号和
+已有的内容身份。旧 schema 1 不会被默认为匹配，需要明确的兼容性验证和新模型
+交付。这个身份字段只解决实际的冻结 Revision 对应关系，不建立新的文件摘要目录。

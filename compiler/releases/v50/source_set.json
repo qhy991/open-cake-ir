@@ -1,5 +1,4 @@
 {
-  "schema_version": 1,
   "paths": [
     "compiler/AUTHORING_CONTRACT.md",
     "docs/PYTHON_FRONTEND.md",
@@ -119,7 +118,7 @@
     "corpus/schedules/metal-row-max-odd.json",
     "corpus/schedules/metal-target-unsupported.json",
     "corpus/schedules/metal-store-program-ownership.json",
-    "src/open_cake_ir/compiler/empirical_cost.py",
-    "examples/python/metal_rmsnorm.py"
-  ]
+    "src/open_cake_ir/compiler/empirical_cost.py"
+  ],
+  "schema_version": 1
 }
