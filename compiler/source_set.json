@@ -108,7 +108,16 @@
     "corpus/schedules/fma-b8-smoke-vector-span-drift.json",
     "corpus/schedules/fma-scalar-load-b8-smoke.json",
     "src/open_cake_ir/compiler/compiled_resources.py",
-    "src/open_cake_ir/compiler/toolchain.py"
+    "src/open_cake_ir/compiler/toolchain.py",
+    "compiler/targets/apple_gpu_family8.json",
+    "examples/python/metal_elementwise.py",
+    "examples/python/metal_row_sum.py",
+    "src/open_cake_ir/compiler/emit_metal.py",
+    "corpus/schedules/metal-elementwise-odd.json",
+    "corpus/schedules/metal-row-sum-odd.json",
+    "corpus/schedules/metal-row-max-odd.json",
+    "corpus/schedules/metal-target-unsupported.json",
+    "corpus/schedules/metal-store-program-ownership.json"
   ],
   "schema_version": 1
 }

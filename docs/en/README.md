@@ -22,6 +22,7 @@ The [English guide](wiki/README.md) also links every learning page. Use the [Glo
 | Purpose | English page |
 | --- | --- |
 | Authoring Schedules in Python | [Python frontend](PYTHON_FRONTEND.md) |
+| Running FP32 elementwise and row reductions on Apple M2 | [Metal guide](../metal.md) |
 | IR objects, implementation ownership and extension points | [IR guide](IR_GUIDE.md) |
 | Operating a frozen Study | [Runbook](../RUNBOOK.md) |
 | Understanding acceptance evidence | [Acceptance gates](../ACCEPTANCE_GATES.md) |
@@ -34,5 +35,7 @@ The [English guide](wiki/README.md) also links every learning page. Use the [Glo
 | A complete eight-output GPU example | [Affine check](AFFINE_PARENT_B200_CANARY_20260906.md) |
 | Current released authorities | [Generated status](../../reports/current/STATUS.md) |
 | Surveys, history, and every language pair | [Complete catalog](../README.md) |
+
+Metal is a correctness-first prototype: `serial_program_tile` uses one active thread per threadgroup to process the complete tile serially. It connects the Compiler to a direct runtime adapter; Metal Lab/Campaign integration, agent search, and performance optimization are not provided.
 
 Original documents retain their paths. Chinese reading companions for English originals live under zh-CN; English counterparts to Chinese originals live here. Companions simplify explanations and link full historical tables rather than creating a second authority. Dates, scope, failures, and unverified outcomes retain their original meaning. Source generation, compilation, correctness, and performance remain distinct.

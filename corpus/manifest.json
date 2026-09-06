@@ -1071,6 +1071,31 @@
         "schedule_sha256": "2fff703865da06f77dd340df69bb5417adc823e929cb2da32f9ec5c5f6aa4e82",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "metal-elementwise-odd",
+      "schedule": "corpus/schedules/metal-elementwise-odd.json",
+      "expected": {}
+    },
+    {
+      "case_id": "metal-row-sum-odd",
+      "schedule": "corpus/schedules/metal-row-sum-odd.json",
+      "expected": {}
+    },
+    {
+      "case_id": "metal-row-max-odd",
+      "schedule": "corpus/schedules/metal-row-max-odd.json",
+      "expected": {}
+    },
+    {
+      "case_id": "metal-target-unsupported",
+      "schedule": "corpus/schedules/metal-target-unsupported.json",
+      "expected": {}
+    },
+    {
+      "case_id": "metal-store-program-ownership",
+      "schedule": "corpus/schedules/metal-store-program-ownership.json",
+      "expected": {}
     }
   ]
 }
