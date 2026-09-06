@@ -2452,7 +2452,11 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                         f"{result.dtype.value}",
                         category,
                     )
-                widest = max((r.shape for r in reads), key=len, default=())
+                # A canonical scalar [1] broadcasts without selecting a result axis.
+                # Other singleton dimensions keep their existing explicit shape rules;
+                # the instruction-specific FMA contract still requires equal shapes.
+                shape_reads = [r for r in reads if not r.is_scalar] if parameters.op is not ElementwiseOp.FMA else reads
+                widest = max((r.shape for r in (shape_reads or reads)), key=len, default=())
                 if tuple(result.shape) != tuple(widest):
                     out.add(
                         "ELEMENTWISE_SHAPE_MISMATCH",
@@ -2463,6 +2467,15 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                         category,
                     )
                 for read in reads:
+                    if read.is_scalar and parameters.op is not ElementwiseOp.FMA:
+                        axis = parameters.broadcast_axis
+                        if axis is not None and (axis >= len(widest) or widest[axis] != 1):
+                            out.add(
+                                "ELEMENTWISE_BROADCAST", f"{path}.parameters.broadcast_axis",
+                                f"scalar operand {read.name!r} needs no broadcast axis; "
+                                f"declared axis {axis} does not have extent one", category,
+                            )
+                        continue
                     if len(read.shape) == len(widest):
                         if tuple(read.shape) != tuple(widest):
                             out.add(

@@ -242,6 +242,20 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         "the Triton backend supports at most one reduce_argmin operation",
     )
     for index, operation in enumerate(schedule.operations):
+        if operation.kind is OperationKind.ELEMENTWISE:
+            # Global arguments are pointers; _operand only names already-produced
+            # values. Arithmetic does not implement access maps or memory effects.
+            for edge in ("reads", "writes"):
+                for position, name in enumerate(getattr(operation, edge)):
+                    buffer = schedule.buffer(name)
+                    if buffer is not None:
+                        add(
+                            buffer.space is MemorySpace.REGISTER,
+                            "TRITON_ELEMENTWISE_STORAGE",
+                            f"operations[{index}].{edge}[{position}]",
+                            f"Triton elementwise arithmetic requires register values; "
+                            f"{name!r} is {buffer.space.value}. Use explicit load/store operations.",
+                        )
         if operation.kind is OperationKind.MMA:
             instruction = operation.parameters.instruction
             add(
@@ -1111,16 +1125,10 @@ class _TritonEmitter:
 
         buffer = self.schedule.buffer(name)
         _require(buffer is not None, f"elementwise reads unknown buffer {name!r}")
-        widest = max(
-            (
-                other.shape
-                for other in (self.schedule.buffer(read) for read in operation.reads)
-                if other is not None
-            ),
-            key=len,
-            default=(),
-        )
-        if len(buffer.shape) == len(widest):
+        result = self.schedule.buffer(operation.writes[0])
+        _require(result is not None, "elementwise requires its verified result shape")
+        widest = result.shape
+        if buffer.is_scalar or len(buffer.shape) == len(widest):
             return name
         axis = operation.parameters.broadcast_axis
         _require(axis is not None, f"operand {name!r} needs a declared broadcast axis")

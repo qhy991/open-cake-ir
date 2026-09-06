@@ -1108,11 +1108,13 @@ class Compiler:
             finding.blocks_lowering for finding in findings
         ):
             findings.append(Finding(
-                "METAL_SERIAL_EXECUTION", "lowering",
-                "Metal executes each complete program tile serially on lane 0 of one "
-                "32-thread SIMD group; private arrays may spill. No occupancy, cost or "
-                "GPU correctness is inferred. Finite FP32 uses Metal rounding/denormal "
-                "behavior, without PTX RN or denormal-preservation equivalence.",
+                "METAL_SIMD_EXECUTION", "lowering",
+                "Metal stripes flattened values over 32 lanes with uniform SIMD "
+                "collectives and uniquely owned stores. Peak live lane-owned Buffer "
+                f"storage: {emit_metal.private_values_per_thread(typed_schedule)} FP32 values; "
+                "temporary registers and spills are unmodeled. No occupancy, cost or "
+                "GPU correctness is inferred. Local-slot then SIMD reduction order and "
+                "precise rsqrt use Metal rounding/denormal behavior, without PTX RN equivalence.",
                 blocks_acceptance=False, blocks_lowering=False,
             ))
 

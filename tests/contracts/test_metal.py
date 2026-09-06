@@ -1,7 +1,8 @@
 """Canonical Metal lowering, bounded refusals and portable generated-body correctness.
 
-The native-C++ test adapter changes only MSL address-space/entry attributes. It executes
-emitted arithmetic and indexing on CPU; it is not a GPU or MSL-toolchain qualification.
+The native-C++ adapter runs the emitted body in 32 threads, synchronizing actual SIMD
+intrinsic calls and checking collective participation. This is CPU semantic evidence,
+not GPU, timing, physical-resource or MSL-toolchain qualification.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import ctypes
 import hashlib
 import itertools
 import json
+import math
 from pathlib import Path
 import re
 import shutil
@@ -55,12 +57,99 @@ def make_document(rows=3, width=37, operation="elementwise"):
     return frontend.parse(make_source(rows, width, operation)).document
 
 
+def make_rms_source(rows=2, width=65):
+    return f"""from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="weighted-rms", target="apple_gpu_family8", backend="metal", entry_point="cake_rms")
+def candidate(lm, x: cake.Tensor(({rows},{width}), "fp32"), weight: cake.Tensor(({width},), "fp32"), out: cake.Tensor(({rows},{width}), "fp32", mode="output")):
+    compute = lm.role(warps=[0])
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        values = lm.load(x[row,:])
+        weights = lm.load(weight[:])
+        squares = lm.square(values)
+        total = lm.reduce(squares, op="sum", axis=0, scope="cta", across_loop=False)
+        inv = lm.rsqrt(total / {float(width)!r} + 1e-5)
+        result = (values * inv) * weights
+        lm.store(out[row,:], result, coalesced=False)
+"""
+
+
 def fp32(value):
     return ctypes.c_float(value).value
 
 
 class _Program(ctypes.Structure):
     _fields_ = [(name, ctypes.c_uint) for name in "xyz"]
+
+
+_CPU_SIMD = r"""
+#include <cmath>
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include <vector>
+using namespace std;
+using uint = unsigned int;
+using ushort = unsigned short;
+using ulong = unsigned long;
+struct uint3 { uint x,y,z; };
+namespace precise { float rsqrt(float value) { return 1.0f / sqrt(value); } }
+struct CpuGroup {
+    float values[32];
+    uint sources[32];
+    int sites[32];
+    atomic<bool> failed{false};
+    mutex lock;
+    condition_variable changed;
+    uint arrivals = 0, generation = 0;
+    bool sync() {
+        unique_lock<mutex> guard(lock);
+        if (failed) return false;
+        uint before = generation;
+        if (++arrivals == 32) {
+            arrivals = 0; ++generation; changed.notify_all();
+        } else if (!changed.wait_for(guard, chrono::seconds(3), [&] {
+            return generation != before || failed;
+        })) {
+            failed = true; changed.notify_all();
+        }
+        return !failed;
+    }
+};
+thread_local CpuGroup* cpu_group;
+thread_local uint cpu_lane;
+float cpu_collective(float value, uint source, int kind, int line) {
+    auto& group = *cpu_group;
+    group.values[cpu_lane] = value;
+    group.sources[cpu_lane] = source;
+    group.sites[cpu_lane] = line * 4 + kind;
+    if (!group.sync()) return 0.0f;
+    for (uint lane = 0; lane < 32; ++lane) {
+        if (group.sites[lane] != line * 4 + kind || group.sources[lane] >= 32 ||
+            (kind == 0 && group.sources[lane] != source)) group.failed = true;
+    }
+    float result = 0.0f;
+    if (kind < 2) {
+        if (source < 32) result = group.values[source];
+    } else {
+        float tree[32];
+        copy(group.values, group.values + 32, tree);
+        for (uint step = 1; step < 32; step *= 2)
+            for (uint lane = 0; lane < 32; lane += 2 * step)
+                tree[lane] = kind == 2 ? tree[lane] + tree[lane + step] : max(tree[lane], tree[lane + step]);
+        result = tree[0];
+    }
+    group.sync(); // Do not overwrite values before all lanes finish reading them.
+    return result;
+}
+#define simd_broadcast(data, source) cpu_collective(data, source, 0, __LINE__)
+#define simd_shuffle(data, source) cpu_collective(data, source, 1, __LINE__)
+#define simd_sum(data) cpu_collective(data, 0, 2, __LINE__)
+#define simd_max(data) cpu_collective(data, 0, 3, __LINE__)
+"""
 
 
 class MetalTests(unittest.TestCase):
@@ -91,35 +180,47 @@ class MetalTests(unittest.TestCase):
         return assessment, self.compiler.lower(assessment)
 
     def execute_body(self, document, inputs):
-        """Run the emitted scalar body with a CPU ABI; never dispatch Metal."""
+        """Run the emitted SIMD body with a CPU intrinsic ABI; never dispatch Metal."""
         compiler = shutil.which("clang++") or shutil.which("c++")
         if compiler is None:
             self.skipTest("native C++ compiler required for generated-body CPU execution")
         _, lowering = self.lower(document)
-        source = lowering.source.replace("#include <metal_stdlib>", "#include <cmath>\n#include <algorithm>\nusing namespace std;\nusing uint = unsigned int;\nusing ulong = unsigned long;\nstruct uint3 { uint x,y,z; };")
+        source = lowering.source.replace("#include <metal_stdlib>", _CPU_SIMD)
         source = source.replace("using namespace metal;", "").replace("#pragma METAL fp contract(off)", "")
         source = re.sub(r"\[\[[^]]*\]\]", "", source)
         source = source.replace("kernel void", 'extern "C" void').replace("device ", "")
+        globals_ = [buffer for buffer in Schedule.from_dict(document).buffers if buffer.space.value == "global"]
+        arguments = ", ".join(f"float* arg{index}" for index in range(len(globals_)))
+        call_arguments = ", ".join(f"arg{index}" for index in range(len(globals_)))
+        source += f"""
+extern "C" int cpu_dispatch({arguments}, uint3 program) {{
+    CpuGroup group;
+    vector<thread> lanes;
+    for (uint lane = 0; lane < 32; ++lane) lanes.emplace_back([&, lane] {{
+        cpu_group = &group; cpu_lane = lane;
+        {lowering.route.entry_point}({call_arguments}, program, lane);
+    }});
+    for (auto& lane : lanes) lane.join();
+    return group.failed ? 1 : 0;
+}}
+"""
         with tempfile.TemporaryDirectory(prefix="cake-metal-body-") as temporary:
             path = Path(temporary)
             (path / "body.cpp").write_text(source)
-            completed = subprocess.run([compiler, "-std=c++17", "-shared", "-fPIC", "-ffp-contract=off", "-fno-fast-math", str(path / "body.cpp"), "-o", str(path / "body.so")], capture_output=True, text=True)
+            completed = subprocess.run([compiler, "-std=c++17", "-shared", "-fPIC", "-pthread", "-ffp-contract=off", "-fno-fast-math", str(path / "body.cpp"), "-o", str(path / "body.so")], capture_output=True, text=True)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             library = ctypes.CDLL(str(path / "body.so"))
-            kernel = getattr(library, lowering.route.entry_point)
-            globals_ = [buffer for buffer in Schedule.from_dict(document).buffers if buffer.space.value == "global"]
+            kernel = library.cpu_dispatch
             arrays = []
             for buffer in globals_:
                 values = inputs.get(buffer.name, [float("nan")] * buffer.elements)
                 self.assertEqual(len(values), buffer.elements)
                 arrays.append((ctypes.c_float * buffer.elements)(*values))
-            kernel.argtypes = [ctypes.POINTER(ctypes.c_float)] * len(arrays) + [_Program, ctypes.c_uint]
-            kernel.restype = None
+            kernel.argtypes = [ctypes.POINTER(ctypes.c_float)] * len(arrays) + [_Program]
+            kernel.restype = ctypes.c_int
             grid = lowering.toolchain_requirements["threadgroups_per_grid"]
             for position in itertools.product(*(range(extent) for extent in grid)):
-                # Confirm inactive lanes cannot perform writes or read private garbage.
-                kernel(*arrays, _Program(*position), 31)
-                kernel(*arrays, _Program(*position), 0)
+                self.assertEqual(kernel(*arrays, _Program(*position)), 0, "SIMD collective participants or call sites diverged")
             return {buffer.name: list(array) for buffer, array in zip(globals_, arrays)}
 
     def test_python_json_and_public_launch_abi_are_identical(self):
@@ -130,13 +231,13 @@ class MetalTests(unittest.TestCase):
             (p / "candidate.json").write_text(json.dumps(document))
             self.assertEqual(self.compiler.assess_file(p / "candidate.py"), self.compiler.assess_file(p / "candidate.json"))
         assessment, lowering = self.lower(document)
-        self.assertIn("METAL_SERIAL_EXECUTION", [finding.code for finding in assessment.findings])
+        self.assertIn("METAL_SIMD_EXECUTION", [finding.code for finding in assessment.findings])
         self.assertEqual(lowering.toolchain_requirements, {
             "source_language": "metal", "compiler": "MTLDevice.makeLibrary", "target": "apple_gpu_family8",
             "buffer_order": ["x", "y", "out"], "threadgroups_per_grid": [3, 1, 1],
             "threads_per_threadgroup": [32, 1, 1], "threadgroup_memory_bytes": 0,
             "language_standard": "metal2.3", "fast_math_enabled": False,
-            "execution_model": "serial_program_tile", "active_threads_per_threadgroup": 1,
+            "execution_model": "simd_program_tile", "active_threads_per_threadgroup": 32,
         })
         self.assertIn("#pragma METAL fp contract(off)", lowering.source)
         self.assertEqual(set(lowering.source_map), {operation["id"] for operation in document["operations"]})
@@ -206,6 +307,92 @@ def candidate(lm, x: cake.Tensor((2,3,5), "fp32"), out: cake.Tensor((2,5), "fp32
         source = source.replace('x[batch,:,:]', 'x[batch,row,:]').replace('out[batch,:]', 'out[batch,row]')
         expected = [sum(x[row * 5:(row + 1) * 5]) for row in range(6)]
         self.assertEqual(self.execute_body(frontend.parse(source).document, {"x": x})["out"], expected)
+
+    def test_weighted_rms_and_scalar_broadcast_cover_lane_boundaries(self):
+        for width in (1, 7, 32, 65, 257, 1024, 4096):
+            with self.subTest(width=width):
+                # One epsilon-dominated zero row and one mixed-sign normal row.
+                x = [0.0] * width + [fp32((index % 23 - 11) / 7.0) for index in range(width)]
+                weight = [fp32((index % 9 - 4) / 3.0) for index in range(width)]
+                document = frontend.parse(make_rms_source(width=width)).document
+                observed = self.execute_body(document, {"x": x, "weight": weight})["out"]
+                expected = []
+                for row in range(2):
+                    values = x[row * width:(row + 1) * width]
+                    inv = 1.0 / math.sqrt(math.fsum(value * value for value in values) / width + 1e-5)
+                    expected.extend(value * inv * scale for value, scale in zip(values, weight))
+                for actual, reference in zip(observed, expected):
+                    self.assertLessEqual(abs(actual - reference), 2e-5 + 2e-5 * abs(reference))
+                _, lowering = self.lower(document)
+                self.assertIn("precise::rsqrt(", lowering.source)
+                self.assertIn("simd_sum(", lowering.source)
+                if width > 1:
+                    self.assertIn("simd_broadcast(", lowering.source)
+                self.assertNotIn("if (lane != 0u) return", lowering.source)
+
+    def test_multislot_broadcast_and_each_reduction_axis_are_collective(self):
+        shape = (3, 33, 5)
+        for axis in range(3):
+            extent = shape[axis]
+            output_shape = tuple(value for index, value in enumerate(shape) if index != axis)
+            source = f"""from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="broadcast-and-reduce", target="apple_gpu_family8", backend="metal", entry_point="cake_compose")
+def candidate(lm, x: cake.Tensor((1,3,33,5), "fp32"), weight: cake.Tensor(({extent},), "fp32"), out: cake.Tensor((1,3,33,5), "fp32", mode="output"), reduced: cake.Tensor((1,{output_shape[0]},{output_shape[1]}), "fp32", mode="output")):
+    compute = lm.role(warps=[0])
+    batch = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        values = lm.load(x[batch,:,:,:])
+        weights = lm.load(weight[:])
+        result = lm.sub(values, lm.broadcast(weights, axis={axis}))
+        total = lm.reduce(result, op="sum", axis={axis}, scope="cta", across_loop=False)
+        lm.store(out[batch,:,:,:], result, coalesced=False)
+        lm.store(reduced[batch,:,:], total, coalesced=False)
+"""
+            x = [float(index % 41 - 20) for index in range(math.prod(shape))]
+            weight = [float(index - 17) for index in range(extent)]
+            inner = math.prod(shape[axis + 1:])
+            expected = [value - weight[(index // inner) % extent] for index, value in enumerate(x)]
+            reduced = [sum(expected[(output // inner) * extent * inner + j * inner + output % inner]
+                           for j in range(extent)) for output in range(math.prod(output_shape))]
+            with self.subTest(axis=axis):
+                observed = self.execute_body(frontend.parse(source).document, {"x": x, "weight": weight})
+                self.assertEqual(observed["out"], expected)
+                self.assertEqual(observed["reduced"], reduced)
+
+    def test_scalar_first_and_second_sub_div_preserve_operand_order(self):
+        source = """from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="ordered-scalars", target="apple_gpu_family8", backend="metal", entry_point="cake_order")
+def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32"), a: cake.Tensor((2,7), "fp32", mode="output"), b: cake.Tensor((2,7), "fp32", mode="output"), c: cake.Tensor((2,7), "fp32", mode="output"), d: cake.Tensor((2,7), "fp32", mode="output")):
+    compute = lm.role(warps=[0])
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        values = lm.load(x[row,:])
+        scale = lm.load(scalar[:])
+        first = scale - values
+        second = values - scale
+        third = scale / values
+        fourth = values / scale
+        lm.store(a[row,:], first, coalesced=False)
+        lm.store(b[row,:], second, coalesced=False)
+        lm.store(c[row,:], third, coalesced=False)
+        lm.store(d[row,:], fourth, coalesced=False)
+"""
+        x = [float(index + 1) for index in range(14)]
+        observed = self.execute_body(frontend.parse(source).document, {"x": x, "scalar": [2.0]})
+        for name, expected in (("a", [2.0 - value for value in x]), ("b", [value - 2.0 for value in x]),
+                               ("c", [fp32(2.0 / value) for value in x]), ("d", [value / 2.0 for value in x])):
+            self.assertEqual(observed[name], expected)
+
+    def test_private_storage_is_lane_distributed_and_lifetime_bounded(self):
+        document = make_document(rows=1, width=4096)
+        _, lowering = self.lower(document)
+        self.assertIn("float v3[128]", lowering.source)
+        self.assertNotIn("float v3[4096]", lowering.source)
+        # Three arrays overlap at the add, although four are declared over the DAG.
+        self.assertEqual(emit_metal.private_values_per_thread(Schedule.from_dict(document)), 384)
+        excessive = self.compiler.assess(make_document(rows=1, width=16384))
+        self.assertFalse(excessive.lowering_eligible)
+        self.assertIn("METAL_PRIVATE_STORAGE_LIMIT", [f.code for f in excessive.findings])
 
     def test_slice_coordinates_are_not_operator_or_shape_recognition(self):
         source = make_source(2, 11).replace('name="metal-elementwise"', 'name="a_different_task"')
