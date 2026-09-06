@@ -53,3 +53,4 @@ jobs:
           tests.contracts.test_triton_loop_scopes
           tests.contracts.test_native_triton_pairing
           tests.contracts.test_metal_benchmark
+          tests.contracts.test_tile_gpu_worker

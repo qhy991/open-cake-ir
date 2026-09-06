@@ -123,6 +123,19 @@ class NativePairingContractTests(unittest.TestCase):
                 self.assertEqual(projected['compile_options'], lowering.toolchain_requirements['compile_options'])
                 self.assertEqual(projected['grid'], lowering.toolchain_requirements['grid'])
 
+    def test_native_environment_accepts_the_compiler_pointer_types_for_every_workload(self):
+        for name in ('rmsnorm-fp32-v1', 'gemm-bias-bf16-fp32-v1', 'indexed-gather-bf16-v1'):
+            with self.subTest(workload=name):
+                workload = WorkloadContract.load(ROOT / f'contracts/workloads/{name}.json')
+                lowering = self.compiler.lower(self.compiler.assess(baseline(workload)))
+                fixture = CompilationFixture()
+                builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=fixture)
+                environment = NativeTritonEnvironment(builder, workload=workload, case_id='primary',
+                    toolchain_requirements=lowering.toolchain_requirements, authority_document={})
+                result = environment.build(CandidateSubmission.seal(environment.media_type, encoded(native_baseline(lowering))))
+                self.assertEqual(result.disposition, 'launchable')
+                self.assertEqual(fixture.requests[0][1]['signature'], lowering.toolchain_requirements['signature'])
+
     def test_both_submission_paths_share_manifest_and_compilation_contract(self):
         open_env, native_env, fixture = self.environments()
         ir = open_env.build(CandidateSubmission.seal(open_env.media_type, encoded(self.schedule)))
@@ -241,6 +254,74 @@ class NativePairingContractTests(unittest.TestCase):
             self.assertEqual(kwargs['environment'], {})
             self.assertEqual(argv.count('--bind'), 1)
             self.assertIn('/compiler-src', argv)
+
+    def test_runtime_loader_alias_keeps_its_guest_mount_destination(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            runtime = root / 'runtime'; runtime.mkdir()
+            python = runtime / 'python'; python.write_bytes(b'fixture python')
+            bwrap = root / 'bwrap'; bwrap.write_bytes(b'fixture bwrap')
+            libraries = root / 'usr-lib64'; libraries.mkdir()
+            alias = root / 'lib64'; alias.symlink_to(libraries, target_is_directory=True)
+            with mock.patch('open_cake_ir.lab.triton_build.sys.platform', 'linux'):
+                compiler = IsolatedTritonCompiler(python=str(python), bubblewrap=str(bwrap),
+                    runtime_roots=[str(runtime), str(alias)], triton_version='fixture')
+            with mock.patch('open_cake_ir.lab.triton_build.run_supervised',
+                            return_value=subprocess.CompletedProcess([], 1, b'', b'fixture stop')) as run:
+                with self.assertRaises(RunProtocolFault):
+                    compiler.compile(self.native['kernel_source'].encode(), self.lowering.toolchain_requirements)
+            argv = run.call_args.args[0]
+            mounts = [argv[i + 1:i + 3] for i, value in enumerate(argv) if value == '--ro-bind']
+            self.assertIn([str(libraries), str(alias)], mounts)
+            self.assertNotIn([str(libraries), str(libraries)], mounts)
+
+    def test_runtime_alias_retarget_cannot_change_the_checked_host_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            runtime = root / 'runtime'; runtime.mkdir()
+            python = runtime / 'python'; python.write_bytes(b'fixture python')
+            bwrap = root / 'bwrap'; bwrap.write_bytes(b'fixture bwrap')
+            libraries = root / 'libraries'; libraries.mkdir()
+            workspace = root / 'author'; workspace.mkdir()
+            alias = workspace / 'runtime-link'; alias.symlink_to(libraries, target_is_directory=True)
+            with mock.patch('open_cake_ir.lab.triton_build.sys.platform', 'linux'):
+                compiler = IsolatedTritonCompiler(python=str(python), bubblewrap=str(bwrap),
+                    runtime_roots=[str(runtime), str(alias)], triton_version='fixture')
+            executor = SimpleNamespace(document={'host_environment': {
+                'python': {'invocation_path': str(python)}, 'packages': {'triton': 'fixture'}}})
+            compiler.check_executor(executor, author_workspace=workspace)
+            identity = compiler.identity
+            alias.unlink(); alias.symlink_to(workspace, target_is_directory=True)
+            with mock.patch('open_cake_ir.lab.triton_build.run_supervised',
+                            return_value=subprocess.CompletedProcess([], 1, b'', b'fixture stop')) as run:
+                with self.assertRaises(RunProtocolFault):
+                    compiler.compile(self.native['kernel_source'].encode(), self.lowering.toolchain_requirements)
+            argv = run.call_args.args[0]
+            mounts = [argv[i + 1:i + 3] for i, value in enumerate(argv) if value == '--ro-bind']
+            self.assertIn([str(libraries), str(alias)], mounts)
+            self.assertNotIn(str(workspace), [source for source, _ in mounts])
+            self.assertEqual(compiler.identity, identity)
+
+    def test_runtime_aliases_cannot_hide_home_or_author_workspace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            runtime = root / 'runtime'; runtime.mkdir()
+            python = runtime / 'python'; python.write_bytes(b'fixture python')
+            bwrap = root / 'bwrap'; bwrap.write_bytes(b'fixture bwrap')
+            alias = root / 'alias'; alias.symlink_to(Path.home(), target_is_directory=True)
+            with mock.patch('open_cake_ir.lab.triton_build.sys.platform', 'linux'):
+                with self.assertRaisesRegex(ValueError, 'runtime mount contract'):
+                    IsolatedTritonCompiler(python=str(python), bubblewrap=str(bwrap),
+                        runtime_roots=[str(runtime), str(alias)], triton_version='fixture')
+                alias.unlink()
+                workspace = root / 'author'; workspace.mkdir()
+                alias.symlink_to(workspace, target_is_directory=True)
+                compiler = IsolatedTritonCompiler(python=str(python), bubblewrap=str(bwrap),
+                    runtime_roots=[str(runtime), str(alias)], triton_version='fixture')
+            executor = SimpleNamespace(document={'host_environment': {
+                'python': {'invocation_path': str(python)}, 'packages': {'triton': 'fixture'}}})
+            with self.assertRaisesRegex(ValueError, 'must not expose author workspace'):
+                compiler.check_executor(executor, author_workspace=workspace)
 
     def test_canonical_composition_rejects_an_unpinned_isolated_runtime_before_build(self):
         from open_cake_ir.lab.compose import execute_matched_from_config

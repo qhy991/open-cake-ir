@@ -25,3 +25,13 @@ live-host claim. Without this input, the existing host/profiler discovery path r
 A focused regression runs two actual releases with no local witness references,
 including an archived higher ordinal, and requires increasing ids, preserved old
 descriptor bytes, and retained inventory history.
+
+On 2026-09-07, concurrent branches independently produced v48. The cost-loop release
+at `4a9d2df0f994a230ceb4b589bf405022a2887abd` keeps its original
+`runtime/executors/open-cake-ir-b200-v48.json`. The R2 B200 release at
+`966eba4bcfa773b302501df45c9f640e95c7268b` is retained unchanged as
+`runtime/executors/open-cake-ir-b200-v48-r2.json` for identity reservation. Its replay
+uses the complete original Git tree at `966eba4`, including the descriptor's original
+path, Compiler v52 and all required source files; it must not load against current
+sources. Both commits remain in the integration ancestry. The R2 GPU records keep
+their original binding, and the combined runtime requires a separately derived successor.

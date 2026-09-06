@@ -85,7 +85,11 @@ Its configuration keys are `python`, `bubblewrap`, `runtime_roots`, `triton_vers
 `timeout_seconds`. The common toolchain binding includes bubblewrap bytes; the frozen
 Executor owns Python/package and source identity. Runtime mounts must contain the Python
 invocation and its dependencies (typically the selected environment and system runtime
-folders), never `/` or the user's home directory. The worker receives the Compiler package
+folders), never `/` or the user's home directory. Python invocation and runtime mount
+destinations retain their declared absolute paths, including Linux loader aliases such
+as `/lib` and `/lib64`. Host mount sources are fixed to the resolved paths used by privacy
+checks, and the toolchain identity binds both source and destination. Changing a guest-path
+alias cannot redirect the host source after admission. The worker receives the Compiler package
 read-only, an isolated temporary/cache/home filesystem, no network namespace, and only its
 build directory writable. No author's workspace is mounted. The existing process supervisor
 owns timeout, group termination and bounded retained output. A subprocess or filtered
@@ -101,7 +105,18 @@ launch resources. The candidate envelope and kernel source retain separate custo
 `evaluate_tile_workload` uses C's `materialize_case` and `reference_outputs`, then compares
 every output and verifies inputs remain unchanged. `TorchTensorLauncher` allocates from
 the ABI and calls the existing admitted CUDA Driver module/launch/unload lifecycle. It never
-executes candidate host wrappers. Launch observations become the ordinary EvaluationReceipt;
+executes candidate host wrappers. Outputs begin with poison values so an unwritten output
+cannot pass merely because allocation returned zeros. The existing evaluator command at
+`tools/evaluate_flash_candidate.py` also accepts `workload_tensors_v1`; its historical name
+remains the command boundary for existing frozen consumers. A `LoadedTorchTensorCandidate`
+keeps the CUBIN and inputs loaded across preflight, CUPTI cohorts and postflight. Each
+timing callback receives a separate poisoned output, prepared and synchronized before
+timing; every output is checked afterward by the common oracle. This prevents an early
+correct result from hiding later calls that do no work. Postflight poisons the output again
+and repeats the common oracle and input-immutability check. Interrupted timing retains the
+actual launch count and any already returned samples. Correctness and timing
+quality remain separate facts, and the raw counters retain all launches. Launch observations
+become the ordinary EvaluationReceipt;
 search, fresh confirmation, timing and attribution still use the existing RunEvaluator and
 broker protocol. A source-only export or a test-double receipt is not a real sealed GPU
 qualification. The correctness helper itself has no timing or promotion authority.
