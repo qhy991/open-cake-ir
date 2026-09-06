@@ -114,6 +114,7 @@ def _collect():
         raise ValueError("result must belong to the current stage")
     candidate = Path(os.environ["KERNELINFRA_CANDIDATE_DIR"]).resolve()
     plan = _read(candidate / "plan.json")
+    if plan.get("state") != "frozen":raise ValueError("collection requires a frozen plan")
     if sha256(Path(__file__).read_bytes()).hexdigest() != plan["collector_sha256"]:
         raise ValueError("collector differs from frozen plan")
     (stage / "collector.py").write_bytes(Path(__file__).read_bytes())
@@ -138,6 +139,8 @@ def _collect():
         raise RuntimeError("multiprocessor count differs")
     (driver_version,) = _driver_call(driver, "cuDriverGetVersion", outputs=1)
     runtime = {"python": sys.version, "torch": str(torch.__version__), "torch_cuda": str(torch.version.cuda), "cuda_driver": str(driver_version), "cuda_bindings": importlib.metadata.version("cuda-bindings"), "triton_package": importlib.metadata.version("triton")}
+    if any(runtime[key] != value for key, value in plan["expected_runtime"].items()):
+        raise ValueError("runtime differs from the frozen collection boundary")
     stream = driver.CUstream(torch.cuda.current_stream().cuda_stream)
     rows, launches = [], []
     for index, case in enumerate(plan["cases"]):
@@ -238,10 +241,16 @@ def _collect():
 
 def _fit(run, output):
     output = _external(output)
+    if output.exists():raise ValueError("fitting output must be a new external directory")
     run_result = _read(run / "result.json")
     if run_result["outcome"] != "completed" or run_result["validity"] != "valid":raise ValueError("whole collection did not pass")
     stage = run / "stages/collection"
     plan, observed = _read(stage / "plan.json"), _read(stage / "observations.json")
+    if plan.get("state") != "frozen" or sha256(Path(__file__).read_bytes()).hexdigest() != plan["collector_sha256"]:
+        raise ValueError("fitting must use the frozen collection instrument")
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+    if compiler.assess_file(stage / "0000/schedule.json").compiler_revision_id != plan["compiler_revision_id"]:
+        raise ValueError("fitting Compiler Revision differs")
     if not observed["quality_passed"]:raise ValueError("quality failed before fitting")
     rows = observed["rows"]
     for row, case in zip(rows, plan["cases"], strict=True):
