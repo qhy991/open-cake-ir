@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import json
 from hashlib import sha256
+import os
 from pathlib import Path
 import sys
 import subprocess
@@ -28,30 +29,39 @@ class IsolatedTritonCompiler:
                  triton_version: str, timeout_seconds: int = 600):
         if sys.platform != "linux":
             raise ValueError("native Triton build requires Linux bubblewrap filesystem isolation")
-        self.python = Path(python).parent.resolve(strict=True) / Path(python).name
+        self.python = Path(os.path.abspath(python))
         self.bubblewrap = Path(bubblewrap).resolve(strict=True)
-        self.runtime_roots = tuple(Path(p).resolve(strict=True) for p in runtime_roots)
+        # ELF interpreters and shared libraries name guest paths such as /lib64.
+        # Resolving those aliases here would mount only /usr/lib64 in the jail.
+        destinations = tuple(Path(os.path.abspath(p)) for p in runtime_roots)
+        self._runtime_mounts = tuple((p.resolve(strict=True), p) for p in destinations)
+        host_home = Path.home().resolve(strict=True)
         if (not self.python.is_file() or not self.bubblewrap.is_file() or not triton_version
             or not isinstance(timeout_seconds, int) or isinstance(timeout_seconds, bool)
             or timeout_seconds <= 0 or not self.runtime_roots
-            or any(not p.is_dir() or p == Path('/') or p == Path.home()
-                   or Path.home().is_relative_to(p) for p in self.runtime_roots)
+            or any(not source.is_dir() or host_home.is_relative_to(source)
+                   for source, _ in self._runtime_mounts)
             or not any(self.python.is_relative_to(p) for p in self.runtime_roots)):
             raise ValueError("isolated Triton runtime mount contract differs")
         self.triton_version = triton_version
         self.timeout_seconds = timeout_seconds
 
+    @property
+    def runtime_roots(self) -> tuple[Path, ...]:
+        """Declared guest destinations; checked host sources are fixed separately."""
+        return tuple(destination for _, destination in self._runtime_mounts)
+
     def check_executor(self, executor, *, author_workspace: str | Path) -> None:
         """Bind the isolated invocation to the already-admitted runtime owner."""
         host = executor.document["host_environment"]
         invocation = Path(host["python"]["invocation_path"])
-        expected_python = invocation.parent.resolve(strict=True) / invocation.name
+        expected_python = Path(os.path.abspath(invocation))
         if self.python != expected_python or self.triton_version != host["packages"]["triton"]:
             raise ValueError("isolated Triton runtime differs from the frozen Executor")
         workspace = Path(author_workspace).resolve()
         checkout = Path(__file__).resolve().parents[3]
-        if any(workspace.is_relative_to(root) or checkout.is_relative_to(root)
-               for root in self.runtime_roots):
+        if any(workspace.is_relative_to(source) or checkout.is_relative_to(source)
+               for source, _ in self._runtime_mounts):
             raise ValueError("runtime mounts must not expose author workspace or Compiler checkout")
 
     @property
@@ -60,7 +70,8 @@ class IsolatedTritonCompiler:
         return {"kind": "bubblewrap_triton_kernel_v1", "python": str(self.python),
                 "bubblewrap": str(self.bubblewrap),
                 "bubblewrap_sha256": sha256(self.bubblewrap.read_bytes()).hexdigest(),
-                "runtime_roots": [str(p) for p in self.runtime_roots],
+                "runtime_roots": [{'source': str(source), 'destination': str(destination)}
+                                  for source, destination in self._runtime_mounts],
                 "triton_version": self.triton_version, "timeout_seconds": self.timeout_seconds}
 
     @property
@@ -79,8 +90,8 @@ class IsolatedTritonCompiler:
             argv = [str(self.bubblewrap), '--die-with-parent', '--new-session',
                     '--unshare-all', '--clearenv', '--proc', '/proc', '--dev', '/dev',
                     '--tmpfs', '/tmp', '--dir', '/home', '--dir', '/home/build']
-            for path in self.runtime_roots:
-                argv += ['--ro-bind', str(path), str(path)]
+            for source_path, destination in self._runtime_mounts:
+                argv += ['--ro-bind', str(source_path), str(destination)]
             argv += ['--ro-bind', str(package_root), '/compiler-src',
                      '--bind', str(root), '/build', '--chdir', '/build',
                      '--setenv', 'HOME', '/home/build', '--setenv', 'PATH', '/usr/bin:/bin',

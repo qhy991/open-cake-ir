@@ -624,11 +624,16 @@ class NativeTritonEnvironment:
         self._toolchain = toolchain
         self._requirements = json.loads(json.dumps(dict(toolchain_requirements)))
         self._abi = workload.tensor_abi(case_id)
+        # The frozen Compiler owns backend spelling (for example int32 -> *i32).
+        # Consume its existing table instead of assuming Workload names are Triton ABI names.
+        from open_cake_ir.compiler.emit_triton import _TritonEmitter
+        from open_cake_ir.compiler.ir import DType
+        expected_signature = {arg.name: _TritonEmitter._POINTER[DType(arg.dtype)] for arg in self._abi}
         signature = self._requirements.get('signature')
         if (self._requirements.get('compiler') != 'triton' or self._requirements.get('target') != 'sm_100a'
-            or signature != {arg.name: '*' + arg.dtype for arg in self._abi}):
+            or signature != expected_signature):
             raise ValueError('native Triton signature differs from the Workload ABI')
-        self._requirements['signature'] = {arg.name: '*' + arg.dtype for arg in self._abi}
+        self._requirements['signature'] = expected_signature
         self.authority_document = json.loads(json.dumps(authority_document, sort_keys=True))
         self.canonical_sha256 = sha256(json.dumps(self.authority_document, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
