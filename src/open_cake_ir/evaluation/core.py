@@ -611,32 +611,64 @@ def evaluate_tile_workload(candidate: LaunchableCandidate, workload: WorkloadCon
             'launch_receipt': launch_bytes, 'timing_samples': b'null'})
 
 
+class LoadedTorchTensorCandidate:
+    """One Workload-shaped argument set and admitted CUBIN for preflight/timing/postflight."""
+
+    def __init__(self, candidate, manifest, inputs, admission):
+        from .cuda_driver import LoadedCudaCandidate
+        import torch
+        self.candidate = candidate
+        self.manifest = manifest
+        self.admission = admission
+        self.inputs = {name: list(values) for name, values in inputs.items()}
+        dtypes = {'fp32': torch.float32, 'bf16': torch.bfloat16, 'fp16': torch.float16, 'int32': torch.int32}
+        self.arguments = [
+            torch.tensor(inputs[name], dtype=dtypes[dtype], device='cuda:0').reshape(shape)
+            if mode == 'input' else torch.full(shape,
+                float('nan') if dtype != 'int32' else -(2**31),
+                dtype=dtypes[dtype], device='cuda:0')
+            for name, shape, dtype, mode in manifest.tensor_abi
+        ]
+        self.loaded = LoadedCudaCandidate.load(candidate, candidate.artifact_payloads['cubin'], manifest, admission)
+
+    def launch(self):
+        import torch
+        self.loaded.launch(self.arguments, tensor_contract=self.manifest,
+                           stream=torch.cuda.current_stream().cuda_stream)
+
+    def launch_tensors(self, candidate, manifest, inputs):
+        from dataclasses import asdict
+        if (candidate.canonical_sha256 != self.candidate.canonical_sha256
+            or manifest.canonical_sha256 != self.manifest.canonical_sha256
+            or inputs != self.inputs):
+            raise ValueError('loaded tensor assay input or candidate differs')
+        before = self.loaded.launch_calls
+        self.launch()
+        observed = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
+                    in zip(manifest.tensor_abi, self.arguments, strict=True) if mode == 'output'}
+        after = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
+                 in zip(manifest.tensor_abi, self.arguments, strict=True) if mode == 'input'}
+        return observed, after, {'candidate_sha256': candidate.candidate_sha256,
+            'kernel_calls': self.loaded.launch_calls - before, 'fallback_calls': 0,
+            'manifest_sha256': manifest.canonical_sha256, 'device_admission': asdict(self.admission),
+            'module_unloaded': self.loaded.closed, 'resources': self.loaded.resources}
+
+    def close(self):
+        import torch
+        self.loaded.close(synchronize=torch.cuda.synchronize)
+
+
 class TorchTensorLauncher:
-    """Allocate by Workload ABI and use the existing admitted Driver CUBIN lifecycle."""
+    """Single-launch convenience over the shared loaded-tensor lifecycle."""
 
     def __init__(self, admission):
         self.admission = admission
 
     def launch_tensors(self, candidate, manifest, inputs):
-        from dataclasses import asdict
-        from .cuda_driver import LoadedCudaCandidate
-        import torch
-        dtypes = {'fp32': torch.float32, 'bf16': torch.bfloat16, 'fp16': torch.float16, 'int32': torch.int32}
-        arguments = [
-            torch.tensor(inputs[name], dtype=dtypes[dtype], device='cuda:0').reshape(shape)
-            if mode == 'input' else torch.empty(shape, dtype=dtypes[dtype], device='cuda:0')
-            for name, shape, dtype, mode in manifest.tensor_abi
-        ]
-        loaded = LoadedCudaCandidate.load(candidate, candidate.artifact_payloads['cubin'], manifest, self.admission)
+        loaded = LoadedTorchTensorCandidate(candidate, manifest, inputs, self.admission)
         try:
-            loaded.launch(arguments, tensor_contract=manifest, stream=torch.cuda.current_stream().cuda_stream)
+            observed, after, receipt = loaded.launch_tensors(candidate, manifest, inputs)
         finally:
-            loaded.close(synchronize=torch.cuda.synchronize)
-        observed = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
-                    in zip(manifest.tensor_abi, arguments, strict=True) if mode == 'output'}
-        after = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
-                 in zip(manifest.tensor_abi, arguments, strict=True) if mode == 'input'}
-        return observed, after, {'candidate_sha256': candidate.candidate_sha256,
-            'kernel_calls': loaded.launch_calls, 'fallback_calls': 0,
-            'manifest_sha256': manifest.canonical_sha256, 'device_admission': asdict(self.admission),
-            'module_unloaded': loaded.closed, 'resources': loaded.resources}
+            loaded.close()
+        receipt['module_unloaded'] = loaded.loaded.closed
+        return observed, after, receipt

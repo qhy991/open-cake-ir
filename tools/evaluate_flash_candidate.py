@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Evaluate one sealed Flash-KMeans CUBIN on an already allocated exclusive B200."""
+"""Evaluate one sealed CUBIN on an already allocated exclusive B200.
+
+The historical command path retains Flash-KMeans and the explicit Workload tensor ABI.
+"""
 
 from __future__ import annotations
 
@@ -34,6 +37,11 @@ from open_cake_ir.evaluation import (  # noqa: E402
     summarize_cohort,
 )
 from open_cake_ir.lab.executor import ExecutorRevision  # noqa: E402
+from open_cake_ir.evaluation.core import (  # noqa: E402
+    EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest,
+    evaluate_tile_workload, parse_launch_manifest,
+)
+from open_cake_ir.evaluation.tile_workloads import materialize_case  # noqa: E402
 from open_cake_ir.lab.process import (  # noqa: E402
     SupervisedProcessOutputLimit,
     SupervisedProcessTimeout,
@@ -101,7 +109,7 @@ class _Authority:
     request_root: Path
     executor: ExecutorRevision
     workload: WorkloadContract
-    manifest: CudaLaunchManifest
+    manifest: CudaLaunchManifest | TensorLaunchManifest
     candidate: LaunchableCandidate
     payloads: Mapping[str, bytes]
     case_id: str
@@ -133,7 +141,7 @@ def _load_authority(request_path: Path) -> _Authority:
     workload = WorkloadContract.load(Path(str(request["workload_path"])).resolve(strict=True))
     if workload.canonical_sha256 != request["workload_sha256"]:
         raise ValueError("worker Workload bytes differ")
-    manifest = CudaLaunchManifest.from_dict(json.loads(payloads["launch_manifest"]))
+    manifest = parse_launch_manifest(json.loads(payloads["launch_manifest"]))
     candidate = LaunchableCandidate(
         candidate_sha256=str(request["candidate_sha256"]),
         target=str(request["target"]),
@@ -149,6 +157,8 @@ def _load_authority(request_path: Path) -> _Authority:
         raise ValueError("worker Evaluation purpose differs")
     case_id = str(request["case_id"])
     workload.case(case_id)
+    if isinstance(manifest, TensorLaunchManifest):
+        manifest.check_workload(workload, case_id)
     return _Authority(
         request,
         request_root,
@@ -159,6 +169,64 @@ def _load_authority(request_path: Path) -> _Authority:
         payloads,
         case_id,
     )
+
+
+def _evaluate_tile_candidate(authority, result, helper, admission, collect_timing):
+    """Use the common oracle and one loaded module across correctness and timing."""
+    inputs = materialize_case(authority.workload, authority.case_id)
+    loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
+    counters = result['counters']
+    counters['module_loads'] = 1
+    # Attribution's child supplies correctness; the parent adds the profiler assay.
+    purpose = 'confirmatory' if authority.request['purpose'] == 'attribution' else authority.request['purpose']
+    protocol = EvaluationProtocol('workload-tensor-worker-correctness', purpose,
+        authority.workload.canonical_sha256, authority.case_id, 'none')
+    try:
+        preflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded)
+        counters['preflight_calls'] = 1
+        passed = preflight.correctness_passed
+        metrics = dict(preflight.correctness)
+        cohorts = []
+        timing = None
+        correctness_calls = 1
+        if collect_timing and passed:
+            strict_cupti = StrictCuptiBenchmark(helper)
+            for _ in range(5):
+                samples = [float(value) for value in strict_cupti(loaded.launch,
+                    dry_run_iters=11, repeat_iters=25, cold_l2_cache=True, use_cuda_graph=False)]
+                if len(samples) != 25:
+                    raise ValueError('worker CUPTI sample count differs')
+                cohorts.append(samples)
+            postflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded)
+            correctness_calls += 1
+            passed = passed and postflight.correctness_passed
+            metrics = dict(postflight.correctness)
+            timing = {
+                'measurement_quality_passed': all(summarize_cohort(s)['cv'] <= 0.05 for s in cohorts),
+                'pooled_median_ms': statistics.median(v for s in cohorts for v in s),
+                'cohort_count': 5, 'samples_per_cohort': 25,
+            }
+        correctness_path = authority.request_root / 'correctness-output.json'
+        launch_path = authority.request_root / 'launch-receipt.json'
+        _write_new(correctness_path, {'passed': passed, 'metrics': metrics,
+            'preflight': dict(preflight.correctness), 'correctness_launches': correctness_calls})
+        _write_new(launch_path, {'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
+            'candidate_sha256': authority.candidate.candidate_sha256,
+            'correctness_launches': correctness_calls, 'fallback_calls': 0,
+            'resources': loaded.loaded.resources})
+        artifacts = {'correctness_output': correctness_path.name, 'launch_receipt': launch_path.name}
+        if collect_timing:
+            timing_path = authority.request_root / 'timing-samples.json'
+            _write_new(timing_path, {'cohorts_ms': cohorts} if cohorts else {'not_measured': 'correctness_rejected'})
+            artifacts['timing_samples'] = timing_path.name
+        counters['kernel_calls'] = loaded.loaded.launch_calls
+        counters['timing_samples'] = sum(len(s) for s in cohorts)
+        # The common receipt describes the final correctness launch; counters and
+        # the raw launch artifact retain the separate preflight and timing work.
+        result['receipt'] = {'correctness_passed': passed, 'correctness': metrics,
+            'kernel_calls': 1, 'fallback_calls': 0, 'timing': timing, 'artifacts': artifacts}
+    finally:
+        loaded.close()
 
 
 def _evaluate_candidate(
@@ -186,6 +254,9 @@ def _evaluate_candidate(
         != admission.gpu_uuid
     ):
         raise ValueError("profile child CUDA device differs from parent admission")
+    if isinstance(authority.manifest, TensorLaunchManifest):
+        _evaluate_tile_candidate(authority, result, helper, admission, collect_timing)
+        return
     case = authority.workload.case(authority.case_id)
     shape = _object(case["shape"], "workload.case.shape")
     contract = CudaTensorContract(

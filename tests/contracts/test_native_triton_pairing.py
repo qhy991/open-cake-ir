@@ -259,8 +259,35 @@ class NativePairingContractTests(unittest.TestCase):
                     compiler.compile(self.native['kernel_source'].encode(), self.lowering.toolchain_requirements)
             argv = run.call_args.args[0]
             mounts = [argv[i + 1:i + 3] for i, value in enumerate(argv) if value == '--ro-bind']
-            self.assertIn([str(alias), str(alias)], mounts)
+            self.assertIn([str(libraries), str(alias)], mounts)
             self.assertNotIn([str(libraries), str(libraries)], mounts)
+
+    def test_runtime_alias_retarget_cannot_change_the_checked_host_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            runtime = root / 'runtime'; runtime.mkdir()
+            python = runtime / 'python'; python.write_bytes(b'fixture python')
+            bwrap = root / 'bwrap'; bwrap.write_bytes(b'fixture bwrap')
+            libraries = root / 'libraries'; libraries.mkdir()
+            workspace = root / 'author'; workspace.mkdir()
+            alias = workspace / 'runtime-link'; alias.symlink_to(libraries, target_is_directory=True)
+            with mock.patch('open_cake_ir.lab.triton_build.sys.platform', 'linux'):
+                compiler = IsolatedTritonCompiler(python=str(python), bubblewrap=str(bwrap),
+                    runtime_roots=[str(runtime), str(alias)], triton_version='fixture')
+            executor = SimpleNamespace(document={'host_environment': {
+                'python': {'invocation_path': str(python)}, 'packages': {'triton': 'fixture'}}})
+            compiler.check_executor(executor, author_workspace=workspace)
+            identity = compiler.identity
+            alias.unlink(); alias.symlink_to(workspace, target_is_directory=True)
+            with mock.patch('open_cake_ir.lab.triton_build.run_supervised',
+                            return_value=subprocess.CompletedProcess([], 1, b'', b'fixture stop')) as run:
+                with self.assertRaises(RunProtocolFault):
+                    compiler.compile(self.native['kernel_source'].encode(), self.lowering.toolchain_requirements)
+            argv = run.call_args.args[0]
+            mounts = [argv[i + 1:i + 3] for i, value in enumerate(argv) if value == '--ro-bind']
+            self.assertIn([str(libraries), str(alias)], mounts)
+            self.assertNotIn(str(workspace), [source for source, _ in mounts])
+            self.assertEqual(compiler.identity, identity)
 
     def test_runtime_aliases_cannot_hide_home_or_author_workspace(self):
         with tempfile.TemporaryDirectory() as directory:
