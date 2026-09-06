@@ -239,6 +239,46 @@ class Schedule:
             depth += 1
         return depth
 
+    def enclosing_loops(self, operation: Operation) -> tuple[TileLoop, ...]:
+        """Lexical loop chain, outermost first, derived from existing bodies.
+
+        Ambiguous direct ownership and cycles remain Verifier findings; this query
+        terminates on malformed schedules so assessment can localize those failures.
+        """
+
+        direct = [loop for loop in self.tile_loops if operation.op_id in loop.body]
+        if len(direct) != 1:
+            return ()
+        chain = [direct[0]]
+        parent = self.loop_parent()
+        seen = {direct[0].name}
+        while chain[-1].name in parent:
+            name = parent[chain[-1].name]
+            loop = self.tile_loop(name)
+            if name in seen or loop is None:
+                break
+            seen.add(name)
+            chain.append(loop)
+        return tuple(reversed(chain))
+
+    def loop_operations(self, loop: TileLoop) -> tuple[Operation, ...]:
+        """Expand a loop body in order, including descendants, without new state."""
+
+        result: list[Operation] = []
+        seen: set[str] = {loop.name}
+        pending = list(reversed(loop.body))
+        while pending:
+            entry = pending.pop()
+            child = self.tile_loop(entry)
+            operation = self.operation(entry)
+            if child is not None:
+                if child.name not in seen:
+                    seen.add(child.name)
+                    pending.extend(reversed(child.body))
+            elif operation is not None:
+                result.append(operation)
+        return tuple(result)
+
     def access_map(self, operation: str, buffer: str) -> AccessMap | None:
         return next(
             (
