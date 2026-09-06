@@ -416,6 +416,19 @@ def _verify_loop_nest(schedule: Schedule, out: _Collector) -> None:
                 break
             seen.add(cursor)
 
+    # Child-loop placement is part of declaration order, just like direct operations.
+    # A non-contiguous body would move a root/outer invariant across a loop boundary.
+    for index, loop in enumerate(schedule.tile_loops):
+        positions = [order[op.op_id] for op in schedule.loop_operations(loop)]
+        if positions and positions != list(range(min(positions), max(positions) + 1)):
+            out.add(
+                "LOOP_BODY_SCOPE_ORDER",
+                f"tile_loops[{index}].body",
+                f"expanded body of {loop.name!r} must be a contiguous sequence in "
+                "operation declaration order",
+                category,
+            )
+
 
 # ------------------------------------------------------------ hardware conformance
 
@@ -1355,7 +1368,7 @@ def _verify_data_consistency(schedule: Schedule, out: _Collector) -> None:
     # nesting alone. The exception in registers is a reduction's result, which the loop
     # carries by construction.
     for loop in schedule.tile_loops:
-        body = set(loop.body)
+        body = {op.op_id for op in schedule.loop_operations(loop)}
         for op_id in loop.body:
             operation = schedule.operation(op_id)
             if (
@@ -2652,6 +2665,16 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         "ACCESS_LOOP_UNKNOWN",
                         component_path,
                         f"unknown loop iterator {component.name!r}",
+                        category,
+                    )
+                elif component.name not in {
+                    loop.iterator for loop in schedule.enclosing_loops(operation)
+                }:
+                    out.add(
+                        "ACCESS_LOOP_SCOPE",
+                        component_path,
+                        f"loop coordinate {component.name!r} is not visible in "
+                        f"operation {operation.op_id!r}'s lexical scope",
                         category,
                     )
             elif component.source is AccessIndexKind.BUFFER:
