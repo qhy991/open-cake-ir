@@ -39,3 +39,4 @@ jobs:
           tests.contracts.test_compiled_resources
           tests.contracts.test_metal
           tests.contracts.test_metal_runtime
+          tests.contracts.test_metal_benchmark
