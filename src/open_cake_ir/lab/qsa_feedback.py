@@ -31,6 +31,22 @@ def _freeze(document: Mapping[str, object]) -> Mapping[str, object]:
     return MappingProxyType(cast(dict[str, object], _plain(document)))
 
 
+def _bounded_empirical_cost(cost: object) -> Mapping[str, object]:
+    """Keep the decision and identity; supplier payloads stay in the source report."""
+
+    if not isinstance(cost, Mapping):
+        raise ValueError("QSA empirical cost projection differs")
+    return {
+        key: cost[key]
+        for key in (
+            "kind", "model_id", "model_compiler_revision_id",
+            "model_compiler_revision_sha256", "target", "covered",
+            "predicted_kernel_us", "empirical_range_us", "reason",
+        )
+        if key in cost
+    }
+
+
 def qsa_compiler_feedback(
     assessment: Assessment,
     *,
@@ -48,6 +64,9 @@ def qsa_compiler_feedback(
         }
         for finding in assessment.findings
     ]
+    profile = None if static_profile is None else dict(static_profile)
+    if profile is not None and "empirical_cost" in profile:
+        profile["empirical_cost"] = _bounded_empirical_cost(profile["empirical_cost"])
     feedback: dict[str, object] = {
         "schema_version": 1,
         "kind": "compiler",
@@ -55,7 +74,7 @@ def qsa_compiler_feedback(
         "accepted": assessment.accepted,
         "lowering_eligible": assessment.lowering_eligible,
         "findings": findings,
-        "static_profile": None if static_profile is None else dict(static_profile),
+        "static_profile": profile,
         "actionable": not assessment.lowering_eligible,
     }
     if not assessment.lowering_eligible:
@@ -149,17 +168,21 @@ def _bounded_profile(profile: Mapping[str, object]) -> Mapping[str, object]:
         "ncu_estimates": retained_metrics,
         "ncu_abstentions": abstained_metrics,
         "abstentions": profile.get("abstentions", []),
-        **{
-            key: profile[key]
-            for key in ("findings", "empirical_cost")
-            if key in profile
-        },
+        **({"findings": profile["findings"]} if "findings" in profile else {}),
+        **({"empirical_cost": _bounded_empirical_cost(profile["empirical_cost"])}
+           if "empirical_cost" in profile else {}),
     }
 
 
 def _bounded_compiler_feedback(compiler: Mapping[str, object]) -> Mapping[str, object]:
     if compiler.get("kind") != "open_cake_program_static_profile":
-        return dict(compiler)
+        feedback = dict(compiler)
+        profile = compiler.get("static_profile")
+        if isinstance(profile, Mapping) and "empirical_cost" in profile:
+            feedback["static_profile"] = {
+                **profile, "empirical_cost": _bounded_empirical_cost(profile["empirical_cost"]),
+            }
+        return feedback
     nodes = compiler.get("nodes")
     if not isinstance(nodes, Mapping):
         raise ValueError("QSA Program static profile nodes differ")

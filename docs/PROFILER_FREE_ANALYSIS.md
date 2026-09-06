@@ -105,8 +105,13 @@ QSA evaluator 为已通过 Compiler 检查的节点保留局部 Finding，包括
 和 `missing`，未知值仍为 `null`。消费者应读取对象的 `metric` 取得名称，
 不再把对象当字符串。已有的 `ncu_estimates` 继续承载非未知指标，不增加平行兼容字段。
 
-输入 profile 若带有 `empirical_cost`，投影保留其条件估算或拒绝原因、上下文及
-外部报告的来源；缺失时不生成此字段。当前 QSA evaluator 未请求经验模型，
+输入 profile 若带有 `empirical_cost`，投影只保留 `kind`、`model_id`、
+`model_compiler_revision_id`、`model_compiler_revision_sha256`、`target`、`covered`、
+`predicted_kernel_us`、`empirical_range_us` 和 `reason`；缺失时不生成此字段。
+估算仍以供应方声明的环境为条件。完整的 `context` 和 `reported_evidence` 留在
+已有的源模型或报告中，通过模型及 Compiler 身份关联；它们允许供应方附带任意内容，
+所以不进入 provider 反馈。此摘要规则同时适用于 Compiler 反馈和终态投影。
+当前 QSA evaluator 未请求经验模型，
 该能力只保证已有元数据的传递。反馈只包含可定位的摘要，不包含原始样本、完整报告、
 生成源码或汇编，不产生新的瓶颈排序或测量。Direct CUDA 保留本臂已有诊断；
 基础设施错误仍不可用于指导候选修改，后续请求继续使用原有 task 线程和计数。

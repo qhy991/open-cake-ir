@@ -281,21 +281,33 @@ class QsaFeedbackTest(unittest.TestCase):
         profile = self.compiler.profile(assessment).as_dict()
         self.assertEqual(feedback["static_profile"], profile)
 
-    def test_conditional_empirical_estimate_and_refusal_survive_next_turn(self) -> None:
+    def test_empirical_next_turn_keeps_decisions_and_leaves_supplier_payloads_in_source(self) -> None:
         schedule = json.loads((ROOT / "corpus/schedules/qsa-score-topk-t32768.json").read_text())
         assessment = self.compiler.assess(schedule)
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        model_path = Path(directory.name) / "model.json"
+        result_path = Path(directory.name) / "result.json"
         for covered in (True, False):
             with self.subTest(covered=covered):
-                model = EmpiricalCostModel({
+                document = {
                     "schema_version": 2, "model_id": "synthetic-feedback-transport-only",
                     "compiler_revision_id": assessment.compiler_revision_id if covered else "other-revision",
                     "compiler_revision_sha256": assessment.compiler_revision_sha256,
                     "target": "sm_100a",
                     "context": {
                         "timer": "synthetic; no measurement", "cache_protocol": "synthetic",
-                        "runtime": {"compiler_version": "synthetic"}, "input_scope": "software fixture only",
+                        "runtime": {
+                            "compiler_version": "synthetic",
+                            "supplier_detail": "EXCLUDED_RUNTIME_PAYLOAD" * 100,
+                        },
+                        "input_scope": "software fixture only",
                     },
-                    "reported_evidence": {"kind": "synthetic; no calibration qualification"},
+                    "reported_evidence": {
+                        "kind": "synthetic; no calibration qualification",
+                        "raw_samples_us": [10.0] * 10000,
+                        "raw_report": "EXCLUDED_EMPIRICAL_REPORT",
+                    },
                     "curves": [{
                         "template": schedule,
                         "varying_dimensions": [{"buffer": "index_q", "dimension": 0}],
@@ -303,7 +315,10 @@ class QsaFeedbackTest(unittest.TestCase):
                         "points": [{"extent": 32768, "kernel_us": 10}, {"extent": 65536, "kernel_us": 20}],
                         "relative_error_envelope": 0.1,
                     }],
-                })
+                }
+                source_text = json.dumps(document)
+                model_path.write_text(source_text)
+                model = EmpiricalCostModel.load(model_path)
                 profile = self.compiler.profile(assessment, cost_model=model).as_dict()
                 result = self._produced_result()
                 result["metrics"]["compile"]["nodes"]["score_topk"] = profile
@@ -313,7 +328,11 @@ class QsaFeedbackTest(unittest.TestCase):
                     maximum_candidates_per_turn=3, result=result,
                 )
                 cost = request.feedback["compiler"]["nodes"]["score_topk"]["empirical_cost"]
-                self.assertEqual(cost, profile["empirical_cost"])
+                expected = {
+                    key: value for key, value in profile["empirical_cost"].items()
+                    if key not in {"context", "reported_evidence"}
+                }
+                self.assertEqual(cost, expected)
                 self.assertEqual(cost["covered"], covered)
                 if covered:
                     self.assertEqual(cost["predicted_kernel_us"], 10)
@@ -322,6 +341,30 @@ class QsaFeedbackTest(unittest.TestCase):
                     self.assertIsNone(cost["predicted_kernel_us"])
                     self.assertIsNone(cost["empirical_range_us"])
                     self.assertIn("Revision", cost["reason"])
+                compiler_feedback = qsa_compiler_feedback(assessment, static_profile=profile)
+                self.assertEqual(compiler_feedback["static_profile"]["empirical_cost"], expected)
+                for metrics in (
+                    result["metrics"]["compile"],
+                    # Retained Compiler feedback may contain the full original profile.
+                    {**compiler_feedback, "static_profile": profile},
+                ):
+                    result["metrics"]["compile"] = metrics
+                    result_path.write_text(json.dumps(result))
+                    turn = self._cli(
+                        "turn", "--arm", "open_cake", "--run-id", "open_cake-1",
+                        "--turn", "2", "--cumulative-provider-tokens", "1200",
+                        "--thread-id", "same-thread", str(result_path),
+                    )
+                    self.assertEqual(turn["thread_id"], "same-thread")
+                    projected = turn["feedback"]["compiler"]
+                    node = (projected["nodes"]["score_topk"]
+                            if "nodes" in projected else projected["static_profile"])
+                    self.assertEqual(node["empirical_cost"], expected)
+                    self.assertNotIn("raw_samples_us", json.dumps(turn))
+                    self.assertNotIn("EXCLUDED_", json.dumps(turn))
+                self.assertEqual(model_path.read_text(), source_text)
+                self.assertEqual(profile["empirical_cost"]["context"], document["context"])
+                self.assertEqual(profile["empirical_cost"]["reported_evidence"], document["reported_evidence"])
 
     def test_direct_cuda_keeps_its_own_diagnostics_without_cake_profile(self) -> None:
         result = _completed()
