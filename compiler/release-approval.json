@@ -3,13 +3,13 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "d1cd9f0fca09a3bcfda78b16bd44a2978d130266dcf979a83885c94d91d8d860"
+    "canonical_sha256": "5b68d66f92b04cbdf20479610e5972cb0388ad23b5330b33345291ac39e831c0"
   },
   "reviewer": {
     "kind": "agent_session",
     "model": "gpt-6-astra",
-    "session_id": "01a074f9-45ac-75a0-9d05-df06de5c3e07",
-    "author_session_id": "01a0746d-ed07-7750-9b06-364fb193436e"
+    "session_id": "01a074bc-2bb0-7371-8e2e-4d6b66cf016a",
+    "author_session_id": "01a074ae-45d0-7ec2-993a-85551751aae3"
   },
-  "approval_basis": "Independent review of frozen commit 5b7510c8f2e8ca6cd2c245cbeec550a3f0daf802, including the original frontend review against bc98679 and follow-up of b0ec41a. The previously demonstrated loss of indexed access semantics is repaired: original nested-index, program-index and broadcast-slice reproductions now fail with located FrontendError; CLI lower exits 2 without output. Rank-compatible nested indexing and range slices are also rejected. Supported load/store slices retain exact offsets/extents, and invalid local accesses still reach the existing verifier. Independently reran 24 frontend/release-approval contract tests, all passing; rebuilt the complete 77/77 Corpus Gate with 101 bound sources and verified exact normalized equality with the bound report. Actual latest session metadata confirms gpt-6-astra and the distinct reviewer session. Original and follow-up reports are preserved outside the checkout at /Users/haiyan-infiniai/Documents/Codex/2026-09-06/open-cake-python-frontend/review/REVIEW.md and REVIEW-5b7510c.md. This approval establishes static Compiler/frontend review and Corpus Gate acceptance only; it does not establish GPU compilation, numerical correctness, runtime/Executor qualification, profiling or performance. No expectations or implementation were changed by the reviewer."
+  "approval_basis": "Independent review of 1fca2e60f435e071ca2306a1c9d66f9ac4451660 against b6b7743. Actual current-turn gpt-6-astra model and reviewer session 01a074bc-2bb0-7371-8e2e-4d6b66cf016a verified from rollout metadata, distinct from author 01a074ae-45d0-7ec2-993a-85551751aae3; no credentials accessed. Full canonical v46-draft Gate matches: 77/77 cases, 103 sources, unchanged Corpus expectations. Python 3.14.6: all 35 compiled-resource, profile-model, QSA-feedback and documentation tests passed. Independent no-GPU-import portable replay yields 41 compiled profiles exactly matching retained observations plus 2 explicitly static uncovered backends. Synthetic public Lab builder probe preserves 8 artifact roles and launch metadata; wrong target, auxiliary scratch and multi-CTA cluster are refused. Assessment replay/context binding, resource units, upper-bound semantics and trusted-collector limits reviewed. Existing released-lock qualification was not claimed to pass against draft sources. Remote real compilation is retained author evidence, not a fresh reviewer run. No kernel timing, GPU correctness, NCU validation or ranking calibration qualification. Report: /Users/haiyan-infiniai/Documents/Codex/2026-09-06/open-cake-cost-model/review/review.md."
 }
