@@ -25,6 +25,7 @@ The [English guide](wiki/README.md) also links every learning page. Use the [Glo
 | Running FP32 elementwise and row reductions on Apple M2 | [Metal guide](../metal.md) |
 | IR objects, implementation ownership and extension points | [IR guide](IR_GUIDE.md) |
 | Initialization, accumulation and stores in two nested TileLoops | [Triton loop scopes](TRITON_LOOP_SCOPES.md) |
+| Matched IR/native Triton optimization from one baseline | [Paired Triton](PAIRED_TRITON.md) |
 | Operating a frozen Study | [Runbook](../RUNBOOK.md) |
 | Understanding acceptance evidence | [Acceptance gates](../ACCEPTANCE_GATES.md) |
 | Comparing paper claims and local evidence | [Paper contract](../PAPER_CONTRACT.md) |

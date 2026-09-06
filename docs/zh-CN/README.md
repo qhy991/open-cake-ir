@@ -32,6 +32,7 @@ GPU 是擅长让很多小组同时算题的处理器。算子是一道明确的�
 | 在 Apple M2 上运行 FP32 逐元素计算与行归约 | [Metal 入门](../metal.zh-CN.md) |
 | 理解 IR 对象、代码组织与扩展位置 | [当前 IR 详解](../IR_GUIDE.md) |
 | 两层 TileLoop 怎样初始化、累积和写回 | [Triton 循环作用域](../TRITON_LOOP_SCOPES.md) |
+| IR 与原生 Triton 怎样从同一基线进行配对优化 | [Triton 配对流程](../PAIRED_TRITON.md) |
 | 从准备到真实实验应该按什么顺序 | [执行手册](RUNBOOK.md) |
 | 什么证据足够进入下一步 | [验收规则](ACCEPTANCE_GATES.md) |
 | 论文结果与本地结果有什么区别 | [论文对照约定](PAPER_CONTRACT.md) |

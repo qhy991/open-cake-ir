@@ -32,6 +32,8 @@ from .environments import AuthoringEnvironment, CandidateSubmission, Environment
 from .executor import ExecutorRevision
 from .faults import RunProtocolFault
 from .routing import CANDIDATE, COST_MODEL, route_rejection
+from .pairing import comparison_arm, bind_baseline, native_baseline, triton_optimization_analysis_plan
+from open_cake_ir.evaluation.core import parse_launch_manifest
 from .portfolio import KernelSeed
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1,
@@ -55,6 +57,7 @@ _ARM_ARTIFACT_ROLES = {
         "launch_manifest",
     },
     "direct_cuda": {"authored_source", "ptx", "cubin", "sass", "launch_manifest"},
+    "native_triton": {"authored_source", "compiler_expanded_source", "ptx", "cubin", "launch_manifest"},
 }
 _STUDY_FIELDS = {
     "schema_version",
@@ -279,6 +282,8 @@ def _scientific_analysis_plan_version(
 ) -> str:
     """Admit the current plan plus bounded read compatibility for frozen v1 plans."""
 
+    if analysis == triton_optimization_analysis_plan():
+        return "triton_optimization_v1"
     if analysis == _SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2:
         return "two_part_v2"
     if set(analysis) != {
@@ -845,7 +850,7 @@ def _replay_launchable_candidate(
         or set(artifact_payloads) != set(artifact_roles)
     ):
         raise ValueError("launchable candidate arm artifact roles differ")
-    manifest = CudaLaunchManifest.from_dict(json.loads(artifact_payloads["launch_manifest"]))
+    manifest = parse_launch_manifest(json.loads(artifact_payloads["launch_manifest"]))
     if artifact_roles["launch_manifest"] != manifest.canonical_sha256:
         raise ValueError("launchable candidate launch manifest seal differs")
     candidate = LaunchableCandidate(
@@ -1396,12 +1401,10 @@ class CampaignLock:
                 resolved.get("arm_environment_sha256"),
                 "campaign_lock.resolved_inputs.arm_environment_sha256",
             )
-            if set(arms) != {"open_cake", "direct_cuda"} or set(arm_hashes) != {
-                "open_cake",
-                "direct_cuda",
-            }:
+            comparison = comparison_arm(arms)
+            if set(arm_hashes) != set(arms):
                 raise ValueError("Campaign Lock Authoring Environment set differs")
-            for arm_name in ("open_cake", "direct_cuda"):
+            for arm_name in arms:
                 environment = _object(
                     arms.get(arm_name),
                     f"campaign_lock.resolved_inputs.arm_environments.{arm_name}",
@@ -1425,9 +1428,9 @@ class CampaignLock:
                 "campaign_lock.resolved_inputs.evidence_policy",
             )
             expected_arms = (
-                ["direct_cuda", "open_cake"]
+                sorted([comparison, "open_cake"])
                 if claim_scope in _ONE_RUN_PER_ARM_SCOPES
-                else ["direct_cuda"] * 3 + ["open_cake"] * 3
+                else sorted([comparison] * 3 + ["open_cake"] * 3)
             )
             if sorted(name.rsplit("-", 1)[0] for name in run_order) != expected_arms:
                 raise ValueError("matched Campaign Lock Run allocation differs")
@@ -1486,9 +1489,9 @@ class CampaignLock:
                 raise ValueError("artifact optimization Campaign Lock Analysis Plan differs")
             estimand = None
         elif study_kind == "matched_search":
-            _scientific_analysis_plan_version(
-                analysis, "campaign_lock.analysis_plan"
-            )
+            version = _scientific_analysis_plan_version(analysis, "campaign_lock.analysis_plan")
+            if (comparison == "native_triton") != (version == "triton_optimization_v1"):
+                raise ValueError("Campaign Lock treatment and analysis arms differ")
             estimand = _name(raw_estimand, "campaign_lock.analysis_plan.estimand")
         else:
             estimand = _name(raw_estimand, "campaign_lock.analysis_plan.estimand")
@@ -1687,10 +1690,10 @@ class Lab:
             raise ValueError("Study Contract workload bytes differ")
 
         arms = _object(study.document.get("arms"), "study.arms")
-        if set(arms) != {"open_cake", "direct_cuda"}:
-            raise ValueError("matched_search requires open_cake and direct_cuda arms")
+        comparison = comparison_arm(arms)
+        paired_triton = comparison == "native_triton"
         open_cake = _object(arms.get("open_cake"), "study.arms.open_cake")
-        direct_cuda = _object(arms.get("direct_cuda"), "study.arms.direct_cuda")
+        direct_cuda = _object(arms.get(comparison), f"study.arms.{comparison}")
         open_cake_fields = {
             "environment_kind",
             "provider",
@@ -1711,6 +1714,14 @@ class Lab:
             "tool_surface",
             "feedback",
         }
+        if paired_triton:
+            open_cake_fields.update({"input_format", "toolchain_sha256"})
+            direct_cuda_fields -= {"launch_contract", "candidate_skeleton"}
+            direct_cuda_fields.add("baseline")
+            if (open_cake.get("input_format") != "schedule_or_python_v1"
+                or direct_cuda.get("baseline") != {"binding": "open_cake_lowering"}
+                or open_cake.get("toolchain_sha256") != direct_cuda.get("toolchain_sha256")):
+                raise ValueError("paired Triton input, baseline or common toolchain binding differs")
         if not ralph_interface:
             open_cake_fields.add("prompt_template")
             direct_cuda_fields.add("prompt_template")
@@ -1718,12 +1729,13 @@ class Lab:
             raise ValueError("Study Contract Authoring Environment fields differ")
         if open_cake.get("environment_kind") != "open_cake" or direct_cuda.get(
             "environment_kind"
-        ) != "direct_cuda":
+        ) != comparison:
             raise ValueError("Study Contract Authoring Environment kinds differ")
-        if open_cake.get("lowering_route") != {
-            "backend": "triton",
-            "entry_point": "cake_flash_kmeans_assign",
-        }:
+        route = open_cake.get("lowering_route")
+        if (not isinstance(route, Mapping) or set(route) != {"backend", "entry_point"}
+            or route.get("backend") != "triton" or not isinstance(route.get("entry_point"), str)
+            or not route["entry_point"].isidentifier()
+            or not paired_triton and route["entry_point"] != "cake_flash_kmeans_assign"):
             raise ValueError("Study Contract Open Cake lowering route differs")
         schedule_skeleton = _object(
             open_cake.get("schedule_skeleton"), "study.arms.open_cake.schedule_skeleton"
@@ -1956,41 +1968,42 @@ class Lab:
             scaffold_path.read_bytes()
         ).hexdigest():
             raise ValueError("Study Contract scaffold bytes differ")
-        launch_contract = _object(
-            direct_cuda.get("launch_contract"), "study.arms.direct_cuda.launch_contract"
-        )
-        if set(launch_contract) != {"path", "sha256"}:
-            raise ValueError("Study Contract direct launch contract reference differs")
-        _, launch_contract_path = _project_path(
-            self._root,
-            launch_contract.get("path"),
-            "study.arms.direct_cuda.launch_contract.path",
-        )
-        if _digest(
-            launch_contract.get("sha256"),
-            "study.arms.direct_cuda.launch_contract.sha256",
-        ) != sha256(launch_contract_path.read_bytes()).hexdigest():
-            raise ValueError("Study Contract direct launch contract bytes differ")
-        candidate_skeleton = _object(
-            direct_cuda.get("candidate_skeleton"),
-            "study.arms.direct_cuda.candidate_skeleton",
-        )
-        if set(candidate_skeleton) != {"path", "sha256"}:
-            raise ValueError("Study Contract direct candidate skeleton reference differs")
-        _, candidate_skeleton_path = _project_path(
-            self._root,
-            candidate_skeleton.get("path"),
-            "study.arms.direct_cuda.candidate_skeleton.path",
-        )
-        if _digest(
-            candidate_skeleton.get("sha256"),
-            "study.arms.direct_cuda.candidate_skeleton.sha256",
-        ) != sha256(candidate_skeleton_path.read_bytes()).hexdigest():
-            raise ValueError("Study Contract direct candidate skeleton bytes differ")
+        if not paired_triton:
+            launch_contract = _object(
+                direct_cuda.get("launch_contract"), "study.arms.direct_cuda.launch_contract"
+            )
+            if set(launch_contract) != {"path", "sha256"}:
+                raise ValueError("Study Contract direct launch contract reference differs")
+            _, launch_contract_path = _project_path(
+                self._root,
+                launch_contract.get("path"),
+                "study.arms.direct_cuda.launch_contract.path",
+            )
+            if _digest(
+                launch_contract.get("sha256"),
+                "study.arms.direct_cuda.launch_contract.sha256",
+            ) != sha256(launch_contract_path.read_bytes()).hexdigest():
+                raise ValueError("Study Contract direct launch contract bytes differ")
+            candidate_skeleton = _object(
+                direct_cuda.get("candidate_skeleton"),
+                "study.arms.direct_cuda.candidate_skeleton",
+            )
+            if set(candidate_skeleton) != {"path", "sha256"}:
+                raise ValueError("Study Contract direct candidate skeleton reference differs")
+            _, candidate_skeleton_path = _project_path(
+                self._root,
+                candidate_skeleton.get("path"),
+                "study.arms.direct_cuda.candidate_skeleton.path",
+            )
+            if _digest(
+                candidate_skeleton.get("sha256"),
+                "study.arms.direct_cuda.candidate_skeleton.sha256",
+            ) != sha256(candidate_skeleton_path.read_bytes()).hexdigest():
+                raise ValueError("Study Contract direct candidate skeleton bytes differ")
         if not ralph_interface:
             for arm_name, environment in (
                 ("open_cake", open_cake),
-                ("direct_cuda", direct_cuda),
+                (comparison, direct_cuda),
             ):
                 prompt = _object(
                     environment.get("prompt_template"),
@@ -2029,9 +2042,9 @@ class Lab:
                     )
                 ):
                     raise ValueError("Study Contract prompt marker set differs")
-        if open_cake.get("tool_surface") != ["submit_schedule"] or direct_cuda.get(
+        if open_cake.get("tool_surface") != (["submit_schedule_or_python"] if paired_triton else ["submit_schedule"]) or direct_cuda.get(
             "tool_surface"
-        ) != ["submit_cuda"]:
+        ) != (["submit_triton_kernel"] if paired_triton else ["submit_cuda"]):
             raise ValueError("Study Contract Authoring Environment tool surfaces differ")
         attribution_evaluation = _object(
             study.document.get("evaluation_protocol"),
@@ -2065,15 +2078,24 @@ class Lab:
             )
         )
 
+        if paired_triton:
+            case_id = str(_object(study.document["evaluation_protocol"], "evaluation_protocol")["case_id"])
+            baseline = bind_baseline(skeleton_document, workload, case_id)
+            baseline_compiler = Compiler.load(self._root, self._root / compiler_relative)
+            assessment = baseline_compiler.assess(baseline)
+            if not assessment.lowering_eligible:
+                raise ValueError("paired optimization baseline is not lowerable")
+            native_baseline(baseline_compiler.lower(assessment))
+
         allocation = _object(study.document.get("allocation"), "study.allocation")
         order = allocation.get("order")
         if allocation.get("method") != "predeclared_balanced_blocks" or not isinstance(order, list):
             raise ValueError("Study Contract allocation differs")
         run_order = tuple(_name(value, "study.allocation.order[]") for value in order)
         expected_arms = (
-            ["direct_cuda", "open_cake"]
+            sorted([comparison, "open_cake"])
             if claim_scope in _ONE_RUN_PER_ARM_SCOPES
-            else ["direct_cuda"] * 3 + ["open_cake"] * 3
+            else sorted([comparison] * 3 + ["open_cake"] * 3)
         )
         if len(run_order) != len(set(run_order)) or sorted(
             name.rsplit("-", 1)[0] for name in run_order
@@ -2220,7 +2242,9 @@ class Lab:
                 raise ValueError("artifact optimization Analysis Plan differs")
             estimand = None
         else:
-            _scientific_analysis_plan_version(analysis, "study.analysis_plan")
+            version = _scientific_analysis_plan_version(analysis, "study.analysis_plan")
+            if paired_triton != (version == "triton_optimization_v1"):
+                raise ValueError("scientific treatment and analysis arm assignment differ")
             estimand = _name(analysis.get("estimand"), "study.analysis_plan.estimand")
         evidence_policy = _object(study.document.get("evidence"), "study.evidence")
         evidence_version = _matched_evidence_policy_version(
@@ -2502,7 +2526,8 @@ class Lab:
             evidence_root,
             role="Campaign Evidence root",
         )
-        if set(environments) != {"open_cake", "direct_cuda"}:
+        comparison_arm(environments)
+        if set(environments) != set(lock.document["resolved_inputs"]["arm_environments"]):
             raise ValueError("Campaign Authoring Environment set differs")
         if lock.study_kind != "matched_search":
             raise ValueError("Lab.execute matched-search path requires a matched Campaign Lock")
@@ -2650,7 +2675,9 @@ class Lab:
             raise ValueError("Campaign Lock Executor identity differs")
         reference_bundle_required = int(executor_match.group(1)) >= 25
         evidence = EvidenceStore.create(root)
+        record_confirmation_time = comparison_arm(environments) == "native_triton"
         for sequence, run_id in enumerate(lock.run_order, start=1):
+            run_started_at = self._clock() if record_confirmation_time else None
             arm = run_id.rsplit("-", 1)[0]
             environment = environments[arm]
             ledger = evidence.start_run(
@@ -3198,6 +3225,8 @@ class Lab:
                                     "purpose": "confirmatory",
                                     "candidate_sha256": launchable.candidate_sha256,
                                     "objects": confirmed_references,
+                                    **({"elapsed_wall_seconds": self._clock() - run_started_at}
+                                       if run_started_at is not None else {}),
                                 },
                             )
                         qualified = confirmed is not None and _receipt_qualifies(confirmed)
@@ -4208,18 +4237,22 @@ class Lab:
                 purpose = payload.get("purpose")
                 candidate_sha256 = payload.get("candidate_sha256")
                 if (
-                    (strict_events and set(payload) != {
-                        "turn",
-                        "purpose",
-                        "candidate_sha256",
-                        "objects",
-                    })
+                    (strict_events and set(payload) != ({
+                        "turn", "purpose", "candidate_sha256", "objects",
+                    } | ({"elapsed_wall_seconds"} if purpose == "confirmatory" and
+                         comparison_arm(lock.document["resolved_inputs"]["arm_environments"]) == "native_triton" else set())))
                     or
                     not isinstance(turn, int)
                     or isinstance(turn, bool)
                     or purpose not in {"search", "confirmatory", "attribution"}
                     or not isinstance(candidate_sha256, str)
                     or _DIGEST.fullmatch(candidate_sha256) is None
+                ):
+                    return False
+                if "elapsed_wall_seconds" in payload and (
+                    type(payload["elapsed_wall_seconds"]) not in {int, float}
+                    or not math.isfinite(payload["elapsed_wall_seconds"])
+                    or payload["elapsed_wall_seconds"] < 0
                 ):
                     return False
                 objects = payload.get("objects")
@@ -4779,6 +4812,62 @@ class Lab:
             and audit.endpoint == expected_endpoint
         )
 
+    def threshold_view(self, campaign: CampaignRef, latency_threshold_ms: float) -> Mapping[str, object]:
+        """Describe first fresh confirmations from audited records; retain every Run.
+
+        A caller-selected threshold is descriptive, never a new scientific estimand.
+        Historical events without confirmation time retain unknown wall time.
+        """
+        if type(latency_threshold_ms) not in {int, float}:
+            raise ValueError("latency threshold must be finite and positive")
+        try:
+            latency_threshold_ms = float(latency_threshold_ms)
+        except (ValueError, OverflowError) as error:
+            raise ValueError("latency threshold must be finite and positive") from error
+        if not math.isfinite(latency_threshold_ms) or latency_threshold_ms <= 0:
+            raise ValueError("latency threshold must be finite and positive")
+        if campaign.lock.study_kind != "matched_search":
+            raise ValueError("threshold view requires matched_search records")
+        report = self.audit(campaign)
+        evidence = EvidenceStore.open(campaign.evidence_root)
+        audits = {audit.run_id: audit for audit in report.run_audits}
+        limit = campaign.lock.document["resolved_inputs"]["budget"]["limit"]
+        rows = []
+        for run_id in campaign.lock.run_order:
+            audit = audits.get(run_id)
+            row = {"run_id": run_id, "endpoint": audit.endpoint_observation if audit else "missing",
+                   "first_confirmation_turn": None, "provider_tokens": None,
+                   "elapsed_wall_seconds": None, "candidate_sha256": None,
+                   "confirmed_latency_ms": None, "status": "missing"}
+            eligible = (audit is not None and audit.archive_integrity and audit.filesystem_custody_verified
+                        and audit.protocol_adherence == "adhered" and report.semantic_replay_passed)
+            if audit is not None and not eligible:
+                row["status"] = "unverified_archive_or_protocol"
+            elif eligible:
+                row["status"] = "threshold_not_reached"
+                tokens = {}
+                for event in evidence.replay_events(run_id):
+                    payload = event["payload"]
+                    if event["kind"] == "provider_turn_completed":
+                        tokens[payload["turn"]] = payload["cumulative_provider_tokens"]
+                    if event["kind"] != "candidate_evaluated" or payload["purpose"] != "confirmatory":
+                        continue
+                    reference = next(value for value in payload["objects"] if value["role"] == "evaluation_receipt")
+                    receipt = json.loads(evidence.read_object(reference))
+                    timing = receipt["timing"]
+                    if (tokens[payload["turn"]] <= limit and receipt["correctness_passed"] is True
+                        and timing is not None and timing.get("measurement_quality_passed") is True
+                        and timing["pooled_median_ms"] <= latency_threshold_ms):
+                        row.update(status="reached_by_fresh_confirmation", first_confirmation_turn=payload["turn"],
+                            provider_tokens=tokens[payload["turn"]], elapsed_wall_seconds=payload.get("elapsed_wall_seconds"),
+                            candidate_sha256=payload["candidate_sha256"], confirmed_latency_ms=timing["pooled_median_ms"])
+                        break
+            rows.append(row)
+        return {"audit": report, "scope": "descriptive_threshold_view", "latency_threshold_ms": latency_threshold_ms,
+                "wall_time_definition": "run_start_to_archived_fresh_confirmation_including_authoring_build_and_evaluation",
+                "missing_confirmation_timestamps": "unknown_never_inferred_from_search_or_terminal_time",
+                "runs": rows}
+
     def audit(self, campaign: CampaignRef) -> StudyReport:
         """Audit terminal Runs, then apply the preregistered availability rule."""
 
@@ -4935,7 +5024,9 @@ class Lab:
                 run_inclusion=inclusions,
                 run_audits=tuple(audits),
             )
-        arm_runs: dict[str, list[RunAudit]] = {"open_cake": [], "direct_cuda": []}
+        assigned_arms = campaign.lock.document["resolved_inputs"]["arm_environments"]
+        comparison = comparison_arm(assigned_arms)
+        arm_runs: dict[str, list[RunAudit]] = {name: [] for name in assigned_arms}
         inclusions: list[AnalysisInclusion] = []
         for audit in audits:
             arm = audit.run_id.rsplit("-", 1)[0]
@@ -5044,14 +5135,16 @@ class Lab:
             )
         )
         paired: list[dict[str, object]] = []
-        for repetition in sorted(set(latencies["open_cake"]) | set(latencies["direct_cuda"])):
+        for repetition in sorted({name.rsplit("-", 1)[1] for name in campaign.lock.run_order}):
             open_latency = latencies["open_cake"].get(repetition)
-            cuda_latency = latencies["direct_cuda"].get(repetition)
+            cuda_latency = latencies[comparison].get(repetition)
             paired.append(
                 {
                     "repetition": int(repetition) if repetition.isdigit() else repetition,
                     "open_cake_latency_ms": open_latency,
-                    "direct_cuda_latency_ms": cuda_latency,
+                    f"{comparison}_latency_ms": cuda_latency,
+                    "open_cake_outcome": next((a.endpoint_observation for a in audits if a.run_id == f"open_cake-{repetition}"), "missing"),
+                    f"{comparison}_outcome": next((a.endpoint_observation for a in audits if a.run_id == f"{comparison}-{repetition}"), "missing"),
                     "open_cake_speedup": (
                         cuda_latency / open_latency
                         if open_latency is not None and cuda_latency is not None
@@ -5071,7 +5164,7 @@ class Lab:
                 "qualification_rate_among_observed": qualification_rate,
                 "qualification_rate_difference_among_observed": (
                     cast(float, qualification_rate["open_cake"])
-                    - cast(float, qualification_rate["direct_cuda"])
+                    - cast(float, qualification_rate[comparison])
                     if all(value is not None for value in qualification_rate.values())
                     else None
                 ),
@@ -5084,15 +5177,15 @@ class Lab:
             estimate = {
                 "qualification_rate": qualification_rate,
                 "median_confirmed_latency_ms": medians,
-                "ratio_of_arm_medians": cast(float, medians["direct_cuda"])
+                "ratio_of_arm_medians": cast(float, medians[comparison])
                 / cast(float, medians["open_cake"]),
             }
-            if analysis_version == "two_part_v2":
+            if analysis_version in {"two_part_v2", "triton_optimization_v1"}:
                 estimate = {
                     **estimate,
                     "qualification_rate_difference": (
                         cast(float, qualification_rate["open_cake"])
-                        - cast(float, qualification_rate["direct_cuda"])
+                        - cast(float, qualification_rate[comparison])
                     ),
                 }
             uncertainty = {"latency_range_ms": ranges}

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Mapping, Protocol, cast
 
 from .faults import RunProtocolFault
+from .pairing import comparison_arm
 from .process import (
     SupervisedProcessOutputLimit,
     SupervisedProcessTimeout,
@@ -170,6 +171,7 @@ def _project_candidate_submission(
     if submission_contract != CANDIDATE_SET_ENVELOPE_V1 or arm not in {
         "open_cake",
         "direct_cuda",
+        "native_triton",
     }:
         raise ValueError("provider submission contract differs")
     try:
@@ -191,7 +193,7 @@ def _project_candidate_submission(
         or len(candidates) > maximum_candidates_per_turn
     ):
         raise ValueError("provider candidate-set envelope count differs")
-    if arm == "open_cake":
+    if arm in {"open_cake", "native_triton"}:
         if any(not isinstance(candidate, Mapping) for candidate in candidates):
             raise ValueError("Open Cake candidate-set member is not a Schedule object")
         projected = tuple(_canonical_json_bytes(candidate) for candidate in candidates)
@@ -830,6 +832,7 @@ class CodexRunProvider:
     _SINGLE_CANDIDATE_NAMES = {
         "open_cake": "candidate.json",
         "direct_cuda": "candidate.cu",
+        "native_triton": "candidate.triton.json",
     }
 
     def __init__(
@@ -844,6 +847,8 @@ class CodexRunProvider:
     ) -> None:
         task_packages = dict(task_packages or {})
         task_mode = bool(task_packages)
+        if not task_mode:
+            comparison_arm(prompt_templates)
         if (
             not qualification.qualified
             or qualification.scope
@@ -864,7 +869,7 @@ class CodexRunProvider:
                 not task_mode
                 and (
                     set(reference_roots) != set(builders)
-                    or set(prompt_templates) != set(self._SINGLE_CANDIDATE_NAMES)
+                    or not {run_id.rsplit("-", 1)[0] for run_id in builders} <= set(prompt_templates)
                 )
             )
         ):
