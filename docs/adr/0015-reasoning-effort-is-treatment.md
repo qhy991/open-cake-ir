@@ -19,7 +19,7 @@ current task-informed skeletons are clean-start inputs.
 preflight already requires the complete provider documents of both arms to be identical.
 The qualification receipt's configuration digest proves the chosen value together with
 model, service tier, output schema, removed environment, sandbox, reference visibility,
-feature policy and submission contract. The Campaign Lock copies that frozen provider
+feature policy and submission contract. The CampaignLock copies that frozen provider
 document; the invocation builder emits the same value on initial and resumed Turns.
 
 The Lab validates a non-empty value and the qualification digest. It does not maintain a

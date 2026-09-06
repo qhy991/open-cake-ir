@@ -6,11 +6,12 @@ import json
 import math
 import re
 import statistics
+import time
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Mapping, Protocol, cast
+from typing import Callable, Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Compiler, CorpusGateReport
 from open_cake_ir.evaluation import (
@@ -40,6 +41,8 @@ from .providers import (
     parse_codex_turn_events,
     required_live_provider_qualification_scope,
 )
+from .ralph import RalphBudget, RalphController, derive_ralph_stop_reason
+from .task_package import TASK_AGENTS_RALPH_V1, render_task_package
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _CURRENT_RELEASE_BINDING = {"binding": "current_release"}
@@ -69,6 +72,7 @@ _STUDY_FIELDS = {
     "analysis_plan",
     "evidence",
 }
+_RALPH_STUDY_FIELDS = _STUDY_FIELDS | {"agent_interface"}
 _PORTFOLIO_STUDY_FIELDS = {
     "schema_version",
     "study_id",
@@ -110,6 +114,7 @@ _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN = {
     "scientific_inclusion": "forbidden",
 }
 _MATCHED_EVENT_VOCABULARY_V1 = "matched_run_v1"
+_MATCHED_RALPH_EVENT_VOCABULARY_V1 = "matched_ralph_v1"
 _MATCHED_EVENT_KINDS_V1 = frozenset(
     {
         "run_started",
@@ -130,6 +135,11 @@ _MATCHED_EVIDENCE_POLICY_V1 = {
     "schema_version": 2,
     "terminal_archive_required_for_every_run": True,
     "event_vocabulary": _MATCHED_EVENT_VOCABULARY_V1,
+}
+_MATCHED_RALPH_EVIDENCE_POLICY_V1 = {
+    "schema_version": 3,
+    "terminal_archive_required_for_every_run": True,
+    "event_vocabulary": _MATCHED_RALPH_EVENT_VOCABULARY_V1,
 }
 _LEGACY_MATCHED_EVIDENCE_POLICY = {
     "schema_version": 2,
@@ -257,6 +267,8 @@ def _matched_evidence_policy_version(
 
     if policy == _MATCHED_EVIDENCE_POLICY_V1:
         return _MATCHED_EVENT_VOCABULARY_V1
+    if policy == _MATCHED_RALPH_EVIDENCE_POLICY_V1:
+        return _MATCHED_RALPH_EVENT_VOCABULARY_V1
     if policy == _LEGACY_MATCHED_EVIDENCE_POLICY:
         return "legacy_open"
     raise ValueError(f"{context} is unsupported")
@@ -1211,6 +1223,7 @@ class StudyContract:
     document: Mapping[str, object]
     source_path: Path
     study_id: str
+    schema_version: int
     state: str
     canonical_sha256: str
 
@@ -1221,8 +1234,17 @@ class StudyContract:
         source = Path(path).resolve(strict=True)
         document = _object(json.loads(source.read_text(encoding="utf-8")), "study")
         kind = document.get("kind")
-        fields = _STUDY_FIELDS if kind == "matched_search" else _PORTFOLIO_STUDY_FIELDS
-        if set(document) != fields or document.get("schema_version") != 1:
+        schema_version = document.get("schema_version")
+        fields = (
+            _RALPH_STUDY_FIELDS
+            if kind == "matched_search" and schema_version == 2
+            else _STUDY_FIELDS
+            if kind == "matched_search" and schema_version == 1
+            else _PORTFOLIO_STUDY_FIELDS
+            if kind == "portfolio" and schema_version == 1
+            else set()
+        )
+        if set(document) != fields:
             raise ValueError("study root fields or schema_version differ")
         state = document.get("state")
         if state not in {"template", "frozen"} or kind not in {
@@ -1231,6 +1253,10 @@ class StudyContract:
         }:
             raise ValueError("Study state or kind differs")
         study_id = _name(document.get("study_id"), "study.study_id")
+        if schema_version == 2:
+            interface = _object(document.get("agent_interface"), "study.agent_interface")
+            if interface != {"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}:
+                raise ValueError("Study Ralph agent interface differs")
         claim_scope = _name(document.get("claim_scope"), "study.claim_scope")
         if kind == "matched_search" and claim_scope not in _MATCHED_CLAIM_SCOPES:
             raise ValueError("matched Study Contract claim scope differs")
@@ -1267,6 +1293,7 @@ class StudyContract:
             document=detached,
             source_path=source,
             study_id=study_id,
+            schema_version=cast(int, schema_version),
             state=cast(str, state),
             canonical_sha256=sha256(_canonical_json_bytes(document)).hexdigest(),
         )
@@ -1281,6 +1308,7 @@ class CampaignLock:
     study_id: str
     study_kind: str
     claim_scope: str
+    agent_interface: str
     workload_id: str
     compiler_revision_id: str
     run_order: tuple[str, ...]
@@ -1337,14 +1365,29 @@ class CampaignLock:
         if study_kind == "matched_search":
             if claim_scope not in _MATCHED_CLAIM_SCOPES:
                 raise ValueError("matched Campaign Lock claim scope differs")
-            if set(resolved) != {
+            legacy_resolved_fields = {
                 "arm_environments",
                 "arm_environment_sha256",
                 "budget",
                 "run_protocol",
                 "evidence_policy",
+            }
+            ralph_resolved_fields = legacy_resolved_fields | {"agent_interface"}
+            if frozenset(resolved) not in {
+                frozenset(legacy_resolved_fields),
+                frozenset(ralph_resolved_fields),
             }:
                 raise ValueError("matched Campaign Lock inputs differ")
+            if "agent_interface" in resolved:
+                interface = _object(
+                    resolved["agent_interface"],
+                    "campaign_lock.resolved_inputs.agent_interface",
+                )
+                if interface != {"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}:
+                    raise ValueError("Campaign Lock Ralph agent interface differs")
+                agent_interface = TASK_AGENTS_RALPH_V1
+            else:
+                agent_interface = "legacy_prompt_v1"
             arms = _object(
                 resolved.get("arm_environments"),
                 "campaign_lock.resolved_inputs.arm_environments",
@@ -1388,12 +1431,13 @@ class CampaignLock:
             )
             if sorted(name.rsplit("-", 1)[0] for name in run_order) != expected_arms:
                 raise ValueError("matched Campaign Lock Run allocation differs")
-            if claim_scope == "system_qualification_only" and (
+            if agent_interface == "legacy_prompt_v1" and claim_scope == "system_qualification_only" and (
                 budget.get("checkpoints") != [budget.get("limit")]
                 or budget.get("maximum_turns") != 1
             ):
                 raise ValueError("system qualification Campaign Lock budget differs")
         elif study_kind == "portfolio":
+            agent_interface = "portfolio_v1"
             if claim_scope != "bounded_local_b200_reconstruction":
                 raise ValueError("portfolio Campaign Lock claim scope differs")
             if set(resolved) != {
@@ -1455,6 +1499,7 @@ class CampaignLock:
             study_id=_name(study.get("study_id"), "campaign_lock.study.study_id"),
             study_kind=study_kind,
             claim_scope=claim_scope,
+            agent_interface=agent_interface,
             workload_id=_name(
                 workload.get("workload_id"), "campaign_lock.workload.workload_id"
             ),
@@ -1526,6 +1571,7 @@ class TurnRequest:
     thread_id: str | None
     feedback: Mapping[str, object]
     maximum_candidates_per_turn: int
+    state_card: Mapping[str, object] | None = None
 
 
 class RunProvider(Protocol):
@@ -1612,8 +1658,14 @@ class _SearchedCandidate:
 class Lab:
     """Resolve, execute and audit preregistered studies over frozen dependencies."""
 
-    def __init__(self, project_root: str | Path) -> None:
+    def __init__(
+        self,
+        project_root: str | Path,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._root = Path(project_root).resolve(strict=True)
+        self._clock = clock
 
     def preflight(self, study_path: str | Path) -> CampaignLock:
         """Resolve one Study Contract without provider, GPU or evidence side effects."""
@@ -1621,6 +1673,7 @@ class Lab:
         study = StudyContract.load(study_path)
         if study.document["kind"] == "portfolio":
             return self._preflight_portfolio(study)
+        ralph_interface = study.schema_version == 2
         workload_ref = _object(study.document.get("workload"), "study.workload")
         if set(workload_ref) != {"path", "canonical_sha256"}:
             raise ValueError("study workload reference fields differ")
@@ -1638,27 +1691,30 @@ class Lab:
             raise ValueError("matched_search requires open_cake and direct_cuda arms")
         open_cake = _object(arms.get("open_cake"), "study.arms.open_cake")
         direct_cuda = _object(arms.get("direct_cuda"), "study.arms.direct_cuda")
-        if set(open_cake) != {
+        open_cake_fields = {
             "environment_kind",
             "provider",
             "scaffold",
-            "prompt_template",
             "compiler_revision",
             "lowering_route",
             "schedule_skeleton",
             "tool_surface",
             "feedback",
-        } or set(direct_cuda) != {
+        }
+        direct_cuda_fields = {
             "environment_kind",
             "provider",
             "scaffold",
-            "prompt_template",
             "launch_contract",
             "candidate_skeleton",
             "toolchain_sha256",
             "tool_surface",
             "feedback",
-        }:
+        }
+        if not ralph_interface:
+            open_cake_fields.add("prompt_template")
+            direct_cuda_fields.add("prompt_template")
+        if set(open_cake) != open_cake_fields or set(direct_cuda) != direct_cuda_fields:
             raise ValueError("Study Contract Authoring Environment fields differ")
         if open_cake.get("environment_kind") != "open_cake" or direct_cuda.get(
             "environment_kind"
@@ -1741,8 +1797,18 @@ class Lab:
             provider.get("model") != "gpt-5.6-sol"
             or provider.get("service_tier") != "default"
             or provider.get("sandbox") != "workspace-write"
-            or provider.get("cwd_policy") != "independent_empty_workspace"
-            or provider.get("reference_visibility") != "embedded_frozen_bundle"
+            or provider.get("cwd_policy")
+            != (
+                "independent_task_workspace"
+                if ralph_interface
+                else "independent_empty_workspace"
+            )
+            or provider.get("reference_visibility")
+            != (
+                "workspace_task_files"
+                if ralph_interface
+                else "embedded_frozen_bundle"
+            )
             or provider.get("disabled_features") != expected_disabled_features
             or provider.get("event_contract", "closed_file_change_v1")
             != expected_event_contract
@@ -1921,40 +1987,48 @@ class Lab:
             "study.arms.direct_cuda.candidate_skeleton.sha256",
         ) != sha256(candidate_skeleton_path.read_bytes()).hexdigest():
             raise ValueError("Study Contract direct candidate skeleton bytes differ")
-        for arm_name, environment in (("open_cake", open_cake), ("direct_cuda", direct_cuda)):
-            prompt = _object(
-                environment.get("prompt_template"),
-                f"study.arms.{arm_name}.prompt_template",
-            )
-            if set(prompt) != {"path", "sha256"}:
-                raise ValueError("Study Contract prompt reference differs")
-            _, prompt_path = _project_path(
-                self._root,
-                prompt.get("path"),
-                f"study.arms.{arm_name}.prompt_template.path",
-            )
-            if _digest(
-                prompt.get("sha256"), f"study.arms.{arm_name}.prompt_template.sha256"
-            ) != sha256(prompt_path.read_bytes()).hexdigest():
-                raise ValueError("Study Contract prompt bytes differ")
-            expected_prompt_markers = {
-                "{{RUN_ID}}",
-                "{{ARM}}",
-                "{{TURN}}",
-                "{{CANDIDATE_PATH}}",
-                "{{CUMULATIVE_PROVIDER_TOKENS}}",
-                "{{FEEDBACK_JSON}}",
-                "{{REFERENCE_BUNDLE}}",
-            }
-            if candidate_set_submission:
-                expected_prompt_markers.add("{{MAXIMUM_CANDIDATES_PER_TURN}}")
-            prompt_text = prompt_path.read_text(encoding="utf-8")
-            if (
-                set(re.findall(r"\{\{[A-Z0-9_]+\}\}", prompt_text))
-                != expected_prompt_markers
-                or any(prompt_text.count(marker) != 1 for marker in expected_prompt_markers)
+        if not ralph_interface:
+            for arm_name, environment in (
+                ("open_cake", open_cake),
+                ("direct_cuda", direct_cuda),
             ):
-                raise ValueError("Study Contract prompt marker set differs")
+                prompt = _object(
+                    environment.get("prompt_template"),
+                    f"study.arms.{arm_name}.prompt_template",
+                )
+                if set(prompt) != {"path", "sha256"}:
+                    raise ValueError("Study Contract prompt reference differs")
+                _, prompt_path = _project_path(
+                    self._root,
+                    prompt.get("path"),
+                    f"study.arms.{arm_name}.prompt_template.path",
+                )
+                if _digest(
+                    prompt.get("sha256"),
+                    f"study.arms.{arm_name}.prompt_template.sha256",
+                ) != sha256(prompt_path.read_bytes()).hexdigest():
+                    raise ValueError("Study Contract prompt bytes differ")
+                expected_prompt_markers = {
+                    "{{RUN_ID}}",
+                    "{{ARM}}",
+                    "{{TURN}}",
+                    "{{CANDIDATE_PATH}}",
+                    "{{CUMULATIVE_PROVIDER_TOKENS}}",
+                    "{{FEEDBACK_JSON}}",
+                    "{{REFERENCE_BUNDLE}}",
+                }
+                if candidate_set_submission:
+                    expected_prompt_markers.add("{{MAXIMUM_CANDIDATES_PER_TURN}}")
+                prompt_text = prompt_path.read_text(encoding="utf-8")
+                if (
+                    set(re.findall(r"\{\{[A-Z0-9_]+\}\}", prompt_text))
+                    != expected_prompt_markers
+                    or any(
+                        prompt_text.count(marker) != 1
+                        for marker in expected_prompt_markers
+                    )
+                ):
+                    raise ValueError("Study Contract prompt marker set differs")
         if open_cake.get("tool_surface") != ["submit_schedule"] or direct_cuda.get(
             "tool_surface"
         ) != ["submit_cuda"]:
@@ -2017,6 +2091,14 @@ class Lab:
         budget_fields = {"unit", "limit", "checkpoints", "maximum_turns"}
         if candidate_set_submission:
             budget_fields.add("maximum_candidates_per_turn")
+        if ralph_interface:
+            budget_fields.update(
+                {
+                    "wall_time_seconds",
+                    "active_authoring_time_seconds",
+                    "evaluation_limits",
+                }
+            )
         if (
             set(budget) != budget_fields
             or
@@ -2037,15 +2119,22 @@ class Lab:
             or maximum_candidates_per_turn <= 0
         ):
             raise ValueError("Study Contract budget grid differs")
-        if claim_scope == "system_qualification_only" and (
+        if ralph_interface:
+            RalphBudget.from_mapping(budget)
+        if not ralph_interface and claim_scope == "system_qualification_only" and (
             checkpoints != [limit] or maximum_turns != 1
         ):
             raise ValueError("system qualification requires one bounded Turn and checkpoint")
 
         run_protocol = _object(study.document.get("run_protocol"), "study.run_protocol")
+        expected_workspace = (
+            run_protocol.get("workspace_seed") == "task_agents_only"
+            if ralph_interface
+            else run_protocol.get("empty_workspace") is True
+        )
         if (
             run_protocol.get("independent_thread") is not True
-            or run_protocol.get("empty_workspace") is not True
+            or not expected_workspace
             or run_protocol.get("automatic_retries") != 0
             or run_protocol.get("replacement_runs") != 0
         ):
@@ -2064,6 +2153,17 @@ class Lab:
             raise ValueError(
                 "Study Contract searches_per_turn exceeds maximum_candidates_per_turn"
             )
+        if ralph_interface:
+            ralph_limits = _object(
+                budget.get("evaluation_limits"), "study.budget.evaluation_limits"
+            )
+            required_attribution = searches if attribution_evaluation == _ATTRIBUTION_EVALUATION else 0
+            if (
+                int(ralph_limits.get("search", 0)) < searches
+                or int(ralph_limits.get("confirmatory", 0)) < 1
+                or int(ralph_limits.get("attribution", 0)) < required_attribution
+            ):
+                raise ValueError("Ralph budget cannot admit one complete Turn")
         # How much faster the measurement has to be before the order counts as wrong.
         # A Study that searches more than one candidate has to say, because without it
         # every inversion inside the noise would be routed to the cost model as a defect
@@ -2123,7 +2223,13 @@ class Lab:
             _scientific_analysis_plan_version(analysis, "study.analysis_plan")
             estimand = _name(analysis.get("estimand"), "study.analysis_plan.estimand")
         evidence_policy = _object(study.document.get("evidence"), "study.evidence")
-        _matched_evidence_policy_version(evidence_policy, "study.evidence")
+        evidence_version = _matched_evidence_policy_version(
+            evidence_policy, "study.evidence"
+        )
+        if ralph_interface != (
+            evidence_version == _MATCHED_RALPH_EVENT_VOCABULARY_V1
+        ):
+            raise ValueError("Study agent interface and Evidence policy differ")
 
         resolved_arms = cast(
             dict[str, object], json.loads(_canonical_json_bytes(arms))
@@ -2163,6 +2269,11 @@ class Lab:
                 "budget": budget,
                 "run_protocol": run_protocol,
                 "evidence_policy": evidence_policy,
+                **(
+                    {"agent_interface": study.document["agent_interface"]}
+                    if ralph_interface
+                    else {}
+                ),
             },
             "run_order": list(run_order),
             "evaluation_protocol": evaluation,
@@ -2423,6 +2534,8 @@ class Lab:
         profile_each_search_survivor = (
             attribution_evaluation == _ATTRIBUTION_EVALUATION
         )
+        ralph_enabled = lock.agent_interface == TASK_AGENTS_RALPH_V1
+        ralph_budget = RalphBudget.from_mapping(budget) if ralph_enabled else None
         expected_protocol_sha256 = sha256(
             _canonical_json_bytes(evaluation_protocol)
         ).hexdigest()
@@ -2560,20 +2673,54 @@ class Lab:
             feedback: Mapping[str, object] = MappingProxyType({"kind": "initial"})
             observations: list[TurnObservation] = []
             live_stage = "provider"
+            ralph = (
+                RalphController(
+                    cast(RalphBudget, ralph_budget),
+                    searches_per_turn=int(
+                        evaluation_protocol.get("searches_per_turn", 1)
+                    ),
+                    profile_each_search_survivor=profile_each_search_survivor,
+                    clock=self._clock,
+                )
+                if ralph_enabled
+                else None
+            )
+            ralph_stop_reason: str | None = None
             try:
                 for turn_number in range(1, maximum_turns + 1):
-                    live_stage = "provider"
-                    provider_turn = provider.turn(
-                        TurnRequest(
-                            run_id,
-                            arm,
-                            turn_number,
-                            cumulative_tokens,
-                            thread_id,
-                            feedback,
-                            maximum_candidates_per_turn,
+                    state_card = None
+                    if ralph is not None:
+                        ralph_stop_reason = ralph.stop_reason(
+                            turn=turn_number,
+                            cumulative_provider_tokens=cumulative_tokens,
                         )
+                        if ralph_stop_reason is not None:
+                            break
+                        state_card = ralph.state_card(
+                            turn=turn_number,
+                            cumulative_provider_tokens=cumulative_tokens,
+                            feedback=feedback,
+                        )
+                    live_stage = "provider"
+                    authoring_started = (
+                        ralph.begin_authoring() if ralph is not None else None
                     )
+                    try:
+                        provider_turn = provider.turn(
+                            TurnRequest(
+                                run_id,
+                                arm,
+                                turn_number,
+                                cumulative_tokens,
+                                thread_id,
+                                feedback,
+                                maximum_candidates_per_turn,
+                                state_card,
+                            )
+                        )
+                    finally:
+                        if ralph is not None and authoring_started is not None:
+                            ralph.end_authoring(authoring_started)
                     if thread_id is not None and provider_turn.thread_id != thread_id:
                         raise ValueError("provider resume thread identity differs")
                     thread_id = provider_turn.thread_id
@@ -2730,7 +2877,10 @@ class Lab:
                             "order": (
                                 filter_rows
                                 if matched_event_vocabulary
-                                == _MATCHED_EVENT_VOCABULARY_V1
+                                in {
+                                    _MATCHED_EVENT_VOCABULARY_V1,
+                                    _MATCHED_RALPH_EVENT_VOCABULARY_V1,
+                                }
                                 else [
                                     {
                                         key: value
@@ -2815,6 +2965,8 @@ class Lab:
                         def evaluate_attribution(
                             candidate: LaunchableCandidate,
                         ) -> EvaluationReceipt:
+                            if ralph is not None:
+                                ralph.record_evaluation("attribution")
                             attempt = evaluator.evaluate(
                                 candidate,
                                 case_id=case_id,
@@ -2895,6 +3047,8 @@ class Lab:
                                 },
                             )
                             live_stage = "evaluation"
+                            if ralph is not None:
+                                ralph.record_evaluation("search")
                             entry_attempt = evaluator.evaluate(
                                 entry_launchable,
                                 case_id=case_id,
@@ -3004,6 +3158,8 @@ class Lab:
 
                         confirmed: EvaluationReceipt | None = None
                         if qualified_search:
+                            if ralph is not None:
+                                ralph.record_evaluation("confirmatory")
                             confirmed_attempt = evaluator.evaluate(
                                 launchable,
                                 case_id=case_id,
@@ -3127,16 +3283,22 @@ class Lab:
                         fault_payload["artifact_rejections"] = rejected_roles
                 ledger.append("run_fault", fault_payload)
                 protocol_adherence = fault
+                if ralph is not None:
+                    ralph_stop_reason = fault
+
+            if ralph is not None and ralph_stop_reason is None:
+                ralph_stop_reason = ralph.stop_reason(
+                    turn=min(maximum_turns + 1, len(observations) + 1),
+                    cumulative_provider_tokens=cumulative_tokens,
+                ) or "maximum_turns"
 
             projected = project_checkpoints(
                 turns=observations,
                 checkpoints=checkpoints,
                 terminal_provider_tokens=cumulative_tokens,
             )
-            ledger.append(
-                "checkpoints_projected",
-                {
-                    "checkpoints": [
+            checkpoint_payload: dict[str, object] = {
+                "checkpoints": [
                         {
                             "provider_tokens": item.provider_tokens,
                             "state": item.state,
@@ -3145,8 +3307,17 @@ class Lab:
                         }
                         for item in projected
                     ]
-                },
-            )
+            }
+            if ralph is not None:
+                checkpoint_payload["ralph"] = dict(
+                    ralph.state_card(
+                        turn=min(maximum_turns + 1, len(observations) + 1),
+                        cumulative_provider_tokens=cumulative_tokens,
+                        feedback=feedback,
+                        terminal_reason=ralph_stop_reason,
+                    )
+                )
+            ledger.append("checkpoints_projected", checkpoint_payload)
             final_checkpoint = projected[-1]
             endpoint_observation, endpoint = _matched_endpoint_from_checkpoint(
                 final_checkpoint, protocol_adherence
@@ -3462,7 +3633,11 @@ class Lab:
             ),
             "resolved_inputs.evidence_policy",
         )
-        strict_events = event_vocabulary == _MATCHED_EVENT_VOCABULARY_V1
+        ralph_events = event_vocabulary == _MATCHED_RALPH_EVENT_VOCABULARY_V1
+        strict_events = event_vocabulary in {
+            _MATCHED_EVENT_VOCABULARY_V1,
+            _MATCHED_RALPH_EVENT_VOCABULARY_V1,
+        }
         arm = audit.run_id.rsplit("-", 1)[0]
         if strict_events:
             kinds = [event.get("kind") for event in events]
@@ -3551,7 +3726,8 @@ class Lab:
                     or not isinstance(fault_payload.get("exception_type"), str)
                     or not fault_payload.get("exception_type")
                     or not _artifact_outcomes_are_closed(fault_payload)
-                    or set(checkpoint_payload) != {"checkpoints"}
+                    or set(checkpoint_payload)
+                    != ({"checkpoints", "ralph"} if ralph_events else {"checkpoints"})
                 ):
                     return False
             fault_fields_present = any(
@@ -3630,6 +3806,11 @@ class Lab:
         )
         event_contract = str(
             provider_authority.get("event_contract", "closed_file_change_v1")
+        )
+        expected_task_package = (
+            render_task_package(self._root, lock, audit.run_id)
+            if ralph_events
+            else None
         )
         executor_revision = _object(
             _object(lock.document["execution"], "execution")["executor_revision"],
@@ -3766,8 +3947,43 @@ class Lab:
                 return False
             if reference_bundle is not None:
                 try:
-                    reference_bundle.decode("utf-8")
-                except UnicodeError:
+                    decoded_reference = reference_bundle.decode("utf-8")
+                    if expected_task_package is not None:
+                        bundle = _object(
+                            json.loads(decoded_reference),
+                            "provider Ralph task package",
+                        )
+                        state = _object(
+                            bundle.get("state_card"),
+                            "provider Ralph StateCard",
+                        )
+                        if (
+                            set(bundle)
+                            != {
+                                "schema_version",
+                                "kind",
+                                "run_id",
+                                "arm",
+                                "task_markdown",
+                                "agents_markdown",
+                                "state_card",
+                            }
+                            or bundle.get("schema_version") != 1
+                            or bundle.get("kind") != TASK_AGENTS_RALPH_V1
+                            or bundle.get("run_id") != audit.run_id
+                            or bundle.get("arm") != arm
+                            or bundle.get("task_markdown")
+                            != expected_task_package.task_markdown
+                            or bundle.get("agents_markdown")
+                            != expected_task_package.agents_markdown
+                            or state.get("kind") != "ralph_state_v1"
+                            or state.get("iteration") != expected_turn
+                            or state.get("cumulative_provider_tokens")
+                            != prior_cumulative
+                            or state.get("terminal_reason") is not None
+                        ):
+                            return False
+                except (UnicodeError, json.JSONDecodeError, ValueError):
                     return False
             terminal_document: dict[str, object] = {
                 "arm": arm,
@@ -4507,11 +4723,54 @@ class Lab:
         checkpoint_payload = _object(
             checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
         )
+        expected_checkpoint_fields = (
+            {"checkpoints", "ralph"} if ralph_events else {"checkpoints"}
+        )
         if (
-            (strict_events and set(checkpoint_payload) != {"checkpoints"})
+            (strict_events and set(checkpoint_payload) != expected_checkpoint_fields)
             or checkpoint_payload.get("checkpoints") != expected_projection
         ):
             return False
+        if ralph_events:
+            ralph_state = _object(
+                checkpoint_payload.get("ralph"), "checkpoints_projected.ralph"
+            )
+            expected_counts = {
+                purpose: sum(key[1] == purpose for key in receipts)
+                for purpose in ("search", "confirmatory", "attribution")
+            }
+            state_turn = ralph_state.get("iteration")
+            elapsed_wall = ralph_state.get("elapsed_wall_seconds")
+            active_authoring = ralph_state.get("active_authoring_seconds")
+            if (
+                not isinstance(state_turn, int)
+                or isinstance(state_turn, bool)
+                or not isinstance(elapsed_wall, (int, float))
+                or isinstance(elapsed_wall, bool)
+                or not isinstance(active_authoring, (int, float))
+                or isinstance(active_authoring, bool)
+            ):
+                return False
+            expected_stop_reason = derive_ralph_stop_reason(
+                RalphBudget.from_mapping(budget),
+                turn=state_turn,
+                cumulative_provider_tokens=max(cumulative_by_turn.values()),
+                elapsed_wall_seconds=float(elapsed_wall),
+                active_authoring_seconds=float(active_authoring),
+                evaluation_counts=expected_counts,
+                searches_per_turn=searches_per_turn,
+                profile_each_search_survivor=(
+                    attribution_evaluation == _ATTRIBUTION_EVALUATION
+                ),
+            )
+            if (
+                ralph_state.get("kind") != "ralph_state_v1"
+                or ralph_state.get("cumulative_provider_tokens")
+                != max(cumulative_by_turn.values())
+                or ralph_state.get("evaluation_counts") != expected_counts
+                or ralph_state.get("terminal_reason") != expected_stop_reason
+            ):
+                return False
         expected_observation, expected_endpoint = _matched_endpoint_from_checkpoint(
             projected[-1], audit.protocol_adherence
         )

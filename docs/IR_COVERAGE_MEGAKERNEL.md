@@ -1,5 +1,8 @@
 # Megakernels and Kimi Delta Attention: three assumptions, all load-bearing
 
+> **Survey snapshot, 2026-08-24.** This records the examined megakernel and KDA boundary;
+> it is not a current completeness or performance claim.
+
 Surveyed against the typed IR. `Megakernels/` fuses a whole transformer layer into one
 persistent launch; `KDA-Pilot/` carries the CuTe-DSL Kimi Delta Attention decode kernel,
 which is one of the paper's own benchmarks.

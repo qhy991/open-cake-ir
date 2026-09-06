@@ -16,7 +16,7 @@ frozen Study, Campaign, event or report.
 ## Authorities and canonical form
 
 `study.evidence.event_vocabulary = matched_run_v1` selects the current contract. It is
-copied into the Campaign Lock and is the sole authority for strict semantic replay. The
+copied into the CampaignLock and is the sole authority for strict semantic replay. The
 vocabulary contains only the event kinds already emitted by the matched execution path;
 it is not a registry that callers may extend.
 

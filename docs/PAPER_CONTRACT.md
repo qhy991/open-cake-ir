@@ -1,5 +1,11 @@
 # Paper contract
 
+This document has two explicit time domains. The paper source contract and public unknowns
+are stable for arXiv v1. The local implementation-alignment table is a frozen 2026-08-25
+snapshot and is not the current release view. Current released authorities are generated
+in [`../reports/current/STATUS.md`](../reports/current/STATUS.md); a later paper version or
+alignment review gets a successor document rather than rewriting this source revision.
+
 ## Source freeze
 
 Canonical source: [CAKE: Compiler-Agent Co-Design for Frontier Kernel Evolution,
@@ -97,7 +103,7 @@ Clean-start provenance must include the Compiler Revision, its Corpus, scaffold,
 the complete frozen reference bundle embedded in each Turn prompt. If a local compiler was evolved from prior observations of the same task, that history is
 an explicit treatment prior: the resulting Study can measure package effectiveness but not task-naive discovery.
 
-## Local implementation choices
+## Local implementation alignment snapshot, 2026-08-25
 
 | Dimension | Paper-reported constraint | Local choice until stronger evidence exists |
 | --- | --- | --- |

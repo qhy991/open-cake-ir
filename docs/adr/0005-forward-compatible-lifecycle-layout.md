@@ -6,7 +6,7 @@ Status: accepted, 2026-08-23; descriptor-placement commitment superseded by ADR 
 
 The Domain Contexts and their dependency direction are stable, but the repository still mixes active
 Implementation, immutable definitions, released identities, historical Evidence and derived views. Historical paths
-cannot be cosmetically reorganized: Compiler Revisions, Executor Revisions, Study Contracts, Campaign Locks and
+cannot be cosmetically reorganized: Compiler Revisions, Executor Revisions, Study Contracts, CampaignLocks and
 Evidence retain exact path and digest references.
 
 The most urgent failure is executable rather than visual. Generated Campaigns are documented as external to the
@@ -30,9 +30,9 @@ The exact owner of a definition must be settled in the Context language before i
 `definitions/`; directory movement may not decide ownership implicitly. Released Revision descriptors belong under
 `releases/`, not `definitions/`.
 
-Every new Campaign Lock and Campaign Evidence root is admitted through one Lab custody rule and must be create-only
+Every new CampaignLock and Campaign Evidence root is admitted through one Lab custody rule and must be create-only
 outside the project checkout. CLI rejection occurs before reading execution inputs; the Lab repeats the same rule so
-SDK callers cannot bypass it. Historical in-checkout Campaign Locks and Evidence remain available to read-only audit.
+SDK callers cannot bypass it. Historical in-checkout CampaignLocks and Evidence remain available to read-only audit.
 
 Executor v6 is the final transitional descriptor under `runtime/executors/` because its B200 observation already
 binds that path. The next Executor Revision begins under `releases/executors/`. Existing expanded Executor archives

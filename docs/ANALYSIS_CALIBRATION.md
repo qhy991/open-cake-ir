@@ -1,5 +1,10 @@
 # The static analysis, measured
 
+> **Historical analysis record through 2026-08-28.** The observations and later QSA
+> counterexample are retained together because they explain the withdrawn bound. Future
+> calibrations produce new contracts, Evidence, and reports; they do not silently update
+> these rows. Released calibration coverage is read from the current Compiler Revision.
+
 The paper's harness reports a performance analysis as a *report*, and says plainly that
 on-device measurement remains the ground truth. This repository had the report and none of
 the measurement, so nothing established whether the bounds it prints are true.

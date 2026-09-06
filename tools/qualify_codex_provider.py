@@ -26,6 +26,7 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     ProviderQualificationReceipt,
     read_frozen_reference_bundle,
 )
+from open_cake_ir.lab.task_package import TASK_AGENTS_RALPH_V1  # noqa: E402
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -66,8 +67,18 @@ def _turn_prompt(
     reference_bundle_sha256: str,
     reference_bundle: str,
     prompt_template: Path,
+    agent_interface: str,
 ) -> str:
     change = "add" if turn == 1 else "update"
+    if agent_interface == TASK_AGENTS_RALPH_V1:
+        return (
+            "Read TASK.md and AGENTS.md completely. Continue the same Ralph "
+            f"qualification thread. {tool_instruction}\n"
+            f"CANDIDATE_PATH_JSON={json.dumps(str(candidate.absolute()))}\n"
+            f"ARM={arm}\n"
+            f"EXPECTED_CANDIDATE_SET_JSON={json.dumps(expected_submission, sort_keys=True, separators=(',', ':'), ensure_ascii=False)}\n"
+            f"{change.capitalize()} only {candidate.name}; keep TASK.md and AGENTS.md unchanged."
+        )
     template = prompt_template.read_text(encoding="utf-8")
     replacements = {
         "{{CANDIDATE_PATH_JSON}}": json.dumps(str(candidate.absolute())),
@@ -180,10 +191,23 @@ def _validate_invocation_pair(
         raise ValueError("Codex initial and resume environments differ")
 
 
-def _validate_workspace(workspace: Path, candidate: Path) -> None:
+def _validate_workspace(
+    workspace: Path,
+    candidate: Path,
+    *,
+    task_files: bool,
+) -> None:
     entries = list(workspace.iterdir())
-    if entries != [candidate] or candidate.is_symlink() or not candidate.is_file():
+    expected = {candidate}
+    if task_files:
+        expected.update({workspace / "TASK.md", workspace / "AGENTS.md"})
+    if set(entries) != expected or candidate.is_symlink() or not candidate.is_file():
         raise ValueError("Codex qualification workspace custody differs")
+    if task_files and any(
+        path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o222
+        for path in (workspace / "TASK.md", workspace / "AGENTS.md")
+    ):
+        raise ValueError("Codex qualification task-file custody differs")
 
 
 def _invocation_document(invocation: ProviderInvocation) -> dict[str, object]:
@@ -266,6 +290,11 @@ def main() -> int:
         default="closed_research",
     )
     parser.add_argument(
+        "--agent-interface",
+        choices=("legacy_prompt_v1", TASK_AGENTS_RALPH_V1),
+        default="legacy_prompt_v1",
+    )
+    parser.add_argument(
         "--remove-env",
         action="append",
         dest="removed_environment",
@@ -287,6 +316,9 @@ def main() -> int:
         if args.maximum_candidates_per_turn is not None
         else SINGLE_CANDIDATE_V1
     )
+    task_interface = args.agent_interface == TASK_AGENTS_RALPH_V1
+    if task_interface and submission_contract != CANDIDATE_SET_ENVELOPE_V1:
+        raise ValueError("Ralph qualification requires a candidate-set envelope")
     qualification_arms = (
         ("open_cake", "direct_cuda")
         if submission_contract == CANDIDATE_SET_ENVELOPE_V1
@@ -371,6 +403,41 @@ def main() -> int:
     reference_path.chmod(0o444)
     references.chmod(0o555)
     reference_bundle_sha256, reference_bundle = read_frozen_reference_bundle(references)
+    task_files_by_arm: dict[str, tuple[bytes, bytes]] = {}
+    if task_interface:
+        for arm, arm_workspace in workspaces.items():
+            task_payload = (
+                "# TASK.md — provider qualification\n\n"
+                f"Prove two-Turn `{arm}` candidate-set add/update behavior.\n\n"
+                f"Frozen qualification nonce: `{reference_nonce}`.\n"
+            ).encode()
+            agents_payload = (
+                "# AGENTS.md — provider qualification\n\n"
+                "Read TASK.md. Write only candidate-set.json. Keep both task files "
+                "unchanged. Do not use a GPU or network.\n"
+            ).encode()
+            for name, payload in (
+                ("TASK.md", task_payload),
+                ("AGENTS.md", agents_payload),
+            ):
+                path = arm_workspace / name
+                path.write_bytes(payload)
+                path.chmod(0o444)
+            task_files_by_arm[arm] = (task_payload, agents_payload)
+        task_bundle = {
+            arm: {
+                "task_markdown": values[0].decode(),
+                "agents_markdown": values[1].decode(),
+            }
+            for arm, values in task_files_by_arm.items()
+        }
+        reference_bundle = json.dumps(
+            task_bundle,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        reference_bundle_sha256 = sha256(reference_bundle.encode()).hexdigest()
     authority = {
         "schema_version": 1,
         "kind": "codex_provider_two_turn_qualification",
@@ -387,7 +454,17 @@ def main() -> int:
         "event_contract": event_contract,
         "feature_policy": args.feature_policy,
         "sandbox": "workspace-write",
-        "cwd_policy": "same_new_empty_workspace",
+        "cwd_policy": (
+            "same_new_task_workspace"
+            if task_interface
+            else "same_new_empty_workspace"
+        ),
+        "reference_visibility": (
+            "workspace_task_files"
+            if task_interface
+            else "embedded_frozen_bundle"
+        ),
+        "agent_interface": args.agent_interface,
         "turns": ["initial_add", "same_thread_resume_update"],
         "gpu_execution_authorized": False,
     }
@@ -429,6 +506,16 @@ def main() -> int:
                 disabled_features=disabled_features,
                 event_contract=event_contract,
                 submission_contract=submission_contract,
+                cwd_policy=(
+                    "independent_task_workspace"
+                    if task_interface
+                    else "independent_empty_workspace"
+                ),
+                reference_visibility=(
+                    "workspace_task_files"
+                    if task_interface
+                    else "embedded_frozen_bundle"
+                ),
             )
             configuration_sha256s.add(builder.configuration_sha256)
             expected_initial, initial_candidates = _expected_submission(
@@ -450,6 +537,7 @@ def main() -> int:
                     reference_bundle_sha256=reference_bundle_sha256,
                     reference_bundle=reference_bundle,
                     prompt_template=prompt_template,
+                    agent_interface=args.agent_interface,
                 ),
                 thread_id=None,
             )
@@ -474,7 +562,9 @@ def main() -> int:
                 ),
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
-            _validate_workspace(arm_workspace, candidate)
+            _validate_workspace(
+                arm_workspace, candidate, task_files=task_interface
+            )
             initial_submission = candidate.read_bytes()
             if (
                 initial.candidates != initial_candidates
@@ -502,6 +592,7 @@ def main() -> int:
                     reference_bundle_sha256=reference_bundle_sha256,
                     reference_bundle=reference_bundle,
                     prompt_template=prompt_template,
+                    agent_interface=args.agent_interface,
                 ),
                 thread_id=initial.thread_id,
             )
@@ -531,7 +622,9 @@ def main() -> int:
                 ),
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
-            _validate_workspace(arm_workspace, candidate)
+            _validate_workspace(
+                arm_workspace, candidate, task_files=task_interface
+            )
             resumed_submission = candidate.read_bytes()
             if (
                 (
@@ -586,7 +679,19 @@ def main() -> int:
             != len(qualification_arms)
             or sha256(executable.read_bytes()).hexdigest() != executable_sha256
             or sha256(output_schema.read_bytes()).hexdigest() != output_schema_sha256
-            or read_frozen_reference_bundle(references)[0] != reference_bundle_sha256
+            or (
+                not task_interface
+                and read_frozen_reference_bundle(references)[0]
+                != reference_bundle_sha256
+            )
+            or (
+                task_interface
+                and any(
+                    (workspaces[arm] / "TASK.md").read_bytes() != values[0]
+                    or (workspaces[arm] / "AGENTS.md").read_bytes() != values[1]
+                    for arm, values in task_files_by_arm.items()
+                )
+            )
         ):
             raise ValueError("Codex provider qualification authority changed")
 

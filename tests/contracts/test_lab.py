@@ -40,8 +40,14 @@ from open_cake_ir.lab import (  # noqa: E402
     ProviderQualificationReceipt,
     ProviderTurn,
     RunProtocolFault,
+    RalphBudget,
+    RalphController,
+    TASK_AGENTS_RALPH_V1,
     TurnObservation,
+    materialize_task_package,
     project_checkpoints,
+    render_task_package,
+    verify_task_package,
 )
 
 
@@ -219,6 +225,38 @@ class FakeProvider:
 
 class CandidateSetFakeProvider(FakeProvider):
     pass
+
+
+class RalphFakeProvider(FakeProvider):
+    provider_revision = "fixture-provider-candidate-set-ralph-v1"
+    qualification_sha256 = "694132ea32f002c56f019a2d5cca80112700cb9bc6e54dfaf87d08a62cc2c979"
+    configuration = {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "max",
+        "service_tier": "default",
+        "output_schema_sha256": "5b3b813d98ddae93fe9ff5cf0f1568d64721fa31029cb77a0ad5f2dfc800ed18",
+        "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
+        "sandbox": "workspace-write",
+        "cwd_policy": "independent_task_workspace",
+        "reference_visibility": "workspace_task_files",
+        "disabled_features": list(CODEX_DISABLED_FEATURES),
+        "submission_contract": CANDIDATE_SET_ENVELOPE_V1,
+    }
+
+    def __init__(self, packages) -> None:
+        super().__init__()
+        self.packages = packages
+
+    def turn(self, request):
+        result = super().turn(request)
+        if request.state_card is None:
+            raise ValueError("Ralph fixture requires a StateCard")
+        return dataclasses.replace(
+            result,
+            reference_bundle=self.packages[request.run_id].evidence_bundle(
+                request.state_card
+            ),
+        )
 
 
 def _enable_candidate_set(document: dict[str, object], maximum: int) -> None:
@@ -403,6 +441,8 @@ class LabContractTests(unittest.TestCase):
             "artifact-optimization-template.json",
             "flash-kmeans-r45-portfolio-reconstruction-template.json",
             "matched-search-clean-start-reference-template.json",
+            "matched-search-system-qualification-ralph-template.json",
+            "artifact-optimization-ralph-template.json",
         ):
             path = ROOT / "contracts/studies" / name
             study = json.loads(path.read_text(encoding="utf-8"))
@@ -3280,6 +3320,299 @@ class BrokerExecutionDigestTest(unittest.TestCase):
                 self._digest([], root)
             with self.assertRaisesRegex(ValueError, "unavailable"):
                 self._digest([str(root / "absent")], root)
+
+
+class RalphTaskInterfaceTests(unittest.TestCase):
+    def test_ralph_budget_controls_tokens_time_turns_and_evaluations(self) -> None:
+        now = [10.0]
+        budget = RalphBudget.from_mapping(
+            {
+                "limit": 100,
+                "maximum_turns": 3,
+                "maximum_candidates_per_turn": 2,
+                "wall_time_seconds": 20,
+                "active_authoring_time_seconds": 10,
+                "evaluation_limits": {
+                    "search": 4,
+                    "confirmatory": 2,
+                    "attribution": 4,
+                },
+            }
+        )
+        controller = RalphController(
+            budget,
+            searches_per_turn=2,
+            profile_each_search_survivor=True,
+            clock=lambda: now[0],
+        )
+        self.assertIsNone(
+            controller.stop_reason(turn=1, cumulative_provider_tokens=0)
+        )
+        started = controller.begin_authoring()
+        now[0] += 4
+        controller.end_authoring(started)
+        for purpose in ("search", "search", "confirmatory", "attribution", "attribution"):
+            controller.record_evaluation(purpose)
+        card = controller.state_card(
+            turn=2,
+            cumulative_provider_tokens=60,
+            feedback={"kind": "evaluation"},
+        )
+        self.assertEqual(card["remaining"]["provider_tokens"], 40)
+        self.assertEqual(card["evaluation_counts"]["search"], 2)
+        self.assertIsNone(
+            controller.stop_reason(turn=2, cumulative_provider_tokens=60)
+        )
+        self.assertEqual(
+            controller.stop_reason(turn=2, cumulative_provider_tokens=100),
+            "provider_token_limit",
+        )
+        now[0] = 31
+        self.assertEqual(
+            controller.stop_reason(turn=2, cumulative_provider_tokens=60),
+            "wall_time_limit",
+        )
+        now[0] = 10
+        active_controller = RalphController(
+            budget,
+            searches_per_turn=2,
+            profile_each_search_survivor=True,
+            clock=lambda: now[0],
+        )
+        started = active_controller.begin_authoring()
+        now[0] += 11
+        active_controller.end_authoring(started)
+        self.assertEqual(
+            active_controller.stop_reason(
+                turn=2, cumulative_provider_tokens=1
+            ),
+            "active_authoring_time_limit",
+        )
+        self.assertEqual(
+            controller.stop_reason(turn=4, cumulative_provider_tokens=1),
+            "maximum_turns",
+        )
+        evaluation_controller = RalphController(
+            budget,
+            searches_per_turn=2,
+            profile_each_search_survivor=True,
+            clock=lambda: 10.0,
+        )
+        for purpose in (
+            "search",
+            "search",
+            "search",
+            "confirmatory",
+            "attribution",
+            "attribution",
+            "attribution",
+        ):
+            evaluation_controller.record_evaluation(purpose)
+        self.assertEqual(
+            evaluation_controller.stop_reason(
+                turn=2, cumulative_provider_tokens=1
+            ),
+            "evaluation_budget",
+        )
+
+    def test_task_package_is_complete_read_only_and_arm_specific(self) -> None:
+        lock = Lab(ROOT).preflight(
+            ROOT
+            / "contracts/studies/matched-search-system-qualification-ralph-template.json"
+        )
+        self.assertEqual(lock.agent_interface, TASK_AGENTS_RALPH_V1)
+        open_package = render_task_package(ROOT, lock, "open_cake-1")
+        cuda_package = render_task_package(ROOT, lock, "direct_cuda-1")
+        self.assertIn("schedule-skeleton.json", open_package.task_markdown)
+        self.assertIn("schedule-authoring.md", open_package.task_markdown)
+        self.assertNotIn("candidate-skeleton.cu", open_package.task_markdown)
+        self.assertIn("candidate-skeleton.cu", cuda_package.task_markdown)
+        self.assertIn("cuda-launch-abi.json", cuda_package.task_markdown)
+        self.assertNotIn("schedule-skeleton.json", cuda_package.task_markdown)
+        for package in (open_package, cuda_package):
+            self.assertIn("Write only `candidate-set.json`", package.agents_markdown)
+            self.assertNotIn("confirmed_latency_ms", package.agents_markdown)
+            with tempfile.TemporaryDirectory() as directory:
+                workspace = Path(directory)
+                materialize_task_package(workspace, package)
+                verify_task_package(workspace, package)
+                self.assertEqual(
+                    {path.name for path in workspace.iterdir()},
+                    {"TASK.md", "AGENTS.md"},
+                )
+                self.assertEqual((workspace / "TASK.md").stat().st_mode & 0o222, 0)
+                (workspace / "TASK.md").chmod(0o644)
+                (workspace / "TASK.md").write_text("changed", encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "TASK.md custody differs"):
+                    verify_task_package(workspace, package)
+
+    def test_ralph_system_qualification_executes_two_turns_and_replays(self) -> None:
+        lab = Lab(ROOT, clock=lambda: 0.0)
+        lock = lab.preflight(
+            ROOT
+            / "contracts/studies/matched-search-system-qualification-ralph-template.json"
+        )
+        packages = {
+            run_id: render_task_package(ROOT, lock, run_id)
+            for run_id in lock.run_order
+        }
+        resolved = lock.document["resolved_inputs"]
+        protocol_sha256 = sha256(
+            json.dumps(
+                lock.document["evaluation_protocol"],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        provider = RalphFakeProvider(packages)
+        with tempfile.TemporaryDirectory() as directory:
+            campaign = lab.execute(
+                lock,
+                Path(directory) / "evidence",
+                provider=provider,
+                environments={
+                    name: FakeEnvironment(name, document)
+                    for name, document in resolved["arm_environments"].items()
+                },
+                evaluator=FakeEvaluator(
+                    lock.document["evaluation_protocol"],
+                    protocol_sha256,
+                    lock.document["workload"]["canonical_sha256"],
+                ),
+            )
+            report = lab.audit(campaign)
+            evidence = EvidenceStore.open(campaign.evidence_root)
+            for run_id in lock.run_order:
+                events = evidence.replay_events(run_id)
+                provider_events = [
+                    event
+                    for event in events
+                    if event["kind"] == "provider_turn_completed"
+                ]
+                self.assertEqual(len(provider_events), 2)
+                checkpoint = next(
+                    event for event in events if event["kind"] == "checkpoints_projected"
+                )["payload"]
+                self.assertEqual(
+                    checkpoint["ralph"]["terminal_reason"],
+                    "provider_token_limit",
+                )
+                bundles = []
+                for event in provider_events:
+                    reference = next(
+                        item
+                        for item in event["payload"]["objects"]
+                        if item["role"] == "provider_reference_bundle"
+                    )
+                    bundles.append(json.loads(evidence.read_object(reference)))
+                self.assertEqual(
+                    [bundle["state_card"]["iteration"] for bundle in bundles],
+                    [1, 2],
+                )
+                self.assertTrue(
+                    all(
+                        bundle["task_markdown"] == packages[run_id].task_markdown
+                        and bundle["agents_markdown"] == packages[run_id].agents_markdown
+                        for bundle in bundles
+                    )
+                )
+            tampered_run = lock.run_order[0]
+            tampered_events = json.loads(
+                json.dumps(evidence.replay_events(tampered_run))
+            )
+            first_provider_event = next(
+                event
+                for event in tampered_events
+                if event["kind"] == "provider_turn_completed"
+            )
+            original_reference = next(
+                item
+                for item in first_provider_event["payload"]["objects"]
+                if item["role"] == "provider_reference_bundle"
+            )
+            tampered_bundle = json.loads(evidence.read_object(original_reference))
+            tampered_bundle["task_markdown"] += "\nunauthorized change\n"
+            writer = EvidenceStore.writer(campaign.evidence_root)
+            tampered_object = writer.put(
+                json.dumps(
+                    tampered_bundle,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode(),
+                media_type="application/json",
+            )
+            first_provider_event["payload"]["objects"] = [
+                (
+                    tampered_object.reference("provider_reference_bundle")
+                    if item["role"] == "provider_reference_bundle"
+                    else item
+                )
+                for item in first_provider_event["payload"]["objects"]
+            ]
+            with mock.patch.object(
+                evidence,
+                "replay_events",
+                return_value=tuple(tampered_events),
+            ):
+                self.assertFalse(
+                    lab._replay_matched_run(
+                        evidence,
+                        evidence.audit_run(tampered_run),
+                        lock,
+                    )
+                )
+            wrong_stop_events = json.loads(
+                json.dumps(evidence.replay_events(tampered_run))
+            )
+            wrong_checkpoint = next(
+                event
+                for event in wrong_stop_events
+                if event["kind"] == "checkpoints_projected"
+            )
+            wrong_checkpoint["payload"]["ralph"]["terminal_reason"] = (
+                "wall_time_limit"
+            )
+            with mock.patch.object(
+                evidence,
+                "replay_events",
+                return_value=tuple(wrong_stop_events),
+            ):
+                self.assertFalse(
+                    lab._replay_matched_run(
+                        evidence,
+                        evidence.audit_run(tampered_run),
+                        lock,
+                    )
+                )
+        self.assertEqual(len(provider.requests), 4)
+        self.assertTrue(report.archive_integrity_passed)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertTrue(report.system_qualification_passed)
+        self.assertIsNone(report.estimand)
+        self.assertIsNone(report.estimate)
+
+    def test_ralph_artifact_template_keeps_promotion_non_scientific(self) -> None:
+        lock = Lab(ROOT).preflight(
+            ROOT / "contracts/studies/artifact-optimization-ralph-template.json"
+        )
+        self.assertEqual(lock.agent_interface, TASK_AGENTS_RALPH_V1)
+        self.assertEqual(lock.claim_scope, "artifact_optimization_only")
+        self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
+        self.assertIsNone(lock.estimand)
+        self.assertEqual(
+            lock.document["analysis_plan"]["comparative_statistics"],
+            "forbidden",
+        )
+        for environment in lock.document["resolved_inputs"][
+            "arm_environments"
+        ].values():
+            provider = environment["provider"]
+            self.assertEqual(provider["disabled_features"], [])
+            self.assertEqual(provider["event_contract"], "tool_rich_candidate_v1")
+            self.assertEqual(
+                provider["reference_visibility"], "workspace_task_files"
+            )
+            self.assertNotIn("prompt_template", environment)
 
 
 class RuntimeReferenceCustodyTest(unittest.TestCase):

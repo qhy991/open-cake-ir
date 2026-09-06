@@ -18,6 +18,7 @@ from .process import (
     run_supervised,
     sanitized_environment,
 )
+from .task_package import TaskPackage, verify_task_package
 
 _THREAD_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _MAX_CANDIDATE_BYTES = 64 * 1024 * 1024
@@ -820,6 +821,7 @@ class TurnRequestLike(Protocol):
     thread_id: str | None
     feedback: Mapping[str, object]
     maximum_candidates_per_turn: int
+    state_card: Mapping[str, object] | None
 
 
 class CodexRunProvider:
@@ -837,8 +839,11 @@ class CodexRunProvider:
         builders: Mapping[str, CodexInvocationBuilder],
         reference_roots: Mapping[str, Path],
         prompt_templates: Mapping[str, Path],
+        task_packages: Mapping[str, TaskPackage] | None = None,
         adapter: CodexProviderAdapter | None = None,
     ) -> None:
+        task_packages = dict(task_packages or {})
+        task_mode = bool(task_packages)
         if (
             not qualification.qualified
             or qualification.scope
@@ -847,8 +852,21 @@ class CodexRunProvider:
                 "live_two_turn_tool_rich_provider",
             }
             or not builders
-            or set(reference_roots) != set(builders)
-            or set(prompt_templates) != set(self._SINGLE_CANDIDATE_NAMES)
+            or (
+                task_mode
+                and (
+                    set(task_packages) != set(builders)
+                    or reference_roots
+                    or prompt_templates
+                )
+            )
+            or (
+                not task_mode
+                and (
+                    set(reference_roots) != set(builders)
+                    or set(prompt_templates) != set(self._SINGLE_CANDIDATE_NAMES)
+                )
+            )
         ):
             raise ValueError("live Codex Run Provider authority differs")
         revisions = {builder.provider_revision for builder in builders.values()}
@@ -859,11 +877,12 @@ class CodexRunProvider:
         if sha256(executable.read_bytes()).hexdigest() != qualification.executable_sha256:
             raise ValueError("Codex executable bytes differ from provider qualification")
         templates: dict[str, str] = {}
-        for arm, path in prompt_templates.items():
-            source = path.resolve(strict=True)
-            if source.is_symlink() or not source.is_file():
-                raise ValueError("Codex prompt template custody differs")
-            templates[arm] = source.read_text(encoding="utf-8")
+        if not task_mode:
+            for arm, path in prompt_templates.items():
+                source = path.resolve(strict=True)
+                if source.is_symlink() or not source.is_file():
+                    raise ValueError("Codex prompt template custody differs")
+                templates[arm] = source.read_text(encoding="utf-8")
         workspaces = [builder.workspace.absolute() for builder in builders.values()]
         if len(set(workspaces)) != len(workspaces):
             raise ValueError("each Run requires an independent workspace")
@@ -895,21 +914,43 @@ class CodexRunProvider:
             CANDIDATE_SET_ENVELOPE_V1,
         }:
             raise ValueError("Codex submission contract differs")
-        self._references = {
-            run_id: (path.resolve(strict=True), *read_frozen_reference_bundle(path))
-            for run_id, path in reference_roots.items()
-        }
-        if any(
-            builder.workspace in self._references[run_id][0].parents
-            or self._references[run_id][0] in builder.workspace.parents
-            for run_id, builder in builders.items()
-        ):
-            raise ValueError("provider references must be outside each writable workspace")
+        self._references = {}
+        if not task_mode:
+            self._references = {
+                run_id: (path.resolve(strict=True), *read_frozen_reference_bundle(path))
+                for run_id, path in reference_roots.items()
+            }
+            if any(
+                builder.workspace in self._references[run_id][0].parents
+                or self._references[run_id][0] in builder.workspace.parents
+                for run_id, builder in builders.items()
+            ):
+                raise ValueError("provider references must be outside each writable workspace")
+        else:
+            for run_id, package in task_packages.items():
+                if package.run_id != run_id:
+                    raise ValueError("Ralph task package Run identity differs")
+                verify_task_package(builders[run_id].workspace, package)
         self._builders = dict(builders)
         self._templates = templates
+        self._task_packages = task_packages
         self._adapter = adapter or CodexProviderAdapter()
 
     def _render_prompt(self, request: TurnRequestLike, candidate_path: Path) -> str:
+        if self._task_packages:
+            if request.state_card is None:
+                raise ValueError("Ralph Turn requires a controller StateCard")
+            state = json.dumps(
+                _plain_json(request.state_card),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+            return (
+                "Read TASK.md and AGENTS.md completely. Continue the same Ralph Run "
+                "under those immutable rules. Write only candidate-set.json. The "
+                f"external controller StateCard for this iteration is: {state}"
+            )
         feedback = json.dumps(
             _plain_json(request.feedback),
             sort_keys=True,
@@ -956,12 +997,25 @@ class CodexRunProvider:
         ):
             raise ValueError("Codex Run or arm is outside the Campaign Lock")
         workspace = builder.workspace.absolute()
-        reference_root, reference_sha256, _ = self._references[request.run_id]
-        if read_frozen_reference_bundle(reference_root)[0] != reference_sha256:
-            raise ValueError("provider references changed before Turn")
+        if self._task_packages:
+            package = self._task_packages[request.run_id]
+            verify_task_package(workspace, package)
+            reference_root = None
+            reference_sha256 = None
+        else:
+            reference_root, reference_sha256, _ = self._references[request.run_id]
+            if read_frozen_reference_bundle(reference_root)[0] != reference_sha256:
+                raise ValueError("provider references changed before Turn")
         if request.turn == 1:
-            if request.thread_id is not None or not workspace.is_dir() or any(
-                workspace.iterdir()
+            expected_initial_entries = (
+                {workspace / "TASK.md", workspace / "AGENTS.md"}
+                if self._task_packages
+                else set()
+            )
+            if (
+                request.thread_id is not None
+                or not workspace.is_dir()
+                or set(workspace.iterdir()) != expected_initial_entries
             ):
                 raise ValueError("initial Codex Turn requires one empty workspace")
         elif request.thread_id is None:
@@ -1007,8 +1061,11 @@ class CodexRunProvider:
         )
         if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1:
             entries = list(workspace.iterdir())
+            expected_entries = {candidate_path}
+            if self._task_packages:
+                expected_entries.update({workspace / "TASK.md", workspace / "AGENTS.md"})
             if (
-                entries != [candidate_path]
+                set(entries) != expected_entries
                 or candidate_path.is_symlink()
                 or not candidate_path.is_file()
             ):
@@ -1016,11 +1073,22 @@ class CodexRunProvider:
                     "provider_fault",
                     "Codex candidate-set workspace custody differs",
                 )
-        if read_frozen_reference_bundle(reference_root)[0] != reference_sha256:
-            raise RunProtocolFault("contamination", "provider references changed during Turn")
+        if self._task_packages:
+            try:
+                verify_task_package(workspace, package)
+            except ValueError as error:
+                raise RunProtocolFault("contamination", str(error)) from error
+            reference_bundle = package.evidence_bundle(
+                cast(Mapping[str, object], request.state_card)
+            )
+        else:
+            assert reference_root is not None and reference_sha256 is not None
+            if read_frozen_reference_bundle(reference_root)[0] != reference_sha256:
+                raise RunProtocolFault("contamination", "provider references changed during Turn")
+            reference_bundle = self._references[request.run_id][2].encode("utf-8")
         return replace(
             result,
-            reference_bundle=self._references[request.run_id][2].encode("utf-8"),
+            reference_bundle=reference_bundle,
         )
 
 
@@ -1041,6 +1109,8 @@ class CodexInvocationBuilder:
         disabled_features: tuple[str, ...] = CODEX_DISABLED_FEATURES,
         event_contract: str = "closed_file_change_v1",
         submission_contract: str = SINGLE_CANDIDATE_V1,
+        cwd_policy: str = "independent_empty_workspace",
+        reference_visibility: str = "embedded_frozen_bundle",
     ) -> None:
         values = (provider_revision, model, reasoning_effort, service_tier)
         if any(not value for value in values) or not removed_environment:
@@ -1062,6 +1132,11 @@ class CodexInvocationBuilder:
             CANDIDATE_SET_ENVELOPE_V1,
         }:
             raise ValueError("Codex submission contract differs")
+        if (cwd_policy, reference_visibility) not in {
+            ("independent_empty_workspace", "embedded_frozen_bundle"),
+            ("independent_task_workspace", "workspace_task_files"),
+        }:
+            raise ValueError("Codex workspace/reference policy differs")
         self._executable = executable
         self._provider_revision = provider_revision
         self._model = model
@@ -1073,6 +1148,8 @@ class CodexInvocationBuilder:
         self._disabled_features = disabled_features
         self._event_contract = event_contract
         self._submission_contract = submission_contract
+        self._cwd_policy = cwd_policy
+        self._reference_visibility = reference_visibility
 
     @property
     def workspace(self) -> Path:
@@ -1095,8 +1172,8 @@ class CodexInvocationBuilder:
             "output_schema_sha256": sha256(self._output_schema.read_bytes()).hexdigest(),
             "removed_environment": list(self._removed_environment),
             "sandbox": "workspace-write",
-            "cwd_policy": "independent_empty_workspace",
-            "reference_visibility": "embedded_frozen_bundle",
+            "cwd_policy": self._cwd_policy,
+            "reference_visibility": self._reference_visibility,
             "disabled_features": list(self._disabled_features),
         }
         if self._event_contract != "closed_file_change_v1":

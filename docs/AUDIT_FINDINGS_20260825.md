@@ -1,13 +1,13 @@
 # Audit findings register, 2026-08-25
 
-This is the current-`main` disposition of the external audit originally performed at
+This frozen snapshot records the 2026-08-25 `main` disposition of the external audit originally performed at
 `f503de4` and rechecked at `e351b67`. The original prose lived in a divergent old
 worktree; every conclusion below was reproduced or falsified again before changing its
 disposition.
 
 ## Disposition summary
 
-| # | Finding | Current disposition |
+| # | Finding | Snapshot disposition |
 | --- | --- | --- |
 | 1 | `EpilogueFormula` was parsed but ignored | fixed in Compiler v23 |
 | 2 | tutorial linked an obsolete, unparsable Schedule | fixed at the documentation authority |
@@ -56,7 +56,7 @@ weak clone-time modes, while `filesystem_custody_verified` separately observes t
 and modes of those exact paths. `EvidenceStore.writer` retains strict live-custody
 admission.
 
-A byte-identical copied G8 Campaign now replays with archive integrity and semantic replay
+A byte-identical copy of the bounded system-qualification Campaign now replays with archive integrity and semantic replay
 true, filesystem custody false and system qualification false. Content tampering still
 fails archive integrity. The old normalization helper was removed: changing modes just
 before audit cannot prove continuous historical custody and is no longer necessary for

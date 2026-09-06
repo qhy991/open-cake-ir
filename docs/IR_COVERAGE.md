@@ -1,5 +1,10 @@
 # What the IR must express, derived from real kernels
 
+> **Survey snapshot through 2026-08-28.** `YES`, `~`, and `NO` below describe the bound
+> survey plus its recorded closure notes, not the current released Compiler. New IR work
+> is gated through successor ADRs and the Corpus; do not keep this survey current by
+> rewriting its historical classifications.
+
 The paper derives Cake IR bottom-up from production kernels (CUTLASS, FlashInfer,
 FlashAttention-4, TensorRT-LLM, DeepGEMM, Alpha-MoE, TileLang) and names what that survey
 motivated: barrier choreography, warp-role partitioning, pipeline staging, TMA descriptors
