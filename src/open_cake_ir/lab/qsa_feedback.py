@@ -120,7 +120,7 @@ def _bounded_profile(profile: Mapping[str, object]) -> Mapping[str, object]:
         if not isinstance(metric, Mapping) or not isinstance(metric.get("metric"), str):
             raise ValueError("QSA static profile metric differs")
         if metric.get("estimate_kind") == "unknown":
-            abstained_metrics.append(metric["metric"])
+            abstained_metrics.append(dict(metric))
         else:
             retained_metrics.append(dict(metric))
     return {
@@ -131,7 +131,9 @@ def _bounded_profile(profile: Mapping[str, object]) -> Mapping[str, object]:
             for key in (
                 "ctas_per_sm_upper_bound",
                 "binding_resource",
+                "coverage",
                 "logical_register_pressure_per_thread",
+                "bounds",
             )
         },
         "lowering": {
@@ -146,6 +148,12 @@ def _bounded_profile(profile: Mapping[str, object]) -> Mapping[str, object]:
         },
         "ncu_estimates": retained_metrics,
         "ncu_abstentions": abstained_metrics,
+        "abstentions": profile.get("abstentions", []),
+        **{
+            key: profile[key]
+            for key in ("findings", "empirical_cost")
+            if key in profile
+        },
     }
 
 
