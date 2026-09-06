@@ -233,6 +233,11 @@ class Buffer:
     valid_extent: ValidExtentRelation | None
 
     @property
+    def is_scalar(self) -> bool:
+        """The canonical one-value shape, also used by scalar loads/reductions."""
+        return self.shape == (1,)
+
+    @property
     def elements(self) -> int:
         total = 1
         for dimension in self.shape:

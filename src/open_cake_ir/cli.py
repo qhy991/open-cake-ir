@@ -225,6 +225,10 @@ def _lab(args: argparse.Namespace) -> int:
         _emit(report)
         return 0 if report.archive_integrity_passed else 2
     campaign = lab.reference_campaign(lock, args.evidence_root)
+    if args.threshold_ms is not None:
+        view = lab.threshold_view(campaign, args.threshold_ms)
+        _emit(view)
+        return 0 if view["audit"].archive_integrity_passed else 2
     report = (
         lab.audit_portfolio(campaign)
         if lock.study_kind == "portfolio"
@@ -266,6 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
     audit = lab_commands.add_parser("audit")
     audit.add_argument("--lock", type=Path, required=True)
     audit.add_argument("--evidence-root", type=Path, required=True)
+    audit.add_argument("--threshold-ms", type=float, help="descriptive first fresh-confirmation view from retained matched Runs")
     execute = lab_commands.add_parser("execute")
     execute.add_argument("--lock", type=Path, required=True)
     execute.add_argument("--runtime-config", type=Path, required=True)

@@ -21,7 +21,7 @@ Reading companions explain the material in simpler language. Detailed tables and
 | 论文对照约定：论文说了什么，本项目证明了什么 | [阅读](zh-CN/PAPER_CONTRACT.md) | [Read](PAPER_CONTRACT.md) |
 | 执行手册：从准备到复查，一步步做什么 | [阅读](zh-CN/RUNBOOK.md) | [Read](RUNBOOK.md) |
 | 用 Python 编写执行计划 | [阅读](zh-CN/PYTHON_FRONTEND.md) | [Read](en/PYTHON_FRONTEND.md) |
-| Apple M2 的 Metal 逐元素计算与行归约 | [阅读](metal.zh-CN.md) | [Read](metal.md) |
+| Apple M2 的 Metal 逐元素计算、行归约、加权 RMSNorm 与测量 | [阅读](metal.zh-CN.md) | [Read](metal.md) |
 | 当前 IR 详解：结构、语义与代码组织 | [阅读](IR_GUIDE.md) | [Read](en/IR_GUIDE.md) |
 | 旧顶层设计入口：现在应该读哪里 | [阅读](zh-CN/TOP_LEVEL_DESIGN.md) | [Read](TOP_LEVEL_DESIGN.md) |
 | Open Cake 中文 Wiki | [阅读](wiki/README.md) | [Read](en/wiki/README.md) |
@@ -33,6 +33,9 @@ Reading companions explain the material in simpler language. Detailed tables and
 | 怎样读结果，也怎样排错 | [阅读](wiki/results.md) | [Read](en/wiki/results.md) |
 | 读懂一份执行计划 | [阅读](wiki/schedule.md) | [Read](en/wiki/schedule.md) |
 | Workload 目录：项目里有哪些完整任务定义 | [阅读](wiki/workloads.md) | [Read](en/wiki/workloads.md) |
+| 独立 Tile Workload：共用 ABI、CPU oracle 与匹配基线 | [阅读](TILE_WORKLOADS.md) | [Read](en/TILE_WORKLOADS.md) |
+| Triton TileLoop：两层循环的作用域、累积与写回 | [阅读](TRITON_LOOP_SCOPES.md) | [Read](en/TRITON_LOOP_SCOPES.md) |
+| 同后端 Triton 配对：共同基线、隔离构建与 Evaluation | [阅读](PAIRED_TRITON.md) | [Read](en/PAIRED_TRITON.md) |
 
 ## 模块职责 / Contexts
 

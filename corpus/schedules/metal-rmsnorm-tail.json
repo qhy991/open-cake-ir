@@ -1,0 +1,365 @@
+{
+  "access_maps": [
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "x",
+      "indices": [
+        {
+          "name": "row",
+          "source": "program"
+        },
+        {
+          "dimension": 1,
+          "source": "dimension"
+        }
+      ],
+      "operation": "load_x"
+    },
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "weight",
+      "indices": [
+        {
+          "dimension": 0,
+          "source": "dimension"
+        }
+      ],
+      "operation": "load_weight"
+    },
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "out",
+      "indices": [
+        {
+          "name": "row",
+          "source": "program"
+        },
+        {
+          "dimension": 1,
+          "source": "dimension"
+        }
+      ],
+      "operation": "store_out"
+    }
+  ],
+  "allocations": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "dtype": "fp32",
+      "mode": "input",
+      "name": "x",
+      "shape": [
+        5,
+        65
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "input",
+      "name": "weight",
+      "shape": [
+        65
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "output",
+      "name": "out",
+      "shape": [
+        5,
+        65
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "values",
+      "shape": [
+        65
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "weights",
+      "shape": [
+        65
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "squared",
+      "shape": [
+        65
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "total",
+      "shape": [
+        1
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "mean",
+      "shape": [
+        1
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "variance",
+      "shape": [
+        1
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "inverse",
+      "shape": [
+        1
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "normalized",
+      "shape": [
+        65
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "result",
+      "shape": [
+        65
+      ],
+      "space": "register"
+    }
+  ],
+  "lowering": {
+    "backend": "metal",
+    "entry_point": "cake_rmsnorm"
+  },
+  "metadata": {},
+  "operations": [
+    {
+      "id": "load_x",
+      "kind": "load",
+      "parameters": {
+        "movement": "global"
+      },
+      "reads": [
+        "x"
+      ],
+      "role": "compute",
+      "writes": [
+        "values"
+      ]
+    },
+    {
+      "id": "load_weight",
+      "kind": "load",
+      "parameters": {
+        "movement": "global"
+      },
+      "reads": [
+        "weight"
+      ],
+      "role": "compute",
+      "writes": [
+        "weights"
+      ]
+    },
+    {
+      "depends_on": [
+        "load_x"
+      ],
+      "id": "square",
+      "kind": "elementwise",
+      "parameters": {
+        "op": "square"
+      },
+      "reads": [
+        "values"
+      ],
+      "role": "compute",
+      "writes": [
+        "squared"
+      ]
+    },
+    {
+      "depends_on": [
+        "square"
+      ],
+      "id": "sum",
+      "kind": "reduce",
+      "parameters": {
+        "across_loop": false,
+        "axis": 0,
+        "op": "sum",
+        "scope": "cta"
+      },
+      "reads": [
+        "squared"
+      ],
+      "role": "compute",
+      "writes": [
+        "total"
+      ]
+    },
+    {
+      "depends_on": [
+        "sum"
+      ],
+      "id": "mean",
+      "kind": "elementwise",
+      "parameters": {
+        "op": "div",
+        "scalar": 65.0
+      },
+      "reads": [
+        "total"
+      ],
+      "role": "compute",
+      "writes": [
+        "mean"
+      ]
+    },
+    {
+      "depends_on": [
+        "mean"
+      ],
+      "id": "variance",
+      "kind": "elementwise",
+      "parameters": {
+        "op": "add",
+        "scalar": 1e-05
+      },
+      "reads": [
+        "mean"
+      ],
+      "role": "compute",
+      "writes": [
+        "variance"
+      ]
+    },
+    {
+      "depends_on": [
+        "variance"
+      ],
+      "id": "rsqrt",
+      "kind": "elementwise",
+      "parameters": {
+        "op": "rsqrt"
+      },
+      "reads": [
+        "variance"
+      ],
+      "role": "compute",
+      "writes": [
+        "inverse"
+      ]
+    },
+    {
+      "depends_on": [
+        "rsqrt"
+      ],
+      "id": "normalized",
+      "kind": "elementwise",
+      "parameters": {
+        "op": "mul"
+      },
+      "reads": [
+        "values",
+        "inverse"
+      ],
+      "role": "compute",
+      "writes": [
+        "normalized"
+      ]
+    },
+    {
+      "depends_on": [
+        "normalized",
+        "load_weight"
+      ],
+      "id": "result",
+      "kind": "elementwise",
+      "parameters": {
+        "op": "mul"
+      },
+      "reads": [
+        "normalized",
+        "weights"
+      ],
+      "role": "compute",
+      "writes": [
+        "result"
+      ]
+    },
+    {
+      "depends_on": [
+        "result"
+      ],
+      "id": "store_out",
+      "kind": "store",
+      "parameters": {
+        "coalesced": false
+      },
+      "reads": [
+        "result"
+      ],
+      "role": "compute",
+      "writes": [
+        "out"
+      ]
+    }
+  ],
+  "outputs": [
+    "out"
+  ],
+  "pipelines": [],
+  "program_map": {
+    "axes": [
+      {
+        "axis": 0,
+        "buffer": "x",
+        "dimension": 0,
+        "name": "row",
+        "tile": 1
+      }
+    ]
+  },
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [
+        0
+      ]
+    }
+  ],
+  "schedule_id": "metal-rmsnorm-canonical",
+  "schema_version": 1,
+  "target": "apple_gpu_family8",
+  "tile_loops": []
+}

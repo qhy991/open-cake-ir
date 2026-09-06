@@ -9,6 +9,8 @@ from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import Mapping, Protocol, cast
 
+from open_cake_ir.compiler import Compiler
+from .pairing import bind_baseline, native_baseline
 from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import WorkloadContract
 
@@ -116,19 +118,23 @@ def build_run_reference_documents(
         )
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
         workload_contract = WorkloadContract.load(root / str(workload["path"]))
-        shape = _object(workload_contract.case(case_id)["shape"], "workload.case.shape")
-        buffers = {
-            str(item["name"]): item
-            for item in cast(list[dict[str, object]], skeleton["buffers"])
-        }
-        buffers["tokens"]["shape"] = [shape["B"], shape["N"], shape["D"]]
-        buffers["centroids"]["shape"] = [shape["B"], shape["K"], shape["D"]]
-        buffers["centroid_sq"]["shape"] = [shape["B"], shape["K"]]
-        buffers["assignments"]["shape"] = [shape["B"], shape["N"]]
-        skeleton["schedule_id"] = "open-cake-ir-matched-authoring-skeleton-v1"
-        cast(dict[str, object], skeleton["metadata"])[
-            "workload_contract_sha256"
-        ] = workload_contract.canonical_sha256
+        if arm.get("input_format") == "schedule_or_python_v1":
+            skeleton = bind_baseline(skeleton, workload_contract, case_id)
+            documents["paired-triton-authoring.md"] = (root / "docs/en/PAIRED_TRITON.md").read_bytes()
+        else:
+            shape = _object(workload_contract.case(case_id)["shape"], "workload.case.shape")
+            buffers = {
+                str(item["name"]): item
+                for item in cast(list[dict[str, object]], skeleton["buffers"])
+            }
+            buffers["tokens"]["shape"] = [shape["B"], shape["N"], shape["D"]]
+            buffers["centroids"]["shape"] = [shape["B"], shape["K"], shape["D"]]
+            buffers["centroid_sq"]["shape"] = [shape["B"], shape["K"]]
+            buffers["assignments"]["shape"] = [shape["B"], shape["N"]]
+            skeleton["schedule_id"] = "open-cake-ir-matched-authoring-skeleton-v1"
+            cast(dict[str, object], skeleton["metadata"])[
+                "workload_contract_sha256"
+            ] = workload_contract.canonical_sha256
         documents.update(
             {
                 "schedule.schema.json": schedule_schema_bytes(),
@@ -136,6 +142,16 @@ def build_run_reference_documents(
                 "schedule-skeleton.json": _canonical_json(skeleton).encode(),
             }
         )
+    elif environment_kind == "native_triton":
+        open_arm = _object(_object(resolved["arm_environments"], "arm_environments")["open_cake"], "open_cake")
+        skeleton_ref = _object(open_arm["schedule_skeleton"], "schedule_skeleton")
+        case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
+        workload_contract = WorkloadContract.load(root / str(workload["path"]))
+        baseline = bind_baseline(json.loads(_read_relative(root, skeleton_ref["path"], "schedule_skeleton")), workload_contract, case_id)
+        compiler_instance = Compiler.load(root, root / str(compiler["path"]))
+        lowering = compiler_instance.lower(compiler_instance.assess(baseline))
+        documents["candidate-baseline.triton.json"] = _canonical_json(native_baseline(lowering)).encode()
+        documents["paired-triton-authoring.md"] = (root / "docs/en/PAIRED_TRITON.md").read_bytes()
     elif environment_kind == "direct_cuda":
         launch = _object(arm["launch_contract"], "arm.launch_contract")
         candidate = _object(arm["candidate_skeleton"], "arm.candidate_skeleton")
@@ -237,11 +253,7 @@ def render_task_package(
     documents = build_run_reference_documents(project_root, lock, authority)
     budget = _object(resolved["budget"], "resolved_inputs.budget")
     evaluation = _object(lock.document["evaluation_protocol"], "evaluation_protocol")
-    output_contract = (
-        '`{"arm":"open_cake","candidates":[...],"schema_version":1}`'
-        if arm == "open_cake"
-        else '`{"arm":"direct_cuda","candidates":[...],"schema_version":1}`'
-    )
+    output_contract = f'`{{"arm":"{arm}","candidates":[...],"schema_version":1}}`'
     task = f"""# TASK.md — {lock.study_id} / {run_id}
 
 ## Objective
@@ -285,6 +297,8 @@ the machine Contracts bound by the CampaignLock; do not edit them or infer newer
     arm_rule = (
         "Author only Cake IR Schedules. Do not invoke CUDA, a GPU, the network, or another compiler."
         if arm == "open_cake"
+        else "Author only the supplied kernel-only Triton baseline and declared compile/launch metadata. Host Python is forbidden."
+        if arm == "native_triton"
         else "Author only direct CUDA/PTX source. Do not access the Open Cake Compiler or a target implementation."
     )
     agents = f"""# AGENTS.md — Ralph optimization rules

@@ -13,7 +13,9 @@ from io import StringIO
 from pathlib import Path
 
 from open_cake_ir.cli import main
-from open_cake_ir.compiler import Compiler, CompilerError
+from open_cake_ir.compiler import Compiler, CompilerError, emit_triton
+from open_cake_ir.compiler.ir import Schedule
+from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.frontend import FrontendError, ScheduleSource, parse, read_schedule
 
 
@@ -76,6 +78,103 @@ class PythonFrontendTests(unittest.TestCase):
         self.assertEqual(operation["parameters"], {"op": "mul", "scalar": 2.0})
         self.assertEqual(operation["reads"], ["a_tile"])
         self.assertTrue(self.compiler.assess(source.document).lowering_eligible)
+
+    def scalar_source(self, expression="values * scale", *, scalar_tensor=False, scalar_output=False):
+        scalar_shape = "(1,1)" if scalar_tensor else "(1,)"
+        scalar_access = "scalar[:,:]" if scalar_tensor else "scalar[:]"
+        output_shape = "(2,)" if scalar_output else "(2,32)"
+        output_access = "out[row]" if scalar_output else "out[row,:]"
+        return f"""from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="scalar-arithmetic", target="sm_100a", backend="triton", entry_point="cake_scalar")
+def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_shape}, "fp32"), out: cake.Tensor({output_shape}, "fp32", mode="output")):
+    compute = lm.role(warps=[0])
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        values = lm.load(x[row,:])
+        scale = lm.load({scalar_access})
+        result = {expression}
+        lm.store({output_access}, result)
+"""
+
+    def test_canonical_scalar_broadcast_infers_shape_without_reordering_operands(self):
+        for expression, reads, operation in (
+            ("scale - values", ["scale", "values"], "sub"),
+            ("values - scale", ["values", "scale"], "sub"),
+            ("scale / values", ["scale", "values"], "div"),
+            ("values / scale", ["values", "scale"], "div"),
+        ):
+            with self.subTest(expression=expression):
+                document = parse(self.scalar_source(expression)).document
+                self.assertEqual(next(b for b in document["buffers"] if b["name"] == "result")["shape"], [32])
+                op = next(op for op in document["operations"] if op["id"] == "result")
+                self.assertEqual(op["reads"], reads)
+                self.assertEqual(op["parameters"], {"op": operation})
+                assessment = self.compiler.assess(document)
+                self.assertTrue(assessment.lowering_eligible, assessment.findings)
+                lowered = self.compiler.lower(assessment)
+                self.assertIn("scale = tl.load(", lowered.source)
+                direct = emit_triton.emit(Schedule.from_dict(document), Target.load(ROOT / "compiler/targets/sm_100a.json"))
+                self.assertIn("scale = tl.load(", direct.source)
+
+    def test_triton_refuses_direct_global_scalar_values_with_complete_access_maps(self):
+        for expression, position in (("values / scalar[unit]", 1), ("scalar[unit] / values", 0)):
+            source = self.scalar_source(expression)
+            source = source.replace("    with compute:", "    unit = lm.program(scalar, axis=1, dimension=0, tile=1)\n    with compute:")
+            source = source.replace("        scale = lm.load(scalar[:])\n", "")
+            document = parse(source).document
+            with self.subTest(expression=expression):
+                assessment = self.compiler.assess(document)
+                self.assertTrue(assessment.accepted)
+                self.assertFalse(assessment.lowering_eligible)
+                refusal = [f for f in assessment.findings if f.code == "TRITON_ELEMENTWISE_STORAGE"]
+                self.assertEqual([f.path for f in refusal], [f"operations[1].reads[{position}]"])
+                with self.assertRaisesRegex(CompilerError, "TRITON_ELEMENTWISE_STORAGE"):
+                    self.compiler.lower(assessment)
+                with self.assertRaisesRegex(emit_triton.EmitError, "requires register values"):
+                    emit_triton.emit(Schedule.from_dict(document), Target.load(ROOT / "compiler/targets/sm_100a.json"))
+
+    def test_triton_refuses_global_arithmetic_destinations(self):
+        source = self.scalar_source()
+        source = source.replace('out: cake.Tensor((2,32), "fp32", mode="output")',
+                                'out: cake.Tensor((2,32), "fp32", mode="output"), direct: cake.Tensor((32,), "fp32", mode="output")')
+        source = source.replace("        result = values * scale", '        lm.mul(values, scale, out=direct[:], id="direct_arithmetic")\n        result = values * scale')
+        document = parse(source).document
+        assessment = self.compiler.assess(document)
+        self.assertTrue(assessment.accepted)
+        self.assertFalse(assessment.lowering_eligible)
+        refusal = [f for f in assessment.findings if f.code == "TRITON_ELEMENTWISE_STORAGE"]
+        self.assertEqual([f.path for f in refusal], ["operations[2].writes[0]"])
+        with self.assertRaisesRegex(CompilerError, "TRITON_ELEMENTWISE_STORAGE"):
+            self.compiler.lower(assessment)
+        with self.assertRaisesRegex(emit_triton.EmitError, "requires register values"):
+            emit_triton.emit(Schedule.from_dict(document), Target.load(ROOT / "compiler/targets/sm_100a.json"))
+
+    def test_two_scalars_cannot_invent_a_larger_result(self):
+        document = parse(self.scalar_source("scale + scale", scalar_output=True)).document
+        result = next(b for b in document["buffers"] if b["name"] == "result")
+        self.assertEqual(result["shape"], [1])
+        self.assertTrue(self.compiler.assess(document).lowering_eligible)
+        result["shape"] = [32]
+        self.assertIn("ELEMENTWISE_SHAPE_MISMATCH", [f.code for f in self.compiler.assess(document).findings])
+
+    def test_scalar_rule_does_not_erase_tensor_rank_axis_or_fma_contract(self):
+        tensor = parse(self.scalar_source(scalar_tensor=True)).document
+        self.assertFalse(self.compiler.assess(tensor).accepted)
+        self.assertEqual(next(b for b in tensor["buffers"] if b["name"] == "scale")["shape"], [1, 1])
+        for axis in (0, 9):
+            document = parse(self.scalar_source(f"lm.mul(values, lm.broadcast(scale, axis={axis}))")).document
+            self.assertIn("ELEMENTWISE_BROADCAST", [f.code for f in self.compiler.assess(document).findings])
+        fma = parse(self.scalar_source("lm.fma(values, values, scale)")).document
+        findings = self.compiler.assess(fma).findings
+        self.assertIn("ELEMENTWISE_SHAPE_MISMATCH", [f.code for f in findings])
+        self.assertEqual(fma["operations"][2]["parameters"]["instruction"], {"contract": "ptx.fma.rn.f32"})
+
+    def test_existing_explicit_singleton_axis_broadcast_remains_valid(self):
+        source = self.scalar_source("lm.mul(values, lm.broadcast(scale, axis=0))")
+        source = source.replace("(2,32)", "(2,1,32)").replace("x[row,:]", "x[row,:,:]").replace("out[row,:]", "out[row,:,:]")
+        assessment = self.compiler.assess(parse(source).document)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        self.compiler.lower(assessment)
 
     def test_writes_depend_on_preceding_reads_even_when_the_read_value_is_unused(self):
         source = FMA.replace('c: cake.Tensor((8, 128), "fp32")',

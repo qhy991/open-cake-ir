@@ -19,3 +19,12 @@ uses paired measurement and a median confidence interval. Both require exactly 1
 rows, 12 rank-local heads, head dimension 128, hidden size 7168, and 49 state slots,
 with distinct 18-active-row and 17-active-row cases. These are Workload definitions;
 registration alone does not provide a Lab evaluator or establish GPU correctness.
+
+The standalone tile contracts
+[`rmsnorm-fp32-v1.json`](rmsnorm-fp32-v1.json),
+[`gemm-bias-bf16-fp32-v1.json`](gemm-bias-bf16-fp32-v1.json) and
+[`indexed-gather-bf16-v1.json`](indexed-gather-bf16-v1.json) give the existing Corpus
+examples explicit mathematical, ABI, input-domain and correctness authority. Their
+standard-library CPU oracles and source-only Compiler baseline preparation are described
+in [TILE_WORKLOADS](../../docs/en/TILE_WORKLOADS.md). These are independent standalone
+definitions; GPU equivalence, timing and framework acceptance remain R2 pending.

@@ -1010,7 +1010,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "d4444e0c29163f37e98573a29c0ce136c87b05b4e0f1d63757a15f93167ef334",
-        "lowering_source_sha256": "e25ef227c30042139f814ad37da43a521c875876cd784a62180b32339d00cb4d"
+        "lowering_source_sha256": "c81066bbff43958af7bb3be1f203ca1cee5c784d8757fb1fbfecf6272b2ecbf9"
       }
     },
     {
@@ -1079,10 +1079,10 @@
         "accepted": true,
         "lowering_eligible": true,
         "finding_codes": [
-          "METAL_SERIAL_EXECUTION"
+          "METAL_SIMD_EXECUTION"
         ],
         "schedule_sha256": "e0d2e9772e902c44a7f7bc4b8cf7da51d28d24ecc11ebc63e2df3faf4229c347",
-        "lowering_source_sha256": "fda2c5e6dd1ebeae9b4a838bf8ac6962f2d2520b3253ad38c7278915550ba220"
+        "lowering_source_sha256": "f53314befa59d6e75f9ccbd110accaf7d2c09de2e33dcccb61366b0d9616f9ec"
       }
     },
     {
@@ -1092,10 +1092,10 @@
         "accepted": true,
         "lowering_eligible": true,
         "finding_codes": [
-          "METAL_SERIAL_EXECUTION"
+          "METAL_SIMD_EXECUTION"
         ],
         "schedule_sha256": "db3a3fd8aa7cd17d39a83e3b126447d5cbbdb036accd773077fdcdc866adb129",
-        "lowering_source_sha256": "afde78f3acad38ae6fbd5512034ea558ca83725f2b330d8abe05097e28dff142"
+        "lowering_source_sha256": "11e922effd5050ccfbaa41a86eed5e1490211d21b5b9a2ff05ebac7c5dc1d305"
       }
     },
     {
@@ -1105,10 +1105,10 @@
         "accepted": true,
         "lowering_eligible": true,
         "finding_codes": [
-          "METAL_SERIAL_EXECUTION"
+          "METAL_SIMD_EXECUTION"
         ],
         "schedule_sha256": "efbd52fe6900bb9926e3e5d266ebfbc8c92a305da219c319db9a7567d20b2e76",
-        "lowering_source_sha256": "f326e76ab7438a6c5bc8a0d4b81e31c9e4ce45d33cd91610eaaa5073d8096ae1"
+        "lowering_source_sha256": "b5987dac4a31f30c4e2d17a880e5aea5cf17c8e4da8aef6b23cfde5478587eed"
       }
     },
     {
@@ -1134,6 +1134,59 @@
           "METAL_STORE_OWNERSHIP"
         ],
         "schedule_sha256": "0e1f86029ac923cab9b592677ccb8de1ce16fe50a5ad65af756fb1f4d5ee14bb",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "gemm-bias-two-deep-tail-b1-smoke",
+      "schedule": "corpus/schedules/gemm-bias-two-deep-tail-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "21d82f10e867f2fb65548d171da86ddb462c11becb4b225212bef242703d665b",
+        "lowering_source_sha256": "c0a17806fe6e1787d8b77395b0d27a53fdff7e36018f6c5d812eb3f16442c3fd"
+      }
+    },
+    {
+      "case_id": "metal-rmsnorm-primary",
+      "schedule": "corpus/schedules/metal-rmsnorm-primary.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "METAL_SIMD_EXECUTION"
+        ],
+        "schedule_sha256": "a07ebf3049700c4cb8709122eb682f4983e90f56b820be335d1b72e5489d4c70",
+        "lowering_source_sha256": "e0cff9f84e70686397a95a931dc072ac0a4a46c551478523c92bd6733fe9da55"
+      }
+    },
+    {
+      "case_id": "metal-rmsnorm-tail",
+      "schedule": "corpus/schedules/metal-rmsnorm-tail.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "METAL_SIMD_EXECUTION"
+        ],
+        "schedule_sha256": "5ee0c423ff57fb8aa442e6e0c1fed7d457c752033040097b724e7725e3598ce2",
+        "lowering_source_sha256": "92d10ab6956759745e61c8767c854725f4427c37eb8252f3b4be56582032c5da"
+      }
+    },
+    {
+      "case_id": "triton-global-scalar-storage-refusal",
+      "schedule": "corpus/schedules/triton-global-scalar-storage-refusal.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "TRITON_ELEMENTWISE_STORAGE"
+        ],
+        "schedule_sha256": "f7dbcdd71cfd1d9ec8e56ca1c7f21a451a9ef13db008f8868e114bf5164e23cd",
         "lowering_source_sha256": null
       }
     }

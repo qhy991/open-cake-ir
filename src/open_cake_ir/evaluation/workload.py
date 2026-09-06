@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Mapping, cast
@@ -702,6 +703,17 @@ def _validate_kda_decode_megaop_b200_contract(
     if measurement.get(order_field) != expected_order:
         raise ValueError("KDA B200 megaop trial order differs")
 
+
+@dataclass(frozen=True)
+class TensorABI:
+    """One ordered argument, resolved only from Workload tensor/case declarations."""
+
+    name: str
+    shape: tuple[int, ...]
+    dtype: str
+    mode: str
+
+
 class WorkloadContract:
     """Canonical operator semantics, cases and correctness authority."""
 
@@ -787,6 +799,12 @@ class WorkloadContract:
             _validate_kda_fused_decode_contract(document)
         elif document.get("operator") == "kimi_k3_kda_decode_megaop_b200":
             _validate_kda_decode_megaop_b200_contract(document)
+        elif document.get("operator") in {
+            "rmsnorm_fp32", "gemm_bias_bf16_fp32", "indexed_gather_bf16",
+        }:
+            from .tile_workloads import validate_tile_contract
+
+            validate_tile_contract(document)
         else:
             raise ValueError("workload operator is unsupported")
         return cls(document, source)
@@ -809,3 +827,48 @@ class WorkloadContract:
         except KeyError as error:
             raise KeyError(f"unknown workload case {case_id!r}") from error
         return cast(dict[str, object], json.loads(_canonical_json_bytes(value)))
+
+    def tensor_abi(self, case_id: str) -> tuple[TensorABI, ...]:
+        """Resolve the explicitly ordered input/output ABI, without operator dispatch.
+
+        A shape component is a positive integer or an exact case-dimension name;
+        expressions are not evaluated. Historical contracts without this declaration
+        retain their existing admission and do not acquire an inferred ABI.
+        """
+
+        shape = _object(self.case(case_id)["shape"], "workload case shape")
+        tensors = _object(self._document["tensors"], "workload tensors")
+        semantics = _object(self._document["semantics"], "workload semantics")
+        abi = _object(semantics.get("candidate_abi"), "explicit workload tensor ABI")
+        if set(abi) != {"inputs", "outputs"}:
+            raise ValueError("workload tensor ABI must declare inputs and outputs")
+        result: list[TensorABI] = []
+        for mode in ("input", "output"):
+            names = abi[mode + "s"]
+            if not isinstance(names, list) or not names:
+                raise ValueError(f"workload tensor ABI {mode}s must be non-empty")
+            for name in names:
+                name = _name(name, "workload tensor ABI name")
+                tensor = _object(tensors.get(name), f"workload tensor {name}")
+                dimensions = tensor.get("shape")
+                if not isinstance(dimensions, list) or not dimensions:
+                    raise ValueError(f"workload tensor {name} must have a shape")
+                extents = tuple(
+                    shape.get(dimension) if isinstance(dimension, str) else dimension
+                    for dimension in dimensions
+                )
+                if any(
+                    not isinstance(extent, int) or isinstance(extent, bool) or extent <= 0
+                    for extent in extents
+                ):
+                    raise ValueError(f"workload tensor {name} has an unresolved shape")
+                dtype = tensor.get("dtype")
+                if not isinstance(dtype, str) or dtype not in {"fp32", "bf16", "int32"}:
+                    raise ValueError(f"workload tensor {name} dtype is unsupported")
+                if tensor.get("layout") != "contiguous_row_major":
+                    raise ValueError(f"workload tensor {name} must be contiguous row major")
+                result.append(TensorABI(name, cast(tuple[int, ...], extents), dtype, mode))
+        names = [tensor.name for tensor in result]
+        if len(names) != len(set(names)) or set(names) != set(tensors):
+            raise ValueError("workload tensor ABI must cover each tensor exactly once")
+        return tuple(result)

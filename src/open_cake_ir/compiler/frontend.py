@@ -409,6 +409,10 @@ class _Builder:
                 self.fail(node, "a computed result requires an input value")
             first = self.buffer(reads[0], node)
             shape, dtype = list(first.shape), first.dtype.value
+            if kind == "elementwise" and parameters.get("op") != "fma":
+                operands = [self.buffer(ref, node) for ref in reads]
+                non_scalar = [operand for operand in operands if not operand.is_scalar]
+                shape = list(max((operand.shape for operand in (non_scalar or operands)), key=len))
             if kind == "load":
                 shape = self.load_shape(values[0], node)
             elif kind == "reduce":

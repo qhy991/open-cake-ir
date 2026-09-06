@@ -17,6 +17,9 @@ Start here to understand how an idea becomes a checked and measured GPU program.
 | What do load, mma, and top_k mean? | [IR primitives](primitives.md) |
 | How can I author a Schedule in Python? | [Python frontend](../PYTHON_FRONTEND.md) |
 | Which complete task definitions exist? | [Workloads](workloads.md) |
+| How do I prepare the shared ABI and matched baselines for three standalone operators? | [Tile Workloads](../TILE_WORKLOADS.md) |
+| How are two nested static TileLoops scoped? | [Loop scopes](../TRITON_LOOP_SCOPES.md) · [GEMM plan with tails](../../../corpus/schedules/gemm-bias-two-deep-tail-b1-smoke.json) |
+| How do IR and native Triton share a baseline, build and Evaluation? | [Paired Triton](../PAIRED_TRITON.md) |
 | How does AI work under a budget? | [Experiments](experiments.md) |
 | How do I prepare real GPU work? | [Runbook](../../RUNBOOK.md) |
 | How can an old task be replayed? | [Replay](replay.md) |

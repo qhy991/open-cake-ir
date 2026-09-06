@@ -76,12 +76,12 @@ class _Reduction:
 
 REDUCTIONS: dict[ReduceOp, _Reduction] = {
     ReduceOp.SUM: _Reduction(
-        identity="tl.zeros(({tile},), tl.float32)",
+        identity="tl.zeros({shape}, tl.float32)",
         accumulate="{out} += tl.sum({src}.to(tl.float32), axis={axis})",
         once="{out} = tl.sum({src}.to(tl.float32), axis={axis})",
     ),
     ReduceOp.MAX: _Reduction(
-        identity='tl.full(({tile},), float("-inf"), tl.float32)',
+        identity='tl.full({shape}, float("-inf"), tl.float32)',
         accumulate="{out} = tl.maximum({out}, tl.max({src}.to(tl.float32), axis={axis}))",
         once="{out} = tl.max({src}.to(tl.float32), axis={axis})",
     ),
@@ -92,10 +92,8 @@ SCANS: dict[ScanOp, str] = {
 }
 
 
-# What this backend has a body for, and where. The two sets differ: an mma or a reduction
-# is only emitted inside the tile loop, and a store only outside it. Keeping them as
-# tables the dispatch reads means the coverage cannot drift from the code, and it makes
-# the position-dependence a stated fact rather than the shape of two elif chains.
+# Dispatch is scope-aware. Position restrictions share these tables with preflight;
+# narrower in-loop effect contracts are checked below before any source is emitted.
 OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
@@ -110,6 +108,7 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
 }
 
 INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
+    OperationKind.STORE: "_emit_store",
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.REDUCE_ARGMIN: "_emit_argmin",
@@ -213,10 +212,10 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         "the Triton backend requires access maps",
     )
     add(
-        len(schedule.tile_loops) <= 1,
+        len(schedule.tile_loops) <= 2,
         "TRITON_TILE_LOOP_COUNT",
         "tile_loops",
-        "the Triton backend supports at most one tile loop",
+        "the Triton backend supports at most a two-deep tile-loop nest",
     )
     add(
         len(schedule.roles) == 1,
@@ -242,6 +241,20 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         "the Triton backend supports at most one reduce_argmin operation",
     )
     for index, operation in enumerate(schedule.operations):
+        if operation.kind is OperationKind.ELEMENTWISE:
+            # Global arguments are pointers; _operand only names already-produced
+            # values. Arithmetic does not implement access maps or memory effects.
+            for edge in ("reads", "writes"):
+                for position, name in enumerate(getattr(operation, edge)):
+                    buffer = schedule.buffer(name)
+                    if buffer is not None:
+                        add(
+                            buffer.space is MemorySpace.REGISTER,
+                            "TRITON_ELEMENTWISE_STORAGE",
+                            f"operations[{index}].{edge}[{position}]",
+                            f"Triton elementwise arithmetic requires register values; "
+                            f"{name!r} is {buffer.space.value}. Use explicit load/store operations.",
+                        )
         if operation.kind is OperationKind.MMA:
             instruction = operation.parameters.instruction
             add(
@@ -275,19 +288,96 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
                 f"{_ATOMIC_RMW_CONTRACT!r}",
             )
 
-    if len(schedule.tile_loops) <= 1:
-        in_loop = set(schedule.tile_loops[0].body) if schedule.tile_loops else set()
-        for index, operation in enumerate(schedule.operations):
-            admitted = (
-                operation.kind in INSIDE_LOOP_EMITTERS
-                if operation.op_id in in_loop
-                else operation.kind in OUTSIDE_LOOP_EMITTERS
-            )
+    nested = len(schedule.tile_loops) > 1
+    if nested:
+        parent = schedule.loop_parent()
+        add(
+            len(schedule.tile_loops) == 2
+            and len(parent) == 1
+            and sorted(schedule.loop_depth(loop.name) for loop in schedule.tile_loops) == [0, 1],
+            "TRITON_LOOP_NEST_UNSUPPORTED",
+            "tile_loops",
+            "the nested Triton slice requires one outer loop with one inner loop",
+        )
+        for index, loop in enumerate(schedule.tile_loops):
             add(
-                admitted,
-                "TRITON_OPERATION_POSITION",
+                loop.stop is None,
+                "TRITON_NESTED_LOOP_STOP",
+                f"tile_loops[{index}].stop",
+                "nested Triton loops currently require static extents",
+            )
+            for option in ("flatten", "warp_specialize"):
+                add(
+                    not getattr(loop.range_options, option),
+                    "TRITON_NESTED_LOOP_OPTION",
+                    f"tile_loops[{index}].range_options.{option}",
+                    f"nested Triton loops do not implement {option}=true",
+                )
+
+    for index, operation in enumerate(schedule.operations):
+        chain = schedule.enclosing_loops(operation)
+        admitted = (
+            operation.kind in INSIDE_LOOP_EMITTERS
+            if chain else operation.kind in OUTSIDE_LOOP_EMITTERS
+        )
+        add(
+            admitted,
+            "TRITON_OPERATION_POSITION",
+            f"operations[{index}].kind",
+            f"the Triton backend has no {operation.kind.value!r} body at this loop position",
+        )
+        if nested and chain:
+            add(
+                operation.kind not in {
+                    OperationKind.REDUCE_ARGMIN,
+                    OperationKind.TOP_K,
+                    OperationKind.ONLINE_SOFTMAX,
+                },
+                "TRITON_NESTED_OPERATION_UNSUPPORTED",
                 f"operations[{index}].kind",
-                f"the Triton backend has no {operation.kind.value!r} body at this loop position",
+                f"the two-deep Triton slice does not implement nested {operation.kind.value!r}",
+            )
+            if operation.kind is OperationKind.MMA:
+                add(
+                    len(operation.reads) == 2 and all(
+                        any(producer.kind is OperationKind.LOAD
+                            and operand in producer.writes for producer in schedule.operations)
+                        for operand in operation.reads
+                    ),
+                    "TRITON_NESTED_MMA_OPERAND",
+                    f"operations[{index}].reads",
+                    "nested MMA currently requires two directly loaded operands so "
+                    "the existing access-map query proves its accumulation axis",
+                )
+                add(
+                    not any(schedule.mma_accumulates_over(operation, loop) for loop in chain[:-1]),
+                    "TRITON_MMA_ANCESTOR_CARRY",
+                    f"operations[{index}]",
+                    "a nested MMA may accumulate only over its direct loop",
+                )
+        if chain and operation.kind is OperationKind.STORE and operation.writes:
+            destination = schedule.buffer(operation.writes[0])
+            access = schedule.access_map(operation.op_id, operation.writes[0])
+            if destination is None or access is None:
+                continue  # Common verification localizes missing declarations.
+            coordinates = [
+                component.name for component in access.indices
+                if component.source in {
+                    AccessIndexKind.PROGRAM, AccessIndexKind.PROGRAM_TILE,
+                    AccessIndexKind.LOOP_TILE,
+                }
+            ]
+            required = [loop.iterator for loop in chain]
+            if schedule.program_map is not None:
+                required.extend(axis.name for axis in schedule.program_map.axes)
+            add(
+                destination.mode is BufferMode.OUTPUT
+                and all(component.source is not AccessIndexKind.BUFFER for component in access.indices)
+                and all(coordinates.count(name) == 1 for name in required),
+                "TRITON_LOOP_STORE_OWNERSHIP",
+                f"operations[{index}]",
+                "an in-loop Triton store requires an output buffer and affine "
+                "coordinates covering every active loop and program axis exactly once",
             )
 
     return tuple(findings)
@@ -307,7 +397,6 @@ class _TritonEmitter:
         failures = preflight(schedule, target)
         if failures:
             raise EmitError(failures[0].message)
-        self.loop = schedule.tile_loops[0] if schedule.tile_loops else None
         self.role = schedule.roles[0]
 
         # A kernel must write something, so a store is required of every Schedule -- but
@@ -349,12 +438,9 @@ class _TritonEmitter:
         for axis in self.schedule.program_map.axes:
             if axis.buffer == buffer_name and axis.dimension == dimension:
                 return f"N_{axis.name.upper()}"
-        if (
-            self.loop is not None
-            and self.loop.buffer == buffer_name
-            and self.loop.dimension == dimension
-        ):
-            return f"N_{self.loop.name.upper()}"
+        for loop in self.schedule.tile_loops:
+            if loop.buffer == buffer_name and loop.dimension == dimension:
+                return f"N_{loop.name.upper()}"
         return f"D_{buffer_name.upper()}_{dimension}"
 
     def _tile(self, name: str) -> str:
@@ -379,9 +465,10 @@ class _TritonEmitter:
         for axis in self.schedule.program_map.axes:
             if axis.is_tiled:
                 values[self._tile(axis.name)] = axis.tile
-        if self.loop is not None:
-            values[self._tile(self.loop.name)] = self.loop.tile
-            values["NUM_STAGES"] = self.loop.range_options.num_stages
+        for loop in self.schedule.tile_loops:
+            values[self._tile(loop.name)] = loop.tile
+        if len(self.schedule.tile_loops) == 1:
+            values["NUM_STAGES"] = self.schedule.tile_loops[0].range_options.num_stages
         values["NUM_WARPS"] = len(self.role.warps)
         if self.schedule.program_map is not None and self.schedule.program_map.persistent:
             values["TOTAL_TILES"] = self.total_tiles()
@@ -485,7 +572,8 @@ class _TritonEmitter:
                 # so this cannot fire. It raises anyway because the alternative is a
                 # silent fall-through to "needs no mask", which is a wrong kernel rather
                 # than a refused one.
-                _require(self.loop is not None, f"{vector} indexes a loop there is none of")
+                _require(any(loop.iterator == component.name for loop in self.schedule.tile_loops),
+                         f"{vector} indexes an unknown loop")
                 return self._extent(buffer.name, position)
         return None  # a full-dimension index spans its axis and needs no mask
 
@@ -633,13 +721,12 @@ class _TritonEmitter:
         ):
             coordinate = shaped(expression, domain)
             if component.source is AccessIndexKind.PROGRAM_TILE:
-                axis = self._axis(component.name)
-                masks.append(f"{coordinate} < {self._extent(axis.buffer, axis.dimension)}")
+                self._axis(component.name)
+                masks.append(f"{coordinate} < {self._extent(buffer.name, position)}")
             elif component.source is AccessIndexKind.LOOP_TILE:
-                _require(self.loop is not None, f"{expression} indexes a loop there is none of")
-                masks.append(
-                    f"{coordinate} < {self._extent(self.loop.buffer, self.loop.dimension)}"
-                )
+                _require(any(loop.iterator == component.name for loop in self.schedule.tile_loops),
+                         f"{expression} indexes an unknown loop")
+                masks.append(f"{coordinate} < {self._extent(buffer.name, position)}")
             elif component.source is AccessIndexKind.BUFFER:
                 bound = self._extent(buffer.name, position)
                 masks.append(f"({coordinate} >= 0) & ({coordinate} < {bound})")
@@ -796,31 +883,22 @@ class _TritonEmitter:
                         self.line(f"{pad}{name} = {walk}")
         self.line()
 
-        # Declared order is the authority. The loop is emitted where its body begins,
-        # and everything else is dispatched by kind at that point in the sequence. The
-        # previous shape emitted prologue loads, the loop, then the store, which silently
-        # dropped any other operation declared outside the loop.
-        emitted_loop = False
+        # A root loop replaces its contiguous expanded operation interval. Within
+        # it, body order recursively owns child-loop and operation placement.
+        emitted: set[str] = set()
         for operation in self.schedule.operations:
-            if self.loop is not None and operation.op_id in self.loop.body:
-                if not emitted_loop:
-                    self._emit_reduction_state(self._body_pad())
-                    self._emit_loop()
-                    emitted_loop = True
-                continue
-            method = OUTSIDE_LOOP_EMITTERS.get(operation.kind)
-            if method is None:
-                raise EmitError(
-                    f"operation {operation.op_id!r} of kind "
-                    f"{operation.kind.value!r} sits outside the loop and this backend "
-                    "has no body for it there"
-                )
-            getattr(self, method)(operation, self._body_pad())
-            if operation.kind is OperationKind.ELEMENTWISE:
-                self.line()
+            chain = self.schedule.enclosing_loops(operation)
+            if chain:
+                root = chain[0]
+                if root.name not in emitted:
+                    self._emit_loop(root, pad)
+                    emitted.add(root.name)
+            else:
+                self._emit_operation(operation, pad, inside=False)
         _require(
-            emitted_loop or self.loop is None,
-            "the declared tile loop names no operation",
+            all(loop.name in emitted for loop in self.schedule.tile_loops
+                if loop.name not in self.schedule.loop_parent()),
+            "a declared tile loop names no operation",
         )
         self.line("    # CAKE_KERNEL_END")
         self.line()
@@ -877,45 +955,38 @@ class _TritonEmitter:
             self.line(f'{pad}    cache_modifier=".cg",')
         self.line(f"{pad})")
 
-    def _emit_reduction_state(self, pad: str) -> None:
-        """A reduction carried across the loop needs its identity before the loop.
+    def _state_shape(self, buffer: Buffer) -> str:
+        # Preserve established single-loop source spelling where that axis owns the
+        # result shape. Nested state is shaped by its result, never an unrelated axis.
+        if len(self.schedule.tile_loops) == 1 and self.schedule.program_map is not None:
+            for axis in self.schedule.program_map.axes:
+                if axis.is_tiled:
+                    if buffer.shape == (axis.tile,):
+                        return f"({self._tile(axis.name)},)"
+                    break
+        return repr(tuple(buffer.shape))
 
-        Which identity depends on the reduction the Schedule declares, so this reads the
-        operation rather than assuming the argmin the first profile happened to use.
-        """
+    def _emit_reduction_state(self, loop: TileLoop, pad: str) -> None:
+        """Initialize only state directly carried by this loop, at its entry."""
 
-        needs_tile = self.reduce is not None or any(
-            operation.op_id in self.loop.body
-            and (
-                (
-                    operation.kind is OperationKind.REDUCE
-                    and operation.parameters.across_loop
-                )
-                or (
-                    operation.kind is OperationKind.MMA
-                    and self._accumulating(operation)
-                )
-            )
-            for operation in self.schedule.operations
-        )
-        tile = self._tile(self._token_axis().name) if needs_tile else None
-        if self.reduce is not None:
-            _require(
-                self.reduce.parameters.across_loop,
-                "this backend carries the reduction across the loop",
-            )
-            self.line(f"{pad}best_distance = tl.full(({tile},), float(\"inf\"), tl.float32)")
+        if self.reduce is not None and self.reduce.op_id in loop.body:
+            _require(self.reduce.parameters.across_loop,
+                     "this backend carries the reduction across the loop")
+            tile = self._tile(self._token_axis().name)
+            self.line(f'{pad}best_distance = tl.full(({tile},), float("inf"), tl.float32)')
             self.line(f"{pad}{self.reduce.writes[0]} = tl.zeros(({tile},), tl.int32)")
             self.line()
         for operation in self.schedule.operations:
-            if operation.op_id not in self.loop.body:
+            if operation.op_id not in loop.body:
                 continue
             if operation.kind is OperationKind.REDUCE:
                 if not operation.parameters.across_loop:
                     continue
-                _require(tile is not None, "a carried reduction has no tiled program axis")
-                identity = REDUCTIONS[operation.parameters.op].identity
-                self.line(f"{pad}{operation.writes[0]} = {identity.format(tile=tile)}")
+                result = self.schedule.buffer(operation.writes[0])
+                _require(result is not None, "a carried reduction has no result buffer")
+                shape = self._state_shape(result)
+                identity = REDUCTIONS[operation.parameters.op].identity.format(shape=shape)
+                self.line(f"{pad}{result.name} = {identity}")
                 self.line()
             elif (
                 operation.kind is OperationKind.TOP_K
@@ -962,8 +1033,7 @@ class _TritonEmitter:
                     f"{pad}{accumulator.name} = tl.zeros(({rows}, {columns}), tl.float32)"
                 )
                 self.line()
-            elif operation.kind is OperationKind.MMA and self._accumulating(operation):
-                _require(tile is not None, "an accumulated contraction has no tiled program axis")
+            elif operation.kind is OperationKind.MMA and self.schedule.mma_accumulates_over(operation, loop):
                 # A contraction summed across the loop needs its accumulator before the
                 # loop, for the same reason a fold does: the first iteration adds to it.
                 accumulator = self.schedule.buffer(operation.writes[0])
@@ -984,10 +1054,20 @@ class _TritonEmitter:
                 return axis
         raise EmitError("no tiled program axis")
 
-    def _emit_loop(self) -> None:
-        options = self.loop.range_options
-        extent = self._loop_stop()
-        tile = self._tile(self.loop.name)
+    def _emit_operation(self, operation, pad: str, *, inside: bool) -> None:
+        dispatch = INSIDE_LOOP_EMITTERS if inside else OUTSIDE_LOOP_EMITTERS
+        method = dispatch.get(operation.kind)
+        _require(method is not None,
+                 f"operation {operation.op_id!r} has no Triton body at this scope")
+        getattr(self, method)(operation, pad)
+        if not inside and operation.kind is OperationKind.ELEMENTWISE:
+            self.line()
+
+    def _emit_loop(self, loop: TileLoop, pad: str) -> None:
+        self._emit_reduction_state(loop, pad)
+        options = loop.range_options
+        extent = self._loop_stop(loop)
+        tile = self._tile(loop.name)
         knobs = [f"num_stages={options.num_stages}"]
         if options.disallow_acc_multi_buffer:
             knobs.append("disallow_acc_multi_buffer=True")
@@ -1000,42 +1080,41 @@ class _TritonEmitter:
         if options.loop_unroll_factor != 1:
             knobs.append(f"loop_unroll_factor={options.loop_unroll_factor}")
         self.line(
-            f"{self._body_pad()}for {self.loop.iterator} in tl.range(0, {extent}, {tile}, "
+            f"{pad}for {loop.iterator} in tl.range(0, {extent}, {tile}, "
             + ", ".join(knobs)
             + "):"
         )
         self.line(
-            f"{self._body_pad()}    {self.loop.iterator}_offsets = "
-            f"{self.loop.iterator} + tl.arange(0, {tile})"
+            f"{pad}    {loop.iterator}_offsets = "
+            f"{loop.iterator} + tl.arange(0, {tile})"
         )
-        for op_id in self.loop.body:
+        for op_id in loop.body:
+            child = self.schedule.tile_loop(op_id)
+            if child is not None:
+                self._emit_loop(child, pad + "    ")
+                continue
             operation = self.schedule.operation(op_id)
             _require(operation is not None, f"loop body names unknown operation {op_id!r}")
-            method = INSIDE_LOOP_EMITTERS.get(operation.kind)
-            if method is None:
-                raise EmitError(
-                    f"operation kind {operation.kind.value!r} has no Triton body emitter"
-                )
-            getattr(self, method)(operation, self._body_pad() + "    ")
-        for op_id in self.loop.body:
+            self._emit_operation(operation, pad + "    ", inside=True)
+        for op_id in loop.body:
             operation = self.schedule.operation(op_id)
             if operation is not None and operation.kind is OperationKind.ONLINE_SOFTMAX:
-                self._emit_online_softmax_finalize(operation, self._body_pad())
+                self._emit_online_softmax_finalize(operation, pad)
             if (
                 operation is not None
                 and operation.kind is OperationKind.TOP_K
                 and operation.parameters.across_loop
             ):
                 if operation.parameters.source_tiles_per_merge == 2:
-                    self._emit_two_tile_top_k_flush(operation, self._body_pad())
-                self._emit_top_k_finalize(operation, self._body_pad())
+                    self._emit_two_tile_top_k_flush(operation, pad)
+                self._emit_top_k_finalize(operation, pad)
         self.line()
 
-    def _loop_stop(self) -> str:
+    def _loop_stop(self, loop: TileLoop) -> str:
         """Return the loop's static or declared query-derived exclusive stop."""
 
-        static = self._extent(self.loop.buffer, self.loop.dimension)
-        relation = self.loop.stop
+        static = self._extent(loop.buffer, loop.dimension)
+        relation = loop.stop
         if relation is None:
             return static
         self._axis(relation.program)
@@ -1111,16 +1190,10 @@ class _TritonEmitter:
 
         buffer = self.schedule.buffer(name)
         _require(buffer is not None, f"elementwise reads unknown buffer {name!r}")
-        widest = max(
-            (
-                other.shape
-                for other in (self.schedule.buffer(read) for read in operation.reads)
-                if other is not None
-            ),
-            key=len,
-            default=(),
-        )
-        if len(buffer.shape) == len(widest):
+        result = self.schedule.buffer(operation.writes[0])
+        _require(result is not None, "elementwise requires its verified result shape")
+        widest = result.shape
+        if buffer.is_scalar or len(buffer.shape) == len(widest):
             return name
         axis = operation.parameters.broadcast_axis
         _require(axis is not None, f"operand {name!r} needs a declared broadcast axis")
@@ -1145,8 +1218,7 @@ class _TritonEmitter:
         )
         reduction = REDUCTIONS[operation.parameters.op]
         carried = (
-            self.loop is not None
-            and operation.op_id in self.loop.body
+            bool(self.schedule.enclosing_loops(operation))
             and operation.parameters.across_loop
         )
         template = reduction.accumulate if carried else reduction.once
@@ -1319,13 +1391,13 @@ class _TritonEmitter:
     def _accumulating(self, operation) -> bool:
         """Whether this contraction sums across the loop it sits in."""
 
-        return (
-            self.loop is not None
-            and operation.op_id in self.loop.body
-            and self.schedule.mma_accumulates_over(operation, self.loop)
-        )
+        chain = self.schedule.enclosing_loops(operation)
+        return bool(chain) and self.schedule.mma_accumulates_over(operation, chain[-1])
 
     def _emit_argmin(self, operation, pad: str) -> None:
+        chain = self.schedule.enclosing_loops(operation)
+        _require(bool(chain), "loop-carried operation has no containing loop")
+        loop = chain[-1]
         source = operation.reads[0]
         best = operation.writes[0]
         lowest = operation.parameters.tie_break is IndexTieBreak.LOWEST_INDEX
@@ -1335,7 +1407,7 @@ class _TritonEmitter:
         self.line(f"{pad})")
         self.line(f"{pad}block_distance = tl.min({source}, axis=1)")
         self.line(
-            f"{pad}candidate_index = {self.loop.iterator} + block_position"
+            f"{pad}candidate_index = {loop.iterator} + block_position"
         )
         self.line(f"{pad}better = block_distance < best_distance")
         comparison = "<" if lowest else ">"
@@ -1376,7 +1448,10 @@ class _TritonEmitter:
     def _emit_loop_carried_top_k(self, operation, source, pad: str) -> None:
         """Merge one score tile into deterministic loop-carried top-k state."""
 
-        _require(self.loop is not None, "loop-carried top_k has no tile loop")
+        chain = self.schedule.enclosing_loops(operation)
+        _require(bool(chain), "loop-carried operation has no containing loop")
+        loop = chain[-1]
+
         if operation.parameters.source_tiles_per_merge == 2:
             self._emit_two_tile_loop_carried_top_k(operation, source, pad)
             return
@@ -1393,14 +1468,14 @@ class _TritonEmitter:
         self.line(f"{pad}{previous_values} = {values}")
         self.line(f"{pad}{previous_indices} = {indices}")
         self.line(
-            f"{pad}{source_positions} = {self.loop.iterator} + "
+            f"{pad}{source_positions} = {loop.iterator} + "
             f"tl.arange(0, {source.shape[0]})"
         )
-        if self.loop.stop is None:
+        if loop.stop is None:
             self.line(f"{pad}{source_valid} = tl.full(({source.shape[0]},), True, tl.int1)")
         else:
             self.line(
-                f"{pad}{source_valid} = {source_positions} < {self._loop_stop()}"
+                f"{pad}{source_valid} = {source_positions} < {self._loop_stop(loop)}"
             )
         self.line(f"{pad}{state_valid} = {previous_indices} != 2147483647")
         source_keys = self._emit_top_k_keys(
@@ -1432,7 +1507,10 @@ class _TritonEmitter:
     def _emit_two_tile_loop_carried_top_k(self, operation, source, pad: str) -> None:
         """Retain one source-key tile and merge only on every second loop trip."""
 
-        _require(self.loop is not None, "two-tile top_k has no tile loop")
+        chain = self.schedule.enclosing_loops(operation)
+        _require(bool(chain), "loop-carried operation has no containing loop")
+        loop = chain[-1]
+
         prefix = operation.op_id
         source_positions = f"{prefix}_source_positions"
         source_valid = f"{prefix}_source_valid"
@@ -1441,14 +1519,14 @@ class _TritonEmitter:
 
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(
-            f"{pad}{source_positions} = {self.loop.iterator} + "
+            f"{pad}{source_positions} = {loop.iterator} + "
             f"tl.arange(0, {source.shape[0]})"
         )
         # The access-map mask protects the load, while this mask protects selection.
         # They must use the same effective stop even for a static partial final tile;
         # otherwise the load's zero fill becomes a real score.
         self.line(
-            f"{pad}{source_valid} = {source_positions} < {self._loop_stop()}"
+            f"{pad}{source_valid} = {source_positions} < {self._loop_stop(loop)}"
         )
         source_keys = self._emit_top_k_keys(
             operation.reads[0],
@@ -1458,8 +1536,8 @@ class _TritonEmitter:
             pad,
             source.dtype,
         )
-        tile = self._tile(self.loop.name)
-        self.line(f"{pad}if (({self.loop.iterator} // {tile}) & 1) != 0:")
+        tile = self._tile(loop.name)
+        self.line(f"{pad}if (({loop.iterator} // {tile}) & 1) != 0:")
         self.line(f"{pad}    {pair} = tl.cat({pending}, {source_keys})")
         self._emit_two_tile_top_k_merge(
             operation,
@@ -1574,7 +1652,10 @@ class _TritonEmitter:
     def _emit_two_tile_top_k_flush(self, operation, pad: str) -> None:
         """Merge a pending odd final source tile after the declared tile loop."""
 
-        _require(self.loop is not None, "two-tile top_k flush has no tile loop")
+        chain = self.schedule.enclosing_loops(operation)
+        _require(bool(chain), "loop-carried operation has no containing loop")
+        loop = chain[-1]
+
         source = self.schedule.buffer(operation.reads[0])
         _require(
             source is not None and len(source.shape) == 1,
@@ -1585,8 +1666,8 @@ class _TritonEmitter:
         count = f"{prefix}_source_tile_count"
         zeros = f"{prefix}_flush_zero_keys"
         pair = f"{prefix}_flush_pair_keys"
-        tile = self._tile(self.loop.name)
-        stop = self._loop_stop()
+        tile = self._tile(loop.name)
+        stop = self._loop_stop(loop)
 
         self.line(f"{pad}# CAKE_FLUSH:{operation.op_id}")
         self.line(f"{pad}{count} = ({stop} + {tile} - 1) // {tile}")
@@ -1757,6 +1838,15 @@ class _TritonEmitter:
         _require(access is not None, f"store {operation.op_id!r} has no access map")
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         pointer, mask = self._address(access, pad)
+        value = self.schedule.buffer(operation.reads[0])
+        _require(value is not None, f"store {operation.op_id!r} has no value buffer")
+        if value.is_scalar and all(
+            component.source is AccessIndexKind.PROGRAM for component in access.indices
+        ):
+            # A canonical [1] value can be a native scalar or a one-element block.
+            # Give both the same one-element pointer domain; adding [0] preserves
+            # the address/count and leaves reduction state and any mask unchanged.
+            pointer = f"({pointer}) + tl.arange(0, 1)"
         self.line(f"{pad}tl.store(")
         self.line(f"{pad}    {pointer},")
         self.line(f"{pad}    {operation.reads[0]},")

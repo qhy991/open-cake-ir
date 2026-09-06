@@ -145,7 +145,7 @@ class ProfileReportTest(unittest.TestCase):
         self.assertIsNone(profile["residency"])
         self.assertEqual(profile["ncu_metrics"], [])
         self.assertIsNone(profile["empirical_cost"]["predicted_kernel_us"])
-        self.assertIn("METAL_SERIAL_EXECUTION at lowering (nonblocking)", output)
+        self.assertIn("METAL_SIMD_EXECUTION at lowering (nonblocking)", output)
         self.assertIn("residency: unavailable", output)
         self.assertIn(profile["abstentions"][0], output)
         self.assertIn("uncovered: " + profile["empirical_cost"]["reason"], output)
