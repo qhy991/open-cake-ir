@@ -43,6 +43,15 @@ python3 tools/report_schedule_profile.py --json \
   corpus/schedules/gemm-bias-b1-smoke.json
 ```
 
+终端报告在每个 Schedule 的数值行下面展示驻留上界的约束资源、已分析范围、
+Finding 的代码、位置、消息及阻止阶段，以及已有的 barrier／scoreboard 定性风险原因。
+风险标签保持 `uncalibrated_risk`，不代表测得的 stall 比例或瓶颈排序。
+
+JSON 外层仍为 `schema_version=1`；`rows` 和 `skipped` 中的 `findings` 现在保留
+Compiler 的完整 Finding 对象，而非只有代码字符串。需要代码列表的消费者应显式
+读取每个对象的 `code`，不能再把对象当字符串。`profile` 保持其原有结构与数值；
+已保留编译报告的复用只读取原有编译资源与产物字段，因此既有报告仍可用于该路径。
+
 在具备工具链的 Linux 环境中编译和检查；输出目录必须是仓库外的新目录：
 
 ```bash
@@ -129,6 +138,9 @@ JSON 中的 `empirical_cost` 给出 `predicted_kernel_us`、`empirical_range_us`
 不等于当前机器环境已经准入；缺少编译观察时，输出完全以声明的编译环境为条件。
 经验残差范围不是置信区间，也不保证全部未测尺寸。该输入不会补写 NCU 的利用率
 或 stall 百分比，更不会决定候选接受与发布。
+
+终端同时显示条件估算的经验范围；未覆盖时保留具体拒绝原因，不用空白数值掩盖
+目标、Revision、模板或范围的差异。完整上下文和来源仍由 JSON 中的既有字段提供。
 
 校准必须在模型绑定的冻结 Compiler Revision 上完成。早期独立 FMA 原型的旧 schema
 与 v46 测量不能仅改写版本名称后充当新 Revision 的模型；需要新的采集或经过明确

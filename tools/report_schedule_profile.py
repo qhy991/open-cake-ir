@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +43,20 @@ def _metric(document: dict[str, object], name: str) -> dict[str, object]:
         for metric in document["ncu_metrics"]
         if metric["metric"] == name
     ), {"value": None})
+
+
+def _finding_lines(findings: list[dict[str, object]]) -> list[str]:
+    lines = []
+    for finding in findings:
+        blocked = [
+            stage for stage in ("acceptance", "lowering")
+            if finding[f"blocks_{stage}"]
+        ]
+        status = "blocks " + ", ".join(blocked) if blocked else "nonblocking"
+        lines.append(
+            f"  {finding['code']} at {finding['path']} ({status}): {finding['message']}"
+        )
+    return lines
 
 
 def _table(rows: list[dict[str, object]]) -> str:
@@ -89,6 +103,28 @@ def _table(rows: list[dict[str, object]]) -> str:
         if has_cost:
             estimate = (profile.get("empirical_cost") or {}).get("predicted_kernel_us")
             lines[-1] += "  " + ("-" if estimate is None else f"{estimate:.3f}")
+        if occupancy:
+            lines.append(
+                f"  residency: binding={occupancy['binding_resource']}; "
+                f"coverage={occupancy['coverage']}"
+            )
+        else:
+            lines.append("  residency: unavailable; " + "; ".join(profile["abstentions"]))
+        lines.extend(_finding_lines(row["findings"]))
+        for name, metric in (("barrier", barrier), ("scoreboard", scoreboard)):
+            if metric.get("reasons"):
+                lines.append(
+                    f"  {name} ({metric['estimate_kind']}): "
+                    + "; ".join(metric["reasons"])
+                )
+        cost = profile.get("empirical_cost")
+        if cost is not None:
+            if cost["covered"]:
+                low, high = cost["empirical_range_us"]
+                detail = f"empirical range [{low:.3f}, {high:.3f}] us"
+            else:
+                detail = "uncovered: " + cost["reason"]
+            lines.append(f"  conditional estimate {cost['model_id']}: {detail}")
     if has_cost:
         lines.append("* Conditional external empirical estimate; context and reported evidence are in JSON. Not a measured counter or qualified Compiler.rank.")
     return "\n".join(lines)
@@ -136,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     skipped: list[dict[str, object]] = []
     for path in _paths(arguments):
         assessment = compiler.assess_file(path)
-        findings = [finding.code for finding in assessment.findings]
+        findings = [asdict(finding) for finding in assessment.findings]
         if not assessment.lowering_eligible:
             skipped.append(
                 {
@@ -188,7 +224,8 @@ def main(argv: list[str] | None = None) -> int:
         if skipped:
             print("\nskipped:")
             for row in skipped:
-                print(f"  {row['schedule']}: {','.join(row['findings'])}")
+                print(f"  {row['schedule']}:")
+                print("\n".join(_finding_lines(row["findings"])))
     return 0
 
 
