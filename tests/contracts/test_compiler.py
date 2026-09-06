@@ -434,13 +434,18 @@ class CompilerContractTests(unittest.TestCase):
                 ).encode()
             ).hexdigest()
             approval = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "decision": "approved",
                 "gate_report": {
                     "path": "compiler/corpus-gate-report.json",
                     "canonical_sha256": gate_sha256,
                 },
-                "reviewer": "independent_fixture_reviewer",
+                "reviewer": {
+                    "kind": "agent_session",
+                    "model": "gpt-6-astra",
+                    "session_id": "fixture-review-session",
+                    "author_session_id": "fixture-author-session",
+                },
                 "approval_basis": "Reviewed the exact temporary Gate diff.",
             }
             approval_path.write_text(

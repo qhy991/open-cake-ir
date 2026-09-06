@@ -11,7 +11,7 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 | 为什么估算需要校准 | [0008](0008-calibration-coverage-gates-ranking.md) |
 | 生成源码与固定源码有什么区别 | [0019](0019-lowering-generation-is-observable.md) |
 | 为什么 Corpus 与 Workload 不同 | [0029](0029-lowering-route-is-not-a-workload-profile.md)、[0038](0038-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) |
-| 发布如何使用明确的批准 | [0030](0030-compiler-release-approval-is-external.md) |
+| 发布如何使用独立人类或模型会话的批准 | [0052](0052-independent-agent-release-review.md)，背景：[0030](0030-compiler-release-approval-is-external.md) |
 | 为什么完整文件不等于可信的权限历史 | [0031](0031-archive-integrity-is-not-filesystem-custody.md) |
 | 文档怎样避免重复维护事实 | [0047](0047-documentation-separates-stable-history-and-current-views.md) |
 | AI 怎样读取任务并受预算约束 | [0048](0048-agent-runs-use-task-agents-and-ralph-control.md) |

@@ -11,6 +11,35 @@ from typing import Mapping, cast
 from .core import Compiler, CompilerError
 
 
+# Canonical model policy for independent agent reviewers (ADR 0052).
+ALLOWED_REVIEW_MODELS = frozenset({"opus-5", "fable-5", "fable-5.1", "gpt-6-astra"})
+
+
+def _validate_reviewer(value: object) -> None:
+    reviewer = _object(value, "compiler_release_approval.reviewer")
+    if reviewer.get("kind") == "human":
+        if set(reviewer) != {"kind", "name"} or not _identity(reviewer.get("name")):
+            raise CompilerError("Compiler release human reviewer identity differs")
+        return
+    if reviewer.get("kind") != "agent_session" or set(reviewer) != {
+        "kind", "model", "session_id", "author_session_id"
+    }:
+        raise CompilerError("Compiler release reviewer fields differ")
+    model = reviewer.get("model")
+    if not isinstance(model, str) or model not in ALLOWED_REVIEW_MODELS:
+        raise CompilerError("Compiler release reviewer model is not allowed")
+    session_id = reviewer.get("session_id")
+    author_session_id = reviewer.get("author_session_id")
+    if not _identity(session_id) or not _identity(author_session_id):
+        raise CompilerError("Compiler release reviewer session identity differs")
+    if str(session_id).casefold() == str(author_session_id).casefold():
+        raise CompilerError("Compiler release reviewer must use a different author session")
+
+
+def _identity(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and value == value.strip()
+
+
 def _canonical_json_bytes(value: object) -> bytes:
     return json.dumps(
         value,
@@ -93,7 +122,7 @@ class CompilerRelease:
 
 @dataclass(frozen=True)
 class CompilerGate:
-    """Persistent full-corpus observation awaiting explicit human approval."""
+    """Persistent full-corpus observation awaiting an independent review."""
 
     document: Mapping[str, object]
     canonical_sha256: str
@@ -149,8 +178,8 @@ def build_gate_report(
         failed = ", ".join(case.case_id for case in gate.cases if not case.matched)
         raise CompilerError(f"compiler corpus gate failed: {failed}")
     document: dict[str, object] = {
-        "schema_version": 1,
-        "decision": "awaiting_human_review",
+        "schema_version": 2,
+        "decision": "awaiting_review",
         "proposal": {
             "path": Path(revision_path).resolve(strict=True).relative_to(root).as_posix(),
             "canonical_sha256": sha256(_canonical_json_bytes(proposal)).hexdigest(),
@@ -197,7 +226,7 @@ def build_release(
         "gate_report",
         "reviewer",
         "approval_basis",
-    } or approval.get("schema_version") != 1 or approval.get("decision") != "approved":
+    } or type(approval.get("schema_version")) is not int or approval.get("schema_version") != 2 or approval.get("decision") != "approved":
         raise CompilerError("Compiler release approval differs")
     approval_gate = _object(approval.get("gate_report"), "compiler_release_approval.gate_report")
     gate_relative, resolved_gate_path = _safe_path(
@@ -207,10 +236,10 @@ def build_release(
         "canonical_sha256"
     ) != observed_gate.canonical_sha256:
         raise CompilerError("Compiler release approval does not bind this Gate report")
-    reviewer = approval.get("reviewer")
+    _validate_reviewer(approval.get("reviewer"))
     approval_basis = approval.get("approval_basis")
-    if not isinstance(reviewer, str) or not reviewer or not isinstance(approval_basis, str) or not approval_basis:
-        raise CompilerError("Compiler release approval identity differs")
+    if not isinstance(approval_basis, str) or not approval_basis.strip():
+        raise CompilerError("Compiler release approval basis differs")
     compiler = Compiler.load(root, revision_path)
     gate = compiler.check_corpus()
 
