@@ -1,0 +1,17 @@
+{
+  "schema": "kernelinfra.stage-receipt.v1",
+  "run_id": "open-cake-affine-n2c2s2-v43-b200-correctness-v1-3cb2d72125ce",
+  "stage_id": "correctness",
+  "stage_kind": "correctness",
+  "execution": "broker",
+  "judge_identity": "open-cake-affine-exact-rational-v1",
+  "started_at": "2026-09-06T01:40:17.889588+00:00",
+  "finished_at": "2026-09-06T01:40:21.430954+00:00",
+  "exit_code": 0,
+  "broker_job_id": "gpuq-9fd4ca406482",
+  "gpu_ids": [
+    0
+  ],
+  "judge_result_valid": true,
+  "error": null
+}

@@ -18,6 +18,15 @@ block-scaled 形式为低精度数据配上分块缩放系数，数据与缩放�
 项目示例：[GEMM+bias](../../corpus/schedules/gemm-bias-b1-smoke.json)、[不等长分组](../../corpus/schedules/ragged-grouped-gemm-b1-smoke.json)、[分块缩放](../../corpus/schedules/block-scaled-gemm-b1-smoke.json)。
 完整固定线性层任务见 [TinyGEMM2](workloads.md#tinygemm2)。
 
+## 仿射计算：每行乘一个数，再加一个数
+
+例如某行输入 `[2,3]`，scale 为 `4`，bias 为 `1`，输出就是 `[9,13]`。
+NCHW 平面仿射中的每个 `(batch,channel)` 有自己的系数；不能把不同 batch 的同一 channel 混用。
+这类计算常见于归一化的收尾等位置，使用 [FMA](primitives.md#elementwise)时还须保留融合舍入规则。
+
+项目有一份 [8 个输出的完整 GPU 检查实例](../AFFINE_PARENT_B200_CANARY_20260906.md)，
+列出了每个输入、系数、答案和验证边界。它帮助理解怎么证明一个固定样本算对，不是通用性能成绩。
+
 ## RMSNorm：按一行的整体大小缩放
 
 输入是一行数和每个位置的权重。先平方、求平均，再用这个平均值的平方根缩放原数，最后乘权重。

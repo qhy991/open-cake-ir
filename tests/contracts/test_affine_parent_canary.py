@@ -24,6 +24,12 @@ def complete_record():
 
 
 class AffineParentCanaryTests(unittest.TestCase):
+    def test_retained_gpu_output_recomputes_from_the_frozen_input_formula(self):
+        data = ROOT / "docs/data/affine-parent-v43-b200-canary-20260906"
+        checked = canary.verify(json.loads((data / "complete-output.json").read_text()))
+        self.assertEqual(checked, json.loads((data / "verification.json").read_text()))
+        self.assertEqual(checked["status"], "passed")
+
     def test_reference_matches_parent_formula_and_detects_channel_only_indexing(self):
         original = canary.inputs()
         expected = []

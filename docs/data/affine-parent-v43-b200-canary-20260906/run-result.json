@@ -1,0 +1,39 @@
+{
+  "schema": "kernelinfra.run-result.v1",
+  "run_id": "open-cake-affine-n2c2s2-v43-b200-correctness-v1-3cb2d72125ce",
+  "task_id": "open-cake-affine-n2c2s2-v43-b200-correctness-v1",
+  "task_sha256": "ba41ed9d391dbb227183be23bb1381f044f1085d2006a3f0eedbe8c98f86f4f6",
+  "candidate_sha256": "c526d25d1d052736f73b25e85072ae16a467107305db0b74bd26592acd546691",
+  "outcome": "completed",
+  "validity": "valid",
+  "frontier_eligible": false,
+  "terminal_reason": null,
+  "stages": [
+    {
+      "id": "correctness",
+      "kind": "correctness",
+      "status": "passed",
+      "validity": "valid",
+      "summary": "N2/C2/S2 complete-output affine, input, guard and wrapper checks finished."
+    }
+  ],
+  "workloads": [
+    {
+      "correct": true,
+      "id": "batch-sensitive-n2-c2-s2"
+    }
+  ],
+  "fingerprints": {},
+  "metrics": {
+    "correctness": {
+      "checked_elements": 8,
+      "guards_unchanged": true,
+      "input_mutation_count": 0,
+      "output_mismatch_count": 0,
+      "performance_measured": false,
+      "recorded_abi_valid": true,
+      "scope": "selected_fixed_instance_only",
+      "status": "passed"
+    }
+  }
+}
