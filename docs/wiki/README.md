@@ -21,6 +21,7 @@
 | 怎么开始一次真实 GPU 实验 | [实验流程](experiments.md#运行前看什么)和 [执行手册](../RUNBOOK.md) |
 | 某个检查没通过，该看什么 | [结果与排错](results.md) |
 | 主线升级后怎样重建旧任务 | [历史任务回放](replay.md) |
+| 一个新操作为什么不等于整个算子都支持 | [FMA 再审与读取检查案例](../ACCESS_DOMAIN_REPAIR_20260906.md) |
 | 现在发布的是哪个版本 | [自动生成的发布状态](../../reports/current/STATUS.md) |
 | 一个英文术语的正式含义 | [术语表](../GLOSSARY.md) |
 | 代码应该放在哪一部分 | [职责地图](../../CONTEXT-MAP.md) |
