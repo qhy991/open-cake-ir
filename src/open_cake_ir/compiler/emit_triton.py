@@ -242,6 +242,20 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         "the Triton backend supports at most one reduce_argmin operation",
     )
     for index, operation in enumerate(schedule.operations):
+        if operation.kind is OperationKind.ELEMENTWISE:
+            # Global arguments are pointers; _operand only names already-produced
+            # values. Arithmetic does not implement access maps or memory effects.
+            for edge in ("reads", "writes"):
+                for position, name in enumerate(getattr(operation, edge)):
+                    buffer = schedule.buffer(name)
+                    if buffer is not None:
+                        add(
+                            buffer.space is MemorySpace.REGISTER,
+                            "TRITON_ELEMENTWISE_STORAGE",
+                            f"operations[{index}].{edge}[{position}]",
+                            f"Triton elementwise arithmetic requires register values; "
+                            f"{name!r} is {buffer.space.value}. Use explicit load/store operations.",
+                        )
         if operation.kind is OperationKind.MMA:
             instruction = operation.parameters.instruction
             add(
