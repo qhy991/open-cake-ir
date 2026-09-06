@@ -22,6 +22,7 @@ The [English guide](wiki/README.md) also links every learning page. Use the [Glo
 | Purpose | English page |
 | --- | --- |
 | Authoring Schedules in Python | [Python frontend](PYTHON_FRONTEND.md) |
+| IR objects, implementation ownership and extension points | [IR guide](IR_GUIDE.md) |
 | Operating a frozen Study | [Runbook](../RUNBOOK.md) |
 | Understanding acceptance evidence | [Acceptance gates](../ACCEPTANCE_GATES.md) |
 | Comparing paper claims and local evidence | [Paper contract](../PAPER_CONTRACT.md) |

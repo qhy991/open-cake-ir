@@ -28,6 +28,7 @@ GPU 是擅长让很多小组同时算题的处理器。算子是一道明确的�
 | load、FMA、矩阵乘和前缀和分别做什么 | [基本操作](../wiki/primitives.md) |
 | 项目有哪些完整任务 | [任务目录](../wiki/workloads.md) |
 | 用 Python 变量和表达式写执行计划 | [Python 入门](PYTHON_FRONTEND.md) |
+| 理解 IR 对象、代码组织与扩展位置 | [当前 IR 详解](../IR_GUIDE.md) |
 | 从准备到真实实验应该按什么顺序 | [执行手册](RUNBOOK.md) |
 | 什么证据足够进入下一步 | [验收规则](ACCEPTANCE_GATES.md) |
 | 论文结果与本地结果有什么区别 | [论文对照约定](PAPER_CONTRACT.md) |

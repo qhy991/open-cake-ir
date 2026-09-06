@@ -320,7 +320,7 @@ def schedule_schema() -> dict[str, Any]:
         "$id": "https://open-cake-ir.local/schema/schedule-v1",
         "title": "Open Cake Schedule v1",
         "description": (
-            "Generated from src/open_cake_ir/compiler/ir.py by "
+            "Generated from open_cake_ir.compiler.ir by "
             "open_cake_ir.compiler.schema.schedule_schema_bytes()."
         ),
         "type": "object",

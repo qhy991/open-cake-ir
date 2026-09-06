@@ -4,7 +4,7 @@
 
 These are operations a Schedule can use, not a promise that every GPU operator is supported. Types, shapes, addresses, targets, and backends still constrain complete plans.
 
-[Guide index](README.md) · [Operators](operators.md) · [Operation definitions](../../../src/open_cake_ir/compiler/ir.py)
+[Guide index](README.md) · [Operators](operators.md) · [Operation definitions](../../../src/open_cake_ir/compiler/ir/operations.py)
 
 ## load
 
