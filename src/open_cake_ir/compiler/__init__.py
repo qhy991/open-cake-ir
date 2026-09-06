@@ -23,6 +23,7 @@ from .core import (
 )
 from .emit_cutedsl import EmitError, Emission, emit
 from .compiled_resources import CompiledResources
+from .empirical_cost import EmpiricalCostModel
 from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
 from .profile_model import MetricEstimate, ProfileEnvelope, profile_envelope
 from .target import Target, TargetParseError
@@ -36,6 +37,7 @@ __all__ = [
     "CorpusCaseReport",
     "CorpusGateReport",
     "EmitError",
+    "EmpiricalCostModel",
     "Emission",
     "Finding",
     "FindingCategory",

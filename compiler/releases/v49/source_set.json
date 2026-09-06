@@ -1,5 +1,4 @@
 {
-  "schema_version": 1,
   "paths": [
     "compiler/AUTHORING_CONTRACT.md",
     "docs/PYTHON_FRONTEND.md",
@@ -31,7 +30,6 @@
     "corpus/schedules/flash-kmeans-b32-warp-specialized-argmin.json",
     "corpus/schedules/gemm-bias-b1-smoke-shape-drift.json",
     "corpus/schedules/gemm-bias-b1-smoke.json",
-    "corpus/schedules/gemm-bias-two-deep-tail-b1-smoke.json",
     "corpus/schedules/indexed-gather-b8-smoke-dtype-drift.json",
     "corpus/schedules/indexed-gather-b8-smoke.json",
     "corpus/schedules/index-expand-b8-smoke-dtype-drift.json",
@@ -119,7 +117,7 @@
     "corpus/schedules/metal-row-sum-odd.json",
     "corpus/schedules/metal-row-max-odd.json",
     "corpus/schedules/metal-target-unsupported.json",
-    "corpus/schedules/metal-store-program-ownership.json",
-    "src/open_cake_ir/compiler/empirical_cost.py"
-  ]
+    "corpus/schedules/metal-store-program-ownership.json"
+  ],
+  "schema_version": 1
 }
