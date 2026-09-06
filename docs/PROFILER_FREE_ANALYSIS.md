@@ -111,11 +111,12 @@ Python 接口使用 `EmpiricalCostModel.load(path)`，然后调用
 模型用一个通用表示覆盖不同算子：每条曲线固定一个完整 Schedule 模板，明确列出
 共同变化的 Buffer 维度、允许的整数对齐和测量区间，再按维度大小插值。这里没有
 按算子名称分派的成本公式。模板比较保留 JSON 的值类型；只允许显示名称与模型
-明确绑定的尺寸变化。不同 Revision、不同目标、范围外或未对齐的尺寸、模板差异，
+明确绑定的尺寸变化。不同 Revision 内容身份、不同目标、范围外或未对齐的尺寸、模板差异，
 以及同时命中多条曲线都会返回未覆盖原因。已提供编译资源时，后端编译器版本
 与模型声明不一致也会拒绝估算。
 
-模型根对象为 schema_version=1，包含 `model_id`、`compiler_revision_id`、`target`、
+模型根对象为 schema_version=2，包含 `model_id`、`compiler_revision_id`、
+`compiler_revision_sha256`（来自 Assessment 的现有内容身份）、`target`、
 `context`、`reported_evidence` 和 `curves`。`context` 声明 `timer`、`cache_protocol`、
 `runtime`（至少有 `compiler_version`）及 `input_scope`。每条曲线包含 `template`、
 `varying_dimensions`（`buffer` 和零起始 `dimension`）、`extent_multiple`、按 extent
@@ -132,3 +133,7 @@ JSON 中的 `empirical_cost` 给出 `predicted_kernel_us`、`empirical_range_us`
 校准必须在模型绑定的冻结 Compiler Revision 上完成。早期独立 FMA 原型的旧 schema
 与 v46 测量不能仅改写版本名称后充当新 Revision 的模型；需要新的采集或经过明确
 审查的兼容证据。本接口不内置未验证的系数。
+
+并行分支曾产生同名 v49 而内容不同的 Compiler；模型因此必须同时绑定编号和
+已有的内容身份。旧 schema 1 不会被默认为匹配，需要明确的兼容性验证和新模型
+交付。这个身份字段只解决实际的冻结 Revision 对应关系，不建立新的文件摘要目录。

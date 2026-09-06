@@ -1071,6 +1071,71 @@
         "schedule_sha256": "2fff703865da06f77dd340df69bb5417adc823e929cb2da32f9ec5c5f6aa4e82",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "metal-elementwise-odd",
+      "schedule": "corpus/schedules/metal-elementwise-odd.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "METAL_SERIAL_EXECUTION"
+        ],
+        "schedule_sha256": "e0d2e9772e902c44a7f7bc4b8cf7da51d28d24ecc11ebc63e2df3faf4229c347",
+        "lowering_source_sha256": "fda2c5e6dd1ebeae9b4a838bf8ac6962f2d2520b3253ad38c7278915550ba220"
+      }
+    },
+    {
+      "case_id": "metal-row-sum-odd",
+      "schedule": "corpus/schedules/metal-row-sum-odd.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "METAL_SERIAL_EXECUTION"
+        ],
+        "schedule_sha256": "db3a3fd8aa7cd17d39a83e3b126447d5cbbdb036accd773077fdcdc866adb129",
+        "lowering_source_sha256": "afde78f3acad38ae6fbd5512034ea558ca83725f2b330d8abe05097e28dff142"
+      }
+    },
+    {
+      "case_id": "metal-row-max-odd",
+      "schedule": "corpus/schedules/metal-row-max-odd.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "METAL_SERIAL_EXECUTION"
+        ],
+        "schedule_sha256": "efbd52fe6900bb9926e3e5d266ebfbc8c92a305da219c319db9a7567d20b2e76",
+        "lowering_source_sha256": "f326e76ab7438a6c5bc8a0d4b81e31c9e4ce45d33cd91610eaaa5073d8096ae1"
+      }
+    },
+    {
+      "case_id": "metal-target-unsupported",
+      "schedule": "corpus/schedules/metal-target-unsupported.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TARGET_UNSUPPORTED"
+        ],
+        "schedule_sha256": "730e095dbd1a5bc39af004cbfec032a016cfed97d5ff1820db934b7ad2ca05dc",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "metal-store-program-ownership",
+      "schedule": "corpus/schedules/metal-store-program-ownership.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "METAL_STORE_OWNERSHIP"
+        ],
+        "schedule_sha256": "0e1f86029ac923cab9b592677ccb8de1ce16fe50a5ad65af756fb1f4d5ee14bb",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

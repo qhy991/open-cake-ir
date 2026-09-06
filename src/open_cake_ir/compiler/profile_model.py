@@ -412,6 +412,16 @@ def profile_envelope(
         if lowering.schedule_id != schedule.schedule_id or lowering.target != target.target_id:
             raise ValueError("profile lowering context differs from Schedule or Target")
         lowered_source = lowering.source
+    if target.compute_capability is None:
+        if compiled_resources is not None:
+            raise ValueError("CUDA compiled-resource feedback does not describe a Metal kernel")
+        return ProfileEnvelope(
+            schedule.schedule_id, target.target_id, _work_document(work_bound(schedule)),
+            None, _lowering_document(schedule, lowered_source), (),
+            ("This target has no calibrated performance model or occupancy facts; "
+             "NVIDIA NCU metrics and CUDA compiled-resource feedback do not apply.",),
+            None,
+        )
     if compiled_resources is not None:
         if lowering is None:
             raise ValueError("compiled resource feedback requires its complete Lowering context")

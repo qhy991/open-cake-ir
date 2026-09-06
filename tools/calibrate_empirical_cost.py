@@ -152,7 +152,7 @@ def _collect():
             raise ValueError("Schedule must belong to the candidate snapshot")
         document = _read(schedule_path)
         assessment = compiler.assess(document)
-        if assessment.compiler_revision_id != plan["compiler_revision_id"]:
+        if (assessment.compiler_revision_id != plan["compiler_revision_id"] or assessment.compiler_revision_sha256 != plan["compiler_revision_sha256"]):
             raise ValueError("Compiler Revision differs")
         lowering = compiler.lower(assessment)
         signature = {"a": "*fp32", "b": "*fp32", "c": "*fp32", "y": "*fp32"} if case["family"] == "fma" else {"a": "*bf16", "b": "*bf16", "bias": "*fp32", "c": "*fp32"}
@@ -253,7 +253,8 @@ def _fit(run, output):
     if plan.get("state") != "frozen" or sha256(Path(__file__).read_bytes()).hexdigest() != plan["collector_sha256"]:
         raise ValueError("fitting must use the frozen collection instrument")
     compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-    if compiler.assess_file(stage / "0000/schedule.json").compiler_revision_id != plan["compiler_revision_id"]:
+    reference = compiler.assess_file(stage / "0000/schedule.json")
+    if reference.compiler_revision_id != plan["compiler_revision_id"] or reference.compiler_revision_sha256 != plan["compiler_revision_sha256"]:
         raise ValueError("fitting Compiler Revision differs")
     if not observed["quality_passed"]:raise ValueError("quality failed before fitting")
     rows = observed["rows"]
@@ -282,7 +283,7 @@ def _fit(run, output):
         buffers = {buffer["name"]: buffer for buffer in row["template"]["buffers"]}
         if type(row["extent"]) is not int or any(buffers[binding["buffer"]]["shape"][binding["dimension"]] != row["extent"] for binding in specifications[row["curve_id"]]["varying_dimensions"]):
             raise ValueError("measured extent differs from the declared Schedule dimensions")
-    document = {"schema_version": 1, "model_id": plan["model_id"], "compiler_revision_id": plan["compiler_revision_id"], "target": "sm_100a", "context": {"timer": "PyTorch Kineto CUPTI GPU kernel activity", "cache_protocol": f"{plan['sampling']['l2_flush_bytes']}-byte zeroing before each sample on same stream", "runtime": observed["runtime"], "input_scope": plan["input_scope"]}, "reported_evidence": {"run_id": run_result["run_id"], "scope": "fresh-measurement holdout; conditional empirical prediction, not candidate acceptance"}, "curves": []}
+    document = {"schema_version": 2, "model_id": plan["model_id"], "compiler_revision_id": plan["compiler_revision_id"], "compiler_revision_sha256": plan["compiler_revision_sha256"], "target": "sm_100a", "context": {"timer": "PyTorch Kineto CUPTI GPU kernel activity", "cache_protocol": f"{plan['sampling']['l2_flush_bytes']}-byte zeroing before each sample on same stream", "runtime": observed["runtime"], "input_scope": plan["input_scope"]}, "reported_evidence": {"run_id": run_result["run_id"], "scope": "fresh-measurement holdout; conditional empirical prediction, not candidate acceptance"}, "curves": []}
     for spec in plan["curves"]:
         group = [row for row in rows if row["curve_id"] == spec["id"]]
         splits = {split: {row["extent"] for row in group if row["split"] == split} for split in ("fit", "calibration", "audit")}
@@ -291,7 +292,7 @@ def _fit(run, output):
         document["curves"].append({"template": fit[0]["template"], "varying_dimensions": spec["varying_dimensions"], "extent_multiple": spec["extent_multiple"], "points": [{"extent": row["extent"], "kernel_us": row["kernel_us"]} for row in fit], "relative_error_envelope": 0.0})
     model = EmpiricalCostModel(document)
     def predict(row):
-        value = model.estimate(row["template"], compiler_revision_id=plan["compiler_revision_id"], target="sm_100a", compiled_compiler_version=observed["runtime"]["compiler_version"])
+        value = model.estimate(row["template"], compiler_revision_id=plan["compiler_revision_id"], compiler_revision_sha256=plan["compiler_revision_sha256"], target="sm_100a", compiled_compiler_version=observed["runtime"]["compiler_version"])
         if not value["covered"]:raise ValueError(value["reason"])
         return value
     # Every fitted observation must describe the same template as its curve too.
@@ -351,7 +352,7 @@ def _bind_artifacts(run, plan, rows, compiler):
         if candidate not in path.parents:
             raise ValueError("Schedule escapes candidate snapshot")
         assessment = compiler.assess_file(path)
-        if assessment.compiler_revision_id != plan["compiler_revision_id"]:
+        if (assessment.compiler_revision_id != plan["compiler_revision_id"] or assessment.compiler_revision_sha256 != plan["compiler_revision_sha256"]):
             raise ValueError("candidate Compiler Revision differs")
         lowering = compiler.lower(assessment)
         expected = json.loads(assessment.schedule_bytes)

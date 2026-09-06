@@ -1,0 +1,156 @@
+{
+  "access_maps": [
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "x",
+      "indices": [
+        {
+          "name": "row",
+          "source": "program"
+        },
+        {
+          "dimension": 1,
+          "source": "dimension"
+        }
+      ],
+      "operation": "load_x"
+    },
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "out",
+      "indices": [
+        {
+          "name": "row",
+          "source": "program"
+        }
+      ],
+      "operation": "store_out"
+    }
+  ],
+  "allocations": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "dtype": "fp32",
+      "mode": "input",
+      "name": "x",
+      "shape": [
+        5,
+        65
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "output",
+      "name": "out",
+      "shape": [
+        5
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "values",
+      "shape": [
+        65
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "total",
+      "shape": [
+        1
+      ],
+      "space": "register"
+    }
+  ],
+  "lowering": {
+    "backend": "metal",
+    "entry_point": "cake_row_sum"
+  },
+  "metadata": {},
+  "operations": [
+    {
+      "id": "load_x",
+      "kind": "load",
+      "parameters": {
+        "movement": "global"
+      },
+      "reads": [
+        "x"
+      ],
+      "role": "compute",
+      "writes": [
+        "values"
+      ]
+    },
+    {
+      "depends_on": [
+        "load_x"
+      ],
+      "id": "row_sum",
+      "kind": "reduce",
+      "parameters": {
+        "across_loop": false,
+        "axis": 0,
+        "op": "sum",
+        "scope": "cta"
+      },
+      "reads": [
+        "values"
+      ],
+      "role": "compute",
+      "writes": [
+        "total"
+      ]
+    },
+    {
+      "depends_on": [
+        "row_sum"
+      ],
+      "id": "store_out",
+      "kind": "store",
+      "parameters": {
+        "coalesced": false
+      },
+      "reads": [
+        "total"
+      ],
+      "role": "compute",
+      "writes": [
+        "out"
+      ]
+    }
+  ],
+  "outputs": [
+    "out"
+  ],
+  "pipelines": [],
+  "program_map": {
+    "axes": [
+      {
+        "axis": 0,
+        "buffer": "x",
+        "dimension": 0,
+        "name": "row",
+        "tile": 1
+      }
+    ]
+  },
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [
+        0
+      ]
+    }
+  ],
+  "schedule_id": "metal-row-sum",
+  "schema_version": 1,
+  "target": "apple_gpu_family8",
+  "tile_loops": []
+}

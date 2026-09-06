@@ -8,6 +8,7 @@ from __future__ import annotations
 import bisect
 import json
 import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -132,16 +133,21 @@ class EmpiricalCostModel:
 
     model_id: str
     compiler_revision_id: str
+    compiler_revision_sha256: str
     target: str
     _details: bytes
     _curves: tuple[_Curve, ...]
 
     def __init__(self, document: object) -> None:
-        row = _object(document, {"schema_version", "model_id", "compiler_revision_id", "target", "context", "reported_evidence", "curves"}, "empirical cost model")
-        if type(row["schema_version"]) is not int or row["schema_version"] != 1:
-            raise ValueError("empirical cost model schema_version differs")
+        row = _object(document, {"schema_version", "model_id", "compiler_revision_id", "compiler_revision_sha256", "target", "context", "reported_evidence", "curves"}, "empirical cost model")
+        if type(row["schema_version"]) is not int or row["schema_version"] != 2:
+            raise ValueError("empirical cost model requires schema_version 2 with Compiler content identity")
         for key in ("model_id", "compiler_revision_id", "target"):
             object.__setattr__(self, key, _name(row[key], key))
+        identity = row["compiler_revision_sha256"]
+        if not isinstance(identity, str) or re.fullmatch(r"[0-9a-f]{64}", identity) is None:
+            raise ValueError("model Compiler content identity differs")
+        object.__setattr__(self, "compiler_revision_sha256", identity)
         context = _object(row["context"], {"timer", "cache_protocol", "runtime", "input_scope"}, "model context")
         for key in ("timer", "cache_protocol", "input_scope"):
             _name(context[key], key)
@@ -162,15 +168,17 @@ class EmpiricalCostModel:
     def load(cls, path: str | Path) -> EmpiricalCostModel:
         return cls(json.loads(Path(path).read_text(encoding="utf-8")))
 
-    def estimate(self, schedule: dict, *, compiler_revision_id: str, target: str,
+    def estimate(self, schedule: dict, *, compiler_revision_id: str, compiler_revision_sha256: str, target: str,
                  compiled_compiler_version: str | None = None) -> dict[str, object]:
         """Estimate an assessed Schedule, preserving all metadata on abstention."""
         result = {"kind": "external_empirical_cost", "model_id": self.model_id,
                   "model_compiler_revision_id": self.compiler_revision_id,
+                  "model_compiler_revision_sha256": self.compiler_revision_sha256,
                   "target": self.target, "covered": False, "predicted_kernel_us": None,
                   "empirical_range_us": None, **json.loads(self._details)}
-        if compiler_revision_id != self.compiler_revision_id or target != self.target:
-            result["reason"] = "model Compiler Revision or target differs"
+        if (compiler_revision_id != self.compiler_revision_id
+                or compiler_revision_sha256 != self.compiler_revision_sha256 or target != self.target):
+            result["reason"] = "model Compiler Revision content identity or target differs"
             return result
         if compiled_compiler_version is not None and compiled_compiler_version != result["context"]["runtime"]["compiler_version"]:
             result["reason"] = "compiled artifact compiler version differs from model context"

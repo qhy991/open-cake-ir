@@ -34,7 +34,9 @@ class FitterBindingTest(unittest.TestCase):
         base = json.loads((ROOT / "corpus/schedules/fma-b8-smoke.json").read_text())
         cases, curves, rows = [], [], []
         collector = Path(instrument.__file__).read_bytes()
-        revision = self.compiler.assess(base).compiler_revision_id
+        assessment = self.compiler.assess(base)
+        revision = assessment.compiler_revision_id
+        revision_sha256 = assessment.compiler_revision_sha256
         for variant, cap in enumerate((64, 96, 128)):
             curve_id = f"synthetic-r{cap}"
             curves.append({"id": curve_id, "extent_multiple": 8, "varying_dimensions": [{"buffer": name, "dimension": 0} for name in ("a", "b", "c", "y")]})
@@ -60,7 +62,7 @@ class FitterBindingTest(unittest.TestCase):
                     write(path / "schedule.json", json.loads(assessment.schedule_bytes))
                     (path / "lowered.py").write_bytes(lowering.source.encode())
                     (path / "kernel.cubin").write_bytes(cubin)
-        plan = {"state": "frozen", "collector_sha256": sha256(collector).hexdigest(), "compiler_revision_id": revision, "model_id": "synthetic-boundary-test", "input_scope": "SYNTHETIC CPU CONTRACT TEST ONLY; no measured performance", "cases": cases, "curves": curves, "sampling": {"rounds": 2, "repetitions": 2, "l2_flush_bytes": 268435456}, "acceptance": {"maximum_cohort_cv": .05, "maximum_repeat_median_ratio": 1.05}, "model_acceptance": {"maximum_mape": .1, "maximum_relative_error": .2, "maximum_top2_regret_ratio": 1.05, "envelope_allowance": .05}}
+        plan = {"state": "frozen", "collector_sha256": sha256(collector).hexdigest(), "compiler_revision_id": revision, "compiler_revision_sha256": revision_sha256, "model_id": "synthetic-boundary-test", "input_scope": "SYNTHETIC CPU CONTRACT TEST ONLY; no measured performance", "cases": cases, "curves": curves, "sampling": {"rounds": 2, "repetitions": 2, "l2_flush_bytes": 268435456}, "acceptance": {"maximum_cohort_cv": .05, "maximum_repeat_median_ratio": 1.05}, "model_acceptance": {"maximum_mape": .1, "maximum_relative_error": .2, "maximum_top2_regret_ratio": 1.05, "envelope_allowance": .05}}
         write(run / "candidate/plan.json", plan)
         stages = []
         for phase in ("correctness", "collection"):

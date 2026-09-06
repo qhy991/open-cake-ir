@@ -38,11 +38,11 @@ def _paths(arguments: argparse.Namespace) -> list[Path]:
 
 
 def _metric(document: dict[str, object], name: str) -> dict[str, object]:
-    return next(
+    return next((
         metric
         for metric in document["ncu_metrics"]
         if metric["metric"] == name
-    )
+    ), {"value": None})
 
 
 def _table(rows: list[dict[str, object]]) -> str:

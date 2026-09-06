@@ -19,7 +19,9 @@ class EmpiricalCostTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
-        cls.revision_id = cls.compiler.assess_file(ROOT / "corpus/schedules/fma-b8-smoke.json").compiler_revision_id
+        assessment = cls.compiler.assess_file(ROOT / "corpus/schedules/fma-b8-smoke.json")
+        cls.revision_id = assessment.compiler_revision_id
+        cls.revision_sha256 = assessment.compiler_revision_sha256
 
     def schedule(self, filename, extent=None):
         document = json.loads((ROOT / "corpus/schedules" / filename).read_text())
@@ -40,8 +42,8 @@ class EmpiricalCostTest(unittest.TestCase):
                            "extent_multiple": extents[0],
                            "points": [{"extent": extent, "kernel_us": duration} for extent, duration in zip(extents, [10, 18, 34])],
                            "relative_error_envelope": .1})
-        return {"schema_version": 1, "model_id": "synthetic-api-contract-fixture",
-                "compiler_revision_id": self.revision_id, "target": "sm_100a",
+        return {"schema_version": 2, "model_id": "synthetic-api-contract-fixture",
+                "compiler_revision_id": self.revision_id, "compiler_revision_sha256": self.revision_sha256, "target": "sm_100a",
                 "context": {"timer": "synthetic; no measurement", "cache_protocol": "synthetic",
                             "runtime": {"compiler_version": "synthetic"}, "input_scope": "unit fixture only"},
                 "reported_evidence": {"kind": "synthetic; no calibration qualification"}, "curves": curves}
@@ -73,16 +75,16 @@ class EmpiricalCostTest(unittest.TestCase):
         self.assertEqual(self.compiler.rank([assessment]), ((), (assessment.schedule_id,)))
 
     def test_wrong_revision_and_target_abstain(self):
-        for field, value in [("compiler_revision_id", "other-revision"), ("target", "different-target")]:
+        for field, value in [("compiler_revision_id", "other-revision"), ("compiler_revision_sha256", "0" * 64), ("target", "different-target")]:
             model = EmpiricalCostModel(self.model_document())
-            arguments = {"compiler_revision_id": self.revision_id, "target": "sm_100a", field: value}
+            arguments = {"compiler_revision_id": self.revision_id, "compiler_revision_sha256": self.revision_sha256, "target": "sm_100a", field: value}
             cost = model.estimate(self.schedule("fma-b8-smoke.json"), **arguments)
             self.assertFalse(cost["covered"])
             self.assertIsNone(cost["predicted_kernel_us"])
 
     def test_observed_backend_version_drift_abstains(self):
         model = EmpiricalCostModel(self.model_document())
-        cost = model.estimate(self.schedule("fma-b8-smoke.json"), compiler_revision_id=self.revision_id,
+        cost = model.estimate(self.schedule("fma-b8-smoke.json"), compiler_revision_id=self.revision_id, compiler_revision_sha256=self.revision_sha256,
                               target="sm_100a", compiled_compiler_version="other-toolchain")
         self.assertFalse(cost["covered"])
         self.assertIn("compiler version", cost["reason"])
@@ -124,6 +126,8 @@ class EmpiricalCostTest(unittest.TestCase):
     def test_malformed_model_values_are_rejected(self):
         mutations = [
             lambda d: d.update(schema_version=True),
+            lambda d: d.update(schema_version=1),
+            lambda d: d.update(compiler_revision_sha256="not-an-identity"),
             lambda d: d.update(context={}),
             lambda d: d.update(reported_evidence={}),
             lambda d: d["curves"][0].update(extent_multiple=True),
@@ -163,6 +167,19 @@ runpy.run_path(script,run_name='__main__')
             assessment = self.compiler.assess(self.schedule("fma-b8-smoke.json"))
             feedback = qsa_compiler_feedback(assessment, static_profile=profile)
             self.assertIn("empirical_cost", str(feedback))
+
+    def test_metal_report_abstains_without_fabricated_nvidia_metrics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory) / "model.json"
+            model.write_text(json.dumps(self.model_document()))
+            command = [sys.executable, str(ROOT / "tools/report_schedule_profile.py"), "--revision", str(ROOT / "compiler/revision.json"), "--cost-model", str(model), str(ROOT / "corpus/schedules/metal-elementwise-odd.json")]
+            table = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=True)
+            self.assertIn("est kernel us", table.stdout)
+            data = subprocess.run([*command, "--json"], cwd=ROOT, capture_output=True, text=True, check=True)
+            profile = json.loads(data.stdout)["rows"][0]["profile"]
+            self.assertEqual(profile["ncu_metrics"], [])
+            self.assertFalse(profile["empirical_cost"]["covered"])
+            self.assertIsNone(profile["empirical_cost"]["predicted_kernel_us"])
 
 
 if __name__ == "__main__":unittest.main()
