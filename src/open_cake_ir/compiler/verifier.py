@@ -2521,7 +2521,9 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
                     category,
                 )
             else:
-                collapsed = source.shape[:axis] + source.shape[axis + 1 :]
+                # Buffer scalars use [1], as scalar loads and the Python frontend do;
+                # a rank-zero Buffer is not part of the IR.
+                collapsed = source.shape[:axis] + source.shape[axis + 1 :] or (1,)
                 if tuple(result.shape) != tuple(collapsed):
                     out.add(
                         "REDUCE_SHAPE_MISMATCH",

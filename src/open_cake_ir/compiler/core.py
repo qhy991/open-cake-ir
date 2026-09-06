@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence, cast
 
-from . import emit_cutedsl, emit_triton
+from . import emit_cutedsl, emit_metal, emit_triton
 from .frontend import read_schedule
 from .emit_cutedsl import EmitError
 from .ir import (
@@ -98,7 +98,7 @@ class TargetDefinition:
     target_id: str
     canonical_sha256: str
     device_names: tuple[str, ...]
-    compute_capability: tuple[int, int]
+    compute_capability: tuple[int, int] | None
     memory_spaces: frozenset[str]
     operation_kinds: frozenset[str]
     maximum_threads_per_cta: int
@@ -249,6 +249,7 @@ class _SourceAsset:
 
 
 _GENERATED_BACKENDS: Mapping[LoweringBackend, _GeneratedBackend] = {
+    LoweringBackend.METAL: _GeneratedBackend(emit_metal, "metal", "MTLDevice.makeLibrary"),
     LoweringBackend.TRITON: _GeneratedBackend(emit_triton, "python", "triton"),
     LoweringBackend.CUTLASS_CUTE_DSL: _GeneratedBackend(
         emit_cutedsl, "python", "cutlass_cute_dsl"
@@ -347,7 +348,6 @@ def _load_target_definition(
         "target_id",
         "architecture",
         "device_names",
-        "compute_capability",
         "memory_spaces",
         "operation_kinds",
         "resource_limits",
@@ -355,7 +355,7 @@ def _load_target_definition(
         "synchronization_contracts",
         "citations",
     }
-    optional_fields = {"occupancy"}
+    optional_fields = {"occupancy", "compute_capability"}
     if (
         not expected_fields <= set(document) <= expected_fields | optional_fields
         or document.get("schema_version") != 1
@@ -366,13 +366,10 @@ def _load_target_definition(
     canonical_sha256 = sha256(_canonical_json_bytes(document)).hexdigest()
     if reference.get("canonical_sha256") != canonical_sha256:
         raise CompilerError(f"target definition {target_id!r} bytes differ")
-    capability = document.get("compute_capability")
-    if (
-        not isinstance(capability, list)
-        or len(capability) != 2
-        or any(not isinstance(item, int) or isinstance(item, bool) or item < 0 for item in capability)
-    ):
-        raise CompilerError(f"target definition {target_id!r} compute capability differs")
+    try:
+        typed_target = Target.from_dict(document)
+    except (TargetParseError, ScheduleParseError) as error:
+        raise CompilerError(f"target definition {target_id!r}: {error}") from error
     limits = _object(document.get("resource_limits"), f"target_definition.{target_id}.resource_limits")
     if set(limits) != {
         "maximum_threads_per_cta",
@@ -392,7 +389,7 @@ def _load_target_definition(
         target_id=target_id,
         canonical_sha256=canonical_sha256,
         device_names=_strings(document.get("device_names"), f"target_definition.{target_id}.device_names"),
-        compute_capability=(cast(list[int], capability)[0], cast(list[int], capability)[1]),
+        compute_capability=typed_target.compute_capability,
         memory_spaces=frozenset(
             _strings(document.get("memory_spaces"), f"target_definition.{target_id}.memory_spaces")
         ),
@@ -411,10 +408,7 @@ def _load_target_definition(
             limits.get("maximum_shared_memory_bytes"),
             f"target_definition.{target_id}.maximum_shared_memory_bytes",
         ),
-        maximum_tensor_memory_bytes=_positive_int(
-            limits.get("maximum_tensor_memory_bytes"),
-            f"target_definition.{target_id}.maximum_tensor_memory_bytes",
-        ),
+        maximum_tensor_memory_bytes=typed_target.resource_limits.maximum_tensor_memory_bytes,
         maximum_grid=(
             _positive_int(grid.get("x"), f"target_definition.{target_id}.grid.x"),
             _positive_int(grid.get("y"), f"target_definition.{target_id}.grid.y"),
@@ -1109,6 +1103,18 @@ class Compiler:
                         blocks_lowering=True,
                     )
                 )
+
+        if backend is not None and backend.module is emit_metal and not any(
+            finding.blocks_lowering for finding in findings
+        ):
+            findings.append(Finding(
+                "METAL_SERIAL_EXECUTION", "lowering",
+                "Metal executes each complete program tile serially on lane 0 of one "
+                "32-thread SIMD group; private arrays may spill. No occupancy, cost or "
+                "GPU correctness is inferred. Finite FP32 uses Metal rounding/denormal "
+                "behavior, without PTX RN or denormal-preservation equivalence.",
+                blocks_acceptance=False, blocks_lowering=False,
+            ))
 
         accepted = not any(finding.blocks_acceptance for finding in findings)
         lowering_eligible = accepted and not any(

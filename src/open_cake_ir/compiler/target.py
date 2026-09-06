@@ -23,9 +23,9 @@ class TargetParseError(ValueError):
     """One Target document is not admissible."""
 
 
-def _int_field(value: Any, context: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-        raise TargetParseError(f"{context} must be a positive integer")
+def _int_field(value: Any, context: str, *, allow_zero: bool = False) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < (0 if allow_zero else 1):
+        raise TargetParseError(f"{context} must be a {'nonnegative' if allow_zero else 'positive'} integer")
     return value
 
 
@@ -192,6 +192,7 @@ class ResourceLimits:
             _int_field(
                 value.get("maximum_tensor_memory_bytes"),
                 f"{context}.maximum_tensor_memory_bytes",
+                allow_zero=True,
             ),
             (
                 _int_field(grid["x"], f"{context}.grid.x"),
@@ -234,7 +235,7 @@ class Target:
     target_id: str
     architecture: str
     device_names: tuple[str, ...]
-    compute_capability: tuple[int, int]
+    compute_capability: tuple[int, int] | None
     memory_spaces: frozenset[MemorySpace]
     operation_kinds: frozenset[OperationKind]
     resource_limits: ResourceLimits
@@ -245,10 +246,15 @@ class Target:
 
     @property
     def warp_size(self) -> int:
+        """Width of a role slot: NVIDIA warp or Apple8 SIMD group.
+
+        Metal execution additionally checks the compiled pipeline threadExecutionWidth.
+        This is no claim that Apple supports CUDA warpgroup instructions.
+        """
         return 32
 
     @property
-    def warps_per_warpgroup(self) -> int:
+    def warps_per_warpgroup(self) -> int | None:
         """Warps that issue a warpgroup-wide instruction together.
 
         A constant of the ISA rather than a device observation, like `warp_size`, so it
@@ -257,7 +263,7 @@ class Target:
         preference.
         """
 
-        return 4
+        return 4 if self.compute_capability is not None else None
 
     @classmethod
     def load(cls, path: str | Path) -> "Target":
@@ -270,15 +276,22 @@ class Target:
         if value.get("schema_version") != 1:
             raise TargetParseError("target.schema_version must be 1")
 
-        def string_tuple(field: str) -> tuple[str, ...]:
+        def string_tuple(field: str, *, allow_empty: bool = False) -> tuple[str, ...]:
             items = value.get(field)
-            if not isinstance(items, list) or not items:
+            if not isinstance(items, list) or (not items and not allow_empty):
                 raise TargetParseError(f"target.{field} must be a non-empty list")
             return tuple(_string(item, f"target.{field}[]") for item in items)
 
         capability = value.get("compute_capability")
-        if not isinstance(capability, list) or len(capability) != 2:
-            raise TargetParseError("target.compute_capability must be a pair")
+        if capability is not None and (
+            not isinstance(capability, list) or len(capability) != 2
+            or any(type(item) is not int or item < 0 for item in capability)
+        ):
+            raise TargetParseError("target.compute_capability must be a nonnegative integer pair")
+        if capability is None and value.get("architecture") != "apple8":
+            raise TargetParseError("target.compute_capability is required for CUDA targets")
+        if value.get("architecture") == "apple8" and "compute_capability" in value:
+            raise TargetParseError("Apple GPU targets have no CUDA compute capability")
 
         try:
             spaces = frozenset(
@@ -292,19 +305,22 @@ class Target:
         except ScheduleParseError as error:
             raise TargetParseError(str(error)) from error
 
-        instruction_contracts = frozenset(string_tuple("instruction_contracts"))
+        if value.get("architecture") == "apple8" and ("occupancy" in value or "peak" in value):
+            raise TargetParseError("Apple8 has no admitted occupancy or peak calibration")
+
+        instruction_contracts = frozenset(string_tuple("instruction_contracts", allow_empty=True))
         return cls(
             target_id=_string(value.get("target_id"), "target.target_id"),
             architecture=_string(value.get("architecture"), "target.architecture"),
             device_names=string_tuple("device_names"),
-            compute_capability=(int(capability[0]), int(capability[1])),
+            compute_capability=None if capability is None else (capability[0], capability[1]),
             memory_spaces=spaces,
             operation_kinds=kinds,
             resource_limits=ResourceLimits.from_dict(
                 value.get("resource_limits"), "target.resource_limits"
             ),
             instruction_contracts=instruction_contracts,
-            synchronization_contracts=frozenset(string_tuple("synchronization_contracts")),
+            synchronization_contracts=frozenset(string_tuple("synchronization_contracts", allow_empty=True)),
             occupancy=(
                 Occupancy.from_dict(value["occupancy"], "target.occupancy")
                 if "occupancy" in value

@@ -108,6 +108,12 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         if not condition:
             findings.append(BackendPrecondition(code, path, message))
 
+    add(
+        target.compute_capability is not None,
+        "BACKEND_TARGET_UNSUPPORTED", "target",
+        "the current CuTe-DSL backend emits CUDA kernels and cannot target Metal",
+    )
+
     kinds = {
         kind: [
             (index, operation)
