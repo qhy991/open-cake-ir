@@ -10,11 +10,12 @@ import json
 from hashlib import sha256
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 from typing import Mapping
 
 from open_cake_ir.compiler.toolchain import (
-    TritonCompilation, compile_triton, project_triton_kernel, validate_triton_kernel,
+    TritonCompilation, compile_triton, validate_triton_kernel,
 )
 from .faults import CandidateCompileRejected, RunProtocolFault
 from .process import run_supervised, SupervisedProcessTimeout, SupervisedProcessOutputLimit
@@ -94,19 +95,46 @@ class IsolatedTritonCompiler:
                 raise RunProtocolFault('harness_fault', str(error), artifact_payloads={
                     'toolchain_stdout': error.stdout, 'toolchain_stderr': error.stderr,
                 }) from error
+            except OSError as error:
+                diagnostic = f'{type(error).__name__}: {error}'
+                raise RunProtocolFault('harness_fault', diagnostic, artifact_payloads={
+                    'toolchain_stderr': diagnostic.encode(),
+                }) from error
             if result.returncode:
-                diagnostic = result.stderr.decode(errors='replace')[-4096:]
+                diagnostic = (result.stderr or result.stdout).decode(errors='replace')[-4096:]
+                artifacts = {'toolchain_stdout': result.stdout, 'toolchain_stderr': result.stderr}
                 if result.returncode != 2:
-                    raise RunProtocolFault('harness_fault', 'isolated Triton build unavailable: ' + diagnostic)
-                raise CandidateCompileRejected(diagnostic, artifact_payloads={
-                    'toolchain_stderr': result.stderr or b'compile rejected',
-                })
+                    raise RunProtocolFault('harness_fault', 'isolated Triton build unavailable: ' + diagnostic,
+                                           artifact_payloads=artifacts)
+                raise CandidateCompileRejected(diagnostic, artifact_payloads=artifacts)
             record = json.loads((root / 'compilation.json').read_text())
             if record['compiler_version'] != self.triton_version:
                 raise RunProtocolFault('harness_fault', 'isolated Triton runtime version differs')
             return TritonCompilation(source, record['target'], record['entry_point'],
                 {k: base64.b64decode(v, validate=True) for k, v in record['artifacts'].items()},
                 record['threads_per_cta'], record['dynamic_shared_bytes'], record['compiler_version'])
+
+
+def _is_candidate_compile_error(error: Exception) -> bool:
+    """Only known source/resource refusals are candidate outcomes.
+
+    Dependency, OS and subprocess failures (including an explicit wrapped cause)
+    are external faults. Unknown compiler-internal exceptions also fail as faults;
+    a failed build alone cannot establish a candidate rejection.
+    """
+    external = (ImportError, OSError, subprocess.SubprocessError)
+    if isinstance(error, external) or isinstance(error.__cause__, external):
+        return False
+    if isinstance(error, (ValueError, SyntaxError)):
+        return True
+    # These optional runtime types are consulted only after a compilation error.
+    # Import failure never selects a fallback compiler or changes the diagnostic.
+    try:
+        from triton.compiler.errors import CompilationError
+        from triton.runtime.errors import OutOfResources
+    except (ImportError, OSError):
+        return False
+    return isinstance(error, (CompilationError, OutOfResources))
 
 
 def _worker(path: str) -> int:
@@ -121,7 +149,7 @@ def _worker(path: str) -> int:
         result = compile_triton(source, request['requirements'])
     except Exception as error:
         print(f'{type(error).__name__}: {error}', file=sys.stderr)
-        return 2
+        return 2 if _is_candidate_compile_error(error) else 1
     Path('/build/compilation.json').write_text(json.dumps({
         'target': result.target, 'entry_point': result.entry_point,
         'artifacts': {k: base64.b64encode(v).decode() for k, v in result.artifacts.items()},

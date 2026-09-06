@@ -7,6 +7,7 @@ import copy
 import dataclasses
 from hashlib import sha256
 import json
+from io import StringIO
 from pathlib import Path
 import shutil
 import subprocess
@@ -277,6 +278,68 @@ class NativePairingContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'runtime differs from the frozen Executor'):
                     execute_matched_from_config(root,lock,path,root/'evidence')
                 run.assert_not_called()
+
+    def test_worker_runtime_faults_propagate_through_both_authoring_environments(self):
+        from open_cake_ir.lab import triton_build
+        wrapped = ValueError('compile wrapper failed')
+        wrapped.__cause__ = ImportError('fixture missing compiler dependency')
+        cases = (
+            (ImportError('libtriton.so: libstdc++.so.6: cannot open shared object file'), False),
+            (FileNotFoundError(2, 'No such file or directory', '/runtime/bin/ptxas'), False),
+            (subprocess.CalledProcessError(127, ['ptxas']), False),
+            (RuntimeError('compiler internal failure'), False),
+            (wrapped, False),
+            (ValueError('fixture candidate compile rejection'), True),
+            (SyntaxError('fixture candidate syntax rejection'), True),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            runtime = root / 'runtime'; runtime.mkdir()
+            python = runtime / 'python'; python.write_bytes(b'non-executable fixture runtime')
+            bwrap = root / 'bwrap'; bwrap.write_bytes(b'non-executable fixture isolation')
+            with mock.patch.object(triton_build.sys, 'platform', 'linux'):
+                compiler = IsolatedTritonCompiler(python=str(python), bubblewrap=str(bwrap),
+                    runtime_roots=[str(runtime)], triton_version='fixture')
+            builder = TritonToolchainBuilder(workload=self.workload, case_id='primary', isolated_compiler=compiler)
+            environments = (
+                OpenCakeEnvironment(self.compiler, builder, authority_document={
+                    'lowering_route': self.schedule['lowering'], 'input_format':'schedule_or_python_v1'},
+                    workload=self.workload, case_id='primary'),
+                NativeTritonEnvironment(builder, toolchain_requirements=self.lowering.toolchain_requirements,
+                    authority_document={}, workload=self.workload, case_id='primary'),
+            )
+            for environment, payload in zip(environments, (self.schedule, self.native), strict=True):
+                for error, candidate_rejection in cases:
+                    with self.subTest(environment=type(environment).__name__, failure=type(error).__name__, message=str(error)):
+                        returncodes = []
+                        def supervise(argv, **kwargs):
+                            stderr = StringIO()
+                            with mock.patch('importlib.metadata.version', return_value='fixture'), \
+                                 mock.patch.object(triton_build, 'compile_triton', side_effect=error), \
+                                 contextlib.redirect_stderr(stderr):
+                                code = triton_build._worker(str(Path(kwargs['cwd']) / 'request.json'))
+                            returncodes.append(code)
+                            return subprocess.CompletedProcess(argv, code, b'fixture build stdout\n', stderr.getvalue().encode())
+                        submission = CandidateSubmission.seal(environment.media_type, encoded(payload))
+                        with mock.patch.object(triton_build, 'run_supervised', side_effect=supervise):
+                            if candidate_rejection:
+                                result = environment.build(submission)
+                                self.assertEqual(result.disposition, 'rejected')
+                                self.assertEqual(result.feedback['stage'], 'compile')
+                                artifacts = result.artifact_payloads
+                            else:
+                                with self.assertRaises(RunProtocolFault) as caught:
+                                    environment.build(submission)
+                                self.assertEqual(caught.exception.protocol_adherence, 'harness_fault')
+                                artifacts = caught.exception.artifact_payloads
+                        self.assertEqual(returncodes, [2 if candidate_rejection else 1])
+                        self.assertEqual(artifacts['toolchain_stdout'], b'fixture build stdout\n')
+                        self.assertIn(str(error).encode(), artifacts['toolchain_stderr'])
+                with mock.patch.object(triton_build, 'run_supervised', side_effect=FileNotFoundError('fixture bwrap disappeared')):
+                    with self.assertRaises(RunProtocolFault) as caught:
+                        environment.build(CandidateSubmission.seal(environment.media_type, encoded(payload)))
+                    self.assertEqual(caught.exception.protocol_adherence, 'harness_fault')
+                    self.assertIn(b'fixture bwrap disappeared', caught.exception.artifact_payloads['toolchain_stderr'])
 
     def test_provider_projects_native_and_python_members_without_executing_source(self):
         for arm, member in [('native_triton', self.native), ('open_cake', {'python_source': 'not executed'})]:
