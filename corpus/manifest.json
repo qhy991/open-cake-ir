@@ -1010,7 +1010,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "d4444e0c29163f37e98573a29c0ce136c87b05b4e0f1d63757a15f93167ef334",
-        "lowering_source_sha256": "e25ef227c30042139f814ad37da43a521c875876cd784a62180b32339d00cb4d"
+        "lowering_source_sha256": "c81066bbff43958af7bb3be1f203ca1cee5c784d8757fb1fbfecf6272b2ecbf9"
       }
     },
     {
