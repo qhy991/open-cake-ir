@@ -47,6 +47,7 @@ jobs:
           tests.contracts.test_profile_report
           tests.contracts.test_empirical_cost_calibration
           tests.contracts.test_empirical_cost_fitter
+          tests.contracts.test_flash_cost_calibration
           tests.contracts.test_metal
           tests.contracts.test_metal_runtime
           tests.contracts.test_tile_workloads

@@ -80,6 +80,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             "src/open_cake_ir/cli.py",
             "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.cu",
             "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.json",
+            "tools/calibrate_flash_cost.py",
             "tools/evaluate_flash_candidate.py",
             "tools/evaluate_qsa_candidate.py",
             "tools/observe_target_peak.py",
