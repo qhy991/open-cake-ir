@@ -2,9 +2,9 @@
 
 [中文入门](zh-CN/README.md) · [English start](en/README.md) · [职责与文档归属](../CONTEXT-MAP.md)
 
-这里把原始 Markdown 文档逐一对应到中文和英文阅读入口。初学者先按语言首页的路线读，不需要从第一份历史报告读到最后一份。
+这里把原始 Markdown 文档对应到中文和英文阅读入口。初学者先按语言首页的路线读，不需要从第一份历史报告读到最后一份。
 
-This catalog pairs the original Markdown documents with Chinese and English reading routes. Start with a language home rather than reading the archive sequentially.
+This catalog pairs original Markdown documents with Chinese and English reading routes. Start with a language home rather than reading the archive sequentially.
 
 中文阅读版用例子解释背景、规则和结果；长篇技术表、精确来源和逐项证据保留在链接的原始材料中，并非逐句译本。英文原文不搬迁，已有中文正文不重复复制；翻译和导读不成为第二份合同或实验结论。术语仍由 [GLOSSARY](GLOSSARY.md) 负责，当前发布只看[生成状态](../reports/current/STATUS.md)。
 
@@ -21,6 +21,7 @@ Reading companions explain the material in simpler language. Detailed tables and
 | 论文对照约定：论文说了什么，本项目证明了什么 | [阅读](zh-CN/PAPER_CONTRACT.md) | [Read](PAPER_CONTRACT.md) |
 | 执行手册：从准备到复查，一步步做什么 | [阅读](zh-CN/RUNBOOK.md) | [Read](RUNBOOK.md) |
 | 用 Python 编写执行计划 | [阅读](zh-CN/PYTHON_FRONTEND.md) | [Read](en/PYTHON_FRONTEND.md) |
+| Apple M2 的 Metal 逐元素计算与行归约 | [阅读](metal.zh-CN.md) | [Read](metal.md) |
 | 当前 IR 详解：结构、语义与代码组织 | [阅读](IR_GUIDE.md) | [Read](en/IR_GUIDE.md) |
 | 旧顶层设计入口：现在应该读哪里 | [阅读](zh-CN/TOP_LEVEL_DESIGN.md) | [Read](TOP_LEVEL_DESIGN.md) |
 | Open Cake 中文 Wiki | [阅读](wiki/README.md) | [Read](en/wiki/README.md) |

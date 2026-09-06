@@ -158,6 +158,12 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         if not condition:
             findings.append(BackendPrecondition(code, path, message))
 
+    add(
+        target.compute_capability is not None,
+        "BACKEND_TARGET_UNSUPPORTED", "target",
+        "the current Triton backend emits CUDA kernels and cannot target Metal",
+    )
+
     def arange(start: int, end: int, path: str) -> None:
         # Match the arange emitted below. Triton 3.7.1 checks end-start, so a
         # nonzero start is legal when the span is a power of two. block_type

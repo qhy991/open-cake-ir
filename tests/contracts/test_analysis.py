@@ -13,6 +13,7 @@ import json
 import unittest
 from pathlib import Path
 
+from open_cake_ir.compiler import Compiler, CompilerError
 from open_cake_ir.compiler.analysis import (
     logical_register_pressure_per_thread,
     residency_upper_bound,
@@ -206,14 +207,16 @@ class ResidencyTest(unittest.TestCase):
 
 
 class ReportTest(unittest.TestCase):
-    def _reports(self, path: Path) -> dict[str, str]:
+    def _reports(self, path: Path, target: Target = TARGET) -> dict[str, str]:
         return {
             finding.code: finding.message
-            for finding in verify(Schedule.load(path), TARGET)
+            for finding in verify(Schedule.load(path), target)
             if finding.severity is FindingSeverity.REPORT
         }
 
     def test_every_retained_schedule_reports_its_bound(self) -> None:
+        revision_path = ROOT / "compiler" / "revision.lock.json"
+        targets = json.loads(revision_path.read_text(encoding="utf-8"))["target_definitions"]
         for path in sorted(
             ROOT / case["schedule"]
             for case in json.loads(
@@ -221,7 +224,27 @@ class ReportTest(unittest.TestCase):
             )["cases"]
         ):
             with self.subTest(schedule=path.name):
-                self.assertIn("RESIDENCY_BOUND", self._reports(path))
+                schedule = Schedule.load(path)
+                reference = targets.get(schedule.target)
+                if reference is None:
+                    compiler = Compiler.load(ROOT, revision_path)
+                    assessment = compiler.assess_file(path)
+                    codes = [finding.code for finding in assessment.findings]
+                    self.assertFalse(assessment.accepted)
+                    self.assertFalse(assessment.lowering_eligible)
+                    self.assertIn("TARGET_UNSUPPORTED", codes)
+                    self.assertNotIn("RESIDENCY_BOUND", codes)
+                    with self.assertRaises(CompilerError):
+                        compiler.lower(assessment)
+                    continue
+                target = Target.load(ROOT / reference["path"])
+                self.assertEqual(schedule.target, target.target_id)
+                reports = self._reports(path, target)
+                if target.occupancy is None:
+                    self.assertIsNone(residency_upper_bound(schedule, target))
+                    self.assertNotIn("RESIDENCY_BOUND", reports)
+                else:
+                    self.assertIn("RESIDENCY_BOUND", reports)
 
     def test_a_report_does_not_block(self) -> None:
         findings = verify(Schedule.load(B32), TARGET)

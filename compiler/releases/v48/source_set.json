@@ -30,7 +30,6 @@
     "corpus/schedules/flash-kmeans-b32-warp-specialized-argmin.json",
     "corpus/schedules/gemm-bias-b1-smoke-shape-drift.json",
     "corpus/schedules/gemm-bias-b1-smoke.json",
-    "corpus/schedules/gemm-bias-two-deep-tail-b1-smoke.json",
     "corpus/schedules/indexed-gather-b8-smoke-dtype-drift.json",
     "corpus/schedules/indexed-gather-b8-smoke.json",
     "corpus/schedules/index-expand-b8-smoke-dtype-drift.json",
@@ -109,16 +108,7 @@
     "corpus/schedules/fma-b8-smoke-vector-span-drift.json",
     "corpus/schedules/fma-scalar-load-b8-smoke.json",
     "src/open_cake_ir/compiler/compiled_resources.py",
-    "src/open_cake_ir/compiler/toolchain.py",
-    "compiler/targets/apple_gpu_family8.json",
-    "examples/python/metal_elementwise.py",
-    "examples/python/metal_row_sum.py",
-    "src/open_cake_ir/compiler/emit_metal.py",
-    "corpus/schedules/metal-elementwise-odd.json",
-    "corpus/schedules/metal-row-sum-odd.json",
-    "corpus/schedules/metal-row-max-odd.json",
-    "corpus/schedules/metal-target-unsupported.json",
-    "corpus/schedules/metal-store-program-ownership.json"
+    "src/open_cake_ir/compiler/toolchain.py"
   ],
   "schema_version": 1
 }

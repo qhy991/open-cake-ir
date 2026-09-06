@@ -93,9 +93,14 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         paths = sorted(accepted) + [
             ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke-v2.json"
         ]
+        targets = json.loads(
+            (ROOT / "compiler" / "revision.lock.json").read_text(encoding="utf-8")
+        )["target_definitions"]
         for path in paths:
             with self.subTest(schedule=path.name):
-                self.assertEqual(_blocking(verify(Schedule.load(path), TARGET)), ())
+                schedule = Schedule.load(path)
+                target = Target.load(ROOT / targets[schedule.target]["path"])
+                self.assertEqual(_blocking(verify(schedule, target)), ())
 
     def test_a_broadcast_axis_no_shape_rule_could_infer_is_checked(self) -> None:
         """The one arithmetic fact shapes cannot settle.

@@ -78,6 +78,7 @@ class OperationKind(str, Enum):
 class LoweringBackend(str, Enum):
     """Mechanism that materializes source, independent of operator or Workload."""
 
+    METAL = "metal"
     TRITON = "triton"
     CUTLASS_CUTE_DSL = "cutlass_cute_dsl"
     CHECKED_CUDA_ASSET = "checked_cuda_asset"

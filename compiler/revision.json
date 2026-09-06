@@ -1,11 +1,15 @@
 {
   "schema_version": 1,
-  "revision_id": "open-cake-ir-sm100a-v48-draft",
+  "revision_id": "open-cake-ir-sm100a-v49-draft",
   "state": "draft",
   "target_definitions": {
     "sm_100a": {
       "path": "compiler/targets/sm_100a.json",
       "canonical_sha256": "a15ec744877d4763206a29c9f1eaf4b4a9cd6f1f9f1e8470cc65bba89fa9cbff"
+    },
+    "apple_gpu_family8": {
+      "path": "compiler/targets/apple_gpu_family8.json",
+      "canonical_sha256": "eba862c63055232695d319d11eedd3246ff95b67895d62b786cff899ee725fb9"
     }
   },
   "corpus_manifest": "corpus/manifest.json",
