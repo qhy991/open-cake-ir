@@ -170,7 +170,7 @@ def _lab(args: argparse.Namespace) -> int:
             if args.output is not None
             else None
         )
-        lock = lab.preflight(args.study)
+        lock = lab.preflight(args.study, empirical_cost_model_path=args.empirical_cost_model)
         if output_path is not None:
             with output_path.open("x", encoding="utf-8") as stream:
                 json.dump(lock.document, stream, sort_keys=True, ensure_ascii=False)
@@ -263,6 +263,7 @@ def build_parser() -> argparse.ArgumentParser:
     preflight = lab_commands.add_parser("preflight")
     preflight.add_argument("study", type=Path)
     preflight.add_argument("--output", type=Path)
+    preflight.add_argument("--empirical-cost-model", type=Path)
     audit = lab_commands.add_parser("audit")
     audit.add_argument("--lock", type=Path, required=True)
     audit.add_argument("--evidence-root", type=Path, required=True)

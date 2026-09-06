@@ -438,6 +438,7 @@ def execute_matched_from_config(
             authority_document=open_arm,
             workload=workload_contract,
             case_id=str(protocol["case_id"]),
+            executor=executor,
         ),
         "direct_cuda": DirectCudaEnvironment(
             nvcc_builder,
