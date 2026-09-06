@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "If you use open-cake-ir, cite this software and identify the source revision and workload used."
+type: software
+title: "open-cake-ir: Agent-driven compiler and kernel co-evolution"
+authors:
+  - name: "open-cake-ir contributors"
+repository-code: "https://github.com/qhy991/open-cake-ir"
+license: Apache-2.0

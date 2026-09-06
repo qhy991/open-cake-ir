@@ -1,5 +1,7 @@
 # 2026 年第 35 周：算子优化与系统证据
 
+> **归属勘误（2026-09-06）：** 下文旧称“RoPE”的结果实际属于 Flash-KMeans。冻结工作负载为 `flash-kmeans-assign-independent-v2`，实例为 `headline_b32`，获胜入口为 `cake_flash_kmeans_assign`。3.533× 不能引用为 RoPE 成绩；原始标识与证据保持不变。
+
 [中文目录](README.md) · [英文原始记录](../WEEKLY_PROGRESS_2026-W35.md)
 
 本页用中文解释原文的背景、决定和结论范围；逐项长表、精确来源及原始记录由链接中的原文负责。

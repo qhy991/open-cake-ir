@@ -2,10 +2,15 @@
 
 [中文文档](docs/zh-CN/README.md) · [English](docs/en/README.md) · [全部中英文对照](docs/README.md)
 
-**把 GPU 的计算计划写清楚，先检查，再生成代码，再验证。**
+**Agent 驱动的编译器与 GPU Kernel 协同进化。**
 
-GPU 算得快，但写出又对又快的程序很难。同一个计算，换一种切块、读数或协作方式，速度就可能改变。
-open-cake-ir 用一份结构化的“执行计划”描述这些选择，让人和 AI 都能修改，并让编译器指出问题。
+open-cake-ir 面向由 Agent 完成算子生产的工作方式。Agent 设计、生成、验证和优化 Kernel，
+并根据实际任务暴露的问题改进 IR、检查规则、代码生成和分析能力；新的编译能力再用于后续 Kernel。
+Python 前端、结构化执行计划、编译反馈与外部评测连接这两条演化路径。
+
+Open-cake-ir is a research system for **agent-driven co-evolution of GPU kernels and compiler capabilities**.
+Agents develop kernels, use compiler and GPU feedback, and improve the compiler when real workloads expose
+representation, verification, lowering, or analysis gaps. The current distribution is a source-based research preview.
 
 这里的 IR 是“中间表示”：它比最终机器代码好读，又比一句“把矩阵乘快一点”明确。
 项目独立重建了 [CAKE 论文](https://arxiv.org/abs/2608.12629v1)中的部分思路，并非论文未公开实现的复制品。
@@ -18,16 +23,20 @@ open-cake-ir 用一份结构化的“执行计划”描述这些选择，让人�
 - **想知道系统有什么用：** [系统全貌](docs/ARCHITECTURE.md)。
 - **想看算子怎么算：** [算子图解](docs/wiki/operators.md)和 [IR 基本操作](docs/wiki/primitives.md)。
 - **想看现在发布了什么：** [自动生成的当前状态](reports/current/STATUS.md)。
+- **想了解 Agent、编译器与 Kernel 怎样协同进化：** [中文技术报告与完整 Python 示例](https://github.com/qhy991/open-cake-ir/releases/download/research-preview-2026-09-06/open-cake-ir-technical-report-zh-CN.zip)。
 
 ## 一条完整路径
 
 ```mermaid
 flowchart LR
-    A["任务：要算什么"] --> B["执行计划：怎样分工"]
-    B --> C["编译器检查"]
-    C --> D["生成目标源码"]
-    D --> E["工具链编译并在 GPU 运行"]
-    E --> F["核对答案，再测速度"]
+    A["算子任务"] --> B["Agent"]
+    B --> K["生成与优化 Kernel"]
+    B --> C["改进编译器"]
+    K -->|"具体问题与需求"| C
+    C -->|"新的表达、检查与生成能力"| K
+    K --> V["评测与验证"]
+    C --> V
+    V -->|"结果与反馈"| B
 ```
 
 编译器可以单独使用，负责读计划、检查规则和生成源码。
@@ -36,6 +45,27 @@ Evaluation 核对答案与测量；Evidence 保存原始记录，让别人能复
 
 “计划通过检查”“GPU 答案正确”“速度提高”是三个不同结论。
 每个结论都应能找到对应记录，见 [怎样读结果](docs/wiki/results.md)。
+
+## 安装与参与
+
+从源码使用，Python 3.10 或更新版本：
+
+```bash
+git clone https://github.com/qhy991/open-cake-ir.git
+cd open-cake-ir
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[test]'
+```
+
+无 GPU 的检查与源码生成见[入门教程](docs/GETTING_STARTED.md)。GPU 编译、运行和历史实验重放需要各自声明的环境。
+当前尚未提供脱离源码工作区的独立 Compiler 发行包；Python 安装不会替你配置 CUDA 或 GPU 评测环境。
+
+[贡献说明](CONTRIBUTING.md) · [安全问题](SECURITY.md) · [开发分支](docs/DEVELOPMENT_BRANCHES.md) · [引用信息](CITATION.cff)
+
+## 许可证
+
+项目自有代码与文档采用 [Apache License 2.0](LICENSE)。第三方组件及引用材料保留原许可，
+见 [NOTICE](NOTICE) 与[第三方说明](THIRD_PARTY_NOTICES.md)。本项目与 CAKE 论文及其作者不存在官方实现或背书关系。
 
 ## 给维护者
 

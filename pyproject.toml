@@ -5,10 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "open-cake-ir"
 version = "0.1.0.dev0"
-description = "Compiler-first independent reconstruction of Cake-like IR and its research lab"
+description = "Agent-driven co-evolution of GPU kernels and compiler capabilities"
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = []
+
+[project.urls]
+Repository = "https://github.com/qhy991/open-cake-ir"
+Issues = "https://github.com/qhy991/open-cake-ir/issues"
 
 [project.optional-dependencies]
 test = ["jsonschema>=4"]
@@ -18,6 +23,9 @@ open-cake-ir = "open_cake_ir.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+open_cake_ir = ["compiler/assets/*.tmpl", "evaluation/assets/*.cu", "evaluation/assets/*.json", "lab/prompts/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
