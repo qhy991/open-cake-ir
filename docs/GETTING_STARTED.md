@@ -9,10 +9,10 @@
 
 ## 1. 准备项目
 
-从有访问权限的账号克隆仓库，然后进入目录：
+克隆仓库，然后进入目录：
 
 ```bash
-git clone git@github.com:qhy991/open-cake-ir.git
+git clone https://github.com/qhy991/open-cake-ir.git
 cd open-cake-ir
 python3 --version
 ```

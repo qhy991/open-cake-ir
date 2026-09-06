@@ -1,0 +1,12 @@
+open-cake-ir
+Copyright 2026 open-cake-ir contributors.
+
+This project is an independent implementation exploring ideas from
+"CAKE: Compiler-Agent Co-Design for Frontier Kernel Evolution"
+(arXiv:2608.12629v1). The paper and its authors are acknowledged as the
+source of those ideas. This project is not an official implementation and
+does not claim endorsement by the paper's authors or their organizations.
+
+Project-authored code and documentation are provided under the Apache
+License, Version 2.0. Third-party materials retain their original notices
+and licenses. See THIRD_PARTY_NOTICES.md for dependency and provenance notes.

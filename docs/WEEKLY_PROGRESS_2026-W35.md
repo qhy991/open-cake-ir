@@ -1,5 +1,7 @@
 # Open-CAKE-IR Weekly Progress — 2026-W35
 
+> **Attribution correction (2026-09-06):** the historical result labeled “RoPE” below is Flash-KMeans. Its frozen Workload is `flash-kmeans-assign-independent-v2`, case `headline_b32`, and the winning entry points are `cake_flash_kmeans_assign`. The 3.533× figure must not be cited as a RoPE result. The original identifiers and evidence are preserved.
+
 **Period:** 2026-08-24 to 2026-08-28, Asia/Shanghai
 
 **Scope:** Compiler, Lab/evaluation, B200 evidence, AMD gfx1151 enablement, and operator-level results.
