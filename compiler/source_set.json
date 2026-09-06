@@ -120,6 +120,9 @@
     "corpus/schedules/metal-target-unsupported.json",
     "corpus/schedules/metal-store-program-ownership.json",
     "src/open_cake_ir/compiler/empirical_cost.py",
-    "examples/python/metal_rmsnorm.py"
+    "examples/python/metal_rmsnorm.py",
+    "corpus/schedules/metal-rmsnorm-primary.json",
+    "corpus/schedules/metal-rmsnorm-tail.json",
+    "corpus/schedules/triton-global-scalar-storage-refusal.json"
   ]
 }

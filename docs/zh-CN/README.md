@@ -28,7 +28,7 @@ GPU 是擅长让很多小组同时算题的处理器。算子是一道明确的�
 | load、FMA、矩阵乘和前缀和分别做什么 | [基本操作](../wiki/primitives.md) |
 | 项目有哪些完整任务 | [任务目录](../wiki/workloads.md) |
 | 用 Python 变量和表达式写执行计划 | [Python 入门](PYTHON_FRONTEND.md) |
-| 在 Apple M2 上运行 FP32 逐元素计算与行归约 | [Metal 入门](../metal.zh-CN.md) |
+| 在 Apple M2 上运行与测量逐元素计算、行归约和加权 RMSNorm | [Metal 入门](../metal.zh-CN.md) |
 | 理解 IR 对象、代码组织与扩展位置 | [当前 IR 详解](../IR_GUIDE.md) |
 | 从准备到真实实验应该按什么顺序 | [执行手册](RUNBOOK.md) |
 | 什么证据足够进入下一步 | [验收规则](ACCEPTANCE_GATES.md) |

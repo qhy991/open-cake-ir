@@ -1136,6 +1136,21 @@
         "schedule_sha256": "0e1f86029ac923cab9b592677ccb8de1ce16fe50a5ad65af756fb1f4d5ee14bb",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "metal-rmsnorm-primary",
+      "schedule": "corpus/schedules/metal-rmsnorm-primary.json",
+      "expected": {}
+    },
+    {
+      "case_id": "metal-rmsnorm-tail",
+      "schedule": "corpus/schedules/metal-rmsnorm-tail.json",
+      "expected": {}
+    },
+    {
+      "case_id": "triton-global-scalar-storage-refusal",
+      "schedule": "corpus/schedules/triton-global-scalar-storage-refusal.json",
+      "expected": {}
     }
   ]
 }
