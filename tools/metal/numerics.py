@@ -33,4 +33,3 @@ def compare(payload: bytes, expected: list[float], tolerance: list[float]) -> di
         raise ValueError(f"output[{i}]={actual[i]} expected={expected[i]} tolerance={tolerance[i]}")
     return {"elements": len(expected), "max_abs_error": max(differences, default=0.0),
             "max_allowed_error": max(tolerance, default=0.0)}
-
