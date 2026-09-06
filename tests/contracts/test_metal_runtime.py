@@ -79,6 +79,14 @@ class MetalRuntimeContracts(unittest.TestCase):
             self.project(lowering=replace(self.lowering, schedule_sha256="different-assessment"))
         self.assertEqual(list(self.directory.iterdir()), [])
 
+    def test_simd_launch_uses_the_same_buffer_projection_as_serial(self):
+        lowering = replace(self.lowering, toolchain_requirements={**self.lowering.toolchain_requirements,
+                            "execution_model": "simd_program_tile", "active_threads_per_threadgroup": 32})
+        result = self.project(lowering=lowering)
+        self.assertEqual(result["execution_model"], "simd_program_tile")
+        self.assertEqual(result["threads_per_threadgroup"], [32, 1, 1])
+        self.assertEqual(result["buffers"][-1]["shape"], [3, 37])
+
     def test_input_count_byte_length_and_finiteness_fail_closed(self):
         for inputs in ({"x": self.inputs["x"]}, {**self.inputs, "x": b""},
                        {**self.inputs, "x": struct.pack("<f", float("nan")) * 111},
@@ -160,6 +168,17 @@ class MetalRuntimeContracts(unittest.TestCase):
         with patch.object(adapter.subprocess, "run", return_value=CompletedProcess([], 1, "", "command failed")):
             with self.assertRaisesRegex(ValueError, "refused or failed"):
                 adapter.invoke(Path("/fake/runner"), self.directory)
+
+    def test_host_build_is_optimized_and_records_the_invoked_argv(self):
+        from subprocess import CompletedProcess
+        with patch.object(adapter.subprocess, "run", return_value=CompletedProcess([], 0, "", "")) as build:
+            binary = adapter.compile_runner(self.directory)
+        build.assert_called_once()
+        argv = build.call_args.args[0]
+        self.assertEqual(argv.count("-O"), 1)
+        self.assertNotIn("-Ounchecked", argv)
+        self.assertEqual(argv[-1], str(binary))
+        self.assertEqual(json.loads((self.directory / "swift-build-command.json").read_text()), argv)
 
     def test_success_exit_without_command_completion_is_not_gpu_success(self):
         from subprocess import CompletedProcess
