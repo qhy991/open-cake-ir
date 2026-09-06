@@ -1,5 +1,7 @@
 # Compiler context
 
+[中文阅读](../../zh-CN/contexts/compiler/CONTEXT.md) · [Bilingual catalog](../../README.md)
+
 The Compiler context owns the independently usable Cake-like language and its deterministic
 interpretation. Canonical definitions are in the
 [`Glossary`](../../GLOSSARY.md#compiler-terms); this document owns responsibilities and

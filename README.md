@@ -1,5 +1,7 @@
 # open-cake-ir
 
+[中文文档](docs/zh-CN/README.md) · [English](docs/en/README.md) · [全部中英文对照](docs/README.md)
+
 **把 GPU 的计算计划写清楚，先检查，再生成代码，再验证。**
 
 GPU 算得快，但写出又对又快的程序很难。同一个计算，换一种切块、读数或协作方式，速度就可能改变。
@@ -12,7 +14,7 @@ open-cake-ir 用一份结构化的“执行计划”描述这些选择，让人�
 
 - **第一次看项目：** [中文 Wiki](docs/wiki/README.md)，按问题找答案。
 - **想马上试用：** [不需要 GPU 的入门教程](docs/GETTING_STARTED.md)。
-- **想用代码编写执行计划：** [Python 前端](docs/PYTHON_FRONTEND.md)，支持检查与生成，并保留 JSON 接口。
+- **想用代码编写执行计划：** [Python 前端](docs/zh-CN/PYTHON_FRONTEND.md)，支持检查与生成，并保留 JSON 接口。
 - **想知道系统有什么用：** [系统全貌](docs/ARCHITECTURE.md)。
 - **想看算子怎么算：** [算子图解](docs/wiki/operators.md)和 [IR 基本操作](docs/wiki/primitives.md)。
 - **想看现在发布了什么：** [自动生成的当前状态](reports/current/STATUS.md)。
@@ -38,8 +40,8 @@ Evaluation 核对答案与测量；Evidence 保存原始记录，让别人能复
 ## 给维护者
 
 [文档维护](docs/wiki/maintaining.md)说明每类信息写在哪里，以及怎样检查示例和链接。
-正式术语见 [GLOSSARY](docs/GLOSSARY.md)，执行流程见 [RUNBOOK](docs/RUNBOOK.md)，
-设计决策见 [ADR](docs/adr/README.md)，代码职责见 [CONTEXT-MAP](CONTEXT-MAP.md)。
+正式术语见 [GLOSSARY](docs/GLOSSARY.md)，执行流程见 [RUNBOOK](docs/zh-CN/RUNBOOK.md)，
+设计决策见 [ADR](docs/adr/README.md)，代码职责见 [CONTEXT-MAP](docs/zh-CN/CONTEXT-MAP.md)。
 
 当前版本只由下面两个文件决定，README 不另存一份版本表：
 

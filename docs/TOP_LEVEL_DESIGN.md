@@ -1,5 +1,7 @@
 # Top-level design
 
+[中文阅读](zh-CN/TOP_LEVEL_DESIGN.md) · [Bilingual catalog](README.md)
+
 Status: superseded as a current documentation owner by
 [ADR 0047](adr/0047-documentation-separates-stable-history-and-current-views.md).
 

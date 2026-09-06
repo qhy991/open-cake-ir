@@ -1,5 +1,7 @@
 # Evidence context
 
+[中文阅读](../../zh-CN/contexts/evidence/CONTEXT.md) · [Bilingual catalog](../../README.md)
+
 Evidence preserves observed bytes and event order without redefining the Study question.
 Canonical definitions are in the
 [`Glossary`](../../GLOSSARY.md#evidence-and-report-terms).

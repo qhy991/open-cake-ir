@@ -1,5 +1,7 @@
 # 读懂一份执行计划
 
+[中文首页](../zh-CN/README.md) · [English](../en/wiki/schedule.md) · [中英文对照](../README.md)
+
 执行计划（Schedule）回答“怎样算”。它把工作分配给 GPU，并写明数据和操作之间的关系。
 [入门教程](../GETTING_STARTED.md)已经检查过完整的 [FMA 计划](../../corpus/schedules/fma-b8-smoke.json)，下面沿用同一份文件。
 
