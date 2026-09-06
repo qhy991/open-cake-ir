@@ -454,3 +454,189 @@ def evaluate_flash_kmeans(
         launch_receipt_sha256=launch.launch_receipt_sha256,
         timing=None,
     )
+
+
+@dataclass(frozen=True)
+class TensorLaunchManifest:
+    """Explicit Workload tensor ABI for the existing sealed CUBIN launch boundary."""
+
+    workload_sha256: str
+    case_id: str
+    tensor_abi: tuple[tuple[str, tuple[int, ...], str, str], ...]
+    target: str
+    kernel_name: str
+    grid: tuple[int, int, int]
+    block: tuple[int, int, int]
+    dynamic_shared_memory_bytes: int
+    hidden_null_pointer_parameters: int
+
+    @classmethod
+    def from_dict(cls, document: object) -> 'TensorLaunchManifest':
+        from .cuda_manifest import CudaLaunchManifest
+        if not isinstance(document, Mapping) or set(document) != {
+            'schema_version', 'abi', 'workload_sha256', 'case_id', 'tensor_abi',
+            'target', 'kernel_name', 'grid', 'block', 'dynamic_shared_memory_bytes',
+            'hidden_null_pointer_parameters',
+        } or document.get('schema_version') != 1 or document.get('abi') != 'workload_tensors_v1':
+            raise ValueError('Workload tensor launch manifest fields differ')
+        # Reuse the existing Driver's structural launch limits. The resulting public
+        # manifest retains its own ABI and never claims to be a Flash-KMeans kernel.
+        launch = CudaLaunchManifest.from_dict({
+            key: value for key, value in {**document, 'abi': 'flash_kmeans_assign_v1'}.items()
+            if key not in {'workload_sha256', 'case_id', 'tensor_abi'}
+        })
+        rows = document['tensor_abi']
+        if (not isinstance(document['workload_sha256'], str)
+            or _DIGEST.fullmatch(document['workload_sha256']) is None
+            or not isinstance(document['case_id'], str) or not document['case_id']
+            or not isinstance(rows, list) or not rows):
+            raise ValueError('Workload tensor launch identity differs')
+        abi = []
+        for row in rows:
+            if (not isinstance(row, Mapping) or set(row) != {'name', 'shape', 'dtype', 'mode'}
+                or not isinstance(row['name'], str) or not row['name'].isidentifier()
+                or not isinstance(row['dtype'], str) or row['dtype'] not in {'fp32', 'bf16', 'fp16', 'int32'}
+                or not isinstance(row['mode'], str) or row['mode'] not in {'input', 'output'}
+                or not isinstance(row['shape'], list) or not row['shape']
+                or any(type(v) is not int or v <= 0 for v in row['shape'])):
+                raise ValueError('Workload tensor launch ABI differs')
+            abi.append((row['name'], tuple(row['shape']), row['dtype'], row['mode']))
+        modes = [row[3] for row in abi]
+        if len({r[0] for r in abi}) != len(abi) or 'input' not in modes or 'output' not in modes or modes != sorted(modes):
+            raise ValueError('Workload tensor launch ABI order differs')
+        return cls(document['workload_sha256'], document['case_id'], tuple(abi),
+                   launch.target, launch.kernel_name, launch.grid, launch.block,
+                   launch.dynamic_shared_memory_bytes, launch.hidden_null_pointer_parameters)
+
+    @classmethod
+    def for_workload(cls, workload: WorkloadContract, case_id: str, **launch: object) -> 'TensorLaunchManifest':
+        from dataclasses import asdict
+        return cls.from_dict({'schema_version': 1, 'abi': 'workload_tensors_v1',
+            'workload_sha256': workload.canonical_sha256, 'case_id': case_id,
+            'tensor_abi': [{**asdict(t), 'shape': list(t.shape)} for t in workload.tensor_abi(case_id)],
+            **launch})
+
+    def check_workload(self, workload: WorkloadContract, case_id: str) -> None:
+        expected = tuple((t.name, t.shape, t.dtype, t.mode) for t in workload.tensor_abi(case_id))
+        if (self.workload_sha256 != workload.canonical_sha256 or self.case_id != case_id
+            or self.tensor_abi != expected):
+            raise ValueError('sealed launch ABI differs from the selected Workload')
+
+    @property
+    def block_threads(self) -> int:
+        return math.prod(self.block)
+
+    @property
+    def tensors(self) -> tuple[tuple[str, tuple[int, ...], str], ...]:
+        dtypes = {'fp32': 'torch.float32', 'bf16': 'torch.bfloat16', 'fp16': 'torch.float16', 'int32': 'torch.int32'}
+        return tuple((name, shape, dtypes[dtype]) for name, shape, dtype, _ in self.tensor_abi)
+
+    def as_dict(self) -> dict[str, object]:
+        return {'schema_version': 1, 'abi': 'workload_tensors_v1',
+            'workload_sha256': self.workload_sha256, 'case_id': self.case_id,
+            'tensor_abi': [dict(name=n, shape=list(s), dtype=d, mode=m) for n, s, d, m in self.tensor_abi],
+            'target': self.target, 'kernel_name': self.kernel_name, 'grid': list(self.grid),
+            'block': list(self.block), 'dynamic_shared_memory_bytes': self.dynamic_shared_memory_bytes,
+            'hidden_null_pointer_parameters': self.hidden_null_pointer_parameters}
+
+    @property
+    def canonical_sha256(self) -> str:
+        return sha256(_canonical_json_bytes(self.as_dict())).hexdigest()
+
+
+def parse_launch_manifest(document: object):
+    """Historical fixed ABI and explicit Workload ABI meet at one replay boundary."""
+    from .cuda_manifest import CudaLaunchManifest
+    if isinstance(document, Mapping) and document.get('abi') == 'workload_tensors_v1':
+        return TensorLaunchManifest.from_dict(document)
+    return CudaLaunchManifest.from_dict(document)
+
+
+def evaluate_tile_workload(candidate: LaunchableCandidate, workload: WorkloadContract,
+                           protocol: EvaluationProtocol, launcher) -> EvaluationReceipt:
+    """Common correctness assay: Workload data/oracle, sealed launch, every output.
+
+    launcher.launch_tensors returns (flat output mapping, unchanged input mapping,
+    raw launch receipt). Timing/profiling are separate retained assays as elsewhere.
+    """
+    import struct
+    from .tile_workloads import materialize_case, reference_outputs
+    if protocol.workload_sha256 != workload.canonical_sha256 or protocol.timing != 'none' or protocol.purpose == 'attribution':
+        raise ValueError('tile correctness Evaluation protocol differs')
+    manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
+    manifest.check_workload(workload, protocol.case_id)
+    if candidate.launch_spec_sha256 != manifest.canonical_sha256:
+        raise ValueError('sealed tensor manifest differs')
+    inputs = materialize_case(workload, protocol.case_id)
+    before = {name: list(values) for name, values in inputs.items()}
+    expected = reference_outputs(workload, protocol.case_id, before)
+    observed, after, launch = launcher.launch_tensors(candidate, manifest, inputs)
+    validation = workload.document['validation']
+    mismatch = 0
+    maximum_error = 0.0
+    if not isinstance(observed, Mapping) or set(observed) != set(expected):
+        mismatch += 1
+    else:
+        for name, values in expected.items():
+            actual = observed[name]
+            if not isinstance(actual, (list, tuple)) or len(actual) != len(values):
+                mismatch += 1
+                continue
+            for value, reference in zip(actual, values, strict=True):
+                if (not isinstance(value, (float, int)) or isinstance(value, bool)
+                    or not -3.4028234663852886e38 <= value <= 3.4028234663852886e38
+                    or not math.isfinite(value)):
+                    mismatch += 1
+                    continue
+                error = abs(value - reference)
+                maximum_error = max(maximum_error, error)
+                if validation['comparison'] == 'bitwise_bf16':
+                    mismatch += (abs(value) > 3.4028234663852886e38 or struct.pack('>f', value) != struct.pack('>f', reference))
+                else:
+                    mismatch += error > validation['atol'] + validation['rtol'] * abs(reference)
+    unchanged = after == before and all(
+        struct.pack('>d', float(a)) == struct.pack('>d', float(b))
+        for name in before for a, b in zip(after[name], before[name], strict=True)
+    )
+    if (not isinstance(launch, Mapping) or launch.get('candidate_sha256') != candidate.candidate_sha256
+        or launch.get('kernel_calls') != 1 or launch.get('fallback_calls') != 0):
+        raise ValueError('tile launch receipt differs')
+    passed = mismatch == 0 and unchanged
+    metrics = {'output_mismatches': mismatch, 'max_abs_error': maximum_error, 'inputs_unchanged': unchanged}
+    launch_bytes = _canonical_json_bytes(launch)
+    return EvaluationReceipt(candidate.candidate_sha256, workload.canonical_sha256,
+        protocol.canonical_sha256, protocol.purpose, protocol.case_id, passed, metrics,
+        1, 0, sha256(launch_bytes).hexdigest(), None, artifact_payloads={
+            'correctness_output': _canonical_json_bytes({'passed': passed, 'metrics': metrics}),
+            'launch_receipt': launch_bytes, 'timing_samples': b'null'})
+
+
+class TorchTensorLauncher:
+    """Allocate by Workload ABI and use the existing admitted Driver CUBIN lifecycle."""
+
+    def __init__(self, admission):
+        self.admission = admission
+
+    def launch_tensors(self, candidate, manifest, inputs):
+        from dataclasses import asdict
+        from .cuda_driver import LoadedCudaCandidate
+        import torch
+        dtypes = {'fp32': torch.float32, 'bf16': torch.bfloat16, 'fp16': torch.float16, 'int32': torch.int32}
+        arguments = [
+            torch.tensor(inputs[name], dtype=dtypes[dtype], device='cuda:0').reshape(shape)
+            if mode == 'input' else torch.empty(shape, dtype=dtypes[dtype], device='cuda:0')
+            for name, shape, dtype, mode in manifest.tensor_abi
+        ]
+        loaded = LoadedCudaCandidate.load(candidate, candidate.artifact_payloads['cubin'], manifest, self.admission)
+        try:
+            loaded.launch(arguments, tensor_contract=manifest, stream=torch.cuda.current_stream().cuda_stream)
+        finally:
+            loaded.close(synchronize=torch.cuda.synchronize)
+        observed = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
+                    in zip(manifest.tensor_abi, arguments, strict=True) if mode == 'output'}
+        after = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
+                 in zip(manifest.tensor_abi, arguments, strict=True) if mode == 'input'}
+        return observed, after, {'candidate_sha256': candidate.candidate_sha256,
+            'kernel_calls': loaded.launch_calls, 'fallback_calls': 0,
+            'manifest_sha256': manifest.canonical_sha256, 'device_admission': asdict(self.admission),
+            'module_unloaded': loaded.closed, 'resources': loaded.resources}

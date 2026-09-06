@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import json
+import math
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType
@@ -12,7 +14,9 @@ from typing import Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Assessment, Compiler, CompilerError
 from open_cake_ir.compiler.ranking import Cost
-from open_cake_ir.compiler.toolchain import compile_triton
+from open_cake_ir.compiler.toolchain import compile_triton, project_triton_kernel, validate_triton_kernel
+from open_cake_ir.compiler.frontend import parse as parse_python_schedule, FrontendError
+from open_cake_ir.evaluation.core import TensorLaunchManifest
 from open_cake_ir.evaluation import (
     CudaLaunchManifest,
     LaunchableCandidate,
@@ -39,7 +43,7 @@ class CandidateSubmission:
 
     @classmethod
     def seal(cls, media_type: str, payload: bytes) -> "CandidateSubmission":
-        if media_type not in {"application/vnd.open-cake.schedule+json", "text/x-cuda"} or not payload:
+        if media_type not in {"application/vnd.open-cake.schedule+json", "text/x-cuda", "application/vnd.open-cake.triton+json"} or not payload:
             raise ValueError("candidate submission media type or bytes differ")
         return cls(media_type, payload, sha256(payload).hexdigest())
 
@@ -82,6 +86,13 @@ class ToolchainBuilder(Protocol):
 class TritonToolchainBuilder:
     """Compile the canonical parametric Triton lowering to an exact sm_100a CUBIN."""
 
+    def __init__(self, *, workload=None, case_id=None, isolated_compiler=None):
+        self._workload = workload
+        self._case_id = case_id
+        self._isolated = isolated_compiler
+        if (workload is None) != (case_id is None):
+            raise ValueError("Triton builder Workload and case must be bound together")
+
     def build(self, request: BuildRequest) -> LaunchableCandidate:
         requirements = request.toolchain_requirements
         if (
@@ -93,26 +104,33 @@ class TritonToolchainBuilder:
         grid = requirements.get("grid")
         if not isinstance(grid, list) or len(grid) != 3:
             raise ValueError("Triton launch grid differs")
-        compilation = compile_triton(request.source, requirements)
+        if self._workload is not None:
+            if self._isolated is None:
+                raise RunProtocolFault("harness_fault", "paired Triton requires filesystem-isolated compilation")
+            kernel_source = (project_triton_kernel(request.source, requirements)
+                             if request.source_role == "lowered_source" else request.source)
+            validate_triton_kernel(kernel_source, requirements)
+            compilation = self._isolated.compile(kernel_source, requirements)
+        else:
+            if request.source_role != "lowered_source":
+                raise ValueError("historical Triton builder accepts Compiler lowering only")
+            compilation = compile_triton(request.source, requirements)
         stages = compilation.artifacts
         kernel_name = compilation.entry_point
-        manifest = CudaLaunchManifest.from_dict(
-            {
-                "schema_version": 1,
-                "abi": "flash_kmeans_assign_v1",
-                "target": request.target,
-                "kernel_name": kernel_name,
-                "grid": grid,
-                "block": [compilation.threads_per_cta, 1, 1],
-                "dynamic_shared_memory_bytes": compilation.dynamic_shared_bytes,
-                "hidden_null_pointer_parameters": 2,
-            }
-        )
+        launch = {
+            "target": request.target, "kernel_name": kernel_name, "grid": grid,
+            "block": [compilation.threads_per_cta, 1, 1],
+            "dynamic_shared_memory_bytes": compilation.dynamic_shared_bytes,
+            "hidden_null_pointer_parameters": 2,
+        }
+        manifest = (TensorLaunchManifest.for_workload(self._workload, self._case_id, **launch)
+                    if self._workload is not None else CudaLaunchManifest.from_dict({
+                        "schema_version": 1, "abi": "flash_kmeans_assign_v1", **launch}))
         manifest_bytes = json.dumps(
             manifest.as_dict(), sort_keys=True, separators=(",", ":")
         ).encode()
         payloads = {
-            "lowered_source": request.source,
+            request.source_role: request.source,
             "compiler_expanded_source": stages["source"],
             "ttir": stages["ttir"],
             "ttgir": stages["ttgir"],
@@ -357,19 +375,32 @@ class OpenCakeEnvironment:
             raise ValueError("Open Cake Environment requires a released Compiler Revision")
         self._compiler = compiler
         self._toolchain = toolchain
-        case = workload.case(case_id)
-        shape = case.get("shape")
-        if not isinstance(shape, Mapping):
-            raise ValueError("Open Cake Workload case shape differs")
+        self._workload = workload
+        self._case_id = case_id
         self._workload_sha256 = workload.canonical_sha256
-        self._shape = {name: int(shape[name]) for name in ("B", "N", "K", "D")}
+        self._python_enabled = authority_document.get("input_format") == "schedule_or_python_v1"
+        self._explicit_abi = isinstance(workload.document["semantics"].get("candidate_abi"), Mapping)
+        if self._explicit_abi:
+            self._expected = {arg.name: ("global", arg.dtype, list(arg.shape), arg.mode)
+                              for arg in workload.tensor_abi(case_id)}
+        else:
+            # Closed historical input boundary. New contracts never infer this ABI.
+            shape = workload.case(case_id).get("shape")
+            if workload.document.get("operator") != "flash_kmeans_assign" or not isinstance(shape, Mapping):
+                raise ValueError("historical Open Cake Workload ABI is unsupported")
+            self._expected = {
+                "tokens": ("global", "bf16", [shape["B"], shape["N"], shape["D"]], "input"),
+                "centroids": ("global", "bf16", [shape["B"], shape["K"], shape["D"]], "input"),
+                "centroid_sq": ("global", "fp32", [shape["B"], shape["K"]], "input"),
+                "assignments": ("global", "int32", [shape["B"], shape["N"]], "output"),
+            }
         route = authority_document.get("lowering_route")
-        if route != {
-            "backend": "triton",
-            "entry_point": "cake_flash_kmeans_assign",
-        }:
+        if (not isinstance(route, Mapping) or set(route) != {"backend", "entry_point"}
+            or route["backend"] != "triton" or not isinstance(route["entry_point"], str)
+            or not route["entry_point"].isidentifier()
+            or not self._explicit_abi and route["entry_point"] != "cake_flash_kmeans_assign"):
             raise ValueError("Open Cake Authoring Environment lowering route differs")
-        self._route = route
+        self._route = dict(route)
         self.authority_document = json.loads(
             json.dumps(authority_document, sort_keys=True, separators=(",", ":"))
         )
@@ -380,7 +411,7 @@ class OpenCakeEnvironment:
         ).hexdigest()
 
     @staticmethod
-    def _finding_rows(assessment: Assessment) -> list[dict[str, object]]:
+    def _finding_rows(assessment: Assessment, source=None) -> list[dict[str, object]]:
         """Project findings for the agent.
 
         One shape for both dispositions. A rejection carries the blocking findings that
@@ -401,6 +432,8 @@ class OpenCakeEnvironment:
                 "message": item.message,
                 "blocks_acceptance": item.blocks_acceptance,
                 "blocks_lowering": item.blocks_lowering,
+                **({"source_location": asdict(location)} if source is not None
+                   and (location := source.location_for(item.path)) is not None else {}),
             }
             for item in assessment.findings
         ]
@@ -408,8 +441,14 @@ class OpenCakeEnvironment:
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:
         if submission.media_type != self.media_type:
             raise ValueError("Open Cake candidate media type differs")
+        source = None
         try:
             parsed = json.loads(submission.payload)
+            if isinstance(parsed, Mapping) and set(parsed) == {"python_source"}:
+                if not self._python_enabled or not isinstance(parsed["python_source"], str):
+                    raise ValueError("Python IR submission is outside the admitted Authoring Environment")
+                source = parse_python_schedule(parsed["python_source"], filename="candidate.ir.py")
+                parsed = source.document
             if not isinstance(parsed, Mapping):
                 raise CompilerError("Schedule root must be an object")
             metadata = parsed.get("metadata")
@@ -430,12 +469,10 @@ class OpenCakeEnvironment:
                 for item in buffers
                 if isinstance(item, Mapping) and isinstance(item.get("name"), str)
             }
-            expected = {
-                "tokens": ("global", "bf16", [self._shape["B"], self._shape["N"], self._shape["D"]], "input"),
-                "centroids": ("global", "bf16", [self._shape["B"], self._shape["K"], self._shape["D"]], "input"),
-                "centroid_sq": ("global", "fp32", [self._shape["B"], self._shape["K"]], "input"),
-                "assignments": ("global", "int32", [self._shape["B"], self._shape["N"]], "output"),
-            }
+            expected = self._expected
+            if self._explicit_abi and [item.get("name") for item in buffers
+                    if isinstance(item, Mapping) and item.get("space") == "global"] != list(expected):
+                raise ValueError("Schedule external tensor order differs from the Workload ABI")
             if any(
                 name not in by_name
                 or (
@@ -454,7 +491,9 @@ class OpenCakeEnvironment:
                 "rejected",
                 submission.sha256,
                 None,
-                MappingProxyType({"stage": "assessment", "error": str(error)}),
+                MappingProxyType({"stage": "assessment", "error": str(error),
+                    **({"code": error.code, "source_location": asdict(error.location)}
+                       if isinstance(error, FrontendError) else {})}),
             )
         if not assessment.lowering_eligible:
             return EnvironmentResult(
@@ -464,7 +503,7 @@ class OpenCakeEnvironment:
                 MappingProxyType(
                     {
                         "stage": "assessment",
-                        "findings": self._finding_rows(assessment),
+                        "findings": self._finding_rows(assessment, source),
                         "calibration_available": assessment.calibration_available,
                     }
                 ),
@@ -497,7 +536,7 @@ class OpenCakeEnvironment:
             submission.sha256,
             launchable,
             MappingProxyType(
-                {"stage": "built", "findings": self._finding_rows(assessment)}
+                {"stage": "built", "findings": self._finding_rows(assessment, source)}
             ),
             cost=next(iter(self._compiler.rank([assessment])[0]), None),
             semantic_sha256=(
@@ -573,3 +612,69 @@ class DirectCudaEnvironment:
                 {"stage": "built", "findings": _ptxas_finding_rows(launchable)}
             ),
         )
+
+
+class NativeTritonEnvironment:
+    """Kernel-only native source, the same Workload ABI, and the same pinned builder."""
+
+    media_type = "application/vnd.open-cake.triton+json"
+
+    def __init__(self, toolchain: ToolchainBuilder, *, toolchain_requirements: Mapping[str, object],
+                 authority_document: Mapping[str, object], workload: WorkloadContract, case_id: str):
+        self._toolchain = toolchain
+        self._requirements = json.loads(json.dumps(dict(toolchain_requirements)))
+        self._abi = workload.tensor_abi(case_id)
+        signature = self._requirements.get('signature')
+        if (self._requirements.get('compiler') != 'triton' or self._requirements.get('target') != 'sm_100a'
+            or signature != {arg.name: '*' + arg.dtype for arg in self._abi}):
+            raise ValueError('native Triton signature differs from the Workload ABI')
+        self._requirements['signature'] = {arg.name: '*' + arg.dtype for arg in self._abi}
+        self.authority_document = json.loads(json.dumps(authority_document, sort_keys=True))
+        self.canonical_sha256 = sha256(json.dumps(self.authority_document, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+    def build(self, submission: CandidateSubmission) -> EnvironmentResult:
+        if submission.media_type != self.media_type:
+            raise ValueError('native Triton candidate media type differs')
+        try:
+            document = json.loads(submission.payload)
+            if not isinstance(document, Mapping) or set(document) != {'kernel_source', 'compile_constants', 'compile_options', 'grid'}:
+                raise ValueError('native Triton candidate requires kernel_source and explicit compile/launch metadata')
+            if not isinstance(document['kernel_source'], str) or not document['kernel_source']:
+                raise ValueError('native Triton kernel_source must be nonempty text')
+            requirements = dict(self._requirements)
+            constants = document['compile_constants']
+            options = document['compile_options']
+            grid = document['grid']
+            if (not isinstance(constants, Mapping) or set(constants) != set(requirements['compile_constants'])
+                or any(type(value) not in {int, float, bool}
+                       or type(value) is int and not -(2**63) <= value < 2**63
+                       or type(value) is float and not math.isfinite(value) for value in constants.values())
+                or not isinstance(options, Mapping) or set(options) != set(requirements['compile_options'])
+                or any(type(value) is not int or value <= 0 for value in options.values())
+                or not isinstance(grid, list) or len(grid) != 3
+                or any(type(value) is not int or value <= 0 for value in grid)):
+                raise ValueError('native Triton compile constants/options/grid differ from the declared interface')
+            # Use the existing structural launch checker before any target compilation.
+            CudaLaunchManifest.from_dict({'schema_version': 1, 'abi': 'flash_kmeans_assign_v1',
+                'target': 'sm_100a', 'kernel_name': requirements['kernel_entry_point'], 'grid': grid,
+                'block': [options.get('num_warps', 4) * 32, 1, 1], 'dynamic_shared_memory_bytes': 0})
+            requirements.update(compile_constants=dict(constants), compile_options=dict(options), grid=grid)
+            source = document['kernel_source'].encode()
+            validate_triton_kernel(source, requirements)
+            kernel = ast.parse(source).body[-1]
+            if [arg.arg for arg in kernel.args.args[:len(self._abi)]] != [arg.name for arg in self._abi]:
+                raise ValueError('native Triton tensor argument order differs from the Workload ABI')
+        except (UnicodeError, json.JSONDecodeError, ValueError) as error:
+            return EnvironmentResult('rejected', submission.sha256, None, {'stage': 'source_admission', 'error': str(error)})
+        digest = sha256(source).hexdigest()
+        try:
+            launchable = self._toolchain.build(BuildRequest(
+                submission.sha256, source, 'authored_source', digest, 'sm_100a',
+                str(requirements['kernel_entry_point']), requirements))
+        except CandidateCompileRejected as error:
+            return EnvironmentResult('rejected', submission.sha256, None,
+                {'stage': 'compile', 'diagnostic': error.diagnostic}, error.artifact_payloads)
+        if launchable.artifact_roles.get('authored_source') != digest:
+            raise ValueError('native Triton builder lost source custody')
+        return EnvironmentResult('launchable', submission.sha256, launchable,
+            {'stage': 'built', 'source_contract': 'triton_kernel_only_v1'})
