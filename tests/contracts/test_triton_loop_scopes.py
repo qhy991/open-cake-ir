@@ -96,6 +96,50 @@ def _reduction(op="sum", resident=False):
     return d
 
 
+def _scalar_store(producer="carried", *, op="sum", singleton=False, vector_store=False):
+    """One logical value with scalar or one-element-block native producers."""
+    d = _reduction(op)
+    d["schedule_id"] = f"scalar-{producer}-{op}-{int(singleton)}-{int(vector_store)}"
+    load_only = producer in {"scalar_load", "block_load"}
+    features = 4 if producer == "carried" else 8
+    x_shape = ([2] if producer == "scalar_load" else [2, 1]) if load_only else (
+        [2, 1, 8] if singleton else [2, 8]
+    )
+    shapes = {"x": x_shape, "y": [2, 1] if vector_store else [2],
+              "tile": [1, features] if singleton else [features], "rows": [1]}
+    for buffer in d["buffers"]:
+        buffer["shape"] = shapes[buffer["name"]]
+    indices = [dict(source="program", name="batch")]
+    if load_only:
+        d["tile_loops"] = []
+        d["buffers"] = [buffer for buffer in d["buffers"] if buffer["name"] != "tile"]
+        load, _, store = d["operations"]
+        load["writes"] = ["rows"]
+        store["depends_on"] = ["load_x"]
+        d["operations"] = [load, store]
+        if producer == "block_load":
+            indices.append(dict(source="dimension", dimension=1))
+    else:
+        dimension = 2 if singleton else 1
+        if singleton:
+            indices.append(dict(source="dimension", dimension=1))
+        if producer == "carried":
+            loop = d["tile_loops"][1]
+            loop["dimension"] = dimension
+            d["tile_loops"] = [loop]
+            indices.append(dict(source="loop_tile", name="feature"))
+        else:
+            d["tile_loops"] = []
+            d["operations"][1]["parameters"]["across_loop"] = False
+            indices.append(dict(source="dimension", dimension=dimension))
+        d["operations"][1]["parameters"]["axis"] = 1 if singleton else 0
+    d["access_maps"][0]["indices"] = indices
+    d["access_maps"][1]["indices"] = [dict(source="program", name="batch")]
+    if vector_store:
+        d["access_maps"][1]["indices"].append(dict(source="dimension", dimension=1))
+    return d
+
+
 class _Tile:
     """Only broadcasting/indexing needed to execute the emitted arithmetic on CPU."""
 
@@ -154,13 +198,15 @@ class _TL:
     def __init__(self):
         self.program = (0, 0, 0)
         self.loads, self.stores = {}, {}
+        self.store_types = []
 
     def program_id(self, axis): return self.program[axis]
 
     def load(self, pointer, mask=None, other=None, **kwargs):
         self.loads[id(pointer.memory)] = self.loads.get(id(pointer.memory), 0) + 1
         offsets = pointer.offsets
-        assert isinstance(offsets, _Tile)
+        if not isinstance(offsets, _Tile):
+            offsets = _Tile((), [offsets])
         valid = mask.binary(offsets, lambda enabled, _: enabled).values if mask is not None else [True] * len(offsets.values)
         # Bounds assertions catch missing/wrong masks rather than accepting Python's
         # negative indexing. False lanes must never touch memory.
@@ -172,8 +218,28 @@ class _TL:
         return _Tile(offsets.shape, values)
 
     def store(self, pointer, values, mask=None):
-        valid = mask.binary(pointer.offsets, lambda enabled, _: enabled).values if mask is not None else [True] * len(values.values)
-        for offset, value, enabled in zip(pointer.offsets.values, values.values, valid):
+        offsets = pointer.offsets
+        if not isinstance(offsets, _Tile):
+            offsets = _Tile((), [offsets])
+        if not isinstance(values, _Tile):
+            values = _Tile((), [values])
+        # This is a type contract, not merely a numerical zip of two value lists:
+        # a scalar pointer takes a scalar value; block pointers broadcast values/masks
+        # to their own shape. It is not a native Triton compilation claim.
+        if not offsets.shape and values.shape:
+            raise TypeError("scalar pointer cannot store a block value")
+        self.store_types.append((offsets.shape, values.shape))
+        values = values.binary(offsets, lambda value, _: value)
+        if values.shape != offsets.shape:
+            raise TypeError("store value cannot broadcast to the pointer shape")
+        if mask is not None:
+            if not isinstance(mask, _Tile):
+                mask = _Tile((), [mask])
+            mask = mask.binary(offsets, lambda enabled, _: enabled)
+            if mask.shape != offsets.shape:
+                raise TypeError("store mask cannot broadcast to the pointer shape")
+        valid = mask.values if mask is not None else [True] * len(offsets.values)
+        for offset, value, enabled in zip(offsets.values, values.values, valid):
             if enabled:
                 assert 0 <= offset < len(pointer.memory)
                 key = (id(pointer.memory), offset)
@@ -195,13 +261,19 @@ class _TL:
 
     @staticmethod
     def sum(a, axis):
-        assert axis == 1 and len(a.shape) == 2
-        return _Tile((a.shape[0],), [sum(a.at((i, j)) for j in range(a.shape[1])) for i in range(a.shape[0])])
+        return _TL.reduce(a, axis, sum)
 
     @staticmethod
     def max(a, axis):
-        assert axis == 1 and len(a.shape) == 2
-        return _Tile((a.shape[0],), [max(a.at((i, j)) for j in range(a.shape[1])) for i in range(a.shape[0])])
+        return _TL.reduce(a, axis, max)
+
+    @staticmethod
+    def reduce(a, axis, function):
+        assert 0 <= axis < len(a.shape)
+        shape = a.shape[:axis] + a.shape[axis + 1:]
+        return _Tile(shape, [function(a.at(index[:axis] + (j,) + index[axis:])
+                                     for j in range(a.shape[axis]))
+                            for index in itertools.product(*(range(n) for n in shape))])
 
 
 def _size(shape):
@@ -295,6 +367,49 @@ class TritonLoopScopesTest(unittest.TestCase):
                 fold = sum if op == "sum" else max
                 self.assertEqual(memories["y"], [fold(x[i*8:(i+1)*8]) for i in range(10)])
                 self.assertEqual(set(tl.stores.values()), {1})
+
+    def test_scalar_carried_store_keeps_singleton_state_for_both_reduction_ranks(self):
+        for singleton, op in itertools.product((False, True), ("sum", "max")):
+            with self.subTest(singleton=singleton, op=op):
+                emission = self.lower(_scalar_store(op=op, singleton=singleton))
+                identity = ('tl.zeros((1,), tl.float32)' if op == "sum" else
+                            'tl.full((1,), float("-inf"), tl.float32)')
+                self.assertIn("rows = " + identity, emission.source)
+                x = [float(i-17) for i in range(16)]
+                memories = dict(x=x, y=[None]*2)
+                tl = _execute(emission, memories)
+                fold = sum if op == "sum" else max
+                self.assertEqual(memories["y"], [fold(x[:8]), fold(x[8:])])
+                self.assertEqual(tl.store_types, [((1,), (1,))]*2)
+                self.assertEqual(set(tl.stores.values()), {1})
+
+    def test_single_value_producers_store_through_scalar_and_vector_addresses(self):
+        producers = (("resident", False, ()), ("resident", True, (1,)),
+                     ("scalar_load", False, ()), ("block_load", False, (1,)))
+        for (producer, singleton, value_shape), vector_store in itertools.product(producers, (False, True)):
+            with self.subTest(producer=producer, singleton=singleton, vector_store=vector_store):
+                emission = self.lower(_scalar_store(producer, singleton=singleton,
+                                                    vector_store=vector_store))
+                x = [float(i+1) for i in range(16 if producer == "resident" else 2)]
+                memories = dict(x=x, y=[None]*2)
+                tl = _execute(emission, memories)
+                expected = [sum(x[:8]), sum(x[8:])] if producer == "resident" else x
+                self.assertEqual(memories["y"], expected)
+                self.assertEqual(tl.store_types, [((1,), value_shape)]*2)
+                self.assertEqual(set(tl.stores.values()), {1})
+
+    def test_store_type_model_rejects_block_to_scalar_pointer_and_preserves_masks(self):
+        tl, memory = _TL(), [None]
+        with self.assertRaisesRegex(TypeError, "scalar pointer"):
+            tl.store(_Pointer(memory), _Tile((1,), [7]))
+        self.assertEqual(memory, [None])
+        tl.store(_Pointer(memory), _Tile((), [3]))
+        self.assertEqual(memory, [3])
+        pointer = _Pointer(memory, _Tile((1,), [0]))
+        tl.store(pointer, _Tile((), [9]), mask=False)
+        self.assertEqual(memory, [3])
+        tl.store(pointer, _Tile((), [7]), mask=True)
+        self.assertEqual(memory, [7])
 
     def test_resident_reduction_inside_output_loop_does_not_carry(self):
         emission = self.lower(_reduction(resident=True))

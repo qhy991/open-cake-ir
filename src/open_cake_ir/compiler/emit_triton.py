@@ -1838,6 +1838,15 @@ class _TritonEmitter:
         _require(access is not None, f"store {operation.op_id!r} has no access map")
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         pointer, mask = self._address(access, pad)
+        value = self.schedule.buffer(operation.reads[0])
+        _require(value is not None, f"store {operation.op_id!r} has no value buffer")
+        if value.is_scalar and all(
+            component.source is AccessIndexKind.PROGRAM for component in access.indices
+        ):
+            # A canonical [1] value can be a native scalar or a one-element block.
+            # Give both the same one-element pointer domain; adding [0] preserves
+            # the address/count and leaves reduction state and any mask unchanged.
+            pointer = f"({pointer}) + tl.arange(0, 1)"
         self.line(f"{pad}tl.store(")
         self.line(f"{pad}    {pointer},")
         self.line(f"{pad}    {operation.reads[0]},")
