@@ -393,8 +393,10 @@ func executeBatch(path: String, device: MTLDevice, queue: MTLCommandQueue,
     for artifact in batch.artifacts where artifact.origin != "compiler_generated" {
         var armTimes: [Double] = []
         for i in 0..<batch.pilot_samples {
+            try event(["stage": "pilot", "status": "started", "artifact": artifact.id, "sample": i])
             var sample = try prepared[artifact.id]!.dispatch(queue: queue, count: 1)
             try validTimer(sample)
+            sample["validation"] = try prepared[artifact.id]!.validate(oraclePath: artifact.oracle_path)
             sample["artifact"] = artifact.id; sample["sample"] = i; sample["stage"] = "pilot"
             armTimes.append(sample["gpu_command_buffer_seconds"] as! Double)
             pilot.append(sample); try event(sample)
@@ -412,6 +414,8 @@ func executeBatch(path: String, device: MTLDevice, queue: MTLCommandQueue,
                 try event(["stage": "measurement", "status": "started", "artifact": id, "round": round, "sweep": sweep, "position": position])
                 var sample = try prepared[id]!.dispatch(queue: queue, count: dispatches)
                 try validTimer(sample)
+                let artifact = batch.artifacts.first { $0.id == id }!
+                sample["validation"] = try prepared[id]!.validate(oraclePath: artifact.oracle_path)
                 sample["artifact"] = id; sample["round"] = round; sample["sweep"] = sweep
                 sample["position"] = position; sample["stage"] = "measurement"
                 samples.append(sample); try event(sample)
@@ -430,8 +434,11 @@ func executeBatch(path: String, device: MTLDevice, queue: MTLCommandQueue,
     for artifact in batch.artifacts {
         let item = prepared[artifact.id]!
         try event(["stage": "instrumented_observation", "artifact": artifact.id, "status": "started"])
-        profiles[artifact.id] = try profile(item, device: device, queue: queue)
-        validation[artifact.id] = try item.validate(oraclePath: artifact.oracle_path)
+        var observation = try profile(item, device: device, queue: queue)
+        if observation["coverage"] as? String != "unavailable" {
+            observation["validation"] = try item.validate(oraclePath: artifact.oracle_path)
+        }
+        profiles[artifact.id] = observation
         try event(["stage": "instrumented_observation", "artifact": artifact.id, "observation": profiles[artifact.id]!])
     }
     for item in cache.values { try item.writeOutputs() }

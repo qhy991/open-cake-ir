@@ -84,6 +84,8 @@ pipeline/缓冲区，经过与 A/B 相同的选择、绑定和调度路径。数
 预先固定的工程资格规则要求 A/A 配对中位数比率位于 `[0.95, 1.05]`，相关各臂相对 IQR
 不超过 10%，且搜索与两次确认中的增益均超过 5%；否则报告 inconclusive 或无实质增益。
 保留全部原始样本、顺序、warmup 和批量数量，不裁剪样本。计时器、执行或正确性失败返回非零退出码。
+每个 pilot 和普通批量样本都附带自身的输出/输入验证；验证在计时外、下一次 dispatch 覆盖缓冲区前完成，
+并与 profile 的验证分开记录。
 参见 Apple 的 [GPU command-buffer 时间戳](https://developer.apple.com/documentation/metal/mtlcommandbuffer/gpustarttime)。
 
 普通计时结束后，单独采集设备支持的 compute-stage `GPUTimestamp` 观察，记录实际能力枚举、

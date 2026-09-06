@@ -5,8 +5,11 @@ import copy
 import json
 import math
 from pathlib import Path
+import shutil
 import struct
+import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -28,7 +31,8 @@ def protocol_fixture():
                 gpu = times[id] * (1 + (s - 4) * 0.001)
                 samples.append({"round": r, "sweep": s, "position": p, "artifact": id,
                     "dispatches": 8, "command_status": "completed", "gpu_command_buffer_seconds": gpu,
-                    "warmed_host_call_seconds": gpu + 0.1, "amortized_dispatch_seconds": gpu / 8})
+                    "warmed_host_call_seconds": gpu + 0.1, "amortized_dispatch_seconds": gpu / 8,
+                    "validation": {"gpu_correctness": "passed", "input_immutability": "passed", "max_abs_error": 0.0}})
     result = {"status": "completed", "ordinary_samples_instrumented": False, "selected_candidate": "canonical",
               "batch_dispatches": 8, "raw_samples": samples}
     return job, result
@@ -150,6 +154,212 @@ class MetalBenchmarkContracts(unittest.TestCase):
                 self.assertEqual(benchmark.main(), 1)
             release.assert_not_called(); gpu.assert_not_called()
             self.assertEqual(json.loads((directory / "receipt.json").read_text())["status"], "failed")
+
+    def test_unvalidated_ordinary_samples_cannot_qualify(self):
+        job, original = protocol_fixture()
+        for validation in (None, {}, {"gpu_correctness": "failed", "input_immutability": "passed"},
+                           {"gpu_correctness": "passed", "input_immutability": "failed"}):
+            result = copy.deepcopy(original)
+            result["raw_samples"][0]["validation"] = validation
+            with self.assertRaisesRegex(ValueError, "output/input validation"):
+                benchmark.analyze(result, job)
+
+    def test_reference_and_unknown_batch_failures_do_not_route_to_candidates(self):
+        cases = (
+            ("reference_prepare", None, "reference_prepare", "simd_reference", "handwritten_reference", None),
+            ("batch", {"stage": "compile", "artifact": "simd_reference", "status": "started"},
+             "reference_compile", "simd_reference", "handwritten_reference", None),
+            ("batch", None, "batch", None, "unknown", None),
+            ("batch", {"stage": "compile", "artifact": "canonical", "status": "completed"},
+             "batch", None, "unknown", None),
+            ("batch", {"stage": "compile", "artifact": "unrecognized", "status": "started"},
+             "batch", None, "unknown", None),
+            ("batch", {"stage": "compile", "artifact": "canonical", "status": "started"},
+             "compile", "canonical", "compiler_generated", "verifier"),
+        )
+        for failure_at, event, stage, artifact, origin, route in cases:
+            with self.subTest(failure_at=failure_at, event=event), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary).resolve()
+
+                def prepare(compiler, document, inputs, oracles, path, device_names, case):
+                    case.update(findings=[], static_accepted=True, lowering_eligible=True)
+
+                def reference(rows, columns, execution, inputs, path, device_names):
+                    if failure_at == "reference_prepare" and path.name == "simd_reference":
+                        raise ValueError("injected handwritten reference preparation failure")
+                    return {}
+
+                def fail_batch(binary, path, job):
+                    if event is not None:
+                        (path / "events.jsonl").write_text(json.dumps(event) + "\n")
+                    raise RuntimeError("injected batch failure")
+
+                with patch.object(benchmark, "fresh_receipt", return_value=directory), \
+                     patch.object(benchmark, "runtime_source", return_value={"tracked": True, "clean": True}), \
+                     patch.object(benchmark, "released_compiler", return_value=(object(), {"revision_id": "CPU-mock"}, ["Apple M2"])), \
+                     patch.object(benchmark, "compile_runner", return_value=Path("/nonexistent/no-gpu")), \
+                     patch.object(benchmark, "prepare_case", side_effect=prepare), \
+                     patch.object(benchmark, "invoke_batch", side_effect=fail_batch), \
+                     patch.object(benchmark, "evaluate_case", side_effect=AssertionError("no held-out execution")), \
+                     patch.object(benchmark.frontend, "read_schedule", return_value=SimpleNamespace(document={}, location_for=lambda _: None)), \
+                     patch.object(rmsnorm, "source", return_value="CPU mock source"), \
+                     patch.object(rmsnorm, "inputs_and_oracle", return_value=({}, {})), \
+                     patch.object(rmsnorm, "reference", side_effect=reference), \
+                     patch.object(benchmark, "route_rejection", wraps=benchmark.route_rejection) as router, \
+                     patch.object(benchmark.subprocess, "run", side_effect=AssertionError("no subprocess permitted")), \
+                     patch("sys.argv", ["benchmark", "--output-root", str(directory)]):
+                    self.assertEqual(benchmark.main(), 1)
+                receipt = json.loads((directory / "receipt.json").read_text())
+                feedback = receipt["failure"]
+                self.assertEqual(receipt["status"], "failed")
+                self.assertEqual((feedback["stage"], feedback["artifact"], feedback["origin"]), (stage, artifact, origin))
+                if route is None:
+                    router.assert_not_called()
+                    self.assertNotIn("route", feedback)
+                    self.assertIn("invalid", feedback["measurement_quality"])
+                    self.assertEqual(feedback["findings"], [])
+                else:
+                    router.assert_called_once()
+                    self.assertEqual(feedback["route"]["destination"], route)
+
+
+# The real executeBatch is executed below with CPU-only device/Prepared/profile
+# doubles. Synthetic durations drive its control flow; they are not measurements.
+_CPU_BATCH_DOUBLES = r"""import Foundation
+struct MockDevice {}
+struct MockQueue {}
+typealias MTLDevice = MockDevice
+typealias MTLCommandQueue = MockQueue
+struct Refusal: Error, CustomStringConvertible { let description: String }
+func require(_ condition: Bool, _ message: String) throws {
+    if !condition { throw Refusal(description: message) }
+}
+let fault = CommandLine.arguments[2]
+var trace: [[String: Any]] = []
+struct MockManifest { let execution_model = "simd_program_tile" }
+final class Prepared {
+    let id: String
+    let manifest = MockManifest()
+    let coldPrepareSeconds = 0.0
+    let coldLibraryPipelineSeconds = 0.0
+    var outputCorrect = true
+    var inputIntact = true
+    var calls = 0
+    init(path: String, device: MTLDevice) throws {
+        id = URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent
+    }
+    func dispatch(queue: MTLCommandQueue, count: Int) throws -> [String: Any] {
+        calls += 1
+        outputCorrect = !(fault == "ordinary_output" && id == "candidate" && count > 1) &&
+                        !(fault == "pilot_output" && id == "reference" && calls == 3)
+        inputIntact = !(fault == "ordinary_input" && id == "candidate" && count > 1)
+        trace.append(["action": "dispatch", "artifact": id, "count": count,
+                      "output_correct": outputCorrect, "input_intact": inputIntact])
+        let synthetic = 0.001 * Double(count)
+        return ["command_status": "completed", "dispatches": count,
+                "warmed_host_call_seconds": synthetic + 0.001,
+                "gpu_start_time_seconds": 1.0, "gpu_end_time_seconds": 1.0 + synthetic,
+                "gpu_command_buffer_seconds": synthetic,
+                "amortized_dispatch_seconds": synthetic / Double(count)]
+    }
+    func validate(oraclePath: String) throws -> [String: Any] {
+        trace.append(["action": "validate", "artifact": id,
+                      "output_correct": outputCorrect, "input_intact": inputIntact])
+        try require(outputCorrect && inputIntact, "injected " + fault)
+        return ["gpu_correctness": "passed", "input_immutability": "passed", "max_abs_error": 0.0]
+    }
+    func writeOutputs() throws {}
+}
+func profile(_ item: Prepared, device: MTLDevice, queue: MTLCommandQueue) throws -> [String: Any] {
+    trace.append(["action": "profile_start", "artifact": item.id])
+    let observed = try item.dispatch(queue: queue, count: 1)
+    try validTimer(observed)
+    return ["coverage": "CPU_mock_only", "instrumented_command": observed]
+}
+"""
+_CPU_BATCH_DRIVER = r"""
+var evidence: [String: Any] = ["scope": "CPU-only control flow; synthetic timer fields; no GPU"]
+var exitCode: Int32 = 0
+do {
+    let result = try executeBatch(path: CommandLine.arguments[1], device: MockDevice(), queue: MockQueue(), compileOnly: false)
+    evidence["status"] = "completed"
+    evidence["result"] = result
+} catch {
+    evidence["status"] = "refused"
+    evidence["error"] = String(describing: error)
+    exitCode = 1
+}
+evidence["trace"] = trace
+let output = URL(fileURLWithPath: CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("outcome.json")
+try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]).write(to: output, options: .withoutOverwriting)
+exit(exitCode)
+"""
+
+
+class MetalBatchControlFlowContracts(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        swift = shutil.which("swiftc")
+        if swift is None:
+            raise unittest.SkipTest("CPU-only Swift control-flow regression requires an existing swiftc")
+        cls.temporary = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.temporary.cleanup)
+        cls.directory = Path(cls.temporary.name).resolve()
+        runner = (Path(__file__).resolve().parents[2] / "tools/metal/runner.swift").read_text()
+        start = runner.index("struct Artifact: Decodable")
+        end = runner.index("\nfunc execute()", start)
+        # Reuse the actual types, timer helpers and executeBatch verbatim.
+        source = _CPU_BATCH_DOUBLES + runner[start:end] + _CPU_BATCH_DRIVER
+        if "import Metal" in source or "MTLCreateSystemDefaultDevice" in source:
+            raise AssertionError("the CPU harness must not access Metal")
+        path = cls.directory / "batch_cpu.swift"
+        path.write_text(source)
+        cls.binary = cls.directory / "batch-cpu"
+        compiled = subprocess.run([swift, str(path), "-o", str(cls.binary)], capture_output=True, text=True, timeout=120)
+        if compiled.returncode:
+            raise AssertionError(compiled.stdout + compiled.stderr)
+
+    def execute(self, fault):
+        directory = self.directory / fault
+        directory.mkdir()
+        names = ("candidate", "reference", "reference_null")
+        artifacts = [{"id": id, "manifest_path": str(directory / id / "manifest.json"),
+                      "oracle_path": str(directory / id / "oracle.json"),
+                      "origin": "compiler_generated" if id == "candidate" else "handwritten_reference"}
+                     for id in names]
+        job = {"artifacts": artifacts, "warmups": 1, "pilot_samples": 1, "max_batch_dispatches": 4,
+               "target_command_seconds": 0.003, "orders": [[list(names)],
+                   [["reference", "__selected__", "reference_null"]],
+                   [["reference_null", "__selected__", "reference"]]]}
+        path = directory / "batch.json"
+        path.write_text(json.dumps(job))
+        process = subprocess.run([str(self.binary), str(path), fault], capture_output=True, text=True, timeout=30)
+        self.assertTrue((directory / "outcome.json").exists(), process.stderr)
+        return process.returncode, json.loads((directory / "outcome.json").read_text())
+
+    def test_each_bad_ordinary_or_pilot_observation_fails_before_overwrite(self):
+        for fault in ("ordinary_output", "ordinary_input", "pilot_output"):
+            with self.subTest(fault=fault):
+                code, evidence = self.execute(fault)
+                self.assertEqual(code, 1)
+                self.assertEqual(evidence["status"], "refused")
+                self.assertEqual(evidence["error"], "injected " + fault)
+                bad = [e for e in evidence["trace"] if e["action"] == "validate" and
+                       (not e["output_correct"] or not e["input_intact"])]
+                self.assertEqual(len(bad), 1)
+                self.assertFalse(any(e["action"] == "profile_start" for e in evidence["trace"]))
+
+    def test_successful_observations_retain_separate_validation(self):
+        code, evidence = self.execute("none")
+        self.assertEqual(code, 0)
+        result = evidence["result"]
+        self.assertEqual(result["batch_dispatches"], 4)
+        self.assertEqual(len(result["raw_samples"]), 9)
+        for sample in result["pilot_samples"] + result["raw_samples"]:
+            self.assertEqual(sample["validation"]["gpu_correctness"], "passed")
+            self.assertEqual(sample["validation"]["input_immutability"], "passed")
+        for observation in result["instrumented_observations"].values():
+            self.assertEqual(observation["validation"]["gpu_correctness"], "passed")
 
 
 if __name__ == "__main__":

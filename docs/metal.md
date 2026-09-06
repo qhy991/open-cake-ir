@@ -98,6 +98,8 @@ relative IQR at most 10% in each relevant arm, and a gain exceeding 5% in search
 confirmations. Otherwise the result is inconclusive or has no material gain. Raw samples,
 orders, warmups and batch counts are retained without trimming; invalid timers, execution
 or correctness fail with a nonzero exit. See Apple's [GPU command-buffer timestamps](https://developer.apple.com/documentation/metal/mtlcommandbuffer/gpustarttime).
+Each pilot and ordinary batch carries its own output/input validation, completed outside
+timing before another dispatch can overwrite its buffers; profile validation is separate.
 
 After ordinary timing, a separate instrumented observation requests compute-stage
 `GPUTimestamp` samples when supported. It records actual capability enumeration, resolved

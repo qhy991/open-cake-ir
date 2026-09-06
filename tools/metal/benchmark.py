@@ -87,6 +87,9 @@ def analyze(result: dict, job: dict) -> dict:
     for sample in samples:
         if sample["dispatches"] != count or sample["command_status"] != "completed":
             raise ValueError("sample dispatch count/completion differs")
+        validation = sample.get("validation", {})
+        if not isinstance(validation, dict) or validation.get("gpu_correctness") != "passed" or validation.get("input_immutability") != "passed":
+            raise ValueError("ordinary sample lacks successful output/input validation")
         for field in ("warmed_host_call_seconds", "gpu_command_buffer_seconds", "amortized_dispatch_seconds"):
             if not math.isfinite(sample[field]) or sample[field] <= 0:
                 raise ValueError(f"invalid timer: {field}")
@@ -174,7 +177,7 @@ def main() -> int:
         artifacts = []
         stage = "assess"
         for formula in rmsnorm.FORMULAS:
-            current = {"id": formula, "kind": "evaluation", "candidate_disposition": "pending", "gpu_correctness": "not_run"}
+            current = {"id": formula, "origin": "compiler_generated", "kind": "evaluation", "candidate_disposition": "pending", "gpu_correctness": "not_run"}
             summary["candidates"].append(current)
             directory = receipt / formula
             directory.mkdir()
@@ -188,6 +191,8 @@ def main() -> int:
             artifacts.append({"id": formula, "manifest_path": str(directory / "manifest.json"),
                               "oracle_path": str(directory / "oracle.json"), "origin": "compiler_generated"})
         for id in REFERENCES:
+            stage = "reference_prepare"
+            current = {"id": id, "origin": "handwritten_reference"}
             directory = receipt / id
             directory.mkdir()
             rmsnorm.reference(*rmsnorm.PRIMARY_SHAPE, "serial" if id == "serial_reference" else "simd",
@@ -199,6 +204,7 @@ def main() -> int:
                "max_batch_dispatches": max(PROTOCOL["batch_powers"]), "target_command_seconds": PROTOCOL["target_command_seconds"],
                "orders": orders(list(rmsnorm.FORMULAS))}
         stage = "batch"
+        current = None
         for candidate in summary["candidates"]:
             candidate.update(gpu_execution="requested", gpu_correctness="unknown", candidate_disposition="pending_runtime")
         observed = invoke_batch(binary, receipt, job)
@@ -222,7 +228,7 @@ def main() -> int:
                 name = f"held-out-{rows}x{columns}-{distribution}"
                 directory = receipt / name
                 directory.mkdir()
-                current = {"case": name, "formula": selected, "gpu_correctness": "not_run"}
+                current = {"case": name, "origin": "compiler_generated", "formula": selected, "gpu_correctness": "not_run"}
                 summary["held_out_correctness"].append(current)
                 case_inputs, case_oracles = rmsnorm.inputs_and_oracle(rows, columns, distribution)
                 evaluate_case(compiler, binary, rmsnorm.document(rows, columns, selected), case_inputs, case_oracles,
@@ -230,7 +236,9 @@ def main() -> int:
         summary["status"] = "completed"
     except Exception as error:
         feedback = {"kind": "rejection", "stage": stage, "error": f"{type(error).__name__}: {error}",
-                    "findings": current.get("findings", []) if current else []}
+                    "findings": current.get("findings", []) if current else [],
+                    "artifact": current.get("id", current.get("case")) if current else None,
+                    "origin": current.get("origin", "unknown") if current else "unknown"}
         if stage == "batch" and (receipt / "events.jsonl").exists():
             events = [json.loads(line) for line in (receipt / "events.jsonl").read_text().splitlines()]
             feedback["last_runtime_event"] = events[-1] if events else None
@@ -239,14 +247,16 @@ def main() -> int:
                     for candidate in summary["candidates"]:
                         if candidate["id"] == event.get("artifact"):
                             candidate.update(gpu_execution="completed", gpu_correctness="passed")
-            if events:
+            if events and events[-1].get("status") == "started":
                 artifact = events[-1].get("artifact")
-                feedback["artifact"] = artifact
-                matching = next((c for c in summary["candidates"] if c["id"] == artifact), None)
-                feedback["findings"] = matching.get("findings", []) if matching else []
-                if events[-1].get("stage") == "compile":
-                    feedback["stage"] = "compile" if matching else "reference_compile"
-        if feedback["stage"] in {"assess", "compile", "reference_compile", "held_out_correctness"}:
+                known = next((a for a in artifacts if a["id"] == artifact), None)
+                if known is not None:
+                    feedback.update(artifact=artifact, origin=known["origin"])
+                    matching = next((c for c in summary["candidates"] if c["id"] == artifact), None)
+                    feedback["findings"] = matching.get("findings", []) if matching else []
+                    if events[-1].get("stage") == "compile":
+                        feedback["stage"] = "compile" if known["origin"] == "compiler_generated" else "reference_compile"
+        if feedback["origin"] == "compiler_generated" and feedback["stage"] in {"assess", "compile", "held_out_correctness"}:
             feedback["route"] = asdict(route_rejection(feedback))
         else:
             feedback["measurement_quality"] = "invalid; no candidate or cost-model attribution established"
