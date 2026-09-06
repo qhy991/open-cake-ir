@@ -37,5 +37,8 @@ jobs:
           tests.contracts.test_documentation
           tests.contracts.test_release_approval
           tests.contracts.test_compiled_resources
+          tests.contracts.test_empirical_cost
+          tests.contracts.test_empirical_cost_calibration
+          tests.contracts.test_empirical_cost_fitter
           tests.contracts.test_metal
           tests.contracts.test_metal_runtime

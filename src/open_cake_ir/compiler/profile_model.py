@@ -95,6 +95,7 @@ class ProfileEnvelope:
     ncu_metrics: tuple[MetricEstimate, ...]
     abstentions: tuple[str, ...]
     compiled_resources: CompiledResources | None = None
+    empirical_cost: Mapping[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -110,6 +111,7 @@ class ProfileEnvelope:
             "compiled_resources": (
                 None if self.compiled_resources is None else self.compiled_resources.as_dict()
             ),
+            **({"empirical_cost": dict(self.empirical_cost)} if self.empirical_cost is not None else {}),
         }
 
 
