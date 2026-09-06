@@ -121,7 +121,7 @@ class RetainedScheduleTest(unittest.TestCase):
             with self.subTest(schedule=path.name):
                 schedule = Schedule.load(path)
                 self.assertEqual(schedule.schema_version, 1)
-                self.assertEqual(schedule.target, "sm_100a")
+                self.assertEqual(schedule.target, _document(path)["target"])
                 self.assertTrue(schedule.operations)
                 self.assertTrue(
                     schedule.outputs
