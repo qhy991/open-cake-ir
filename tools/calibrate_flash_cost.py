@@ -73,15 +73,13 @@ def observation_order(pool, baseline):
 
 def _plan(candidate):
     plan = _read(_external_file(candidate, "plan.json", "plan"))
-    if set(plan) != {"schema_version", "plan_id", "state", "source_commit", "model_id", "compiler_revision", "executor_revision", "workload", "case_id", "target", "pool", "baseline", "observations", "acceptance"}:
+    if set(plan) != {"schema_version", "plan_id", "state", "model_id", "compiler_revision", "executor_revision", "workload", "case_id", "target", "pool", "baseline", "observations", "acceptance"}:
         raise ValueError("calibration plan fields differ")
     if type(plan["schema_version"]) is not int or plan["schema_version"] != 1 or plan["state"] != "frozen":
         raise ValueError("calibration plan must be frozen schema 1")
     for name in ("plan_id", "model_id", "baseline"):
         if not isinstance(plan[name], str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]*", plan[name]):
             raise ValueError(f"plan {name} differs")
-    if not isinstance(plan["source_commit"], str) or not re.fullmatch(r"[0-9a-f]{40}", plan["source_commit"]):
-        raise ValueError("plan source commit differs")
     if plan["case_id"] != "b32_smoke" or plan["target"] != "sm_100a":
         raise ValueError("calibration supports the fixed B200 Flash case only")
     pool = plan["pool"]
@@ -207,13 +205,13 @@ def _compile(candidate_root, stage, plan, compiler, executor, workload):
         _seal(stage / spec["id"], built.launchable, plan, ROOT)
         with (stage / spec["id"] / "schedule.json").open("xb") as stream:
             stream.write(assessment.schedule_bytes)
-    _write(stage / "build.json", {"source_commit": plan["source_commit"], "source_root": str(ROOT), "context": _empirical_context(executor, workload_sha256=workload.canonical_sha256, case_id=plan["case_id"])})
+    _write(stage / "build.json", {"source_root": str(ROOT), "context": _empirical_context(executor, workload_sha256=workload.canonical_sha256, case_id=plan["case_id"])})
 
 
 def _compiled(run, plan, compiler, executor, workload, source_root):
     stage = run / "stages/compile"
     _equal(_read(_external_file(stage, "plan.json", "compile plan")), plan, "compile plan")
-    _equal(_read(_external_file(stage, "build.json", "compile binding")), {"source_commit": plan["source_commit"], "source_root": str(source_root), "context": _empirical_context(executor, workload_sha256=workload.canonical_sha256, case_id=plan["case_id"])}, "compile context")
+    _equal(_read(_external_file(stage, "build.json", "compile binding")), {"source_root": str(source_root), "context": _empirical_context(executor, workload_sha256=workload.canonical_sha256, case_id=plan["case_id"])}, "compile context")
     result = {}
     seen = set()
     for spec in plan["pool"]:
@@ -250,16 +248,60 @@ def _broker_principal():
         peer = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))
     observed = {"pid": os.getpid(), "parent_pid": os.getppid(), "uid": os.geteuid(), "gid": os.getegid(), "broker_peer": list(peer), "broker_socket": endpoint,
                 "job_id": os.environ.get("GPUQ_JOB_ID"), "visible_device": os.environ.get("CUDA_VISIBLE_DEVICES"), "run_id": os.environ.get("KERNELINFRA_RUN_ID")}
-    _principal(observed, observed["job_id"], observed["run_id"])
+    if list(peer) != [observed["parent_pid"], observed["uid"], observed["gid"]]:
+        raise ValueError("controller is not the direct broker execution principal")
     return observed
 
 
 def _principal(observed, job_id, run_id):
     if (observed["broker_peer"] != [observed["parent_pid"], observed["uid"], observed["gid"]]
-        or not isinstance(job_id, str) or not job_id.startswith("gpuq-") or observed["job_id"] != job_id
+        or not isinstance(job_id, str) or re.fullmatch(r"gpuq-[0-9a-f]{12}", job_id) is None or observed["job_id"] != job_id
         or not isinstance(run_id, str) or not run_id or observed["run_id"] != run_id
         or not isinstance(observed["visible_device"], str) or not observed["visible_device"] or "," in observed["visible_device"]):
         raise ValueError("controller is not the observed direct broker execution principal")
+
+
+def _node_admission(run, task, observed, deadline):
+    """Read this run's node-owned allocation; never discover or guess a job ID.
+
+    Broker 0.5.3 starts its child before the asynchronous node event pump may have
+    published broker_started. Only that bounded submitting/queued race is waited
+    for; missing, malformed, unrelated or terminal state is an unknown admission.
+    """
+    request = _read(_external_file(run, "request.json", "node request"))
+    expected = {"run_id": observed["run_id"], "task_id": task["task_id"]}
+    _equal({"schema": request["schema"], **{k: request[k] for k in expected}}, {"schema": "kernelinfra.request.v1", **expected}, "node request identity")
+    for key in ("task_sha256", "candidate_sha256"):
+        value = request[key]
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            raise ValueError("node request content identity differs")
+        expected[key] = value
+    expected.update(schema="kernelinfra.state.v1", stage_id="collection", stage_kind="judge", stage_index=1)
+    publication_deadline = min(deadline, time.monotonic() + 10)
+    while True:
+        state = _read(_external_file(run, "state.json", "node state"))
+        _equal({key: state[key] for key in expected}, expected, "node allocation identity")
+        if state["run_dir"] != str(run) or state["terminal_at"] is not None:
+            raise ValueError("node allocation run directory or terminal state differs")
+        job_id = state["broker_job_id"]
+        if job_id is not None and (not isinstance(job_id, str) or re.fullmatch(r"gpuq-[0-9a-f]{12}", job_id) is None):
+            raise ValueError("node broker job identity is malformed")
+        if state["state"] == "running":
+            ids = state["gpu_ids"]
+            if job_id is None or not isinstance(ids, list) or len(ids) != 1 or type(ids[0]) is not int or ids[0] < 0 or observed["visible_device"] != str(ids[0]):
+                raise ValueError("node allocation differs from the controller-visible GPU")
+            exported = observed["job_id"]
+            if exported is not None and exported != job_id:
+                raise ValueError("exported broker job differs from node allocation")
+            observed.update(exported_job_id=exported, job_id=job_id,
+                            node_admission={**expected, "state": "running", "broker_job_id": job_id, "gpu_ids": ids})
+            _principal(observed, job_id, request["run_id"])
+            return observed
+        if state["state"] not in {"submitting", "queued"} or state["gpu_ids"] != []:
+            raise ValueError("node allocation is not awaiting broker publication")
+        if time.monotonic() >= publication_deadline:
+            raise TimeoutError("node did not publish this broker allocation in time")
+        time.sleep(.05)
 
 
 class CorrectnessRejected(ValueError):
@@ -267,11 +309,13 @@ class CorrectnessRejected(ValueError):
 
 
 def _observation(directory, spec, plan, candidate, source_root, job_id):
+    for name in ("stdout.log", "stderr.log"):
+        _external_file(directory, name, "mandatory evaluator stream")
     observed, _ = _candidate(directory, plan, source_root)
     if observed.canonical_sha256 != candidate.canonical_sha256:
         raise ValueError("measured artifact differs from the sealed compile artifact")
     result = _read(_external_file(directory, "result.json", "Evaluation result"))
-    if result["schema_version"] != 1 or result["job_id"] != job_id or result["mode"] != "exclusive" or result["admitted"] is not True or result["error"] is not None or result["failure_class"] is not None:
+    if type(result["schema_version"]) is not int or result["schema_version"] != 1 or result["job_id"] != job_id or result["mode"] != "exclusive" or result["admitted"] is not True or result["error"] is not None or result["failure_class"] is not None:
         raise ValueError("common evaluator admission or completion differs")
     receipt = result["receipt"]
     if receipt["correctness_passed"] is not True:
@@ -324,9 +368,9 @@ def _baseline_quality(rows, limits):
 
 
 def _measure(run, stage, plan, executor, compiled, task):
-    principal = _broker_principal()
-    _write(stage / "execution-context.json", principal)
     deadline = time.monotonic() + task["stages"][1]["resources"]["run_timeout_s"] - 2
+    principal = _node_admission(run, task, _broker_principal(), deadline)
+    _write(stage / "execution-context.json", principal)
     rows = []
     for spec in plan["observations"]:
         candidate, _ = compiled[spec["candidate_id"]]
@@ -339,8 +383,10 @@ def _measure(run, stage, plan, executor, compiled, task):
         remaining = int(deadline - time.monotonic())
         if remaining <= 0:
             raise TimeoutError("collection task deadline exhausted before next observation")
+        environment = sanitized_environment()
+        environment["GPUQ_JOB_ID"] = principal["job_id"]
         with (directory / "stdout.log").open("xb") as stdout, (directory / "stderr.log").open("xb") as stderr:
-            completed = subprocess.run(command, cwd=ROOT, timeout=remaining, env=sanitized_environment(),
+            completed = subprocess.run(command, cwd=ROOT, timeout=remaining, env=environment,
                                        stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, check=False)
         if completed.returncode != 0:
             raise ValueError("common evaluator subprocess failed")
@@ -475,6 +521,9 @@ def fit(run, output):
         _equal(_read(_external_file(stage, "plan.json", "collection plan")), plan, "collection plan")
         principal = _read(_external_file(stage, "execution-context.json", "broker principal"))
         _principal(principal, receipts["collection"]["broker_job_id"], result["run_id"])
+        _equal(principal["node_admission"], {"schema": "kernelinfra.state.v1", "run_id": result["run_id"], "task_id": result["task_id"], "task_sha256": result["task_sha256"], "candidate_sha256": result["candidate_sha256"], "state": "running", "stage_id": "collection", "stage_kind": "judge", "stage_index": 1, "broker_job_id": receipts["collection"]["broker_job_id"], "gpu_ids": receipts["collection"]["gpu_ids"]}, "retained node admission")
+        if principal["exported_job_id"] is not None and principal["exported_job_id"] != principal["job_id"]:
+            raise ValueError("retained exported broker job differs from node admission")
         if principal["visible_device"] != str(receipts["collection"]["gpu_ids"][0]):
             raise ValueError("controller-visible GPU differs from the broker allocation")
         rows = []
