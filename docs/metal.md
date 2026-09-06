@@ -1,19 +1,19 @@
-# Authoring for Apple Metal
+# Authoring and measuring Apple Metal programs
 
-Write a Python Schedule with the existing tensor frontend, assess it, then inspect the
-generated Metal source. The first target is `apple_gpu_family8` on the exact device
-`Apple M2`; another Apple GPU is not an implicit fallback.
+Write a Python Schedule, read localized compiler findings, and inspect the emitted Metal
+before testing it. The exact supported target is `apple_gpu_family8` on `Apple M2`.
+Python and JSON use the same canonical Schedule; another GPU is never an implicit fallback.
 
-The [elementwise example](../examples/python/metal_elementwise.py) computes
-`(x + y) * 2` on `(3, 37)` tensors. The [row-sum example](../examples/python/metal_row_sum.py)
-reduces `(5, 65)` to `(5,)`. Both use normal Python tensor expressions and the same
-canonical Schedule as JSON authoring. No hand-written Metal is needed.
+The [elementwise example](../examples/python/metal_elementwise.py),
+[row reduction](../examples/python/metal_row_sum.py), and
+[weighted RMSNorm](../examples/python/metal_rmsnorm.py) use the existing tensor frontend.
+RMSNorm composes square, sum, scalar arithmetic, rsqrt and multiplication:
 
 ```python
 from open_cake_ir.compiler import Compiler, frontend
 
 compiler = Compiler.load(".", "compiler/revision.lock.json")
-source = frontend.read_schedule("examples/python/metal_row_sum.py")
+source = frontend.read_schedule("examples/python/metal_rmsnorm.py")
 assessment = compiler.assess(source.document)
 for finding in assessment.findings:
     print(finding.code, finding.path, finding.message)
@@ -24,62 +24,94 @@ if assessment.lowering_eligible:
     print(dict(lowered.toolchain_requirements))
 ```
 
-An agent follows the same loop: change the Python expression or a concrete scheduling
-decision, read localized Findings, fix the relevant declaration, and inspect lowering
-before requesting an on-device check. Assessment is a static result; it does not establish
-GPU correctness or speed. Unsupported commitments are refused instead of silently erased.
+An agent changes a formula or concrete scheduling decision, reads the returned findings,
+fixes the relevant declaration, and inspects the next lowering. Source maps connect emitted
+operations to the Schedule. Static acceptance, compilation, output correctness and a
+qualified measurement remain distinct results.
 
-## Current execution boundary
+## Execution and numerical scope
 
-This is a correctness prototype with **one active lane per program tile**. A threadgroup
-has 32 threads; lane 0 walks the private FP32 values and performs reductions in increasing
-index order. It is not an optimized SIMD reduction. The emitter admits composable
-FP32 arithmetic and finite sum/max reductions within its modeled subset, subject to
-private-storage and buffer-count limits. The examples use one row per program tile,
-`coalesced=False` stores, and `across_loop=False` reductions. Odd row lengths are supported
-without caller-provided padding. Wider program tiles, loop-carried reductions, shared
-collectives, tensor operations and unsupported memory/access commitments are refused.
+Current lowering assigns each flattened value to lane `index % 32` and private slot
+`index // 32`. All 32 lanes participate in supported SIMD collectives, including tails;
+program coordinates retain ownership of separate output regions. Scalar `(1,)` results can
+feed tensor arithmetic. Odd widths need no caller padding. The compiler checks supported
+access, shape, storage, broadcast and reduction declarations; unsupported commitments
+produce localized refusals. Per-lane storage analysis is a modeled view, not a measurement
+of physical registers, spills, residency or bandwidth.
 
-The generic [Swift adapter](../tools/metal/runner.swift) consumes buffer order and launch
-metadata from lowering; the [Python boundary](../tools/metal/adapter.py) derives dtype,
-shape and byte sizes from the assessed Schedule. It checks exact device/family and pipeline
-limits, compiles with `MTLDevice.makeLibrary`, initializes outputs to NaN, waits for command
-completion and preserves input/output bytes. It requires macOS 15+, Apple Silicon and an
-existing `xcrun swiftc`. A standalone `xcrun metal` executable is not required.
+The [generic Swift runner](../tools/metal/runner.swift) accepts the current SIMD launch
+metadata and the explicit serial reference/replay seam. It derives no behavior from an
+operator name. The [Python boundary](../tools/metal/adapter.py) projects buffer shape, dtype,
+size and launch information from the assessed Schedule. The runner verifies exact device
+and pipeline limits, reuses device/queue/pipelines/buffers, poisons outputs outside timing,
+uses serial dispatch ordering, and checks command completion and input immutability.
 
-Compilation explicitly selects MSL 2.3, safe math and precise math functions; generated
-source disables contraction. Metal still permits behavior such as denormal flushing and
-different FP32 rounding modes. The current oracle covers finite normal-range inputs and
-zeros with explicit tolerances, not IEEE/PTX bit equivalence. See Apple's
-[compile options](https://developer.apple.com/documentation/metal/mtlcompileoptions) and
-[MSL specification, sections 1.6.3 and 8](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf).
+Runtime source compilation uses `MTLDevice.makeLibrary`, MSL 2.3, safe math, precise math
+functions and contraction disabled in source. An existing `xcrun swiftc`, Apple Silicon
+and macOS 15+ are required; standalone `xcrun metal` is unnecessary. This does not establish
+IEEE/PTX bit equivalence: Metal permits denormal flushing and different FP32 rounding
+behavior. See Apple's [compile options](https://developer.apple.com/documentation/metal/mtlcompileoptions)
+and [MSL specification](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf).
 
-## Correctness evidence
+## Correctness and measurement
 
-After the applicable release gates pass and local GPU execution is authorized, run from
-the checkout with an absolute output directory outside every project worktree:
+After independent release review and the applicable local GPU authorization, run from the
+checkout with absolute output roots outside every project worktree:
 
 ```sh
 env PYTHONPATH=src python3 tools/metal/check_correctness.py \
-  --output-root /absolute/external/metal-checks
+  --output-root /absolute/external/metal-correctness
+env PYTHONPATH=src python3 tools/metal/benchmark.py \
+  --output-root /absolute/external/metal-measurements
 ```
 
-Each invocation creates a fresh receipt directory. The harness verifies the reviewed
-released Compiler, records the committed and clean runtime source identity, uses public
-`assess`/`lower`, and checks 60 combinations: elementwise, row sum, and a row-max variant
-of the same Python reduction template; five shapes (including row lengths 1, 7, 32, 65
-and 257); and four deterministic
-input distributions. The external CPU oracle checks output lengths, finite values and
-numerical error, while byte comparisons check input immutability. A failure exits nonzero
-and retains the receipt. Static findings, compilation/completion and output correctness
-remain separate fields. These checks establish only the listed local output cases;
-no timing, profiler, framework integration or end-to-end performance result is implied.
+Each command verifies a reviewed released Compiler and committed, clean runtime sources,
+then creates a fresh external receipt. Correctness retains the 60 elementwise/sum/max cases
+and adds 35 RMSNorm cases. The [RMSNorm contract](../tools/metal/rmsnorm.py) owns the equation,
+input ranges, seeds, epsilon, tolerances and shapes. It includes zeros, normal bounded inputs,
+epsilon-dominated inputs, negative/zero weights, and widths 1, 7, 32, 65, 257, 1024 and 4096.
+The independent high-precision CPU oracle uses fixed `atol=rtol=2e-5` for RMSNorm.
 
-Portable host tests dispatch no GPU work:
+The [benchmark protocol](../tools/metal/benchmark.py) compares three equivalent RMSNorm
+formula DAGs on the fixed primary `(128, 1024)` shape. Handwritten serial and SIMD references
+have explicit source provenance and the same input bytes and oracle. They are not forged
+Compiler-generated artifacts or a previous-Compiler RMSNorm result: the older serial
+Compiler could not lower rsqrt. This is known-kernel reproduction/optimization.
+
+One process constructs every treatment before comparison. A reference-only pilot chooses
+a fixed batch count from bounded powers; randomized matched sweeps then perform one search
+round and two independent confirmation rounds for the selected candidate. An independent
+identical-reference slot supplies the A/A noise control through the same binding/dispatch
+path. Buffers stay warm; there is no cache flush or inherited NVIDIA CUPTI protocol.
+
+Receipts keep these intervals separate:
+
+| Field | Actual interval |
+| --- | --- |
+| Cold construction | Swift host build; device/queue creation; host preparation and library/pipeline construction, with possible system caches |
+| Warmed host call | Encode, submit and wait for completion; excludes poison, oracle checks and file I/O |
+| GPU command buffer | `GPUEndTime - GPUStartTime` after command completion |
+| Amortized dispatch | Command-buffer interval divided by the recorded dispatch count; not pure kernel latency |
+
+The predeclared engineering rule requires A/A paired median ratio in `[0.95, 1.05]`,
+relative IQR at most 10% in each relevant arm, and a gain exceeding 5% in search and both
+confirmations. Otherwise the result is inconclusive or has no material gain. Raw samples,
+orders, warmups and batch counts are retained without trimming; invalid timers, execution
+or correctness fail with a nonzero exit. See Apple's [GPU command-buffer timestamps](https://developer.apple.com/documentation/metal/mtlcommandbuffer/gpustarttime).
+
+After ordinary timing, a separate instrumented observation requests compute-stage
+`GPUTimestamp` samples when supported. It records actual capability enumeration, resolved
+raw values and absence/failure reasons. Counter values are not converted to host time or
+called kernel cycles. Occupancy, bandwidth and instruction counters are not inferred.
+See Apple's [counter sampling](https://developer.apple.com/documentation/metal/sampling-gpu-data-into-counter-sample-buffers).
+
+`feedback.json` gives candidate disposition, localized findings, search/confirmation
+results and rejection ownership through the existing Lab routing vocabulary. There is no
+calibrated Apple ranker or inferred ranking inversion. This local evaluation is not a
+qualified Study/provider campaign, framework integration, serving or end-to-end result.
+Portable tests dispatch no GPU work:
 
 ```sh
-env PYTHONPATH=src python3 -m unittest tests.contracts.test_metal_runtime
+env PYTHONPATH=src python3 -m unittest \
+  tests.contracts.test_metal_runtime tests.contracts.test_metal_benchmark
 ```
-
-There is no calibrated Apple timing model in this slice. Inspect any emitted coverage
-limitations rather than interpreting missing estimates as free resources.

@@ -1,4 +1,4 @@
-"""FP32 row tiles; one active Metal lane evaluates (x + y) * 2."""
+"""FP32 row tiles; SIMD lanes evaluate (x + y) * 2 including odd tails."""
 from open_cake_ir.compiler import frontend as cake
 
 

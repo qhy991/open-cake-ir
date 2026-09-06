@@ -79,6 +79,14 @@ class MetalRuntimeContracts(unittest.TestCase):
             self.project(lowering=replace(self.lowering, schedule_sha256="different-assessment"))
         self.assertEqual(list(self.directory.iterdir()), [])
 
+    def test_simd_launch_uses_the_same_buffer_projection_as_serial(self):
+        lowering = replace(self.lowering, toolchain_requirements={**self.lowering.toolchain_requirements,
+                            "execution_model": "simd_program_tile", "active_threads_per_threadgroup": 32})
+        result = self.project(lowering=lowering)
+        self.assertEqual(result["execution_model"], "simd_program_tile")
+        self.assertEqual(result["threads_per_threadgroup"], [32, 1, 1])
+        self.assertEqual(result["buffers"][-1]["shape"], [3, 37])
+
     def test_input_count_byte_length_and_finiteness_fail_closed(self):
         for inputs in ({"x": self.inputs["x"]}, {**self.inputs, "x": b""},
                        {**self.inputs, "x": struct.pack("<f", float("nan")) * 111},

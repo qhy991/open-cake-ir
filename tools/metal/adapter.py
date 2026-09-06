@@ -42,20 +42,41 @@ def manifest(assessment: Assessment, lowering: Lowering, inputs: Mapping[str, by
     _require(schedule.target == lowering.target == "apple_gpu_family8" and
              schedule.lowering.backend.value == "metal", "exact Metal target required")
     _require(lowering.generated, "Metal requires generated source")
+    result = _project(schedule, lowering.source, dict(lowering.toolchain_requirements), inputs,
+                      directory, device_names=device_names)
+    (directory / "origin.json").write_text(json.dumps({"kind": "compiler_generated",
+        "compiler_revision_id": lowering.compiler_revision_id, "schedule_id": lowering.schedule_id}) + "\n")
+    return result
+
+
+def reference_manifest(schedule: Schedule, source: str, toolchain: dict, inputs: Mapping[str, bytes],
+                       directory: Path, *, device_names: list[str], provenance: dict) -> dict:
+    """Explicit reference boundary; never fabricates a Compiler Assessment or Lowering."""
+    _require(provenance.get("kind") == "handwritten_reference" and provenance.get("source_path"),
+             "reference source requires explicit handwritten provenance")
+    result = _project(schedule, source, toolchain, inputs, directory, device_names=device_names)
+    (directory / "origin.json").write_text(json.dumps(provenance) + "\n")
+    return result
+
+
+def _project(schedule: Schedule, source: str, tc: dict, inputs: Mapping[str, bytes],
+             directory: Path, *, device_names: list[str]) -> dict:
     _require(isinstance(device_names, list) and device_names and
              all(isinstance(n, str) and n for n in device_names),
              "revision-bound exact device names are required")
-    tc = dict(lowering.toolchain_requirements)
     expected = {"target": schedule.target, "source_language": "metal",
                 "compiler": "MTLDevice.makeLibrary", "language_standard": "metal2.3",
-                "fast_math_enabled": False, "threadgroup_memory_bytes": 0,
-                "execution_model": "serial_program_tile", "active_threads_per_threadgroup": 1}
+                "fast_math_enabled": False, "threadgroup_memory_bytes": 0}
     _require(set(tc) == set(expected) | {"buffer_order", "threads_per_threadgroup",
-                                       "threadgroups_per_grid"},
+                                       "threadgroups_per_grid", "execution_model", "active_threads_per_threadgroup"},
              "unsupported or missing Metal toolchain commitment")
     for name, value in expected.items():
         _require(type(tc[name]) is type(value) and tc[name] == value,
                  f"unsupported Metal {name}")
+    _require(type(tc["active_threads_per_threadgroup"]) is int and
+             (tc["execution_model"], tc["active_threads_per_threadgroup"]) in
+             {("serial_program_tile", 1), ("simd_program_tile", 32)},
+             "unsupported Metal execution model/active-lane commitment")
     grid = _size(tc["threadgroups_per_grid"], "threadgroups_per_grid")
     threads = _size(tc["threads_per_threadgroup"], "threads_per_threadgroup")
     _require(threads == [32, 1, 1] and len(schedule.roles) == 1 and
@@ -102,7 +123,7 @@ def manifest(assessment: Assessment, lowering: Lowering, inputs: Mapping[str, by
     result = {**tc, "entry_point": schedule.lowering.entry_point,
               "device_names": device_names, "source_path": str(directory / "kernel.metal"),
               "buffers": records}
-    (directory / "kernel.metal").write_text(lowering.source, encoding="utf-8")
+    (directory / "kernel.metal").write_text(source, encoding="utf-8")
     for buffer, record in zip(buffers, records):
         if record["input_path"] is not None:
             Path(record["input_path"]).write_bytes(inputs[buffer.name])
