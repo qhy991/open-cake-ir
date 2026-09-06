@@ -1,0 +1,404 @@
+"""Synthetic CPU protocol fixtures only: no GPU, real broker or measured timings.
+
+The prospective Compiler/Executor exist only in temporary directories. Existing
+release helpers build their source bindings; dummy host metadata is never admitted.
+Only target compilation, broker observation and evaluator process execution are
+replaced. The complete collector/fitter and common model/ordering owners execute.
+"""
+from __future__ import annotations
+
+import contextlib
+import copy
+import io
+import json
+import os
+import signal
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from dataclasses import replace
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tools"))
+import calibrate_flash_cost as instrument
+import evaluate_flash_candidate as common
+import release_executor
+from open_cake_ir.compiler import Compiler, EmpiricalCostModel
+from open_cake_ir.compiler.release import build_gate_report, build_release
+from open_cake_ir.compiler.toolchain import TritonCompilation
+from open_cake_ir.evaluation import WorkloadContract
+from open_cake_ir.lab import environments
+from open_cake_ir.lab.executor import ExecutorRevision
+from open_cake_ir.lab.portfolio import ExactShape, KernelSeed
+
+
+def write(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value))
+
+
+class FlashCalibrationTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory(prefix="SYNTHETIC-flash-contract-")
+        cls.addClassCleanup(cls.temporary.cleanup)
+        cls.root = Path(cls.temporary.name).resolve()
+        cls.project = cls.root / "synthetic-source"
+        cls.project.mkdir()
+        paths = set(json.loads((ROOT / "compiler/source_set.json").read_text())["paths"])
+        paths.update(p.relative_to(ROOT).as_posix() for p in release_executor._source_paths(ROOT))
+        paths.update({"compiler/revision.json", "compiler/source_set.json", "corpus/manifest.json", "tools/calibrate_flash_cost.py", "contracts/workloads/flash-kmeans-assign-v2.json", "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"})
+        for relative in paths:
+            destination = cls.project / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / relative, destination)
+        proposal = json.loads((cls.project / "compiler/revision.json").read_text())
+        proposal["revision_id"] = "SYNTHETIC-flash-collector-draft"
+        write(cls.project / "compiler/revision.json", proposal)
+        gate = build_gate_report(cls.project, cls.project / "compiler/revision.json", cls.project / "compiler/source_set.json")
+        write(cls.project / "compiler/corpus-gate-report.json", gate.document)
+        write(cls.project / "compiler/release-approval.json", {"schema_version": 2, "decision": "approved", "gate_report": {"path": "compiler/corpus-gate-report.json", "canonical_sha256": gate.canonical_sha256}, "reviewer": {"kind": "agent_session", "model": "gpt-6-astra", "session_id": "SYNTHETIC-review-fixture", "author_session_id": "SYNTHETIC-author-fixture"}, "approval_basis": "Synthetic contract fixture only; not an independent production review or release."})
+        release = build_release(cls.project, cls.project / "compiler/revision.json", cls.project / "compiler/source_set.json", cls.project / "compiler/corpus-gate-report.json", cls.project / "compiler/release-approval.json")
+        write(cls.project / "compiler/revision.lock.json", release.document)
+        cls.compiler_ref = {"path": "compiler/revision.lock.json", "revision_id": release.document["revision_id"], "canonical_sha256": release.canonical_sha256}
+        host = {"python": {"invocation_path": "/SYNTHETIC/not-an-executable/python", "version": "SYNTHETIC", "resolved_sha256": "0" * 64}, "packages": {"triton": "SYNTHETIC"}, "cupti_python": {"site_packages_path": "/SYNTHETIC/no-runtime", "distribution": "SYNTHETIC", "version": "SYNTHETIC", "files": [{"path": "not-a-runtime", "sha256": "0" * 64, "size_bytes": 1}]}, "flashinfer_helper": {"path": "/SYNTHETIC/not-a-helper", "distribution": "SYNTHETIC", "version": "SYNTHETIC", "sha256": "0" * 64, "size_bytes": 1}}
+        executor_proposal = cls.project / "runtime/executor-proposal.json"
+        write(executor_proposal, {"schema_version": 1, "executor_id": "SYNTHETIC-flash-executor", "state": "draft", "sources": [], "host_environment": host})
+        executor_path = cls.project / "runtime/executors/SYNTHETIC.json"
+        executor_path.parent.mkdir(parents=True)
+        # Prospective closure extension belongs to integration in production.
+        # This temporary fixture uses the actual source-binding release helper.
+        with patch.object(release_executor, "_SOURCE_FILES", (*release_executor._SOURCE_FILES, "tools/calibrate_flash_cost.py")), patch.object(sys, "argv", ["release_executor", "--project-root", str(cls.project), "--proposal", str(executor_proposal), "--output", str(executor_path)]), contextlib.redirect_stdout(io.StringIO()):
+            if release_executor.main() != 0:
+                raise AssertionError("prospective synthetic Executor construction failed")
+        cls.executor = ExecutorRevision.load(cls.project, executor_path)
+        cls.workload = WorkloadContract.load(cls.project / "contracts/workloads/flash-kmeans-assign-v2.json")
+        cls.seed = KernelSeed.load(cls.project, cls.project / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json")
+
+    def setUp(self):
+        self.local = tempfile.TemporaryDirectory(prefix="run-", dir=self.root)
+        self.addCleanup(self.local.cleanup)
+        self.directory = Path(self.local.name)
+        self.addCleanup(patch.stopall)
+        patch.object(instrument, "ROOT", self.project).start()
+        self.calls = []
+
+    def plan(self):
+        pool = [{"id": name, "schedule": f"schedules/{name}.json"} for name in ("n128-k64-w4", "n256-k64-w4", "n256-k128-w8", "n128-k128-w8")]
+        return {"schema_version": 1, "plan_id": "SYNTHETIC-not-a-GPU-plan", "state": "frozen", "source_commit": "1" * 40, "model_id": "SYNTHETIC-no-performance-evidence", "compiler_revision": self.compiler_ref, "executor_revision": dict(self.executor.reference), "workload": {"path": "contracts/workloads/flash-kmeans-assign-v2.json", "workload_id": self.workload.workload_id, "canonical_sha256": self.workload.canonical_sha256}, "case_id": "b32_smoke", "target": "sm_100a", "pool": pool, "baseline": pool[2]["id"], "observations": instrument.observation_order(pool, pool[2]["id"]), "acceptance": {"maximum_cohort_cv": .05, "maximum_within_observation_median_ratio": 1.05, "maximum_baseline_drift_ratio": 1.05, "maximum_mape": .10, "maximum_relative_error": .20, "top_k": 2, "maximum_top_k_regret_ratio": 1.05}}
+
+    def _synthetic_compilation(self, source, requirements):
+        payloads = {role: f"SYNTHETIC NON-EXECUTABLE {role}".encode() for role in ("source", "ttir", "ttgir", "llir", "ptx", "cubin")}
+        payloads["source"] = source + b"\n# SYNTHETIC compiler expansion, not executable evidence\n"
+        payloads["cubin"] = b"\x7fELF SYNTHETIC NON-EXECUTABLE " + repr(requirements).encode()
+        return TritonCompilation(source, "sm_100a", requirements["kernel_entry_point"], payloads, requirements["compile_options"]["num_warps"] * 32, 0, "SYNTHETIC")
+
+    def _fake_evaluator(self, command, **kwargs):
+        self.calls.append(command)
+        self.assertEqual(command[:2], [self.executor.document["host_environment"]["python"]["invocation_path"], str(self.project / "tools/evaluate_flash_candidate.py")])
+        self.assertEqual(command[2], "--request")
+        self.assertEqual(command[4], "--output")
+        self.assertEqual(kwargs["cwd"], self.project)
+        self.assertEqual(kwargs["env"]["GPUQ_JOB_ID"], "gpuq-SYNTHETIC-NO-REAL-JOB")
+        self.assertNotIn("OPENAI_API_KEY", kwargs["env"])
+        self.assertNotIn("start_new_session", kwargs)
+        directory = Path(command[3]).parent
+        request = json.loads(Path(command[3]).read_text())
+        _candidate, manifest = instrument._candidate(directory, self.active_plan, self.project)
+        self.assertEqual(manifest.hidden_null_pointer_parameters, 2)
+        spec = next(r for r in self.active_plan["observations"] if r["id"] == directory.name)
+        index = [p["id"] for p in self.active_plan["pool"]].index(spec["candidate_id"])
+        median = self.sample(spec, index)
+        values = [[median] * 25 for _ in range(5)]
+        metrics = {"SYNTHETIC_CPU_FIXTURE_NOT_ORACLE_EVIDENCE": True}
+        result = common._base_result("gpuq-SYNTHETIC-NO-REAL-JOB")
+        result.update(admitted=True)
+        result["counters"].update(module_loads=1, preflight_calls=1, kernel_calls=181, timing_samples=125)
+        result["receipt"] = {"correctness_passed": True, "correctness": metrics, "kernel_calls": 1, "fallback_calls": 0, "timing": {"measurement_quality_passed": True, "pooled_median_ms": median, "cohort_count": 5, "samples_per_cohort": 25}, "artifacts": {"correctness_output": "correctness-output.json", "launch_receipt": "launch-receipt.json", "timing_samples": "timing-samples.json"}}
+        write(directory / "correctness-output.json", {"metrics": metrics, "output_sha256": "0" * 64, "output_size_bytes": 65536})
+        write(directory / "launch-receipt.json", {"job_id": result["job_id"], "gpu_uuid": "GPU-SYNTHETIC-NO-DEVICE", "candidate_sha256": request["candidate_sha256"], "correctness_launches": 1, "fallback_calls": 0})
+        write(directory / "timing-samples.json", {"cohorts_ms": values})
+        if self.reject == directory.name:
+            result["receipt"]["correctness_passed"] = False
+        write(Path(command[5]), result)
+        kwargs["stdout"].write(b"SYNTHETIC evaluator stdout")
+        kwargs["stderr"].write(b"SYNTHETIC evaluator stderr")
+        return subprocess.CompletedProcess(command, 0)
+
+    def fixture(self, *, sample=None, reject=None):
+        self.active_plan = plan = self.plan()
+        self.sample = sample or (lambda spec, index: (.010 + index * .003) * (1.01 if spec["split"] == "calibration" else 1))
+        self.reject = reject
+        run = self.directory / "run"
+        candidate = run / "candidate"
+        write(candidate / "plan.json", plan)
+        for spec, choices in zip(plan["pool"], ((128, 64, 4), (256, 64, 4), (256, 128, 8), (128, 128, 8))):
+            bn, bk, warps = choices
+            seed = replace(self.seed, block_n=bn, block_k=bk, num_warps=warps, num_stages=3)
+            schedule = seed.schedule_for(plan["case_id"], ExactShape.from_mapping(self.workload.case(plan["case_id"])["shape"]))
+            schedule["schedule_id"] = spec["id"]
+            # The historical seed's base metadata predates Workload v2. Bind only
+            # this new derived Schedule; never edit or relabel the frozen seed.
+            schedule["metadata"]["workload_contract_sha256"] = self.workload.canonical_sha256
+            write(candidate / spec["schedule"], schedule)
+        judge = {"identity": f"{self.executor.executor_id}@{self.executor.canonical_sha256}", "cwd": str(self.project), "command": [self.executor.document["host_environment"]["python"]["invocation_path"], str(self.project / "tools/calibrate_flash_cost.py"), "collect"]}
+        task = {"schema": "kernelinfra.task.v1", "task_id": "SYNTHETIC-no-GPU-task", "workloads": [self.workload.workload_id], "comparison": {"primary_workloads": [self.workload.workload_id], "relative_noise_floor": .05}, "stages": [{"id": "compile", "kind": "compile", "execution": "local", "judge": judge}, {"id": "collection", "kind": "judge", "resources": {"mode": "exclusive", "gpu_count": 1, "run_timeout_s": 3600}, "judge": judge}]}
+        write(run / "task.json", task)
+        principal = {"pid": 200, "parent_pid": 100, "uid": 321, "gid": 654, "broker_peer": [100, 321, 654], "broker_socket": "/SYNTHETIC/no-broker.sock", "job_id": "gpuq-SYNTHETIC-NO-REAL-JOB", "visible_device": "7", "run_id": "SYNTHETIC-NOT-A-GPU-RUN"}
+        stage_summaries = []
+        for spec in task["stages"]:
+            stage = run / "stages" / spec["id"]
+            stage.mkdir(parents=True)
+            env = {"KERNELINFRA_RUN_DIR": str(run), "KERNELINFRA_CANDIDATE_DIR": str(candidate), "KERNELINFRA_TASK": str(run / "task.json"), "KERNELINFRA_STAGE_DIR": str(stage), "KERNELINFRA_STAGE_ID": spec["id"], "KERNELINFRA_STAGE_KIND": spec["kind"], "KERNELINFRA_RESULT": str(stage / "result.json"), "KERNELINFRA_RUN_ID": principal["run_id"], "OPENAI_API_KEY": "SYNTHETIC-SECRET-MUST-NOT-REACH-CHILD"}
+            if spec["kind"] == "judge":
+                env.update(GPUQ_JOB_ID=principal["job_id"], CUDA_VISIBLE_DEVICES=principal["visible_device"])
+            with patch.dict(os.environ, env, clear=True), patch.object(ExecutorRevision, "admit_host", return_value=object()), patch.object(environments, "compile_triton", side_effect=self._synthetic_compilation), patch.object(instrument, "_broker_principal", return_value=principal), patch.object(instrument.subprocess, "run", side_effect=self._fake_evaluator):
+                code = instrument.collect()
+            result = instrument._read(stage / "result.json")
+            write(stage / "receipt.json", {"schema": "kernelinfra.stage-receipt.v1", "run_id": principal["run_id"], "stage_id": spec["id"], "stage_kind": spec["kind"], "execution": spec.get("execution", "broker"), "judge_identity": judge["identity"], "exit_code": code, "judge_result_valid": True, "error": None, "broker_job_id": principal["job_id"] if spec["kind"] == "judge" else None, "gpu_ids": [7] if spec["kind"] == "judge" else []})
+            stage_summaries.append({"id": spec["id"], "kind": spec["kind"], "status": result["status"], "validity": result["validity"]})
+            if code:
+                break
+        completed = len(stage_summaries) == 2 and all(r["status"] == "passed" for r in stage_summaries)
+        write(run / "result.json", {"schema": "kernelinfra.run-result.v1", "run_id": principal["run_id"], "task_id": task["task_id"], "outcome": "completed" if completed else "infra_error", "validity": "valid" if completed else "unknown", "frontier_eligible": False, "stages": stage_summaries})
+        return run
+
+    def fit(self, run, name="fit-output"):
+        output = self.directory / name
+        code = instrument.fit(run, output)
+        return code, output, instrument._read(output / "audit.json")
+
+    def test_complete_cpu_orchestration_and_fitter_use_exact_common_owners(self):
+        run = self.fixture()
+        self.assertEqual(len(self.calls), 17, instrument._read(run / "stages/collection/result.json"))
+        code, output, audit = self.fit(run)
+        self.assertEqual(code, 0, audit)
+        document = instrument._read(output / "model.json")
+        self.assertEqual(len(document["curves"]), 4)
+        self.assertTrue(all(len(c["points"]) == 1 and c["points"][0]["extent"] == 512 for c in document["curves"]))
+        self.assertEqual(audit["validation"]["audit"]["selected_ids"], [p["id"] for p in self.active_plan["pool"][:2]])
+        self.assertEqual(audit["validation"]["audit"]["metrics"]["top_k_regret_ratio"], 1)
+        self.assertEqual(audit["validation"]["audit"]["metrics"]["descriptive_range_coverage_fraction"], 1)
+        self.assertEqual(document["context"], instrument._empirical_context(self.executor, workload_sha256=self.workload.canonical_sha256, case_id="b32_smoke"))
+        model = EmpiricalCostModel(document)
+        schedule = copy.deepcopy(document["curves"][0]["template"])
+        for buffer in schedule["buffers"]:
+            if buffer["name"] in {"tokens", "assignments"}:
+                buffer["shape"][1] += 128
+        prediction = model.estimate(schedule, compiler_revision_id=self.compiler_ref["revision_id"], compiler_revision_sha256=self.compiler_ref["canonical_sha256"], target="sm_100a")
+        self.assertFalse(prediction["covered"])
+        judge = instrument._read(run / "stages/collection/result.json")
+        self.assertFalse(any("candidate_ms" in row or "baseline_ms" in row for row in judge["workloads"]))
+
+    def test_oracle_failure_stops_collection_and_retains_failed_observation(self):
+        run = self.fixture(reject="aa-02")
+        self.assertEqual(len(self.calls), 2)
+        result = instrument._read(run / "stages/collection/result.json")
+        self.assertEqual((result["status"], result["validity"]), ("failed", "invalid"))
+        self.assertTrue((run / "stages/collection/aa-02/stdout.log").is_file())
+        code, output, audit = self.fit(run)
+        self.assertEqual(code, 1)
+        self.assertFalse((output / "model.json").exists())
+
+    def test_historical_seed_metadata_requires_new_derived_workload_binding(self):
+        run = self.fixture()
+        plan = self.active_plan
+        first = run / "candidate" / plan["pool"][0]["schedule"]
+        schedule = instrument._read(first)
+        original = self.seed.schedule_for(plan["case_id"], ExactShape.from_mapping(self.workload.case(plan["case_id"])["shape"]))
+        schedule["metadata"]["workload_contract_sha256"] = original["metadata"]["workload_contract_sha256"]
+        self.assertNotEqual(schedule["metadata"]["workload_contract_sha256"], self.workload.canonical_sha256)
+        write(first, schedule)
+        stage = self.directory / "refused-prospective-build"
+        stage.mkdir()
+        compiler = Compiler.load(self.project, self.project / self.compiler_ref["path"])
+        with patch.dict(os.environ, {}, clear=True), patch.object(ExecutorRevision, "admit_host", return_value=object()), patch.object(environments, "compile_triton", side_effect=self._synthetic_compilation), self.assertRaisesRegex(ValueError, "Schedule Workload binding differs"):
+            instrument._compile(run / "candidate", stage, plan, compiler, self.executor, self.workload)
+        self.assertFalse((stage / "build.json").exists())
+
+    def test_aa_drift_stops_before_pool_measurement(self):
+        run = self.fixture(sample=lambda spec, index: .02 if spec["id"] == "aa-04" else .01)
+        self.assertEqual(len(self.calls), 4)
+        self.assertIn("A/A", instrument._read(run / "stages/collection/result.json")["summary"])
+        self.assertFalse((run / "stages/collection/fit-n128-k64-w4").exists())
+
+    def test_final_anchor_drift_refuses_model(self):
+        run = self.fixture(sample=lambda spec, index: .02 if spec["split"] == "anchor" else .01)
+        self.assertEqual(len(self.calls), 17)
+        self.assertIn("anchor", instrument._read(run / "stages/collection/result.json")["summary"])
+        code, output, _ = self.fit(run)
+        self.assertEqual(code, 1)
+        self.assertFalse((output / "model.json").exists())
+
+    def test_audit_changes_neither_fitted_point_nor_calibration_envelope(self):
+        run = self.fixture(sample=lambda spec, index: (.01 + index * .003) * (1.01 if spec["split"] == "calibration" else 1.08 if spec["split"] == "audit" else 1))
+        code, output, audit = self.fit(run)
+        self.assertEqual(code, 0, audit)
+        model = instrument._read(output / "model.json")
+        self.assertAlmostEqual(model["curves"][0]["points"][0]["kernel_us"], 10)
+        self.assertAlmostEqual(model["curves"][0]["relative_error_envelope"], .01)
+        self.assertEqual(audit["validation"]["audit"]["metrics"]["descriptive_range_coverage_fraction"], 0)
+
+    def test_audit_point_error_refuses_model_without_adjusting_calibration(self):
+        run = self.fixture(sample=lambda spec, index: (.01 + index * .003) * (1.5 if spec["split"] == "audit" else 1))
+        code, output, audit = self.fit(run)
+        self.assertEqual(code, 1, audit)
+        self.assertTrue(audit["validation"]["calibration"]["passed"])
+        self.assertFalse(audit["validation"]["audit"]["passed"])
+        self.assertFalse((output / "model.json").exists())
+
+    def test_top_two_regret_uses_existing_stable_point_order(self):
+        def samples(spec, index):
+            return [.010, .0101, .0102, .0103][index] if spec["split"] != "audit" else [.0105, .0106, .0095, .0103][index]
+        run = self.fixture(sample=samples)
+        code, output, audit = self.fit(run)
+        self.assertEqual(code, 1, audit)
+        metrics = audit["validation"]["audit"]["metrics"]
+        self.assertLess(metrics["maximum_relative_error"], .20)
+        self.assertGreater(metrics["top_k_regret_ratio"], 1.05)
+        self.assertFalse((output / "model.json").exists())
+
+    def test_unknown_or_mismatched_node_receipt_cannot_emit_model(self):
+        run = self.fixture()
+        path = run / "stages/collection/receipt.json"
+        original = instrument._read(path)
+        for index, mutation in enumerate(({"judge_result_valid": False}, {"gpu_ids": [8]}, {"exit_code": 1}, {"execution": "local"}, {"broker_job_id": "gpuq-OTHER"}, {"judge_identity": "different-Executor"}, {"error": "lost observation"})):
+            write(path, {**original, **mutation})
+            with self.subTest(mutation=mutation):
+                code, output, audit = self.fit(run, f"refused-{index}")
+                self.assertEqual(code, 1, audit)
+                self.assertFalse((output / "model.json").exists())
+
+    def test_missing_corrupt_or_rebound_launch_artifacts_refuse_model(self):
+        run = self.fixture()
+        directory = run / "stages/collection/fit-n128-k64-w4"
+        cubin = directory / "candidate-cubin"
+        original = cubin.read_bytes()
+        cubin.unlink()
+        self.assertEqual(self.fit(run, "missing")[0], 1)
+        cubin.write_bytes(original + b"CORRUPT")
+        self.assertEqual(self.fit(run, "corrupt")[0], 1)
+        cubin.write_bytes(original)
+        request = instrument._read(directory / "request.json")
+        request["case_id"] = "headline_b32"
+        write(directory / "request.json", request)
+        self.assertEqual(self.fit(run, "rebound")[0], 1)
+
+    def test_raw_counts_types_quality_and_gpu_changes_are_rejected(self):
+        run = self.fixture()
+        directory = run / "stages/collection/fit-n128-k64-w4"
+        path = directory / "timing-samples.json"
+        original = instrument._read(path)
+        variants = [[], [[.01] * 24] * 5, [[True] * 25] * 5, [[float("nan")] * 25] * 5, [[-.01] * 25] * 5, [[.01] * 24 + [.02]] * 5, [[.01 * (1 + i * .1)] * 25 for i in range(5)]]
+        for i, cohorts in enumerate(variants):
+            write(path, {"cohorts_ms": cohorts})
+            with self.subTest(variant=i):
+                code, output, audit = self.fit(run, f"bad-raw-{i}")
+                self.assertEqual(code, 1, audit)
+                self.assertFalse((output / "model.json").exists())
+        write(path, original)
+        launch = instrument._read(directory / "launch-receipt.json")
+        write(directory / "launch-receipt.json", {**launch, "gpu_uuid": "GPU-SYNTHETIC-OTHER"})
+        self.assertEqual(self.fit(run, "other-gpu")[0], 1)
+
+    def test_plan_split_context_and_create_only_output_boundaries(self):
+        run = self.fixture()
+        code, output, audit = self.fit(run)
+        self.assertEqual(code, 0, audit)
+        before = (output / "model.json").read_bytes()
+        with self.assertRaises(FileExistsError):
+            instrument.fit(run, output)
+        self.assertEqual((output / "model.json").read_bytes(), before)
+        path = run / "candidate/plan.json"
+        plan = instrument._read(path)
+        plan["observations"][4]["split"] = "audit"
+        write(path, plan)
+        self.assertEqual(self.fit(run, "split-refusal")[0], 1)
+        write(path, self.active_plan)
+        build_path = run / "stages/compile/build.json"
+        build = instrument._read(build_path)
+        build["context"]["timer"] = "different timer"
+        write(build_path, build)
+        self.assertEqual(self.fit(run, "context-refusal")[0], 1)
+
+    def test_broker_identity_checks_observations_without_fixed_service_uid(self):
+        record = {"broker_peer": [100, 321, 654], "parent_pid": 100, "uid": 321, "gid": 654, "job_id": "gpuq-SYNTHETIC", "run_id": "SYNTHETIC-run", "visible_device": "SYNTHETIC-one-GPU"}
+        instrument._principal(record, record["job_id"], record["run_id"])
+        for mutation in ({"parent_pid": 99}, {"uid": 999}, {"gid": 987}, {"visible_device": "0,1"}, {"job_id": None}):
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                instrument._principal({**record, **mutation}, record["job_id"], record["run_id"])
+
+    @unittest.skipUnless(os.name == "posix", "broker process groups require POSIX")
+    def test_owned_cpu_evaluator_inherits_group_and_is_reaped_on_timeout_or_cancellation(self):
+        run = self.fixture()
+        cpu_root = self.directory / "owned-CPU-process-fixture"
+        evaluator = cpu_root / "tools/evaluate_flash_candidate.py"
+        evaluator.parent.mkdir(parents=True)
+        evaluator.write_text("""import json,os,time
+from pathlib import Path
+Path(os.environ['FLASH_CALIBRATION_CPU_PROBE']).write_text(json.dumps({'pid':os.getpid(),'pgid':os.getpgrp()}))
+print('owned CPU child; no CUDA or evaluation',flush=True)
+time.sleep(30)
+""")
+        controller_code = """import json,signal,sys,types,subprocess
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import calibrate_flash_cost as i
+source,run,cpu,stage,outcome=map(Path,sys.argv[2:7])
+plan=i._read(run/'candidate/plan.json')
+name=plan['baseline']
+candidate,_=i._candidate(run/'stages/compile'/name,plan,source)
+plan['observations']=plan['observations'][:1]
+i.ROOT=cpu
+i._broker_principal=lambda:{'CPU_TEST_ONLY':True,'job_id':'gpuq-SYNTHETIC'}
+executor=types.SimpleNamespace(document={'host_environment':{'python':{'invocation_path':sys.executable}}})
+task={'stages':[{}, {'resources':{'run_timeout_s':int(sys.argv[7])}}]}
+def stop(signum,frame):
+    raise SystemExit(128+signum)
+signal.signal(signal.SIGTERM,stop)
+try:
+    i._measure(run,stage,plan,executor,{name:(candidate,{})},task)
+except subprocess.TimeoutExpired:
+    outcome.write_text('timeout-reaped')
+except SystemExit:
+    outcome.write_text('group-cancelled')
+    raise
+"""
+        for cancel in (False, True):
+            with self.subTest(cancel=cancel):
+                stage = self.directory / f"owned-stage-{cancel}"
+                stage.mkdir()
+                probe = self.directory / f"owned-child-{cancel}.json"
+                outcome = self.directory / f"owned-outcome-{cancel}.txt"
+                command = [sys.executable, "-c", controller_code, str(ROOT / "tools"), str(self.project), str(run), str(cpu_root), str(stage), str(outcome), "30" if cancel else "4"]
+                environment = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(ROOT / "src"), "PYTHONDONTWRITEBYTECODE": "1", "FLASH_CALIBRATION_CPU_PROBE": str(probe)}
+                process = subprocess.Popen(command, env=environment, start_new_session=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                try:
+                    deadline = time.monotonic() + 5
+                    while not probe.exists() and process.poll() is None and time.monotonic() < deadline:
+                        time.sleep(.02)
+                    self.assertTrue(probe.exists(), "owned CPU child did not start")
+                    child = instrument._read(probe)
+                    self.assertEqual(child["pgid"], process.pid)
+                    if cancel:
+                        self.assertEqual(os.getpgid(child["pid"]), process.pid)
+                        os.killpg(process.pid, signal.SIGTERM)  # Only this test's group.
+                    stdout, stderr = process.communicate(timeout=6)
+                    self.assertEqual(outcome.read_text(), "group-cancelled" if cancel else "timeout-reaped", (stdout, stderr))
+                    with self.assertRaises(ProcessLookupError):
+                        os.kill(child["pid"], 0)
+                    self.assertIn(b"owned CPU child", (stage / "aa-01/stdout.log").read_bytes())
+                finally:
+                    if process.poll() is None:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    process.communicate()
+
+
+if __name__ == "__main__":
+    unittest.main()
