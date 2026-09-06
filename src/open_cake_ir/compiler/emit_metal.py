@@ -56,6 +56,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
           "METAL_TARGET_UNSUPPORTED", "target", "Metal requires the exact Apple M2 / apple_gpu_family8 target")
     check(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", schedule.lowering.entry_point)
           and "CAKE_KERNEL_END" not in schedule.lowering.entry_point
+          and "__SCHEDULE_SHA256__" not in schedule.lowering.entry_point
           and schedule.lowering.entry_point not in _RESERVED
           and not re.fullmatch(r"(?:bool|char|uchar|short|ushort|int|uint|long|ulong|half|float)(?:[234](?:x[234])?)", schedule.lowering.entry_point),
           "METAL_ENTRY_POINT_UNSUPPORTED", "lowering.entry_point", "Metal requires a non-reserved function identifier")
@@ -104,8 +105,11 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         check(not any(ord(c) < 32 or ord(c) == 127 for c in operation.op_id)
               and "CAKE_OP:" not in operation.op_id and "CAKE_KERNEL_END" not in operation.op_id
               and operation.op_id.strip() == operation.op_id
+              and operation.op_id.splitlines() == [operation.op_id]
+              and "__SCHEDULE_SHA256__" not in operation.op_id
               and not operation.op_id.endswith(("\\", "??/")),
-              "METAL_OPERATION_ID_UNSUPPORTED", path + ".id", "operation id contains a source-map delimiter or lexical line continuation")
+              "METAL_OPERATION_ID_UNSUPPORTED", path + ".id", "operation id contains a source-map delimiter, reserved substitution token, "
+              "or lexical line continuation")
         check(operation.kind in SUPPORTED_OPERATION_KINDS, "BACKEND_OPERATION_UNEMITTABLE", path + ".kind", "operation has no Metal body")
         check(not operation.waits and not operation.signals and operation.pipeline is None,
               "METAL_SYNCHRONIZATION_UNSUPPORTED", path, "Metal serial operations do not implement synchronization or pipelines")
@@ -177,6 +181,20 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
                       f"access has value shape {list(shape)}, but private buffer "
                       f"{private_name!r} has shape {list(private_buffer.shape)}; Metal "
                       "loads/stores do not reshape, broadcast or truncate values")
+            if operation.kind is OperationKind.STORE and schedule.program_map is not None:
+                owned = {component.name for component in access.indices
+                         if component.source is AccessIndexKind.PROGRAM}
+                unowned = [axis.name for axis in schedule.program_map.axes
+                           if (owner := schedule.buffer(axis.buffer)) is not None
+                           and axis.dimension < len(owner.shape)
+                           and axis.tile_count(owner.shape[axis.dimension]) > 1
+                           and axis.name not in owned]
+                # With direct scalar program coordinates, differing programs must
+                # differ in a destination coordinate. Common verification proves the
+                # coordinates are in bounds and the output has only one writer.
+                check(not unowned, "METAL_STORE_OWNERSHIP", f"access_maps[{access_index}].indices",
+                      f"store does not own varying program axes {unowned}; different "
+                      "threadgroups could write the same non-atomic output addresses")
     return tuple(findings)
 
 

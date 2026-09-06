@@ -278,6 +278,74 @@ def candidate(lm, x: cake.Tensor((2,3,5), "fp32"), out: cake.Tensor((2,5), "fp32
                 with self.assertRaisesRegex(emit_metal.EmitError, "access has value shape"):
                     emit_metal.emit(Schedule.from_dict(document), self.target)
 
+    def test_store_owns_every_varying_program_axis(self):
+        document = make_document()
+        document["program_map"]["axes"].append(
+            {"name": "other", "axis": 1, "buffer": "y", "dimension": 0, "tile": 1})
+        document["access_maps"][1]["indices"][0]["name"] = "other"
+        result = self.compiler.assess(document)
+        self.assertFalse(result.lowering_eligible)
+        ownership = [f for f in result.findings if f.code == "METAL_STORE_OWNERSHIP"]
+        self.assertEqual([f.path for f in ownership], ["access_maps[2].indices"])
+        self.assertIn("other", ownership[0].message)
+        with self.assertRaisesRegex(CompilerError, "METAL_STORE_OWNERSHIP"):
+            self.compiler.lower(result)
+        with self.assertRaisesRegex(emit_metal.EmitError, "does not own varying program axes"):
+            emit_metal.emit(Schedule.from_dict(document), self.target)
+
+        # An omitted extent-one coordinate creates no second threadgroup writer.
+        next(buffer for buffer in document["buffers"] if buffer["name"] == "y")["shape"][0] = 1
+        x, y = list(range(111)), list(range(37))
+        actual = self.execute_body(document, {"x": x, "y": y})["out"]
+        self.assertEqual(actual, [float((value + y[index % 37]) * 2) for index, value in enumerate(x)])
+
+    def test_existing_single_writer_rule_covers_cross_operation_ownership(self):
+        document = make_document()
+        second = dict(document["operations"][-1], id="second_store", depends_on=["store"])
+        document["operations"].append(second)
+        document["access_maps"].append(dict(document["access_maps"][-1], operation="second_store"))
+        result = self.compiler.assess(document)
+        self.assertFalse(result.accepted)
+        self.assertFalse(result.lowering_eligible)
+        self.assertIn("BUFFER_MULTIPLE_WRITERS", [f.code for f in result.findings])
+        with self.assertRaises(CompilerError):
+            self.compiler.lower(result)
+        with self.assertRaises(emit_metal.EmitError):
+            emit_metal.emit(Schedule.from_dict(document), self.target)
+
+    def test_identifiers_preserve_source_map_and_entry_point_identity(self):
+        separators = ("\n", "\r", "\r\n", "\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029")
+        for token in (*separators, "__SCHEDULE_SHA256__"):
+            document = make_document()
+            new_id = "store" + token + "tail"
+            document["operations"][-1]["id"] = new_id
+            document["access_maps"][-1]["operation"] = new_id
+            with self.subTest(token=repr(token)):
+                result = self.compiler.assess(document)
+                self.assertFalse(result.lowering_eligible)
+                self.assertIn("METAL_OPERATION_ID_UNSUPPORTED", [f.code for f in result.findings])
+                with self.assertRaises(CompilerError):
+                    self.compiler.lower(result)
+                with self.assertRaises(emit_metal.EmitError):
+                    emit_metal.emit(Schedule.from_dict(document), self.target)
+        document = make_document()
+        document["lowering"]["entry_point"] = "kernel__SCHEDULE_SHA256__tail"
+        result = self.compiler.assess(document)
+        self.assertFalse(result.lowering_eligible)
+        self.assertIn("METAL_ENTRY_POINT_UNSUPPORTED", [f.code for f in result.findings])
+        with self.assertRaises(CompilerError):
+            self.compiler.lower(result)
+        with self.assertRaises(emit_metal.EmitError):
+            emit_metal.emit(Schedule.from_dict(document), self.target)
+
+        # Ordinary non-ASCII comment ids remain exact; source projection is the oracle.
+        document = make_document()
+        document["operations"][-1]["id"] = "store_结果"
+        document["access_maps"][-1]["operation"] = "store_结果"
+        _, lowering = self.lower(document)
+        self.assertEqual(set(lowering.source_map), {op["id"] for op in document["operations"]})
+        self.assertIn("kernel void " + lowering.route.entry_point + "(", lowering.source)
+
     def test_source_map_ids_cannot_continue_the_generated_comment_line(self):
         for suffix in ("\\", "??/"):
             document = make_document()
