@@ -3801,6 +3801,37 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
             selection = _EmpiricalSelection({"kind": "external_empirical_advisory_v1", "model": self.model}, context=self.context, **arguments)
             self.assertFalse(selection.estimate(self.model["curves"][0]["template"])["covered"])
 
+    def test_both_author_interfaces_keep_full_model_only_in_the_lock(self):
+        from open_cake_ir.lab.task_package import build_run_reference_documents
+        model = json.loads(json.dumps(self.model))
+        model["reported_evidence"]["raw_observations"] = list(range(10000))
+        model["reported_evidence"]["unbounded_report"] = "private supplier report" * 10000
+        for interface in ("legacy", "ralph"):
+            study = json.loads(json.dumps(self.study))
+            if interface == "ralph":
+                study = json.loads((self.root / "contracts/studies/artifact-optimization-ralph-template.json").read_text())
+                study["arms"]["open_cake"]["candidate_selection"] = {"kind": "external_empirical_advisory_v1"}
+            with self.subTest(interface=interface):
+                lock, _, _ = self.preflight(model=model, study=study)
+                arm = lock.document["resolved_inputs"]["arm_environments"]["open_cake"]
+                documents = build_run_reference_documents(self.root, lock, arm)
+                authority = json.loads(documents["run-authority.json"])
+                projected = authority["authoring_environment"]["candidate_selection"]
+                self.assertEqual(projected, {
+                    "kind": "external_empirical_advisory_v1",
+                    "model": {key: model[key] for key in (
+                        "model_id", "compiler_revision_id", "compiler_revision_sha256", "target",
+                    )},
+                })
+                self.assertLess(len(documents["run-authority.json"]), 10000)
+                visible = b"\n".join(documents.values()).decode()
+                if interface == "ralph":
+                    package = render_task_package(self.root, lock, "open_cake-1")
+                    visible += package.task_markdown + package.agents_markdown
+                for forbidden in ("raw_observations", "unbounded_report", "private supplier report", "varying_dimensions"):
+                    self.assertNotIn(forbidden, visible)
+                self.assertEqual(arm["candidate_selection"]["model"], model)
+
     def run_campaign(self, *, model=None, include_rejected=False, via_cli=False):
         from open_cake_ir.lab import OpenCakeEnvironment
         lock, directory, model_path = self.preflight(model=model)

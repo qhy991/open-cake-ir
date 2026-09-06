@@ -91,11 +91,26 @@ def build_run_reference_documents(
     targets = _object(revision_document["target_definitions"], "target_definitions")
     target = _object(targets["sm_100a"], "target_definitions.sm_100a")
     resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
+    authoring_environment = arm
+    if "candidate_selection" in arm:
+        selection = _object(arm["candidate_selection"], "arm.candidate_selection")
+        model = _object(selection["model"], "arm.candidate_selection.model")
+        # Both author interfaces consume this projection. The complete supplier model
+        # belongs to the frozen CampaignLock, not TASK.md or the repeated prompt bundle.
+        authoring_environment = {
+            **arm,
+            "candidate_selection": {
+                "kind": selection["kind"],
+                "model": {key: model[key] for key in (
+                    "model_id", "compiler_revision_id", "compiler_revision_sha256", "target",
+                )},
+            },
+        }
     run_authority = {
         "schema_version": 1,
         "study": lock.document["study"],
         "workload": lock.document["workload"],
-        "authoring_environment": arm,
+        "authoring_environment": authoring_environment,
         "budget": resolved["budget"],
         "run_protocol": resolved["run_protocol"],
         "evaluation_protocol": lock.document["evaluation_protocol"],

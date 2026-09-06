@@ -74,7 +74,11 @@ When the policy is bound, `candidate_set_filtered` adds `candidate_selection` wi
 the applied decision/reason; each order row adds `empirical_cost` with the existing
 model/Compiler identity, target, coverage, point estimate, empirical range and refusal
 reason, or null for a rejection. Arbitrary supplier context/provenance maps and raw
-observations remain in the frozen model, not next-turn feedback. The same decision and rows reach the next Turn on the same
+observations remain in the frozen model, not next-turn feedback. The common reference
+producer likewise projects only the selection kind and existing model/Compiler/target
+identity fields into the author-visible `run-authority.json` and Ralph `TASK.md`;
+neither interface receives model curves or arbitrary supplier metadata. The complete
+CampaignLock remains unchanged. The same decision and rows reach the next Turn on the same
 provider thread, including unknown and unmeasured candidates. No-policy archives keep
 their prior shape. Audit reconstructs predictions from retained submissions and the
 frozen model, recreates the stable order from provider order, and requires the exact
