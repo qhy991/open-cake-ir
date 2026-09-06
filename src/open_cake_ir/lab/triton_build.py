@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import json
 from hashlib import sha256
+import os
 from pathlib import Path
 import sys
 import subprocess
@@ -28,14 +29,17 @@ class IsolatedTritonCompiler:
                  triton_version: str, timeout_seconds: int = 600):
         if sys.platform != "linux":
             raise ValueError("native Triton build requires Linux bubblewrap filesystem isolation")
-        self.python = Path(python).parent.resolve(strict=True) / Path(python).name
+        self.python = Path(os.path.abspath(python))
         self.bubblewrap = Path(bubblewrap).resolve(strict=True)
-        self.runtime_roots = tuple(Path(p).resolve(strict=True) for p in runtime_roots)
+        # ELF interpreters and shared libraries name guest paths such as /lib64.
+        # Resolving those aliases here would mount only /usr/lib64 in the jail.
+        self.runtime_roots = tuple(Path(os.path.abspath(p)) for p in runtime_roots)
+        resolved_roots = tuple(p.resolve(strict=True) for p in self.runtime_roots)
+        host_home = Path.home().resolve(strict=True)
         if (not self.python.is_file() or not self.bubblewrap.is_file() or not triton_version
             or not isinstance(timeout_seconds, int) or isinstance(timeout_seconds, bool)
             or timeout_seconds <= 0 or not self.runtime_roots
-            or any(not p.is_dir() or p == Path('/') or p == Path.home()
-                   or Path.home().is_relative_to(p) for p in self.runtime_roots)
+            or any(not p.is_dir() or host_home.is_relative_to(p) for p in resolved_roots)
             or not any(self.python.is_relative_to(p) for p in self.runtime_roots)):
             raise ValueError("isolated Triton runtime mount contract differs")
         self.triton_version = triton_version
@@ -45,12 +49,13 @@ class IsolatedTritonCompiler:
         """Bind the isolated invocation to the already-admitted runtime owner."""
         host = executor.document["host_environment"]
         invocation = Path(host["python"]["invocation_path"])
-        expected_python = invocation.parent.resolve(strict=True) / invocation.name
+        expected_python = Path(os.path.abspath(invocation))
         if self.python != expected_python or self.triton_version != host["packages"]["triton"]:
             raise ValueError("isolated Triton runtime differs from the frozen Executor")
         workspace = Path(author_workspace).resolve()
         checkout = Path(__file__).resolve().parents[3]
-        if any(workspace.is_relative_to(root) or checkout.is_relative_to(root)
+        if any(workspace.is_relative_to(root.resolve(strict=True))
+               or checkout.is_relative_to(root.resolve(strict=True))
                for root in self.runtime_roots):
             raise ValueError("runtime mounts must not expose author workspace or Compiler checkout")
 

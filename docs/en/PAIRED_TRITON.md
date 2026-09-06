@@ -85,7 +85,10 @@ Its configuration keys are `python`, `bubblewrap`, `runtime_roots`, `triton_vers
 `timeout_seconds`. The common toolchain binding includes bubblewrap bytes; the frozen
 Executor owns Python/package and source identity. Runtime mounts must contain the Python
 invocation and its dependencies (typically the selected environment and system runtime
-folders), never `/` or the user's home directory. The worker receives the Compiler package
+folders), never `/` or the user's home directory. Python invocation and runtime mount
+destinations retain their declared absolute paths, including Linux loader aliases such
+as `/lib` and `/lib64`;
+privacy checks still inspect resolved host paths. The worker receives the Compiler package
 read-only, an isolated temporary/cache/home filesystem, no network namespace, and only its
 build directory writable. No author's workspace is mounted. The existing process supervisor
 owns timeout, group termination and bounded retained output. A subprocess or filtered
