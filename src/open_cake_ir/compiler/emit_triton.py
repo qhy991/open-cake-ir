@@ -1111,16 +1111,10 @@ class _TritonEmitter:
 
         buffer = self.schedule.buffer(name)
         _require(buffer is not None, f"elementwise reads unknown buffer {name!r}")
-        widest = max(
-            (
-                other.shape
-                for other in (self.schedule.buffer(read) for read in operation.reads)
-                if other is not None
-            ),
-            key=len,
-            default=(),
-        )
-        if len(buffer.shape) == len(widest):
+        result = self.schedule.buffer(operation.writes[0])
+        _require(result is not None, "elementwise requires its verified result shape")
+        widest = result.shape
+        if buffer.is_scalar or len(buffer.shape) == len(widest):
             return name
         axis = operation.parameters.broadcast_axis
         _require(axis is not None, f"operand {name!r} needs a declared broadcast axis")

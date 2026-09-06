@@ -77,6 +77,67 @@ class PythonFrontendTests(unittest.TestCase):
         self.assertEqual(operation["reads"], ["a_tile"])
         self.assertTrue(self.compiler.assess(source.document).lowering_eligible)
 
+    def scalar_source(self, expression="values * scale", *, scalar_tensor=False, scalar_output=False):
+        scalar_shape = "(1,1)" if scalar_tensor else "(1,)"
+        scalar_access = "scalar[:,:]" if scalar_tensor else "scalar[:]"
+        output_shape = "(2,)" if scalar_output else "(2,32)"
+        output_access = "out[row]" if scalar_output else "out[row,:]"
+        return f"""from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="scalar-arithmetic", target="sm_100a", backend="triton", entry_point="cake_scalar")
+def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_shape}, "fp32"), out: cake.Tensor({output_shape}, "fp32", mode="output")):
+    compute = lm.role(warps=[0])
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        values = lm.load(x[row,:])
+        scale = lm.load({scalar_access})
+        result = {expression}
+        lm.store({output_access}, result)
+"""
+
+    def test_canonical_scalar_broadcast_infers_shape_without_reordering_operands(self):
+        for expression, reads, operation in (
+            ("scale - values", ["scale", "values"], "sub"),
+            ("values - scale", ["values", "scale"], "sub"),
+            ("scale / values", ["scale", "values"], "div"),
+            ("values / scale", ["values", "scale"], "div"),
+        ):
+            with self.subTest(expression=expression):
+                document = parse(self.scalar_source(expression)).document
+                self.assertEqual(next(b for b in document["buffers"] if b["name"] == "result")["shape"], [32])
+                op = next(op for op in document["operations"] if op["id"] == "result")
+                self.assertEqual(op["reads"], reads)
+                self.assertEqual(op["parameters"], {"op": operation})
+                assessment = self.compiler.assess(document)
+                self.assertTrue(assessment.lowering_eligible, assessment.findings)
+                self.compiler.lower(assessment)
+
+    def test_two_scalars_cannot_invent_a_larger_result(self):
+        document = parse(self.scalar_source("scale + scale", scalar_output=True)).document
+        result = next(b for b in document["buffers"] if b["name"] == "result")
+        self.assertEqual(result["shape"], [1])
+        self.assertTrue(self.compiler.assess(document).lowering_eligible)
+        result["shape"] = [32]
+        self.assertIn("ELEMENTWISE_SHAPE_MISMATCH", [f.code for f in self.compiler.assess(document).findings])
+
+    def test_scalar_rule_does_not_erase_tensor_rank_axis_or_fma_contract(self):
+        tensor = parse(self.scalar_source(scalar_tensor=True)).document
+        self.assertFalse(self.compiler.assess(tensor).accepted)
+        self.assertEqual(next(b for b in tensor["buffers"] if b["name"] == "scale")["shape"], [1, 1])
+        for axis in (0, 9):
+            document = parse(self.scalar_source(f"lm.mul(values, lm.broadcast(scale, axis={axis}))")).document
+            self.assertIn("ELEMENTWISE_BROADCAST", [f.code for f in self.compiler.assess(document).findings])
+        fma = parse(self.scalar_source("lm.fma(values, values, scale)")).document
+        findings = self.compiler.assess(fma).findings
+        self.assertIn("ELEMENTWISE_SHAPE_MISMATCH", [f.code for f in findings])
+        self.assertEqual(fma["operations"][2]["parameters"]["instruction"], {"contract": "ptx.fma.rn.f32"})
+
+    def test_existing_explicit_singleton_axis_broadcast_remains_valid(self):
+        source = self.scalar_source("lm.mul(values, lm.broadcast(scale, axis=0))")
+        source = source.replace("(2,32)", "(2,1,32)").replace("x[row,:]", "x[row,:,:]").replace("out[row,:]", "out[row,:,:]")
+        assessment = self.compiler.assess(parse(source).document)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        self.compiler.lower(assessment)
+
     def test_writes_depend_on_preceding_reads_even_when_the_read_value_is_unused(self):
         source = FMA.replace('c: cake.Tensor((8, 128), "fp32")',
                              'c: cake.Tensor((8, 128), "fp32", mode="state")')

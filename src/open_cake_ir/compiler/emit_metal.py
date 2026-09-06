@@ -1,11 +1,10 @@
-"""Compositional, serial-per-program Metal lowering over the canonical Schedule.
+"""Compositional SIMD Metal lowering over canonical Schedule coordinates.
 
-One SIMD group is launched per program coordinate, and lane zero evaluates its complete
-FP32 tile using private arrays. This deliberately small correctness route has no hidden
-threadgroup storage, collective reduction, operator registry or performance estimate.
-Reductions fold in increasing index order; contraction and fast math must stay disabled.
-The 4096-value private-storage limit is this backend's bounded first slice, not an Apple
-register-file capacity claim. Physical allocation and spills remain toolchain evidence.
+Flattened private value i belongs to lane i % 32, slot i // 32. All 32 lanes
+execute every collective round; padded lanes hold initialized values and contribute
+reduction identities. Reduction order is ascending local slots followed by the Metal
+SIMD collective, whose cross-lane addition order is not a serial or PTX RN contract.
+Logical lane storage is derived from these slots and IR lifetimes, not Apple occupancy.
 """
 
 from __future__ import annotations
@@ -39,7 +38,34 @@ threadgroup constant device throw true try typedef typeid typename uchar uint ul
 union unsigned ushort using virtual void volatile wchar_t while xor xor_eq half
 sampler texture2d array vector matrix INFINITY NAN
 """.split())
-_UNARY = {ElementwiseOp.SQUARE: "({x} * {x})", ElementwiseOp.RELU: "max({x}, 0.0f)"}
+_UNARY = {
+    ElementwiseOp.SQUARE: "({x} * {x})",
+    ElementwiseOp.RELU: "max({x}, 0.0f)",
+    ElementwiseOp.RSQRT: "precise::rsqrt({x})",
+}
+
+
+def _slots(buffer):
+    return (buffer.elements + 31) // 32
+
+
+def private_values_per_thread(schedule: Schedule) -> int:
+    """Peak simultaneously live lane-owned FP32 values, without physical allocation claims.
+
+    Count source and destination at their common operation boundary. No speculative
+    in-place aliasing or compiler register reuse is assumed. Shuffle/reduction scalar
+    temporaries and backend spills are outside this declared-Buffer domain.
+    """
+    intervals = []
+    for buffer in schedule.buffers:
+        if buffer.space is not MemorySpace.REGISTER:
+            continue
+        uses = [index for index, operation in enumerate(schedule.operations)
+                if buffer.name in (*operation.reads, *operation.writes)]
+        intervals.append((uses[0], uses[-1], _slots(buffer)) if uses
+                         else (0, len(schedule.operations) - 1, _slots(buffer)))
+    return max((sum(slots for first, last, slots in intervals if first <= index <= last)
+                for index in range(len(schedule.operations))), default=0)
 
 
 def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, ...]:
@@ -61,13 +87,13 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
           and not re.fullmatch(r"(?:bool|char|uchar|short|ushort|int|uint|long|ulong|half|float)(?:[234](?:x[234])?)", schedule.lowering.entry_point),
           "METAL_ENTRY_POINT_UNSUPPORTED", "lowering.entry_point", "Metal requires a non-reserved function identifier")
     check(len(schedule.roles) == 1 and schedule.roles[0].warps == (0,),
-          "METAL_ROLE_UNSUPPORTED", "roles", "serial program tiles require one role occupying SIMD group [0]")
+          "METAL_ROLE_UNSUPPORTED", "roles", "SIMD program tiles require one role occupying SIMD group [0]")
     for index, role in enumerate(schedule.roles):
         check(role.registers_per_thread is None, "METAL_REGISTER_CAP_UNSUPPORTED",
               f"roles[{index}].registers_per_thread", "Metal has no CUDA warpgroup register redistribution")
     for field in ("allocations", "pipelines", "barriers", "tile_loops"):
         check(not getattr(schedule, field), "METAL_DECLARATION_UNSUPPORTED", field,
-              f"serial Metal lowering does not implement {field}")
+              f"SIMD Metal lowering does not implement {field}")
     check(schedule.residency is None, "METAL_RESIDENCY_UNSUPPORTED", "residency",
           "Apple occupancy and register caps are not modeled or enforced")
     check(schedule.program_map is not None, "METAL_PROGRAM_MAP_REQUIRED", "program_map",
@@ -80,9 +106,9 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
                   f"program_map.axes[{index}].tile", "this Metal route requires scalar program indices (tile=1); dimension extents may be odd")
     globals_ = [buffer for buffer in schedule.buffers if buffer.space is MemorySpace.GLOBAL]
     check(len(globals_) <= 31, "METAL_BUFFER_ARGUMENT_LIMIT", "buffers", "Metal admits at most 31 global buffer arguments")
-    private_values = sum(buffer.elements for buffer in schedule.buffers if buffer.space is MemorySpace.REGISTER)
-    check(private_values <= 4096, "METAL_PRIVATE_STORAGE_LIMIT", "buffers",
-          "serial Metal lowering supports at most 4096 FP32 private values per program tile")
+    check(private_values_per_thread(schedule) <= 1024, "METAL_PRIVATE_STORAGE_LIMIT", "buffers",
+          "Metal supports at most 1024 simultaneously live lane-owned FP32 values; "
+          "this backend limit is not an Apple register capacity or occupancy estimate")
     for index, buffer in enumerate(schedule.buffers):
         path = f"buffers[{index}]"
         check(buffer.dtype in SUPPORTED_DTYPES, "BACKEND_DTYPE_UNEMITTABLE", path + ".dtype", "Metal first slice supports FP32 only")
@@ -112,7 +138,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
               "or lexical line continuation")
         check(operation.kind in SUPPORTED_OPERATION_KINDS, "BACKEND_OPERATION_UNEMITTABLE", path + ".kind", "operation has no Metal body")
         check(not operation.waits and not operation.signals and operation.pipeline is None,
-              "METAL_SYNCHRONIZATION_UNSUPPORTED", path, "Metal serial operations do not implement synchronization or pipelines")
+              "METAL_SYNCHRONIZATION_UNSUPPORTED", path, "Metal does not implement declared barriers or pipelines")
         if operation.kind in {OperationKind.ELEMENTWISE, OperationKind.REDUCE}:
             check(len(operation.writes) == 1 and all(
                 schedule.buffer(name) is not None and schedule.buffer(name).space is MemorySpace.REGISTER
@@ -133,7 +159,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
                   "METAL_LOAD_STORAGE_UNSUPPORTED", path, "Metal loads one global input into one private value")
         elif operation.kind is OperationKind.STORE:
             check(not parameters.coalesced, "METAL_COALESCING_UNSUPPORTED", path + ".parameters.coalesced",
-                  "lane-zero serial stores require coalesced=false")
+                  "this generic SIMD address route does not promise coalescing; declare coalesced=false")
             check(len(operation.reads) == len(operation.writes) == 1
                   and schedule.buffer(operation.reads[0]).space is MemorySpace.REGISTER
                   and schedule.buffer(operation.writes[0]).space is MemorySpace.GLOBAL,
@@ -141,7 +167,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         elif operation.kind is OperationKind.ELEMENTWISE:
             check(parameters.op in _BINARY or parameters.op in _UNARY,
                   "METAL_ELEMENTWISE_UNSUPPORTED", path + ".parameters.op",
-                  "Metal supports add/sub/mul/div/square/relu; PTX FMA and transcendental contracts are not implemented")
+                  "Metal supports add/sub/mul/div/square/relu/rsqrt; PTX FMA and other transcendental contracts are not implemented")
             check(parameters.instruction is None, "METAL_INSTRUCTION_UNSUPPORTED", path + ".parameters.instruction", "Metal does not implement a CUDA/PTX instruction contract")
             check(parameters.scalar is None or abs(parameters.scalar) <= 3.4028234663852886e38,
                   "METAL_SCALAR_RANGE_UNSUPPORTED", path + ".parameters.scalar", "literal must be representable as finite FP32")
@@ -229,17 +255,19 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
     for axis in axes.values():
         grid[axis.axis] = buffers[axis.buffer].shape[axis.dimension]
     lines = ["#include <metal_stdlib>", "using namespace metal;", "#pragma METAL fp contract(off)",
-             "// Serial program tile: lane 0 owns all private values; other lanes do no work.",
-             "// Finite FP32 inputs; increasing-index reductions; fast math must be disabled.",
+             "// SIMD program tile: i belongs to lane i % 32, private slot i / 32.",
+             "// Every collective has uniform participation, including padded tail lanes.",
+             "// FP32 local-slot accumulation then SIMD sum/max; precise rsqrt; fast math disabled.",
+             f"// Peak live lane-owned Buffer values: {private_values_per_thread(schedule)} FP32; temporaries/spills unmodeled.",
              f"kernel void {schedule.lowering.entry_point}("]
     for index, buffer in enumerate(globals_):
         const = "const " if buffer.mode is BufferMode.INPUT else ""
         lines.append(f"    device {const}float* {names[buffer.name]} [[buffer({index})]],")
     lines += ["    uint3 program [[threadgroup_position_in_grid]],",
-              "    uint lane [[thread_index_in_threadgroup]]) {", "    if (lane != 0u) return;"]
+              "    uint lane [[thread_index_in_simdgroup]]) {"]
     for buffer in schedule.buffers:
         if buffer.space is MemorySpace.REGISTER:
-            lines.append(f"    float {names[buffer.name]}[{buffer.elements}];")
+            lines.append(f"    float {names[buffer.name]}[{_slots(buffer)}] = {{}};")
 
     def address(operation, global_buffer, local_buffer):
         access = accesses[(operation.op_id, global_buffer.name)]
@@ -253,53 +281,81 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
         return _flat(coordinates, global_buffer.shape)
 
     for operation in schedule.operations:
-        lines.append(f"    // CAKE_OP: {operation.op_id}")
+        lines += [f"    // CAKE_OP: {operation.op_id}", "    {"]
         src = buffers[operation.reads[0]]
         dst = buffers[operation.writes[0]]
-        count = src.elements if operation.kind is OperationKind.STORE else dst.elements
-        lines.append(f"    for (uint i = 0u; i < {count}u; ++i) {{")
-        if operation.kind is OperationKind.LOAD:
-            lines.append(f"        {names[dst.name]}[i] = {names[src.name]}[{address(operation, src, dst)}];")
-        elif operation.kind is OperationKind.STORE:
-            lines.append(f"        {names[dst.name]}[{address(operation, dst, src)}] = {names[src.name]}[i];")
-        elif operation.kind is OperationKind.ELEMENTWISE:
-            parameters = operation.parameters
-            operands = []
-            for read in operation.reads:
-                buffer = buffers[read]
-                if buffer.shape == dst.shape:
-                    subscript = "i"
-                elif buffer.elements == 1:
-                    subscript = "0"
-                else:
-                    coordinates = _coordinates("i", dst.shape)
-                    start = parameters.broadcast_axis if parameters.broadcast_axis is not None else len(dst.shape) - len(buffer.shape)
-                    subscript = _flat(coordinates[start:start + len(buffer.shape)], buffer.shape)
-                operands.append(f"{names[read]}[{subscript}]")
-            if parameters.scalar is not None:
-                operands.append(f"{float(parameters.scalar)!r}f")
-            if parameters.op in _BINARY:
-                expression = f"({operands[0]} {_BINARY[parameters.op]} {operands[1]})"
-            else:
-                expression = _UNARY[parameters.op].format(x=operands[0])
-            lines.append(f"        {names[dst.name]}[i] = {expression};")
-        else:
+        if operation.kind is OperationKind.REDUCE:
             parameters = operation.parameters
             extent = src.shape[parameters.axis]
-            coordinates = [] if len(src.shape) == 1 else _coordinates("i", dst.shape)
-            coordinates.insert(parameters.axis, "j")
-            initial = "0.0f" if parameters.op is ReduceOp.SUM else "-INFINITY"
-            lines.append(f"        float accumulator = {initial};")
-            lines.append(f"        for (uint j = 0u; j < {extent}u; ++j) {{")
-            value = f"{names[src.name]}[{_flat(coordinates, src.shape)}]"
-            expression = f"accumulator + {value}" if parameters.op is ReduceOp.SUM else f"max(accumulator, {value})"
-            lines += [f"            accumulator = {expression};", "        }", f"        {names[dst.name]}[i] = accumulator;"]
-        lines.append("    }")
+            inner = math.prod(src.shape[parameters.axis + 1:])
+            identity = "0.0f" if parameters.op is ReduceOp.SUM else "-INFINITY"
+            intrinsic = "simd_sum" if parameters.op is ReduceOp.SUM else "simd_max"
+            # Every output coordinate is uniform across the SIMD group. Each lane
+            # contributes only its own source elements; no cross-lane array indexing.
+            # Restrict visits to the containing contiguous source slab. A final-axis
+            # reduction has inner=1 and visits exactly its row, including misaligned tails.
+            lines += [f"        for (uint output = 0u; output < {dst.elements}u; ++output) {{",
+                      f"            float partial = {identity};",
+                      f"            uint begin = (output / {inner}u) * {extent * inner}u;",
+                      f"            uint end = begin + {extent * inner}u;",
+                      "            for (uint s = begin / 32u; s < (end + 31u) / 32u; ++s) {",
+                      "                uint i = s * 32u + lane;",
+                      f"                if (i >= begin && i < end && i % {inner}u == output % {inner}u) {{"]
+            value = f"{names[src.name]}[s]"
+            expression = f"partial + {value}" if parameters.op is ReduceOp.SUM else f"max(partial, {value})"
+            lines += [f"                    partial = {expression};", "                }", "            }",
+                      f"            float reduced = {intrinsic}(partial);",
+                      f"            if (lane == output % 32u) {names[dst.name]}[output / 32u] = reduced;",
+                      "        }", "    }"]
+            continue
+
+        count = src.elements if operation.kind is OperationKind.STORE else dst.elements
+        parameters = operation.parameters
+        scalar_reads = {}
+        if operation.kind is OperationKind.ELEMENTWISE:
+            for position, read in enumerate(operation.reads):
+                if buffers[read].is_scalar and not dst.is_scalar:
+                    scalar_reads[read] = f"scalar{position}"
+                    lines.append(f"        float scalar{position} = simd_broadcast({names[read]}[0], 0u);")
+        lines += [f"        for (uint s = 0u; s < {(count + 31) // 32}u; ++s) {{",
+                  "            uint i = s * 32u + lane;"]
+        if operation.kind is OperationKind.LOAD:
+            lines.append(f"            {names[dst.name]}[s] = i < {count}u ? {names[src.name]}[{address(operation, src, dst)}] : 0.0f;")
+        elif operation.kind is OperationKind.STORE:
+            lines.append(f"            if (i < {count}u) {names[dst.name]}[{address(operation, dst, src)}] = {names[src.name]}[s];")
+        else:
+            operands = []
+            for position, read in enumerate(operation.reads):
+                buffer = buffers[read]
+                if buffer.shape == dst.shape:
+                    operands.append(f"{names[read]}[s]")
+                elif read in scalar_reads:
+                    operands.append(scalar_reads[read])
+                else:
+                    coordinates = _coordinates("i", dst.shape)
+                    start = parameters.broadcast_axis
+                    subscript = _flat(coordinates[start:start + len(buffer.shape)], buffer.shape)
+                    # A lane may request a value from a different private slot than
+                    # its source lane. Visit slots uniformly; shuffling src[index/32]
+                    # directly would select the requesting lane's slot at the source.
+                    lines += [f"            uint index{position} = uint({subscript});",
+                              f"            float operand{position} = 0.0f;",
+                              f"            for (uint k = 0u; k < {_slots(buffer)}u; ++k) {{",
+                              f"                float exchanged = simd_shuffle({names[read]}[k], ushort(index{position} % 32u));",
+                              f"                if (k == index{position} / 32u) operand{position} = exchanged;",
+                              "            }"]
+                    operands.append(f"operand{position}")
+            if parameters.scalar is not None:
+                operands.append(f"{float(parameters.scalar)!r}f")
+            expression = (f"({operands[0]} {_BINARY[parameters.op]} {operands[1]})"
+                          if parameters.op in _BINARY else _UNARY[parameters.op].format(x=operands[0]))
+            lines.append(f"            {names[dst.name]}[s] = i < {count}u ? {expression} : 0.0f;")
+        lines += ["        }", "    }"]
     lines += ["    // CAKE_KERNEL_END", "}", ""]
     return Emission("\n".join(lines), schedule.lowering.entry_point, {}, {
         "buffer_order": [buffer.name for buffer in globals_],
         "threadgroups_per_grid": grid, "threads_per_threadgroup": [32, 1, 1],
         "threadgroup_memory_bytes": 0, "language_standard": "metal2.3",
-        "fast_math_enabled": False, "execution_model": "serial_program_tile",
-        "active_threads_per_threadgroup": 1,
+        "fast_math_enabled": False, "execution_model": "simd_program_tile",
+        "active_threads_per_threadgroup": 32,
     })
