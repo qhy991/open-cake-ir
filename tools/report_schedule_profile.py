@@ -48,7 +48,7 @@ def _metric(document: dict[str, object], name: str) -> dict[str, object]:
 def _table(rows: list[dict[str, object]]) -> str:
     header = (
         f"{'schedule':<34}{'regs':>8}{'CTA/SM<=':>10}{'warps%<=':>10}"
-        f"{'barrier':>10}{'scoreboard':>12}{'source B':>12}  coverage"
+        f"{'IR read MiB<=':>14}{'barrier':>10}{'scoreboard':>12}{'source B':>12}  coverage"
     )
     lines = [header, "-" * len(header)]
     for row in rows:
@@ -69,11 +69,15 @@ def _table(rows: list[dict[str, object]]) -> str:
         source_bytes = profile["lowering"]["generated_source_bytes"]
         active_value = active["value"]
         active_text = "-" if active_value is None else f"{float(active_value):.1f}"
+        payload = (profile["work"] or {}).get("scheduled_transfer_payload", {})
+        read_bytes = payload.get("read_bytes_upper_bound")
+        read_text = "-" if read_bytes is None else f"{read_bytes / (1 << 20):.2f}"
         lines.append(
             f"{str(row['schedule_id'])[:33]:<34}"
             f"{str(registers['value']):>8}"
             f"{str(occupancy.get('ctas_per_sm_upper_bound')):>10}"
             f"{active_text:>10}"
+            f"{read_text:>14}"
             f"{str(barrier['value']):>10}"
             f"{str(scoreboard['value']):>12}"
             f"{str(source_bytes):>12}  "

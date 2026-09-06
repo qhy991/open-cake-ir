@@ -126,6 +126,18 @@ def _work_document(bound: WorkBound | None) -> Mapping[str, object] | None:
         "contended_contract": bound.contended_contract,
         "compulsory_read_bytes": bound.compulsory_read_bytes,
         "compulsory_written_bytes": bound.compulsory_written_bytes,
+        "scheduled_transfer_payload": {
+            "scope": "explicit IR LOAD/STORE values before access masks; not physical memory traffic",
+            "read_bytes_upper_bound": bound.scheduled_read_bytes_upper_bound,
+            "written_bytes_upper_bound": bound.scheduled_written_bytes_upper_bound,
+            "operations": [
+                {"operation": item.operation,
+                 "read_bytes_upper_bound": item.read_bytes_upper_bound,
+                 "written_bytes_upper_bound": item.written_bytes_upper_bound,
+                 "missing": list(item.missing)}
+                for item in bound.scheduled_transfers
+            ],
+        },
         "compulsory_bytes_estimate_kind": (
             "exact" if bound.compulsory_bytes_exact else "upper_bound"
         ),

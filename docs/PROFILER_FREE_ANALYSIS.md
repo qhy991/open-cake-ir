@@ -23,6 +23,14 @@ CUDA binary utilities，但无需 GPU，也不会初始化 Triton kernel handle�
 保留空间、shared-memory carveout、barrier、隐式 tensor memory 和调度可能进一步
 降低并发度。不能把上界直接读成耗时或实际利用率。
 
+`work.scheduled_transfer_payload` 另外计算显式 LOAD/STORE 在整个计划中的逻辑载荷，
+包含每个分块和循环执行次数，并保留逐操作明细。例如 GEMM 的 A 会随 N 分块重复读取，
+B 会随 M 分块重复读取；只统计输入 Buffer 的大小看不到这些复用成本。
+访问掩码可能减少载荷，所以这里使用上界；persistent 计划按遍历的工作块计数，动态
+停止循环使用真实可推导的 trip 分布。无法建模的访问（如原子读改写）明确返回未知。
+这个数字**不包含后端复制、合并、缓存命中和事务粒度的效果**，不是实际 L2/DRAM
+字节数，也不能直接除以 HBM 带宽当作运行时间。终端的 `IR read MiB<=` 显示该范围。
+
 ## 使用
 
 以下命令在仓库根目录运行，使用已经满足依赖的 Python 环境。输入既可以是 JSON，

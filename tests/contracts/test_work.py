@@ -167,6 +167,54 @@ class CompulsoryTrafficTest(unittest.TestCase):
         self.assertIn("normalized_keys", prefix.partially_addressed)
 
 
+class ScheduledTransferTest(unittest.TestCase):
+    def test_gemm_counts_repeated_tiles_instead_of_only_unique_inputs(self) -> None:
+        bound = _bound(GEMM)
+        rows = {row.operation: row for row in bound.scheduled_transfers}
+        # M512/N256/K256, M/N tiles64, K tile64: A is revisited for four N
+        # tiles, B for eight M tiles, and each bias value for eight M tiles.
+        self.assertEqual(rows["load_a"].read_bytes_upper_bound, 512 * 256 * 2 * 4)
+        self.assertEqual(rows["load_b"].read_bytes_upper_bound, 256 * 256 * 2 * 8)
+        self.assertEqual(rows["load_bias"].read_bytes_upper_bound, 256 * 4 * 8)
+        self.assertEqual(bound.scheduled_read_bytes_upper_bound, 2_105_344)
+        self.assertGreater(bound.scheduled_read_bytes_upper_bound, bound.compulsory_read_bytes)
+        self.assertEqual(bound.scheduled_written_bytes_upper_bound, 512 * 256 * 4)
+
+    def test_fma_without_reuse_matches_its_payload_footprint(self) -> None:
+        bound = _bound(SCHEDULES / "fma-b8-smoke.json")
+        self.assertEqual(bound.scheduled_read_bytes_upper_bound, 8 * 128 * 4 * 3)
+        self.assertEqual(bound.scheduled_written_bytes_upper_bound, 8 * 128 * 4)
+
+    def test_persistent_program_counts_work_tiles_not_launched_ctas(self) -> None:
+        bound = _bound(PERSISTENT)
+        x = next(row for row in bound.scheduled_transfers if row.operation == "load_x")
+        self.assertEqual(x.read_bytes_upper_bound, 33_554_432)
+        self.assertEqual(bound.scheduled_written_bytes_upper_bound, 33_554_432)
+
+    def test_causal_loop_uses_its_trip_distribution(self) -> None:
+        bound = _bound(QSA)
+        keys = next(row for row in bound.scheduled_transfers if row.operation == "load_keys")
+        # q in [0,32768): tile starts below floor((q+1)/4), 128 keys per tile.
+        trips = sum((min(8192, (q + 1) // 4) + 127) // 128 for q in range(32768))
+        self.assertEqual(keys.read_bytes_upper_bound, trips * 128 * 128 * 4)
+        self.assertLess(keys.read_bytes_upper_bound, 32768 * 64 * 128 * 128 * 4)
+
+    def test_zero_trip_load_has_zero_payload(self) -> None:
+        document = json.loads(QSA.read_text())
+        document["tile_loops"][0]["stop"]["add"] = -65536
+        bound = work_bound(Schedule.from_dict(document))
+        keys = next(row for row in bound.scheduled_transfers if row.operation == "load_keys")
+        self.assertEqual(keys.read_bytes_upper_bound, 0)
+
+    def test_atomic_access_is_named_as_unmodeled_not_charged_zero(self) -> None:
+        bound = _bound(SCHEDULES / "atomic-reservation-b8-smoke.json")
+        self.assertIsNone(bound.scheduled_read_bytes_upper_bound)
+        self.assertIsNone(bound.scheduled_written_bytes_upper_bound)
+        reservation = next(row for row in bound.scheduled_transfers if row.operation == "reserve_positions")
+        self.assertTrue(reservation.missing)
+        self.assertIsNone(reservation.read_bytes_upper_bound)
+
+
 class AbstentionTest(unittest.TestCase):
     """What the model refuses to count, and why refusing beats guessing."""
 

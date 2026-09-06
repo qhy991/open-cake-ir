@@ -114,6 +114,16 @@ class OperationRepetition:
 
 
 @dataclass(frozen=True)
+class ScheduledTransfer:
+    """Unmasked logical LOAD/STORE payload, not cache or DRAM transactions."""
+
+    operation: str
+    read_bytes_upper_bound: int | None
+    written_bytes_upper_bound: int | None
+    missing: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class WorkBound:
     """What one Schedule's declarations commit to computing and to moving.
 
@@ -132,6 +142,17 @@ class WorkBound:
     compulsory_read_bytes: int
     compulsory_written_bytes: int
     partially_addressed: tuple[str, ...]
+    scheduled_transfers: tuple[ScheduledTransfer, ...] = ()
+
+    @property
+    def scheduled_read_bytes_upper_bound(self) -> int | None:
+        values = [item.read_bytes_upper_bound for item in self.scheduled_transfers]
+        return None if any(value is None for value in values) else sum(values)
+
+    @property
+    def scheduled_written_bytes_upper_bound(self) -> int | None:
+        values = [item.written_bytes_upper_bound for item in self.scheduled_transfers]
+        return None if any(value is None for value in values) else sum(values)
 
     @property
     def contended_contract(self) -> str | None:
@@ -549,6 +570,7 @@ def work_bound(schedule: Schedule) -> WorkBound | None:
             mma_flops += total
 
     read, written, partial = _compulsory_traffic(schedule)
+    transfers = _scheduled_transfers(schedule, repetition_by_operation)
     return WorkBound(
         program_tiles=tiles,
         flops=flops,
@@ -559,4 +581,42 @@ def work_bound(schedule: Schedule) -> WorkBound | None:
         compulsory_read_bytes=read,
         compulsory_written_bytes=written,
         partially_addressed=partial,
+        scheduled_transfers=transfers,
     )
+
+
+def _scheduled_transfers(
+    schedule: Schedule, repetitions: dict[str, OperationRepetition]
+) -> tuple[ScheduledTransfer, ...]:
+    """Count values moved by explicit IR transfers, charging every loop execution.
+
+    Tile payload includes lanes which an access mask may remove. Staging copies do not
+    multiply transfers. Backend duplication/coalescing/caching is outside this quantity,
+    so this is deliberately not a bound on physical DRAM/L2 traffic.
+    """
+    rows = []
+    for operation in schedule.operations:
+        reads = [schedule.buffer(name) for name in operation.reads]
+        writes = [schedule.buffer(name) for name in operation.writes]
+        global_reads = [item for item in reads if item is not None and item.space is MemorySpace.GLOBAL]
+        global_writes = [item for item in writes if item is not None and item.space is MemorySpace.GLOBAL]
+        if not global_reads and not global_writes:
+            continue
+        count = repetitions[operation.op_id]
+        read_bytes = None if global_reads else 0
+        written_bytes = None if global_writes else 0
+        missing = []
+        if count.whole_grid is None:
+            missing.extend(count.missing or ("operation repetition is unavailable",))
+        elif count.whole_grid == 0:
+            read_bytes = written_bytes = 0
+        elif (operation.kind is OperationKind.LOAD and len(global_reads) == 1
+              and not global_writes and len(writes) == 1 and writes[0] is not None):
+            read_bytes = writes[0].elements * global_reads[0].dtype.itemsize * count.whole_grid
+        elif (operation.kind is OperationKind.STORE and len(global_writes) == 1
+              and not global_reads and len(reads) == 1 and reads[0] is not None):
+            written_bytes = reads[0].elements * global_writes[0].dtype.itemsize * count.whole_grid
+        else:
+            missing.append("global access is not one explicit LOAD or STORE payload")
+        rows.append(ScheduledTransfer(operation.op_id, read_bytes, written_bytes, tuple(missing)))
+    return tuple(rows)
