@@ -22,6 +22,30 @@ from open_cake_ir.lab import (  # noqa: E402
     Lab,
     OpenCakeEnvironment,
 )
+from open_cake_ir.lab.environments import _EMPIRICAL_SELECTION, _empirical_context  # noqa: E402
+from open_cake_ir.lab.executor import ExecutorRevision  # noqa: E402
+
+
+def _synthetic_flash_model(workload, compiler_ref, context, durations=(20.0, 10.0)):
+    """Synthetic points exercise wiring; they are never calibration evidence."""
+    curves = []
+    for warps, duration in zip((4, 8), durations):
+        schedule = _headline_schedule(workload)
+        schedule["roles"][0]["warps"] = list(range(warps))
+        curves.append({
+            "template": schedule,
+            "varying_dimensions": [{"buffer": name, "dimension": 1} for name in ("tokens", "assignments")],
+            "extent_multiple": 512,
+            "points": [{"extent": extent, "kernel_us": duration} for extent in (32768, 131072)],
+            "relative_error_envelope": 0.1,
+        })
+    return {
+        "schema_version": 2, "model_id": "synthetic-flash-selection-contract",
+        "compiler_revision_id": compiler_ref["revision_id"],
+        "compiler_revision_sha256": compiler_ref["canonical_sha256"], "target": "sm_100a",
+        "context": context, "reported_evidence": {"kind": "synthetic software fixture; no measurements"},
+        "curves": curves,
+    }
 
 
 class RecordingToolchain:
@@ -62,6 +86,51 @@ def _headline_schedule(workload: WorkloadContract) -> dict[str, object]:
 
 
 class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
+    def test_empirical_flash_environment_preserves_native_gates_and_rank(self) -> None:
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        workload = WorkloadContract.load(ROOT / "contracts/workloads/flash-kmeans-assign-v2.json")
+        schedule = _headline_schedule(workload)
+        assessment = compiler.assess(schedule)
+        compiler_ref = {
+            "revision_id": assessment.compiler_revision_id,
+            "canonical_sha256": assessment.compiler_revision_sha256,
+        }
+        # Explicit prospective software fixture; it is never loaded/admitted as a host.
+        executor = ExecutorRevision("fixture", "a" * 64, {"host_environment": {"packages": {"triton": "fixture"}}}, ROOT, "fixture")
+        context = _empirical_context(executor, workload_sha256=workload.canonical_sha256, case_id="headline_b32")
+        model = _synthetic_flash_model(workload, compiler_ref, context)
+        authority = {
+            "lowering_route": schedule["lowering"], "compiler_revision": compiler_ref,
+            "candidate_selection": {"kind": _EMPIRICAL_SELECTION, "model": model},
+        }
+        toolchain = RecordingToolchain()
+        environment = OpenCakeEnvironment(compiler, toolchain, authority_document=authority, workload=workload, case_id="headline_b32", executor=executor)
+        submit = lambda value: CandidateSubmission.seal(environment.media_type, json.dumps(value).encode())
+        result = environment.build(submit(schedule))
+        self.assertEqual(result.disposition, "launchable")
+        self.assertTrue(result.empirical_cost["covered"])
+        self.assertEqual(result.empirical_cost["predicted_kernel_us"], 20.0)
+        self.assertIsNone(result.cost)
+        self.assertFalse(compiler.rank([assessment])[0])
+        invalid = json.loads(json.dumps(schedule))
+        invalid["buffers"][0]["dtype"] = "fp32"
+        rejected = environment.build(submit(invalid))
+        self.assertEqual(rejected.disposition, "rejected")
+        self.assertIsNone(rejected.empirical_cost)
+        wrong_authority = json.loads(json.dumps(authority))
+        wrong_authority["compiler_revision"]["canonical_sha256"] = "0" * 64
+        rejected = OpenCakeEnvironment(compiler, toolchain, authority_document=wrong_authority, workload=workload, case_id="headline_b32", executor=executor).build(submit(schedule))
+        self.assertEqual(rejected.disposition, "rejected")
+        self.assertIn("Compiler Revision", rejected.feedback["error"])
+        self.assertEqual(len(toolchain.requests), 1)
+        from open_cake_ir.lab.faults import CandidateCompileRejected
+        class RejectedToolchain:
+            def build(self, request):
+                raise CandidateCompileRejected("synthetic compile rejection", artifact_payloads={})
+        rejected = OpenCakeEnvironment(compiler, RejectedToolchain(), authority_document=authority, workload=workload, case_id="headline_b32", executor=executor).build(submit(schedule))
+        self.assertEqual(rejected.disposition, "rejected")
+        self.assertIsNone(rejected.empirical_cost)
+
     def test_current_prompts_name_the_only_route_spelling(self) -> None:
         templates = (
             "artifact-optimization-template.json",

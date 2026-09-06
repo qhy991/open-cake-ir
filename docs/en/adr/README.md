@@ -64,3 +64,4 @@ Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft wor
 | 0050 | [a released Compiler lock reserves its identity](../../adr/0050-released-compiler-locks-reserve-their-identities.md) | [发布过的编译器 lock 也永久保留身份](../../zh-CN/adr/0050-released-compiler-locks-reserve-their-identities.md) |
 | 0051 | [load values follow the access domain](../../adr/0051-load-values-follow-the-access-domain.md) | [load 的结果形状必须符合地址实际读出的范围](../../zh-CN/adr/0051-load-values-follow-the-access-domain.md) |
 | 0052 | [Independent agent sessions may review Compiler releases](../../adr/0052-independent-agent-release-review.md) | [独立代理会话也可以审查编译器发布](../../zh-CN/adr/0052-independent-agent-release-review.md) |
+| 0053 | [Study-bound external advisory candidate order](../../adr/0053-study-bound-advisory-cost-selection.md) | — |

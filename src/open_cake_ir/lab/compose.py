@@ -445,8 +445,14 @@ def execute_matched_from_config(
         direct_environment = DirectCudaEnvironment(toolchain,
             toolchain_requirements={"compiler": "nvcc", "target": "sm_100a"}, authority_document=direct_arm)
     environments = {
-        "open_cake": OpenCakeEnvironment(compiler, builder, authority_document=open_arm,
-            workload=workload_contract, case_id=str(protocol["case_id"])),
+        "open_cake": OpenCakeEnvironment(
+            compiler,
+            builder,
+            authority_document=open_arm,
+            workload=workload_contract,
+            case_id=str(protocol["case_id"]),
+            executor=executor,
+        ),
         comparison: direct_environment,
     }
     protocol_sha256 = sha256(
