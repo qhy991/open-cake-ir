@@ -1,0 +1,39 @@
+# Workloads: complete problem definitions
+
+[中文原文](../../wiki/workloads.md) · [Guide index](README.md) · [Operator explanations](operators.md)
+
+A Workload fixes inputs, required outputs, correctness, and measurement. A shared operator name does not make different shapes or precision the same problem. This list is a contract catalog, not a claim that every task has a Lab evaluator, GPU qualification, or best performance. The Study selects the version.
+
+## Flash-KMeans
+
+BF16 points and centroids produce the nearest-centroid index under the FP32 distance/accumulation contract. The independent reference and tie-aware rule own acceptance; do not impose another tie policy afterward.
+
+Contracts: [v1](../../../contracts/workloads/flash-kmeans-assign.json), [v2](../../../contracts/workloads/flash-kmeans-assign-v2.json). Code: [evaluation](../../../src/open_cake_ir/evaluation/flash_kmeans.py), [teaching tool](../../../examples/gpu/flash_kmeans_quickstart.py), [Compiler example](../../../corpus/schedules/flash-kmeans-b32-smoke-v2.json). Old Studies keep their bound versions.
+
+## TinyGEMM2
+
+A fixed small-batch linear layer computes input times transposed weight plus bias, then BF16 rounding. An independent FP32 reference and the declared output rules judge it. [v1](../../../contracts/workloads/tinygemm2-stage4.json) and [v2](../../../contracts/workloads/tinygemm2-stage4-v2.json) differ: v2 fixes materialized input, weight, bias, and reference bytes; a seed alone need not reproduce them.
+
+The retained [Schedule](../../../corpus/schedules/tinygemm2-stage4-split-k.json) selects checked_cuda_asset. This is fixed source selection, not arbitrary generation of this operator family.
+
+## DSA: sparse MLA one-step decode
+
+Query, compressed KV cache, positional components, and supplied sparse indices produce masked scoring, softmax, and weighted values. Empty valid selections produce zero under the [v1 contract](../../../contracts/workloads/dsa-attention-sparse-mla-decode-v1.json). This fixed single-GPU DeepSeek-V3.2 task includes captured/generated rows, not full serving. Use the contract's executable scaling constant; it records a discrepancy with source prose. [WorkloadContract](../../../src/open_cake_ir/evaluation/workload.py) owns validation.
+
+## QSA: long-sequence selection and attention
+
+Post-projection q, k, v, index_q, and index_k feed causal complete-block pooling, LayerNorm, index-head scoring, block selection, token expansion, and selected causal attention. The [prefill contract](../../../contracts/workloads/qsa-prefill-t32768-v1.json) excludes earlier projections, RoPE, cache updates, and serving. Multiple stages require a complete Program; timing only top-k or attention is insufficient. The [evaluator](../../../tools/evaluate_qsa_candidate.py) preserves that boundary. Declared smaller checks and target geometry do not establish a complete checkpoint configuration.
+
+## Kimi-K3 KDA: stateful one-step core
+
+Current-step inputs, gate parameters, convolution/recurrent state, and cache positions feed convolution update, recurrence, and sigmoid-gated RMSNorm. Selected state changes; unselected slots and padded rows remain protected. The [fused-decode contract](../../../contracts/workloads/kimi-k3-kda-fused-decode-v1.json) covers local head/activity cases and state pools across two calls. Prefill/chunk/model results cannot substitute.
+
+## Kimi-K3 megaop: surrounding projections
+
+Layer inputs, weights, and state feed qkvg/gate projections, the stateful core, then the local output projection. This is one B200 rank-local module, ending before BF16 TP AllReduce. [v1](../../../contracts/workloads/kimi-k3-kda-decode-megaop-b200-v1.json) uses a baseline-bracketed protocol; [v2](../../../contracts/workloads/kimi-k3-kda-decode-megaop-b200-v2.json) uses paired timing and confidence intervals. Rules cannot be interchanged after results.
+
+Contract loading and boundary validation do not supply a complete megaop Lab evaluator or GPU results. Exact shapes, oracle, output storage, and state requirements remain in the contracts.
+
+## Why some examples are not listed as Workloads
+
+RMSNorm, softmax, and RoPE also appear as [Corpus cases](../../../corpus/manifest.json) or independent measurements. [State update](../../../examples/gpu/state_store_b200_correctness/README.md) and [FMA](../../../examples/gpu/fma_b200_correctness/README.md) have fixed GPU tasks. A JSON file or README does not automatically make them a complete Workload callable by arbitrary Studies; task semantics, evaluator, and evidence each need delivery.

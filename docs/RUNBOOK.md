@@ -1,5 +1,7 @@
 # Canonical execution runbook
 
+[中文阅读](zh-CN/RUNBOOK.md) · [Bilingual catalog](README.md)
+
 This runbook describes the supported operating path, not authorization or historical
 experiment results. A live run still requires the exact Workload and Study gates, a
 qualified provider, released Compiler and Executor authorities, admitted GPU

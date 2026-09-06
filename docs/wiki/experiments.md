@@ -1,7 +1,9 @@
 # 一次实验怎样进行
 
+[中文首页](../zh-CN/README.md) · [English](../en/wiki/experiments.md) · [中英文对照](../README.md)
+
 **先固定题目和判分规则，再让 AI 改候选，最后保存可复查的结果。**
-这页解释流程；准确的运行参数和工具入口在 [RUNBOOK](../RUNBOOK.md)。
+这页解释流程；准确的运行参数和工具入口在 [RUNBOOK](../zh-CN/RUNBOOK.md)。
 
 [返回 Wiki](README.md) · [结果解释](results.md)
 
@@ -63,7 +65,7 @@ GPU 操作需要实际机器、驱动、工具链和受控资源分配；旧教�
 后续主线升级，不会让旧实验自动改用新编译器。
 
 仓库的基础设施测试模板还含模拟 provider 和工具链信息。它们用于验证流程，不能原样冒充真实环境。
-[执行手册](../RUNBOOK.md)说明如何从真实的 provider 验收记录构造实机 Study。
+[执行手册](../zh-CN/RUNBOOK.md)说明如何从真实的 provider 验收记录构造实机 Study。
 
 ## 计时怎样公平
 

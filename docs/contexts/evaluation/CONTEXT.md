@@ -1,5 +1,7 @@
 # Evaluation context
 
+[中文阅读](../../zh-CN/contexts/evaluation/CONTEXT.md) · [Bilingual catalog](../../README.md)
+
 Evaluation owns the common assay after an Authoring Environment seals a Candidate.
 Canonical definitions are in the [`Glossary`](../../GLOSSARY.md#evaluation-terms).
 

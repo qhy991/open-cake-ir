@@ -1,5 +1,7 @@
 # Acceptance gates
 
+[中文阅读](zh-CN/ACCEPTANCE_GATES.md) · [Bilingual catalog](README.md)
+
 Each gate names the uncertainty it settles and the action that changes if it fails. The
 headings describe capabilities directly; internal migration sequence codes are not domain
 language.

@@ -1,5 +1,7 @@
 # Open Cake 中文 Wiki
 
+[中文首页](../zh-CN/README.md) · [English](../en/wiki/README.md) · [中英文对照](../README.md)
+
 **这里讲清楚一件事：怎样把计算想法变成可检查、可测量的 GPU 程序。**
 不要求先学编译器。先读熟悉的问题，再按需查代码里的英文名。
 
@@ -16,17 +18,18 @@
 | 我想知道 | 去哪里 |
 | --- | --- |
 | `load`、`mma`、`top_k` 等名字是什么意思 | [IR 基本操作](primitives.md) |
+| 用 Python 写计划而不是手填 JSON | [Python 入门](../zh-CN/PYTHON_FRONTEND.md) |
 | 当前有哪些完整任务定义 | [Workload 目录](workloads.md) |
 | AI 怎样改代码，怎样控制预算 | [实验流程](experiments.md) |
-| 怎么开始一次真实 GPU 实验 | [实验流程](experiments.md#运行前看什么)和 [执行手册](../RUNBOOK.md) |
+| 怎么开始一次真实 GPU 实验 | [实验流程](experiments.md#运行前看什么)和 [执行手册](../zh-CN/RUNBOOK.md) |
 | 某个检查没通过，该看什么 | [结果与排错](results.md) |
 | 主线升级后怎样重建旧任务 | [历史任务回放](replay.md) |
 | 一个新操作为什么不等于整个算子都支持 | [FMA 再审与读取检查案例](../ACCESS_DOMAIN_REPAIR_20260906.md) |
 | 怎样证明一个固定样本在 GPU 上算对 | [8 个输出的仿射检查实例](../AFFINE_PARENT_B200_CANARY_20260906.md) |
 | 现在发布的是哪个版本 | [自动生成的发布状态](../../reports/current/STATUS.md) |
 | 一个英文术语的正式含义 | [术语表](../GLOSSARY.md) |
-| 代码应该放在哪一部分 | [职责地图](../../CONTEXT-MAP.md) |
-| 为什么采用某种设计 | [设计决策目录](../adr/README.md) |
+| 代码应该放在哪一部分 | [职责地图](../zh-CN/CONTEXT-MAP.md) |
+| 为什么采用某种设计 | [设计决策目录](../zh-CN/adr/README.md) |
 | 文档怎样保持准确 | [文档维护](maintaining.md) |
 
 ## 怎样使用这个 Wiki

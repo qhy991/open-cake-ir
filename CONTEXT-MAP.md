@@ -1,5 +1,7 @@
 # open-cake-ir documentation and context map
 
+[中文阅读](docs/zh-CN/CONTEXT-MAP.md) · [Bilingual catalog](docs/README.md)
+
 This is the navigation authority for repository documentation. Canonical term definitions
 live in [`docs/GLOSSARY.md`](docs/GLOSSARY.md); this file says which document owns each kind
 of information and where new material belongs.

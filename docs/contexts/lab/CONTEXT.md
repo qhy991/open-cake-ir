@@ -1,5 +1,7 @@
 # Research Lab context
 
+[中文阅读](../../zh-CN/contexts/lab/CONTEXT.md) · [Bilingual catalog](../../README.md)
+
 The Research Lab owns Study design and execution while treating Workload, Compiler, and
 Executor revisions as frozen inputs. Canonical definitions are in the
 [`Glossary`](../../GLOSSARY.md#workload-and-research-lab-terms).

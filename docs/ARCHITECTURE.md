@@ -1,5 +1,7 @@
 # 系统全貌：怎样把一个想法变成可验证的 GPU 程序
 
+[中文首页](zh-CN/README.md) · [English](en/ARCHITECTURE.md) · [中英文对照](README.md)
+
 open-cake-ir 解决的问题是：**让计算方法写得明确，让错误能定位，让改进有证据。**
 这份文档解释稳定的职责；当前版本和数量只看 [发布状态](../reports/current/STATUS.md)。
 
@@ -99,6 +101,6 @@ AI 提交候选，外部控制器 Ralph 记录预算和当前状态，再决定�
 最后运行完整语料检查，按发布流程生成新的 Compiler。
 
 Executor 固定的是 Lab、评测、证据工具和机器环境。它与 Compiler 是不同版本。
-已发布 Executor 的身份不重复使用，见 [ADR 0049](adr/0049-released-executor-descriptors-reserve-their-identities.md)。
+已发布 Executor 的身份不重复使用，见 [ADR 0049](zh-CN/adr/0049-released-executor-descriptors-reserve-their-identities.md)。
 
 文档、代码、合同与历史记录分别维护，具体做法见 [文档维护](wiki/maintaining.md)。
