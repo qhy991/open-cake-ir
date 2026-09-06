@@ -52,6 +52,8 @@ and macOS 15+ are required; standalone `xcrun metal` is unnecessary. This does n
 IEEE/PTX bit equivalence: Metal permits denormal flushing and different FP32 rounding
 behavior. See Apple's [compile options](https://developer.apple.com/documentation/metal/mtlcompileoptions)
 and [MSL specification](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf).
+The host executable is built once with `swiftc -O` and shared by all arms;
+`swift-build-command.json` records the invoked build argv. Metal math options remain separate.
 
 ## Correctness and measurement
 

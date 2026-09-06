@@ -45,6 +45,8 @@ contraction。需要 Apple Silicon、macOS 15+ 和已有的 `xcrun swiftc`，不
 Metal 仍允许非规格化数清零和不同 FP32 舍入行为，不能据此宣称 IEEE/PTX 位级等价。
 参见 Apple [编译选项](https://developer.apple.com/documentation/metal/mtlcompileoptions)及
 [MSL 规范](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf)。
+主机可执行文件统一使用 `swiftc -O` 构建一次、供所有比较臂复用；
+`swift-build-command.json` 记录实际构建参数。Metal 数学选项保持独立。
 
 ## 正确性和测量
 

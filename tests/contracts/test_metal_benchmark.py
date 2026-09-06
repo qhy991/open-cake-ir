@@ -315,7 +315,7 @@ class MetalBatchControlFlowContracts(unittest.TestCase):
         path = cls.directory / "batch_cpu.swift"
         path.write_text(source)
         cls.binary = cls.directory / "batch-cpu"
-        compiled = subprocess.run([swift, str(path), "-o", str(cls.binary)], capture_output=True, text=True, timeout=120)
+        compiled = subprocess.run([swift, "-O", str(path), "-o", str(cls.binary)], capture_output=True, text=True, timeout=120)
         if compiled.returncode:
             raise AssertionError(compiled.stdout + compiled.stderr)
 

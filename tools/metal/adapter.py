@@ -136,8 +136,9 @@ def compile_runner(directory: Path) -> Path:
     binary = directory / "metal-runner"
     _require(directory.is_absolute() and directory.is_dir() and not binary.exists(),
              "runner requires a fresh absolute output location")
-    command = ["xcrun", "swiftc", "-target", "arm64-apple-macosx15.0",
+    command = ["xcrun", "swiftc", "-O", "-target", "arm64-apple-macosx15.0",
                str(Path(__file__).with_name("runner.swift")), "-o", str(binary)]
+    (directory / "swift-build-command.json").write_text(json.dumps(command, indent=2) + "\n")
     completed = subprocess.run(command, capture_output=True, text=True, timeout=120)
     (directory / "swift-build.log").write_text(completed.stdout + completed.stderr)
     _require(completed.returncode == 0, "Swift host compilation failed; see swift-build.log")

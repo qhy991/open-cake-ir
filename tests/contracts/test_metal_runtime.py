@@ -169,6 +169,17 @@ class MetalRuntimeContracts(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "refused or failed"):
                 adapter.invoke(Path("/fake/runner"), self.directory)
 
+    def test_host_build_is_optimized_and_records_the_invoked_argv(self):
+        from subprocess import CompletedProcess
+        with patch.object(adapter.subprocess, "run", return_value=CompletedProcess([], 0, "", "")) as build:
+            binary = adapter.compile_runner(self.directory)
+        build.assert_called_once()
+        argv = build.call_args.args[0]
+        self.assertEqual(argv.count("-O"), 1)
+        self.assertNotIn("-Ounchecked", argv)
+        self.assertEqual(argv[-1], str(binary))
+        self.assertEqual(json.loads((self.directory / "swift-build-command.json").read_text()), argv)
+
     def test_success_exit_without_command_completion_is_not_gpu_success(self):
         from subprocess import CompletedProcess
         with patch.object(adapter.subprocess, "run", return_value=CompletedProcess([], 0, '{"status":"completed"}', "")):
