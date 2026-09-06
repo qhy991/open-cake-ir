@@ -69,7 +69,9 @@ class EnvironmentContractTests(unittest.TestCase):
                 "            'ptx': '.target sm_100a',\n"
                 "            'cubin': b'\\x7fELFfixture',\n"
                 "        },\n"
-                "        metadata=SimpleNamespace(shared=164880),\n"
+                "        metadata=SimpleNamespace(shared=164880, name=source.kernel.__name__,\n"
+                "            num_ctas=1, num_warps=options['num_warps'],\n"
+                "            global_scratch_size=0, profile_scratch_size=0),\n"
                 "    )\n",
                 encoding="utf-8",
             )

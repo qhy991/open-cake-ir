@@ -6,12 +6,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler import Compiler, Schedule  # noqa: E402
+from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.compiler.toolchain import compile_triton, inspect_triton_resources  # noqa: E402
 from open_cake_ir.compiler.compiled_resources import load_compiled_resources  # noqa: E402
 
@@ -130,10 +131,16 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
             continue
-        schedule = Schedule.from_dict(json.loads(assessment.schedule_bytes))
-        lowering = compiler.lower(assessment)
+        lowering = (
+            compiler.lower(assessment)
+            if output is not None or arguments.compiled_report is not None else None
+        )
         resources = None
-        if output is not None:
+        uncovered = (
+            lowering is not None
+            and lowering.toolchain_requirements.get("compiler") != "triton"
+        )
+        if output is not None and not uncovered:
             compilation = compile_triton(lowering.source.encode(), lowering.toolchain_requirements)
             resources = inspect_triton_resources(compilation, arguments.cuobjdump)
             artifacts = output / f"{len(rows):04d}"
@@ -141,16 +148,20 @@ def main(argv: list[str] | None = None) -> int:
             (artifacts / "lowered.py").write_bytes(compilation.source)
             for role in ("ptx", "cubin"):
                 (artifacts / f"kernel.{role}").write_bytes(compilation.artifacts[role])
-        elif arguments.compiled_report is not None:
+        elif arguments.compiled_report is not None and not uncovered:
             resources = observations.get(lowering.source_sha256)
             if resources is None:
-                raise ValueError(f"compiled report has no observation for current source {schedule.schedule_id!r}")
+                raise ValueError(f"compiled report has no observation for current source {assessment.schedule_id!r}")
+        profile = compiler.profile(assessment, compiled_resources=resources)
+        if uncovered:
+            profile = replace(profile, abstentions=(*profile.abstentions,
+                "offline compiled resource collection does not cover this lowering backend"))
         rows.append(
             {
                 "schedule": _display_path(path),
-                "schedule_id": schedule.schedule_id,
+                "schedule_id": assessment.schedule_id,
                 "findings": findings,
-                "profile": compiler.profile(assessment, compiled_resources=resources).as_dict(),
+                "profile": profile.as_dict(),
             }
         )
     document = {"schema_version": 1, "rows": rows, "skipped": skipped}

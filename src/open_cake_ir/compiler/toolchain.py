@@ -79,7 +79,7 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
         # and n_spills require the GPU runtime and must not be used in this path.
         metadata = compiled.metadata
         if metadata.name != name or metadata.num_ctas != 1:
-            raise ValueError("offline resource model requires the requested single-CTA kernel")
+            raise ValueError("offline resource model requires the requested single-CTA-cluster kernel")
         if metadata.global_scratch_size or metadata.profile_scratch_size:
             raise ValueError("offline resource model does not cover auxiliary global scratch")
         if not artifacts["cubin"].startswith(b"\x7fELF") or re.search(

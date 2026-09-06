@@ -31,6 +31,7 @@ from .ir import (
 )
 from .target import Target, TargetParseError
 from .ranking import Cost, rank as rank_candidates
+from .compiled_resources import CompiledResources
 from .verifier import FindingSeverity, verify as verify_contracts
 
 
@@ -1248,7 +1249,7 @@ class Compiler:
                 )
         return findings
 
-    def profile(self, assessment: Assessment, *, compiled_resources=None):
+    def profile(self, assessment: Assessment, *, compiled_resources: CompiledResources | None = None):
         """Profile the canonical assessed program without executing a kernel.
 
         Reuse lower's full Assessment replay so compiled facts cannot be paired with a

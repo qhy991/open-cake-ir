@@ -5,6 +5,8 @@
 
 [返回 Wiki](README.md) · [正式证据术语](../GLOSSARY.md#evidence-strength-and-scope)
 
+运行前的资源判断和离线复用见 [无 GPU 的编译资源分析](../PROFILER_FREE_ANALYSIS.md)。
+
 ## 从计划到实际运行
 
 | 看到的结果 | 可以说什么 | 还缺什么 |

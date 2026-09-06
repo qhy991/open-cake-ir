@@ -109,10 +109,16 @@ def load_compiled_resources(path: Path) -> dict[str, CompiledResources]:
     for index, row in enumerate(document["rows"]):
         if not isinstance(row, dict) or not isinstance(row.get("profile"), dict):
             raise ValueError("compiled report row structure differs")
-        resource = CompiledResources.from_dict(row["profile"].get("compiled_resources"))
+        value = row["profile"].get("compiled_resources")
+        if value is None:
+            continue
+        resource = CompiledResources.from_dict(value)
         binary_path = root / f"{index:04d}" / "kernel.cubin"
         source_path = root / f"{index:04d}" / "lowered.py"
-        if any(root not in item.resolve(strict=True).parents for item in (binary_path, source_path)):
+        if binary_path.parent.is_symlink() or any(
+            item.is_symlink() or root not in item.resolve(strict=True).parents
+            for item in (binary_path, source_path)
+        ):
             raise ValueError("compiled report artifact escapes its output directory")
         binary = binary_path.read_bytes()
         if not binary.startswith(b"\x7fELF") or sha256(binary).hexdigest() != resource.cubin_sha256:

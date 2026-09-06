@@ -68,10 +68,10 @@ def main(argv: list[str] | None = None) -> int:
         assessment = compiler.assess_file(schedule_path)
         schedule = Schedule.from_dict(json.loads(assessment.schedule_bytes))
         target = Target.load(ROOT / f"compiler/targets/{schedule.target}.json")
-        lowering = compiler.lower(assessment) if assessment.lowering_eligible else None
-        if lowering is not None:
+        if assessment.lowering_eligible:
             resources = None
             if arguments.compiled_report is not None:
+                lowering = compiler.lower(assessment)
                 resources = load_compiled_resources(arguments.compiled_report).get(lowering.source_sha256)
                 if resources is None:
                     raise ValueError("compiled report has no observation for this current QSA source")

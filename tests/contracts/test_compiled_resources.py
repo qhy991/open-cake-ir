@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 from dataclasses import replace
 from hashlib import sha256
 import json
@@ -153,6 +152,30 @@ runpy.run_path('tools/report_schedule_profile.py',run_name='__main__')
                     stream.write(b"changed")
                 with self.assertRaisesRegex(ValueError, "differs from its observation"):
                     load_compiled_resources(path)
+
+    def test_bulk_profile_keeps_an_uncovered_backend_explicitly_static(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            report = self._write_report(Path(folder))
+            result = subprocess.run([
+                sys.executable, "-B", "tools/report_schedule_profile.py", "--revision",
+                "compiler/revision.json", "--compiled-report", str(report), "--json",
+                "corpus/schedules/flash-kmeans-assignment-full.json",
+            ], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        profile = json.loads(result.stdout)["rows"][0]["profile"]
+        self.assertIsNone(profile["compiled_resources"])
+        self.assertTrue(any("does not cover this lowering backend" in item for item in profile["abstentions"]))
+
+    def test_portable_report_does_not_follow_artifact_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            path = self._write_report(root)
+            original = root / "0000/kernel.cubin"
+            moved = root / "fixture.cubin"
+            original.rename(moved)
+            original.symlink_to(moved)
+            with self.assertRaisesRegex(ValueError, "escapes its output directory"):
+                load_compiled_resources(path)
 
     def test_shared_compiler_uses_an_explicit_target_and_never_initializes_gpu_handles(self) -> None:
         class Compiled:

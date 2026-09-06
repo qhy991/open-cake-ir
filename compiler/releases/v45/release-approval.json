@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "d1cd9f0fca09a3bcfda78b16bd44a2978d130266dcf979a83885c94d91d8d860"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a074f9-45ac-75a0-9d05-df06de5c3e07",
+    "author_session_id": "01a0746d-ed07-7750-9b06-364fb193436e"
+  },
+  "approval_basis": "Independent review of frozen commit 5b7510c8f2e8ca6cd2c245cbeec550a3f0daf802, including the original frontend review against bc98679 and follow-up of b0ec41a. The previously demonstrated loss of indexed access semantics is repaired: original nested-index, program-index and broadcast-slice reproductions now fail with located FrontendError; CLI lower exits 2 without output. Rank-compatible nested indexing and range slices are also rejected. Supported load/store slices retain exact offsets/extents, and invalid local accesses still reach the existing verifier. Independently reran 24 frontend/release-approval contract tests, all passing; rebuilt the complete 77/77 Corpus Gate with 101 bound sources and verified exact normalized equality with the bound report. Actual latest session metadata confirms gpt-6-astra and the distinct reviewer session. Original and follow-up reports are preserved outside the checkout at /Users/haiyan-infiniai/Documents/Codex/2026-09-06/open-cake-python-frontend/review/REVIEW.md and REVIEW-5b7510c.md. This approval establishes static Compiler/frontend review and Corpus Gate acceptance only; it does not establish GPU compilation, numerical correctness, runtime/Executor qualification, profiling or performance. No expectations or implementation were changed by the reviewer."
+}
