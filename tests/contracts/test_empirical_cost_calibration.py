@@ -15,14 +15,14 @@ SPEC.loader.exec_module(instrument)
 
 class TraceAttributionTest(unittest.TestCase):
     def fixture(self):
-        rows = [{"id": "a", "grid": [2, 1, 1], "compiled_resources": {"entry_point": "same_name", "threads_per_cta": 128}},
-                {"id": "b", "grid": [4, 1, 1], "compiled_resources": {"entry_point": "same_name", "threads_per_cta": 256}}]
+        rows = [{"id": "a", "grid": [2, 1, 1], "profile": {"compiled_resources": {"entry_point": "same_name", "threads_per_cta": 128}}},
+                {"id": "b", "grid": [4, 1, 1], "profile": {"compiled_resources": {"entry_point": "same_name", "threads_per_cta": 256}}}]
         events = []
         for position, index in enumerate([0, 1, 1, 0]):
             common = {"device": 0, "context": 1, "stream": 7}
             events.extend([
                 {"cat": "kernel", "name": "FillFunctor<unsigned char>", "ts": position * 10, "dur": 1, "args": common},
-                {"cat": "kernel", "name": "same_name", "ts": position * 10 + 2, "dur": index + 2, "args": {**common, "correlation": position + 1, "grid": rows[index]["grid"], "block": [rows[index]["compiled_resources"]["threads_per_cta"], 1, 1]}},
+                {"cat": "kernel", "name": "same_name", "ts": position * 10 + 2, "dur": index + 2, "args": {**common, "correlation": position + 1, "grid": rows[index]["grid"], "block": [rows[index]["profile"]["compiled_resources"]["threads_per_cta"], 1, 1]}},
                 {"cat": "cuda_driver", "name": "cuLaunchKernel", "args": {"correlation": position + 1}},
             ])
         return rows, events

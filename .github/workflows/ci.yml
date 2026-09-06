@@ -39,3 +39,4 @@ jobs:
           tests.contracts.test_compiled_resources
           tests.contracts.test_empirical_cost
           tests.contracts.test_empirical_cost_calibration
+          tests.contracts.test_empirical_cost_fitter

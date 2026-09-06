@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.compiler import Compiler, EmpiricalCostModel
 from open_cake_ir.compiler.toolchain import compile_triton, inspect_triton_resources
+from open_cake_ir.compiler.compiled_resources import CompiledResources, load_compiled_resources
 from open_cake_ir.evaluation.cuda_driver import _DYNAMIC_SHARED_OPT_IN_THRESHOLD, _driver_call
 
 
@@ -91,9 +92,9 @@ def _trace_samples(stage, repetition, plan, rows):
         if ("FillFunctor<unsigned char>" not in clear["name"]
                 or clear["ts"] + clear["dur"] > target["ts"] + .002
                 or (previous and previous["ts"] + previous["dur"] > clear["ts"] + .002)
-                or target["name"] != row["compiled_resources"]["entry_point"]
+                or target["name"] != row["profile"]["compiled_resources"]["entry_point"]
                 or target["args"]["grid"] != row["grid"]
-                or target["args"]["block"] != [row["compiled_resources"]["threads_per_cta"], 1, 1]):
+                or target["args"]["block"] != [row["profile"]["compiled_resources"]["threads_per_cta"], 1, 1]):
             raise ValueError("clear/target order or launch identity differs")
         correlation = target["args"]["correlation"]
         if correlation not in driver_ids or correlation in seen:
@@ -188,12 +189,12 @@ def _collect():
             deviations.append(deviation)
         for tensor, original in zip(inputs, cpu, strict=True):tensor.copy_(original)
         invoke(); torch.cuda.synchronize()
-        row = {**case, "grid": grid, "compiled_resources": resources.as_dict(), "correct": True, "inputs_unchanged": True, "max_deviations": deviations, "samples_us": []}
+        row = {**case, "grid": grid, "profile": compiler.profile(assessment, compiled_resources=resources).as_dict(), "correct": True, "inputs_unchanged": True, "max_deviations": deviations, "samples_us": []}
         rows.append(row)
         launches.append((invoke, module, cpu, inputs, output, expected, tolerance))
         print(json.dumps({"prepared": case["id"], "count": index + 1}), flush=True)
-    versions = {row["compiled_resources"]["compiler_version"] for row in rows}
-    inspectors = {row["compiled_resources"]["inspector_version"] for row in rows}
+    versions = {row["profile"]["compiled_resources"]["compiler_version"] for row in rows}
+    inspectors = {row["profile"]["compiled_resources"]["inspector_version"] for row in rows}
     if len(versions) != 1 or len(inspectors) != 1:raise ValueError("compilation context changed within collection")
     runtime.update(compiler_version=versions.pop(), inspector_version=inspectors.pop())
     if kind == "profile":
@@ -229,7 +230,7 @@ def _collect():
             row["quality_passed"] &= row["repeat_median_ratio"] <= plan["acceptance"]["maximum_repeat_median_ratio"] and all(item["cv"] <= plan["acceptance"]["maximum_cohort_cv"] for item in row["summaries"])
         quality &= row["quality_passed"]
         _driver_call(driver, "cuModuleUnload", module, outputs=0)
-    _write(stage / "observations.json", {"runtime": runtime, "quality_passed": quality, "rows": rows})
+    _write(stage / "observations.json", {"schema_version": 1, "runtime": runtime, "quality_passed": quality, "rows": rows})
     artifacts = {"observations": "observations.json", "plan": "plan.json", "collector": "collector.py", "execution_context": "execution-context.json"}
     for index in range(len(rows)):
         for role, name in (("schedule", "schedule.json"), ("source", "lowered.py"), ("cubin", "kernel.cubin"), ("ptx", "kernel.ptx")):
@@ -244,6 +245,9 @@ def _fit(run, output):
     if output.exists():raise ValueError("fitting output must be a new external directory")
     run_result = _read(run / "result.json")
     if run_result["outcome"] != "completed" or run_result["validity"] != "valid":raise ValueError("whole collection did not pass")
+    outcomes = {row["id"]: row for row in run_result["stages"]}
+    if any(outcomes[name]["status"] != "passed" or outcomes[name]["validity"] != "valid" for name in ("correctness", "collection")):
+        raise ValueError("required stage did not pass")
     stage = run / "stages/collection"
     plan, observed = _read(stage / "plan.json"), _read(stage / "observations.json")
     if plan.get("state") != "frozen" or sha256(Path(__file__).read_bytes()).hexdigest() != plan["collector_sha256"]:
@@ -270,7 +274,7 @@ def _fit(run, output):
         receipt = _read(run / f"stages/{name}/receipt.json")
         if receipt["execution"] != "broker" or receipt["exit_code"] != 0 or not receipt["judge_result_valid"] or not receipt["broker_job_id"]:raise ValueError("stage receipt differs")
     if _read(run / "stages/correctness/observations.json")["runtime"] != observed["runtime"]:raise ValueError("runtime changed between stages")
-    for index, row in enumerate(rows):row["template"] = _read(stage / f"{index:04d}/schedule.json")
+    _bind_artifacts(run, plan, rows, compiler)
     specifications = {spec["id"]: spec for spec in plan["curves"]}
     if len(specifications) != len(plan["curves"]) or set(specifications) != {row["curve_id"] for row in rows}:
         raise ValueError("curve ownership differs")
@@ -318,6 +322,59 @@ def _fit(run, output):
         _write(output / "model.json", document)
     print(json.dumps({"passed": passed, **metrics}, indent=2))
     return 0 if passed else 1
+
+
+def _bind_artifacts(run, plan, rows, compiler):
+    """Replay canonical candidates and reuse the existing compiled-report owner."""
+    candidate = (run / "candidate").resolve()
+    if _read(candidate / "plan.json") != plan:
+        raise ValueError("stage plan differs from the candidate snapshot")
+    observations = {}
+    phase_rows = {}
+    for phase in ("correctness", "collection"):
+        directory = run / "stages" / phase
+        if _read(directory / "plan.json") != plan:
+            raise ValueError("stage plans differ")
+        if (directory / "collector.py").read_bytes() != Path(__file__).read_bytes():
+            raise ValueError("stage collector differs from the frozen fitter")
+        # Validates retained source/CUBIN against their existing identities, including
+        # missing files, source/binary drift and symlink/escape refusal.
+        observations[phase] = load_compiled_resources(directory / "observations.json")
+        phase_document = _read(directory / "observations.json")
+        phase_rows[phase] = phase_document["rows"]
+        if phase_document["quality_passed"] is not True or any(row["correct"] is not True or row["inputs_unchanged"] is not True for row in phase_rows[phase]):
+            raise ValueError("stage correctness or input preservation differs")
+        if len(phase_rows[phase]) != len(rows):
+            raise ValueError("stage case count differs")
+    for index, row in enumerate(rows):
+        path = (candidate / row["schedule"]).resolve()
+        if candidate not in path.parents:
+            raise ValueError("Schedule escapes candidate snapshot")
+        assessment = compiler.assess_file(path)
+        if assessment.compiler_revision_id != plan["compiler_revision_id"]:
+            raise ValueError("candidate Compiler Revision differs")
+        lowering = compiler.lower(assessment)
+        expected = json.loads(assessment.schedule_bytes)
+        bound = []
+        for phase in ("correctness", "collection"):
+            directory = run / "stages" / phase / f"{index:04d}"
+            if json.dumps(_read(directory / "schedule.json"), sort_keys=True) != json.dumps(expected, sort_keys=True):
+                raise ValueError("stage Schedule differs from canonical candidate snapshot")
+            recorded = phase_rows[phase][index]
+            if any(recorded[key] != row[key] for key in plan["cases"][index]):
+                raise ValueError("stage case ownership differs")
+            resource = observations[phase].get(lowering.source_sha256)
+            if resource is None or resource != CompiledResources.from_dict(recorded["profile"]["compiled_resources"]):
+                raise ValueError("compiled observation differs from canonical candidate lowering")
+            requirements = lowering.toolchain_requirements
+            if ((resource.target, resource.entry_point, resource.threads_per_cta) !=
+                    (assessment.target, requirements["kernel_entry_point"], requirements["compile_options"]["num_warps"] * 32)
+                    or json.dumps(recorded["grid"]) != json.dumps(list(requirements["grid"]))):
+                raise ValueError("recorded launch differs from canonical lowering")
+            bound.append(resource)
+        if bound[0] != bound[1]:
+            raise ValueError("correctness and collection compiled artifacts differ")
+        row["template"] = expected
 
 
 def main():
