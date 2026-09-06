@@ -7,11 +7,11 @@
 
 ## Compiler
 
-- 版本： `open-cake-ir-sm100a-v46`
+- 版本： `open-cake-ir-sm100a-v47`
 - 状态： `released`
 - 目标： `sm_100a`
 - 语料检查： `77/77` 项符合预期
-- 绑定源码： `103` 个文件
+- 绑定源码： `109` 个文件
 - 已发布校准： `无`
 - 负责记录： [`compiler/revision.lock.json`](../../compiler/revision.lock.json)
 
