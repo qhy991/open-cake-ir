@@ -37,3 +37,6 @@ jobs:
           tests.contracts.test_documentation
           tests.contracts.test_release_approval
           tests.contracts.test_compiled_resources
+          tests.contracts.test_tile_workloads
+          tests.contracts.test_triton_loop_scopes
+          tests.contracts.test_native_triton_pairing

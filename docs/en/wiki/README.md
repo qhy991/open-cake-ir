@@ -17,6 +17,7 @@ Start here to understand how an idea becomes a checked and measured GPU program.
 | What do load, mma, and top_k mean? | [IR primitives](primitives.md) |
 | How can I author a Schedule in Python? | [Python frontend](../PYTHON_FRONTEND.md) |
 | Which complete task definitions exist? | [Workloads](workloads.md) |
+| How do I prepare the shared ABI and matched baselines for three standalone operators? | [Tile Workloads](../TILE_WORKLOADS.md) |
 | How does AI work under a budget? | [Experiments](experiments.md) |
 | How do I prepare real GPU work? | [Runbook](../../RUNBOOK.md) |
 | How can an old task be replayed? | [Replay](replay.md) |

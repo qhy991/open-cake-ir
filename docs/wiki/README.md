@@ -20,6 +20,7 @@
 | `load`、`mma`、`top_k` 等名字是什么意思 | [IR 基本操作](primitives.md) |
 | 用 Python 写计划而不是手填 JSON | [Python 入门](../zh-CN/PYTHON_FRONTEND.md) |
 | 当前有哪些完整任务定义 | [Workload 目录](workloads.md) |
+| 怎样准备三个独立算子的共用 ABI 和匹配基线 | [Tile Workload 指南](../TILE_WORKLOADS.md) |
 | AI 怎样改代码，怎样控制预算 | [实验流程](experiments.md) |
 | 怎么开始一次真实 GPU 实验 | [实验流程](experiments.md#运行前看什么)和 [执行手册](../zh-CN/RUNBOOK.md) |
 | 某个检查没通过，该看什么 | [结果与排错](results.md) |
