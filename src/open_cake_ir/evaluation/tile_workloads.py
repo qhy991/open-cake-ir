@@ -9,15 +9,36 @@ from __future__ import annotations
 import math
 import random
 import struct
+import sys
 from collections.abc import Mapping, Sequence
 
-from .workload import TensorABI, WorkloadContract, _object
+from .workload import TensorABI, WorkloadContract, _name, _object
+
+
+def source_schedule_path(document: Mapping[str, object]) -> str:
+    """Validate the tile Workload's source projection before any consumer uses it."""
+
+    provenance = document.get("provenance")
+    if not isinstance(provenance, list) or not provenance:
+        raise ValueError("tile provenance must be a non-empty list of objects")
+    sources = []
+    for index, value in enumerate(provenance):
+        context = f"tile provenance[{index}]"
+        entry = _object(value, context)
+        if entry.get("kind") == "source_schedule":
+            for field in ("path", "source_commit", "scope"):
+                _name(entry.get(field), f"{context}.{field}")
+            sources.append(entry["path"])
+    if len(sources) != 1:
+        raise ValueError("tile provenance requires one visible source Schedule")
+    return sources[0]
 
 
 def validate_tile_contract(document: Mapping[str, object]) -> None:
     """Check supported mathematical/ABI invariants, not a second contract catalogue."""
 
     workload = WorkloadContract(document)
+    source_schedule_path(document)
     operator = document["operator"]
     if document["revision"] != "1" or document["workload_id"] != str(operator).replace("_", "-") + "-v1":
         raise ValueError("tile workload identity or revision differs")
@@ -38,8 +59,8 @@ def validate_tile_contract(document: Mapping[str, object]) -> None:
         raise ValueError("tile workload evaluation boundary differs")
     for name in ("atol", "rtol"):
         value = validation.get(name)
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
-            raise ValueError("tile workload tolerance must be finite and nonnegative")
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= sys.float_info.max:
+            raise ValueError(f"tile workload validation.{name} must be finite and nonnegative")
     for case_id in workload.case_ids:
         if workload.case(case_id)["seed"] is None:
             raise ValueError("tile materialization requires an explicit deterministic seed")

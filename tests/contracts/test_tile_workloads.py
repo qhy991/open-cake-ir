@@ -194,6 +194,40 @@ class TileWorkloadTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.load_document(document)
 
+    def test_oversized_tolerances_are_public_load_refusals(self) -> None:
+        for workload in self.workloads.values():
+            for field in ("atol", "rtol"):
+                with self.subTest(workload=workload.workload_id, field=field):
+                    document = workload.document
+                    document["validation"][field] = 10 ** 1000
+                    with self.assertRaisesRegex(ValueError, f"validation.{field}"):
+                        self.load_document(document)
+
+    def test_nonobject_provenance_is_refused_at_load_and_baseline(self) -> None:
+        for entry in (None, "source", 7):
+            with self.subTest(entry=entry):
+                document = self.workloads["rmsnorm-fp32"].document
+                document["provenance"] = [entry]
+                with self.assertRaisesRegex(ValueError, r"provenance\[0\].*object"):
+                    self.load_document(document)
+                # The public constructor can also reach preparation without load().
+                with self.assertRaisesRegex(ValueError, r"provenance\[0\].*object"):
+                    baseline_schedule(WorkloadContract(document), "primary")
+
+    def test_source_provenance_required_fields_are_validated(self) -> None:
+        for field in ("path", "source_commit", "scope"):
+            for missing in (True, False):
+                with self.subTest(field=field, missing=missing):
+                    document = self.workloads["rmsnorm-fp32"].document
+                    if missing:
+                        document["provenance"][0].pop(field)
+                    else:
+                        document["provenance"][0][field] = 7
+                    with self.assertRaisesRegex(ValueError, rf"provenance\[0\].{field}"):
+                        self.load_document(document)
+                    with self.assertRaisesRegex(ValueError, rf"provenance\[0\].{field}"):
+                        baseline_schedule(WorkloadContract(document), "primary")
+
     def test_materialization_honors_each_declared_input_bound(self) -> None:
         document = self.workloads["rmsnorm-fp32"].document
         document["tensors"]["x"]["max_abs"] = 0.125

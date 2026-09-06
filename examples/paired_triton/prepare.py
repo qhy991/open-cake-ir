@@ -8,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from open_cake_ir.compiler import Compiler
+from open_cake_ir.evaluation.tile_workloads import source_schedule_path
 from open_cake_ir.evaluation.workload import WorkloadContract
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,11 +23,9 @@ def baseline_schedule(workload: WorkloadContract, case_id: str, *, project_root:
     """
 
     document = workload.document
-    sources = [entry for entry in document["provenance"] if entry.get("kind") == "source_schedule"]
-    if len(sources) != 1:
-        raise ValueError("baseline requires one visible source Schedule")
+    source_path = source_schedule_path(document)
     root = project_root.resolve(strict=True)
-    source = (root / sources[0]["path"]).resolve(strict=True)
+    source = (root / source_path).resolve(strict=True)
     if not source.is_relative_to(root / "corpus/schedules"):
         raise ValueError("baseline source must be a corpus Schedule")
     schedule = json.loads(source.read_text(encoding="utf-8"))
