@@ -1071,6 +1071,19 @@
         "schedule_sha256": "2fff703865da06f77dd340df69bb5417adc823e929cb2da32f9ec5c5f6aa4e82",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "gemm-bias-two-deep-tail-b1-smoke",
+      "schedule": "corpus/schedules/gemm-bias-two-deep-tail-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "21d82f10e867f2fb65548d171da86ddb462c11becb4b225212bef242703d665b",
+        "lowering_source_sha256": "c0a17806fe6e1787d8b77395b0d27a53fdff7e36018f6c5d812eb3f16442c3fd"
+      }
     }
   ]
 }

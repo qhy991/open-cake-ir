@@ -21,6 +21,7 @@
 | 用 Python 写计划而不是手填 JSON | [Python 入门](../zh-CN/PYTHON_FRONTEND.md) |
 | 当前有哪些完整任务定义 | [Workload 目录](workloads.md) |
 | 怎样准备三个独立算子的共用 ABI 和匹配基线 | [Tile Workload 指南](../TILE_WORKLOADS.md) |
+| 两层静态 TileLoop 怎样组织作用域 | [循环作用域](../TRITON_LOOP_SCOPES.md) · [带尾部的 GEMM 计划](../../corpus/schedules/gemm-bias-two-deep-tail-b1-smoke.json) |
 | AI 怎样改代码，怎样控制预算 | [实验流程](experiments.md) |
 | 怎么开始一次真实 GPU 实验 | [实验流程](experiments.md#运行前看什么)和 [执行手册](../zh-CN/RUNBOOK.md) |
 | 某个检查没通过，该看什么 | [结果与排错](results.md) |

@@ -30,6 +30,7 @@ GPU 是擅长让很多小组同时算题的处理器。算子是一道明确的�
 | 三个独立 Tile Workload 的 ABI、CPU 参考和匹配基线 | [Tile Workload 指南](../TILE_WORKLOADS.md) |
 | 用 Python 变量和表达式写执行计划 | [Python 入门](PYTHON_FRONTEND.md) |
 | 理解 IR 对象、代码组织与扩展位置 | [当前 IR 详解](../IR_GUIDE.md) |
+| 两层 TileLoop 怎样初始化、累积和写回 | [Triton 循环作用域](../TRITON_LOOP_SCOPES.md) |
 | 从准备到真实实验应该按什么顺序 | [执行手册](RUNBOOK.md) |
 | 什么证据足够进入下一步 | [验收规则](ACCEPTANCE_GATES.md) |
 | 论文结果与本地结果有什么区别 | [论文对照约定](PAPER_CONTRACT.md) |
