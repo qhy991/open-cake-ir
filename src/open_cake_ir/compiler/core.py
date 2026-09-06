@@ -32,6 +32,7 @@ from .ir import (
 from .target import Target, TargetParseError
 from .ranking import Cost, rank as rank_candidates
 from .compiled_resources import CompiledResources
+from .empirical_cost import EmpiricalCostModel
 from .verifier import FindingSeverity, verify as verify_contracts
 
 
@@ -1249,7 +1250,8 @@ class Compiler:
                 )
         return findings
 
-    def profile(self, assessment: Assessment, *, compiled_resources: CompiledResources | None = None):
+    def profile(self, assessment: Assessment, *, compiled_resources: CompiledResources | None = None,
+                cost_model: EmpiricalCostModel | None = None):
         """Profile the canonical assessed program without executing a kernel.
 
         Reuse lower's full Assessment replay so compiled facts cannot be paired with a
@@ -1262,9 +1264,17 @@ class Compiler:
             _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
         )
         target = Target.from_dict(dict(self._target_definitions[assessment.target].document))
-        return profile_envelope(
+        profile = profile_envelope(
             schedule, target, lowering=lowering, compiled_resources=compiled_resources,
         )
+        if cost_model is not None:
+            from dataclasses import replace
+            profile = replace(profile, empirical_cost=cost_model.estimate(
+                json.loads(assessment.schedule_bytes), compiler_revision_id=self._revision_id,
+                target=assessment.target,
+                compiled_compiler_version=compiled_resources.compiler_version if compiled_resources else None,
+            ))
+        return profile
 
     def rank(
         self, assessments: Sequence[Assessment]

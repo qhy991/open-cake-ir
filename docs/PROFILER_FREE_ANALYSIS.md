@@ -90,3 +90,44 @@ Python 调用通过 `compiler.profile(assessment, compiled_resources=resources)`
 耗时、吞吐率和 stall 比例的数值预测需要独立的目标校准；最终候选仍由外部正确性及
 匹配实测验收。当前工作继续推进有适用范围和误差证据的性能估算，而不把资源上界
 直接作为运行时间。
+
+## 显式传入经验耗时模型
+
+`Compiler.profile` 现在可以通过同一入口接收外部经验模型。模型查询只使用 CPU，
+不会加载 GPU 库或隐式采样，也不会修改已发布的 `calibration_coverage` 或
+`Compiler.rank`。静态资源、编译资源和条件耗时预测可以在同一份反馈中查看：
+
+```bash
+python3 tools/report_schedule_profile.py --json \
+  --cost-model /external/calibration/model.json \
+  /external/candidates/schedule.json
+```
+
+Python 接口使用 `EmpiricalCostModel.load(path)`，然后调用
+`compiler.profile(assessment, cost_model=model)`。已有 agent 反馈工具
+`tools/project_qsa_feedback.py compiler` 也接受 `--cost-model`。
+
+模型用一个通用表示覆盖不同算子：每条曲线固定一个完整 Schedule 模板，明确列出
+共同变化的 Buffer 维度、允许的整数对齐和测量区间，再按维度大小插值。这里没有
+按算子名称分派的成本公式。模板比较保留 JSON 的值类型；只允许显示名称与模型
+明确绑定的尺寸变化。不同 Revision、不同目标、范围外或未对齐的尺寸、模板差异，
+以及同时命中多条曲线都会返回未覆盖原因。已提供编译资源时，后端编译器版本
+与模型声明不一致也会拒绝估算。
+
+模型根对象为 schema_version=1，包含 `model_id`、`compiler_revision_id`、`target`、
+`context`、`reported_evidence` 和 `curves`。`context` 声明 `timer`、`cache_protocol`、
+`runtime`（至少有 `compiler_version`）及 `input_scope`。每条曲线包含 `template`、
+`varying_dimensions`（`buffer` 和零起始 `dimension`）、`extent_multiple`、按 extent
+严格递增的 `points`（`extent`、`kernel_us`）和 `relative_error_envelope`。
+模型内容在读取时复制为不可变数据，后续修改输入对象不会改变预测。
+
+JSON 中的 `empirical_cost` 给出 `predicted_kernel_us`、`empirical_range_us`、覆盖状态、
+原因、上下文及外部报告的证据。它是 **external empirical cost**：Compiler 校验匹配
+关系和插值计算，外部采集者仍负责实测、误差验证和来源真实性。模型声明的环境
+不等于当前机器环境已经准入；缺少编译观察时，输出完全以声明的编译环境为条件。
+经验残差范围不是置信区间，也不保证全部未测尺寸。该输入不会补写 NCU 的利用率
+或 stall 百分比，更不会决定候选接受与发布。
+
+校准必须在模型绑定的冻结 Compiler Revision 上完成。早期独立 FMA 原型的旧 schema
+与 v46 测量不能仅改写版本名称后充当新 Revision 的模型；需要新的采集或经过明确
+审查的兼容证据。本接口不内置未验证的系数。

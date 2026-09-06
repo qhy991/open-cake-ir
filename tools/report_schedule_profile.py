@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler import Compiler  # noqa: E402
+from open_cake_ir.compiler import Compiler, EmpiricalCostModel  # noqa: E402
 from open_cake_ir.compiler.toolchain import compile_triton, inspect_triton_resources  # noqa: E402
 from open_cake_ir.compiler.compiled_resources import load_compiled_resources  # noqa: E402
 
@@ -46,10 +46,13 @@ def _metric(document: dict[str, object], name: str) -> dict[str, object]:
 
 
 def _table(rows: list[dict[str, object]]) -> str:
+    has_cost = any(row["profile"].get("empirical_cost") is not None for row in rows)
     header = (
         f"{'schedule':<34}{'regs':>8}{'CTA/SM<=':>10}{'warps%<=':>10}"
         f"{'IR read MiB<=':>14}{'barrier':>10}{'scoreboard':>12}{'source B':>12}  coverage"
     )
+    if has_cost:
+        header += "  est kernel us*"
     lines = [header, "-" * len(header)]
     for row in rows:
         profile = row["profile"]
@@ -83,6 +86,11 @@ def _table(rows: list[dict[str, object]]) -> str:
             f"{str(source_bytes):>12}  "
             f"{len(profile['abstentions'])} abstention(s)"
         )
+        if has_cost:
+            estimate = (profile.get("empirical_cost") or {}).get("predicted_kernel_us")
+            lines[-1] += "  " + ("-" if estimate is None else f"{estimate:.3f}")
+    if has_cost:
+        lines.append("* Conditional external empirical estimate; context and reported evidence are in JSON. Not a measured counter or qualified Compiler.rank.")
     return "\n".join(lines)
 
 
@@ -96,6 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--cost-model", type=Path, help="explicit external empirical cost model; CPU-only, exact Revision/target/template coverage")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--compile-to", type=Path, help="compile without a GPU and retain report.json plus artifacts in a new external directory")
     mode.add_argument("--compiled-report", type=Path, help="reuse an artifact-bound compiled report without CUDA tools or a GPU")
@@ -122,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.compiled_report else {}
     )
     compiler = Compiler.load(ROOT, arguments.revision.resolve(strict=True))
+    cost_model = EmpiricalCostModel.load(arguments.cost_model) if arguments.cost_model else None
     rows: list[dict[str, object]] = []
     skipped: list[dict[str, object]] = []
     for path in _paths(arguments):
@@ -156,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             resources = observations.get(lowering.source_sha256)
             if resources is None:
                 raise ValueError(f"compiled report has no observation for current source {assessment.schedule_id!r}")
-        profile = compiler.profile(assessment, compiled_resources=resources)
+        profile = compiler.profile(assessment, compiled_resources=resources, cost_model=cost_model)
         if uncovered:
             profile = replace(profile, abstentions=(*profile.abstentions,
                 "offline compiled resource collection does not cover this lowering backend"))
