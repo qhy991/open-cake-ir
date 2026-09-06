@@ -7,7 +7,7 @@
 
 ## Compiler
 
-- 版本： `open-cake-ir-sm100a-v47`
+- 版本： `open-cake-ir-sm100a-v48`
 - 状态： `released`
 - 目标： `sm_100a`
 - 语料检查： `77/77` 项符合预期
