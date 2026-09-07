@@ -100,6 +100,29 @@ class ExecutorRevision:
     relative_path: str
 
     @classmethod
+    def load_reference(
+        cls, project_root: str | Path, reference: object, context: str
+    ) -> "ExecutorRevision":
+        """Verify one exact descriptor reference and its repository source closure.
+
+        Host admission is a separate live-execution boundary. Every producer,
+        worker and replay consumer calls this validator independently.
+        """
+        if not isinstance(reference, Mapping) or set(reference) != {
+            "path", "canonical_sha256", "executor_id"
+        }:
+            raise ValueError(f"{context} fields differ")
+        root = Path(project_root).resolve(strict=True)
+        _, path = _relative_file(root, reference["path"], context)
+        revision = cls.load(root, path)
+        if (revision.executor_id != reference["executor_id"]
+            or revision.canonical_sha256 != _digest(
+                reference["canonical_sha256"], f"{context}.canonical_sha256"
+            )):
+            raise ValueError(f"{context} Executor Revision differs")
+        return revision
+
+    @classmethod
     def load(cls, project_root: str | Path, path: str | Path) -> "ExecutorRevision":
         """Load and verify every repository-owned byte in a released Executor."""
 

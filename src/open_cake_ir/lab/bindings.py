@@ -6,7 +6,6 @@ filled; source references and provider treatment are never refreshed here.
 from __future__ import annotations
 
 import json
-import shlex
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import Mapping
@@ -15,6 +14,7 @@ from open_cake_ir.evaluation.paired import candidate_from_identity, candidate_id
 from .executor import ExecutorRevision
 
 CAMPAIGN_BINDING = {'binding': 'campaign_lock'}
+CURRENT_RELEASE_BINDING = {'binding': 'current_release'}
 
 
 def canonical(value):
@@ -77,11 +77,34 @@ def load_baseline_bundle(project_root, bundle_path):
     return candidate
 
 
+def resolve_executor(
+    root: Path, value: object, context: str, *, template: bool
+) -> ExecutorRevision:
+    """Select the Study's current or frozen reference and return its verified object."""
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{context}.executor_revision must be an object")
+    if template:
+        if value != CURRENT_RELEASE_BINDING:
+            raise ValueError("Study template Executor binding differs")
+        inventory = json.loads((root / "inventory/EXECUTOR_REVISIONS.json").read_text())
+        if not isinstance(inventory, Mapping):
+            raise ValueError("Executor inventory must be an object")
+        current = inventory.get("current")
+        if not isinstance(current, Mapping):
+            raise ValueError("current Executor must be an object")
+        exact = {field: current[field] for field in ("executor_id", "path", "canonical_sha256")}
+    else:
+        if value == CURRENT_RELEASE_BINDING:
+            raise ValueError("frozen Study cannot follow the current Executor")
+        exact = value
+    return ExecutorRevision.load_reference(root, exact, f"{context}.executor_revision")
+
+
 def resolve_execution_bindings(
     project_root: str | Path, study, bindings_path: str | Path | None
 ) -> tuple[dict[str, object], ExecutorRevision | None]:
     """Return resolved runtime leaves and the Executor already validated for them."""
-    from .runtime import broker_execution_sha256
+    from .runtime import broker_execution_sha256, load_runtime_config
     from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
     from .triton_build import IsolatedTritonCompiler
 
@@ -115,13 +138,7 @@ def resolve_execution_bindings(
     runtime_path = external_file(project_root, bindings['runtime_config_path'], 'runtime configuration')
     receipt = ProviderQualificationReceipt.load(receipt_path)
     anchor = json.loads(anchor_path.read_bytes())
-    config = json.loads(runtime_path.read_bytes())
-    if (not isinstance(config, Mapping) or set(config) != {'schema_version', 'provider', 'toolchain', 'broker'}
-        or type(config['schema_version']) is not int or config['schema_version'] != 1
-        or set(config['provider']) != {'executable', 'workspace_root'}
-        or set(config['toolchain']) != {'python', 'bubblewrap', 'runtime_roots', 'triton_version', 'timeout_seconds'}
-        or set(config['broker']) != {'command', 'cwd', 'timeout_seconds', 'service_user', 'service_group'}):
-        raise ValueError('external runtime configuration fields differ')
+    config = load_runtime_config(runtime_path, toolchain_kind="triton")
     executable = Path(config['provider']['executable']).resolve(strict=True)
     if sha256(executable.read_bytes()).hexdigest() != receipt.executable_sha256:
         raise ValueError('runtime provider executable differs from qualification')
@@ -133,18 +150,15 @@ def resolve_execution_bindings(
             qualification={'path': str(receipt_path), 'canonical_sha256': receipt.canonical_sha256},
             qualification_anchor={'path': str(anchor_path), 'canonical_sha256': sha256(canonical(anchor)).hexdigest()})
     # current_release resolves once, with the existing Executor resolver's closure checks.
-    from .core import _resolve_executor_reference
-    executor_reference = _resolve_executor_reference(Path(project_root), execution['executor_revision'],
+    executor = resolve_executor(Path(project_root), execution['executor_revision'],
         'study.execution', template=True)
-    executor = ExecutorRevision.load(project_root, Path(project_root) / executor_reference['path'])
-    if dict(executor.reference) != executor_reference:
-        raise ValueError('Executor changed during external execution binding')
+    executor_reference = dict(executor.reference)
     toolchain = IsolatedTritonCompiler(**config['toolchain'])
     toolchain.check_executor(executor, author_workspace=config['provider']['workspace_root'])
     for arm in arms.values():
         arm['toolchain_sha256'] = toolchain.canonical_sha256
     broker = config['broker']
-    command = tuple(broker['command']) if isinstance(broker['command'], list) else tuple(shlex.split(broker['command']))
+    command = broker['command']
     execution['executor_revision'] = executor_reference
     execution['broker_execution_sha256'] = broker_execution_sha256(command,
         cwd=Path(broker['cwd']).resolve(strict=True), project_root=Path(project_root),

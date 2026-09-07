@@ -164,7 +164,7 @@ class PairedExecutionTests(unittest.TestCase):
             result_path = Path(argv[argv.index('--output') + 1])
             document = json.loads(request_path.read_bytes())
             requests.append(document)
-            with patch.object(worker.ExecutorRevision, 'load', return_value=executor):
+            with patch.object(worker.ExecutorRevision, 'load_reference', return_value=executor):
                 authority = worker._load_authority(request_path)
             self.assertEqual(authority.candidate, self.candidate)
             self.assertEqual(authority.baseline, self.baseline)
@@ -438,10 +438,16 @@ class PairedExecutionTests(unittest.TestCase):
         with ExitStack() as stack:
             stack.enter_context(patch('open_cake_ir.lab.core._resolve_compiler_reference',
                 return_value=(gate, compiler_ref['path'], compiler_ref)))
-            from open_cake_ir.lab.core import _resolve_executor_reference
+            from open_cake_ir.lab.bindings import resolve_executor
             from open_cake_ir.lab.executor import ExecutorRevision
-            resolver = stack.enter_context(patch('open_cake_ir.lab.core._resolve_executor_reference',
-                wraps=_resolve_executor_reference))
+            resolved_executors = []
+            def resolve_once(*args, **kwargs):
+                value = resolve_executor(*args, **kwargs)
+                resolved_executors.append(value)
+                return value
+            resolver = stack.enter_context(patch('open_cake_ir.lab.bindings.resolve_executor', side_effect=resolve_once))
+            stack.enter_context(patch('open_cake_ir.lab.core.resolve_executor',
+                side_effect=AssertionError('preflight must retain the already-bound Executor')))
             stack.enter_context(patch('open_cake_ir.lab.core.Compiler.load', return_value=draft))
             toolchain = stack.enter_context(patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler'))
             toolchain.return_value.canonical_sha256 = 'b'*64
@@ -451,12 +457,13 @@ class PairedExecutionTests(unittest.TestCase):
             self.assertEqual(lock.document['execution']['executor_revision'], executor_ref)
             bound_executor = toolchain.return_value.check_executor.call_args.args[0]
             self.assertIsInstance(bound_executor, ExecutorRevision)
+            self.assertIs(bound_executor, resolved_executors[0])
             self.assertEqual(dict(bound_executor.reference), executor_ref)
             self.assertEqual(bound_executor.project_root, project)
             self.assertEqual(bound_executor.document['sources'][0]['path'], source.name)
             # The resolver still rejects exact references in an original template.
             with self.assertRaisesRegex(ValueError, 'Study template Executor binding differs'):
-                _resolve_executor_reference(project, executor_ref, 'study.execution', template=True)
+                resolve_executor(project, executor_ref, 'study.execution', template=True)
 
             self.assertEqual(lock.document['study']['canonical_sha256'], study.canonical_sha256)
             self.assertEqual(template.read_bytes(), before)

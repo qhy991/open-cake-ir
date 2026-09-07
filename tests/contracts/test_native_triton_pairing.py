@@ -518,8 +518,9 @@ class PairedLabFixtureTests(unittest.TestCase):
             reference = {'revision_id':'compiler-fixture','path':'compiler/revision.lock.json','canonical_sha256':'a'*64}
             executor = {'executor_id':'open-cake-ir-b200-v9000','path':'runtime/executors/fixture.json','canonical_sha256':'e'*64}
             stack.enter_context(mock.patch('open_cake_ir.lab.core._resolve_compiler_reference', return_value=(gate, reference['path'], reference)))
-            stack.enter_context(mock.patch('open_cake_ir.lab.core._resolve_executor_reference', return_value=executor))
-            stack.enter_context(mock.patch('open_cake_ir.lab.core._validate_executor_revision'))
+            bound_executor = SimpleNamespace(reference=executor)
+            stack.enter_context(mock.patch('open_cake_ir.lab.core.resolve_executor', return_value=bound_executor))
+            stack.enter_context(mock.patch('open_cake_ir.lab.executor.ExecutorRevision.load_reference', return_value=bound_executor))
             stack.enter_context(mock.patch('open_cake_ir.lab.core.Compiler.load', return_value=draft))
             lab = TaskLab(root)
             lock = lab.preflight(study)

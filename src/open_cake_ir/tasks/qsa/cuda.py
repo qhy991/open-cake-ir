@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable, Mapping, Sequence, cast
 
+from open_cake_ir.evaluation.cuda_driver import CudaModules, _driver_call, _load_cuda_driver
+
 _PROGRAM_FIELDS = {"schema_version", "abi", "arm", "kernels"}
 _KERNEL_FIELDS = {
     "id",
@@ -153,24 +155,6 @@ class QsaProgramArtifact:
         return cls(arm, tuple(kernels))
 
 
-def _driver_call(api: object, name: str, *arguments: object, outputs: int) -> tuple[object, ...]:
-    function = getattr(api, name, None)
-    if not callable(function):
-        raise RuntimeError(f"CUDA Driver lacks {name}")
-    result = function(*arguments)
-    values = result if isinstance(result, tuple) else (result,)
-    if len(values) != outputs + 1 or int(values[0]) != 0:
-        raise RuntimeError(f"CUDA Driver {name} failed")
-    return values[1:]
-
-
-def _handle(value: object) -> object:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return value
-
-
 class LoadedQsaProgram:
     """Load every QSA kernel once and launch the closed Program on one stream."""
 
@@ -180,42 +164,22 @@ class LoadedQsaProgram:
         *,
         driver: object | None = None,
     ) -> None:
-        if driver is None:
-            from cuda.bindings import driver as cuda_driver
-
-            driver = cuda_driver
         self.artifact = artifact
-        self._api = driver
-        (context,) = _driver_call(driver, "cuCtxGetCurrent", outputs=1)
-        if not context:
-            raise RuntimeError("QSA Program requires a current CUDA context")
-        self._context = _handle(context)
-        self._modules: list[object] = []
+        self._api = _load_cuda_driver() if driver is None else driver
+        self._modules = CudaModules(self._api)
         self._functions: dict[str, object] = {}
         modules_by_path: dict[Path, object] = {}
         try:
             for kernel in artifact.kernels:
                 module = modules_by_path.get(kernel.cubin_path)
                 if module is None:
-                    (module,) = _driver_call(
-                        driver,
-                        "cuModuleLoadData",
-                        kernel.cubin_path.read_bytes(),
-                        outputs=1,
-                    )
+                    module = self._modules.load(kernel.cubin_path.read_bytes())
                     modules_by_path[kernel.cubin_path] = module
-                    self._modules.append(module)
-                (function,) = _driver_call(
-                    driver,
-                    "cuModuleGetFunction",
-                    module,
-                    kernel.kernel_name.encode("ascii"),
-                    outputs=1,
-                )
+                function = self._modules.function(module, kernel.kernel_name)
                 if kernel.dynamic_shared_memory_bytes > 49_152:
-                    enum = getattr(driver, "CUfunction_attribute")
+                    enum = getattr(self._api, "CUfunction_attribute")
                     _driver_call(
-                        driver,
+                        self._api,
                         "cuFuncSetAttribute",
                         function,
                         getattr(
@@ -226,22 +190,19 @@ class LoadedQsaProgram:
                         outputs=0,
                     )
                 self._functions[kernel.kernel_id] = function
-        except BaseException:
-            for module in reversed(self._modules):
-                try:
-                    _driver_call(driver, "cuModuleUnload", module, outputs=0)
-                except BaseException:
-                    pass
+        except BaseException as primary:
+            self._modules.close(primary=primary)
             raise
         self.launch_calls = 0
-        self.closed = False
+
+    @property
+    def closed(self) -> bool:
+        return self._modules.closed
 
     def _checked_stream(self, stream: object) -> object:
         if self.closed:
             raise ValueError("QSA Program is closed")
-        (context,) = _driver_call(self._api, "cuCtxGetCurrent", outputs=1)
-        if _handle(context) != self._context:
-            raise ValueError("QSA Program CUDA context changed")
+        self._modules.check_open()
         stream_type = getattr(self._api, "CUstream", None)
         return (
             stream_type(stream)
@@ -281,6 +242,7 @@ class LoadedQsaProgram:
                 for value in values
             ]
         )
+        self._modules.check_open()
         _driver_call(
             self._api,
             "cuLaunchKernel",
@@ -315,10 +277,7 @@ class LoadedQsaProgram:
     def close(self, *, synchronize: Callable[[], None]) -> None:
         if self.closed:
             raise ValueError("QSA Program is already closed")
-        synchronize()
-        for module in reversed(self._modules):
-            _driver_call(self._api, "cuModuleUnload", module, outputs=0)
-        self.closed = True
+        self._modules.close(synchronize=synchronize)
 
 
 def qsa_program_tensors(inputs: Mapping[str, object], output: object) -> dict[str, object]:
