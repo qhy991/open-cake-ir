@@ -40,6 +40,14 @@ python tools/release_compiler.py --project-root . \
   --verify
 ```
 
+Both release cycles select `OPEN_CAKE_PYTHON` (default: `python3`) once and require Python
+3.10 or newer before creating temporary files or changing release artifacts. Every Python
+step uses that same executable. Select an installed environment explicitly when needed:
+
+```bash
+OPEN_CAKE_PYTHON="$PWD/.venv/bin/python" bash tools/release_compiler_cycle.sh
+```
+
 For a proposed successor, `bash tools/release_compiler_cycle.sh` derives the revision id
 and prepares the full Corpus Gate. The cycle never writes
 `compiler/release-approval.json`. Missing, malformed, or stale approval exits with status
@@ -65,6 +73,35 @@ python tools/release_executor.py --project-root . \
 
 A released id or output path is never reused. Source, evaluator, audit, provider, or host
 closure changes require a successor descriptor.
+
+`tools/release_executor_cycle.sh` derives the next Executor id and accepts the same
+`OPEN_CAKE_PYTHON` selection. Its `--host-environment /verified/host-environment.json`
+argument requires a host environment already verified against the intended executor host;
+choosing the local release interpreter does not verify that remote environment.
+
+Capture a new host on that host, using its intended Python invocation and explicit
+installed distribution names and Nsight Compute executable. The destination directory
+must already exist outside every project checkout, and the output file must be new:
+
+```bash
+PYTHONPATH=src /absolute/environment/bin/python tools/capture_executor_host.py \
+  --package torch --package triton --package numpy \
+  --package cuda-bindings --package flashinfer-python \
+  --cupti-distribution cupti-python --flashinfer-distribution flashinfer-python \
+  --ncu /absolute/nsight-compute/target/linux-desktop-glibc_2_11_3-x64/ncu \
+  --output /new/external/host-environment.json
+```
+
+The command records the current interpreter and installed versions, binds CUPTI's
+non-bytecode package files plus its distribution metadata and RECORD, and binds
+FlashInfer's distribution-owned `flashinfer/testing/utils.py`. It reads `ncu --version`
+from the supplied executable. The existing Executor schema, host admission (including
+real CUPTI and helper imports), and profiler admission must all succeed before the JSON
+is created. Run it as a fresh process and retain stdout/stderr, including any cold-import
+failure; it does not install packages or repair the environment. These file bindings
+establish the new host capture boundary, not GPU correctness or performance. No kernel
+is dispatched, and no Compiler or Executor release is created. Pass the resulting JSON
+to the Executor release cycle only as part of an authorized successor delivery.
 
 ### Review an external AKA corpus
 

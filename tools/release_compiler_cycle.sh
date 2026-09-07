@@ -15,13 +15,14 @@
 # preparation keeps that draft id, and verifying an unchanged release does not bump it.
 # Expectations are never regenerated here — see tools/refresh_corpus_expectations.py.
 set -euo pipefail
+source "$(dirname "$0")/release_runtime.sh"
 cd "$(dirname "$0")/.."
 export PYTHONPATH=src
 if [ "$#" -ne 0 ]; then
   echo "usage: release_compiler_cycle.sh" >&2
   exit 2
 fi
-if [ -f compiler/revision.lock.json ] && python3 tools/release_compiler.py --project-root . \
+if [ -f compiler/revision.lock.json ] && "$OPEN_CAKE_PYTHON" tools/release_compiler.py --project-root . \
     --proposal compiler/revision.json --source-set compiler/source_set.json \
     --gate-report compiler/corpus-gate-report.json --approval compiler/release-approval.json \
     --output compiler/revision.lock.json --verify >/dev/null 2>&1; then
@@ -32,7 +33,7 @@ COMPILER_RELEASE_TMP=$(mktemp -d compiler/.release-cycle.XXXXXX)
 export COMPILER_RELEASE_TMP
 trap 'rm -r -- "$COMPILER_RELEASE_TMP"' EXIT
 
-REVISION_ASSIGNMENTS=$(python3 - <<'PY'
+REVISION_ASSIGNMENTS=$("$OPEN_CAKE_PYTHON" - <<'PY'
 import json, pathlib, re
 
 from tools.compiler_revision_witnesses import compiler_revision_witnesses
@@ -69,7 +70,7 @@ eval "$REVISION_ASSIGNMENTS"
 if [ -n "$ARCHIVE" ]; then
   echo "--- preserve released ${ARCHIVE}; prepare successor ${NEXT} ---"
   if [ -e "compiler/releases/${ARCHIVE}" ]; then
-    python3 - "$ARCHIVE" <<'PY'
+    "$OPEN_CAKE_PYTHON" - "$ARCHIVE" <<'PY'
 import hashlib, json, pathlib, sys
 
 archive = pathlib.Path("compiler/releases") / sys.argv[1]
@@ -100,7 +101,7 @@ PY
     mkdir "compiler/releases/${ARCHIVE}"
     cp compiler/revision.lock.json compiler/corpus-gate-report.json \
        compiler/release-approval.json "compiler/releases/${ARCHIVE}/"
-    python3 - "$ARCHIVE" <<'PY'
+    "$OPEN_CAKE_PYTHON" - "$ARCHIVE" <<'PY'
 import json, pathlib, sys
 
 archive = pathlib.Path("compiler/releases") / sys.argv[1]
@@ -115,7 +116,7 @@ else
   echo "--- no current released lock; prepare working draft ${NEXT} ---"
 fi
 
-python3 - "$NEXT" <<'PY'
+"$OPEN_CAKE_PYTHON" - "$NEXT" <<'PY'
 import json, pathlib, sys
 p = pathlib.Path("compiler/revision.json"); d = json.loads(p.read_text())
 d["revision_id"] = f"open-cake-ir-sm100a-{sys.argv[1]}-draft"
@@ -127,10 +128,10 @@ PY
 # until a separately written approval validates and a verified replacement is ready; a
 # source edit may of course already make that old lock unloadable.
 rm -f compiler/corpus-gate-report.json
-python3 tools/release_compiler.py --project-root . \
+"$OPEN_CAKE_PYTHON" tools/release_compiler.py --project-root . \
   --proposal compiler/revision.json --source-set compiler/source_set.json \
   --output compiler/corpus-gate-report.json --prepare-gate
-python3 - <<'PY'
+"$OPEN_CAKE_PYTHON" - <<'PY'
 import json, pathlib
 gate = json.loads(pathlib.Path("compiler/corpus-gate-report.json").read_text())
 assert gate["matched_case_count"] == gate["case_count"], "corpus gate did not match"
@@ -144,7 +145,7 @@ if [ ! -f compiler/release-approval.json ]; then
 fi
 
 echo "--- validate external approval and build release ---"
-if ! python3 tools/release_compiler.py --project-root . \
+if ! "$OPEN_CAKE_PYTHON" tools/release_compiler.py --project-root . \
     --proposal compiler/revision.json --source-set compiler/source_set.json \
     --gate-report compiler/corpus-gate-report.json \
     --approval compiler/release-approval.json \
@@ -152,14 +153,14 @@ if ! python3 tools/release_compiler.py --project-root . \
   echo "--- external approval required: it must bind this exact Gate digest ---" >&2
   exit 3
 fi
-python3 tools/release_compiler.py --project-root . \
+"$OPEN_CAKE_PYTHON" tools/release_compiler.py --project-root . \
     --proposal compiler/revision.json --source-set compiler/source_set.json \
     --gate-report compiler/corpus-gate-report.json \
     --approval compiler/release-approval.json \
     --output "$COMPILER_RELEASE_TMP/revision.lock.json" --verify
 mv -f "$COMPILER_RELEASE_TMP/revision.lock.json" compiler/revision.lock.json
 
-python3 - <<'PY'
+"$OPEN_CAKE_PYTHON" - <<'PY'
 import hashlib, json, pathlib
 
 lock = json.loads(pathlib.Path("compiler/revision.lock.json").read_text())

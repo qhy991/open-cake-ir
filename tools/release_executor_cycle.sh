@@ -11,13 +11,14 @@
 # checkout. The next id follows the largest released ordinal; no witness scan can
 # authorize deleting or reusing a released descriptor.
 set -euo pipefail
+source "$(dirname "$0")/release_runtime.sh"
 cd "$(dirname "$0")/.."
 export PYTHONPATH=src
 EXECUTOR_RELEASE_TMP=$(mktemp -d)
 export EXECUTOR_RELEASE_TMP
 trap 'rm -r -- "$EXECUTOR_RELEASE_TMP"' EXIT
 
-python3 - "$@" <<'PY'
+"$OPEN_CAKE_PYTHON" - "$@" <<'PY'
 import argparse, hashlib, json, os, pathlib, re, subprocess
 
 from open_cake_ir.lab.executor import ExecutorRevision
@@ -100,12 +101,12 @@ temporary.joinpath("keep").write_text(keep)
 PY
 
 KEEP=$(cat "$EXECUTOR_RELEASE_TMP/keep")
-python3 tools/release_executor.py --project-root . \
+"$OPEN_CAKE_PYTHON" tools/release_executor.py --project-root . \
   --proposal "$EXECUTOR_RELEASE_TMP/proposal.json" \
   --output "runtime/executors/${KEEP}.json" >/dev/null
 
 echo "--- update Executor inventory ---"
-python3 - "$KEEP" <<'PY'
+"$OPEN_CAKE_PYTHON" - "$KEEP" <<'PY'
 import hashlib, json, pathlib, sys
 
 keep = sys.argv[1]
