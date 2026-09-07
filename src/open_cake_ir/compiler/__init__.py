@@ -21,10 +21,10 @@ from .core import (
 from .corpus import CorpusCaseReport, CorpusGateReport
 from .errors import CompilerError
 from .backends.common import EmitError, Emission
-from .compiled_resources import CompiledResources
-from .empirical_cost import EmpiricalCostModel
+from .performance.compiled_resources import CompiledResources
+from .performance.empirical_cost import EmpiricalCostModel
 from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
-from .profile_model import MetricEstimate, ProfileEnvelope, profile_envelope
+from .performance.profile import MetricEstimate, ProfileEnvelope, profile_envelope
 from .target import Target, TargetParseError
 from .diagnostics import Finding, FindingCategory, FindingSeverity
 from .verifier import verify

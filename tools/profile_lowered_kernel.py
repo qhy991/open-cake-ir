@@ -11,8 +11,10 @@ puts the analysis's prediction and the profiler's measurement side by side.
 
 The comparison is exact about direction. `residency_upper_bound` is an upper bound, so it
 is *sound* when the measured limit is at or below it and refuted when the measurement is
-higher. The register figure is a lower bound on storage and is sound the other way round.
-Reporting them without their direction is how a bound gets read as an estimate.
+higher. Physical register allocation is reported only from measurement; the logical
+register-pressure proxy has no sound lower-bound direction. New reports use schema v2
+and omit the obsolete null register-floor fields. The measured register-limit resource
+is named `registers`; schema v1 reports and their assertions remain unchanged.
 
 It makes a second comparison of the same shape. `work_bound` counts the unique global
 bytes the Schedule commits to moving; Nsight counts the bytes that crossed L2 and DRAM.
@@ -47,18 +49,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from kernel_inputs import build_inputs  # noqa: E402
 from kernel_oracles import ORACLE_BY_ENTRY_POINT  # noqa: E402
-from open_cake_ir.compiler.analysis import residency_upper_bound  # noqa: E402
+from open_cake_ir.compiler.performance.residency import residency_upper_bound  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
 from open_cake_ir.compiler.ir import Schedule  # noqa: E402
 from open_cake_ir.compiler.target import Target  # noqa: E402
-from open_cake_ir.compiler.utilization import Utilization, utilization  # noqa: E402
-from open_cake_ir.compiler.work import WorkBound, work_bound  # noqa: E402
+from open_cake_ir.compiler.performance.utilization import Utilization, utilization  # noqa: E402
+from open_cake_ir.compiler.performance.work import WorkBound, work_bound  # noqa: E402
 
-# The four limits Nsight reports are the same four resources the analysis reasons about,
-# which is why this comparison is possible at all: the smallest one is what bounds
-# residency, and which one it is answers the attribution half of the report.
+# Nsight reports physical resource limits. Preserve their values and name the
+# register limit as physical registers, never as the logical pressure proxy.
 _LIMITS = {
-    "launch__occupancy_limit_registers": "logical_register_storage",
+    "launch__occupancy_limit_registers": "registers",
     "launch__occupancy_limit_shared_mem": "shared_memory",
     "launch__occupancy_limit_blocks": "blocks",
     "launch__occupancy_limit_warps": "threads",
@@ -110,22 +111,6 @@ inputs = build_inputs(document, torch)
 launch(*inputs)
 torch.cuda.synchronize()
 '''
-
-
-def _register_floor(bound) -> int | None:
-    """Registers per thread the declared buffers alone already need.
-
-    Derived from the same per-CTA figures the residency bound is built from rather than
-    recomputed, so the two halves of the report cannot disagree about the same Schedule.
-    """
-
-    registers = next(
-        (b for b in bound.bounds if b.resource == "logical_register_storage"), None
-    )
-    threads = next((b for b in bound.bounds if b.resource == "threads"), None)
-    if registers is None or threads is None or not threads.per_cta:
-        return None
-    return -(-registers.per_cta // threads.per_cta)
 
 
 def _profile(command: list[str]) -> str:
@@ -305,7 +290,7 @@ def main() -> int:
     binding = sorted(name for name, value in limits.items() if value == resident)
 
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "observed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "purpose": "residency_attribution",
         "host": socket.gethostname(),
@@ -338,9 +323,6 @@ def main() -> int:
         "predicted": {
             "ctas_per_multiprocessor_upper_bound": predicted.ctas_per_multiprocessor,
             "binding_resource": predicted.binding.resource,
-            # The other half of the report, and the one that runs the other way: this is
-            # a lower bound on storage, so it is sound while the measurement is above it.
-            "registers_per_thread_lower_bound": _register_floor(predicted),
         },
         "measured": {
             "registers_per_thread": values["launch__registers_per_thread"],
@@ -365,12 +347,6 @@ def main() -> int:
             # A tie means the measurement did not single one resource out, so a correct
             # prediction here discriminated less than the word "correct" suggests.
             "binding_resource_measured_uniquely": len(binding) == 1,
-            "register_floor_sound": (
-                None
-                if _register_floor(predicted) is None
-                else _register_floor(predicted)
-                <= values["launch__registers_per_thread"]
-            ),
         },
     }
     out = Path(arguments.out)

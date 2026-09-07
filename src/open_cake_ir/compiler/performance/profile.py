@@ -14,22 +14,25 @@ from typing import Mapping, TYPE_CHECKING
 from .compiled_resources import CompiledResources
 
 if TYPE_CHECKING:
-    from .core import Lowering
+    from ..core import Lowering
 
-from .analysis import (
+from ..backends.triton_selection import top_k_selection_structure
+from .residency import (
+    ResidencyUpperBound,
+    TopKMergeStructure,
+    allocation_bytes,
     logical_register_pressure_per_thread,
     residency_upper_bound,
     top_k_merge_structure,
-    top_k_selection_structure,
 )
-from .ir import (
+from ..ir import (
     AccessIndexKind,
     MemorySpace,
     OperationKind,
     Schedule,
     TopKParameters,
 )
-from .target import Target
+from ..target import Target
 from .work import WorkBound, work_bound
 
 _ESTIMATE_KINDS = {
@@ -158,18 +161,15 @@ def _work_document(bound: WorkBound | None) -> Mapping[str, object] | None:
     }
 
 
-def _residency_document(schedule: Schedule, target: Target,
+def _residency_document(envelope: ResidencyUpperBound | None, register_pressure: int | None,
                         compiled_resources: CompiledResources | None = None) -> Mapping[str, object] | None:
-    envelope = residency_upper_bound(schedule, target, compiled_resources=compiled_resources)
     if envelope is None:
         return None
     return {
         "ctas_per_sm_upper_bound": envelope.ctas_per_multiprocessor,
         "binding_resource": envelope.binding.resource if envelope.binding else None,
         "coverage": "compiled allocation" if compiled_resources else "Schedule declarations",
-        "logical_register_pressure_per_thread": logical_register_pressure_per_thread(
-            schedule, target
-        ),
+        "logical_register_pressure_per_thread": register_pressure,
         "bounds": [
             {
                 "resource": bound.resource,
@@ -183,33 +183,18 @@ def _residency_document(schedule: Schedule, target: Target,
     }
 
 
-def _bound_ctas(schedule: Schedule, target: Target, resource: str,
-                compiled_resources: CompiledResources | None = None) -> int | None:
-    envelope = residency_upper_bound(schedule, target, compiled_resources=compiled_resources)
-    if envelope is None:
-        return None
-    match = next((bound for bound in envelope.bounds if bound.resource == resource), None)
-    return None if match is None else match.ctas
-
-
-def _explicit_allocation_bytes(schedule: Schedule, space: MemorySpace) -> int:
-    return sum(
-        allocation.size_bytes
-        for allocation in schedule.allocations
-        if allocation.space is space
-    )
-
-
-def _top_k_features(schedule: Schedule) -> list[dict[str, object]]:
+def _top_k_features(
+    schedule: Schedule, structures: Mapping[int, TopKMergeStructure | None]
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    for operation in schedule.operations:
+    for index, operation in enumerate(schedule.operations):
         if operation.kind is not OperationKind.TOP_K or not operation.reads:
             continue
         parameters = operation.parameters
         source = schedule.buffer(operation.reads[0])
         if not isinstance(parameters, TopKParameters) or source is None:
             continue
-        structure = top_k_merge_structure(schedule, operation)
+        structure = structures[index]
         selection = (
             top_k_selection_structure(
                 parameters.k,
@@ -370,9 +355,9 @@ def _loop_body_operations(schedule: Schedule) -> frozenset[str]:
 
 
 def _lowering_document(
-    schedule: Schedule, lowered_source: str | None
+    schedule: Schedule, lowered_source: str | None, top_k: list[dict[str, object]],
+    runtime_indexed: tuple[str, ...],
 ) -> Mapping[str, object]:
-    top_k = _top_k_features(schedule)
     source = lowered_source or ""
     return {
         "generated_source_bytes": (
@@ -387,7 +372,7 @@ def _lowering_document(
         "global_store_operations": sum(
             operation.kind is OperationKind.STORE for operation in schedule.operations
         ),
-        "runtime_indexed_buffers": list(_runtime_indexed_buffers(schedule)),
+        "runtime_indexed_buffers": list(runtime_indexed),
         "triton_dot_count": source.count("tl.dot("),
         "triton_top_k_count": source.count("tl.topk("),
         "triton_sort_count": source.count("tl.sort("),
@@ -417,9 +402,13 @@ def profile_envelope(
     if target.compute_capability is None:
         if compiled_resources is not None:
             raise ValueError("CUDA compiled-resource feedback does not describe a Metal kernel")
+        structures = {index: top_k_merge_structure(schedule, operation)
+                      for index, operation in enumerate(schedule.operations)
+                      if operation.kind is OperationKind.TOP_K}
         return ProfileEnvelope(
             schedule.schedule_id, target.target_id, _work_document(work_bound(schedule)),
-            None, _lowering_document(schedule, lowered_source), (),
+            None, _lowering_document(schedule, lowered_source, _top_k_features(schedule, structures),
+                                     _runtime_indexed_buffers(schedule)), (),
             ("This target has no calibrated performance model or occupancy facts; "
              "NVIDIA NCU metrics and CUDA compiled-resource feedback do not apply.",),
             None,
@@ -436,15 +425,26 @@ def profile_envelope(
         )
     work = work_bound(schedule)
     residency = residency_upper_bound(schedule, target, compiled_resources=compiled_resources)
-    register_pressure = logical_register_pressure_per_thread(schedule, target)
-    shared_bytes = (
-        compiled_resources.shared_bytes if compiled_resources
-        else _explicit_allocation_bytes(schedule, MemorySpace.SHARED)
+    structures = {index: top_k_merge_structure(schedule, operation)
+                  for index, operation in enumerate(schedule.operations)
+                  if operation.kind is OperationKind.TOP_K}
+    register_pressure = logical_register_pressure_per_thread(
+        schedule, target, top_k_structures=structures
     )
-    shared_ctas = _bound_ctas(schedule, target, "shared_memory", compiled_resources)
-    warp_ctas = _bound_ctas(schedule, target, "threads", compiled_resources)
-    register_ctas = _bound_ctas(schedule, target, "registers", compiled_resources)
-    top_k = _top_k_features(schedule)
+    bounds = {bound.resource: bound for bound in residency.bounds} if residency else {}
+    shared = bounds.get("shared_memory")
+    if compiled_resources is not None:
+        shared_bytes = compiled_resources.shared_bytes
+    elif residency is None:
+        shared_bytes = allocation_bytes(schedule, MemorySpace.SHARED)
+    else:
+        shared_bytes = shared.per_cta if shared else 0
+    shared_ctas = shared.ctas if shared else None
+    threads = bounds.get("threads")
+    warp_ctas = threads.ctas if threads else None
+    registers = bounds.get("registers")
+    register_ctas = registers.ctas if registers else None
+    top_k = _top_k_features(schedule, structures)
     synchronization = _synchronization_risk(schedule, top_k)
     runtime_indexed = _runtime_indexed_buffers(schedule)
     contended_contract = work.contended_contract if work is not None else None
@@ -641,8 +641,8 @@ def profile_envelope(
         schedule.schedule_id,
         target.target_id,
         _work_document(work),
-        _residency_document(schedule, target, compiled_resources),
-        _lowering_document(schedule, lowered_source),
+        _residency_document(residency, register_pressure, compiled_resources),
+        _lowering_document(schedule, lowered_source, top_k, runtime_indexed),
         metrics,
         tuple(abstentions),
         compiled_resources,

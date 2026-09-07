@@ -6,6 +6,8 @@ from dataclasses import replace
 from pathlib import Path
 import sys
 import tempfile
+from open_cake_ir.compiler.backends import triton as backend_triton
+
 import unittest
 from unittest import mock
 
@@ -69,8 +71,8 @@ class CompilerConvergenceContractTests(unittest.TestCase):
             mock.patch.object(TargetSource, "document", new_callable=mock.PropertyMock,
                               side_effect=AssertionError("provenance used as hardware")),
             mock.patch.object(core, "verify_contracts", wraps=core.verify_contracts) as verify_call,
-            mock.patch.object(core.triton, "preflight", wraps=core.triton.preflight) as preflight,
-            mock.patch.object(core.triton, "emit", wraps=core.triton.emit) as emit,
+            mock.patch.object(backend_triton, "preflight", wraps=backend_triton.preflight) as preflight,
+            mock.patch.object(backend_triton, "emit", wraps=backend_triton.emit) as emit,
             mock.patch.object(core, "rank_candidates", wraps=core.rank_candidates) as rank,
         ):
             assessment = compiler.assess(document)
@@ -246,7 +248,10 @@ class CompilerConvergenceContractTests(unittest.TestCase):
         self.assertFalse(assessment.lowering_eligible)
         self.assertFalse(finding.blocks_acceptance)
         self.assertTrue(finding.blocks_lowering)
-        assessment = self.compiler.assess(self.document("tinygemm2-stage4-split-k"))
+        document = self.document("flash-kmeans-assignment-full")
+        for buffer in document["buffers"]:
+            buffer.pop("swizzle", None)
+        assessment = self.compiler.assess(document)
         self.assertTrue(assessment.guidance)
         self.assertTrue(assessment.lowering_eligible)
         self.assertTrue(all(finding.severity is public.FindingSeverity.HINT and not finding.blocks_lowering

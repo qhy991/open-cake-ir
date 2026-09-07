@@ -18,7 +18,7 @@ reproducing them would mean hardcoding the thing this module exists to compute.
 
 from __future__ import annotations
 
-from .common import BackendPrecondition, Emission, EmitError, require as _require
+from .common import TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 
 from ..ir import (
     AccessIndexKind,
@@ -37,6 +37,7 @@ from ..ir import (
     TileLoop,
 )
 from ..target import Target
+from ..diagnostics import Finding
 
 
 _CUTLASS_DTYPE = {
@@ -47,18 +48,11 @@ _CUTLASS_DTYPE = {
     DType.INT32: "cutlass.Int32",
 }
 
-_TORCH_DTYPE = {
-    DType.BF16: "torch.bfloat16",
-    DType.FP16: "torch.float16",
-    DType.FP32: "torch.float32",
-    DType.FP8_E4M3: "torch.float8_e4m3fn",
-    DType.INT32: "torch.int32",
-}
 
 # What this backend can name, in both the places it has to name it. A dtype in one table
 # and not the other is a Schedule that lowers until it reaches a host tensor, which is a
 # KeyError rather than a refusal.
-SUPPORTED_DTYPES = frozenset(_CUTLASS_DTYPE) & frozenset(_TORCH_DTYPE)
+SUPPORTED_DTYPES = frozenset(_CUTLASS_DTYPE) & frozenset(TORCH_DTYPES)
 
 # Total over PipelineKind by contract, unlike the operation and dtype tables above: a
 # pipeline kind with no class is a Schedule the IR admits and this backend cannot name,
@@ -119,14 +113,21 @@ def _barrier_signaller_scopes(schedule: Schedule, barrier: Barrier) -> set[str |
     }
 
 
-def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, ...]:
+def requirements(schedule: Schedule) -> tuple[Finding, ...]:
+    """Target-independent backend requirements, including unsupported vocabulary."""
+    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+
+
+def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     """Return the CuTe emitter's backend-owned constructor requirements."""
 
-    findings: list[BackendPrecondition] = []
+    findings = list(requirements(schedule))
+    if findings:
+        return tuple(findings)
 
     def add(condition: object, code: str, path: str, message: str) -> None:
         if not condition:
-            findings.append(BackendPrecondition(code, path, message))
+            findings.append(refusal(code, path, message))
 
     add(
         target.compute_capability is not None,
@@ -1078,7 +1079,7 @@ class _Emitter:
                 f"\"{buffer.name} must have shape {list(buffer.shape)}\")"
             )
             self.line(
-                f"    if {buffer.name}.dtype != {_TORCH_DTYPE[buffer.dtype]}:"
+                f"    if {buffer.name}.dtype != {TORCH_DTYPES[buffer.dtype]}:"
             )
             self.line(
                 f"        raise TypeError("

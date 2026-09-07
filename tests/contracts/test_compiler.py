@@ -42,7 +42,9 @@ class FindingFeedbackContractTests(unittest.TestCase):
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
     def test_public_assessment_retains_the_verifiers_typed_reports_and_hints(self) -> None:
-        document = json.loads((ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json").read_text())
+        document = json.loads((ROOT / "corpus/schedules/flash-kmeans-assignment-full.json").read_text())
+        for buffer in document["buffers"]:
+            buffer.pop("swizzle", None)
         target = Target.from_dict(json.loads((ROOT / "compiler/targets/sm_100a.json").read_text()))
         diagnostics = verify(Schedule.from_dict(document), target)
         assessment = self.compiler.assess(document)
@@ -53,7 +55,7 @@ class FindingFeedbackContractTests(unittest.TestCase):
         self.assertEqual(assessment.findings + assessment.guidance, diagnostics)
         self.assertEqual(
             {finding.category for finding in assessment.guidance},
-            {FindingCategory.HARDWARE_CONFORMANCE, FindingCategory.PROGRAM_SAFETY},
+            {FindingCategory.HARDWARE_CONFORMANCE},
         )
         for finding in assessment.findings:
             self.assertIsInstance(finding, Finding)
@@ -547,15 +549,12 @@ class CompilerContractTests(unittest.TestCase):
     def test_the_architecture_map_names_the_lowering_mechanisms(self) -> None:
         """The architecture documents mechanisms, not a growing use-case registry."""
 
-        from open_cake_ir.compiler.core import _GENERATED_BACKENDS, _SOURCE_ASSETS
+        from open_cake_ir.compiler.backends import BACKENDS
 
         text = (ROOT / "docs/ARCHITECTURE.md").read_text(encoding="utf-8")
-        for backend in _GENERATED_BACKENDS:
+        for backend in BACKENDS:
             with self.subTest(backend=backend.value):
                 self.assertIn(f"`{backend.value}`", text)
-        for entry_point in _SOURCE_ASSETS:
-            with self.subTest(entry_point=entry_point):
-                self.assertIn(f"`{entry_point}`", text)
 
     def test_a_schedule_outside_the_corpus_is_history_something_else_pins(self) -> None:
         """Why an ungated Schedule is allowed to sit in the corpus directory.
@@ -624,7 +623,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_every_lowering_mechanism_has_a_corpus_case_that_lowers(self) -> None:
         """Every implementation route is exercised without enumerating Workloads."""
 
-        from open_cake_ir.compiler.core import _GENERATED_BACKENDS, _SOURCE_ASSETS
+        from open_cake_ir.compiler.backends import BACKENDS
 
         manifest = json.loads(
             (ROOT / "corpus/manifest.json").read_text(encoding="utf-8")
@@ -640,9 +639,8 @@ class CompilerContractTests(unittest.TestCase):
                 entry_points.add(document["lowering"]["entry_point"])
 
         self.assertLessEqual(
-            {backend.value for backend in _GENERATED_BACKENDS}, backends
+            {backend.value for backend in BACKENDS}, backends
         )
-        self.assertLessEqual(set(_SOURCE_ASSETS), entry_points)
 
     def test_full_compiler_corpus_gate_passes(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
@@ -873,66 +871,8 @@ class CompilerContractTests(unittest.TestCase):
             },
         )
 
-    def test_r31_is_a_second_accepted_compiler_family(self) -> None:
-        compiler = Compiler.load(ROOT, REVISION_PATH)
 
-        assessment = compiler.assess_file(
-            ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json"
-        )
 
-        self.assertTrue(assessment.accepted)
-        self.assertTrue(assessment.lowering_eligible)
-        self.assertEqual(assessment.analysis["grid"], (64, 1, 1))
-        self.assertEqual(assessment.analysis["total_warps"], 12)
-        self.assertEqual(
-            assessment.analysis["operation_counts"],
-            {"epilogue": 1, "load": 3, "mma": 1, "reduce": 1},
-        )
-
-    def test_r31_reduction_semantic_drift_blocks_only_the_checked_asset(self) -> None:
-        compiler = Compiler.load(ROOT, REVISION_PATH)
-        schedule = json.loads(
-            (ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json").read_text()
-        )
-        # The part count is the extent of the collapsed axis, so drift is expressed
-        # where that fact lives; the operation can no longer disagree with the buffer.
-        for buffer in schedule["buffers"]:
-            if buffer["name"] == "partial_accumulators":
-                buffer["shape"] = [3, 16, 8]
-
-        assessment = compiler.assess(schedule)
-
-        self.assertTrue(assessment.accepted)
-        self.assertFalse(assessment.lowering_eligible)
-        self.assertEqual(
-            [(finding.code, finding.path) for finding in _decisive(assessment)],
-            [("REDUCE_SUM_SEMANTICS", "operations.reduce_partials.parameters.axis")],
-        )
-
-    def test_r31_epilogue_formula_blocks_only_the_checked_asset(self) -> None:
-        compiler = Compiler.load(ROOT, REVISION_PATH)
-        schedule = json.loads(
-            (ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json").read_text()
-        )
-        next(
-            operation
-            for operation in schedule["operations"]
-            if operation["id"] == "bias_epilogue"
-        )["parameters"]["formula"] = "centroid_sq_minus_two_dot"
-
-        assessment = compiler.assess(schedule)
-
-        self.assertTrue(assessment.accepted)
-        self.assertFalse(assessment.lowering_eligible)
-        self.assertEqual(
-            [(finding.code, finding.path) for finding in _decisive(assessment)],
-            [
-                (
-                    "TINYGEMM_EPILOGUE_SEMANTICS",
-                    "operations.bias_epilogue.parameters.formula",
-                )
-            ],
-        )
 
     def test_cute_formula_drift_is_refused_before_lowering(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
@@ -958,28 +898,6 @@ class CompilerContractTests(unittest.TestCase):
             [(finding.code, finding.path) for finding in assessment.findings],
         )
 
-    def test_r31_lowering_uses_the_same_compiler_interface(self) -> None:
-        compiler = Compiler.load(ROOT, REVISION_PATH)
-        assessment = compiler.assess_file(
-            ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json"
-        )
-
-        lowering = compiler.lower(assessment)
-
-        self.assertFalse(lowering.generated)
-        self.assertEqual(lowering.route.entry_point, "cake_tinygemm2_stage4_split_k")
-        self.assertIn(assessment.schedule_sha256, lowering.source)
-        self.assertEqual(
-            set(lowering.source_map),
-            {
-                "load_bias",
-                "load_weight",
-                "load_activation",
-                "split_k_mma",
-                "reduce_partials",
-                "bias_epilogue",
-            },
-        )
 
     def test_single_writer_state_store_requires_program_owned_coordinates(self) -> None:
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")

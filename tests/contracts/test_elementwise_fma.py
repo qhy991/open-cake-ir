@@ -15,13 +15,13 @@ import unittest
 from jsonschema import Draft202012Validator
 
 from open_cake_ir.compiler import Compiler
-from open_cake_ir.compiler.analysis import logical_register_pressure_per_thread
+from open_cake_ir.compiler.performance.residency import logical_register_pressure_per_thread
 from open_cake_ir.compiler.backends.triton import emit
 from open_cake_ir.compiler.ir import ElementwiseOp, Schedule, ScheduleParseError
 from open_cake_ir.compiler.schema import schedule_schema
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.verifier import verify
-from open_cake_ir.compiler.work import work_bound
+from open_cake_ir.compiler.performance.work import work_bound
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEDULES = ROOT / "corpus/schedules"

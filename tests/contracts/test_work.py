@@ -17,7 +17,7 @@ import unittest
 from pathlib import Path
 
 from open_cake_ir.compiler.ir import OperationKind, Schedule
-from open_cake_ir.compiler.work import (
+from open_cake_ir.compiler.performance.work import (
     loop_trip_distribution,
     operation_repetitions,
     program_tiles,
@@ -41,7 +41,10 @@ QSA = SCHEDULES / "qsa-score-topk-t32768.json"
 
 
 def _bound(path: Path):
-    bound = work_bound(Schedule.load(path))
+    document = json.loads(path.read_text())
+    if path == TINYGEMM2:
+        document["lowering"]["backend"] = "cutlass_cute_dsl"
+    bound = work_bound(Schedule.from_dict(document))
     assert bound is not None
     return bound
 
@@ -103,7 +106,7 @@ class ContractionTest(unittest.TestCase):
         self.assertEqual(repetitions["dot_mma"], 8)
 
     def test_a_contraction_without_a_declared_shape_abstains(self) -> None:
-        """TinyGEMM2's asset is not generated from the Schedule, so it declares no shape."""
+        """The generic typed fixture retains a contraction with no declared tile shape."""
 
         bound = _bound(TINYGEMM2)
         self.assertEqual(bound.mma_flops, 0)
@@ -415,14 +418,14 @@ class NoPredictedTimeTest(unittest.TestCase):
 
         import dataclasses
 
-        from open_cake_ir.compiler import work
+        from open_cake_ir.compiler.performance import work as work
 
         fields = {field.name for field in dataclasses.fields(work.WorkBound)}
         self.assertFalse(
             {name for name in fields if "time" in name or "second" in name or "peak" in name}
         )
         body = (
-            ROOT / "src" / "open_cake_ir" / "compiler" / "work.py"
+            ROOT / "src" / "open_cake_ir" / "compiler" / "performance" / "work.py"
         ).read_text(encoding="utf-8")
         for absent in ("clock", "latency_ms", "tflops", "peak_"):
             with self.subTest(term=absent):

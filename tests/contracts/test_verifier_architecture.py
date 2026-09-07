@@ -150,6 +150,7 @@ class VerifierArchitectureTests(unittest.TestCase):
 
     def test_duplicate_names_are_findings_for_each_named_schedule_group(self) -> None:
         document = json.loads((ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json").read_text())
+        document["lowering"]["backend"] = "cutlass_cute_dsl"
         for group in ("roles", "allocations", "buffers", "pipelines", "barriers", "operations"):
             with self.subTest(group=group):
                 mutated = copy.deepcopy(document)

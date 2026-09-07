@@ -15,8 +15,8 @@ from pathlib import Path
 
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import PeakSource, Target, TargetParseError
-from open_cake_ir.compiler.utilization import utilization
-from open_cake_ir.compiler.work import work_bound
+from open_cake_ir.compiler.performance.utilization import utilization
+from open_cake_ir.compiler.performance.work import work_bound
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET_PATH = ROOT / "compiler" / "targets" / "sm_100a.json"

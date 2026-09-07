@@ -10,10 +10,10 @@ import struct
 import unittest
 from pathlib import Path
 
-from open_cake_ir.compiler.analysis import top_k_selection_structure
+from open_cake_ir.compiler.backends.triton_selection import top_k_selection_structure
 from open_cake_ir.compiler.backends.triton import emit
 from open_cake_ir.compiler.ir import Schedule
-from open_cake_ir.compiler.profile_model import profile_envelope
+from open_cake_ir.compiler.performance.profile import profile_envelope
 from open_cake_ir.compiler.target import Target
 
 ROOT = Path(__file__).resolve().parents[2]

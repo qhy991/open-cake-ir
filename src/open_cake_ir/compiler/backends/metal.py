@@ -12,13 +12,14 @@ from __future__ import annotations
 import math
 import re
 
-from .common import BackendPrecondition, Emission, EmitError
+from .common import refusal, vocabulary_findings, Emission, EmitError
 from ..ir import (
     AccessIndexKind, BufferMode, DType, ElementwiseOp, LoadMovement,
     LoweringBackend, MemorySpace, OperationKind, ReduceOp, ReductionScope, Schedule,
 )
 from ..target import Target
-from ..verifier import FindingSeverity, verify
+from ..diagnostics import Finding, FindingCategory, FindingSeverity
+from ..verifier import verify
 
 SUPPORTED_DTYPES = frozenset({DType.FP32})
 SUPPORTED_OPERATION_KINDS = frozenset({
@@ -68,13 +69,20 @@ def private_values_per_thread(schedule: Schedule) -> int:
                 for index in range(len(schedule.operations))), default=0)
 
 
-def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, ...]:
+def requirements(schedule: Schedule) -> tuple[Finding, ...]:
+    """Target-independent backend requirements, including unsupported vocabulary."""
+    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+
+
+def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     """Refuse every declaration this emitter cannot faithfully realize."""
-    findings = []
+    findings = list(requirements(schedule))
+    if findings:
+        return tuple(findings)
 
     def check(condition, code, path, message):
         if not condition:
-            findings.append(BackendPrecondition(code, path, message))
+            findings.append(refusal(code, path, message))
 
     check(schedule.lowering.backend is LoweringBackend.METAL
           and schedule.target == target.target_id == "apple_gpu_family8"
@@ -106,12 +114,12 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
                   f"program_map.axes[{index}].tile", "this Metal route requires scalar program indices (tile=1); dimension extents may be odd")
     globals_ = [buffer for buffer in schedule.buffers if buffer.space is MemorySpace.GLOBAL]
     check(len(globals_) <= 31, "METAL_BUFFER_ARGUMENT_LIMIT", "buffers", "Metal admits at most 31 global buffer arguments")
-    check(private_values_per_thread(schedule) <= 1024, "METAL_PRIVATE_STORAGE_LIMIT", "buffers",
+    private_values = private_values_per_thread(schedule)
+    check(private_values <= 1024, "METAL_PRIVATE_STORAGE_LIMIT", "buffers",
           "Metal supports at most 1024 simultaneously live lane-owned FP32 values; "
           "this backend limit is not an Apple register capacity or occupancy estimate")
     for index, buffer in enumerate(schedule.buffers):
         path = f"buffers[{index}]"
-        check(buffer.dtype in SUPPORTED_DTYPES, "BACKEND_DTYPE_UNEMITTABLE", path + ".dtype", "Metal first slice supports FP32 only")
         check(buffer.space in {MemorySpace.GLOBAL, MemorySpace.REGISTER},
               "METAL_STORAGE_UNSUPPORTED", path + ".space", "Metal first slice uses global buffers and private register values only")
         check(buffer.allocation is None and buffer.byte_offset == 0 and buffer.stages == 1
@@ -136,7 +144,6 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
               and not operation.op_id.endswith(("\\", "??/")),
               "METAL_OPERATION_ID_UNSUPPORTED", path + ".id", "operation id contains a source-map delimiter, reserved substitution token, "
               "or lexical line continuation")
-        check(operation.kind in SUPPORTED_OPERATION_KINDS, "BACKEND_OPERATION_UNEMITTABLE", path + ".kind", "operation has no Metal body")
         check(not operation.waits and not operation.signals and operation.pipeline is None,
               "METAL_SYNCHRONIZATION_UNSUPPORTED", path, "Metal does not implement declared barriers or pipelines")
         if operation.kind in {OperationKind.ELEMENTWISE, OperationKind.REDUCE}:
@@ -221,6 +228,17 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
                 check(not unowned, "METAL_STORE_OWNERSHIP", f"access_maps[{access_index}].indices",
                       f"store does not own varying program axes {unowned}; different "
                       "threadgroups could write the same non-atomic output addresses")
+    if not findings:
+        findings.append(Finding(
+            "METAL_SIMD_EXECUTION", "lowering",
+            "Metal stripes flattened values over 32 lanes with uniform SIMD "
+            "collectives and uniquely owned stores. Peak live lane-owned Buffer "
+            f"storage: {private_values} FP32 values; "
+            "temporary registers and spills are unmodeled. No occupancy, cost or "
+            "GPU correctness is inferred. Local-slot then SIMD reduction order and "
+            "precise rsqrt use Metal rounding/denormal behavior, without PTX RN equivalence.",
+            FindingCategory.HARDWARE_CONFORMANCE, FindingSeverity.REPORT,
+        ))
     return tuple(findings)
 
 
@@ -240,7 +258,7 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
     invalid = [finding for finding in verify(schedule, target) if finding.severity is FindingSeverity.BLOCKING]
     if invalid:
         raise EmitError(f"{invalid[0].path}: {invalid[0].message}")
-    failures = preflight(schedule, target)
+    failures = [finding for finding in preflight(schedule, target) if finding.blocks_lowering]
     if failures:
         raise EmitError(f"{failures[0].path}: {failures[0].message}")
     if entry_point is not None and entry_point != schedule.lowering.entry_point:

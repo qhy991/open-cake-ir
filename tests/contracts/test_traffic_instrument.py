@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from open_cake_ir.compiler.ir import Schedule  # noqa: E402
-from open_cake_ir.compiler.work import work_bound  # noqa: E402
-from profile_lowered_kernel import _measured, traffic_comparison  # noqa: E402
+from open_cake_ir.compiler.performance.work import work_bound  # noqa: E402
+from profile_lowered_kernel import _LIMITS, _measured, traffic_comparison  # noqa: E402
 
 GEMM = ROOT / "corpus" / "schedules" / "gemm-bias-b1-smoke.json"
 GATHER = ROOT / "corpus" / "schedules" / "indexed-gather-b8-smoke.json"
@@ -56,6 +56,12 @@ def _bound(path: Path):
 
 class UnitTest(unittest.TestCase):
     """Nsight rescales for display, and a rescaled byte count is not a byte count."""
+
+    def test_schema_two_names_the_measured_physical_register_limit(self) -> None:
+        values = _measured(_csv(_complete()))
+        limits = {name: values[metric] for metric, name in _LIMITS.items()}
+        self.assertEqual(limits["registers"], 5.0)
+        self.assertNotIn("logical_register_storage", limits)
 
     def test_base_units_are_read_as_written(self) -> None:
         values = _measured(_csv(_complete()))

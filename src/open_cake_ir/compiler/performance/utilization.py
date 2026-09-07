@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .target import PeakRate, PeakSource, Target
+from ..target import PeakRate, PeakSource, Target
 from .work import WorkBound
 
 

@@ -223,25 +223,6 @@ class BackendCoverageTest(unittest.TestCase):
                     # A string key is only safe while something checks it resolves.
                     self.assertTrue(callable(getattr(emitter_class, method, None)))
 
-    def test_a_backend_names_every_dtype_it_admits_in_both_places(self) -> None:
-        """A dtype in one of a backend's tables and not the other lowers until it reaches
-        a host tensor, and then raises a KeyError instead of being refused.
-
-        `int64` was exactly that until the Compiler learned to check: it had a byte width
-        in the IR, no entry in either backend, and produced a raw KeyError from emission.
-        It is gone; this holds the shape that let it hide.
-        """
-
-        from open_cake_ir.compiler.backends import cutedsl, triton
-
-        for module, tables in (
-            (triton, (triton._TL_DTYPE, triton._TORCH_DTYPE)),
-            (cutedsl, (cutedsl._CUTLASS_DTYPE, cutedsl._TORCH_DTYPE)),
-        ):
-            with self.subTest(backend=module.__name__):
-                first, second = (frozenset(table) for table in tables)
-                self.assertEqual(first, second)
-                self.assertEqual(module.SUPPORTED_DTYPES, first)
 
     def test_every_dtype_the_ir_admits_has_a_backend(self) -> None:
         from open_cake_ir.compiler.backends import cutedsl, triton
@@ -260,7 +241,8 @@ class BackendCoverageTest(unittest.TestCase):
         ("triton", "INSIDE_LOOP_EMITTERS"),
         ("triton", "OUTSIDE_LOOP_EMITTERS"),
         ("triton", "_TL_DTYPE"),
-        ("triton", "_TORCH_DTYPE"),
+        ("triton", "TORCH_DTYPES"),
+        ("triton", "_POINTER_TYPES"),
         ("cutedsl", "BODY_EMITTERS"),
     }
 

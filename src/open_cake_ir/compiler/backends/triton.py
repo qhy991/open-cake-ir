@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..analysis import top_k_selection_structure
-from .common import BackendPrecondition, Emission, EmitError, require as _require
+from .triton_selection import top_k_selection_structure
+from .common import TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 from ..ir import (
     ElementwiseOp,
     LoadReuse,
@@ -38,6 +38,7 @@ from ..ir import (
     TileLoop,
 )
 from ..target import Target
+from ..diagnostics import Finding
 
 _TL_DTYPE = {
     DType.BF16: "tl.bfloat16",
@@ -47,16 +48,24 @@ _TL_DTYPE = {
     DType.INT32: "tl.int32",
 }
 
-_TORCH_DTYPE = {
-    DType.BF16: "torch.bfloat16",
-    DType.FP16: "torch.float16",
-    DType.FP32: "torch.float32",
-    DType.FP8_E4M3: "torch.float8_e4m3fn",
-    DType.INT32: "torch.int32",
+
+_POINTER_TYPES = {
+    DType.BF16: "*bf16",
+    DType.FP16: "*fp16",
+    DType.FP32: "*fp32",
+    DType.FP8_E4M3: "*fp8e4nv",
+    DType.INT32: "*i32",
 }
 
-# What this backend can name, in both the places it has to name it.
-SUPPORTED_DTYPES = frozenset(_TL_DTYPE) & frozenset(_TORCH_DTYPE)
+
+def pointer_type(dtype: DType) -> str:
+    """Return this backend's compile-signature spelling; unknown types fail closed."""
+    if not isinstance(dtype, DType) or dtype not in _POINTER_TYPES:
+        raise EmitError(f"Triton cannot name pointer dtype {dtype!r}")
+    return _POINTER_TYPES[dtype]
+
+
+SUPPORTED_DTYPES = frozenset(_TL_DTYPE) & frozenset(TORCH_DTYPES) & frozenset(_POINTER_TYPES)
 
 
 @dataclass(frozen=True)
@@ -144,7 +153,45 @@ _TRITON_DOT_INPUT_PRECISION = {
 }
 
 
-def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, ...]:
+def requirements(schedule: Schedule) -> tuple[Finding, ...]:
+    """Target-independent requirements shared by Compiler and direct emission."""
+    findings = list(vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS))
+    for index, loop in enumerate(schedule.tile_loops):
+        if loop.range_options.warp_specialize and any(
+            (operation := schedule.operation(operation_id)) is not None
+            and operation.kind is OperationKind.REDUCE_ARGMIN
+            for operation_id in loop.body
+        ):
+            findings.append(refusal(
+                "TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED",
+                f"tile_loops[{index}].range_options.warp_specialize",
+                "the pinned Triton backend cannot warp-specialize a "
+                "loop containing the value-and-index argmin reduction",
+            ))
+        for operation_id in loop.body:
+            operation = schedule.operation(operation_id)
+            if (operation is None or operation.kind is not OperationKind.TOP_K
+                    or not operation.parameters.across_loop or not operation.reads
+                    or operation.parameters.source_tiles_per_merge != 2):
+                continue
+            options = loop.range_options
+            for field, actual, admitted in (
+                ("loop_unroll_factor", options.loop_unroll_factor, 1),
+                ("warp_specialize", options.warp_specialize, False),
+                ("flatten", options.flatten, False),
+            ):
+                if actual != admitted:
+                    findings.append(refusal(
+                        "TRITON_TOP_K_TWO_TILE_CONTROL_FLOW_UNSUPPORTED",
+                        f"tile_loops[{index}].range_options.{field}",
+                        f"the current Triton two-source-tile top_k control flow "
+                        f"requires {field}={admitted!r}, got {actual!r}; the Compiler "
+                        "does not silently rewrite a declared loop option",
+                    ))
+    return tuple(findings)
+
+
+def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     """Return the constructor's backend-owned lowering requirements.
 
     The Compiler projects these into Findings and direct emitter users fail on the same
@@ -152,11 +199,13 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
     constraints imposed by this emitter's program shape and dispatch.
     """
 
-    findings: list[BackendPrecondition] = []
+    findings = list(requirements(schedule))
+    if findings:
+        return tuple(findings)
 
     def add(condition: object, code: str, path: str, message: str) -> None:
         if not condition:
-            findings.append(BackendPrecondition(code, path, message))
+            findings.append(refusal(code, path, message))
 
     add(
         target.compute_capability is not None,
@@ -796,14 +845,6 @@ class _TritonEmitter:
             self._toolchain(kernel),
         )
 
-    _POINTER = {
-        DType.BF16: "*bf16",
-        DType.FP16: "*fp16",
-        DType.FP32: "*fp32",
-        DType.FP8_E4M3: "*fp8e4nv",
-        DType.INT32: "*i32",
-    }
-
     def _toolchain(self, kernel: str) -> dict[str, object]:
         """The compile contract, derived rather than restated beside the source."""
 
@@ -811,7 +852,7 @@ class _TritonEmitter:
         return {
             "kernel_entry_point": kernel,
             "signature": {
-                buffer.name: self._POINTER[buffer.dtype] for buffer in self._globals()
+                buffer.name: pointer_type(buffer.dtype) for buffer in self._globals()
             },
             "compile_constants": {
                 name: value for name, value in constants.items() if name != "NUM_WARPS"
@@ -1904,7 +1945,7 @@ class _TritonEmitter:
         self.line("    for tensor, shape, dtype in (")
         for buffer in inputs:
             self.line(
-                f"        ({buffer.name}, {tuple(buffer.shape)}, {_TORCH_DTYPE[buffer.dtype]}),"
+                f"        ({buffer.name}, {tuple(buffer.shape)}, {TORCH_DTYPES[buffer.dtype]}),"
             )
         self.line("    ):")
         self.line("        if tuple(tensor.shape) != shape:")
@@ -1953,11 +1994,11 @@ class _TritonEmitter:
             self.line("    if out is None:")
             self.line(
                 f"        out = torch.empty({tuple(output.shape)}, "
-                f"dtype={_TORCH_DTYPE[output.dtype]}, device={anchor}.device)"
+                f"dtype={TORCH_DTYPES[output.dtype]}, device={anchor}.device)"
             )
             self.line(
                 f"    if tuple(out.shape) != {tuple(output.shape)} "
-                f"or out.dtype != {_TORCH_DTYPE[output.dtype]}:"
+                f"or out.dtype != {TORCH_DTYPES[output.dtype]}:"
             )
             self.line("        raise ValueError(\"out differs from the frozen output contract\")")
             self.line(f"    if out.device != {anchor}.device or not out.is_contiguous():")
@@ -1968,7 +2009,7 @@ class _TritonEmitter:
         for buffer in outputs:
             self.line(
                 f"            torch.empty({tuple(buffer.shape)}, "
-                f"dtype={_TORCH_DTYPE[buffer.dtype]}, device={anchor}.device),"
+                f"dtype={TORCH_DTYPES[buffer.dtype]}, device={anchor}.device),"
             )
         self.line("        )")
         self.line("    out = tuple(out)")
@@ -1980,7 +2021,7 @@ class _TritonEmitter:
         for index, buffer in enumerate(outputs):
             self.line(
                 f"        (out[{index}], {tuple(buffer.shape)}, "
-                f"{_TORCH_DTYPE[buffer.dtype]}),"
+                f"{TORCH_DTYPES[buffer.dtype]}),"
             )
         self.line("    ):")
         self.line("        if tuple(tensor.shape) != shape or tensor.dtype != dtype:")
@@ -2022,7 +2063,7 @@ class _TritonEmitter:
         self.line("    for tensor, shape, dtype in (")
         for buffer in caller_owned:
             self.line(
-                f"        ({buffer.name}, {tuple(buffer.shape)}, {_TORCH_DTYPE[buffer.dtype]}),"
+                f"        ({buffer.name}, {tuple(buffer.shape)}, {TORCH_DTYPES[buffer.dtype]}),"
             )
         self.line("    ):")
         self.line("        if tuple(tensor.shape) != shape:")

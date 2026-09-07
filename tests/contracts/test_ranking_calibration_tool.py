@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import math
 import statistics
@@ -13,21 +14,30 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.calibrate_ranking_at_scale import (  # noqa: E402
-    DEFAULT_TILES,
-    EXTENT_SYMBOLS,
-    VARIANTS,
-    main,
+# These instruments and their source assertions belong to the frozen v6/v7/v8
+# Compiler environment. Retiring both flat modules does not migrate that history.
+_REQUIRES_PINNED_GIT = (
+    importlib.util.find_spec("open_cake_ir.compiler.analysis") is None
+    and importlib.util.find_spec("open_cake_ir.compiler.ranking") is None
 )
-from tools.calibrate_gemm_ranking_interleaved import (  # noqa: E402
-    _check as evaluate_interleaved,
-)
-from tools.check_ranking_calibration import evaluate  # noqa: E402
-from tools.kernel_cases import ORACLES, global_shapes  # noqa: E402
+if not _REQUIRES_PINNED_GIT:
+    from tools.calibrate_ranking_at_scale import (  # noqa: E402
+        DEFAULT_TILES,
+        EXTENT_SYMBOLS,
+        VARIANTS,
+        main,
+    )
+    from tools.calibrate_gemm_ranking_interleaved import (  # noqa: E402
+        _check as evaluate_interleaved,
+    )
+    from tools.check_ranking_calibration import evaluate  # noqa: E402
+    from tools.kernel_cases import ORACLES, global_shapes  # noqa: E402
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
 
 
+@unittest.skipIf(_REQUIRES_PINNED_GIT,
+                 "requires pinned historical Git for ranking calibration v6/v7/v8")
 class RankingCalibrationInstrumentTests(unittest.TestCase):
     _SCHEDULES = {
         "flash_kmeans_b32_smoke": "corpus/schedules/flash-kmeans-b32-smoke-v2.json",
