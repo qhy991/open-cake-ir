@@ -12,7 +12,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
-from open_cake_ir.compiler import Assessment, Compiler, CompilerError
+from open_cake_ir.compiler import (
+    Assessment, Compiler, CompilerError, Finding, FindingCategory, FindingSeverity,
+)
 from open_cake_ir.compiler.empirical_cost import EmpiricalCostModel
 from open_cake_ir.compiler.ranking import Cost
 from open_cake_ir.compiler.toolchain import compile_triton, project_triton_kernel, validate_triton_kernel
@@ -366,13 +368,10 @@ def _ptxas_finding_rows(
     if not lines:
         return []
     return [
-        {
-            "code": "TOOLCHAIN_RESOURCE_REPORT",
-            "path": launchable.entry_point,
-            "message": " ".join(lines),
-            "blocks_acceptance": False,
-            "blocks_lowering": False,
-        }
+        Finding(
+            "TOOLCHAIN_RESOURCE_REPORT", launchable.entry_point, " ".join(lines),
+            FindingCategory.HARDWARE_CONFORMANCE, FindingSeverity.REPORT,
+        ).to_dict()
     ]
 
 
@@ -505,10 +504,9 @@ class OpenCakeEnvironment:
     def _finding_rows(assessment: Assessment, source=None) -> list[dict[str, object]]:
         """Project findings for the agent.
 
-        One shape for both dispositions. A rejection carries the blocking findings that
-        caused it; an acceptance carries the reports that survived it, which is where the
-        analysis attribution reaches the agent. Dropping them on acceptance would leave a
-        working candidate with no stated reason for the performance it got.
+        A rejection carries the blocking findings that caused it; an acceptance retains
+        reports and hints with their original category and severity. These diagnostics
+        describe modeled limits or missing commitments, not measured performance.
 
         What a finding blocks is two facts, not one. A Schedule can be accepted and still
         not lowerable -- its kinds are well-formed and this backend has no body for one --
@@ -518,15 +516,11 @@ class OpenCakeEnvironment:
 
         return [
             {
-                "code": item.code,
-                "path": item.path,
-                "message": item.message,
-                "blocks_acceptance": item.blocks_acceptance,
-                "blocks_lowering": item.blocks_lowering,
+                **item.to_dict(),
                 **({"source_location": asdict(location)} if source is not None
                    and (location := source.location_for(item.path)) is not None else {}),
             }
-            for item in assessment.findings
+            for item in assessment.findings + assessment.guidance
         ]
 
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:

@@ -44,11 +44,13 @@ python3 tools/report_schedule_profile.py --json \
 ```
 
 终端报告在每个 Schedule 的数值行下面展示驻留上界的约束资源、已分析范围、
-Finding 的代码、位置、消息及阻止阶段，以及已有的 barrier／scoreboard 定性风险原因。
+Finding 的代码、位置、消息、类别、严重程度及阻止阶段，以及已有的 barrier／scoreboard 定性风险原因。
 风险标签保持 `uncalibrated_risk`，不代表测得的 stall 比例或瓶颈排序。
 
 JSON 外层仍为 `schema_version=1`；`rows` 和 `skipped` 中的 `findings` 现在保留
-Compiler 的完整 Finding 对象，而非只有代码字符串。需要代码列表的消费者应显式
+Compiler 的完整 Finding 对象，合并 `Assessment.findings` 与 `Assessment.guidance`，
+由 `severity` 区分 blocking、report 和 hint；提示不成为阻止条件或测量结果。
+需要代码列表的消费者应显式
 读取每个对象的 `code`，不能再把对象当字符串。`profile` 保持其原有结构与数值；
 已保留编译报告的复用只读取原有编译资源与产物字段，因此既有报告仍可用于该路径。
 

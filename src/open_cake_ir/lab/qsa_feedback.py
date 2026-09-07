@@ -55,14 +55,7 @@ def qsa_compiler_feedback(
     """Project one Compiler Assessment without collapsing localized findings."""
 
     findings = [
-        {
-            "code": finding.code,
-            "path": finding.path,
-            "message": finding.message,
-            "blocks_acceptance": finding.blocks_acceptance,
-            "blocks_lowering": finding.blocks_lowering,
-        }
-        for finding in assessment.findings
+        finding.to_dict() for finding in assessment.findings + assessment.guidance
     ]
     profile = None if static_profile is None else dict(static_profile)
     if profile is not None and "empirical_cost" in profile:

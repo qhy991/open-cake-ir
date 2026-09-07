@@ -60,6 +60,11 @@ flowchart LR
   → 如果允许，生成目标源码
 ```
 
+Finding 保留具体位置、四类合同中的 `category`、`severity`，以及是否阻止结构验收和生成。
+`Assessment.findings` 保留现有 Corpus Gate 检查的阻塞诊断和报告；`Assessment.guidance`
+单独携带 `hint` 提示。提示不改变验收结果。CLI、Lab 和 profile 报告都会展示这些提示，
+但提示既不是 GPU 正确性证明，也不是测量结果。
+
 计划还会说明生成方式：Triton、CuTe DSL，或一个已经核验的固定 CUDA 源码。
 最后一种不是从任意计划生成任意 CUDA；输出中的 `generated` 字段会说明来源。
 代码中的名称分别是 `triton`、`cutlass_cute_dsl` 和 `checked_cuda_asset`。

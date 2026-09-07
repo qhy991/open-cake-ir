@@ -62,7 +62,7 @@ Text output currently reports Chinese structural acceptance and generation eligi
 
 The CLI parses the AST without executing imports, the function body, or arbitrary host effects. Unsupported syntax receives a source location. Compiler.assess_file accepts .py and yields the same Assessment as equivalent JSON. read_schedule returns the canonical document plus a companion location map; the [source contract](../PYTHON_FRONTEND.md) contains the complete API example.
 
-CLI JSON diagnostics add source filename and start/end line/column while preserving Finding code/path. FrontendError carries PYTHON_SYNTAX or the existing SCHEDULE_STRUCTURE code. Invalid candidates cannot create output. Locations are display projections, not part of Schedule, Assessment, or lowering identity.
+CLI JSON diagnostics add source filename and start/end line/column while preserving Finding code/path, category, severity, and both blocking dispositions. `findings` retains blocking diagnostics and reports; `guidance` carries nonblocking hints. Iterate over `assessment.findings + assessment.guidance` to inspect both. Hints do not change structural acceptance, generation eligibility, or Corpus Gate expectations, and are not GPU measurements. FrontendError carries PYTHON_SYNTAX or the existing SCHEDULE_STRUCTURE code. Invalid candidates cannot create output. Locations are display projections, not part of Schedule, Assessment, or lowering identity.
 
 Ordinary Python import can still execute module-level code and argument expressions even though the decorator does not call the function body. Candidate-reading tools must use read_schedule to maintain the nonexecuting boundary.
 

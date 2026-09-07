@@ -16,7 +16,9 @@ ROOT = Path(__file__).resolve().parents[2]
 REVISION_PATH = ROOT / "compiler/revision.lock.json"
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler import Compiler, CompilerError  # noqa: E402
+from open_cake_ir.compiler import (  # noqa: E402
+    Compiler, CompilerError, Finding, FindingCategory, FindingSeverity, Schedule, Target, verify,
+)
 from open_cake_ir.compiler.release import build_release  # noqa: E402
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
 from open_cake_ir.lab import KernelSeed, lower_specialists  # noqa: E402
@@ -32,6 +34,61 @@ def _decisive(assessment):
     """
 
     return [f for f in assessment.findings if f.blocks_acceptance or f.blocks_lowering]
+
+
+class FindingFeedbackContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+
+    def test_public_assessment_retains_the_verifiers_typed_reports_and_hints(self) -> None:
+        document = json.loads((ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json").read_text())
+        target = Target.from_dict(json.loads((ROOT / "compiler/targets/sm_100a.json").read_text()))
+        diagnostics = verify(Schedule.from_dict(document), target)
+        assessment = self.compiler.assess(document)
+
+        self.assertTrue(assessment.accepted)
+        self.assertTrue(assessment.lowering_eligible)
+        self.assertTrue(assessment.guidance)
+        self.assertEqual(assessment.findings + assessment.guidance, diagnostics)
+        self.assertEqual(
+            {finding.category for finding in assessment.guidance},
+            {FindingCategory.HARDWARE_CONFORMANCE, FindingCategory.PROGRAM_SAFETY},
+        )
+        for finding in assessment.findings:
+            self.assertIsInstance(finding, Finding)
+            self.assertIs(finding.severity, FindingSeverity.REPORT)
+        for finding in assessment.guidance:
+            self.assertIsInstance(finding, Finding)
+            self.assertIs(finding.severity, FindingSeverity.HINT)
+            self.assertFalse(finding.blocks_acceptance)
+            self.assertFalse(finding.blocks_lowering)
+        self.assertEqual(self.compiler.lower(assessment).route, assessment.route)
+        with self.assertRaisesRegex(CompilerError, "canonical Schedule replay"):
+            self.compiler.lower(replace(assessment, guidance=()))
+
+    def test_compiler_originated_findings_keep_distinct_blocking_dispositions(self) -> None:
+        assessment = self.compiler.assess_file(
+            ROOT / "corpus/schedules/flash-kmeans-b32-warp-specialized-argmin.json"
+        )
+        finding = next(item for item in assessment.findings
+                       if item.code == "TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED")
+        self.assertIs(finding.category, FindingCategory.HARDWARE_CONFORMANCE)
+        self.assertIs(finding.severity, FindingSeverity.BLOCKING)
+        self.assertFalse(finding.blocks_acceptance)
+        self.assertTrue(finding.blocks_lowering)
+        self.assertTrue(assessment.accepted)
+        self.assertFalse(assessment.lowering_eligible)
+
+        document = json.loads((ROOT / "corpus/schedules/fma-b8-smoke.json").read_text())
+        document["buffers"][0]["space"] = "unknown"
+        rejected = self.compiler.assess(document)
+        structural = rejected.findings[0]
+        self.assertEqual(structural.code, "SCHEDULE_STRUCTURE")
+        self.assertIs(structural.category, FindingCategory.SCHEDULE_SEMANTICS)
+        self.assertIs(structural.severity, FindingSeverity.BLOCKING)
+        self.assertTrue(structural.blocks_acceptance)
+        self.assertTrue(structural.blocks_lowering)
 
 
 class CompilerContractTests(unittest.TestCase):
@@ -395,10 +452,12 @@ class CompilerContractTests(unittest.TestCase):
                 + "\nTemporary release-protocol fixture.\n",
                 encoding="utf-8",
             )
+            environment = {**os.environ, "OPEN_CAKE_PYTHON": sys.executable}
 
             first = subprocess.run(
                 ["bash", "tools/release_compiler_cycle.sh"],
                 cwd=project,
+                env=environment,
                 capture_output=True,
                 text=True,
             )
@@ -419,7 +478,7 @@ class CompilerContractTests(unittest.TestCase):
             self.assertEqual(json.loads((archive / "source_set.json").read_text()), json.loads(prior_sources))
             repeat = subprocess.run(
                 ["bash", "tools/release_compiler_cycle.sh"], cwd=project,
-                capture_output=True, text=True,
+                env=environment, capture_output=True, text=True,
             )
             self.assertEqual(repeat.returncode, 3, repeat.stdout + repeat.stderr)
             self.assertEqual(json.loads(gate_path.read_text())["compiler_revision_id"], draft_id)
@@ -455,6 +514,7 @@ class CompilerContractTests(unittest.TestCase):
             second = subprocess.run(
                 ["bash", "tools/release_compiler_cycle.sh"],
                 cwd=project,
+                env=environment,
                 capture_output=True,
                 text=True,
             )
@@ -477,7 +537,7 @@ class CompilerContractTests(unittest.TestCase):
             released_lock = lock_path.read_bytes()
             unchanged = subprocess.run(
                 ["bash", "tools/release_compiler_cycle.sh"], cwd=project,
-                capture_output=True, text=True,
+                env=environment, capture_output=True, text=True,
             )
             self.assertEqual(unchanged.returncode, 0, unchanged.stdout + unchanged.stderr)
             self.assertIn("no successor is needed", unchanged.stdout)
