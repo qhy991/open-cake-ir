@@ -455,14 +455,13 @@ class ProviderContractTests(unittest.TestCase):
                 tuple(sha256(member).hexdigest() for member in expected),
             )
 
-    def test_candidate_set_rejects_noncanonical_wrong_arm_and_over_bound_envelopes(self) -> None:
+    def test_candidate_set_rejects_wrong_arm_and_over_bound_envelopes(self) -> None:
         valid = {
             "schema_version": 1,
             "arm": "open_cake",
             "candidates": [{"variant": 0}, {"variant": 1}],
         }
         cases = (
-            (json.dumps(valid).encode() + b"\n", "canonical bytes", "open_cake", 2),
             (
                 json.dumps(valid, sort_keys=True, separators=(",", ":")).encode()
                 + b"\n",
@@ -491,6 +490,80 @@ class ProviderContractTests(unittest.TestCase):
                         submission_contract=CANDIDATE_SET_ENVELOPE_V1,
                         arm=arm,
                         maximum_candidates_per_turn=maximum,
+                    )
+
+    def test_json_presentation_preserves_members_order_and_captured_raw_bytes(self) -> None:
+        for arm in ("open_cake", "native_triton", "direct_cuda"):
+            objects = [
+                {"z": [{"text": "海岩 / quoted \"text\"", "value": 1.0}], "a": -0.0},
+                {"z": [{"text": "second", "value": 2.0}], "a": 0.5},
+            ]
+            sources = ["// 海岩 / quoted \"text\"\nfloat x = 1.0;\n", "// second\r\n"]
+            members = sources if arm == "direct_cuda" else objects
+            expected = tuple(
+                member.encode("utf-8") if arm == "direct_cuda"
+                else json.dumps(member, sort_keys=True, separators=(",", ":"),
+                                ensure_ascii=False).encode("utf-8")
+                for member in members
+            )
+            document = {"schema_version": 1, "candidates": members, "arm": arm}
+            presentations = [
+                json.dumps(document, indent=2, ensure_ascii=False),
+                json.dumps(document, sort_keys=True, separators=(",", ":")),
+                json.dumps(document, indent=4).replace("/", "\\/"),
+            ]
+            if arm != "direct_cuda":
+                presentations.append(presentations[0].replace("1.0", "1e0")
+                                     .replace("-0.0", "-0.000").replace("0.5", "5e-1"))
+            for presentation in presentations:
+                with self.subTest(arm=arm, presentation=presentation), tempfile.TemporaryDirectory() as directory:
+                    candidate = Path(directory) / "candidate-set.json"
+                    raw = (" \n" + presentation + "\t\n").encode("utf-8")
+                    candidate.write_bytes(raw)
+                    turn = normalize_codex_turn(
+                        self._events(candidate, duplicate=False), candidate_path=candidate,
+                        expected_change="add", expected_terminal_message='{"candidate_written":true}',
+                        arm=arm, maximum_candidates_per_turn=2,
+                    )
+                    candidate.write_bytes(b"overwritten by a later turn")
+                    self.assertEqual(turn.raw_submission, raw)
+                    self.assertEqual(turn.candidates, expected)
+                    self.assertEqual(turn.candidate_sha256s,
+                                     tuple(sha256(member).hexdigest() for member in expected))
+
+    def test_candidate_set_refuses_ambiguous_or_invalid_json(self) -> None:
+        prefix = b'{"schema_version":1,"arm":"open_cake","candidates":'
+        invalid = [
+            b'{"schema_version":1,"schema_version":1,"arm":"open_cake","candidates":[{}]}',
+            prefix + b'[{"nested":[{"x":1,"x":2}]}]}',
+            prefix + b'[{"x":1,"\\u0078":2}]}',
+            *(prefix + b'[{"nested":[' + number + b']}]}'
+              for number in (b"NaN", b"Infinity", b"-Infinity", b"1e400", b"-1e400")),
+            prefix.replace(b'"schema_version":1', b'"schema_version":true') + b'[{}]}',
+            prefix.replace(b'"schema_version":1', b'"schema_version":1.0') + b'[{}]}',
+            prefix + b'[{"text":"\xff"}]}',
+            (prefix + b'[{}]}').decode().encode("utf-16"),
+            prefix + b'[{"text":"\\ud800"}]}',
+            prefix + b'[{},{}]}',
+            prefix + b'[{"x":1.0},{"x":1e0}]}',
+            prefix + b'[]}', prefix + b'{} }', prefix + b'[null]}',
+            prefix + b'[true]}', prefix + b'["source"]}',
+            prefix + b'[{}],"extra":1}', prefix + b'[{}]} trailing',
+            b'[]', b'{"arm":"open_cake","candidates":[{}]}',
+            b'{"schema_version":1,"arm":"direct_cuda","candidates":[""]}',
+            b'{"schema_version":1,"arm":"direct_cuda","candidates":[{},"source"]}',
+            b'{"schema_version":1,"arm":"direct_cuda","candidates":["same","same"]}',
+        ]
+        for raw in invalid:
+            with self.subTest(raw=raw), tempfile.TemporaryDirectory() as directory:
+                candidate = Path(directory) / "candidate-set.json"
+                candidate.write_bytes(raw)
+                arm = "direct_cuda" if b'"arm":"direct_cuda"' in raw else "open_cake"
+                with self.assertRaises(ValueError):
+                    normalize_codex_turn(
+                        self._events(candidate, duplicate=False), candidate_path=candidate,
+                        expected_change="add", expected_terminal_message='{"candidate_written":true}',
+                        arm=arm, maximum_candidates_per_turn=2,
                     )
 
     def test_nonidentical_duplicate_terminal_is_rejected(self) -> None:
@@ -963,6 +1036,7 @@ class ProviderContractTests(unittest.TestCase):
                         thread_id="01234567-89ab-cdef-0123-456789abcdef",
                         provider_tokens=100,
                         candidates=(payload,),
+                        raw_submission=candidate_path.read_bytes(),
                         candidate_sha256s=(sha256(payload).hexdigest(),),
                         raw_events=b"{}\n",
                         raw_events_sha256=sha256(b"{}\n").hexdigest(),

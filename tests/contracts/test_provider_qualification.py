@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 import subprocess
 import sys
 import tempfile
@@ -8,12 +10,14 @@ import textwrap
 import unittest
 from hashlib import sha256
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
 from open_cake_ir.lab import ProviderQualificationReceipt  # noqa: E402
+from tools import qualify_codex_provider as qualifier  # noqa: E402
 
 
 class ProviderQualificationContractTests(unittest.TestCase):
@@ -29,6 +33,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         wrong_resumed_turn: bool = False,
         mutate_task: bool = False,
         mutate_helper: bool = False,
+        pretty_submission: bool = False,
     ) -> None:
         path.write_text(
             textwrap.dedent(
@@ -89,7 +94,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 declared = next(item for item in plan["turns"] if item["turn"] == selected_turn)
                 expected = declared["submission"]
                 candidate.write_text(
-                    json.dumps(expected, sort_keys=True, separators=(",", ":")) + "\\n",
+                    (json.dumps(expected, indent=2, ensure_ascii=False)
+                     if {pretty_submission!r} else json.dumps(expected, sort_keys=True, separators=(",", ":"))) + "\\n",
                     encoding="utf-8",
                 )
                 if {mutate_helper!r} and not resumed:
@@ -353,7 +359,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             executable = root / "codex"
-            self._write_provider(executable)
+            self._write_provider(executable, pretty_submission=True)
             completed, receipt_path, _, evidence_root = self._run_qualification(
                 root,
                 executable,
@@ -404,6 +410,48 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 self.assertEqual(envelope["arm"], arm)
                 self.assertEqual(len(envelope["candidates"]), 3)
             self.assertEqual(receipt.scope, "live_two_turn_current_provider")
+
+    def test_qualification_archives_the_captured_submission_after_path_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable, pretty_submission=True)
+            captured = {}
+            original_execute = qualifier.CodexProviderAdapter.execute
+
+            def overwrite_after_capture(adapter, invocation, **kwargs):
+                turn = original_execute(adapter, invocation, **kwargs)
+                phase = "initial" if kwargs["expected_change"] == "add" else "resumed"
+                captured[(kwargs["arm"], phase)] = turn.raw_submission
+                kwargs["candidate_path"].write_bytes(b"later file contents")
+                return turn
+
+            arguments = [
+                "qualify_codex_provider.py", "--executable", str(executable),
+                "--provider-revision", "captured-submission-fixture",
+                "--output-schema", str(ROOT / "contracts/providers/codex-turn-output-schema-v1.json"),
+                "--workspace", str(root / "workspace"),
+                "--receipt-output", str(root / "receipt.json"),
+                "--anchor-output", str(root / "anchor.json"),
+                "--evidence-root", str(root / "evidence"),
+                "--run-id", "captured-submission", "--reasoning-effort", "max",
+            ]
+            with mock.patch.object(sys, "argv", arguments), mock.patch.object(
+                qualifier.CodexProviderAdapter, "execute", overwrite_after_capture
+            ), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(qualifier.main(), 0)
+            evidence = EvidenceStore.open(root / "evidence")
+            observed = next(event["payload"] for event in evidence.replay_events("captured-submission")
+                            if event["kind"] == "provider_qualification_observed")
+            objects = {item["role"]: item for item in observed["objects"]}
+            self.assertEqual(len(captured), 4)
+            for (arm, phase), raw in captured.items():
+                with self.subTest(arm=arm, phase=phase):
+                    self.assertIn(b"\n  ", raw)
+                    self.assertEqual(evidence.read_object(objects[f"{arm}_{phase}_submission_envelope"]), raw)
+                    self.assertEqual((root / "workspace" / arm / "candidate-set.json").read_bytes(),
+                                     b"later file contents")
+                self.assertNotEqual(captured[(arm, "initial")], captured[(arm, "resumed")])
 
     def test_ralph_qualification_exposes_only_task_agents_and_candidate_set(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import stat
@@ -193,6 +194,26 @@ def _canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    document: dict[str, object] = {}
+    for key, value in pairs:
+        if key in document:
+            raise ValueError("provider candidate-set envelope contains duplicate JSON keys")
+        document[key] = value
+    return document
+
+
+def _finite_json_float(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError("provider candidate-set envelope contains a non-finite JSON number")
+    return value
+
+
+def _reject_json_constant(text: str) -> object:
+    raise ValueError("provider candidate-set envelope contains a non-finite JSON number")
+
+
 def _project_candidate_submission(
     payload: bytes,
     *,
@@ -215,17 +236,22 @@ def _project_candidate_submission(
     }:
         raise ValueError("provider submission contract differs")
     try:
-        document = json.loads(payload)
+        document = json.loads(
+            payload.decode("utf-8"),
+            object_pairs_hook=_unique_json_object,
+            parse_float=_finite_json_float,
+            parse_constant=_reject_json_constant,
+        )
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("provider candidate-set envelope is not JSON") from error
     if (
         not isinstance(document, Mapping)
         or set(document) != {"schema_version", "arm", "candidates"}
+        or type(document.get("schema_version")) is not int
         or document.get("schema_version") != 1
         or document.get("arm") != arm
-        or payload != _canonical_json_bytes(document) + b"\n"
     ):
-        raise ValueError("provider candidate-set envelope fields or canonical bytes differ")
+        raise ValueError("provider candidate-set envelope fields differ")
     candidates = document.get("candidates")
     if (
         not isinstance(candidates, list)
@@ -274,6 +300,9 @@ class ProviderTurn:
     """
 
     candidate_sha256s: tuple[str, ...]
+    raw_submission: bytes
+    """Exact candidate envelope bytes from this Turn's no-follow file read."""
+
     raw_events: bytes
     raw_events_sha256: str
     terminal_message: str
@@ -764,6 +793,7 @@ def normalize_codex_turn(
         provider_tokens=parsed.provider_tokens,
         candidates=candidates,
         candidate_sha256s=tuple(sha256(candidate).hexdigest() for candidate in candidates),
+        raw_submission=submission,
         raw_events=raw_events,
         raw_events_sha256=sha256(raw_events).hexdigest(),
         terminal_message=expected_terminal_message,

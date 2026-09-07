@@ -137,6 +137,10 @@ def _qualification_package(
         "Write that entry's complete submission to candidate_path with its declared "
         "file change, then return its terminal_message as JSON. Do not execute "
         "either candidate. The plan and both task files stay unchanged between turns.\n\n"
+        "The submission must be valid UTF-8 JSON. Whitespace, object-key order, and "
+        "equivalent JSON escapes are accepted. Keys must be unique at every level, "
+        "numbers must be finite, and schema_version must be the integer 1. Preserve "
+        "Candidate array order and direct CUDA source strings exactly.\n\n"
         "QUALIFICATION_PLAN_JSON=" + _canonical_json_bytes(plan).decode() + "\n"
     )
     agents = (
@@ -490,7 +494,6 @@ def main() -> int:
                 arm_workspace, candidate, task_files=True
             )
             verify_task_package(arm_workspace, package)
-            initial_submission = candidate.read_bytes()
             if (
                 initial.candidates != _planned_candidates(arm, initial_plan)
             ):
@@ -526,7 +529,6 @@ def main() -> int:
                 arm_workspace, candidate, task_files=True
             )
             verify_task_package(arm_workspace, package)
-            resumed_submission = candidate.read_bytes()
             if (
                 (
                     resumed.candidates != _planned_candidates(arm, resumed_plan)
@@ -558,11 +560,9 @@ def main() -> int:
                 "initial": initial,
                 "initial_invocation": initial_invocation,
                 "initial_projection": initial_projection,
-                "initial_submission": initial_submission,
                 "resumed": resumed,
                 "resumed_invocation": resumed_invocation,
                 "resumed_projection": resumed_projection,
-                "resumed_submission": resumed_submission,
             }
 
         if (
@@ -638,11 +638,11 @@ def main() -> int:
             objects.extend(
                 [
                     evidence.put(
-                        observation["initial_submission"],
+                        initial.raw_submission,
                         media_type="application/json",
                     ).reference(f"{arm}_initial_submission_envelope"),
                     evidence.put(
-                        observation["resumed_submission"],
+                        resumed.raw_submission,
                         media_type="application/json",
                     ).reference(f"{arm}_resumed_submission_envelope"),
                 ]

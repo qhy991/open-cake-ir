@@ -57,6 +57,15 @@ def _execute(lab, lock, evidence_root, *, provider, **kwargs):
     return lab.execute(lock, evidence_root, provider=provider, **kwargs)
 
 
+def _submission_envelope(arm: str, candidates: tuple[bytes, ...]) -> bytes:
+    members = [
+        candidate.decode("utf-8") if arm == "direct_cuda" else json.loads(candidate)
+        for candidate in candidates
+    ]
+    return json.dumps({"schema_version": 1, "arm": arm, "candidates": members},
+                      ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+
+
 class FakeEnvironment:
     def __init__(self, arm: str, authority_document) -> None:
         self.arm = arm
@@ -147,7 +156,7 @@ class FakeProvider:
             raise ValueError("resume thread differs")
         payload = json.dumps(
             {"run_id": request.run_id, "turn": request.turn},
-            sort_keys=True,
+            sort_keys=True, separators=(",", ":"),
         ).encode()
         candidate_name = (
             "candidate-set.json"
@@ -202,6 +211,7 @@ class FakeProvider:
             thread_id=thread_id,
             provider_tokens=80000,
             candidates=(payload,),
+            raw_submission=_submission_envelope(request.arm, (payload,)),
             candidate_sha256s=(sha256(payload).hexdigest(),),
             raw_events=raw_events,
             raw_events_sha256=sha256(raw_events).hexdigest(),
@@ -786,6 +796,7 @@ class LabContractTests(unittest.TestCase):
                     thread_id=observed.thread_id,
                     provider_tokens=70000,
                     candidates=observed.candidates,
+                    raw_submission=observed.raw_submission,
                     candidate_sha256s=observed.candidate_sha256s,
                     raw_events=raw_events,
                     raw_events_sha256=sha256(raw_events).hexdigest(),
@@ -915,6 +926,7 @@ class LabContractTests(unittest.TestCase):
                     thread_id=observed.thread_id,
                     provider_tokens=observed.provider_tokens,
                     candidates=observed.candidates,
+                    raw_submission=observed.raw_submission,
                     candidate_sha256s=observed.candidate_sha256s,
                     raw_events=raw_events,
                     raw_events_sha256=sha256(raw_events).hexdigest(),
@@ -1538,6 +1550,7 @@ class LabContractTests(unittest.TestCase):
                     thread_id=observed.thread_id,
                     provider_tokens=observed.provider_tokens,
                     candidates=observed.candidates,
+                    raw_submission=observed.raw_submission,
                     candidate_sha256s=observed.candidate_sha256s,
                     raw_events=raw_events,
                     raw_events_sha256=sha256(raw_events).hexdigest(),
@@ -1596,7 +1609,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
 
-        for failure in ("raw_events_sha256", "candidate_count"):
+        for failure in ("raw_events_sha256", "candidate_count", "raw_submission"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 builds: list[str] = []
 
@@ -1611,6 +1624,11 @@ class LabContractTests(unittest.TestCase):
                         if failure == "raw_events_sha256":
                             return dataclasses.replace(
                                 observed, raw_events_sha256="f" * 64
+                            )
+                        if failure == "raw_submission":
+                            return dataclasses.replace(
+                                observed,
+                                raw_submission=_submission_envelope(request.arm, (b'{"turn":999}',)),
                             )
                         payloads = tuple(
                             json.dumps(
@@ -1628,6 +1646,7 @@ class LabContractTests(unittest.TestCase):
                         return dataclasses.replace(
                             observed,
                             candidates=payloads,
+                            raw_submission=_submission_envelope(request.arm, payloads),
                             candidate_sha256s=tuple(
                                 sha256(payload).hexdigest() for payload in payloads
                             ),
@@ -2087,7 +2106,7 @@ class CandidateSetFilterTest(unittest.TestCase):
                 payloads = tuple(
                     json.dumps(
                         {"run_id": request.run_id, "turn": request.turn, "variant": i},
-                        sort_keys=True,
+                        sort_keys=True, separators=(",", ":"),
                     ).encode()
                     for i in range(3)
                 )
@@ -2095,6 +2114,7 @@ class CandidateSetFilterTest(unittest.TestCase):
                     thread_id=observed.thread_id,
                     provider_tokens=observed.provider_tokens,
                     candidates=payloads,
+                    raw_submission=_submission_envelope(request.arm, payloads),
                     candidate_sha256s=tuple(sha256(p).hexdigest() for p in payloads),
                     raw_events=observed.raw_events,
                     raw_events_sha256=observed.raw_events_sha256,
@@ -2174,6 +2194,48 @@ class CandidateSetFilterTest(unittest.TestCase):
             )
             report = lab.audit(campaign)
             lock_path = Path(parent) / "campaign.lock.json"
+            writer = EvidenceStore.writer(campaign.evidence_root)
+            for arm in ("open_cake", "direct_cuda"):
+                identifier = f"{arm}-1"
+                original_events = store.replay_events(identifier)
+                original_audit = store.audit_run(identifier)
+                original_turn = next(event["payload"] for event in original_events
+                                     if event["kind"] == "provider_turn_completed")
+                objects = {item["role"]: item for item in original_turn["objects"]}
+                member_bytes = tuple(store.read_object(objects[f"candidate_submission_{i:04d}"])
+                                     for i in range(original_turn["candidate_count"]))
+                raw = store.read_object(objects["provider_submission_envelope"])
+                self.assertEqual(raw, _submission_envelope(arm, member_bytes))
+                self.assertIn(b"\n  ", raw)
+                for failure in ("changed", "reordered", "duplicate_keys", "missing", "duplicate_role"):
+                    with self.subTest(arm=arm, raw_submission_failure=failure):
+                        tampered = json.loads(json.dumps(original_events))
+                        turn = next(event["payload"] for event in tampered
+                                    if event["kind"] == "provider_turn_completed")
+                        if failure == "missing":
+                            turn["objects"] = [item for item in turn["objects"]
+                                               if item["role"] != "provider_submission_envelope"]
+                        elif failure == "duplicate_role":
+                            turn["objects"].append(objects["provider_submission_envelope"])
+                        else:
+                            envelope = json.loads(raw)
+                            if failure == "changed":
+                                if arm == "direct_cuda":
+                                    envelope["candidates"][0] += "\nchanged"
+                                else:
+                                    envelope["candidates"][0]["turn"] = 999
+                            elif failure == "reordered":
+                                envelope["candidates"].reverse()
+                            altered = json.dumps(envelope).encode()
+                            if failure == "duplicate_keys":
+                                altered = altered.replace(b'"schema_version": 1',
+                                                          b'"schema_version": 1, "schema_version": 1')
+                            replacement = writer.put(altered, media_type="application/json")
+                            turn["objects"] = [replacement.reference("provider_submission_envelope")
+                                               if item["role"] == "provider_submission_envelope" else item
+                                               for item in turn["objects"]]
+                        with mock.patch.object(store, "replay_events", return_value=tuple(tampered)):
+                            self.assertFalse(lab._replay_matched_run(store, original_audit, lock))
             lock_path.write_text(
                 json.dumps(lock.document, sort_keys=True, separators=(",", ":")),
                 encoding="utf-8",
@@ -2391,13 +2453,14 @@ class CandidateSetFilterTest(unittest.TestCase):
                             "turn": request.turn,
                             "variant": index,
                         },
-                        sort_keys=True,
+                        sort_keys=True, separators=(",", ":"),
                     ).encode()
                     for index in range(3)
                 )
                 return dataclasses.replace(
                     observed,
                     candidates=payloads,
+                    raw_submission=_submission_envelope(request.arm, payloads),
                     candidate_sha256s=tuple(
                         sha256(payload).hexdigest() for payload in payloads
                     ),
@@ -2731,7 +2794,7 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
                 payloads = tuple(
                     json.dumps(
                         {"run_id": request.run_id, "turn": request.turn, "variant": i},
-                        sort_keys=True,
+                        sort_keys=True, separators=(",", ":"),
                     ).encode()
                     for i in range(3)
                 )
@@ -2739,6 +2802,7 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
                     thread_id=observed.thread_id,
                     provider_tokens=observed.provider_tokens,
                     candidates=payloads,
+                    raw_submission=_submission_envelope(request.arm, payloads),
                     candidate_sha256s=tuple(sha256(p).hexdigest() for p in payloads),
                     raw_events=observed.raw_events,
                     raw_events_sha256=observed.raw_events_sha256,
@@ -2901,7 +2965,7 @@ class QualifiedCandidateSelectionTest(unittest.TestCase):
                             "turn": request.turn,
                             "variant": variant,
                         },
-                        sort_keys=True,
+                        sort_keys=True, separators=(",", ":"),
                     ).encode()
                     for variant in range(2)
                 )
@@ -2909,6 +2973,7 @@ class QualifiedCandidateSelectionTest(unittest.TestCase):
                     thread_id=observed.thread_id,
                     provider_tokens=observed.provider_tokens,
                     candidates=payloads,
+                    raw_submission=_submission_envelope(request.arm, payloads),
                     candidate_sha256s=tuple(
                         sha256(payload).hexdigest() for payload in payloads
                     ),
@@ -3104,7 +3169,7 @@ class CostModelRouteTest(unittest.TestCase):
                 payloads = tuple(
                     json.dumps(
                         {"run_id": request.run_id, "turn": request.turn, "variant": i},
-                        sort_keys=True,
+                        sort_keys=True, separators=(",", ":"),
                     ).encode()
                     for i in range(2)
                 )
@@ -3112,6 +3177,7 @@ class CostModelRouteTest(unittest.TestCase):
                     thread_id=observed.thread_id,
                     provider_tokens=observed.provider_tokens,
                     candidates=payloads,
+                    raw_submission=_submission_envelope(request.arm, payloads),
                     candidate_sha256s=tuple(sha256(p).hexdigest() for p in payloads),
                     raw_events=observed.raw_events,
                     raw_events_sha256=observed.raw_events_sha256,
@@ -3402,6 +3468,8 @@ class RalphTaskInterfaceTests(unittest.TestCase):
         self.assertIn("cuda-launch-abi.json", cuda_package.task_markdown)
         self.assertNotIn("schedule-skeleton.json", cuda_package.task_markdown)
         for package in (open_package, cuda_package):
+            self.assertIn("valid UTF-8 JSON", package.task_markdown)
+            self.assertIn("unique at every level", package.task_markdown)
             self.assertIn("Write only `candidate-set.json`", package.agents_markdown)
             self.assertNotIn("confirmed_latency_ms", package.agents_markdown)
             with tempfile.TemporaryDirectory() as directory:
@@ -3887,8 +3955,8 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
                         invalid = json.loads(json.dumps(schedules[0]))
                         invalid["buffers"][0]["dtype"] = "fp32"
                         schedules.append(invalid)
-                    payloads = tuple(json.dumps(schedule).encode() for schedule in schedules)
-                return dataclasses.replace(observed, candidates=payloads, candidate_sha256s=tuple(sha256(value).hexdigest() for value in payloads), raw_events=raw, raw_events_sha256=sha256(raw).hexdigest(), terminal_message=events[-2]["item"]["text"], tool_activity=(ProviderAuxiliaryActivity(item_id=f"file-{request.turn}", item_type="file_change", status="completed"),))
+                    payloads = tuple(json.dumps(schedule, sort_keys=True, separators=(",", ":")).encode() for schedule in schedules)
+                return dataclasses.replace(observed, candidates=payloads, raw_submission=_submission_envelope(request.arm, payloads), candidate_sha256s=tuple(sha256(value).hexdigest() for value in payloads), raw_events=raw, raw_events_sha256=sha256(raw).hexdigest(), terminal_message=events[-2]["item"]["text"], tool_activity=(ProviderAuxiliaryActivity(item_id=f"file-{request.turn}", item_type="file_change", status="completed"),))
 
         class Toolchain:
             def __init__(self):
