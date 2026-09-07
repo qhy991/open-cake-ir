@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
-from typing import Mapping, Protocol, cast
+from typing import Callable, Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Compiler
 from .pairing import bind_baseline, native_baseline
@@ -79,11 +79,14 @@ def build_run_reference_documents(
     project_root: str | Path,
     lock: CampaignLockLike,
     arm: Mapping[str, object],
+    *, workload_contract: WorkloadContract, prepare_schedule: Callable,
 ) -> Mapping[str, bytes]:
     """Build the sole run-authority projection used by the Ralph task package."""
 
     root = Path(project_root).resolve(strict=True)
     workload = _object(lock.document["workload"], "campaign_lock.workload")
+    if workload_contract.canonical_sha256 != workload["canonical_sha256"]:
+        raise ValueError("task package Workload differs from CampaignLock")
     compiler = _object(lock.document["compiler_revision"], "campaign_lock.compiler")
     scaffold = _object(arm["scaffold"], "arm.scaffold")
     revision_document = _object(
@@ -134,24 +137,9 @@ def build_run_reference_documents(
             json.loads(_read_relative(root, skeleton_ref["path"], "schedule_skeleton")),
         )
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
-        workload_contract = WorkloadContract.load(root / str(workload["path"]))
+        skeleton = prepare_schedule(skeleton, workload_contract, case_id, arm)
         if arm.get("input_format") == "schedule_or_python_v1":
-            skeleton = bind_baseline(skeleton, workload_contract, case_id)
             documents["paired-triton-authoring.md"] = (root / "docs/en/PAIRED_TRITON.md").read_bytes()
-        else:
-            shape = _object(workload_contract.case(case_id)["shape"], "workload.case.shape")
-            buffers = {
-                str(item["name"]): item
-                for item in cast(list[dict[str, object]], skeleton["buffers"])
-            }
-            buffers["tokens"]["shape"] = [shape["B"], shape["N"], shape["D"]]
-            buffers["centroids"]["shape"] = [shape["B"], shape["K"], shape["D"]]
-            buffers["centroid_sq"]["shape"] = [shape["B"], shape["K"]]
-            buffers["assignments"]["shape"] = [shape["B"], shape["N"]]
-            skeleton["schedule_id"] = "open-cake-ir-matched-authoring-skeleton-v1"
-            cast(dict[str, object], skeleton["metadata"])[
-                "workload_contract_sha256"
-            ] = workload_contract.canonical_sha256
         documents.update(
             {
                 "schedule.schema.json": schedule_schema_bytes(),
@@ -163,7 +151,6 @@ def build_run_reference_documents(
         open_arm = _object(_object(resolved["arm_environments"], "arm_environments")["open_cake"], "open_cake")
         skeleton_ref = _object(open_arm["schedule_skeleton"], "schedule_skeleton")
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
-        workload_contract = WorkloadContract.load(root / str(workload["path"]))
         baseline = bind_baseline(json.loads(_read_relative(root, skeleton_ref["path"], "schedule_skeleton")), workload_contract, case_id)
         compiler_instance = Compiler.load(root, root / str(compiler["path"]))
         lowering = compiler_instance.lower(compiler_instance.assess(baseline))
@@ -255,6 +242,7 @@ def render_task_package(
     project_root: str | Path,
     lock: CampaignLockLike,
     run_id: str,
+    *, workload_contract: WorkloadContract, prepare_schedule: Callable,
 ) -> TaskPackage:
     """Render TASK.md and AGENTS.md from canonical owners, never from run history."""
 
@@ -267,7 +255,8 @@ def render_task_package(
     arm = run_id.rsplit("-", 1)[0]
     arms = _object(resolved["arm_environments"], "resolved_inputs.arm_environments")
     authority = _object(arms[arm], f"arm_environments.{arm}")
-    documents = build_run_reference_documents(project_root, lock, authority)
+    documents = build_run_reference_documents(project_root, lock, authority,
+        workload_contract=workload_contract, prepare_schedule=prepare_schedule)
     budget = _object(resolved["budget"], "resolved_inputs.budget")
     evaluation = _object(lock.document["evaluation_protocol"], "evaluation_protocol")
     output_contract = f'`{{"arm":"{arm}","candidates":[...],"schema_version":1}}`'

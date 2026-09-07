@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.workloads import load_workload
 
 from open_cake_ir.evaluation import WorkloadContract  # noqa: E402
 
@@ -21,24 +22,24 @@ class WorkloadContractTest(unittest.TestCase):
 
     def test_new_workloads_load(self) -> None:
         self.assertEqual(
-            WorkloadContract.load(self.dsa_path).workload_id,
+            load_workload(self.dsa_path).workload_id,
             "deepseek-v3.2-dsa-sparse-mla-decode-v1",
         )
         self.assertEqual(
-            WorkloadContract.load(self.kda_path).workload_id,
+            load_workload(self.kda_path).workload_id,
             "kimi-k3-kda-fused-decode-v1",
         )
         self.assertEqual(
-            WorkloadContract.load(self.kda_megaop_b200_v1_path).workload_id,
+            load_workload(self.kda_megaop_b200_v1_path).workload_id,
             "kimi-k3-kda-decode-megaop-b200-v1",
         )
         self.assertEqual(
-            WorkloadContract.load(self.kda_megaop_b200_path).workload_id,
+            load_workload(self.kda_megaop_b200_path).workload_id,
             "kimi-k3-kda-decode-megaop-b200-v2",
         )
 
     def test_dsa_task_matrix_scale_and_timing(self) -> None:
-        workload = WorkloadContract.load(self.dsa_path)
+        workload = load_workload(self.dsa_path)
         captured = (
             ("0c23b10c7b7645719517828c12eaa1d2", 1),
             ("9d4a5f21268e484ea05a2f2af91d9fa7", 2),
@@ -109,7 +110,7 @@ class WorkloadContractTest(unittest.TestCase):
         )
 
     def test_kda_task_matrix_abi_state_timing_and_trajectory(self) -> None:
-        workload = WorkloadContract.load(self.kda_path)
+        workload = load_workload(self.kda_path)
         self.assertEqual(
             tuple(
                 (
@@ -169,7 +170,7 @@ class WorkloadContractTest(unittest.TestCase):
         )
 
     def test_kda_b200_megaop_owns_hardware_state_and_measurement(self) -> None:
-        workload = WorkloadContract.load(self.kda_megaop_b200_path)
+        workload = load_workload(self.kda_megaop_b200_path)
         self.assertEqual(
             tuple(
                 (case_id, workload.case(case_id)["shape"]["active_rows"])
@@ -228,7 +229,7 @@ class WorkloadContractTest(unittest.TestCase):
                         path = Path(directory) / "workload.json"
                         path.write_text(json.dumps(document), encoding="utf-8")
                         with self.assertRaisesRegex(ValueError, "KDA B200 megaop case shape"):
-                            WorkloadContract.load(path)
+                            load_workload(path)
 
     def test_megaop_required_semantic_boundaries_reject_drift_and_omission(self) -> None:
         for source in (self.kda_megaop_b200_v1_path, self.kda_megaop_b200_path):
@@ -275,7 +276,7 @@ class WorkloadContractTest(unittest.TestCase):
                         path = Path(directory) / "workload.json"
                         path.write_text(json.dumps(document), encoding="utf-8")
                         with self.assertRaisesRegex(ValueError, "KDA B200 megaop"):
-                            WorkloadContract.load(path)
+                            load_workload(path)
 
     def test_megaop_provenance_explanation_is_not_a_semantic_field(self) -> None:
         for source in (self.kda_megaop_b200_v1_path, self.kda_megaop_b200_path):
@@ -284,7 +285,7 @@ class WorkloadContractTest(unittest.TestCase):
                 document["provenance"][0]["scope"] += "; clarified source description"
                 path = Path(directory) / "workload.json"
                 path.write_text(json.dumps(document), encoding="utf-8")
-                self.assertEqual(WorkloadContract.load(path).workload_id, document["workload_id"])
+                self.assertEqual(load_workload(path).workload_id, document["workload_id"])
 
     def test_structural_cross_field_inconsistencies_fail_closed(self) -> None:
         cases = (
@@ -315,7 +316,7 @@ class WorkloadContractTest(unittest.TestCase):
                 path = Path(directory) / "workload.json"
                 path.write_text(json.dumps(document), encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, message):
-                    WorkloadContract.load(path)
+                    load_workload(path)
 
 
 if __name__ == "__main__":

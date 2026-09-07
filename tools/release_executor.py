@@ -12,6 +12,7 @@ _SOURCE_ROOTS = (
     "src/open_cake_ir/lab",
     "src/open_cake_ir/evaluation",
     "src/open_cake_ir/evidence",
+    "src/open_cake_ir/tasks",
 )
 _SOURCE_FILES = (
     "compiler/targets/sm_100a.json",
@@ -21,14 +22,10 @@ _SOURCE_FILES = (
     "examples/gpu/flash_kmeans_quickstart.py",
     "src/open_cake_ir/__init__.py",
     "src/open_cake_ir/cli.py",
-    "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.cu",
-    "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.json",
-    "tools/calibrate_flash_cost.py",
+    "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu",
+    "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json",
     "tools/capture_executor_host.py",
-    "tools/evaluate_flash_candidate.py",
-    "tools/evaluate_qsa_candidate.py",
     "tools/observe_target_peak.py",
-    "tools/project_qsa_feedback.py",
 )
 
 
@@ -45,7 +42,7 @@ def _canonical_json_bytes(value: object) -> bytes:
 def _source_paths(root: Path) -> list[Path]:
     paths = [root / value for value in _SOURCE_FILES]
     for value in _SOURCE_ROOTS:
-        paths.extend((root / value).glob("*.py"))
+        paths.extend((root / value).rglob("*.py"))
     resolved = sorted({path.resolve(strict=True) for path in paths})
     if any(root not in path.parents or path.is_symlink() for path in resolved):
         raise ValueError("Executor source custody differs")

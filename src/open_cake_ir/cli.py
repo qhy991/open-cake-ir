@@ -12,12 +12,9 @@ from typing import Sequence
 
 from open_cake_ir.compiler import Compiler, CompilerError, Finding, FindingCategory
 from open_cake_ir.compiler.frontend import FrontendError, read_schedule
-from open_cake_ir.lab import (
-    CampaignLock,
-    Lab,
-    execute_matched_from_config,
-    execute_portfolio_from_config,
-)
+from open_cake_ir.lab import CampaignLock
+from open_cake_ir.tasks.runtime import TaskLab
+from open_cake_ir.tasks.compose import execute_matched_from_config, execute_portfolio_from_config
 from open_cake_ir.lab.custody import admit_new_campaign_path
 
 
@@ -165,7 +162,7 @@ def _compiler(args: argparse.Namespace) -> int:
 
 
 def _lab(args: argparse.Namespace) -> int:
-    lab = Lab(args.project_root)
+    lab = TaskLab(args.project_root)
     if args.lab_command == "preflight":
         output_path = (
             admit_new_campaign_path(

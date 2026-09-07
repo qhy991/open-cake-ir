@@ -80,14 +80,14 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             "examples/gpu/flash_kmeans_quickstart.py",
             "src/open_cake_ir/__init__.py",
             "src/open_cake_ir/cli.py",
-            "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.cu",
-            "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.json",
-            "tools/calibrate_flash_cost.py",
+            "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu",
+            "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json",
+            "src/open_cake_ir/tasks/flash_kmeans/calibrate.py",
             "tools/capture_executor_host.py",
-            "tools/evaluate_flash_candidate.py",
-            "tools/evaluate_qsa_candidate.py",
+            "src/open_cake_ir/tasks/evaluate.py",
+            "src/open_cake_ir/tasks/qsa/evaluate.py",
             "tools/observe_target_peak.py",
-            "tools/project_qsa_feedback.py",
+            "src/open_cake_ir/tasks/qsa/project_feedback.py",
         }
 
         self.assertEqual(observed, expected)

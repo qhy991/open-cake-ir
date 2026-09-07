@@ -14,13 +14,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.evaluation import LaunchableCandidate  # noqa: E402
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
-from open_cake_ir.lab import (  # noqa: E402
-    BuildRequest,
-    CandidateSubmission,
-    DirectCudaEnvironment,
-    EnvironmentResult,
-    NvccToolchainBuilder,
-)
+from open_cake_ir.lab import BuildRequest, CandidateSubmission, EnvironmentResult
+from open_cake_ir.tasks.flash_kmeans.environment import DirectCudaEnvironment, NvccToolchainBuilder
 from open_cake_ir.lab.environments import _ptxas_finding_rows  # noqa: E402
 
 

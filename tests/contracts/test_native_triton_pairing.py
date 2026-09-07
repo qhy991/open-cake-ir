@@ -1,5 +1,7 @@
 """CPU contract fixtures only; no fixture here is a real GPU or isolation qualification."""
 from __future__ import annotations
+from open_cake_ir.tasks.flash_kmeans.environment import FlashTritonToolchainBuilder
+from open_cake_ir.tasks.workloads import load_workload
 
 import ast
 import contextlib
@@ -19,10 +21,14 @@ from unittest import mock
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.compiler.toolchain import TritonCompilation, project_triton_kernel, validate_triton_kernel
-from open_cake_ir.evaluation.core import EvaluationProtocol, TensorLaunchManifest, evaluate_tile_workload, parse_launch_manifest
-from open_cake_ir.evaluation.tile_workloads import reference_outputs
+from open_cake_ir.evaluation.core import EvaluationProtocol, TensorLaunchManifest
+from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload
+from open_cake_ir.tasks.launch import parse_launch_manifest
+from open_cake_ir.tasks.tiles.workload import reference_outputs
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.lab import CandidateSubmission, Lab, NativeTritonEnvironment, OpenCakeEnvironment, TritonToolchainBuilder
+from open_cake_ir.lab import CandidateSubmission, NativeTritonEnvironment, TritonToolchainBuilder
+from open_cake_ir.tasks.runtime import TaskLab
+from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.lab.pairing import bind_baseline, native_baseline, triton_optimization_analysis_plan
 from open_cake_ir.lab.providers import _project_candidate_submission, CANDIDATE_SET_ENVELOPE_V1
@@ -94,7 +100,7 @@ class NativePairingContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.compiler = DraftCompilerFixture()
-        cls.workload = WorkloadContract.load(ROOT / 'contracts/workloads/rmsnorm-fp32-v1.json')
+        cls.workload = load_workload(ROOT / 'contracts/workloads/rmsnorm-fp32-v1.json')
         cls.schedule = baseline(cls.workload)
         cls.lowering = cls.compiler.lower(cls.compiler.assess(cls.schedule))
         cls.native = native_baseline(cls.lowering)
@@ -112,7 +118,7 @@ class NativePairingContractTests(unittest.TestCase):
     def test_three_primary_baselines_project_only_the_exact_trusted_kernel(self):
         for name in ('rmsnorm-fp32-v1', 'gemm-bias-bf16-fp32-v1', 'indexed-gather-bf16-v1'):
             with self.subTest(workload=name):
-                workload = WorkloadContract.load(ROOT / f'contracts/workloads/{name}.json')
+                workload = load_workload(ROOT / f'contracts/workloads/{name}.json')
                 lowering = self.compiler.lower(self.compiler.assess(baseline(workload)))
                 projected = native_baseline(lowering)
                 tree = ast.parse(projected['kernel_source'])
@@ -126,7 +132,7 @@ class NativePairingContractTests(unittest.TestCase):
     def test_native_environment_accepts_the_compiler_pointer_types_for_every_workload(self):
         for name in ('rmsnorm-fp32-v1', 'gemm-bias-bf16-fp32-v1', 'indexed-gather-bf16-v1'):
             with self.subTest(workload=name):
-                workload = WorkloadContract.load(ROOT / f'contracts/workloads/{name}.json')
+                workload = load_workload(ROOT / f'contracts/workloads/{name}.json')
                 lowering = self.compiler.lower(self.compiler.assess(baseline(workload)))
                 fixture = CompilationFixture()
                 builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=fixture)
@@ -215,9 +221,9 @@ class NativePairingContractTests(unittest.TestCase):
         self.assertFalse(fixture.requests)
 
     def test_native_cannot_use_historical_unsandboxed_builder(self):
-        env = NativeTritonEnvironment(TritonToolchainBuilder(), toolchain_requirements=self.lowering.toolchain_requirements,
+        env = NativeTritonEnvironment(FlashTritonToolchainBuilder(), toolchain_requirements=self.lowering.toolchain_requirements,
             authority_document={}, workload=self.workload, case_id='primary')
-        with self.assertRaisesRegex(ValueError, 'Compiler lowering only'), mock.patch('open_cake_ir.lab.environments.compile_triton') as compile_:
+        with self.assertRaisesRegex(ValueError, 'Compiler lowering only'), mock.patch('open_cake_ir.tasks.flash_kmeans.environment.compile_triton') as compile_:
             env.build(CandidateSubmission.seal(env.media_type, encoded(self.native)))
         compile_.assert_not_called()
 
@@ -225,7 +231,7 @@ class NativePairingContractTests(unittest.TestCase):
         builder = TritonToolchainBuilder(workload=self.workload, case_id='primary')
         env = NativeTritonEnvironment(builder, toolchain_requirements=self.lowering.toolchain_requirements,
             authority_document={}, workload=self.workload, case_id='primary')
-        with self.assertRaisesRegex(RunProtocolFault, 'filesystem-isolated'), mock.patch('open_cake_ir.lab.environments.compile_triton') as compile_:
+        with self.assertRaisesRegex(RunProtocolFault, 'filesystem-isolated'), mock.patch('open_cake_ir.tasks.flash_kmeans.environment.compile_triton') as compile_:
             env.build(CandidateSubmission.seal(env.media_type, encoded(self.native)))
         compile_.assert_not_called()
 
@@ -324,7 +330,7 @@ class NativePairingContractTests(unittest.TestCase):
                 compiler.check_executor(executor, author_workspace=workspace)
 
     def test_canonical_composition_rejects_an_unpinned_isolated_runtime_before_build(self):
-        from open_cake_ir.lab.compose import execute_matched_from_config
+        from open_cake_ir.tasks.compose import execute_matched_from_config
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             runtime = root / 'runtime'; runtime.mkdir()
@@ -346,8 +352,8 @@ class NativePairingContractTests(unittest.TestCase):
                              'triton_version':'fixture','timeout_seconds':1},
                 'broker':{'command':['unused'],'cwd':str(root),'timeout_seconds':1,'service_user':'fixture','service_group':'fixture'}}
             path = root/'runtime.json'; path.write_bytes(encoded(config))
-            with mock.patch('open_cake_ir.lab.compose._admit_executor',return_value=(executor,None)), \
-                 mock.patch('open_cake_ir.lab.compose.ProviderQualificationReceipt.load',return_value=qualification), \
+            with mock.patch('open_cake_ir.tasks.compose._admit_executor',return_value=(executor,None)), \
+                 mock.patch('open_cake_ir.tasks.compose.ProviderQualificationReceipt.load',return_value=qualification), \
                  mock.patch('open_cake_ir.lab.triton_build.sys.platform','linux'), \
                  mock.patch('open_cake_ir.lab.triton_build.run_supervised') as run:
                 with self.assertRaisesRegex(ValueError,'runtime differs from the frozen Executor'):
@@ -485,7 +491,7 @@ class NativePairingContractTests(unittest.TestCase):
 class PairedLabFixtureTests(unittest.TestCase):
     def test_real_matched_loop_preflight_submission_confirmation_replay_and_threshold_view(self):
         draft = DraftCompilerFixture()
-        workload = WorkloadContract.load(ROOT / 'contracts/workloads/rmsnorm-fp32-v1.json')
+        workload = load_workload(ROOT / 'contracts/workloads/rmsnorm-fp32-v1.json')
         schedule = baseline(workload)
         lowering = draft.lower(draft.assess(schedule))
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
@@ -512,7 +518,7 @@ class PairedLabFixtureTests(unittest.TestCase):
             stack.enter_context(mock.patch('open_cake_ir.lab.core._resolve_executor_reference', return_value=executor))
             stack.enter_context(mock.patch('open_cake_ir.lab.core._validate_executor_revision'))
             stack.enter_context(mock.patch('open_cake_ir.lab.core.Compiler.load', return_value=draft))
-            lab = Lab(root)
+            lab = TaskLab(root)
             lock = lab.preflight(study)
             self.assertEqual(lock.analysis_plan, triton_optimization_analysis_plan())
             fixture = CompilationFixture()
@@ -531,8 +537,7 @@ class PairedLabFixtureTests(unittest.TestCase):
                     payload = encoded(member)
                     return dataclasses.replace(original,candidates=(payload,),candidate_sha256s=(sha256(payload).hexdigest(),))
             provider = Provider(); provider.configuration = configuration
-            from open_cake_ir.lab import render_task_package
-            provider.packages = {run_id: render_task_package(root, lock, run_id) for run_id in lock.run_order}
+            provider.packages = {run_id: TaskLab(root).task_package(lock, run_id) for run_id in lock.run_order}
             provider.qualification_sha256 = sha256(encoded(qualification)).hexdigest()
             class Evaluator(FakeEvaluator):
                 def evaluate(self,candidate,*,case_id,purpose):

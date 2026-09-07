@@ -1,6 +1,8 @@
 """Closed CLI composition for a live matched-search Campaign."""
 
 from __future__ import annotations
+from open_cake_ir.tasks.flash_kmeans.environment import FlashTritonToolchainBuilder
+from open_cake_ir.tasks.workloads import load_workload
 
 import json
 import shlex
@@ -10,44 +12,25 @@ from pathlib import Path, PurePosixPath
 from typing import Mapping, cast
 
 from open_cake_ir.compiler import Compiler
-from open_cake_ir.evaluation import (
-    CudaLaunchManifest,
-    CuptiPortfolioAssay,
-    LoadedCudaCandidate,
-    PortfolioArtifact,
-    PortfolioEvaluationReceipt,
-    StrictCuptiBenchmark,
-    WorkloadContract,
-    observe_exclusive_b200,
-)
+from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
+from open_cake_ir.tasks.flash_kmeans.portfolio_runtime import CuptiPortfolioAssay
+from open_cake_ir.evaluation import LoadedCudaCandidate, WorkloadContract, observe_exclusive_b200
+from open_cake_ir.tasks.flash_kmeans.portfolio import PortfolioArtifact, PortfolioEvaluationReceipt
+from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 
-from .core import CampaignLock, CampaignRef, Lab
-from .environments import (
-    BuildRequest,
-    DirectCudaEnvironment,
-    NvccToolchainBuilder,
-    OpenCakeEnvironment,
-    NativeTritonEnvironment,
-    TritonToolchainBuilder,
-)
-from .executor import ExecutorRevision
-from .faults import RunProtocolFault
-from .portfolio import KernelSeed, lower_specialists
-from .providers import (
-    CANDIDATE_SET_ENVELOPE_V1,
-    CodexInvocationBuilder,
-    CodexProviderAdapter,
-    CodexRunProvider,
-    ProviderQualificationReceipt,
-    required_live_provider_qualification_scope,
-)
-from .pairing import comparison_arm, bind_baseline
-from .triton_build import IsolatedTritonCompiler
-from .runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter
-from .task_package import (
-    materialize_task_package,
-    render_task_package,
-)
+from open_cake_ir.lab.core import CampaignLock, CampaignRef
+from open_cake_ir.tasks.runtime import TaskLab
+from open_cake_ir.lab.environments import BuildRequest, NativeTritonEnvironment, TritonToolchainBuilder
+from open_cake_ir.tasks.flash_kmeans.environment import DirectCudaEnvironment, NvccToolchainBuilder
+from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
+from open_cake_ir.lab.executor import ExecutorRevision
+from open_cake_ir.lab.faults import RunProtocolFault
+from open_cake_ir.tasks.flash_kmeans.seed import KernelSeed, lower_specialists
+from open_cake_ir.lab.providers import CANDIDATE_SET_ENVELOPE_V1, CodexInvocationBuilder, CodexProviderAdapter, CodexRunProvider, ProviderQualificationReceipt, required_live_provider_qualification_scope
+from open_cake_ir.lab.pairing import comparison_arm, bind_baseline
+from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
+from open_cake_ir.lab.runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter
+from open_cake_ir.lab.task_package import materialize_task_package
 
 
 def _object(value: object, context: str) -> Mapping[str, object]:
@@ -193,7 +176,7 @@ class _LivePortfolioAssay:
                 for case_id in self._case_ids
             }
             lowered = lower_specialists(self._compiler, self._seed, cases)
-            toolchain = TritonToolchainBuilder()
+            toolchain = FlashTritonToolchainBuilder()
             candidates = {}
             for item in lowered:
                 request = BuildRequest(
@@ -393,7 +376,7 @@ def execute_matched_from_config(
         raise ValueError("runtime Compiler Revision differs from the Campaign Lock")
     protocol = _object(lock.document["evaluation_protocol"], "evaluation_protocol")
     workload = _object(lock.document["workload"], "workload")
-    workload_contract = WorkloadContract.load(root / str(workload["path"]))
+    workload_contract = load_workload(root / str(workload["path"]))
     if workload_contract.canonical_sha256 != workload["canonical_sha256"]:
         raise ValueError("runtime Workload differs from the Campaign Lock")
     if paired_triton:
@@ -404,7 +387,7 @@ def execute_matched_from_config(
         direct_environment = NativeTritonEnvironment(builder, toolchain_requirements=lowering.toolchain_requirements,
             authority_document=direct_arm, workload=workload_contract, case_id=str(protocol["case_id"]))
     else:
-        builder = TritonToolchainBuilder()
+        builder = FlashTritonToolchainBuilder()
         direct_environment = DirectCudaEnvironment(toolchain,
             toolchain_requirements={"compiler": "nvcc", "target": "sm_100a"}, authority_document=direct_arm)
     environments = {
@@ -442,7 +425,7 @@ def execute_matched_from_config(
         workspace = workspace_root / run_id
         workspace.mkdir(mode=0o750)
         arm_name = run_id.rsplit("-", 1)[0]
-        package = render_task_package(root, lock, run_id)
+        package = TaskLab(root).task_package(lock, run_id)
         materialize_task_package(workspace, package)
         task_packages[run_id] = package
         builders[run_id] = CodexInvocationBuilder(
@@ -475,7 +458,7 @@ def execute_matched_from_config(
         task_packages=task_packages,
         adapter=CodexProviderAdapter(),
     )
-    return Lab(root).execute(
+    return TaskLab(root).execute(
         lock,
         evidence_root,
         provider=provider,
@@ -512,7 +495,7 @@ def execute_portfolio_from_config(
     seed_ref = _object(resolved["kernel_seed"], "resolved_inputs.kernel_seed")
     seed = KernelSeed.load(root, root / str(seed_ref["path"]))
     workload_ref = _object(lock.document["workload"], "workload")
-    workload = WorkloadContract.load(root / str(workload_ref["path"]))
+    workload = load_workload(root / str(workload_ref["path"]))
     case_roles = _object(resolved["case_roles"], "resolved_inputs.case_roles")
     case_ids = cast(list[str], case_roles["anchor"]) + cast(
         list[str], case_roles["held_out"]
@@ -530,7 +513,7 @@ def execute_portfolio_from_config(
         torch_module=torch,
         cupti_helper=cupti_helper,
     )
-    return Lab(root).execute_portfolio(
+    return TaskLab(root).execute_portfolio(
         lock,
         evidence_root,
         assay=assay,

@@ -25,7 +25,7 @@ The [tile Workload guide](../TILE_WORKLOADS.md) explains shapes, tolerances, the
 
 BF16 points and centroids produce the nearest-centroid index under the FP32 distance/accumulation contract. The independent reference and tie-aware rule own acceptance; do not impose another tie policy afterward.
 
-Contracts: [v1](../../../contracts/workloads/flash-kmeans-assign.json), [v2](../../../contracts/workloads/flash-kmeans-assign-v2.json). Code: [evaluation](../../../src/open_cake_ir/evaluation/flash_kmeans.py), [teaching tool](../../../examples/gpu/flash_kmeans_quickstart.py), [Compiler example](../../../corpus/schedules/flash-kmeans-b32-smoke-v2.json). Old Studies keep their bound versions.
+Contracts: [v1](../../../contracts/workloads/flash-kmeans-assign.json), [v2](../../../contracts/workloads/flash-kmeans-assign-v2.json). Code: [evaluation](../../../src/open_cake_ir/tasks/flash_kmeans/workload.py), [teaching tool](../../../examples/gpu/flash_kmeans_quickstart.py), [Compiler example](../../../corpus/schedules/flash-kmeans-b32-smoke-v2.json). Old Studies keep their bound versions.
 
 ## TinyGEMM2
 
@@ -39,7 +39,7 @@ Query, compressed KV cache, positional components, and supplied sparse indices p
 
 ## QSA: long-sequence selection and attention
 
-Post-projection q, k, v, index_q, and index_k feed causal complete-block pooling, LayerNorm, index-head scoring, block selection, token expansion, and selected causal attention. The [prefill contract](../../../contracts/workloads/qsa-prefill-t32768-v1.json) excludes earlier projections, RoPE, cache updates, and serving. Multiple stages require a complete Program; timing only top-k or attention is insufficient. The [evaluator](../../../tools/evaluate_qsa_candidate.py) preserves that boundary. Declared smaller checks and target geometry do not establish a complete checkpoint configuration.
+Post-projection q, k, v, index_q, and index_k feed causal complete-block pooling, LayerNorm, index-head scoring, block selection, token expansion, and selected causal attention. The [prefill contract](../../../contracts/workloads/qsa-prefill-t32768-v1.json) excludes earlier projections, RoPE, cache updates, and serving. Multiple stages require a complete Program; timing only top-k or attention is insufficient. The [evaluator](../../../src/open_cake_ir/tasks/qsa/evaluate.py) preserves that boundary. Declared smaller checks and target geometry do not establish a complete checkpoint configuration.
 
 ## Kimi-K3 KDA: stateful one-step core
 

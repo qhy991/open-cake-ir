@@ -8,15 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.evaluation import (  # noqa: E402
-    CudaDeviceAdmission,
-    CudaTensorContract,
-    LaunchableCandidate,
-    LoadedCudaCandidate,
-    launch_candidate_once,
-    launch_cubin_once,
-    parse_cuda_launch_manifest,
-)
+from open_cake_ir.evaluation import CudaDeviceAdmission, LaunchableCandidate, LoadedCudaCandidate, launch_candidate_once, launch_cubin_once
+from open_cake_ir.tasks.flash_kmeans.cuda import CudaTensorContract
+from open_cake_ir.tasks.flash_kmeans.cuda_manifest import parse_cuda_launch_manifest
 
 CUBIN = b"\x7fELFopen-cake-driver-fixture"
 
@@ -168,7 +162,7 @@ class CudaDriverContractTests(unittest.TestCase):
         self.assertEqual(loaded.launch_calls, 2)
 
     def test_triton_launch_passes_dynamic_shared_memory_and_two_hidden_nulls(self) -> None:
-        from open_cake_ir.evaluation import CudaLaunchManifest
+        from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
 
         manifest = CudaLaunchManifest.from_dict(
             {
@@ -263,7 +257,7 @@ class CudaDriverContractTests(unittest.TestCase):
         self.assertEqual(names[-1], "cuModuleUnload")
 
     def test_shape_bound_contract_launches_the_heldout_b32_case(self) -> None:
-        from open_cake_ir.evaluation import CudaLaunchManifest
+        from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
 
         manifest = CudaLaunchManifest.from_dict(
             {

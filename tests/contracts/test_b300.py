@@ -1,5 +1,6 @@
 """CPU boundary probes; fixture CUBINs and drivers are not GPU qualification."""
 from __future__ import annotations
+from open_cake_ir.tasks.workloads import load_workload
 
 from dataclasses import replace
 from hashlib import sha256
@@ -13,8 +14,10 @@ from open_cake_ir.compiler.frontend import parse, FrontendError
 from open_cake_ir.compiler.target import cuda_architecture, cuda_target
 from open_cake_ir.evaluation import CudaDeviceAdmission, LaunchableCandidate, LoadedCudaCandidate, WorkloadContract
 from open_cake_ir.evaluation.core import TensorLaunchManifest
-from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec, CudaLaunchManifest
-from open_cake_ir.lab import CandidateSubmission, NativeTritonEnvironment, OpenCakeEnvironment, TritonToolchainBuilder
+from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
+from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
+from open_cake_ir.lab import CandidateSubmission, NativeTritonEnvironment, TritonToolchainBuilder
+from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
 from open_cake_ir.lab.pairing import bind_baseline, native_baseline
 from examples.paired_triton.prepare import baseline_schedule
 from tests.contracts.test_cuda_driver import CUBIN, FakeDriver, FakeTensor
@@ -33,7 +36,7 @@ class B300ContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
-        cls.workload = WorkloadContract.load(ROOT / 'contracts/workloads/rmsnorm-fp32-v2.json')
+        cls.workload = load_workload(ROOT / 'contracts/workloads/rmsnorm-fp32-v2.json')
 
     def test_b300_ralph_task_and_frozen_successor_keep_native_treatment(self):
         import os
@@ -41,7 +44,7 @@ class B300ContractTests(unittest.TestCase):
         import subprocess
         import sys
         import tempfile
-        from open_cake_ir.lab import Lab, render_task_package
+        from open_cake_ir.tasks.runtime import TaskLab
         from tests.contracts.test_lab import FakeProvider
 
         with tempfile.TemporaryDirectory() as directory:
@@ -64,9 +67,9 @@ class B300ContractTests(unittest.TestCase):
                     "canonical_sha256": sha256(encoded(receipt)).hexdigest(),
                 }
             template.write_text(json.dumps(study))
-            lock = Lab(root).preflight(template)
+            lock = TaskLab(root).preflight(template)
             for arm in ("open_cake", "native_triton"):
-                package = render_task_package(root, lock, arm + "-1")
+                package = TaskLab(root).task_package(lock, arm + "-1")
                 self.assertIn('"sm_103a"', package.task_markdown)
                 self.assertIn("candidate-set.json", package.agents_markdown)
                 self.assertNotIn("prompt_template", package.task_markdown)
@@ -83,7 +86,7 @@ class B300ContractTests(unittest.TestCase):
             ], cwd=root, env={**os.environ, "PYTHONPATH": str(root / "src")},
                 capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            successor = Lab(root).preflight(output)
+            successor = TaskLab(root).preflight(output)
             self.assertEqual(successor.analysis_plan, lock.analysis_plan)
             self.assertEqual(successor.agent_interface, "task_agents_ralph_v1")
             self.assertEqual(successor.document["execution"]["target"], "sm_103a")
@@ -91,8 +94,8 @@ class B300ContractTests(unittest.TestCase):
     def test_fifteen_successor_cases_preserve_math_and_lower_to_b300(self):
         count = 0
         for name in ('rmsnorm-fp32', 'gemm-bias-bf16-fp32', 'indexed-gather-bf16'):
-            old = WorkloadContract.load(ROOT / f'contracts/workloads/{name}-v1.json')
-            new = WorkloadContract.load(ROOT / f'contracts/workloads/{name}-v2.json')
+            old = load_workload(ROOT / f'contracts/workloads/{name}-v1.json')
+            new = load_workload(ROOT / f'contracts/workloads/{name}-v2.json')
             for field in ('cases', 'tensors', 'oracle'):
                 self.assertEqual(old.document[field], new.document[field])
             self.assertEqual({k: v for k, v in old.document['semantics'].items() if k != 'target'},
@@ -115,7 +118,7 @@ class B300ContractTests(unittest.TestCase):
         for file, name in (('b300_rmsnorm', 'rmsnorm-fp32'), ('b300_gemm_bias', 'gemm-bias-bf16-fp32'),
                            ('b300_indexed_gather', 'indexed-gather-bf16')):
             with self.subTest(example=file):
-                workload = WorkloadContract.load(ROOT / f'contracts/workloads/{name}-v2.json')
+                workload = load_workload(ROOT / f'contracts/workloads/{name}-v2.json')
                 document = parse((ROOT / f'examples/python/{file}.py').read_text()).document
                 authored = self.compiler.lower(self.compiler.assess(bind_baseline(document, workload, 'primary')))
                 baseline = self.compiler.lower(self.compiler.assess(baseline_schedule(workload, 'primary')))

@@ -16,7 +16,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.cli import build_parser, main  # noqa: E402
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
-from open_cake_ir.lab import CampaignLock, Lab, StudyReport  # noqa: E402
+from open_cake_ir.lab import CampaignLock, StudyReport
+from open_cake_ir.tasks.runtime import TaskLab
 
 
 class FindingCliContractTests(unittest.TestCase):
@@ -68,8 +69,8 @@ class FindingCliContractTests(unittest.TestCase):
 
 class CliContractTests(unittest.TestCase):
     def test_preflight_forwards_explicit_empirical_model_to_the_existing_owner(self) -> None:
-        lock = Lab(ROOT).preflight(ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json")
-        with patch("open_cake_ir.cli.Lab.preflight", return_value=lock) as preflight:
+        lock = TaskLab(ROOT).preflight(ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json")
+        with patch("open_cake_ir.cli.TaskLab.preflight", return_value=lock) as preflight:
             with redirect_stdout(StringIO()):
                 self.assertEqual(main(["lab", "preflight", "/external/study.json", "--empirical-cost-model", "/external/model.json"]), 0)
         preflight.assert_called_once_with(Path("/external/study.json"), empirical_cost_model_path=Path("/external/model.json"))
@@ -291,7 +292,7 @@ class CliContractTests(unittest.TestCase):
     def test_artifact_report_with_read_only_promoted_record_is_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            lock = Lab(ROOT).preflight(ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json")
+            lock = TaskLab(ROOT).preflight(ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json")
             evidence = EvidenceStore.create(root / "evidence")
             report = StudyReport(
                 study_id="artifact-fixture",
@@ -327,8 +328,8 @@ class CliContractTests(unittest.TestCase):
             output = StringIO()
             with (
                 patch("open_cake_ir.cli.CampaignLock.load", return_value=lock),
-                patch("open_cake_ir.cli.Lab.reference_campaign", return_value=object()),
-                patch("open_cake_ir.cli.Lab.audit", return_value=report),
+                patch("open_cake_ir.cli.TaskLab.reference_campaign", return_value=object()),
+                patch("open_cake_ir.cli.TaskLab.audit", return_value=report),
                 redirect_stdout(output),
             ):
                 code = main(

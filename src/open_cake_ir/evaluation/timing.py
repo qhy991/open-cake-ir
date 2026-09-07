@@ -165,4 +165,3 @@ def derive_paired_timing(
         speedup=speedup,
         classification=classification,
     )
-

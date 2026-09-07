@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
-from launch_qsa_seed_experiment import (  # noqa: E402
+from open_cake_ir.tasks.qsa.launch import (  # noqa: E402
     _external_open_cake_candidates,
     _select_candidates,
     _task,
@@ -53,7 +53,7 @@ class QsaLauncherContractTest(unittest.TestCase):
             first = self._candidate(root, "first")
             second = self._candidate(root, "second")
             with patch(
-                "launch_qsa_seed_experiment._materialize_candidates"
+                "open_cake_ir.tasks.qsa.launch._materialize_candidates"
             ) as materialize:
                 selected = _select_candidates(
                     root / "run",
@@ -98,7 +98,7 @@ class QsaLauncherContractTest(unittest.TestCase):
         cake = Path("/seed/open-cake")
         direct = Path("/seed/direct")
         with patch(
-            "launch_qsa_seed_experiment._materialize_candidates",
+            "open_cake_ir.tasks.qsa.launch._materialize_candidates",
             return_value=(cake, direct),
         ) as materialize:
             selected = _select_candidates(

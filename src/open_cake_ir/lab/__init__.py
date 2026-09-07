@@ -1,41 +1,10 @@
 """Research Lab public Interface."""
 
 from .checkpoints import CheckpointObservation, TurnObservation, project_checkpoints
-from .compose import (
-    broker_execution_sha256,
-    execute_matched_from_config,
-    execute_portfolio_from_config,
-)
-from .core import (
-    AnalysisInclusion,
-    CampaignLock,
-    CampaignRef,
-    ClaimView,
-    Lab,
-    PortfolioAssay,
-    PortfolioStudyReport,
-    RunEvaluator,
-    RunProvider,
-    StudyContract,
-    StudyReport,
-    TurnRequest,
-    scientific_matched_analysis_plan_v2,
-)
-from .environments import (
-    AuthoringEnvironment,
-    BuildRequest,
-    CandidateSubmission,
-    DirectCudaEnvironment,
-    NativeTritonEnvironment,
-    EnvironmentResult,
-    NvccToolchainBuilder,
-    OpenCakeEnvironment,
-    ToolchainBuilder,
-    TritonToolchainBuilder,
-)
+from open_cake_ir.lab.core import AnalysisInclusion, CampaignLock, CampaignRef, Lab, RunEvaluator, RunProvider, StudyContract, StudyReport, TurnRequest, scientific_matched_analysis_plan_v2
+from open_cake_ir.lab.environments import AuthoringEnvironment, BuildRequest, CandidateSubmission, NativeTritonEnvironment, EnvironmentResult, OpenCakeEnvironment, ToolchainBuilder, TritonToolchainBuilder
 from .executor import ExecutorRevision
 from .faults import CandidateCompileRejected, RunProtocolFault
-from .portfolio import ExactShape, KernelSeed, SpecialistLowering, lower_specialists
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
@@ -48,11 +17,6 @@ from .providers import (
     ProviderTurn,
     normalize_codex_turn,
     required_live_provider_qualification_scope,
-)
-from .qsa_feedback import (
-    qsa_compiler_feedback,
-    qsa_evaluation_feedback,
-    qsa_next_turn_request,
 )
 from .runtime import BoundedBrokerEvaluator, BrokerSubmitter, CommandBrokerSubmitter
 from .ralph import RalphBudget, RalphController, derive_ralph_stop_reason
@@ -68,11 +32,8 @@ __all__ = [
     "AnalysisInclusion",
     "CampaignLock",
     "CampaignRef",
-    "ClaimView",
     "CheckpointObservation",
     "Lab",
-    "PortfolioAssay",
-    "PortfolioStudyReport",
     "RunEvaluator",
     "RunProvider",
     "StudyContract",
@@ -84,11 +45,9 @@ __all__ = [
     "AuthoringEnvironment",
     "BuildRequest",
     "CandidateSubmission",
-    "DirectCudaEnvironment",
     "NativeTritonEnvironment",
     "EnvironmentResult",
     "ExecutorRevision",
-    "NvccToolchainBuilder",
     "OpenCakeEnvironment",
     "TritonToolchainBuilder",
     "ToolchainBuilder",
@@ -103,19 +62,9 @@ __all__ = [
     "ProviderTurn",
     "normalize_codex_turn",
     "required_live_provider_qualification_scope",
-    "qsa_compiler_feedback",
-    "qsa_evaluation_feedback",
-    "qsa_next_turn_request",
-    "ExactShape",
-    "KernelSeed",
-    "SpecialistLowering",
-    "lower_specialists",
     "BoundedBrokerEvaluator",
     "BrokerSubmitter",
     "CommandBrokerSubmitter",
-    "execute_matched_from_config",
-    "execute_portfolio_from_config",
-    "broker_execution_sha256",
     "RunProtocolFault",
     "CandidateCompileRejected",
     "RalphBudget",

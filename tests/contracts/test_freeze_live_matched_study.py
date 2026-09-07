@@ -15,12 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.lab import (  # noqa: E402
-    CANDIDATE_SET_ENVELOPE_V1,
-    CodexInvocationBuilder,
-    Lab,
-    ProviderQualificationReceipt,
-)
+from open_cake_ir.lab import CANDIDATE_SET_ENVELOPE_V1, CodexInvocationBuilder, ProviderQualificationReceipt
+from open_cake_ir.tasks.runtime import TaskLab
 from tools.freeze_live_matched_study import (  # noqa: E402
     _replace_artifact_feedback_budget,
 )
@@ -152,7 +148,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "broker": {
                     "command": [
                         sys.executable,
-                        str(project / "tools/evaluate_flash_candidate.py"),
+                        str(project / "src/open_cake_ir/tasks/evaluate.py"),
                     ],
                     "cwd": str(project),
                     "timeout_seconds": 1800,
@@ -208,7 +204,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             )
 
             self.assertEqual(completed.returncode, 0, completed.stderr.decode())
-            lock = Lab(project).preflight(output)
+            lock = TaskLab(project).preflight(output)
             self.assertEqual(lock.claim_scope, "system_qualification_only")
             self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
             self.assertIsNone(lock.estimand)
@@ -279,7 +275,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 0,
                 scientific_completed.stderr.decode(),
             )
-            scientific_lock = Lab(project).preflight(scientific_output)
+            scientific_lock = TaskLab(project).preflight(scientific_output)
             scientific_study = json.loads(scientific_output.read_text())
             self.assertEqual(scientific_lock.claim_scope, "scientific_matched_search")
             self.assertEqual(
@@ -374,7 +370,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             )
             self.assertEqual(clean.returncode, 0, clean.stderr.decode())
             clean_study = json.loads(clean_output.read_text(encoding="utf-8"))
-            Lab(project).preflight(clean_output)
+            TaskLab(project).preflight(clean_output)
             self.assertEqual(clean_study["state"], "frozen")
             self.assertEqual(
                 clean_study["arms"]["open_cake"]["schedule_skeleton"]["path"],
@@ -477,7 +473,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "broker": {
                     "command": [
                         sys.executable,
-                        str(project / "tools/evaluate_flash_candidate.py"),
+                        str(project / "src/open_cake_ir/tasks/evaluate.py"),
                     ],
                     "cwd": str(project),
                     "timeout_seconds": 1800,
@@ -528,7 +524,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
 
             self.assertEqual(completed.returncode, 0, completed.stderr.decode())
             study = json.loads(output.read_text())
-            lock = Lab(project).preflight(output)
+            lock = TaskLab(project).preflight(output)
             self.assertEqual(study["schema_version"], 2)
             self.assertEqual(
                 study["agent_interface"]["kind"], "task_agents_ralph_v1"

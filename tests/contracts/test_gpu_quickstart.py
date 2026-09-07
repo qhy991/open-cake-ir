@@ -10,14 +10,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.workloads import load_workload
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.evaluation import LaunchableCandidate, WorkloadContract  # noqa: E402
-from open_cake_ir.lab import (  # noqa: E402
-    CandidateSubmission,
-    ExecutorRevision,
-    OpenCakeEnvironment,
-)
+from open_cake_ir.lab import CandidateSubmission, ExecutorRevision
+from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
 
 
 def _resolve_executor(executor_id: str) -> dict:
@@ -290,7 +288,7 @@ class GpuQuickstartContractTests(unittest.TestCase):
                 )
 
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         toolchain = RecordingToolchain()

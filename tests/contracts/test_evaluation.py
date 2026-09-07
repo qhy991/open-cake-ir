@@ -11,39 +11,16 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.workloads import load_workload
 
-from open_cake_ir.evaluation import (  # noqa: E402
-    BrokerAttempt,
-    CudaLaunchManifest,
-    EvaluationProtocol,
-    EvaluationReceipt,
-    ExactShapeDispatcher,
-    LaunchableCandidate,
-    LaunchObservation,
-    NCU_ATTRIBUTION_METRICS,
-    PairedTimingProtocol,
-    PortfolioArtifact,
-    PortfolioCaseObservation,
-    WorkloadContract,
-    assignment_raw_sha256,
-    audit_flash_kmeans_assignment,
-    build_ncu_attribution_profile,
-    classify_flash_kmeans_output,
-    derive_paired_timing,
-    evaluate_flash_kmeans,
-    evaluate_portfolio_observations,
-    evaluate_tinygemm,
-    evaluate_with_admission_recovery,
-    flash_kmeans_metrics,
-    flash_kmeans_oracle,
-    generate_flash_kmeans_case,
-    parse_cuda_launch_manifest,
-    replay_legacy_r45_result,
-    replay_portfolio_receipt,
-    tensor_raw_sha256,
-    tinygemm_metrics,
-    tinygemm_oracle,
-)
+from open_cake_ir.evaluation import BrokerAttempt, EvaluationProtocol, EvaluationReceipt, LaunchableCandidate, LaunchObservation, NCU_ATTRIBUTION_METRICS, PairedTimingProtocol, WorkloadContract, build_ncu_attribution_profile, derive_paired_timing, evaluate_with_admission_recovery
+from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest, parse_cuda_launch_manifest
+from open_cake_ir.tasks.flash_kmeans.portfolio import ExactShapeDispatcher, PortfolioArtifact, PortfolioCaseObservation, evaluate_portfolio_observations, replay_portfolio_receipt
+from open_cake_ir.tasks.flash_kmeans.workload import assignment_raw_sha256, classify_flash_kmeans_output, flash_kmeans_metrics, flash_kmeans_oracle, generate_flash_kmeans_case, tensor_raw_sha256
+from open_cake_ir.tasks.flash_kmeans.correctness import audit_flash_kmeans_assignment
+from open_cake_ir.tasks.flash_kmeans.evaluation import evaluate_flash_kmeans
+from open_cake_ir.tasks.tinygemm.evaluation import evaluate_tinygemm, tinygemm_metrics, tinygemm_oracle
+from open_cake_ir.tasks.flash_kmeans.legacy import replay_legacy_r45_result
 
 
 def _profile_fixture(candidate_sha256: str, case_id: str, kernel_name: str) -> bytes:
@@ -114,7 +91,7 @@ class EvaluationContractTests(unittest.TestCase):
         )
 
     def test_actual_r45_raw_result_binds_its_own_cubins_and_launch_specs(self) -> None:
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         raw = json.loads((ROOT / "tests/fixtures/r45-portfolio-result.json").read_text())
@@ -142,7 +119,7 @@ class EvaluationContractTests(unittest.TestCase):
         )
 
     def test_legacy_r45_fixture_and_self_hash_preimage_are_checked_independently(self) -> None:
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         raw = json.loads((ROOT / "tests/fixtures/r45-portfolio-result.json").read_text())
@@ -204,7 +181,7 @@ class EvaluationContractTests(unittest.TestCase):
             )
 
     def test_two_launchable_candidates_cross_one_common_evaluation_interface(self) -> None:
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign.json"
         )
         protocol = EvaluationProtocol(
@@ -279,7 +256,7 @@ class EvaluationContractTests(unittest.TestCase):
             )
 
     def test_manifest_driven_dispatch_rejects_unsupported_shape_before_launch(self) -> None:
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         candidate = LaunchableCandidate(
@@ -337,7 +314,7 @@ class EvaluationContractTests(unittest.TestCase):
         self.assertEqual(dispatcher.fallback_calls, 0)
 
     def test_portfolio_correctness_survives_unstable_dispatcher_measurement(self) -> None:
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         candidates = {
@@ -575,10 +552,10 @@ class EvaluationContractTests(unittest.TestCase):
                 path = Path(directory) / "workload.json"
                 path.write_text(json.dumps(document))
                 with self.assertRaisesRegex(ValueError, "semantics|oracle|validation"):
-                    WorkloadContract.load(path)
+                    load_workload(path)
 
     def test_flash_kmeans_workload_generates_and_oracles_the_declared_tie_case(self) -> None:
-        workload = WorkloadContract.load(ROOT / "contracts/workloads/flash-kmeans-assign.json")
+        workload = load_workload(ROOT / "contracts/workloads/flash-kmeans-assign.json")
 
         tokens, centroids = generate_flash_kmeans_case(workload, "duplicate_tie", device="cpu")
         assignments = flash_kmeans_oracle(
@@ -642,7 +619,7 @@ class EvaluationContractTests(unittest.TestCase):
         self.assertEqual(manifest.dynamic_shared_memory_bytes, 0)
 
     def test_r37_both_arms_cross_the_same_correctness_interface(self) -> None:
-        workload = WorkloadContract.load(ROOT / "contracts/workloads/flash-kmeans-assign.json")
+        workload = load_workload(ROOT / "contracts/workloads/flash-kmeans-assign.json")
         observed = {}
         for arm, filename in (
             ("cake_ir", "r37-cake-correctness-result.json"),
@@ -664,8 +641,8 @@ class EvaluationContractTests(unittest.TestCase):
         self.assertEqual(observed["cake_ir"], observed["cuda_ptx"])
 
     def test_workload_contracts_own_semantics_without_study_policy(self) -> None:
-        flash = WorkloadContract.load(ROOT / "contracts/workloads/flash-kmeans-assign.json")
-        tiny = WorkloadContract.load(ROOT / "contracts/workloads/tinygemm2-stage4-v2.json")
+        flash = load_workload(ROOT / "contracts/workloads/flash-kmeans-assign.json")
+        tiny = load_workload(ROOT / "contracts/workloads/tinygemm2-stage4-v2.json")
 
         self.assertEqual(flash.case_ids, ("tail_nk", "batched_tail", "b32_smoke", "duplicate_tie", "public_b1", "headline_b32"))
         self.assertEqual(flash.case("headline_b32")["shape"], {"B": 32, "N": 65536, "K": 1024, "D": 128})
@@ -692,7 +669,7 @@ class EvaluationContractTests(unittest.TestCase):
             self.assertNotIn("estimand", contract.document)
 
     def test_tinygemm_v2_fails_closed_before_non_cuda_launch(self) -> None:
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/tinygemm2-stage4-v2.json"
         )
         protocol = EvaluationProtocol(
@@ -738,7 +715,7 @@ class EvaluationContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "workload.json"
             path.write_text(json.dumps(document))
-            workload = WorkloadContract.load(path)
+            workload = load_workload(path)
 
         metrics = tinygemm_metrics(
             workload,
@@ -780,7 +757,7 @@ class EvaluationContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "workload.json"
             path.write_text(json.dumps(document))
-            workload = WorkloadContract.load(path)
+            workload = load_workload(path)
 
         observed = tinygemm_oracle(
             workload,

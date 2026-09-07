@@ -16,7 +16,7 @@ from open_cake_ir.compiler.profile_model import profile_envelope
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.verifier import verify
 from open_cake_ir.compiler.work import work_bound
-from open_cake_ir.evaluation import ProgramContract
+from open_cake_ir.tasks.qsa.program import ProgramContract
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler/targets/sm_100a.json")

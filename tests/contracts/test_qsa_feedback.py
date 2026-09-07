@@ -14,13 +14,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
-import evaluate_qsa_candidate as evaluator  # noqa: E402
+import open_cake_ir.tasks.qsa.evaluate as evaluator  # noqa: E402
 from open_cake_ir.compiler import Compiler, EmpiricalCostModel  # noqa: E402
-from open_cake_ir.lab import (  # noqa: E402
-    qsa_compiler_feedback,
-    qsa_evaluation_feedback,
-    qsa_next_turn_request,
-)
+from open_cake_ir.tasks.qsa.feedback import qsa_compiler_feedback, qsa_evaluation_feedback
 
 
 def _completed() -> dict[str, object]:
@@ -98,7 +94,7 @@ class QsaFeedbackTest(unittest.TestCase):
             ]}
 
             def build(request):
-                return SimpleNamespace(artifact_payloads={
+                return {
                     "lowered_source": request.source,
                     "ptx": b"software fixture, not compiled PTX",
                     "cubin": b"software fixture, not a launchable kernel",
@@ -107,12 +103,12 @@ class QsaFeedbackTest(unittest.TestCase):
                         "grid": [1, 1, 1], "block": [1, 1, 1],
                         "dynamic_shared_memory_bytes": 0,
                     }).encode(),
-                })
+                }
 
             with (
                 patch.object(evaluator.Compiler, "load", return_value=cls.compiler),
                 patch.object(cls.compiler, "check_corpus", return_value=SimpleNamespace(passed=True)),
-                patch.object(evaluator.TritonToolchainBuilder, "build", side_effect=build),
+                patch.object(evaluator, "_compile_node", side_effect=build),
             ):
                 metrics = evaluator._compile_open_cake(root, root, candidate, root / "built")
             retained = json.loads((root / "built/static-profile.json").read_text())
@@ -127,7 +123,7 @@ class QsaFeedbackTest(unittest.TestCase):
 
     def _cli(self, *arguments: str) -> dict[str, object]:
         result = subprocess.run(
-            [sys.executable, "-B", str(ROOT / "tools/project_qsa_feedback.py"), *arguments],
+            [sys.executable, "-B", str(ROOT / "src/open_cake_ir/tasks/qsa/project_feedback.py"), *arguments],
             cwd=ROOT, capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -265,7 +261,7 @@ class QsaFeedbackTest(unittest.TestCase):
         self.assertTrue(any("tl.topk" in note for note in topk["abstentions"]))
         self.assertTrue(topk["residency"]["bounds"])
 
-    def test_public_evaluation_and_turn_cli_preserve_bounded_producer_feedback(self) -> None:
+    def test_public_evaluation_cli_preserves_bounded_producer_feedback(self) -> None:
         result = self._produced_result()
         topk = result["metrics"]["compile"]["nodes"]["score_topk"]
         topk["raw_report"] = "EXCLUDED_RAW_REPORT"
@@ -276,19 +272,9 @@ class QsaFeedbackTest(unittest.TestCase):
             path = Path(directory) / "result.json"
             path.write_text(json.dumps(result))
             evaluation = self._cli("evaluation", "--arm", "open_cake", str(path))
-            turn = self._cli(
-                "turn", "--arm", "open_cake", "--run-id", "open_cake-1",
-                "--turn", "2", "--cumulative-provider-tokens", "1200",
-                "--thread-id", "same-thread", "--maximum-candidates-per-turn", "3", str(path),
-            )
         self.assertEqual(evaluation, expected)
-        self.assertEqual(turn, {
-            "run_id": "open_cake-1", "arm": "open_cake", "turn": 2,
-            "cumulative_provider_tokens": 1200, "thread_id": "same-thread",
-            "maximum_candidates_per_turn": 3, "feedback": expected,
-        })
-        self.assertNotIn("EXCLUDED_", json.dumps(turn))
-        self.assertNotIn("candidate_samples_ms", turn["feedback"]["timing"])
+        self.assertNotIn("EXCLUDED_", json.dumps(evaluation))
+        self.assertNotIn("candidate_samples_ms", evaluation["timing"])
 
     def test_public_compiler_cli_retains_local_findings_and_unknown_metric_details(self) -> None:
         path = ROOT / "corpus/schedules/qsa-score-topk-t32768.json"
@@ -339,12 +325,8 @@ class QsaFeedbackTest(unittest.TestCase):
                 profile = self.compiler.profile(assessment, cost_model=model).as_dict()
                 result = self._produced_result()
                 result["metrics"]["compile"]["nodes"]["score_topk"] = profile
-                request = qsa_next_turn_request(
-                    run_id="open_cake-1", arm="open_cake", turn=2,
-                    cumulative_provider_tokens=1200, thread_id="same-thread",
-                    maximum_candidates_per_turn=3, result=result,
-                )
-                cost = request.feedback["compiler"]["nodes"]["score_topk"]["empirical_cost"]
+                feedback = qsa_evaluation_feedback(result, arm="open_cake")
+                cost = feedback["compiler"]["nodes"]["score_topk"]["empirical_cost"]
                 expected = {
                     key: value for key, value in profile["empirical_cost"].items()
                     if key not in {"context", "reported_evidence"}
@@ -367,18 +349,13 @@ class QsaFeedbackTest(unittest.TestCase):
                 ):
                     result["metrics"]["compile"] = metrics
                     result_path.write_text(json.dumps(result))
-                    turn = self._cli(
-                        "turn", "--arm", "open_cake", "--run-id", "open_cake-1",
-                        "--turn", "2", "--cumulative-provider-tokens", "1200",
-                        "--thread-id", "same-thread", str(result_path),
-                    )
-                    self.assertEqual(turn["thread_id"], "same-thread")
-                    projected = turn["feedback"]["compiler"]
+                    evaluation = self._cli("evaluation", "--arm", "open_cake", str(result_path))
+                    projected = evaluation["compiler"]
                     node = (projected["nodes"]["score_topk"]
                             if "nodes" in projected else projected["static_profile"])
                     self.assertEqual(node["empirical_cost"], expected)
-                    self.assertNotIn("raw_samples_us", json.dumps(turn))
-                    self.assertNotIn("EXCLUDED_", json.dumps(turn))
+                    self.assertNotIn("raw_samples_us", json.dumps(evaluation))
+                    self.assertNotIn("EXCLUDED_", json.dumps(evaluation))
                 self.assertEqual(model_path.read_text(), source_text)
                 self.assertEqual(profile["empirical_cost"]["context"], document["context"])
                 self.assertEqual(profile["empirical_cost"]["reported_evidence"], document["reported_evidence"])
@@ -441,20 +418,6 @@ class QsaFeedbackTest(unittest.TestCase):
         self.assertEqual(feedback["routed_to"], "verifier")
         self.assertEqual(feedback["compiler"]["diagnostic"], "unsupported instruction")
 
-    def test_terminal_result_becomes_same_thread_next_turn_feedback(self) -> None:
-        request = qsa_next_turn_request(
-            run_id="open_cake-1",
-            arm="open_cake",
-            turn=2,
-            cumulative_provider_tokens=1200,
-            thread_id="019d1111-2222-7333-8444-555555555555",
-            maximum_candidates_per_turn=3,
-            result=_completed(),
-        )
-
-        self.assertEqual(request.turn, 2)
-        self.assertEqual(request.thread_id, "019d1111-2222-7333-8444-555555555555")
-        self.assertEqual(request.feedback["kind"], "evaluation")
 
 
 if __name__ == "__main__":

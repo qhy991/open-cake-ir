@@ -12,18 +12,20 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.workloads import load_workload
 
-from open_cake_ir.compiler import Compiler  # noqa: E402
-from open_cake_ir.evaluation import ProgramContract, WorkloadContract  # noqa: E402
-from open_cake_ir.lab import ExecutorRevision  # noqa: E402
+from open_cake_ir.compiler import Compiler
+from open_cake_ir.tasks.qsa.program import ProgramContract
+from open_cake_ir.evaluation import WorkloadContract
+from open_cake_ir.lab import ExecutorRevision
 
 _RUNTIME_PATH = ROOT / "runtime/qsa-seed-gpu-infra-verda-v1.json"
 _PROGRAM_PATH = ROOT / "contracts/programs/qsa-prefill-t32768-v2.json"
 _WORKLOAD_PATH = ROOT / "contracts/workloads/qsa-prefill-t32768-v1.json"
-_DIRECT_SOURCE = ROOT / "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.cu"
-_DIRECT_MANIFEST = ROOT / "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.json"
+_DIRECT_SOURCE = ROOT / "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu"
+_DIRECT_MANIFEST = ROOT / "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json"
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -75,7 +77,7 @@ def _preflight_authorities() -> tuple[ExecutorRevision, ProgramContract]:
     if compiler.state != "released" or not gate.passed:
         raise ValueError("released Compiler Corpus Gate is not current")
     program = ProgramContract.load(ROOT, _PROGRAM_PATH, compiler)
-    workload = WorkloadContract.load(_WORKLOAD_PATH)
+    workload = load_workload(_WORKLOAD_PATH)
     if program.workload.canonical_sha256 != workload.canonical_sha256:
         raise ValueError("QSA Program and Workload differ")
     return _current_executor(), program
@@ -183,7 +185,7 @@ def _task(
     assert isinstance(judge, dict)
     command = [
         str(judge["python"]),
-        f"{remote_root}/tools/evaluate_qsa_candidate.py",
+        f"{remote_root}/src/open_cake_ir/tasks/qsa/evaluate.py",
         "--project-root",
         remote_root,
         "--nvcc",

@@ -36,7 +36,7 @@ combined as a Cartesian product. INT32 minimum and maximum are boundary cases.
 
 ```python
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.evaluation.tile_workloads import materialize_case, reference_outputs
+from open_cake_ir.tasks.tiles.workload import materialize_case, reference_outputs
 
 workload = WorkloadContract.load("contracts/workloads/rmsnorm-fp32-v1.json")
 abi = workload.tensor_abi("tiny")

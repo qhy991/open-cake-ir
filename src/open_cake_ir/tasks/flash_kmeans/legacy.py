@@ -6,14 +6,9 @@ import json
 from hashlib import sha256
 from typing import Mapping, cast
 
-from .core import LaunchableCandidate
-from .portfolio import (
-    PortfolioArtifact,
-    PortfolioCaseObservation,
-    PortfolioEvaluationReceipt,
-    evaluate_portfolio_observations,
-)
-from .workload import WorkloadContract
+from open_cake_ir.evaluation.core import LaunchableCandidate
+from open_cake_ir.tasks.flash_kmeans.portfolio import PortfolioArtifact, PortfolioCaseObservation, PortfolioEvaluationReceipt, evaluate_portfolio_observations
+from open_cake_ir.evaluation.workload import WorkloadContract
 
 
 def _canonical_json_bytes(value: object) -> bytes:

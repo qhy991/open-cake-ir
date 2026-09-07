@@ -13,11 +13,6 @@ from typing import Mapping, Protocol, cast
 
 from open_cake_ir.compiler.target import cuda_architecture
 
-from .flash_kmeans import (
-    classify_flash_kmeans_output,
-    flash_kmeans_oracle,
-    generate_flash_kmeans_case,
-)
 from .profiler import load_ncu_attribution_profile, ncu_attribution_feedback
 from .workload import WorkloadContract
 
@@ -195,19 +190,6 @@ class LaunchObservation:
             or _DIGEST.fullmatch(self.launch_receipt_sha256) is None
         ):
             raise ValueError("LaunchObservation violates common route policy")
-
-
-class CandidateLauncher(Protocol):
-    """Adapter that launches one already-sealed candidate."""
-
-    def launch(
-        self,
-        candidate: LaunchableCandidate,
-        tokens: object,
-        centroids: object,
-        centroid_sq: object,
-    ) -> LaunchObservation:
-        """Launch exactly once and return output plus route evidence."""
 
 
 @dataclass(frozen=True)
@@ -409,55 +391,6 @@ class EvaluationReceipt:
         ).hexdigest()
 
 
-def evaluate_flash_kmeans(
-    candidate: LaunchableCandidate,
-    workload: WorkloadContract,
-    protocol: EvaluationProtocol,
-    launcher: CandidateLauncher,
-    *,
-    device: str,
-) -> EvaluationReceipt:
-    """Run materialization, external oracle, one launch, then correctness."""
-
-    if protocol.workload_sha256 != workload.canonical_sha256:
-        raise ValueError("EvaluationProtocol Workload bytes differ")
-    if protocol.timing != "none":
-        raise ValueError("timing protocol requires a separately retained timing assay")
-    tokens, centroids = generate_flash_kmeans_case(
-        workload, protocol.case_id, device=device
-    )
-    oracle = flash_kmeans_oracle(
-        workload, tokens, centroids, case_id=protocol.case_id
-    )
-    torch = __import__("torch")
-    centroids_fp32 = centroids.to(torch.float32)
-    centroid_sq = (centroids_fp32 * centroids_fp32).sum(
-        dim=-1, dtype=torch.float32
-    ).contiguous()
-    launch = launcher.launch(candidate, tokens, centroids, centroid_sq)
-    passed, metrics = classify_flash_kmeans_output(
-        workload,
-        tokens,
-        centroids,
-        launch.output,
-        oracle,
-        case_id=protocol.case_id,
-    )
-    return EvaluationReceipt(
-        candidate_sha256=candidate.candidate_sha256,
-        workload_sha256=workload.canonical_sha256,
-        evaluation_protocol_sha256=protocol.canonical_sha256,
-        purpose=protocol.purpose,
-        case_id=protocol.case_id,
-        correctness_passed=passed,
-        correctness=MappingProxyType(dict(metrics)),
-        kernel_calls=launch.kernel_calls,
-        fallback_calls=launch.fallback_calls,
-        launch_receipt_sha256=launch.launch_receipt_sha256,
-        timing=None,
-    )
-
-
 @dataclass(frozen=True)
 class TensorLaunchManifest:
     """Explicit Workload tensor ABI for the existing sealed CUBIN launch boundary."""
@@ -547,14 +480,6 @@ class TensorLaunchManifest:
         return sha256(_canonical_json_bytes(self.as_dict())).hexdigest()
 
 
-def parse_launch_manifest(document: object):
-    """Historical fixed ABI and explicit Workload ABI meet at one replay boundary."""
-    from .cuda_manifest import CudaLaunchManifest
-    if isinstance(document, Mapping) and document.get('abi') == 'workload_tensors_v1':
-        return TensorLaunchManifest.from_dict(document)
-    return CudaLaunchManifest.from_dict(document)
-
-
 def compare_tile_outputs(workload, before, expected, observed, after):
     """One comparison owner for fresh and already-recorded tensor launches."""
     import struct
@@ -587,33 +512,6 @@ def compare_tile_outputs(workload, before, expected, observed, after):
     )
     metrics = {'output_mismatches': mismatch, 'max_abs_error': maximum_error, 'inputs_unchanged': unchanged}
     return mismatch == 0 and unchanged, metrics
-
-
-def evaluate_tile_workload(candidate: LaunchableCandidate, workload: WorkloadContract,
-                           protocol: EvaluationProtocol, launcher) -> EvaluationReceipt:
-    """Common correctness assay: Workload data/oracle, sealed launch, every output."""
-    from .tile_workloads import materialize_case, reference_outputs
-    if protocol.workload_sha256 != workload.canonical_sha256 or protocol.timing != 'none' or protocol.purpose == 'attribution':
-        raise ValueError('tile correctness Evaluation protocol differs')
-    manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
-    manifest.check_workload(workload, protocol.case_id)
-    if (candidate.launch_spec_sha256 != manifest.canonical_sha256
-        or candidate.target != manifest.target or candidate.entry_point != manifest.kernel_name):
-        raise ValueError('sealed tensor manifest differs')
-    inputs = materialize_case(workload, protocol.case_id)
-    before = {name: list(values) for name, values in inputs.items()}
-    expected = reference_outputs(workload, protocol.case_id, before)
-    observed, after, launch = launcher.launch_tensors(candidate, manifest, inputs)
-    passed, metrics = compare_tile_outputs(workload, before, expected, observed, after)
-    if (not isinstance(launch, Mapping) or launch.get('candidate_sha256') != candidate.candidate_sha256
-        or launch.get('kernel_calls') != 1 or launch.get('fallback_calls') != 0):
-        raise ValueError('tile launch receipt differs')
-    launch_bytes = _canonical_json_bytes(launch)
-    return EvaluationReceipt(candidate.candidate_sha256, workload.canonical_sha256,
-        protocol.canonical_sha256, protocol.purpose, protocol.case_id, passed, metrics,
-        1, 0, sha256(launch_bytes).hexdigest(), None, artifact_payloads={
-            'correctness_output': _canonical_json_bytes({'passed': passed, 'metrics': metrics}),
-            'launch_receipt': launch_bytes, 'timing_samples': b'null'})
 
 
 class LoadedTorchTensorCandidate:

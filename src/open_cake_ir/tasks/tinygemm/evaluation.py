@@ -6,8 +6,8 @@ from hashlib import sha256
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
-from .core import EvaluationProtocol, EvaluationReceipt, LaunchableCandidate, LaunchObservation
-from .workload import WorkloadContract
+from open_cake_ir.evaluation.core import EvaluationProtocol, EvaluationReceipt, LaunchableCandidate, LaunchObservation
+from open_cake_ir.evaluation.workload import WorkloadContract
 
 
 class TinyGemmLauncher(Protocol):

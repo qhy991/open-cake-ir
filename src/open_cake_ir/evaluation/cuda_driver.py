@@ -10,7 +10,7 @@ from typing import Callable, Mapping, Protocol, Sequence, cast
 from open_cake_ir.compiler.target import cuda_architecture, cuda_target
 
 from .core import LaunchableCandidate
-from .cuda_manifest import MAX_DYNAMIC_SHARED_MEMORY_BYTES, CudaLaunchManifest
+from .cuda_manifest import MAX_DYNAMIC_SHARED_MEMORY_BYTES
 
 _ATTRIBUTES = (
     "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES",
@@ -44,37 +44,6 @@ class TensorLike(Protocol):
     def is_contiguous(self) -> bool: ...
 
     def data_ptr(self) -> int: ...
-
-
-@dataclass(frozen=True)
-class CudaTensorContract:
-    """Exact Workload-derived tensor shapes for one launchable candidate."""
-
-    batch: int
-    tokens: int
-    centroids: int
-    features: int
-    target: str = "sm_100a"
-
-    def __post_init__(self) -> None:
-        if self.target != "sm_100a" or any(
-            not isinstance(value, int) or isinstance(value, bool) or value <= 0
-            for value in (self.batch, self.tokens, self.centroids, self.features)
-        ):
-            raise ValueError("CUDA tensor contract differs")
-
-    @property
-    def tensors(self) -> tuple[tuple[str, tuple[int, ...], str], ...]:
-        return (
-            ("tokens", (self.batch, self.tokens, self.features), "torch.bfloat16"),
-            (
-                "centroids",
-                (self.batch, self.centroids, self.features),
-                "torch.bfloat16",
-            ),
-            ("centroid_sq", (self.batch, self.centroids), "torch.float32"),
-            ("assignments", (self.batch, self.tokens), "torch.int32"),
-        )
 
 
 def _driver_call(driver: object, name: str, *arguments: object, outputs: int) -> tuple[object, ...]:
@@ -111,10 +80,10 @@ def _handle_identity(value: object) -> object:
 
 
 def _tensor_contract(
-    arguments: Sequence[TensorLike], contract: CudaTensorContract
+    arguments: Sequence[TensorLike], contract: TensorContract
 ) -> tuple[dict[str, object], tuple[int, ...]]:
     if len(arguments) != len(contract.tensors):
-        raise ValueError("CUDA Driver launch requires exactly four tensors")
+        raise ValueError("CUDA Driver launch tensor count differs from the task contract")
     observed: dict[str, object] = {}
     pointers: list[int] = []
     device: str | None = None
@@ -168,7 +137,7 @@ def _attribute(driver: object, name: str, function: object) -> int:
 def _function_resources(
     api: object,
     function: object,
-    manifest: CudaLaunchManifest,
+    manifest: LaunchManifest,
 ) -> dict[str, int]:
     resources = {name: _attribute(api, name, function) for name in _ATTRIBUTES}
     if resources["CU_FUNC_ATTRIBUTE_BINARY_VERSION"] != cuda_architecture(manifest.target):
@@ -263,7 +232,7 @@ class LoadedCudaCandidate:
         *,
         candidate: LaunchableCandidate,
         cubin: bytes,
-        manifest: CudaLaunchManifest,
+        manifest: LaunchManifest,
         admission: CudaDeviceAdmission,
         api: object,
         module: object,
@@ -288,7 +257,7 @@ class LoadedCudaCandidate:
         cls,
         candidate: LaunchableCandidate,
         cubin: bytes,
-        manifest: CudaLaunchManifest,
+        manifest: LaunchManifest,
         admission: CudaDeviceAdmission,
         *,
         driver: object | None = None,
@@ -347,7 +316,7 @@ class LoadedCudaCandidate:
         self,
         arguments: Sequence[TensorLike],
         *,
-        tensor_contract: CudaTensorContract,
+        tensor_contract: TensorContract,
         stream: object,
     ) -> None:
         """Validate the shape-bound tensor contract before one Driver launch."""
@@ -421,10 +390,10 @@ class LoadedCudaCandidate:
 def launch_cubin_once(
     cubin: bytes,
     expected_cubin_sha256: str,
-    manifest: CudaLaunchManifest,
+    manifest: LaunchManifest,
     arguments: Sequence[TensorLike],
     *,
-    tensor_contract: CudaTensorContract,
+    tensor_contract: TensorContract,
     stream: object,
     synchronize: Callable[[], None],
     driver: object | None = None,
@@ -557,10 +526,10 @@ def launch_cubin_once(
 def launch_candidate_once(
     candidate: LaunchableCandidate,
     cubin: bytes,
-    manifest: CudaLaunchManifest,
+    manifest: LaunchManifest,
     arguments: Sequence[TensorLike],
     *,
-    tensor_contract: CudaTensorContract,
+    tensor_contract: TensorContract,
     stream: object,
     synchronize: Callable[[], None],
     driver: object | None = None,
@@ -585,3 +554,19 @@ def launch_candidate_once(
         synchronize=synchronize,
         driver=driver,
     )
+
+
+class TensorContract(Protocol):
+    target: str
+    tensors: tuple[tuple[str, tuple[int, ...], str], ...]
+
+
+class LaunchManifest(Protocol):
+    target: str
+    kernel_name: str
+    grid: tuple[int, int, int]
+    block: tuple[int, int, int]
+    dynamic_shared_memory_bytes: int
+    hidden_null_pointer_parameters: int
+    block_threads: int
+    canonical_sha256: str

@@ -66,3 +66,5 @@ may be silently converted into the other.
 
 Artifact Promotion chooses one confirmatory-qualified Candidate inside one Run. It is not
 an arm winner, a causal effect, or a production deployment decision.
+
+Concrete task code and the TaskLab composition root live outside the common engine; see [task ownership](../../en/TASKS.md).

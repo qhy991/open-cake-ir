@@ -1,6 +1,7 @@
 """Immutable multi-kernel program contract over independently compiled Schedules."""
 
 from __future__ import annotations
+from open_cake_ir.tasks.workloads import load_workload
 
 import json
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from typing import Mapping, cast
 
 from open_cake_ir.compiler import Compiler, Schedule
 
-from .workload import WorkloadContract
+from open_cake_ir.evaluation.workload import WorkloadContract
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -104,7 +105,7 @@ class ProgramContract:
         if set(workload_ref) != {"path", "canonical_sha256"}:
             raise ValueError("program Workload reference fields differ")
         workload_path = _project_path(root, workload_ref["path"], "program.workload.path")
-        workload = WorkloadContract.load(workload_path)
+        workload = load_workload(workload_path)
         if workload.canonical_sha256 != workload_ref["canonical_sha256"]:
             raise ValueError("program Workload bytes differ")
 
