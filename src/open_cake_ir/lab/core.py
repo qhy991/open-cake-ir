@@ -38,6 +38,7 @@ from .providers import (
     CODEX_DISABLED_FEATURES,
     ProviderQualificationReceipt,
     ProviderTurn,
+    _project_candidate_submission,
     parse_codex_turn_events,
     required_live_provider_qualification_scope,
 )
@@ -2544,8 +2545,19 @@ class Lab:
                         provider_turn.raw_events,
                         media_type="application/x-ndjson",
                     )
+                    submission_object = evidence.put(
+                        provider_turn.raw_submission,
+                        media_type="application/json",
+                    )
+                    projected_candidates = _project_candidate_submission(
+                        provider_turn.raw_submission,
+                        submission_contract=CANDIDATE_SET_ENVELOPE_V1,
+                        arm=arm,
+                        maximum_candidates_per_turn=maximum_candidates_per_turn,
+                    )
                     if (
                         events_object.sha256 != provider_turn.raw_events_sha256
+                        or projected_candidates != provider_turn.candidates
                         or not provider_turn.candidates
                         or len(provider_turn.candidates) > maximum_candidates_per_turn
                         or len(provider_turn.candidates)
@@ -2584,6 +2596,7 @@ class Lab:
                                 else []
                             ),
                             events_object.reference("provider_events"),
+                            submission_object.reference("provider_submission_envelope"),
                             *(
                                 item.reference(f"candidate_submission_{index:04d}")
                                 for index, item in enumerate(candidate_objects)
@@ -3344,6 +3357,12 @@ class Lab:
                 if isinstance(item, Mapping)
                 and item.get("role") == "provider_reference_bundle"
             ]
+            submission_references = [
+                cast(Mapping[str, object], item)
+                for item in objects
+                if isinstance(item, Mapping)
+                and item.get("role") == "provider_submission_envelope"
+            ]
             candidate_count = payload.get("candidate_count")
             candidate_set_turns.add(expected_turn)
             indexed_references: dict[int, Mapping[str, object]] = {}
@@ -3367,6 +3386,7 @@ class Lab:
             ]
             if (
                 len(event_references) != 1
+                or len(submission_references) != 1
                 or len(reference_bundle_references) > 1
                 or (
                     len(reference_bundle_references) != 1
@@ -3377,7 +3397,7 @@ class Lab:
                 or candidate_count > maximum_candidates_per_turn
                 or len(candidate_references) != candidate_count
                 or len(objects)
-                != candidate_count + 1 + len(reference_bundle_references)
+                != candidate_count + 2 + len(reference_bundle_references)
             ):
                 return False
             raw_events = evidence.read_object(event_references[0])
@@ -3389,6 +3409,17 @@ class Lab:
             candidates = tuple(
                 evidence.read_object(reference) for reference in candidate_references
             )
+            try:
+                projected_candidates = _project_candidate_submission(
+                    evidence.read_object(submission_references[0]),
+                    submission_contract=CANDIDATE_SET_ENVELOPE_V1,
+                    arm=arm,
+                    maximum_candidates_per_turn=maximum_candidates_per_turn,
+                )
+            except (UnicodeError, ValueError):
+                return False
+            if projected_candidates != candidates:
+                return False
             candidate_digests = tuple(sha256(candidate).hexdigest() for candidate in candidates)
             if (
                 sha256(raw_events).hexdigest() != event_references[0].get("sha256")

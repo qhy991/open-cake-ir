@@ -291,9 +291,14 @@ correctness, artifact custody, or the declared Claim Scope `{lock.claim_scope}`.
 
 ## Candidate output
 
-Write exactly one canonical `candidate-set.json` envelope:
+Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:
 
 {output_contract}
+
+Whitespace, object-key order, and equivalent JSON escapes are accepted. Object keys
+must be unique at every level; numbers must be finite. `schema_version` must be the
+integer `1`. Candidate identity uses the existing canonical member projection; direct
+CUDA source strings keep their decoded UTF-8 bytes exactly.
 
 The envelope contains between one and {budget['maximum_candidates_per_turn']} Candidates
 in provider order. The first Ralph iteration adds it; later iterations update the same
