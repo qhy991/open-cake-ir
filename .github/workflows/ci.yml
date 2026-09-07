@@ -29,6 +29,9 @@ jobs:
           python -m unittest
           tests.contracts.test_ir
           tests.contracts.test_verifier
+          tests.contracts.test_verifier_architecture
+          tests.contracts.test_compiler_revision_architecture
+          tests.contracts.test_compiler_convergence
           tests.contracts.test_analysis
           tests.contracts.test_emit_triton
           tests.contracts.test_emit_cutedsl
