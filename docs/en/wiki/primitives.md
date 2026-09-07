@@ -23,6 +23,9 @@ Compute at corresponding positions, such as `[1,2]+[3,4]=[4,6]`.
 | `op` | Meaning | Example |
 | --- | --- | --- |
 | `square` | Square | 3 → 9 |
+| `abs` | Absolute value | -3 → 3 |
+| `round` | Round with the declared rule | -2.5 → -3, ties away from zero |
+| `divide_no_nan` | Divide, returning zero for a zero denominator | 6/3 → 2; 6/0 → 0 |
 | `rsqrt` | Reciprocal square root | 4 → 1/2 |
 | `exp` | Exponential | 0 → 1 |
 | `relu` | Replace negatives with zero | [-2,3] → [0,3] |
@@ -35,9 +38,23 @@ Compute at corresponding positions, such as `[1,2]+[3,4]=[4,6]`.
 
 FMA rounds `a*b+c` once rather than separately rounding the product. It requires three same-shaped FP32 register inputs and `ptx.fma.rn.f32`, without scalar or broadcast shortcuts. Tanh also requires an explicit instruction contract. See [FMA](../../../corpus/schedules/fma-b8-smoke.json), [nested FMA](../../../corpus/schedules/fma-chain-b8-smoke.json), and [ReLU](../../../corpus/schedules/relu-b8-smoke.json).
 
+Round requires `rounding=nearest_away_from_zero`. The quantization composition operations
+retain exact-target, FP32 and shape constraints; their names do not bypass assessment.
+
 ## cast
 
 Convert numerical storage type. More bits do not recover previously lost precision; fewer bits may round again. This does not reshape a tensor or move it to another GPU. See the [cast plan](../../../corpus/schedules/cast-b8-smoke.json); allowed pairs depend on the Compiler and backend.
+
+The quantization producer uses this same cast operation. FP32-to-FP16 explicitly uses
+`rounding=nearest_even, overflow=ieee`; FP32-to-INT8 uses
+`rounding=toward_zero, overflow=forbid`. The rounding and overflow policies appear together.
+
+## reshape
+
+Regroup the same register-held values, for example `[4]` into `[2,2]`. Element count,
+order and dtype stay unchanged. This performs no global-memory copy and introduces no
+layout algebra. The verifier checks input/result and target constraints; the Q8
+producer uses it to group values into blocks of 32.
 
 ## mma
 
@@ -50,6 +67,10 @@ A fixed post-contraction formula: `centroid_sq_minus_two_dot` for clustering or 
 ## reduce
 
 Collapse one axis using sum or max: `[2,5,1]` gives 8 or 5. Axis selects the dimension; scope selects cooperating threads. See [softmax](../../../corpus/schedules/softmax-b8-smoke.json).
+
+The ordinary algorithm is `backend`. Explicit `xor_tree_32` requires a resident FP32
+last axis of 32 and combines values in XOR-offset order 16, 8, 4, 2, 1 outside TileLoops.
+That order is part of the numerical contract and cannot be exchanged for another tree.
 
 ## reduce_argmin
 

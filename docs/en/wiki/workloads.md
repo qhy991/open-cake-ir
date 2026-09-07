@@ -16,6 +16,18 @@ These contracts turn existing Corpus examples into standalone operators with exp
 
 The [tile Workload guide](../TILE_WORKLOADS.md) explains shapes, tolerances, the shared ABI and independent CPU oracle. [Baseline preparation](../../../examples/paired_triton/README.md) generates the paired native Triton source from the same IR as a declared common optimization starting point. The current delivery covers contracts, CPU references and source preparation; GPU compilation, correctness, timing, profiling and target-framework acceptance remain R2 pending.
 
+## AMD leaf paths: SwiGLU, RMSNorm and packed records
+
+| Contract | Computation and boundary |
+| --- | --- |
+| [SwiGLU FP32 v1](../../../contracts/workloads/swiglu-fp32-v1.json) | Two independent inputs and a CPU FP64 oracle; input storage stays unchanged. |
+| [RMSNorm+Mul FP32 v1](../../../contracts/workloads/llama-rmsnorm-mul-fp32-v1.json), [v2](../../../contracts/workloads/llama-rmsnorm-mul-fp32-v2.json) | Normalize and multiply by weights; each selected contract owns its distributions and tolerances. |
+| [Q4_0/Q8_1 MMVQ FP32 v1](../../../contracts/workloads/llama-q4_0-q8_1-mmvq-f32-v1.json) | Raw-record semantics and the composed mathematical reference; this migration reconnects the Q8 producer, while the Q4 consumer remains unimplemented. |
+
+The contracts and [AMD entry points](../../GETTING_STARTED_AMD.md) supply no new GPU or
+performance qualification. The formal RMSNorm Search Contract and a live Executor
+for the current sources remain pending.
+
 ## Flash-KMeans
 
 BF16 points and centroids produce the nearest-centroid index under the FP32 distance/accumulation contract. The independent reference and tie-aware rule own acceptance; do not impose another tie policy afterward.
