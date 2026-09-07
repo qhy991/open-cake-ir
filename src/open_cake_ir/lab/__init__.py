@@ -34,7 +34,7 @@ from .environments import (
     ToolchainBuilder,
     TritonToolchainBuilder,
 )
-from .executor import ExecutorRevision
+from .executor import ExecutorRevision, HipHostAdmission
 from .faults import CandidateCompileRejected, RunProtocolFault
 from .portfolio import ExactShape, KernelSeed, SpecialistLowering, lower_specialists
 from .providers import (
@@ -90,6 +90,7 @@ __all__ = [
     "NativeTritonEnvironment",
     "EnvironmentResult",
     "ExecutorRevision",
+    "HipHostAdmission",
     "NvccToolchainBuilder",
     "OpenCakeEnvironment",
     "TritonToolchainBuilder",
