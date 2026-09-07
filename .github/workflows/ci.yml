@@ -60,3 +60,5 @@ jobs:
           tests.contracts.test_native_triton_pairing
           tests.contracts.test_metal_benchmark
           tests.contracts.test_tile_gpu_worker
+          tests.contracts.test_b300
+          tests.contracts.test_python_gather

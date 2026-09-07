@@ -13,6 +13,11 @@ These contracts turn existing Corpus examples into standalone operators with exp
 | [RMSNorm FP32 v1](../../../contracts/workloads/rmsnorm-fp32-v1.json) | Normalize the last dimension and scale by gamma, with FP32 inputs and output. |
 | [GEMM+bias BF16/FP32 v1](../../../contracts/workloads/gemm-bias-bf16-fp32-v1.json) | Compute `A @ B.T + bias` from BF16 A and B, with FP32 bias and output. |
 | [Indexed gather BF16 v1](../../../contracts/workloads/indexed-gather-bf16-v1.json) | Select BF16 rows with paired expert/row IDs; either invalid ID produces positive zero for the whole row, and negative IDs never wrap. |
+| [RMSNorm FP32 v2](../../../contracts/workloads/rmsnorm-fp32-v2.json) | Same mathematics and six cases, explicitly targeting B300 `sm_103a`. |
+| [GEMM+bias BF16/FP32 v2](../../../contracts/workloads/gemm-bias-bf16-fp32-v2.json) | Same mathematics and five cases, explicitly targeting B300 `sm_103a`. |
+| [Indexed gather BF16 v2](../../../contracts/workloads/indexed-gather-bf16-v2.json) | Same indexing semantics and four cases, explicitly targeting B300 `sm_103a`. |
+
+See the [B300 guide](../B300.md) for Python starting points and separate experiment qualification.
 
 The [tile Workload guide](../TILE_WORKLOADS.md) explains shapes, tolerances, the shared ABI and independent CPU oracle. [Baseline preparation](../../../examples/paired_triton/README.md) generates the paired native Triton source from the same IR as a declared common optimization starting point. The current delivery covers contracts, CPU references and source preparation; GPU compilation, correctness, timing, profiling and target-framework acceptance remain R2 pending.
 

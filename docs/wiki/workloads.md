@@ -20,6 +20,11 @@ Workload 是一道题的完整约定：给什么输入，必须输出什么，�
 | [RMSNorm FP32 v1](../../contracts/workloads/rmsnorm-fp32-v1.json) | 沿最后一维归一化并乘 gamma，输入与输出为 FP32。 |
 | [GEMM+bias BF16/FP32 v1](../../contracts/workloads/gemm-bias-bf16-fp32-v1.json) | BF16 的 A、B 按 `A @ B.T + bias` 计算，bias 和输出为 FP32。 |
 | [Indexed gather BF16 v1](../../contracts/workloads/indexed-gather-bf16-v1.json) | expert/row ID 成对选择 BF16 行；任一 ID 越界时输出整行正零，负数不回绕。 |
+| [RMSNorm FP32 v2](../../contracts/workloads/rmsnorm-fp32-v2.json) | 同一数学定义与 6 个用例，明确绑定 B300 `sm_103a`。 |
+| [GEMM+bias BF16/FP32 v2](../../contracts/workloads/gemm-bias-bf16-fp32-v2.json) | 同一数学定义与 5 个用例，明确绑定 B300 `sm_103a`。 |
+| [Indexed gather BF16 v2](../../contracts/workloads/indexed-gather-bf16-v2.json) | 同一索引语义与 4 个用例，明确绑定 B300 `sm_103a`。 |
+
+B300 的 Python 起点和单独的实验资格要求见 [B300 指南](../B300.md)。
 
 形状、容差、共用 ABI 和独立 CPU oracle 见 [Tile Workload 指南](../TILE_WORKLOADS.md)。
 [基线准备入口](../../examples/paired_triton/README.md)从同一 IR 生成对应的原生 Triton
