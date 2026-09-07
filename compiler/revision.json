@@ -10,6 +10,10 @@
     "apple_gpu_family8": {
       "path": "compiler/targets/apple_gpu_family8.json",
       "canonical_sha256": "eba862c63055232695d319d11eedd3246ff95b67895d62b786cff899ee725fb9"
+    },
+    "sm_103a": {
+      "path": "compiler/targets/sm_103a.json",
+      "canonical_sha256": "924973447e3176d332a2460f673a80740c58ed20c4c5af1372911c7904bf69e5"
     }
   },
   "corpus_manifest": "corpus/manifest.json",

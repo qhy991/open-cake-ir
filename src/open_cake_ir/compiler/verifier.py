@@ -3656,7 +3656,6 @@ def _verify_residency_commitment(
     author its occupancy and telling it which declaration to change.
     """
 
-    _verify_role_register_split(schedule, target, out)
     commitment = schedule.residency
     if commitment is None:
         return
@@ -3688,6 +3687,7 @@ def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> No
     category = FindingCategory.HARDWARE_CONFORMANCE
     if schedule.target != target.target_id:
         return  # nothing to analyse against a Target this Schedule does not name
+    _verify_role_register_split(schedule, target, out)
     upper_bound = residency_upper_bound(schedule, target)
     if upper_bound is None or upper_bound.binding is None:
         return

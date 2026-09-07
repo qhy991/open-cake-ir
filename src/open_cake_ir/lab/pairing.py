@@ -18,6 +18,8 @@ def comparison_arm(arms: Mapping[str, object]) -> str:
 def bind_baseline(schedule: Mapping[str, object], workload, case_id: str) -> dict:
     """Bind an already shaped baseline; the Workload ABI is the only tensor owner."""
     document = json.loads(json.dumps(schedule))
+    if document.get('target') != workload.document['semantics'].get('target'):
+        raise ValueError('baseline Schedule target differs from the Workload target')
     abi = workload.tensor_abi(case_id)
     buffers = [buffer for buffer in document['buffers'] if buffer['space'] == 'global']
     if [(b['name'], tuple(b['shape']), b['dtype'], b['mode']) for b in buffers] != [

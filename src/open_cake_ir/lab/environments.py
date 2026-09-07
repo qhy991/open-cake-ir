@@ -19,6 +19,7 @@ from open_cake_ir.compiler.empirical_cost import EmpiricalCostModel
 from open_cake_ir.compiler.ranking import Cost
 from open_cake_ir.compiler.toolchain import compile_triton, project_triton_kernel, validate_triton_kernel
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule, FrontendError
+from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
 from open_cake_ir.evaluation.core import TensorLaunchManifest
 from open_cake_ir.evaluation import (
     CudaLaunchManifest,
@@ -158,7 +159,7 @@ class ToolchainBuilder(Protocol):
 
 
 class TritonToolchainBuilder:
-    """Compile the canonical parametric Triton lowering to an exact sm_100a CUBIN."""
+    """Compile the canonical parametric Triton lowering to its exact CUDA CUBIN."""
 
     def __init__(self, *, workload=None, case_id=None, isolated_compiler=None):
         self._workload = workload
@@ -179,6 +180,8 @@ class TritonToolchainBuilder:
         if not isinstance(grid, list) or len(grid) != 3:
             raise ValueError("Triton launch grid differs")
         if self._workload is not None:
+            if request.target != self._workload.document['semantics'].get('target'):
+                raise ValueError("Triton build target differs from the Workload")
             if self._isolated is None:
                 raise RunProtocolFault("harness_fault", "paired Triton requires filesystem-isolated compilation")
             kernel_source = (project_triton_kernel(request.source, requirements)
@@ -189,6 +192,9 @@ class TritonToolchainBuilder:
             if request.source_role != "lowered_source":
                 raise ValueError("historical Triton builder accepts Compiler lowering only")
             compilation = compile_triton(request.source, requirements)
+        if (compilation.target != request.target
+            or compilation.entry_point != requirements.get('kernel_entry_point')):
+            raise ValueError("Triton compilation target or entry point differs from its request")
         stages = compilation.artifacts
         kernel_name = compilation.entry_point
         launch = {
@@ -455,6 +461,7 @@ class OpenCakeEnvironment:
         self._workload_sha256 = workload.canonical_sha256
         self._python_enabled = authority_document.get("input_format") == "schedule_or_python_v1"
         self._explicit_abi = isinstance(workload.document["semantics"].get("candidate_abi"), Mapping)
+        self._target = workload.document['semantics']['target'] if self._explicit_abi else 'sm_100a'
         if self._explicit_abi:
             self._expected = {arg.name: ("global", arg.dtype, list(arg.shape), arg.mode)
                               for arg in workload.tensor_abi(case_id)}
@@ -545,6 +552,7 @@ class OpenCakeEnvironment:
                 )
             if (
                 not isinstance(metadata, Mapping)
+                or parsed.get('target') != self._target
                 or metadata.get("workload_contract_sha256") != self._workload_sha256
                 or not isinstance(buffers, list)
             ):
@@ -719,13 +727,14 @@ class NativeTritonEnvironment:
         self._toolchain = toolchain
         self._requirements = json.loads(json.dumps(dict(toolchain_requirements)))
         self._abi = workload.tensor_abi(case_id)
+        self._target = workload.document['semantics']['target']
         # The frozen Compiler owns backend spelling (for example int32 -> *i32).
         # Consume its existing table instead of assuming Workload names are Triton ABI names.
         from open_cake_ir.compiler.emit_triton import _TritonEmitter
         from open_cake_ir.compiler.ir import DType
         expected_signature = {arg.name: _TritonEmitter._POINTER[DType(arg.dtype)] for arg in self._abi}
         signature = self._requirements.get('signature')
-        if (self._requirements.get('compiler') != 'triton' or self._requirements.get('target') != 'sm_100a'
+        if (self._requirements.get('compiler') != 'triton' or self._requirements.get('target') != self._target
             or signature != expected_signature):
             raise ValueError('native Triton signature differs from the Workload ABI')
         self._requirements['signature'] = expected_signature
@@ -755,8 +764,8 @@ class NativeTritonEnvironment:
                 or any(type(value) is not int or value <= 0 for value in grid)):
                 raise ValueError('native Triton compile constants/options/grid differ from the declared interface')
             # Use the existing structural launch checker before any target compilation.
-            CudaLaunchManifest.from_dict({'schema_version': 1, 'abi': 'flash_kmeans_assign_v1',
-                'target': 'sm_100a', 'kernel_name': requirements['kernel_entry_point'], 'grid': grid,
+            CudaKernelSpec.from_dict({
+                'target': self._target, 'kernel_name': requirements['kernel_entry_point'], 'grid': grid,
                 'block': [options.get('num_warps', 4) * 32, 1, 1], 'dynamic_shared_memory_bytes': 0})
             requirements.update(compile_constants=dict(constants), compile_options=dict(options), grid=grid)
             source = document['kernel_source'].encode()
@@ -769,7 +778,7 @@ class NativeTritonEnvironment:
         digest = sha256(source).hexdigest()
         try:
             launchable = self._toolchain.build(BuildRequest(
-                submission.sha256, source, 'authored_source', digest, 'sm_100a',
+                submission.sha256, source, 'authored_source', digest, self._target,
                 str(requirements['kernel_entry_point']), requirements))
         except CandidateCompileRejected as error:
             return EnvironmentResult('rejected', submission.sha256, None,

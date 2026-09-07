@@ -14,6 +14,9 @@ _SOURCE_ROOTS = (
     "src/open_cake_ir/evidence",
 )
 _SOURCE_FILES = (
+    "compiler/targets/sm_100a.json",
+    "compiler/targets/sm_103a.json",
+    "src/open_cake_ir/compiler/target.py",
     "docs/en/PAIRED_TRITON.md",
     "examples/gpu/flash_kmeans_quickstart.py",
     "src/open_cake_ir/__init__.py",

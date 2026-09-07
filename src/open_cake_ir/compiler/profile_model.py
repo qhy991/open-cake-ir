@@ -406,6 +406,8 @@ def profile_envelope(
 ) -> ProfileEnvelope:
     """Derive one NCU-aligned report without inventing measured percentages."""
 
+    target_label = "B200" if target.target_id == "sm_100a" else target.target_id
+
     if lowering is not None:
         if lowered_source is not None:
             raise ValueError("provide one lowering authority, not two source representations")
@@ -578,7 +580,7 @@ def profile_envelope(
             "risk",
             "IR synchronization and stateful-reduction structure",
             reasons=synchronization,
-            missing=("B200 NCU calibration",),
+            missing=(f"{target_label} NCU calibration",),
         ),
         MetricEstimate(
             "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct",
@@ -587,7 +589,7 @@ def profile_envelope(
             "risk",
             "global dependency and latency-hiding proxies",
             reasons=tuple(scoreboard_reasons),
-            missing=("SASS load-use distance", "cache behavior", "B200 NCU calibration"),
+            missing=("SASS load-use distance", "cache behavior", f"{target_label} NCU calibration"),
         ),
         MetricEstimate(
             "sm__throughput.avg.pct_of_peak_sustained_elapsed",
@@ -609,7 +611,7 @@ def profile_envelope(
                 if work is not None
                 else "traffic domain unavailable",
             ),
-            missing=("B200 bandwidth peak", "measured or calibrated duration"),
+            missing=(f"{target_label} bandwidth peak", "measured or calibrated duration"),
         ),
         MetricEstimate(
             "lts__throughput.avg.pct_of_peak_sustained_elapsed",
@@ -617,14 +619,14 @@ def profile_envelope(
             None,
             "%",
             "IR access structure has no cache transaction model",
-            missing=("working-set residency", "reuse realization", "B200 NCU calibration"),
+            missing=("working-set residency", "reuse realization", f"{target_label} NCU calibration"),
         ),
     )
 
     abstentions = [
         "throughput percentages require a measured or calibrated duration and target rate",
         "L2 behavior requires a cache/transaction calibration",
-        "stall percentages remain qualitative until B200 NCU coverage exists",
+        f"stall percentages remain qualitative until {target_label} NCU coverage exists",
     ]
     if compiled_resources is None:
         abstentions.insert(0, "physical register allocation requires a compiled artifact")

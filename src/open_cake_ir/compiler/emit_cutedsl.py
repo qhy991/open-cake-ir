@@ -133,6 +133,11 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         "BACKEND_TARGET_UNSUPPORTED", "target",
         "the current CuTe-DSL backend emits CUDA kernels and cannot target Metal",
     )
+    add(
+        target.target_id != "sm_103a",
+        "CUTE_TARGET_UNSUPPORTED", "target",
+        "the B300 successor currently admits the Triton backend only",
+    )
 
     kinds = {
         kind: [

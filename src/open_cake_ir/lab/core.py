@@ -38,6 +38,7 @@ from .faults import RunProtocolFault
 from .routing import CANDIDATE, COST_MODEL, route_rejection
 from .pairing import comparison_arm, bind_baseline, native_baseline, triton_optimization_analysis_plan
 from open_cake_ir.evaluation.core import parse_launch_manifest
+from open_cake_ir.compiler.target import cuda_target
 from .portfolio import KernelSeed
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1,
@@ -2291,7 +2292,7 @@ class Lab:
         }:
             raise ValueError("Study Contract execution fields differ")
         if (
-            execution.get("target") != "sm_100a"
+            execution.get("target") != (workload.document['semantics'].get('target') if paired_triton else "sm_100a")
             or execution.get("sandbox") != "workspace-write"
         ):
             raise ValueError("Study Contract execution authority differs")
@@ -2306,7 +2307,9 @@ class Lab:
             template=study.state == "template",
         )
         gpu = _object(execution.get("gpu"), "study.execution.gpu")
-        if gpu != {"name": "NVIDIA B200", "count": 1, "mode": "exclusive"}:
+        target = cuda_target(execution['target'])
+        if (set(gpu) != {'name', 'count', 'mode'} or gpu.get('name') not in target.device_names
+            or type(gpu.get('count')) is not int or gpu['count'] != 1 or gpu.get('mode') != 'exclusive'):
             raise ValueError("Study Contract GPU admission differs")
         analysis = _object(study.document.get("analysis_plan"), "study.analysis_plan")
         if claim_scope == "system_qualification_only":

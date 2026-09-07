@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from hashlib import sha256
 from typing import Mapping, cast
+
+from open_cake_ir.compiler.target import cuda_target
 
 MANIFEST_PREFIX = "// CAKE_REPRO_LAUNCH_V1 "
 MAX_DYNAMIC_SHARED_MEMORY_BYTES = 232_448
@@ -66,6 +68,46 @@ def _dimensions(
 
 
 @dataclass(frozen=True)
+class CudaKernelSpec:
+    """Structural launch limits shared by the distinct public tensor ABIs."""
+
+    target: str
+    kernel_name: str
+    grid: tuple[int, int, int]
+    block: tuple[int, int, int]
+    dynamic_shared_memory_bytes: int
+    hidden_null_pointer_parameters: int = 0
+
+    @classmethod
+    def from_dict(cls, value: object) -> "CudaKernelSpec":
+        document = _object(value, "CUDA kernel specification")
+        fields = _BASE_FIELDS - {"schema_version", "abi"}
+        if set(document) not in (fields, fields | {"hidden_null_pointer_parameters"}):
+            raise ValueError("CUDA kernel specification fields differ")
+        target = cuda_target(document.get("target"))
+        limits = target.resource_limits
+        spec = cls(
+            target=target.target_id,
+            kernel_name=str(document.get("kernel_name")),
+            grid=_dimensions(document.get("grid"), "manifest.grid",
+                             tuple((1, maximum) for maximum in limits.maximum_grid)),
+            block=_dimensions(document.get("block"), "manifest.block",
+                              ((1, 1024), (1, 1024), (1, 64))),
+            dynamic_shared_memory_bytes=_integer(document.get("dynamic_shared_memory_bytes"),
+                "manifest.dynamic_shared_memory_bytes", 0, limits.maximum_shared_memory_bytes),
+            hidden_null_pointer_parameters=_integer(document.get("hidden_null_pointer_parameters", 0),
+                "manifest.hidden_null_pointer_parameters", 0, 2),
+        )
+        if _KERNEL_NAME.fullmatch(spec.kernel_name) is None or spec.block_threads > limits.maximum_threads_per_cta:
+            raise ValueError("CUDA kernel name or block differs")
+        return spec
+
+    @property
+    def block_threads(self) -> int:
+        return self.block[0] * self.block[1] * self.block[2]
+
+
+@dataclass(frozen=True)
 class CudaLaunchManifest:
     """Exact host-owned launch contract contributed by a direct CUDA candidate."""
 
@@ -84,33 +126,12 @@ class CudaLaunchManifest:
         fields = set(document)
         if fields != _BASE_FIELDS and fields != _FIELDS_WITH_HIDDEN:
             raise ValueError("CUDA launch manifest fields differ")
+        spec = CudaKernelSpec.from_dict({key: item for key, item in document.items()
+                                         if key not in {"schema_version", "abi"}})
         manifest = cls(
             schema_version=_integer(document.get("schema_version"), "manifest.schema_version", 1, 1),
             abi=str(document.get("abi")),
-            target=str(document.get("target")),
-            kernel_name=str(document.get("kernel_name")),
-            grid=_dimensions(
-                document.get("grid"),
-                "manifest.grid",
-                ((1, 2_147_483_647), (1, 65_535), (1, 65_535)),
-            ),
-            block=_dimensions(
-                document.get("block"),
-                "manifest.block",
-                ((1, 1_024), (1, 1_024), (1, 64)),
-            ),
-            dynamic_shared_memory_bytes=_integer(
-                document.get("dynamic_shared_memory_bytes"),
-                "manifest.dynamic_shared_memory_bytes",
-                0,
-                MAX_DYNAMIC_SHARED_MEMORY_BYTES,
-            ),
-            hidden_null_pointer_parameters=_integer(
-                document.get("hidden_null_pointer_parameters", 0),
-                "manifest.hidden_null_pointer_parameters",
-                0,
-                2,
-            ),
+            **asdict(spec),
         )
         if (
             manifest.abi != "flash_kmeans_assign_v1"

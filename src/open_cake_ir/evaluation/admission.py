@@ -1,4 +1,4 @@
-"""Observed exclusive-B200 admission shared by matched and Portfolio workers."""
+"""Observed exact-device admission shared by matched and Portfolio workers."""
 
 from __future__ import annotations
 
@@ -7,10 +7,18 @@ import subprocess
 from pathlib import Path
 
 from .cuda_driver import CudaDeviceAdmission
+from open_cake_ir.compiler.target import cuda_target
 
 
 def observe_exclusive_b200() -> CudaDeviceAdmission:
+    """Retain the historical B200-only public admission boundary."""
+    return observe_exclusive_cuda("sm_100a")
+
+
+def observe_exclusive_cuda(target_id: str) -> CudaDeviceAdmission:
     """Reject the r41 clean-card race before compile, module load or launch."""
+
+    target = cuda_target(target_id)
 
     visible = os.environ.get("CUDA_VISIBLE_DEVICES")
     job_id = os.environ.get("GPUQ_JOB_ID")
@@ -39,14 +47,14 @@ def observe_exclusive_b200() -> CudaDeviceAdmission:
     torch = __import__("torch")
     if (
         torch.cuda.device_count() != 1
-        or torch.cuda.get_device_name(0) != "NVIDIA B200"
-        or torch.cuda.get_device_capability(0) != (10, 0)
+        or torch.cuda.get_device_name(0) not in target.device_names
+        or torch.cuda.get_device_capability(0) != target.compute_capability
     ):
         raise ValueError("gpu_admission_differs")
     properties = torch.cuda.get_device_properties(0)
     return CudaDeviceAdmission(
-        "NVIDIA B200",
-        (10, 0),
+        torch.cuda.get_device_name(0),
+        torch.cuda.get_device_capability(0),
         str(getattr(properties, "uuid", "")),
         job_id,
         "exclusive",

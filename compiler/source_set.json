@@ -124,6 +124,12 @@
     "examples/python/metal_rmsnorm.py",
     "corpus/schedules/metal-rmsnorm-primary.json",
     "corpus/schedules/metal-rmsnorm-tail.json",
-    "corpus/schedules/triton-global-scalar-storage-refusal.json"
+    "corpus/schedules/triton-global-scalar-storage-refusal.json",
+    "compiler/targets/sm_103a.json",
+    "corpus/schedules/rmsnorm-b8-smoke-b300.json",
+    "corpus/schedules/gemm-bias-b1-smoke-b300.json",
+    "corpus/schedules/indexed-gather-b8-smoke-b300.json",
+    "corpus/schedules/b300-cute-target-refusal.json",
+    "corpus/schedules/b300-persistent-target-facts-missing.json"
   ]
 }

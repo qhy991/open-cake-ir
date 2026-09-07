@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -21,6 +22,27 @@ from .ir import MemorySpace, OperationKind, ScheduleParseError, _enum, _string
 
 class TargetParseError(ValueError):
     """One Target document is not admissible."""
+
+
+def cuda_architecture(target_id: str) -> int:
+    """Decode the two admitted exact CUDA code-generation targets."""
+    if not isinstance(target_id, str) or re.fullmatch(r"sm_(100|103)a", target_id) is None:
+        raise TargetParseError("unsupported exact CUDA target")
+    return int(target_id[3:-1])
+
+
+def cuda_target(target_id: str) -> "Target":
+    """Read the canonical hardware facts bound by the Compiler and Executor.
+
+    Runtime consumers pin these same files in their Executor closure. Offline
+    compilation needs only cuda_architecture and never opens this data in its jail.
+    """
+    architecture = cuda_architecture(target_id)
+    path = Path(__file__).resolve().parents[3] / "compiler" / "targets" / f"{target_id}.json"
+    target = Target.from_dict(json.loads(path.read_text(encoding="utf-8")))
+    if target.target_id != target_id or target.compute_capability != divmod(architecture, 10):
+        raise TargetParseError("CUDA target identity and compute capability differ")
+    return target
 
 
 def _int_field(value: Any, context: str, *, allow_zero: bool = False) -> int:

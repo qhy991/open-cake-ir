@@ -176,6 +176,11 @@ _SUPPORTED_OPERATION_KINDS = {member.value for member in OperationKind}
 def _tinygemm2_asset_preflight(schedule: Schedule) -> list["Finding"]:
     """Check only facts implemented by the retained source asset."""
 
+    if schedule.target != "sm_100a":
+        return [Finding("CUDA_ASSET_TARGET_UNSUPPORTED", "target",
+                        "the checked CUDA asset is compiled only for sm_100a",
+                        FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False)]
+
     reduction = schedule.operation("reduce_partials")
     parameters = reduction.parameters if reduction is not None else None
     source = (

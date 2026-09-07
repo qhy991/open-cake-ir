@@ -146,13 +146,15 @@ def project_triton_kernel(source: bytes, requirements: Mapping[str, object]) -> 
 
 def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonCompilation:
     """Compile a complete emitted source; never launch it or initialize GPU handles."""
+    from .target import cuda_architecture
+    target = requirements.get("target")
+    architecture = cuda_architecture(target)
     if (
         requirements.get("compiler") != "triton"
         or requirements.get("source_language") != "python"
-        or requirements.get("target") != "sm_100a"
         or not source
     ):
-        raise ValueError("offline Triton compilation requires the explicit sm_100a contract")
+        raise ValueError("offline Triton compilation requires an explicit CUDA target contract")
     name = requirements.get("kernel_entry_point")
     signature = requirements.get("signature")
     constants = requirements.get("compile_constants")
@@ -178,7 +180,7 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
             raise ValueError("Triton lowering kernel entry point is missing")
         compiled = triton_compile(
             ASTSource(kernel, dict(signature), dict(constants)),
-            target=GPUTarget("cuda", 100, 32), options=dict(options),
+            target=GPUTarget("cuda", architecture, 32), options=dict(options),
         )
         artifacts = {}
         for role in ("source", "ttir", "ttgir", "llir", "ptx", "cubin"):
@@ -196,11 +198,11 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
         if metadata.global_scratch_size or metadata.profile_scratch_size:
             raise ValueError("offline resource model does not cover auxiliary global scratch")
         if not artifacts["cubin"].startswith(b"\x7fELF") or re.search(
-            rb"^\.target\s+sm_100a(?:\s|,|$)", artifacts["ptx"], re.MULTILINE
+            rb"^\.target\s+" + target.encode("ascii") + rb"(?:\s|,|$)", artifacts["ptx"], re.MULTILINE
         ) is None:
-            raise ValueError("Triton output does not match the exact sm_100a CUBIN target")
+            raise ValueError(f"Triton output does not match the exact {target} CUBIN target")
         return TritonCompilation(
-            source, "sm_100a", name, MappingProxyType(artifacts),
+            source, target, name, MappingProxyType(artifacts),
             int(metadata.num_warps) * 32, int(metadata.shared), importlib.metadata.version("triton"),
         )
 

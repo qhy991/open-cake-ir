@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate one sealed CUBIN on an already allocated exclusive B200.
+"""Evaluate one sealed CUBIN on an already allocated exact CUDA target.
 
 The historical command path retains Flash-KMeans and the explicit Workload tensor ABI.
 """
@@ -33,10 +33,10 @@ from open_cake_ir.evaluation import (  # noqa: E402
     flash_kmeans_oracle,
     generate_flash_kmeans_case,
     NCU_ATTRIBUTION_METRICS,
-    observe_exclusive_b200,
     summarize_cohort,
 )
 from open_cake_ir.lab.executor import ExecutorRevision  # noqa: E402
+from open_cake_ir.evaluation.admission import observe_exclusive_cuda  # noqa: E402
 from open_cake_ir.evaluation.core import (  # noqa: E402
     EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest,
     compare_tile_outputs, evaluate_tile_workload, parse_launch_manifest,
@@ -271,7 +271,7 @@ def _evaluate_candidate(
     helper = authority.executor.admit_host()
     if admission is None:
         try:
-            admission = observe_exclusive_b200()
+            admission = observe_exclusive_cuda(authority.candidate.target)
         except ValueError:
             result["error"] = "gpu_admission_differs"
             return
@@ -431,7 +431,7 @@ def _profile_candidate(
 ) -> None:
     profiler = authority.executor.admit_profiler()
     try:
-        admission = observe_exclusive_b200()
+        admission = observe_exclusive_cuda(authority.candidate.target)
     except ValueError:
         result["error"] = "gpu_admission_differs"
         return

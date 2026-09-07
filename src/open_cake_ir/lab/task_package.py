@@ -91,7 +91,9 @@ def build_run_reference_documents(
         "compiler_revision",
     )
     targets = _object(revision_document["target_definitions"], "target_definitions")
-    target = _object(targets["sm_100a"], "target_definitions.sm_100a")
+    execution = _object(lock.document['execution'], 'campaign_lock.execution')
+    target_id = str(execution['target'])
+    target = _object(targets[target_id], f"target_definitions.{target_id}")
     resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
     authoring_environment = arm
     if "candidate_selection" in arm:

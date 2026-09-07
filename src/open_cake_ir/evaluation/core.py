@@ -11,6 +11,8 @@ from hashlib import sha256
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
+from open_cake_ir.compiler.target import cuda_architecture
+
 from .flash_kmeans import (
     classify_flash_kmeans_output,
     flash_kmeans_oracle,
@@ -81,10 +83,10 @@ class LaunchableCandidate:
     artifact_payloads: Mapping[str, bytes] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        cuda_architecture(self.target)
         if (
             _DIGEST.fullmatch(self.candidate_sha256) is None
             or _DIGEST.fullmatch(self.launch_spec_sha256) is None
-            or self.target != "sm_100a"
             or not self.entry_point
             or not self.artifact_roles
             or "cubin" not in self.artifact_roles
@@ -472,18 +474,16 @@ class TensorLaunchManifest:
 
     @classmethod
     def from_dict(cls, document: object) -> 'TensorLaunchManifest':
-        from .cuda_manifest import CudaLaunchManifest
+        from .cuda_manifest import CudaKernelSpec
         if not isinstance(document, Mapping) or set(document) != {
             'schema_version', 'abi', 'workload_sha256', 'case_id', 'tensor_abi',
             'target', 'kernel_name', 'grid', 'block', 'dynamic_shared_memory_bytes',
             'hidden_null_pointer_parameters',
         } or document.get('schema_version') != 1 or document.get('abi') != 'workload_tensors_v1':
             raise ValueError('Workload tensor launch manifest fields differ')
-        # Reuse the existing Driver's structural launch limits. The resulting public
-        # manifest retains its own ABI and never claims to be a Flash-KMeans kernel.
-        launch = CudaLaunchManifest.from_dict({
-            key: value for key, value in {**document, 'abi': 'flash_kmeans_assign_v1'}.items()
-            if key not in {'workload_sha256', 'case_id', 'tensor_abi'}
+        launch = CudaKernelSpec.from_dict({
+            key: value for key, value in document.items()
+            if key not in {'schema_version', 'abi', 'workload_sha256', 'case_id', 'tensor_abi'}
         })
         rows = document['tensor_abi']
         if (not isinstance(document['workload_sha256'], str)
@@ -511,15 +511,18 @@ class TensorLaunchManifest:
     @classmethod
     def for_workload(cls, workload: WorkloadContract, case_id: str, **launch: object) -> 'TensorLaunchManifest':
         from dataclasses import asdict
-        return cls.from_dict({'schema_version': 1, 'abi': 'workload_tensors_v1',
+        manifest = cls.from_dict({'schema_version': 1, 'abi': 'workload_tensors_v1',
             'workload_sha256': workload.canonical_sha256, 'case_id': case_id,
             'tensor_abi': [{**asdict(t), 'shape': list(t.shape)} for t in workload.tensor_abi(case_id)],
             **launch})
+        manifest.check_workload(workload, case_id)
+        return manifest
 
     def check_workload(self, workload: WorkloadContract, case_id: str) -> None:
         expected = tuple((t.name, t.shape, t.dtype, t.mode) for t in workload.tensor_abi(case_id))
         if (self.workload_sha256 != workload.canonical_sha256 or self.case_id != case_id
-            or self.tensor_abi != expected):
+            or self.tensor_abi != expected
+            or self.target != workload.document['semantics'].get('target')):
             raise ValueError('sealed launch ABI differs from the selected Workload')
 
     @property
@@ -594,7 +597,8 @@ def evaluate_tile_workload(candidate: LaunchableCandidate, workload: WorkloadCon
         raise ValueError('tile correctness Evaluation protocol differs')
     manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
     manifest.check_workload(workload, protocol.case_id)
-    if candidate.launch_spec_sha256 != manifest.canonical_sha256:
+    if (candidate.launch_spec_sha256 != manifest.canonical_sha256
+        or candidate.target != manifest.target or candidate.entry_point != manifest.kernel_name):
         raise ValueError('sealed tensor manifest differs')
     inputs = materialize_case(workload, protocol.case_id)
     before = {name: list(values) for name, values in inputs.items()}

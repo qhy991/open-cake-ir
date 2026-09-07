@@ -1,6 +1,6 @@
 """Public common Evaluation Interface."""
 
-from .admission import observe_exclusive_b200
+from .admission import observe_exclusive_b200, observe_exclusive_cuda
 from .attempts import (
     BrokerAttempt,
     LogicalEvaluationAttempt,
@@ -115,6 +115,7 @@ __all__ = [
     "ncu_attribution_feedback",
     "replay_legacy_r45_result",
     "observe_exclusive_b200",
+    "observe_exclusive_cuda",
     "DispatchReceipt",
     "ExactShapeDispatcher",
     "PortfolioArtifact",

@@ -40,14 +40,15 @@ def validate_tile_contract(document: Mapping[str, object]) -> None:
     workload = WorkloadContract(document)
     source_schedule_path(document)
     operator = document["operator"]
-    if document["revision"] != "1" or document["workload_id"] != str(operator).replace("_", "-") + "-v1":
+    revision = document["revision"]
+    if revision not in {"1", "2"} or document["workload_id"] != str(operator).replace("_", "-") + "-v" + revision:
         raise ValueError("tile workload identity or revision differs")
     semantics = _object(document["semantics"], "tile semantics")
     oracle = _object(document["oracle"], "tile oracle")
     validation = _object(document["validation"], "tile validation")
     tensors = _object(document["tensors"], "tile tensors")
     if (
-        semantics.get("target") != "sm_100a"
+        semantics.get("target") != ("sm_100a" if revision == "1" else "sm_103a")
         or semantics.get("input_effects") != "unchanged"
         or semantics.get("output_storage") != "fresh_contiguous_nonaliasing"
         or oracle.get("callable") != "open_cake_ir.evaluation.tile_workloads.reference_outputs"

@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "target_id": "sm_103a",
+  "architecture": "blackwell_ultra",
+  "device_names": [
+    "NVIDIA B300",
+    "NVIDIA B300 SXM6 AC"
+  ],
+  "compute_capability": [
+    10,
+    3
+  ],
+  "memory_spaces": [
+    "global",
+    "shared",
+    "tensor",
+    "register"
+  ],
+  "operation_kinds": [
+    "load",
+    "mma",
+    "epilogue",
+    "reduce_argmin",
+    "reduce",
+    "top_k",
+    "index_expand",
+    "online_softmax",
+    "atomic_rmw",
+    "cast",
+    "elementwise",
+    "scan",
+    "store"
+  ],
+  "resource_limits": {
+    "maximum_threads_per_cta": 1024,
+    "maximum_warps_per_cta": 32,
+    "maximum_shared_memory_bytes": 232448,
+    "maximum_tensor_memory_bytes": 262144,
+    "grid": {
+      "x": 2147483647,
+      "y": 65535,
+      "z": 65535
+    }
+  },
+  "instruction_contracts": [
+    "tcgen05.mma.cta_group::1.kind::f16",
+    "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
+    "triton.dot.bf16_fp32",
+    "triton.dot.fp32_ieee",
+    "triton.dot.fp32_tf32",
+    "triton.dot.fp8e4m3_block_scale_fp32",
+    "triton.atomic_add.i32.relaxed.gpu",
+    "libdevice.tanh.f32",
+    "ptx.fma.rn.f32"
+  ],
+  "synchronization_contracts": [
+    "mbarrier",
+    "barrier.sync",
+    "triton_program_order"
+  ],
+  "citations": [
+    {
+      "kind": "device_specification",
+      "source": "https://developer.nvidia.com/cuda/gpus",
+      "locator": "NVIDIA B300: compute capability 10.3"
+    },
+    {
+      "kind": "device_specification",
+      "source": "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html",
+      "locator": "Tables 30 and 31: CC 10.3 / 10.x launch, warp, register and shared-memory limits"
+    },
+    {
+      "kind": "instruction_set",
+      "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html",
+      "locator": "PTX target sm_103a; common sm_100f tensor-memory and tcgen05 f16 instructions; no new instruction form is admitted here"
+    }
+  ]
+}

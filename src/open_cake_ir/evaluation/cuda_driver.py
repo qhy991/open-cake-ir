@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Callable, Mapping, Protocol, Sequence, cast
 
+from open_cake_ir.compiler.target import cuda_architecture, cuda_target
+
 from .core import LaunchableCandidate
 from .cuda_manifest import MAX_DYNAMIC_SHARED_MEMORY_BYTES, CudaLaunchManifest
 
@@ -169,16 +171,16 @@ def _function_resources(
     manifest: CudaLaunchManifest,
 ) -> dict[str, int]:
     resources = {name: _attribute(api, name, function) for name in _ATTRIBUTES}
-    if resources["CU_FUNC_ATTRIBUTE_BINARY_VERSION"] != 100:
+    if resources["CU_FUNC_ATTRIBUTE_BINARY_VERSION"] != cuda_architecture(manifest.target):
         raise ValueError("CUDA Driver function binary version differs")
     if manifest.block_threads > resources["CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK"]:
         raise ValueError("CUDA Driver manifest block exceeds function maximum")
     if (
         resources["CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES"]
         + manifest.dynamic_shared_memory_bytes
-        > MAX_DYNAMIC_SHARED_MEMORY_BYTES
+        > cuda_target(manifest.target).resource_limits.maximum_shared_memory_bytes
     ):
-        raise ValueError("CUDA Driver static plus dynamic shared memory exceeds B200 limit")
+        raise ValueError("CUDA Driver static plus dynamic shared memory exceeds Target limit")
     cluster_names = (
         "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET",
         "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH",
@@ -235,14 +237,22 @@ class CudaDeviceAdmission:
     mode: str
 
     def __post_init__(self) -> None:
+        if (not isinstance(self.compute_capability, tuple) or len(self.compute_capability) != 2
+            or any(type(value) is not int for value in self.compute_capability)):
+            raise ValueError("CUDA device compute capability differs")
+        target = cuda_target(self.target)
         if (
-            self.device_name != "NVIDIA B200"
-            or self.compute_capability != (10, 0)
-            or not self.gpu_uuid
-            or not self.broker_job_id.startswith("gpuq-")
+            self.device_name not in target.device_names
+            or self.compute_capability != target.compute_capability
+            or not isinstance(self.gpu_uuid, str) or not self.gpu_uuid
+            or not isinstance(self.broker_job_id, str) or not self.broker_job_id.startswith("gpuq-")
             or self.mode != "exclusive"
         ):
             raise ValueError("CUDA device admission differs")
+
+    @property
+    def target(self) -> str:
+        return f"sm_{self.compute_capability[0]}{self.compute_capability[1]}a"
 
 
 class LoadedCudaCandidate:
@@ -289,6 +299,7 @@ class LoadedCudaCandidate:
         if (
             not cubin.startswith(b"\x7fELF")
             or candidate.target != manifest.target
+            or candidate.target != admission.target
             or candidate.entry_point != manifest.kernel_name
             or candidate.launch_spec_sha256 != manifest.canonical_sha256
             or candidate.artifact_roles.get("cubin") != cubin_sha256
@@ -343,6 +354,8 @@ class LoadedCudaCandidate:
 
         if self.closed or sha256(self.cubin).hexdigest() != self.candidate.artifact_roles["cubin"]:
             raise ValueError("persistent candidate is closed or its CUBIN changed")
+        if tensor_contract.target != self.candidate.target:
+            raise ValueError("persistent candidate tensor Target differs")
         observed, pointers = _tensor_contract(arguments, tensor_contract)
         (current_context,) = _driver_call(self._api, "cuCtxGetCurrent", outputs=1)
         if _is_null(current_context) or _handle_identity(current_context) != self._context:

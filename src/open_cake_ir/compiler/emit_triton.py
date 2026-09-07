@@ -180,6 +180,11 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         )
 
     if schedule.program_map is not None:
+        add(
+            not schedule.program_map.persistent or target.occupancy is not None,
+            "TRITON_PERSISTENT_TARGET_FACTS_MISSING", "program_map.persistent",
+            "a persistent grid requires the Target's observed multiprocessor count",
+        )
         for index, axis in enumerate(schedule.program_map.axes):
             if axis.is_tiled:
                 arange(0, axis.tile, f"program_map.axes[{index}].tile")
