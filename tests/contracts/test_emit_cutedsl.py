@@ -503,7 +503,9 @@ class EmittedKernelObservationTest(unittest.TestCase):
         from open_cake_ir.compiler import Compiler
 
         record = json.loads(self.RECORD.read_text(encoding="utf-8"))
-        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        # Compare the current source candidate with the frozen observation. Released
+        # lock/source validation has its own Compiler and release contract tests.
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.json")
         lowering = compiler.lower(compiler.assess_file(SCHEDULE))
         self.assertEqual(lowering.generated, record["lowering"]["generated"])
         self.assertNotEqual(
@@ -573,3 +575,107 @@ class SubRangeIsRefusedNotIgnoredTest(unittest.TestCase):
             blocking(sub_assessment) - blocking(whole_assessment),
             {"CUTE_ACCESS_SUBRANGE_UNSUPPORTED"},
         )
+
+
+class RangeOptionsAreRefusedNotIgnoredTest(unittest.TestCase):
+    """A declared loop control must survive lowering or produce a localized refusal.
+
+    The accepted pipeline previously emitted identical CuTe source with unroll=1 or
+    unroll=4, flatten=False or True, disable_licm=False or True, and inner stages=2 or
+    3. These probes change only the option under test, so an unrelated blocker cannot
+    lend the backend a false claim that it checks the loop control.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from open_cake_ir.compiler import Compiler
+
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+
+    def _assert_option_refused(self, document: dict, index: int, field: str) -> None:
+        from open_cake_ir.compiler import CompilerError
+        from open_cake_ir.compiler.emit_cutedsl import preflight
+
+        schedule = Schedule.from_dict(document)
+        failures = preflight(schedule, TARGET)
+        expected = [("CUTE_RANGE_OPTION_UNSUPPORTED", f"tile_loops[{index}].range_options.{field}")]
+        self.assertEqual([(item.code, item.path) for item in failures], expected)
+
+        assessment = self.compiler.assess(document)
+        self.assertTrue(assessment.accepted)
+        self.assertFalse(assessment.lowering_eligible)
+        blocking = [item for item in assessment.findings if item.blocks_lowering]
+        self.assertEqual([(item.code, item.path) for item in blocking], expected)
+        self.assertFalse(blocking[0].blocks_acceptance)
+        with self.assertRaises(CompilerError):
+            self.compiler.lower(assessment)
+        with self.assertRaisesRegex(EmitError, field):
+            emit(schedule, TARGET)
+
+    def test_unimplemented_controls_are_refused_on_each_loop(self) -> None:
+        original = json.loads(SCHEDULE.read_text(encoding="utf-8"))
+        self.assertTrue(self.compiler.assess(original).lowering_eligible)
+        for index in range(len(original["tile_loops"])):
+            for field, value in (
+                ("loop_unroll_factor", 4), ("flatten", True), ("disable_licm", True),
+            ):
+                with self.subTest(loop=index, field=field):
+                    document = json.loads(SCHEDULE.read_text(encoding="utf-8"))
+                    document["tile_loops"][index]["range_options"][field] = value
+                    self._assert_option_refused(document, index, field)
+
+    def test_nondefault_stages_must_match_the_pipeline_acquisition_scope(self) -> None:
+        # The Pipeline's barrier is acquired in the inner loop, whose requested count
+        # must match the emitted storage. The outer loop does not acquire that barrier.
+        for index, stages in ((0, 2), (1, 3)):
+            with self.subTest(loop=index, stages=stages):
+                document = json.loads(SCHEDULE.read_text(encoding="utf-8"))
+                document["tile_loops"][index]["range_options"]["num_stages"] = stages
+                self._assert_option_refused(document, index, "num_stages")
+
+    def test_an_operation_pipeline_tag_does_not_move_stage_consumption(self) -> None:
+        document = json.loads(SCHEDULE.read_text(encoding="utf-8"))
+        baseline = emit(Schedule.from_dict(document), TARGET).source
+        epilogue = next(op for op in document["operations"] if op["id"] == "distance_epilogue")
+        epilogue["pipeline"] = "main"
+        self.assertTrue(self.compiler.assess(document).lowering_eligible)
+        self.assertEqual(emit(Schedule.from_dict(document), TARGET).source, baseline)
+
+        # This tag formerly admitted two outer-loop stages, although the emitted
+        # Pipeline barrier was still acquired only in k_loop and source was unchanged.
+        document["tile_loops"][0]["range_options"]["num_stages"] = 2
+        self._assert_option_refused(document, 0, "num_stages")
+
+    def test_default_loop_stages_defer_to_the_explicit_pipeline(self) -> None:
+        document = json.loads(SCHEDULE.read_text(encoding="utf-8"))
+        baseline = emit(Schedule.from_dict(document), TARGET).source
+        document["tile_loops"][1]["range_options"]["num_stages"] = 1
+        self.assertTrue(self.compiler.assess(document).lowering_eligible)
+        self.assertEqual(emit(Schedule.from_dict(document), TARGET).source, baseline)
+
+    def test_existing_pipeline_preserves_its_structural_controls(self) -> None:
+        from open_cake_ir.compiler.emit_cutedsl import preflight
+
+        for path in (SCHEDULE, ROOT / "examples/python/kmeans_pipeline.py"):
+            with self.subTest(path=path):
+                assessment = self.compiler.assess_file(path)
+                schedule = Schedule.from_dict(json.loads(assessment.schedule_bytes))
+                self.assertEqual(preflight(schedule, TARGET), ())
+                self.assertTrue(assessment.lowering_eligible)
+                source = self.compiler.lower(assessment).source
+                self.assertIn("PIPELINE_STAGES = 2", source)
+                self.assertIn("num_stages=PIPELINE_STAGES", source)
+                self.assertIn("warp_idx == TMA_WARP", source)
+                self.assertIn("warp_idx == MMA_WARP", source)
+                self.assertEqual(source.count("tmem.allocate(TMEM_COLUMNS)"), 1)
+
+    def test_python_unroll_request_is_localized_to_its_symbolic_loop(self) -> None:
+        from open_cake_ir.compiler.frontend import parse
+
+        source = (ROOT / "examples/python/kmeans_pipeline.py").read_text(encoding="utf-8")
+        source = source.replace("tile=64, num_stages=2,", "tile=64, num_stages=2, loop_unroll_factor=4,")
+        authored = parse(source, filename="unrolled-kmeans.py")
+        self._assert_option_refused(authored.document, 1, "loop_unroll_factor")
+        location = authored.location_for("tile_loops[1].range_options.loop_unroll_factor")
+        self.assertIsNotNone(location)
+        self.assertIn("lm.range", source.splitlines()[location.line - 1])

@@ -99,6 +99,26 @@ _CUTE_MMA_CONTRACTS = frozenset(
 )
 
 
+def _operation_scope(schedule: Schedule, op_id: str) -> str | None:
+    """The innermost loop whose body names this operation, if any."""
+
+    return next((loop.name for loop in schedule.tile_loops if op_id in loop.body), None)
+
+
+def _barrier_signaller_scopes(schedule: Schedule, barrier: Barrier) -> set[str | None]:
+    """A Pipeline-bound barrier is acquired in its single signaller scope.
+
+    Both stage admission and emission consume this relation. An operation's pipeline
+    tag alone does not place a barrier acquisition in that operation's loop.
+    """
+
+    return {
+        _operation_scope(schedule, operation.op_id)
+        for operation in schedule.operations
+        if barrier.name in operation.signals
+    }
+
+
 def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, ...]:
     """Return the CuTe emitter's backend-owned constructor requirements."""
 
@@ -167,6 +187,52 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
             f"buffers[{index}].mode",
             "the CuTe-DSL backend does not implement caller-owned mutable state",
         )
+
+    for index, loop in enumerate(schedule.tile_loops):
+        options = loop.range_options
+        # The emitter retains nested cutlass.range loops and requests neither unrolling
+        # nor LICM suppression. These choices cannot be silently discarded. Explicit
+        # role dispatch already realizes warp specialization, and the emitted single
+        # accumulator tile satisfies disallow_acc_multi_buffer without a loop flag.
+        for field, actual, default in (
+            ("loop_unroll_factor", options.loop_unroll_factor, 1),
+            ("flatten", options.flatten, False),
+            ("disable_licm", options.disable_licm, False),
+        ):
+            add(
+                actual == default,
+                "CUTE_RANGE_OPTION_UNSUPPORTED",
+                f"tile_loops[{index}].range_options.{field}",
+                f"the current CuTe-DSL loop emitter requires {field}={default!r}, "
+                f"got {actual!r}; it does not implement this loop control",
+            )
+        # Missing mechanisms are refused by the verifier and _is_mbarrier; their
+        # acquisition domain is not known well enough to diagnose loop stages yet.
+        if options.num_stages != 1 and all(
+            barrier.mechanism is not None for barrier in schedule.barriers
+        ):
+            # Stage storage and barrier construction are owned by the sole Pipeline.
+            # Its stages belong to the loop where its mbarrier is acquired, as in
+            # _emit_loop_nest; a bare operation.pipeline tag does not consume them.
+            stages = 1
+            if len(schedule.pipelines) == 1:
+                pipeline = schedule.pipelines[0]
+                if any(
+                    barrier.mechanism is BarrierMechanism.MBARRIER
+                    and barrier.pipeline == pipeline.name
+                    and _barrier_signaller_scopes(schedule, barrier) == {loop.name}
+                    for barrier in schedule.barriers
+                ):
+                    stages = pipeline.stages
+            add(
+                options.num_stages == stages,
+                "CUTE_RANGE_OPTION_UNSUPPORTED",
+                f"tile_loops[{index}].range_options.num_stages",
+                f"the current CuTe-DSL loop emitter requires num_stages={stages} "
+                f"for loop {loop.name!r}, got {options.num_stages}; non-default "
+                "stages must match an explicit Pipeline whose mbarrier is acquired "
+                "in this loop",
+            )
 
     for index, mma in kinds[OperationKind.MMA]:
         instruction = mma.parameters.instruction
@@ -463,12 +529,7 @@ class _Emitter:
         return tuple(b for b in self.schedule.barriers if self._is_mbarrier(b))
 
     def _scope_of(self, op_id: str) -> str | None:
-        """The innermost loop whose body names this operation, if any."""
-
-        for loop in self.schedule.tile_loops:
-            if op_id in loop.body:
-                return loop.name
-        return None
+        return _operation_scope(self.schedule, op_id)
 
     def _ops_in_scope(self, role: Role, scope: str | None) -> list:
         return [
@@ -744,8 +805,7 @@ class _Emitter:
     def _barrier_scope(self, barrier: Barrier) -> str | None:
         """The loop a barrier is acquired in: the scope of whatever signals it."""
 
-        signallers = [op for op in self.schedule.operations if barrier.name in op.signals]
-        scopes = {self._scope_of(op.op_id) for op in signallers}
+        scopes = _barrier_signaller_scopes(self.schedule, barrier)
         if len(scopes) != 1:
             raise EmitError(
                 f"barrier {barrier.name!r} is signalled from more than one loop scope"
