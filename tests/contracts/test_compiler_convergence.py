@@ -38,6 +38,22 @@ class CompilerConvergenceContractTests(unittest.TestCase):
             self.assertIs(getattr(public, name), getattr(diagnostics, name))
             self.assertIs(getattr(verifier, name), getattr(diagnostics, name))
 
+    def test_keyword_construction_keeps_target_binding_snapshot_semantics(self) -> None:
+        revision = self.compiler._revision
+        targets = dict(revision.targets)
+        compiler = public.Compiler(
+            project_root=revision.project_root,
+            revision_id=revision.revision_id,
+            revision_sha256=revision.canonical_sha256,
+            state=revision.state,
+            target_definitions=targets,
+            corpus_path=revision.corpus_path,
+            calibration_coverage=revision.calibration_coverage,
+        )
+        targets.clear()
+        self.assertEqual(compiler.state, self.compiler.state)
+        self.assertEqual(compiler.assess(self.document()), self.compiler.assess(self.document()))
+
     def test_assess_lower_profile_and_rank_reuse_the_admitted_target(self) -> None:
         document = self.document()
         initial = self.compiler.assess(document)

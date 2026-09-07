@@ -31,6 +31,7 @@ from .ir import (
 from .corpus import CorpusCaseReport, CorpusGateReport, check_corpus
 from .errors import CompilerError
 from .revision import CompilerRevision, load_revision
+from .target import Target
 from .ranking import Cost, rank as rank_candidates
 from .compiled_resources import CompiledResources
 from .empirical_cost import EmpiricalCostModel
@@ -253,8 +254,26 @@ def _semantic_schedule_sha256(schedule: Mapping[str, object]) -> str:
 class Compiler:
     """Assess and lower Schedules independently of the Research Lab."""
 
-    def __init__(self, revision: CompilerRevision) -> None:
-        self._revision = revision
+    def __init__(
+        self,
+        *,
+        project_root: Path,
+        revision_id: str,
+        revision_sha256: str,
+        state: str,
+        target_definitions: Mapping[str, Target],
+        corpus_path: Path,
+        calibration_coverage: frozenset[str],
+    ) -> None:
+        self._revision = CompilerRevision(
+            project_root=project_root,
+            revision_id=revision_id,
+            canonical_sha256=revision_sha256,
+            state=state,
+            targets=MappingProxyType(dict(target_definitions)),
+            corpus_path=corpus_path,
+            calibration_coverage=calibration_coverage,
+        )
 
     @property
     def state(self) -> str:
@@ -266,7 +285,16 @@ class Compiler:
     def load(cls, project_root: str | Path, revision_path: str | Path) -> "Compiler":
         """Load a draft or released Compiler Revision manifest."""
 
-        return cls(load_revision(project_root, revision_path))
+        revision = load_revision(project_root, revision_path)
+        return cls(
+            project_root=revision.project_root,
+            revision_id=revision.revision_id,
+            revision_sha256=revision.canonical_sha256,
+            state=revision.state,
+            target_definitions=revision.targets,
+            corpus_path=revision.corpus_path,
+            calibration_coverage=revision.calibration_coverage,
+        )
 
     def check_corpus(self) -> CorpusGateReport:
         """Assess the declared Corpus through its canonical report owner."""
