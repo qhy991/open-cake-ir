@@ -290,6 +290,11 @@ class _Builder:
                     "program" if self.record(index)["tile"] == 1 else "program_tile")
                 item = dict(source=source, name=index.name)
             indices.append(item)
+        if any(item['source'] == 'buffer' for item in indices):
+            tiled = [(item['source'], item['name']) for item in indices
+                     if item['source'] in {'program_tile', 'loop_tile'}]
+            if len(tiled) != len(set(tiled)):
+                self.fail(node, "buffer-indexed loads cannot repeat a tiled coordinate")
         return _Access(ref, indices)
 
     def load_shape(self, access, node):

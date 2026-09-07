@@ -191,6 +191,19 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
     for index, loop in enumerate(schedule.tile_loops):
         arange(0, loop.tile, f"tile_loops[{index}].tile")
     for index, access in enumerate(schedule.access_maps):
+        operation = schedule.operation(access.operation)
+        if (operation is not None and operation.kind is OperationKind.LOAD
+            and any(component.source is AccessIndexKind.BUFFER for component in access.indices)):
+            seen_tiles = set()
+            for position, component in enumerate(access.indices):
+                if component.source in {AccessIndexKind.PROGRAM_TILE, AccessIndexKind.LOOP_TILE}:
+                    coordinate = (component.source, component.name)
+                    add(
+                        coordinate not in seen_tiles,
+                        "TRITON_INDEXED_TILE_REUSE", f"access_maps[{index}].indices[{position}]",
+                        "buffer-indexed loads cannot preserve a repeated tiled coordinate's declared vector domain",
+                    )
+                    seen_tiles.add(coordinate)
         buffer = schedule.buffer(access.buffer)
         if buffer is None:
             continue  # The common Verifier owns unknown references.

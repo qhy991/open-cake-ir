@@ -147,6 +147,15 @@ class B300ContractTests(unittest.TestCase):
         self.assertFalse(assessment.accepted)
         self.assertIn('ROLE_REGISTERS_NOT_CONSERVED', [f.code for f in assessment.findings])
 
+    def test_json_indexed_tile_reuse_refuses_impossible_reduction_axis(self):
+        document = json.loads((ROOT / 'corpus/schedules/b300-indexed-tile-reuse-refusal.json').read_text())
+        for target in ('sm_100a', 'sm_103a'):
+            with self.subTest(target=target):
+                document['target'] = target
+                assessment = self.compiler.assess(document)
+                self.assertFalse(assessment.lowering_eligible)
+                self.assertIn('TRITON_INDEXED_TILE_REUSE', [f.code for f in assessment.findings])
+
     def _launch_authority(self):
         manifest = TensorLaunchManifest.for_workload(self.workload, 'primary', target='sm_103a',
             kernel_name='kernel', grid=[1, 1, 1], block=[128, 1, 1],

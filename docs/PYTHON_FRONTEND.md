@@ -74,6 +74,8 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 出现一次，因此这个例子的结果为 `[J,D]`；不是两个 J 维的笛卡尔积。索引 Buffer 会成为
 load 的显式读取和依赖，重复使用同一个索引不会产生重复读取边。`out=` 也执行相同验证。
 这段语法当前只用于 global load，不扩展 indexed store、atomic 或算术的语义。
+同一次 buffer-indexed load 不能重复使用同一个分块坐标，例如 `data[p, idx, p]`
+中的 p 若代表一个 tile 会被拒绝；标量 program 坐标的重复不受此限制。
 
 `lm.range(buffer, dimension=..., tile=..., name=...)` 声明循环，循环体里的操作只构造一次。
 其 `num_stages` 和 `loop_unroll_factor` 默认为 1，其余现有布尔 range options 默认为 false；

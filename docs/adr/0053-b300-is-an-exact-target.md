@@ -14,6 +14,10 @@ IR: rank-one INT32 register indices share one zipped shape, appear once in the
 ordered read set, and participate in normal dependency/lifetime analysis.
 Explicit destinations cannot bypass index validation; other indexed operations
 remain refused by this frontend slice.
+Independent review exposed a repeated tiled-coordinate mismatch in indexed
+loads. Python and equivalent JSON/Triton preflight now refuse this pattern;
+scalar program coordinates may still repeat. The impossible-reduction-axis
+reproducer is retained as a separate negative Corpus case.
 Workload v2 successors retain the three operators' mathematics, ABI, input domains,
 15 cases and tolerances, and explicitly select B300 corpus seeds. Historical
 Workloads, B200 Target bytes, releases, calibrations and evidence stay immutable.

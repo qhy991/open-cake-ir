@@ -133,6 +133,7 @@
     "corpus/schedules/b300-persistent-target-facts-missing.json",
     "examples/python/b300_rmsnorm.py",
     "examples/python/b300_gemm_bias.py",
-    "examples/python/b300_indexed_gather.py"
+    "examples/python/b300_indexed_gather.py",
+    "corpus/schedules/b300-indexed-tile-reuse-refusal.json"
   ]
 }

@@ -1248,6 +1248,19 @@
         "schedule_sha256": "64d896502df0e3ae770883ecb51fd2cfec584a862f2fa9ba20352c1abfd91134",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "b300-indexed-tile-reuse-refusal",
+      "schedule": "corpus/schedules/b300-indexed-tile-reuse-refusal.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TRITON_INDEXED_TILE_REUSE"
+        ],
+        "schedule_sha256": "6d9e7d3286f858d3cb5dd5e6cc9caa9819cdd41c20de1f431406373838c542ed",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

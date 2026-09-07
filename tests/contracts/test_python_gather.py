@@ -78,6 +78,27 @@ class PythonGatherTests(unittest.TestCase):
         with self.assertRaisesRegex(FrontendError, 'buffer-indexed destinations'):
             parse(source)
 
+    def test_repeated_tiled_coordinate_refuses_the_impossible_reduction(self):
+        source = '''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="repeat-domain", target="sm_103a", backend="triton", entry_point="repeat_domain")
+def f(lm, data: cake.Tensor((8,8,8), "fp32"), ids: cake.Tensor((4,), "int32"),
+      output: cake.Tensor((8,4), "fp32", mode="output")):
+    compute = lm.role(warps=[0,1,2,3])
+    p = lm.program(data, axis=0, dimension=0, tile=4)
+    with compute:
+        idx = lm.load(ids[:], id="load_ids")
+        values = lm.load(data[p, idx, p], id="gather")
+        reduced = lm.reduce(values, op="sum", axis=2, scope="cta", id="reduce")
+        lm.store(output[p, :], reduced, id="store")
+'''
+        with self.assertRaisesRegex(FrontendError, 'cannot repeat a tiled coordinate'):
+            parse(source)
+        scalar = source.replace('tile=4)', 'tile=1)').replace(
+            '        reduced = lm.reduce(values, op="sum", axis=2, scope="cta", id="reduce")\n', '').replace(
+            'lm.store(output[p, :], reduced', 'lm.store(output[p, :], values')
+        document = parse(scalar).document
+        self.assertEqual(next(b['shape'] for b in document['buffers'] if b['name'] == 'values'), [4])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,0 +1,218 @@
+{
+  "access_maps": [
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "ids",
+      "indices": [
+        {
+          "dimension": 0,
+          "source": "dimension"
+        }
+      ],
+      "operation": "load_ids"
+    },
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "data",
+      "indices": [
+        {
+          "name": "p",
+          "source": "program_tile"
+        },
+        {
+          "name": "idx",
+          "source": "buffer"
+        },
+        {
+          "name": "p",
+          "source": "program_tile"
+        }
+      ],
+      "operation": "gather"
+    },
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "output",
+      "indices": [
+        {
+          "name": "p",
+          "source": "program_tile"
+        },
+        {
+          "dimension": 1,
+          "source": "dimension"
+        }
+      ],
+      "operation": "store"
+    }
+  ],
+  "allocations": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "dtype": "fp32",
+      "mode": "input",
+      "name": "data",
+      "shape": [
+        8,
+        8,
+        8
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "int32",
+      "mode": "input",
+      "name": "ids",
+      "shape": [
+        4
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "output",
+      "name": "output",
+      "shape": [
+        8,
+        4
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "int32",
+      "mode": "scratch",
+      "name": "idx",
+      "shape": [
+        4
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "values",
+      "shape": [
+        4,
+        4,
+        4
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "reduced",
+      "shape": [
+        4,
+        4
+      ],
+      "space": "register"
+    }
+  ],
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "gather_repeat"
+  },
+  "metadata": {},
+  "operations": [
+    {
+      "id": "load_ids",
+      "kind": "load",
+      "parameters": {
+        "movement": "global"
+      },
+      "reads": [
+        "ids"
+      ],
+      "role": "compute",
+      "writes": [
+        "idx"
+      ]
+    },
+    {
+      "depends_on": [
+        "load_ids"
+      ],
+      "id": "gather",
+      "kind": "load",
+      "parameters": {
+        "movement": "global"
+      },
+      "reads": [
+        "data",
+        "idx"
+      ],
+      "role": "compute",
+      "writes": [
+        "values"
+      ]
+    },
+    {
+      "depends_on": [
+        "gather"
+      ],
+      "id": "reduce",
+      "kind": "reduce",
+      "parameters": {
+        "axis": 2,
+        "op": "sum",
+        "scope": "cta"
+      },
+      "reads": [
+        "values"
+      ],
+      "role": "compute",
+      "writes": [
+        "reduced"
+      ]
+    },
+    {
+      "depends_on": [
+        "reduce"
+      ],
+      "id": "store",
+      "kind": "store",
+      "parameters": {
+        "coalesced": true
+      },
+      "reads": [
+        "reduced"
+      ],
+      "role": "compute",
+      "writes": [
+        "output"
+      ]
+    }
+  ],
+  "outputs": [
+    "output"
+  ],
+  "pipelines": [],
+  "program_map": {
+    "axes": [
+      {
+        "axis": 0,
+        "buffer": "data",
+        "dimension": 0,
+        "name": "p",
+        "tile": 4
+      }
+    ]
+  },
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "schedule_id": "b300-indexed-tile-reuse-refusal",
+  "schema_version": 1,
+  "target": "sm_103a",
+  "tile_loops": []
+}
