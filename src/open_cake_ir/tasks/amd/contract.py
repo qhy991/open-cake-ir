@@ -308,4 +308,3 @@ def _validate_llama_q4_mmvq_contract(document: Mapping[str, object]) -> None:
     )
     if observed != expected_cases:
         raise ValueError("llama Q4 MMVQ workload cases differ")
-

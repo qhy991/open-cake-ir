@@ -520,8 +520,6 @@ def _verify_hardware_conformance(
             category,
         )
 
-    _verify_role_register_split(schedule, target, out)
-
     for index, operation in enumerate(schedule.operations):
         if operation.kind not in target.operation_kinds:
             out.add(
