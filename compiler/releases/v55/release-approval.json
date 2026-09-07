@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "63fd0565b6919aaa916f8f86a648faf91838c1e1bf781fee6611d5f93840a7b2"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a079b7-7bd7-76b1-920e-2080a122bacb",
+    "author_session_id": "01a079ba-3093-72a1-9ca3-b7269d5bf2cd"
+  },
+  "approval_basis": "Independently reviewed exact combined source commit 95fbda2c1c8efb98a58679fa5fc8b6ef97e00842 against main d169128 and the three separately reviewed CuTe, Finding and runtime submissions. Own local session/turn metadata records gpt-6-astra max and reviewer session 01a079b7-7bd7-76b1-920e-2080a122bacb, distinct from integration author 01a079ba-3093-72a1-9ca3-b7269d5bf2cd; this is workflow provenance, not cryptographic authentication. The independently reconstructed normalized v55-draft full Corpus Gate matches the committed Gate: 86/86 cases, 124 bound source files, all 26 Compiler Python modules covered, with no resolved Compiler imports of Lab, Evaluation or Evidence. P1-P8 review finds no new IR vocabulary or unsupported analysis claim: one Finding class retains category, severity and separate dispositions; CuTe loop controls refuse locally and pipeline stages use the same signaller scope as emission; the default emitted corpus behavior and existing expectations remain intact. Independent per-item tests/probes and combined CuTe refusal plus advisory-hint CLI/Lab/QSA probes passed; both Python locations survive, structural assess remains distinct from refused lower, and no output is created by the refused lower. Integration adds only agreed portable test selectors and the capture tool to the planned 51-path Executor closure. Historical releases, current-main scope/scalar/R2 behavior and existing Cost calibration bindings are preserved. No actionable source defect found. Approval authorizes this exact Compiler Gate only. Full integrated portable CI, source-bound Lab next-turn and release-cycle fixtures remain for the subsequent authorized successor cycle; no GPU/provider execution, live-host qualification, measurement, model-calibration promotion, release lock or main publication is claimed by this review."
+}
