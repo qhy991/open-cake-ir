@@ -69,10 +69,20 @@ class FindingCliContractTests(unittest.TestCase):
 class CliContractTests(unittest.TestCase):
     def test_preflight_forwards_explicit_empirical_model_to_the_existing_owner(self) -> None:
         lock = Lab(ROOT).preflight(ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json")
-        with patch("open_cake_ir.cli.Lab.preflight", return_value=lock) as preflight:
-            with redirect_stdout(StringIO()):
-                self.assertEqual(main(["lab", "preflight", "/external/study.json", "--empirical-cost-model", "/external/model.json"]), 0)
-        preflight.assert_called_once_with(Path("/external/study.json"), empirical_cost_model_path=Path("/external/model.json"))
+        for binding in (None, Path("/external/bindings.json")):
+            with self.subTest(binding=binding):
+                arguments = ["lab", "preflight", "/external/study.json",
+                             "--empirical-cost-model", "/external/model.json"]
+                if binding is not None:
+                    arguments.extend(["--execution-bindings", str(binding)])
+                with patch("open_cake_ir.cli.Lab.preflight", return_value=lock) as preflight:
+                    with redirect_stdout(StringIO()):
+                        self.assertEqual(main(arguments), 0)
+                preflight.assert_called_once_with(
+                    Path("/external/study.json"),
+                    empirical_cost_model_path=Path("/external/model.json"),
+                    execution_bindings_path=binding,
+                )
 
     def test_compiler_text_keeps_acceptance_lowering_and_diagnostic_impact_separate(self) -> None:
         cases = (
