@@ -621,7 +621,7 @@ def main() -> int:
                 ]
             )
             candidate_media_type = (
-                "application/json" if arm == "open_cake" else "text/x-cuda"
+                "text/x-cuda" if arm == "direct_cuda" else "application/json"
             )
             for phase, turn in (("initial", initial), ("resumed", resumed)):
                 objects.extend(

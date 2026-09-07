@@ -432,7 +432,34 @@ class ProviderQualificationContractTests(unittest.TestCase):
             for member in envelope["candidates"]:
                 self.assertEqual(set(member), {"kernel_source", "compile_constants", "compile_options", "grid"})
                 self.assertIn("def qualification_2_", member["kernel_source"])
-            self.assertTrue(evidence.audit_run("native-ralph").archive_integrity)
+            audit = evidence.audit_run("native-ralph")
+            self.assertTrue(audit.archive_integrity)
+            self.assertEqual(audit.endpoint["arms_qualified"], ["open_cake", "native_triton"])
+            for phase, turn in (("initial", 1), ("resumed", 2)):
+                refs = [item for item in observed["objects"]
+                        if item["role"].startswith(f"native_triton_{phase}_candidate_")]
+                self.assertEqual(len(refs), 2)
+                for index, reference in enumerate(refs):
+                    self.assertEqual(reference["media_type"], "application/json")
+                    member = json.loads(evidence.read_object(reference))
+                    self.assertEqual(set(member), {"kernel_source", "compile_constants", "compile_options", "grid"})
+                    self.assertIn(f"def qualification_{turn}_{index}", member["kernel_source"])
+
+    def test_unsupported_schema_pair_is_rejected_before_creating_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable)
+            schema = root / "unsupported-schema.json"
+            schema.write_text(json.dumps({"properties": {"arm": {"enum": ["open_cake", "unknown"]}}}))
+            completed, receipt_path, anchor_path, evidence_root = self._run_qualification(
+                root, executable, provider_revision="unsupported-pair-fixture",
+                run_id="unsupported-pair", output_schema=schema,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(b"supported arm pair", completed.stderr)
+            for path in (receipt_path, anchor_path, evidence_root, root / "workspace"):
+                self.assertFalse(path.exists())
 
     def test_incomplete_two_turn_observation_cannot_issue_a_live_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
