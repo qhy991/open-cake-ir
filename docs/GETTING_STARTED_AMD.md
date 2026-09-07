@@ -144,6 +144,11 @@ source for its old descriptors. The unchanged
 original dates, source commits and evidence meaning. Their observations do not qualify
 the successor source tree.
 
+The common runtime's B200 source-bound successor preserves the baseline v51 host
+declaration explicitly. Updating that source binding does not repeat live host admission;
+actual execution must still admit the recorded host. It does not inherit the concurrent
+B300 branch's host merely because that descriptor reserves a higher historical id.
+
 The concurrent B300 branch at `bfc446e384b87634daf5a289a35bc1e36bbad9ff` already used
 Compiler v56 and B200 Executor v52. Only its
 [release reservation metadata](../compiler/releases/v56/README.md) is retained here;
