@@ -20,7 +20,7 @@ representation, verification, lowering, or analysis gaps. The current distributi
 - **第一次看项目：** [中文 Wiki](docs/wiki/README.md)，按问题找答案。
 - **想马上试用：** [不需要 GPU 的入门教程](docs/GETTING_STARTED.md)。
 - **想用代码编写执行计划：** [Python 前端](docs/zh-CN/PYTHON_FRONTEND.md)，支持检查与生成，并保留 JSON 接口。
-- **想在 Apple M2 上运行与测量：** [Metal 入门](docs/metal.zh-CN.md) · [English guide](docs/metal.md)，涵盖 FP32 逐元素计算、行归约与加权 RMSNorm。
+- **想在 Apple M1 Pro / M2 上运行与测量：** [Metal 入门](docs/metal.zh-CN.md) · [English guide](docs/metal.md)，涵盖 FP32 逐元素计算、行归约与加权 RMSNorm。
 - **想知道系统有什么用：** [系统全貌](docs/ARCHITECTURE.md)。
 - **想看算子怎么算：** [算子图解](docs/wiki/operators.md)和 [IR 基本操作](docs/wiki/primitives.md)。
 - **想看现在发布了什么：** [自动生成的当前状态](reports/current/STATUS.md)。

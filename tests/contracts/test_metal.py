@@ -242,6 +242,11 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
             self.assertEqual(self.compiler.rank([assessment]), ((), (assessment.schedule_id,)))
             self.assertIsNone(residency_upper_bound(Schedule.from_dict(document), target))
             self.assertIsNone(cost(Schedule.from_dict(document), target))
+            profile = self.compiler.profile(assessment).as_dict()
+            self.assertEqual(profile["ncu_metrics"], [])
+            self.assertIsNone(profile["residency"])
+            self.assertTrue(any("no calibrated performance model" in reason
+                                for reason in profile["abstentions"]))
         wrong = make_document()
         self.assertIn("METAL_TARGET_UNSUPPORTED", [f.code for f in metal.preflight(Schedule.from_dict(wrong), target)])
         wrong["target"] = "apple_gpu_family7"

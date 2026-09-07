@@ -23,7 +23,7 @@ Reading companions explain the material in simpler language. Detailed tables and
 | 论文对照约定：论文说了什么，本项目证明了什么 | [阅读](zh-CN/PAPER_CONTRACT.md) | [Read](PAPER_CONTRACT.md) |
 | 执行手册：从准备到复查，一步步做什么 | [阅读](zh-CN/RUNBOOK.md) | [Read](RUNBOOK.md) |
 | 用 Python 编写执行计划 | [阅读](zh-CN/PYTHON_FRONTEND.md) | [Read](en/PYTHON_FRONTEND.md) |
-| Apple M2 的 Metal 逐元素计算、行归约、加权 RMSNorm 与测量 | [阅读](metal.zh-CN.md) | [Read](metal.md) |
+| Apple M1 Pro / M2 的 Metal 逐元素计算、行归约、加权 RMSNorm 与测量 | [阅读](metal.zh-CN.md) | [Read](metal.md) |
 | 当前 IR 详解：结构、语义与代码组织 | [阅读](IR_GUIDE.md) | [Read](en/IR_GUIDE.md) |
 | 旧顶层设计入口：现在应该读哪里 | [阅读](zh-CN/TOP_LEVEL_DESIGN.md) | [Read](TOP_LEVEL_DESIGN.md) |
 | Open Cake 中文 Wiki | [阅读](wiki/README.md) | [Read](en/wiki/README.md) |

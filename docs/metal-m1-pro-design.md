@@ -1,30 +1,24 @@
 # M1 Pro successor design
 
-The exact target `apple_gpu_family7` admits `Apple M1 Pro`, independently of
-`apple_gpu_family8` / `Apple M2`. The target, parser, lowering preflight, host
-projection and native runtime must agree; no automatic target downgrade exists.
-Apple7 supports 1024 threads and 32 KiB threadgroup memory, per the
-[Apple feature tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf).
-Pipeline limits and SIMD width are still checked on the observed device.
+The [Metal guide](metal.md) owns exact-target selection, supported operations, runtime
+requirements and measurement semantics. This proposal extends that path to Apple M1 Pro.
+The [Apple7 target definition](../compiler/targets/apple_gpu_family7.json) declares
+1024 threads and 32 KiB threadgroup memory; the
+current lowering uses one 32-lane threadgroup and no threadgroup memory. These limits
+are not an occupancy or timing calibration. Pipeline limits and SIMD width remain
+runtime checks on the observed device.
 
-P1/P3: reuse canonical tensor authoring and existing primitives without a second
-layout language. P2/P8: preserve 32-lane striped ownership, explicit launch metadata,
-safe math and inspectable source. P4/P5/P7: extend exact-target parser/refusals together;
-Apple7 has no CUDA capability, occupancy facts or calibrated cost model. P6: preserve
-all existing Corpus expectations, run the complete Gate and focused CPU/host tests,
-and obtain independent ADR 0052 review before release or GPU evaluation.
+P1/P3: reuse canonical tensor authoring and existing primitives. P2/P8: preserve 32-lane
+striped ownership, explicit launch metadata and safe math. P4/P5/P7: extend exact-target
+parser/refusals and analysis abstentions together. P6: preserve Corpus expectations,
+run the full Gate and focused portable tests, then obtain independent
+[ADR 0052 review](adr/0052-independent-agent-release-review.md) before release or GPU evaluation.
+Develop in an isolated successor worktree; pinned Git retains released source bytes,
+and cycle commands assign Compiler and affected Executor successor identities.
 
-Develop only in the isolated successor worktree; the original released checkout
-and pinned Git retain the existing Compiler and Executor source bytes. Compiler
-and affected Executor successor identities are assigned by their cycle commands.
-
-Bounded local known-kernel optimization compares four distinct RMSNorm DAGs at
-(128, 1024): canonical, weight first, prescaled square, and scale weights first.
-The last changes the multiplication dependency after the inverse RMS calculation;
-it is a performance hypothesis, not an assumed gain. Each run retains one randomized
-search and two independent confirmation rounds, A/A control and separate profiling.
-Run three complete repetitions with unchanged inputs, tolerances and stopping rules.
-No cost ranking is available for Apple7; record this abstention before GPU time.
-Raw receipts and the derived experiment report remain outside every checkout.
-Future changes to lane mapping, vector access, shared reductions or dtype support
-need their own legality/analysis update and successor review, justified by results.
+The bounded local experiment compares the guide's four RMSNorm DAGs at `(128, 1024)`.
+Run three complete repetitions with unchanged inputs, tolerances and stopping rules;
+retain raw receipts and the derived report outside every checkout. Each repetition
+uses the guide's search, confirmation, noise-control and profiling protocol. Results
+must justify any further change to lane mapping, vector access, shared reductions or
+dtype support, together with its legality/analysis updates and successor review.

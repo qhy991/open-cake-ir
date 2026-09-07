@@ -1,9 +1,15 @@
 # Authoring and measuring Apple Metal programs
 
 Write a Python Schedule, read localized compiler findings, and inspect the emitted Metal
-before testing it. The exact targets are `apple_gpu_family7` on `Apple M1 Pro` and
-`apple_gpu_family8` on `Apple M2`.
-Python and JSON use the same canonical Schedule; another GPU is never an implicit fallback.
+before testing it. Python and JSON use the same canonical Schedule.
+
+| Exact device | Schedule target and CLI `--target` |
+| --- | --- |
+| Apple M1 Pro | `apple_gpu_family7` |
+| Apple M2 | `apple_gpu_family8` (CLI default) |
+
+The runtime checks both device name and Metal family; another model in the same family
+is not supported implicitly. The examples declare M2; select M1 Pro as shown below.
 
 The [elementwise example](../examples/python/metal_elementwise.py),
 [row reduction](../examples/python/metal_row_sum.py), and
@@ -15,7 +21,8 @@ from open_cake_ir.compiler import Compiler, frontend
 
 compiler = Compiler.load(".", "compiler/revision.lock.json")
 source = frontend.read_schedule("examples/python/metal_rmsnorm.py")
-assessment = compiler.assess(source.document)
+document = {**source.document, "target": "apple_gpu_family7"}
+assessment = compiler.assess(document)
 for finding in assessment.findings:
     print(finding.code, finding.path, finding.message)
     print(source.location_for(finding.path))
@@ -68,18 +75,22 @@ env PYTHONPATH=src python3 tools/metal/benchmark.py \
   --target apple_gpu_family7 --output-root /absolute/external/metal-measurements
 ```
 
-Each command verifies a reviewed released Compiler and committed, clean runtime sources,
-then creates a fresh external receipt. Correctness retains the 60 elementwise/sum/max cases
-and adds 35 RMSNorm cases. The [RMSNorm contract](../tools/metal/rmsnorm.py) owns the equation,
+Each command creates a fresh external receipt, then verifies committed, clean runtime
+sources and a reviewed released Compiler that binds the selected target before building
+the host runner or dispatching GPU work. A release without that target must be superseded
+through the [Compiler release process](adr/0052-independent-agent-release-review.md).
+
+Correctness covers 60 elementwise/sum/max cases and 35 RMSNorm cases. The [RMSNorm contract](../tools/metal/rmsnorm.py) owns the equation,
 input ranges, seeds, epsilon, tolerances and shapes. It includes zeros, normal bounded inputs,
 epsilon-dominated inputs, negative/zero weights, and widths 1, 7, 32, 65, 257, 1024 and 4096.
 The independent high-precision CPU oracle uses fixed `atol=rtol=2e-5` for RMSNorm.
 
-The [benchmark protocol](../tools/metal/benchmark.py) compares four equivalent RMSNorm
-formula DAGs on the fixed primary `(128, 1024)` shape. Handwritten serial and SIMD references
-have explicit source provenance and the same input bytes and oracle. They are not forged
-Compiler-generated artifacts or a previous-Compiler RMSNorm result: the older serial
-Compiler could not lower rsqrt. This is known-kernel reproduction/optimization.
+The [benchmark protocol](../tools/metal/benchmark.py) compares four mathematically
+equivalent RMSNorm DAGs on the fixed primary `(128, 1024)` shape: canonical, weight first,
+prescaled square, and scale weights first. Different FP32 evaluation orders must pass the
+same oracle tolerances; none is assumed faster. Handwritten serial and SIMD references
+retain explicit source provenance and use the same input bytes and oracle. This is
+known-kernel reproduction/optimization.
 
 One process constructs every treatment before comparison. A reference-only pilot chooses
 a fixed batch count from bounded powers; randomized matched sweeps then perform one search
@@ -111,19 +122,19 @@ called kernel cycles. Occupancy, bandwidth and instruction counters are not infe
 See Apple's [counter sampling](https://developer.apple.com/documentation/metal/sampling-gpu-data-into-counter-sample-buffers).
 
 `feedback.json` gives candidate disposition, localized findings, search/confirmation
-results and rejection ownership through the existing Lab routing vocabulary. There is no
-calibrated Apple ranker or inferred ranking inversion. This local evaluation is not a
-qualified Study/provider campaign, framework integration, serving or end-to-end result.
+results and rejection ownership through the existing Lab routing vocabulary. Both Apple
+targets retain cost-model abstention before GPU dispatch: there is no calibrated Apple
+ranker, occupancy, physical-register, spill, bandwidth or latency estimate, and no inferred
+ranking inversion. This local evaluation is not a qualified Study/provider campaign,
+framework integration, serving or end-to-end result.
 Portable tests dispatch no GPU work:
 
 ```sh
 env PYTHONPATH=src python3 -m unittest \
-  tests.contracts.test_metal_runtime tests.contracts.test_metal_benchmark
+  tests.contracts.test_metal tests.contracts.test_metal_runtime tests.contracts.test_metal_benchmark
 ```
 
-For M2 pass `--target apple_gpu_family8` (the backward-compatible default).
-The selected target is retained in every Schedule, manifest and receipt. The fourth
-RMSNorm DAG scales weights by inverse RMS before multiplying the input. All four
-are hypotheses under the same oracle; no improvement is assumed. Cost-model
-abstention is retained before dispatch, without borrowing another GPU calibration.
-See the [M1 Pro successor design](metal-m1-pro-design.md) for scope and future work.
+`test_metal` uses a native C++ adapter for generated-body CPU semantics when a C++ compiler
+is available; it does not qualify Metal compilation, device correctness or performance.
+See the [M1 Pro successor design](metal-m1-pro-design.md) for the compiler-change review
+basis and the bounded iteration plan.
