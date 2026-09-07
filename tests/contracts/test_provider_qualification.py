@@ -26,6 +26,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
         exit_nonzero: bool = False,
         tool_rich: bool = False,
         startup_error: bool = False,
+        wrong_resumed_turn: bool = False,
+        mutate_task: bool = False,
     ) -> None:
         path.write_text(
             textwrap.dedent(
@@ -41,15 +43,17 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     raise SystemExit(9)
                 resumed = arguments[:2] == ["exec", "resume"]
                 prompt = arguments[-1]
-                candidate_line = next(
-                    line for line in prompt.splitlines()
-                    if line.startswith("CANDIDATE_PATH_JSON=")
-                )
-                candidate = Path(json.loads(candidate_line.split("=", 1)[1]))
-                arm_lines = [
-                    line for line in prompt.splitlines() if line.startswith("ARM=")
-                ]
-                arm = arm_lines[0].split("=", 1)[1] if arm_lines else "open_cake"
+                projection = json.loads(prompt.split("\\n\\n", 1)[1])
+                if projection["kind"] != "task_agents_ralph_v1":
+                    raise SystemExit(38)
+                for field, name in (("task_markdown", "TASK.md"), ("agents_markdown", "AGENTS.md")):
+                    if projection[field].encode() != Path(name).read_bytes():
+                        raise SystemExit(39)
+                plan_line = next(line for line in projection["task_markdown"].splitlines()
+                                 if line.startswith("QUALIFICATION_PLAN_JSON="))
+                plan = json.loads(plan_line.split("=", 1)[1])
+                candidate = Path(plan["candidate_path"])
+                arm = projection["arm"]
                 thread_id = (
                     "11234567-89ab-cdef-0123-456789abcdef"
                     if arm != "open_cake"
@@ -75,31 +79,23 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 if arm not in allowed_arms:
                     raise SystemExit(37)
                 turn = 2 if resumed else 1
+                if projection["state_card"] != {{"turn": turn}}:
+                    raise SystemExit(40)
                 change = "update" if resumed else "add"
                 if candidate.exists() is not resumed:
                     raise SystemExit(35)
-                candidate_set_lines = [
-                    line for line in prompt.splitlines()
-                    if line.startswith("EXPECTED_CANDIDATE_SET_JSON=")
-                ]
-                if candidate_set_lines:
-                    expected = json.loads(candidate_set_lines[0].split("=", 1)[1])
-                    candidate.write_text(
-                        json.dumps(expected, sort_keys=True, separators=(",", ":")) + "\\n",
-                        encoding="utf-8",
-                    )
-                else:
-                    expected_line = next(
-                        line for line in prompt.splitlines()
-                        if line.startswith("Write exactly this JSON object: ")
-                    )
-                    candidate.write_text(
-                        json.dumps(
-                            json.loads(expected_line.split(": ", 1)[1]),
-                            sort_keys=True,
-                        ),
-                        encoding="utf-8",
-                    )
+                selected_turn = 1 if resumed and {wrong_resumed_turn!r} else turn
+                declared = next(item for item in plan["turns"] if item["turn"] == selected_turn)
+                expected = declared["submission"]
+                candidate.write_text(
+                    json.dumps(expected, sort_keys=True, separators=(",", ":")) + "\\n",
+                    encoding="utf-8",
+                )
+                if {mutate_task!r} and not resumed:
+                    task = Path("TASK.md")
+                    task.chmod(0o644)
+                    task.write_text(task.read_text() + "changed by provider\\n")
+                    task.chmod(0o444)
                 terminal_document = {{
                     "arm": arm,
                     "candidate_written": True,
@@ -411,6 +407,67 @@ class ProviderQualificationContractTests(unittest.TestCase):
             audit = evidence.audit_run("codex-provider-ralph")
             self.assertTrue(audit.archive_integrity)
             self.assertEqual(audit.endpoint_observation, "qualified")
+            observed = next(event["payload"] for event in evidence.replay_events(audit.run_id)
+                            if event["kind"] == "provider_qualification_observed")
+            objects = {item["role"]: item for item in observed["objects"]}
+            for arm in ("open_cake", "direct_cuda"):
+                projections = []
+                for phase, turn in (("initial", 1), ("resumed", 2)):
+                    raw = evidence.read_object(objects[f"{arm}_{phase}_task_projection"])
+                    invocation = json.loads(evidence.read_object(objects[f"{arm}_{phase}_invocation"]))
+                    delivered = invocation["argv"][-1].split("\n\n", 1)[1].encode()
+                    self.assertEqual(delivered, raw)
+                    projection = json.loads(raw)
+                    self.assertEqual(projection["state_card"], {"turn": turn})
+                    self.assertEqual(projection["task_markdown"].encode(),
+                                     (workspace / arm / "TASK.md").read_bytes())
+                    self.assertEqual(projection["agents_markdown"].encode(),
+                                     (workspace / arm / "AGENTS.md").read_bytes())
+                    plan_line = next(line for line in projection["task_markdown"].splitlines()
+                                     if line.startswith("QUALIFICATION_PLAN_JSON="))
+                    plan = json.loads(plan_line.split("=", 1)[1])
+                    self.assertEqual([item["turn"] for item in plan["turns"]], [1, 2])
+                    envelope = json.loads(evidence.read_object(
+                        objects[f"{arm}_{phase}_submission_envelope"]))
+                    self.assertEqual(envelope, plan["turns"][turn - 1]["submission"])
+                    projections.append(projection)
+                self.assertEqual(
+                    {key: value for key, value in projections[0].items() if key != "state_card"},
+                    {key: value for key, value in projections[1].items() if key != "state_card"},
+                )
+
+    def test_qualification_rejects_the_wrong_task_plan_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable, wrong_resumed_turn=True)
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root, executable, provider_revision="wrong-task-turn-fixture",
+                run_id="wrong-task-turn",
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertFalse(receipt_path.exists())
+            audit = EvidenceStore.open(evidence_root).audit_run("wrong-task-turn")
+            self.assertEqual(audit.endpoint_observation, "missing")
+            self.assertEqual(audit.protocol_adherence, "provider_fault")
+
+    def test_qualification_rejects_task_mutation_before_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable, mutate_task=True)
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root, executable, provider_revision="task-mutation-fixture",
+                run_id="task-mutation",
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(b"Ralph task file TASK.md custody differs", completed.stderr)
+            self.assertFalse(receipt_path.exists())
+            candidate = json.loads((root / "workspace/open_cake/candidate-set.json").read_text())
+            self.assertEqual(candidate["candidates"][0]["qualification_turn"], 1)
+            audit = EvidenceStore.open(evidence_root).audit_run("task-mutation")
+            self.assertEqual(audit.endpoint_observation, "missing")
+            self.assertEqual(audit.protocol_adherence, "provider_fault")
 
     def test_native_triton_schema_qualifies_its_actual_pair_through_ralph(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

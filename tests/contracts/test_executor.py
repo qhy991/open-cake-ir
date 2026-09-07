@@ -76,6 +76,9 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             )
             for path in directory.glob("*.py")
         } | {
+            "compiler/targets/sm_100a.json",
+            "compiler/targets/sm_103a.json",
+            "src/open_cake_ir/compiler/target.py",
             "docs/en/PAIRED_TRITON.md",
             "examples/gpu/flash_kmeans_quickstart.py",
             "src/open_cake_ir/__init__.py",

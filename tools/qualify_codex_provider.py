@@ -24,7 +24,13 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     ProviderInvocation,
     ProviderQualificationReceipt,
 )
-from open_cake_ir.lab.task_package import TASK_AGENTS_RALPH_V1  # noqa: E402
+from open_cake_ir.lab.task_package import (  # noqa: E402
+    TASK_AGENTS_RALPH_V1,
+    TaskPackage,
+    materialize_task_package,
+    render_task_request,
+    verify_task_package,
+)
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -53,32 +59,12 @@ def _terminal_message(turn: int, event_contract: str, *, arm: str = "open_cake")
     )
 
 
-def _turn_prompt(
-    candidate: Path,
-    turn: int,
-    *,
-    arm: str,
-    expected_submission: object,
-    tool_instruction: str,
-) -> str:
-    change = "add" if turn == 1 else "update"
-    return (
-        "Read TASK.md and AGENTS.md completely. Continue the same Ralph "
-        f"qualification thread. {tool_instruction}\n"
-        f"CANDIDATE_PATH_JSON={json.dumps(str(candidate.absolute()))}\n"
-        f"ARM={arm}\n"
-        f"EXPECTED_CANDIDATE_SET_JSON={json.dumps(expected_submission, sort_keys=True, separators=(',', ':'), ensure_ascii=False)}\n"
-        f"{change.capitalize()} only {candidate.name}; keep TASK.md and AGENTS.md unchanged."
-    )
-
-
 def _expected_submission(
     arm: str,
     turn: int,
     reference_nonce: str,
     maximum_candidates_per_turn: int,
-    submission_contract: str,
-) -> tuple[object, tuple[bytes, ...]]:
+) -> dict[str, object]:
     if arm == "open_cake":
         members: list[object] = [
             {
@@ -88,7 +74,6 @@ def _expected_submission(
             }
             for index in range(maximum_candidates_per_turn)
         ]
-        projected = tuple(_canonical_json_bytes(member) for member in members)
     elif arm == "native_triton":
         members = [
             {
@@ -104,7 +89,6 @@ def _expected_submission(
             }
             for index in range(maximum_candidates_per_turn)
         ]
-        projected = tuple(_canonical_json_bytes(member) for member in members)
     else:
         members = [
             (
@@ -113,12 +97,72 @@ def _expected_submission(
             )
             for index in range(maximum_candidates_per_turn)
         ]
-        projected = tuple(str(member).encode("utf-8") for member in members)
     return {
         "schema_version": 1,
         "arm": arm,
         "candidates": members,
-    }, projected
+    }
+
+
+def _qualification_package(
+    run_id: str,
+    arm: str,
+    candidate: Path,
+    reference_nonce: str,
+    maximum_candidates_per_turn: int,
+    event_contract: str,
+    tool_instruction: str,
+) -> TaskPackage:
+    plan = {
+        "candidate_path": str(candidate.absolute()),
+        "turns": [
+            {
+                "turn": turn,
+                "change": "add" if turn == 1 else "update",
+                "submission": _expected_submission(
+                    arm, turn, reference_nonce, maximum_candidates_per_turn
+                ),
+                "terminal_message": json.loads(
+                    _terminal_message(turn, event_contract, arm=arm)
+                ),
+            }
+            for turn in (1, 2)
+        ],
+    }
+    task = (
+        "# TASK.md — provider qualification\n\n"
+        f"Prove two-Turn `{arm}` candidate-set add/update behavior.\n\n"
+        "Use only the plan entry whose turn equals the controller StateCard turn. "
+        "Write that entry's complete submission to candidate_path with its declared "
+        "file change, then return its terminal_message as JSON. Do not execute "
+        "either candidate. The plan and both task files stay unchanged between turns.\n\n"
+        "QUALIFICATION_PLAN_JSON=" + _canonical_json_bytes(plan).decode() + "\n"
+    )
+    agents = (
+        "# AGENTS.md — provider qualification\n\n"
+        "Follow the complete TASK.md plan. Write only candidate-set.json. Keep "
+        "TASK.md and AGENTS.md unchanged. Do not use a GPU or network.\n"
+        + tool_instruction + "\n"
+    )
+    return TaskPackage(run_id, arm, task, agents)
+
+
+def _planned_turn(package: TaskPackage, turn: int) -> dict[str, object]:
+    """Read expected behavior from the same immutable TASK the provider receives."""
+
+    prefix = "QUALIFICATION_PLAN_JSON="
+    line = next(line for line in package.task_markdown.splitlines() if line.startswith(prefix))
+    plan = json.loads(line[len(prefix):])
+    return next(item for item in plan["turns"] if item["turn"] == turn)
+
+
+def _planned_candidates(arm: str, plan: dict[str, object]) -> tuple[bytes, ...]:
+    members = plan["submission"]["candidates"]
+    return tuple(
+        str(member).encode("utf-8") if arm == "direct_cuda"
+        else _canonical_json_bytes(member)
+        for member in members
+    )
 
 
 def _validate_invocation(
@@ -313,7 +357,6 @@ def main() -> int:
     ):
         raise ValueError("Codex qualification input custody differs")
     workspace.mkdir(mode=0o750)
-    workspaces = {"open_cake": workspace}
     workspaces = {}
     for arm in qualification_arms:
         arm_workspace = workspace / arm
@@ -333,32 +376,21 @@ def main() -> int:
             }
         )
     ).hexdigest()
-    task_files_by_arm: dict[str, tuple[bytes, bytes]] = {}
+    task_packages: dict[str, TaskPackage] = {}
     for arm, arm_workspace in workspaces.items():
-        task_payload = (
-            "# TASK.md — provider qualification\n\n"
-            f"Prove two-Turn `{arm}` candidate-set add/update behavior.\n\n"
-            f"Frozen qualification nonce: `{reference_nonce}`.\n"
-        ).encode()
-        agents_payload = (
-            "# AGENTS.md — provider qualification\n\n"
-            "Read TASK.md. Write only candidate-set.json. Keep both task files "
-            "unchanged. Do not use a GPU or network.\n"
-        ).encode()
-        for name, payload in (
-            ("TASK.md", task_payload),
-            ("AGENTS.md", agents_payload),
-        ):
-            path = arm_workspace / name
-            path.write_bytes(payload)
-            path.chmod(0o444)
-        task_files_by_arm[arm] = (task_payload, agents_payload)
+        package = _qualification_package(
+            f"{args.run_id}-{arm}", arm, arm_workspace / "candidate-set.json",
+            reference_nonce, maximum_candidates_per_turn, event_contract,
+            tool_instruction,
+        )
+        materialize_task_package(arm_workspace, package)
+        task_packages[arm] = package
     task_bundle = {
         arm: {
-            "task_markdown": values[0].decode(),
-            "agents_markdown": values[1].decode(),
+            "task_markdown": package.task_markdown,
+            "agents_markdown": package.agents_markdown,
         }
-        for arm, values in task_files_by_arm.items()
+        for arm, package in task_packages.items()
     }
     reference_bundle = json.dumps(
         task_bundle,
@@ -409,6 +441,7 @@ def main() -> int:
         for arm in qualification_arms:
             arm_workspace = workspaces[arm]
             candidate = arm_workspace / "candidate-set.json"
+            package = task_packages[arm]
             builder = CodexInvocationBuilder(
                 executable=executable,
                 provider_revision=args.provider_revision,
@@ -425,21 +458,11 @@ def main() -> int:
                 reference_visibility="workspace_task_files",
             )
             configuration_sha256s.add(builder.configuration_sha256)
-            expected_initial, initial_candidates = _expected_submission(
-                arm,
-                1,
-                reference_nonce,
-                maximum_candidates_per_turn,
-                submission_contract,
-            )
+            initial_plan = _planned_turn(package, 1)
+            verify_task_package(arm_workspace, package)
+            initial_prompt, initial_projection = render_task_request(package, {"turn": 1})
             initial_invocation = builder.build(
-                _turn_prompt(
-                    candidate,
-                    1,
-                    arm=arm,
-                    expected_submission=expected_initial,
-                    tool_instruction=tool_instruction,
-                ),
+                initial_prompt,
                 thread_id=None,
             )
             _validate_invocation(
@@ -450,10 +473,8 @@ def main() -> int:
             initial = adapter.execute(
                 initial_invocation,
                 candidate_path=candidate,
-                expected_change="add",
-                expected_terminal_message=_terminal_message(
-                    1, event_contract, arm=arm
-                ),
+                expected_change=initial_plan["change"],
+                expected_terminal_message=_canonical_json_bytes(initial_plan["terminal_message"]).decode(),
                 event_contract=event_contract,
                 submission_contract=submission_contract,
                 arm=arm,
@@ -462,27 +483,17 @@ def main() -> int:
             _validate_workspace(
                 arm_workspace, candidate, task_files=True
             )
+            verify_task_package(arm_workspace, package)
             initial_submission = candidate.read_bytes()
             if (
-                initial.candidates != initial_candidates
+                initial.candidates != _planned_candidates(arm, initial_plan)
             ):
                 raise ValueError("Codex initial candidate bytes differ")
 
-            expected_resumed, resumed_candidates = _expected_submission(
-                arm,
-                2,
-                reference_nonce,
-                maximum_candidates_per_turn,
-                submission_contract,
-            )
+            resumed_plan = _planned_turn(package, 2)
+            resumed_prompt, resumed_projection = render_task_request(package, {"turn": 2})
             resumed_invocation = builder.build(
-                _turn_prompt(
-                    candidate,
-                    2,
-                    arm=arm,
-                    expected_submission=expected_resumed,
-                    tool_instruction=tool_instruction,
-                ),
+                resumed_prompt,
                 thread_id=initial.thread_id,
             )
             _validate_invocation(
@@ -498,10 +509,8 @@ def main() -> int:
             resumed = adapter.execute(
                 resumed_invocation,
                 candidate_path=candidate,
-                expected_change="update",
-                expected_terminal_message=_terminal_message(
-                    2, event_contract, arm=arm
-                ),
+                expected_change=resumed_plan["change"],
+                expected_terminal_message=_canonical_json_bytes(resumed_plan["terminal_message"]).decode(),
                 event_contract=event_contract,
                 submission_contract=submission_contract,
                 arm=arm,
@@ -510,10 +519,11 @@ def main() -> int:
             _validate_workspace(
                 arm_workspace, candidate, task_files=True
             )
+            verify_task_package(arm_workspace, package)
             resumed_submission = candidate.read_bytes()
             if (
                 (
-                    resumed.candidates != resumed_candidates
+                    resumed.candidates != _planned_candidates(arm, resumed_plan)
                 )
                 or resumed.thread_id != initial.thread_id
                 or initial.provider_tokens <= 0
@@ -541,9 +551,11 @@ def main() -> int:
                 "candidate": candidate,
                 "initial": initial,
                 "initial_invocation": initial_invocation,
+                "initial_projection": initial_projection,
                 "initial_submission": initial_submission,
                 "resumed": resumed,
                 "resumed_invocation": resumed_invocation,
+                "resumed_projection": resumed_projection,
                 "resumed_submission": resumed_submission,
             }
 
@@ -564,9 +576,9 @@ def main() -> int:
             or sha256(output_schema.read_bytes()).hexdigest() != output_schema_sha256
             or (
                 any(
-                    (workspaces[arm] / "TASK.md").read_bytes() != values[0]
-                    or (workspaces[arm] / "AGENTS.md").read_bytes() != values[1]
-                    for arm, values in task_files_by_arm.items()
+                    (workspaces[arm] / "TASK.md").read_bytes() != package.task_markdown.encode()
+                    or (workspaces[arm] / "AGENTS.md").read_bytes() != package.agents_markdown.encode()
+                    for arm, package in task_packages.items()
                 )
             )
         ):
@@ -606,6 +618,12 @@ def main() -> int:
                     _put_json(
                         evidence, _invocation_document(resumed_invocation)
                     ).reference(f"{prefix}resumed_invocation"),
+                    evidence.put(
+                        observation["initial_projection"], media_type="application/json"
+                    ).reference(f"{prefix}initial_task_projection"),
+                    evidence.put(
+                        observation["resumed_projection"], media_type="application/json"
+                    ).reference(f"{prefix}resumed_task_projection"),
                 ]
             )
             objects.extend(
