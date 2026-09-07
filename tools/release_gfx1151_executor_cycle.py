@@ -57,7 +57,12 @@ def release_gfx1151_executor(
     target = Target.load(root / "compiler/targets/gfx1151.json")
     if target.target_id != "gfx1151" or target.triton_target is None:
         raise ValueError("gfx1151 Executor requires the exact Compiler Target")
-    requirements = {"target": target.target_id, "triton_target": dict(target.triton_target)}
+    requirements = {
+        "target": target.target_id,
+        "triton_target": dict(target.triton_target),
+        "binary_role": "hsaco",
+        "assembly_role": "amdgcn",
+    }
     history = max((ordinal for _, _, ordinal in _released_gfx1151(root)), default=0)
     executor_id = f"open-cake-ir-gfx1151-v{history + 1}"
     runtime = root / "runtime/executors"
