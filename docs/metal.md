@@ -1,7 +1,8 @@
 # Authoring and measuring Apple Metal programs
 
 Write a Python Schedule, read localized compiler findings, and inspect the emitted Metal
-before testing it. The exact supported target is `apple_gpu_family8` on `Apple M2`.
+before testing it. The exact targets are `apple_gpu_family7` on `Apple M1 Pro` and
+`apple_gpu_family8` on `Apple M2`.
 Python and JSON use the same canonical Schedule; another GPU is never an implicit fallback.
 
 The [elementwise example](../examples/python/metal_elementwise.py),
@@ -62,9 +63,9 @@ checkout with absolute output roots outside every project worktree:
 
 ```sh
 env PYTHONPATH=src python3 tools/metal/check_correctness.py \
-  --output-root /absolute/external/metal-correctness
+  --target apple_gpu_family7 --output-root /absolute/external/metal-correctness
 env PYTHONPATH=src python3 tools/metal/benchmark.py \
-  --output-root /absolute/external/metal-measurements
+  --target apple_gpu_family7 --output-root /absolute/external/metal-measurements
 ```
 
 Each command verifies a reviewed released Compiler and committed, clean runtime sources,
@@ -74,7 +75,7 @@ input ranges, seeds, epsilon, tolerances and shapes. It includes zeros, normal b
 epsilon-dominated inputs, negative/zero weights, and widths 1, 7, 32, 65, 257, 1024 and 4096.
 The independent high-precision CPU oracle uses fixed `atol=rtol=2e-5` for RMSNorm.
 
-The [benchmark protocol](../tools/metal/benchmark.py) compares three equivalent RMSNorm
+The [benchmark protocol](../tools/metal/benchmark.py) compares four equivalent RMSNorm
 formula DAGs on the fixed primary `(128, 1024)` shape. Handwritten serial and SIMD references
 have explicit source provenance and the same input bytes and oracle. They are not forged
 Compiler-generated artifacts or a previous-Compiler RMSNorm result: the older serial
@@ -119,3 +120,10 @@ Portable tests dispatch no GPU work:
 env PYTHONPATH=src python3 -m unittest \
   tests.contracts.test_metal_runtime tests.contracts.test_metal_benchmark
 ```
+
+For M2 pass `--target apple_gpu_family8` (the backward-compatible default).
+The selected target is retained in every Schedule, manifest and receipt. The fourth
+RMSNorm DAG scales weights by inverse RMS before multiplying the input. All four
+are hypotheses under the same oracle; no improvement is assumed. Cost-model
+abstention is retained before dispatch, without borrowing another GPU calibration.
+See the [M1 Pro successor design](metal-m1-pro-design.md) for scope and future work.

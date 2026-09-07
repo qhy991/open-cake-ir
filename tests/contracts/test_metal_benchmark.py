@@ -21,7 +21,7 @@ def protocol_fixture():
     artifacts = [{"id": id, "origin": "compiler_generated"} for id in rmsnorm.FORMULAS]
     artifacts += [{"id": id, "origin": "handwritten_reference"} for id in benchmark.REFERENCES]
     job = {"artifacts": artifacts, "orders": benchmark.orders(list(rmsnorm.FORMULAS))}
-    times = {"canonical": 1.0, "weight_first": 1.2, "prescaled_square": 1.3,
+    times = {"canonical": 1.0, "weight_first": 1.2, "prescaled_square": 1.3, "scale_weights": 1.4,
              "serial_reference": 10.0, "simd_reference": 2.0, "simd_reference_null": 2.0}
     samples = []
     for r, sweeps in enumerate(job["orders"]):
@@ -47,7 +47,7 @@ def change_gpu(sample, value):
 class MetalBenchmarkContracts(unittest.TestCase):
     def test_formulas_are_distinct_canonical_schedules_under_one_contract(self):
         documents = [rmsnorm.document(128, 1024, formula) for formula in rmsnorm.FORMULAS]
-        self.assertEqual(len(documents), 3)
+        self.assertEqual(len(documents), 4)
         normalized = []
         for document in documents:
             schedule = Schedule.from_dict(document)
@@ -57,7 +57,7 @@ class MetalBenchmarkContracts(unittest.TestCase):
             eps = [op for op in document["operations"] if op.get("parameters", {}).get("scalar") == 1e-5]
             self.assertEqual(len(eps), 1)
             normalized.append(json.dumps(document["operations"], sort_keys=True))
-        self.assertEqual(len(set(normalized)), 3)
+        self.assertEqual(len(set(normalized)), 4)
         self.assertEqual(rmsnorm.CONTRACT["atol"], 2e-5)
         self.assertEqual(rmsnorm.CONTRACT["rtol"], 2e-5)
 
@@ -184,7 +184,7 @@ class MetalBenchmarkContracts(unittest.TestCase):
                 def prepare(compiler, document, inputs, oracles, path, device_names, case):
                     case.update(findings=[], static_accepted=True, lowering_eligible=True)
 
-                def reference(rows, columns, execution, inputs, path, device_names):
+                def reference(rows, columns, execution, inputs, path, device_names, *, target):
                     if failure_at == "reference_prepare" and path.name == "simd_reference":
                         raise ValueError("injected handwritten reference preparation failure")
                     return {}

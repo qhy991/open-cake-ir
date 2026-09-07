@@ -60,7 +60,7 @@ func loadManifest(_ manifestPath: String) throws -> (Manifest, [Data?]) {
     }
     try require(rawBuffers.allSatisfy { Set($0.keys) == bufferFields }, "buffer fields differ")
     let manifest = try JSONDecoder().decode(Manifest.self, from: data)
-    try require(manifest.target == "apple_gpu_family8" && manifest.source_language == "metal" &&
+    try require(["apple_gpu_family7", "apple_gpu_family8"].contains(manifest.target) && manifest.source_language == "metal" &&
                 manifest.compiler == "MTLDevice.makeLibrary", "unsupported exact Metal route")
     try require(manifest.language_standard == "metal2.3" && !manifest.fast_math_enabled &&
                 manifest.threadgroup_memory_bytes == 0 &&
@@ -133,8 +133,11 @@ final class Prepared {
         (manifest, inputData) = try loadManifest(path)
         grid = try size(manifest.threadgroups_per_grid, "threadgroups_per_grid")
         threads = try size(manifest.threads_per_threadgroup, "threads_per_threadgroup")
-    try require(manifest.device_names.contains(device.name) && device.supportsFamily(.apple8) &&
-                !device.supportsFamily(.apple9),
+    let exactDevice = manifest.target == "apple_gpu_family7" ? "Apple M1 Pro" : "Apple M2"
+    let exactFamily = manifest.target == "apple_gpu_family7"
+        ? device.supportsFamily(.apple7) && !device.supportsFamily(.apple8)
+        : device.supportsFamily(.apple8) && !device.supportsFamily(.apple9)
+    try require(manifest.device_names == [exactDevice] && device.name == exactDevice && exactFamily,
                 "exact target/device mismatch: observed \(device.name)")
     try require(device.hasUnifiedMemory, "shared host buffers require unified memory")
     let maxThreads = device.maxThreadsPerThreadgroup
@@ -479,7 +482,8 @@ func execute() throws {
         }
     }
     receipt["device"] = device.name
-    receipt["target"] = "apple_gpu_family8"
+    receipt["target"] = device.name == "Apple M1 Pro" ? "apple_gpu_family7"
+        : device.name == "Apple M2" ? "apple_gpu_family8" : "unsupported"
     receipt["capabilities"] = capabilities(device)
     receipt["device_queue_construction_seconds"] = deviceQueueSeconds
     receipt["math_mode"] = "safe"; receipt["math_functions"] = "precise"; receipt["language_standard"] = "metal2.3"

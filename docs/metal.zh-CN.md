@@ -102,3 +102,14 @@ occupancy、带宽或指令计数。参见 [Apple counter 采样](https://develo
 env PYTHONPATH=src python3 -m unittest \
   tests.contracts.test_metal_runtime tests.contracts.test_metal_benchmark
 ```
+
+## M1 Pro 精确目标
+
+M1 Pro 使用 `apple_gpu_family7`，M2 继续使用 `apple_gpu_family8`。
+Python Schedule 的 `target` 与 correctness/benchmark 命令的 `--target` 必须一致；
+运行时同时检查精确设备名与 Metal family，不自动降级。
+两个命令都支持 `--target apple_gpu_family7`，输出目录仍须位于所有 checkout 之外。
+RMSNorm 新增先将权重乘 inverse RMS 的计算图，与已有三种公式使用相同容差比较。
+每次测量包含一次搜索、两次独立确认、A/A 对照及单独 profiler 观测。
+Apple7 没有成本/占用率校准，GPU 前会保留未排名原因。
+详见 [设计说明](metal-m1-pro-design.md)。

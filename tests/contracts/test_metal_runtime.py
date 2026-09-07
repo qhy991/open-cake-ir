@@ -48,6 +48,22 @@ class MetalRuntimeContracts(unittest.TestCase):
                                 self.inputs if inputs is None else inputs, self.directory,
                                 device_names=["Apple M2"])
 
+    def test_m1_pro_manifest_keeps_target_and_refuses_cross_device_names(self):
+        document = json.loads(self.assessment.schedule_bytes)
+        document["target"] = "apple_gpu_family7"
+        assessment = replace(self.assessment, target="apple_gpu_family7", schedule_bytes=json.dumps(document).encode())
+        lowering = replace(self.lowering, target="apple_gpu_family7", toolchain_requirements={
+            **self.lowering.toolchain_requirements, "target": "apple_gpu_family7"})
+        for names in (["Apple M2"], ["Apple M1"], ["Apple M1 Pro", "Apple M2"]):
+            with self.subTest(names=names), self.assertRaisesRegex(ValueError, "target/device"):
+                adapter.manifest(assessment, lowering, self.inputs, self.directory, device_names=names)
+            self.assertEqual(list(self.directory.iterdir()), [])
+        result = adapter.manifest(assessment, lowering, self.inputs, self.directory, device_names=["Apple M1 Pro"])
+        self.assertEqual(result["target"], "apple_gpu_family7")
+        self.assertEqual(result["device_names"], ["Apple M1 Pro"])
+        for operator in ("elementwise", "row_sum", "row_max", "rmsnorm"):
+            self.assertEqual(check_correctness.schedule_document(operator, 2, 7, "apple_gpu_family7")["target"], "apple_gpu_family7")
+
     def test_manifest_preserves_odd_shapes_order_and_output_poison_contract(self):
         result = self.project()
         self.assertEqual([b["name"] for b in result["buffers"]], ["x", "y", "out"])

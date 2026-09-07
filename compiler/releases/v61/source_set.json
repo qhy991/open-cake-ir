@@ -1,5 +1,4 @@
 {
-  "schema_version": 1,
   "paths": [
     "compiler/AUTHORING_CONTRACT.md",
     "docs/PYTHON_FRONTEND.md",
@@ -145,7 +144,7 @@
     "src/open_cake_ir/compiler/corpus.py",
     "src/open_cake_ir/compiler/errors.py",
     "src/open_cake_ir/compiler/performance/__init__.py",
-    "src/open_cake_ir/compiler/backends/triton_selection.py",
-    "compiler/targets/apple_gpu_family7.json"
-  ]
+    "src/open_cake_ir/compiler/backends/triton_selection.py"
+  ],
+  "schema_version": 1
 }

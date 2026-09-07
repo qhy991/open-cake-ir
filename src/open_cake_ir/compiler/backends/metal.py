@@ -85,9 +85,13 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
             findings.append(refusal(code, path, message))
 
     check(schedule.lowering.backend is LoweringBackend.METAL
-          and schedule.target == target.target_id == "apple_gpu_family8"
-          and target.architecture == "apple8" and target.device_names == ("Apple M2",),
-          "METAL_TARGET_UNSUPPORTED", "target", "Metal requires the exact Apple M2 / apple_gpu_family8 target")
+          and schedule.target == target.target_id
+          and (target.target_id, target.architecture, target.device_names) in {
+              ("apple_gpu_family7", "apple7", ("Apple M1 Pro",)),
+              ("apple_gpu_family8", "apple8", ("Apple M2",)),
+          },
+          "METAL_TARGET_UNSUPPORTED", "target",
+          "Metal requires the exact Apple M1 Pro / apple_gpu_family7 or Apple M2 / apple_gpu_family8 target")
     check(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", schedule.lowering.entry_point)
           and "CAKE_KERNEL_END" not in schedule.lowering.entry_point
           and "__SCHEDULE_SHA256__" not in schedule.lowering.entry_point

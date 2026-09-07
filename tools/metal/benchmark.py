@@ -157,6 +157,8 @@ def invoke_batch(binary: Path, receipt: Path, job: dict, *, compile_only: bool =
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--target", choices=("apple_gpu_family7", "apple_gpu_family8"),
+                        default="apple_gpu_family8", help="exact target; no device fallback")
     args = parser.parse_args()
     receipt = fresh_receipt(args.output_root, prefix="metal-benchmark-")
     summary = {"status": "failed", "started_at": datetime.now(timezone.utc).isoformat(),
@@ -167,8 +169,9 @@ def main() -> int:
         summary["runtime_source"] = runtime_source()
         if not summary["runtime_source"]["tracked"] or not summary["runtime_source"]["clean"]:
             raise ValueError("benchmark requires committed clean runtime/example sources")
-        compiler, lock, device_names = released_compiler(receipt)
+        compiler, lock, device_names = released_compiler(receipt, args.target)
         summary["compiler_revision_id"] = lock["revision_id"]
+        summary["target"] = args.target
         (receipt / "protocol.json").write_text(json.dumps({"contract": rmsnorm.CONTRACT, "protocol": PROTOCOL}, indent=2) + "\n")
         begin = time.perf_counter()
         binary = compile_runner(receipt)
@@ -182,7 +185,7 @@ def main() -> int:
             directory = receipt / formula
             directory.mkdir()
             source_path = receipt / f"{formula}.py"
-            source_path.write_text(rmsnorm.source(*rmsnorm.PRIMARY_SHAPE, formula))
+            source_path.write_text(rmsnorm.source(*rmsnorm.PRIMARY_SHAPE, formula, target=args.target))
             authored = frontend.read_schedule(source_path)
             current["authored_source"] = str(source_path)
             prepare_case(compiler, authored.document, inputs, oracles, directory, device_names, current)
@@ -196,7 +199,7 @@ def main() -> int:
             directory = receipt / id
             directory.mkdir()
             rmsnorm.reference(*rmsnorm.PRIMARY_SHAPE, "serial" if id == "serial_reference" else "simd",
-                              inputs, directory, device_names)
+                              inputs, directory, device_names, target=args.target)
             (directory / "oracle.json").write_text(json.dumps(oracles, allow_nan=False) + "\n")
             artifacts.append({"id": id, "manifest_path": str(directory / "manifest.json"),
                               "oracle_path": str(directory / "oracle.json"), "origin": "handwritten_reference"})
@@ -231,7 +234,7 @@ def main() -> int:
                 current = {"case": name, "origin": "compiler_generated", "formula": selected, "gpu_correctness": "not_run"}
                 summary["held_out_correctness"].append(current)
                 case_inputs, case_oracles = rmsnorm.inputs_and_oracle(rows, columns, distribution)
-                evaluate_case(compiler, binary, rmsnorm.document(rows, columns, selected), case_inputs, case_oracles,
+                evaluate_case(compiler, binary, rmsnorm.document(rows, columns, selected, target=args.target), case_inputs, case_oracles,
                               directory, device_names, current)
         summary["status"] = "completed"
     except Exception as error:
