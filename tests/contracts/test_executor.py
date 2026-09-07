@@ -73,21 +73,29 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                 ROOT / "src/open_cake_ir/lab",
                 ROOT / "src/open_cake_ir/evaluation",
                 ROOT / "src/open_cake_ir/evidence",
+                ROOT / "src/open_cake_ir/tasks",
             )
-            for path in directory.glob("*.py")
+            for path in directory.rglob("*.py")
         } | {
+            "compiler/targets/sm_100a.json",
+            "compiler/targets/sm_103a.json",
+            "compiler/targets/gfx1151.json",
+            "src/open_cake_ir/compiler/target.py",
             "docs/en/PAIRED_TRITON.md",
+            "examples/gpu/aiter_rmsnorm_amd_baseline.py",
+            "examples/gpu/amd_triton_quickstart.py",
             "examples/gpu/flash_kmeans_quickstart.py",
+            "examples/gpu/llama_q8_1_amd_quickstart.py",
+            "examples/gpu/rmsnorm_amd_quickstart.py",
+            "examples/gpu/rmsnorm_amd_rocprofv3.py",
+            "examples/gpu/rmsnorm_amd_search.py",
+            "examples/gpu/swiglu_amd_quickstart.py",
             "src/open_cake_ir/__init__.py",
             "src/open_cake_ir/cli.py",
             "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu",
             "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json",
-            "src/open_cake_ir/tasks/flash_kmeans/calibrate.py",
             "tools/capture_executor_host.py",
-            "src/open_cake_ir/tasks/evaluate.py",
-            "src/open_cake_ir/tasks/qsa/evaluate.py",
             "tools/observe_target_peak.py",
-            "src/open_cake_ir/tasks/qsa/project_feedback.py",
         }
 
         self.assertEqual(observed, expected)

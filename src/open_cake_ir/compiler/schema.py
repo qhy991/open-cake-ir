@@ -35,6 +35,10 @@ from .ir import (
     OperandSource,
     OperationKind,
     ReduceOp,
+    ReductionAlgorithm,
+    RoundingMode,
+    OverflowPolicy,
+    PackedBlockFormat,
     ScanDirection,
     ScanOp,
     ReductionScope,
@@ -190,7 +194,7 @@ _PARAMETERS = {
             "axis": _NONNEGATIVE,
             "scope": _enum(ReductionScope),
         },
-        {"across_loop": {"const": False}},
+        {"across_loop": {"const": False}, "algorithm": _enum(ReductionAlgorithm)},
     ),
     OperationKind.SCAN: _object(
         {"op": _enum(ScanOp), "axis": _NONNEGATIVE},
@@ -227,7 +231,10 @@ _PARAMETERS = {
             "sentinel": {"type": "integer"},
         }
     ),
-    OperationKind.CAST: _object({"to": _enum(DType)}),
+    OperationKind.CAST: {"oneOf": [
+        _object({"to": _enum(DType)}),
+        _object({"to": _enum(DType), "rounding": _enum(RoundingMode), "overflow": _enum(OverflowPolicy)}),
+    ]},
     OperationKind.ATOMIC_RMW: _object(
         {
             "op": _enum(AtomicOp),
@@ -236,8 +243,11 @@ _PARAMETERS = {
             "scope": _enum(AtomicMemoryScope),
         }
     ),
+    OperationKind.RESHAPE: _object({}),
     OperationKind.ELEMENTWISE: {
         "oneOf": [
+            _object({"op": {"const": ElementwiseOp.ROUND.value},
+                     "rounding": {"const": RoundingMode.NEAREST_AWAY_FROM_ZERO.value}}),
             _object(
                 {
                     "op": {"const": ElementwiseOp.FMA.value},
@@ -260,7 +270,7 @@ _PARAMETERS = {
                         "enum": [
                             member.value
                             for member in ElementwiseOp
-                            if member not in (ElementwiseOp.TANH, ElementwiseOp.FMA)
+                            if member not in (ElementwiseOp.TANH, ElementwiseOp.FMA, ElementwiseOp.ROUND)
                         ]
                     }
                 },
@@ -447,6 +457,12 @@ def schedule_schema() -> dict[str, Any]:
                         "byte_offset": _NONNEGATIVE,
                         "stages": _POSITIVE,
                         "swizzle": _enum(Swizzle),
+                        "packed_block": _object(
+                            {
+                                "format": _enum(PackedBlockFormat),
+                                "record_axis": _NONNEGATIVE,
+                            }
+                        ),
                         "scale_of": _object(
                             {
                                 "buffer": _NAME,

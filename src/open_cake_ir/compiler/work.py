@@ -54,7 +54,7 @@ MULTIPLY_ADD_FLOPS = 2
 published FLOP count for a matmul uses. Naming it is cheaper than explaining a 2."""
 
 _TRANSCENDENTAL = frozenset(
-    {ElementwiseOp.RSQRT, ElementwiseOp.EXP, ElementwiseOp.TANH}
+    {ElementwiseOp.RSQRT, ElementwiseOp.EXP, ElementwiseOp.TANH, ElementwiseOp.ROUND, ElementwiseOp.DIVIDE_NO_NAN}
 )
 """Primitives with no defensible operation count.
 
@@ -71,6 +71,8 @@ _NON_ARITHMETIC_KINDS = frozenset(
         OperationKind.REDUCE_ARGMIN,
         OperationKind.TOP_K,
         OperationKind.ATOMIC_RMW,
+        OperationKind.CAST,
+        OperationKind.RESHAPE,
     }
 )
 """Kinds that perform no floating-point arithmetic, counted as zero rather than abstained.

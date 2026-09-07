@@ -134,6 +134,17 @@
     "examples/python/b300_rmsnorm.py",
     "examples/python/b300_gemm_bias.py",
     "examples/python/b300_indexed_gather.py",
-    "corpus/schedules/b300-indexed-tile-reuse-refusal.json"
+    "corpus/schedules/b300-indexed-tile-reuse-refusal.json",
+    "compiler/targets/gfx1151.json",
+    "corpus/schedules/int8-byte-copy-gfx1151.json",
+    "corpus/schedules/llama-rmsnorm-mul-b8-gfx1151-r1-w8.json",
+    "corpus/schedules/llama-rmsnorm-mul-b8-gfx1151-r64-w4.json",
+    "corpus/schedules/packed-q4_0-record-copy-gfx1151.json",
+    "corpus/schedules/packed-q8_1-direct-dimension-gfx1151-unsupported.json",
+    "corpus/schedules/packed-q8_1-producer-gfx1151-record-count-drift.json",
+    "corpus/schedules/packed-q8_1-producer-gfx1151.json",
+    "corpus/schedules/packed-q8_1-record-copy-gfx1151.json",
+    "corpus/schedules/swiglu-b8-smoke-gfx1151-instruction-unsupported.json",
+    "corpus/schedules/swiglu-b8-smoke-gfx1151.json"
   ]
 }

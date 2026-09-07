@@ -354,6 +354,13 @@
       "source_count": 54
     },
     {
+      "canonical_sha256": "3ebb8b1d3df729aca380d6f963e9ead6d152e313f3549cd5fce140bd012478d6",
+      "descriptor_raw_sha256": "18f8d14a401e488b950b831eb0f833d8cda99e5cbdaad8cae48a0a44e4b67a46",
+      "executor_id": "open-cake-ir-b200-v53",
+      "path": "runtime/executors/open-cake-ir-b200-v53-amd-refresh.json",
+      "source_count": 64
+    },
+    {
       "canonical_sha256": "a3d53379a9b1774f7b54964db05f035495924a22baa611d1be190502761e16f3",
       "descriptor_raw_sha256": "b49e9c8a21bac2e1266dc8b68028dd4854cbc85120c282c99cae627baec8e709",
       "executor_id": "open-cake-ir-b200-v53",

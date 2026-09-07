@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "kind": "gfx1151_executor_release_registration",
+  "state": "frozen",
+  "observed_at": "2026-08-26T19:10:00+08:00",
+  "executor": {
+    "executor_id": "open-cake-ir-gfx1151-v3",
+    "canonical_sha256": "d21be95c32b3b19661797c74e00da98e2b5652e2fb09244d3e6caf60773a0963",
+    "descriptor_raw_sha256": "b2ebea53a28907cb3747b2bad01568af07b87249f382ffe6161272c1d7f01668",
+    "path": "runtime/executors/open-cake-ir-gfx1151-v3.json"
+  },
+  "source_commit": "c9d9c17de3565d1baf94a19e3c29171789af7060",
+  "source_count": 47,
+  "target": {
+    "architecture": "gfx1151",
+    "wave_size": 32,
+    "visible_device_count": 1
+  },
+  "profiler_kinds": [
+    "rocprofv3",
+    "rocprof"
+  ],
+  "live_admission_passed": true,
+  "release_disposition": "released_and_immutable",
+  "required_next_action": "Any later Executor-pinned source change must derive open-cake-ir-gfx1151-v4."
+}

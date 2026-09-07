@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping
 
 from ._parse import (
     ScheduleParseError,
@@ -18,6 +19,8 @@ from ._parse import (
 from .vocabulary import (
     BarrierMechanism,
     BufferMode,
+    ByteOrder,
+    PackedBlockFormat,
     DType,
     MemorySpace,
     Swizzle,
@@ -144,6 +147,89 @@ class Allocation:
 
 
 @dataclass(frozen=True)
+class PackedBlockField:
+    """One typed, non-overlapping field in a packed record."""
+
+    name: str
+    byte_offset: int
+    dtype: DType
+    elements: int
+
+    @property
+    def size_bytes(self) -> int:
+        return self.dtype.itemsize * self.elements
+
+
+@dataclass(frozen=True)
+class PackedBlockContract:
+    """Canonical mechanical ABI for one closed packed-block format."""
+
+    logical_extent: int
+    record_bytes: int
+    record_alignment_bytes: int
+    byte_order: ByteOrder
+    fields: tuple[PackedBlockField, ...]
+    nibble_logical_order: tuple[int, ...] = ()
+
+
+# One authority for the bytes shared by Workload materialization, Schedule validation
+# and future decode/encode operations.  Q4's tuple is physical nibble order: low then
+# high for each payload byte maps to logical j then 16+j.
+PACKED_BLOCK_FORMATS: Mapping[PackedBlockFormat, PackedBlockContract] = MappingProxyType(
+    {
+        PackedBlockFormat.GGML_Q4_0_V1: PackedBlockContract(
+            logical_extent=32,
+            record_bytes=18,
+            record_alignment_bytes=2,
+            byte_order=ByteOrder.LITTLE,
+            fields=(
+                PackedBlockField("d", 0, DType.FP16, 1),
+                PackedBlockField("qs", 2, DType.UINT8, 16),
+            ),
+            nibble_logical_order=tuple(
+                value for byte in range(16) for value in (byte, byte + 16)
+            ),
+        ),
+        PackedBlockFormat.GGML_Q8_1_V1: PackedBlockContract(
+            logical_extent=32,
+            record_bytes=36,
+            record_alignment_bytes=4,
+            byte_order=ByteOrder.LITTLE,
+            fields=(
+                PackedBlockField("d", 0, DType.FP16, 1),
+                PackedBlockField("s", 2, DType.FP16, 1),
+                PackedBlockField("qs", 4, DType.INT8, 32),
+            ),
+        ),
+    }
+)
+
+
+@dataclass(frozen=True)
+class PackedBlockRelation:
+    """Bind one UINT8 Buffer axis to a closed packed-record ABI."""
+
+    format: PackedBlockFormat
+    record_axis: int
+
+    @property
+    def contract(self) -> PackedBlockContract:
+        return PACKED_BLOCK_FORMATS[self.format]
+
+    @classmethod
+    def from_dict(cls, value: Any, context: str) -> "PackedBlockRelation":
+        obj = _strict_object(
+            value,
+            required={"format", "record_axis"},
+            context=context,
+        )
+        return cls(
+            _enum(PackedBlockFormat, obj["format"], f"{context}.format"),
+            _nonnegative_int(obj["record_axis"], f"{context}.record_axis"),
+        )
+
+
+@dataclass(frozen=True)
 class ScaleRelation:
     """How one scale buffer partitions and names its FP8 data buffer.
 
@@ -231,6 +317,7 @@ class Buffer:
     swizzle: Swizzle | None
     scale_of: ScaleRelation | None
     valid_extent: ValidExtentRelation | None
+    packed_block: PackedBlockRelation | None = None
 
     @property
     def is_scalar(self) -> bool:
@@ -264,6 +351,7 @@ class Buffer:
                 "byte_offset",
                 "stages",
                 "swizzle",
+                "packed_block",
                 "scale_of",
                 "valid_extent",
             },
@@ -295,6 +383,8 @@ class Buffer:
             else ValidExtentRelation.from_dict(
                 valid_extent, f"{context}.valid_extent"
             ),
+            PackedBlockRelation.from_dict(obj["packed_block"], f"{context}.packed_block")
+            if "packed_block" in obj else None,
         )
 
 
