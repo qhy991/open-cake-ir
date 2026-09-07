@@ -412,13 +412,21 @@ class FakeEvaluator:
         return LogicalEvaluationAttempt(candidate.candidate_sha256, (attempt,), receipt)
 
 
+def _generated_advisory_assessment(compiler):
+    """Exercise real report/hint feedback through a current generated route."""
+    document = json.loads((ROOT / "corpus/schedules/flash-kmeans-assignment-full.json").read_text())
+    for buffer in document["buffers"]:
+        buffer.pop("swizzle", None)
+    return compiler.assess(document)
+
+
 class FindingRoutingContractTests(unittest.TestCase):
     def test_environment_retains_hints_in_the_existing_agent_channel(self) -> None:
         from open_cake_ir.compiler import Compiler
         from open_cake_ir.lab.environments import OpenCakeEnvironment
 
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
-        assessment = compiler.assess_file(ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json")
+        assessment = _generated_advisory_assessment(compiler)
         rows = OpenCakeEnvironment._finding_rows(assessment)
         self.assertEqual(rows, [item.to_dict() for item in assessment.findings + assessment.guidance])
         self.assertTrue(any(item["severity"] == "report" for item in rows))
@@ -1443,7 +1451,7 @@ class LabContractTests(unittest.TestCase):
         from open_cake_ir.lab.environments import OpenCakeEnvironment
 
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
-        assessment = compiler.assess_file(ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json")
+        assessment = _generated_advisory_assessment(compiler)
         diagnostics = OpenCakeEnvironment._finding_rows(assessment)
         self.assertTrue(any(item["severity"] == "hint" for item in diagnostics))
 
