@@ -220,7 +220,7 @@ assert "fma.rn.f32" in lowering.source
 
 1. 在定义模块补最小 typed 结构与解析规则。词汇属于 `vocabulary.py`，资源关系属于 `resources.py`，地址与循环属于 `mapping.py`，操作与参数属于 `operations.py`；仅顶层组装需要改 `schedule.py`。
 2. 从公共入口导出需要给调用方使用的类型；生成 Schema 和 authoring 文档应与同一规范相符，不另加一套注册表或旧新 parser 路径。
-3. 同步更新 [Verifier](../src/open_cake_ir/compiler/verifier.py)、相关 [analysis](../src/open_cake_ir/compiler/analysis.py) / [work](../src/open_cake_ir/compiler/work.py) 及目标后端。不能先接受字段，再让 lowering 默默忽略它。
+3. 同步更新 [Verifier](../src/open_cake_ir/compiler/verifier/__init__.py)、相关 [analysis](../src/open_cake_ir/compiler/analysis.py) / [work](../src/open_cake_ir/compiler/work.py) 及目标后端。不能先接受字段，再让 lowering 默默忽略它。
 4. 对稳定接口或已复现错误补聚焦测试，并通过完整 Corpus Gate。期望变化需要单独审查，不能为了变绿而重写期望。
 5. 新文件纳入 [Compiler source set](../compiler/source_set.json)，按 [发布流程](RUNBOOK.md) 准备后继并独立审查。历史 release、Executor 与实验固定的源码使用原 Git 版本回放。
 

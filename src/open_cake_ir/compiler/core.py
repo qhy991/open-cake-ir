@@ -17,7 +17,6 @@ from .emit_cutedsl import EmitError
 from .ir import (
     _SCHEDULE_OPTIONAL,
     _SCHEDULE_REQUIRED,
-    DType,
     EpilogueParameters,
     EpilogueFormula,
     LoweringBackend,
@@ -35,7 +34,8 @@ from .revision import CompilerRevision, load_revision
 from .ranking import Cost, rank as rank_candidates
 from .compiled_resources import CompiledResources
 from .empirical_cost import EmpiricalCostModel
-from .verifier import Finding, FindingCategory, FindingSeverity, verify as verify_contracts
+from .diagnostics import Finding, FindingCategory, FindingSeverity
+from .verifier import name_conflicts, resolve_grid, verify as verify_contracts
 
 
 @dataclass(frozen=True)
@@ -88,16 +88,6 @@ class Lowering:
 # parsed cleanly and was then rejected as an unknown root field by this check.
 _REQUIRED_TOP_LEVEL_FIELDS = set(_SCHEDULE_REQUIRED)
 _OPTIONAL_TOP_LEVEL_FIELDS = set(_SCHEDULE_OPTIONAL)
-# Derived, not restated. The byte width of a dtype is the IR's fact; a second table here
-# is how a new dtype gets a size in one place and not the other.
-_DTYPE_BYTES = {member.value: member.itemsize for member in DType}
-# The IR's enum is what the compiler knows how to parse, so restating the list here
-# made a second authority that a new kind had to be added to as well -- and forgetting
-# it rejected the Schedule as unsupported rather than saying anything about the gap.
-# What a Target admits is a separate question, and stays with the Target.
-_SUPPORTED_OPERATION_KINDS = {member.value for member in OperationKind}
-
-
 def _tinygemm2_asset_preflight(schedule: Schedule) -> list["Finding"]:
     """Check only facts implemented by the retained source asset."""
 
@@ -207,70 +197,54 @@ def _object(value: object, path: str) -> Mapping[str, object]:
     return cast(Mapping[str, object], value)
 
 
-def _objects(value: object, path: str) -> tuple[Mapping[str, object], ...]:
-    if not isinstance(value, list):
-        raise CompilerError(f"{path} must be a list")
-    return tuple(_object(item, f"{path}[{index}]") for index, item in enumerate(value))
+# A Compiler Mapping historically required lists at these reference boundaries,
+# while the typed IR admits general string Sequences. This adapter records only
+# that container distinction; IR parsing still owns elements and all structure.
+_InputError = tuple[tuple[int, int, int], str]
 
 
-def _strings(value: object, path: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
-        raise CompilerError(f"{path} must be a list of non-empty strings")
-    return tuple(cast(list[str], value))
+def _input_container_error(document: Mapping[str, object]) -> _InputError | None:
+    """Observe the first legacy container error without preempting IR parsing."""
+
+    operations = document.get("operations")
+    if isinstance(operations, list):
+        for index, operation in enumerate(operations):
+            if not isinstance(operation, Mapping):
+                continue
+            for position, field in enumerate(("reads", "writes", "waits", "signals", "depends_on"), 1):
+                if not isinstance(operation.get(field, []), list):
+                    return ((1, index, position),
+                            f"operations[{index}].{field} must be a list of non-empty strings")
+    if not isinstance(document.get("outputs"), list):
+        return ((2, 0, 0), "outputs must be a list of non-empty strings")
+    route = document.get("lowering")
+    loops = document.get("tile_loops", [])
+    if isinstance(route, Mapping) and route.get("backend") == LoweringBackend.TRITON.value and isinstance(loops, list):
+        for index, loop in enumerate(loops):
+            if isinstance(loop, Mapping) and not isinstance(loop.get("body"), list):
+                return ((3, index, 0),
+                        f"tile_loops[{index}].body must be a list of non-empty strings")
+    return None
 
 
-def _name(value: object, path: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise CompilerError(f"{path} must be a non-empty string")
-    return value
+def _check_input_boundary(schedule: Schedule, error: _InputError | None) -> None:
+    """Project typed name facts and legacy container errors in their old order."""
 
-
-def _positive_int(value: object, path: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-        raise CompilerError(f"{path} must be a positive integer")
-    return value
-
-
-def _named(items: Sequence[Mapping[str, object]], path: str) -> dict[str, Mapping[str, object]]:
-    result: dict[str, Mapping[str, object]] = {}
-    for index, item in enumerate(items):
-        name = _name(item.get("name"), f"{path}[{index}].name")
-        if name in result:
-            raise CompilerError(f"{path}[{index}].name duplicates {name!r}")
-        result[name] = item
-    return result
-
-
-def _resolve_grid(schedule: Schedule) -> tuple[int, int, int]:
-    """Project a typed Schedule's launch grid without deciding ProgramMap legality."""
-
-    if schedule.grid is not None:
-        return schedule.grid
-
-    program_map = schedule.program_map
-    if program_map is None:
-        return (1, 1, 1)
-    resolved = [1, 1, 1]
-    seen_axes: set[int] = set()
-    for axis in program_map.axes:
-        # The Verifier owns range, uniqueness, owner and dimension legality. Skipping an
-        # invalid axis keeps this derived projection total, so public assess can return
-        # the localized blocking Finding instead of turning candidate feedback into a
-        # harness exception.
-        if not 0 <= axis.axis < 3 or axis.axis in seen_axes:
-            continue
-        buffer = schedule.buffer(axis.buffer)
-        if buffer is None or axis.dimension >= len(buffer.shape):
-            continue
-        resolved[axis.axis] = axis.tile_count(buffer.shape[axis.dimension])
-        seen_axes.add(axis.axis)
-    return cast(tuple[int, int, int], tuple(resolved))
+    conflict = next((item for item in name_conflicts(schedule)
+                     if item.collection != "tile_loops"), None)
+    if conflict is not None:
+        position = (1, conflict.index, 0) if conflict.collection == "operations" else (0, 0, 0)
+        if error is None or position < error[0]:
+            error = (position,
+                     f"{conflict.collection}[{conflict.index}].{conflict.field} duplicates {conflict.name!r}")
+    if error is not None:
+        raise CompilerError(error[1])
 
 
 def _semantic_schedule_sha256(schedule: Mapping[str, object]) -> str:
     semantic = dict(schedule)
     semantic.pop("schedule_id", None)
-    metadata = dict(_object(semantic.get("metadata"), "metadata"))
+    metadata = dict(cast(Mapping[str, object], semantic["metadata"]))
     metadata.pop("legacy_source", None)
     semantic["metadata"] = metadata
     return sha256(_canonical_json_bytes(semantic)).hexdigest()
@@ -305,7 +279,7 @@ class Compiler:
         return self.assess(_object(read_schedule(path).document, "schedule"))
 
     def assess(self, schedule: Mapping[str, object]) -> Assessment:
-        """Assess one parsed Schedule document."""
+        """Assess one Schedule through its input, typed-verifier and backend owners."""
 
         missing = _REQUIRED_TOP_LEVEL_FIELDS - schedule.keys()
         extra = schedule.keys() - _REQUIRED_TOP_LEVEL_FIELDS - _OPTIONAL_TOP_LEVEL_FIELDS
@@ -314,376 +288,83 @@ class Compiler:
         if ("grid" in schedule) == ("program_map" in schedule):
             raise CompilerError("schedule must define exactly one of grid or program_map")
 
-        # Structural admissibility has one owner: the typed IR. It is stricter than the
-        # checks below -- closed vocabularies are enums and unknown fields are refused --
-        # so a document that reaches the rest of this method is known to be well formed.
-        #
-        # A structural violation is a Finding, not an exception. The agent needs a repair
-        # target, and an exception crossing the Authoring Environment becomes a harness
-        # fault rather than candidate feedback.
+        input_error = _input_container_error(schedule)
         try:
             typed_schedule = Schedule.from_dict(schedule)
         except ScheduleParseError as error:
             return self._structural_rejection(schedule, error)
-        schedule_id = _name(schedule.get("schedule_id"), "schedule.schedule_id")
-        target = _name(schedule.get("target"), "schedule.target")
-        findings: list[Finding] = []
+        _check_input_boundary(typed_schedule, input_error)
+
+        target = typed_schedule.target
         target_definition = self._revision.targets.get(target)
+        findings: list[Finding] = []
         if target_definition is None:
-            findings.append(
-                Finding(
-                    "TARGET_UNSUPPORTED",
-                    "target",
-                    f"target {target!r} is not defined by Compiler Revision {self._revision.revision_id}",
-                    FindingCategory.HARDWARE_CONFORMANCE,
-                )
-            )
-
-        roles = _objects(schedule.get("roles"), "roles")
-        allocations = _objects(schedule.get("allocations"), "allocations")
-        buffers = _objects(schedule.get("buffers"), "buffers")
-        pipelines = _objects(schedule.get("pipelines"), "pipelines")
-        barriers = _objects(schedule.get("barriers"), "barriers")
-        operations = _objects(schedule.get("operations"), "operations")
-        role_by_name = _named(roles, "roles")
-        allocation_by_name = _named(allocations, "allocations")
-        buffer_by_name = _named(buffers, "buffers")
-        pipeline_by_name = _named(pipelines, "pipelines")
-        barrier_by_name = _named(barriers, "barriers")
-        parsed_grid = _resolve_grid(typed_schedule)
-        if "program_map" in schedule:
-            _objects(schedule.get("tile_loops", []), "tile_loops")
-            _objects(schedule.get("access_maps", []), "access_maps")
-
-        used_warps = {
-            warp for role in typed_schedule.roles for warp in role.warps
-        }
-
-        if target_definition is not None:
-            for axis, (observed, maximum) in enumerate(zip(parsed_grid, target_definition.resource_limits.maximum_grid)):
-                if observed > maximum:
-                    findings.append(
-                        Finding(
-                            "TARGET_GRID_LIMIT",
-                            f"grid[{axis}]",
-                            f"grid extent {observed} exceeds Target limit {maximum}",
-                            FindingCategory.HARDWARE_CONFORMANCE,
-                        )
-                    )
-
-        allocation_sizes = {
-            name: _positive_int(item.get("size_bytes"), f"allocations.{name}.size_bytes")
-            for name, item in allocation_by_name.items()
-        }
-        allocation_spaces: Counter[str] = Counter()
-        for index, allocation in enumerate(allocations):
-            space = _name(allocation.get("space"), f"allocations[{index}].space")
-            if target_definition is not None and space not in target_definition.memory_spaces:
-                findings.append(
-                    Finding(
-                        "TARGET_MEMORY_SPACE_UNSUPPORTED",
-                        f"allocations[{index}].space",
-                        f"memory space {space!r} is not supported by Target {target!r}",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
-                )
-            allocation_spaces[space] += allocation_sizes[_name(allocation.get("name"), f"allocations[{index}].name")]
-        if target_definition is not None:
-            if allocation_spaces["shared"] > target_definition.resource_limits.maximum_shared_memory_bytes:
-                findings.append(
-                    Finding(
-                        "TARGET_SHARED_MEMORY_LIMIT",
-                        "allocations",
-                        "Schedule exceeds the Target shared-memory limit",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
-                )
-            if allocation_spaces["tensor"] > target_definition.resource_limits.maximum_tensor_memory_bytes:
-                findings.append(
-                    Finding(
-                        "TARGET_TENSOR_MEMORY_LIMIT",
-                        "allocations",
-                        "Schedule exceeds the Target tensor-memory limit",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
-                )
-        for index, buffer in enumerate(buffers):
-            dtype = _name(buffer.get("dtype"), f"buffers[{index}].dtype")
-            space = _name(buffer.get("space"), f"buffers[{index}].space")
-            if target_definition is not None and space not in target_definition.memory_spaces:
-                findings.append(
-                    Finding(
-                        "TARGET_MEMORY_SPACE_UNSUPPORTED",
-                        f"buffers[{index}].space",
-                        f"memory space {space!r} is not supported by Target {target!r}",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
-                )
-            shape = buffer.get("shape")
-            if dtype not in _DTYPE_BYTES or not isinstance(shape, list) or not shape:
-                raise CompilerError(f"buffers[{index}] has unsupported dtype or shape")
-            dimensions = tuple(
-                _positive_int(value, f"buffers[{index}].shape[{axis}]")
-                for axis, value in enumerate(shape)
-            )
-            stages = _positive_int(buffer.get("stages", 1), f"buffers[{index}].stages")
-            byte_offset = buffer.get("byte_offset", 0)
-            if not isinstance(byte_offset, int) or isinstance(byte_offset, bool) or byte_offset < 0:
-                raise CompilerError(f"buffers[{index}].byte_offset must be non-negative")
-            allocation = buffer.get("allocation")
-            if allocation is not None:
-                allocation_name = _name(allocation, f"buffers[{index}].allocation")
-                if allocation_name not in allocation_sizes:
-                    findings.append(
-                        Finding(
-                            "BUFFER_ALLOCATION_UNKNOWN",
-                            f"buffers[{index}].allocation",
-                            f"allocation {allocation_name!r} is not declared",
-                            FindingCategory.DATA_CONSISTENCY,
-                        )
-                    )
-                else:
-                    elements = 1
-                    for dimension in dimensions:
-                        elements *= dimension
-                    extent = byte_offset + elements * _DTYPE_BYTES[dtype] * stages
-                    if extent > allocation_sizes[allocation_name]:
-                        findings.append(
-                            Finding(
-                                "BUFFER_ALLOCATION_OVERFLOW",
-                                f"buffers[{index}]",
-                                f"buffer extent {extent} exceeds allocation {allocation_name!r}",
-                                FindingCategory.DATA_CONSISTENCY,
-                            )
-                        )
-
-        operation_ids: set[str] = set()
-        operation_counts: Counter[str] = Counter()
-        written_buffers: set[str] = set()
-        if not operations:
-            findings.append(
-                Finding(
-                    "SCHEDULE_OPERATIONS_EMPTY",
-                    "operations",
-                    "Schedule must contain at least one operation",
-                    FindingCategory.SCHEDULE_SEMANTICS,
-                )
-            )
-        for index, operation in enumerate(operations):
-            op_id = _name(operation.get("id"), f"operations[{index}].id")
-            kind = _name(operation.get("kind"), f"operations[{index}].kind")
-            role = _name(operation.get("role"), f"operations[{index}].role")
-            if op_id in operation_ids:
-                raise CompilerError(f"operations[{index}].id duplicates {op_id!r}")
-            if kind not in _SUPPORTED_OPERATION_KINDS:
-                findings.append(
-                    Finding("OPERATION_UNSUPPORTED", f"operations[{index}].kind", f"operation {kind!r} is unsupported",
-                            FindingCategory.SCHEDULE_SEMANTICS)
-                )
-            elif target_definition is not None and kind not in target_definition.operation_kinds:
-                findings.append(
-                    Finding(
-                        "TARGET_OPERATION_UNSUPPORTED",
-                        f"operations[{index}].kind",
-                        f"operation {kind!r} is not supported by Target {target!r}",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
-                )
-            if role not in role_by_name:
-                findings.append(
-                    Finding("OPERATION_ROLE_UNKNOWN", f"operations[{index}].role", f"role {role!r} is not declared",
-                            FindingCategory.SCHEDULE_SEMANTICS)
-                )
-            for field in ("reads", "writes"):
-                for name in _strings(operation.get(field), f"operations[{index}].{field}"):
-                    if name not in buffer_by_name:
-                        findings.append(
-                            Finding(
-                                "OPERATION_BUFFER_UNKNOWN",
-                                f"operations[{index}].{field}",
-                                f"buffer {name!r} is not declared",
-                                FindingCategory.DATA_CONSISTENCY,
-                            )
-                        )
-                    elif field == "writes":
-                        written_buffers.add(name)
-            for field in ("waits", "signals"):
-                for name in _strings(operation.get(field, []), f"operations[{index}].{field}"):
-                    if name not in barrier_by_name:
-                        findings.append(
-                            Finding(
-                                "OPERATION_BARRIER_UNKNOWN",
-                                f"operations[{index}].{field}",
-                                f"barrier {name!r} is not declared",
-                                FindingCategory.PROGRAM_SAFETY,
-                            )
-                        )
-            for dependency in _strings(
-                operation.get("depends_on", []), f"operations[{index}].depends_on"
-            ):
-                if dependency not in operation_ids:
-                    findings.append(
-                        Finding(
-                            "OPERATION_DEPENDENCY_ORDER",
-                            f"operations[{index}].depends_on",
-                            f"dependency {dependency!r} is missing or appears later",
-                            FindingCategory.PROGRAM_SAFETY,
-                        )
-                    )
-            pipeline = operation.get("pipeline")
-            if pipeline is not None and _name(pipeline, f"operations[{index}].pipeline") not in pipeline_by_name:
-                findings.append(
-                    Finding(
-                        "OPERATION_PIPELINE_UNKNOWN",
-                        f"operations[{index}].pipeline",
-                        f"pipeline {pipeline!r} is not declared",
-                        FindingCategory.PROGRAM_SAFETY,
-                    )
-                )
-            _object(operation.get("parameters"), f"operations[{index}].parameters")
-            operation_ids.add(op_id)
-            operation_counts[kind] += 1
-
-        outputs = _strings(schedule.get("outputs"), "outputs")
-        for index, output in enumerate(outputs):
-            buffer = buffer_by_name.get(output)
-            if buffer is None or buffer.get("mode") != "output":
-                findings.append(
-                    Finding("OUTPUT_INVALID", f"outputs[{index}]", f"output buffer {output!r} is not declared as output",
-                            FindingCategory.DATA_CONSISTENCY)
-                )
-            elif output not in written_buffers:
-                findings.append(
-                    Finding(
-                        "OUTPUT_UNWRITTEN",
-                        f"outputs[{index}]",
-                        f"output buffer {output!r} has no writer",
-                        FindingCategory.DATA_CONSISTENCY,
-                    )
-                )
+            findings.append(Finding(
+                "TARGET_UNSUPPORTED", "target",
+                f"target {target!r} is not defined by Compiler Revision {self._revision.revision_id}",
+                FindingCategory.HARDWARE_CONFORMANCE,
+            ))
 
         route = typed_schedule.lowering
-        lowering_parameters: dict[str, int] = {}
         backend = _GENERATED_BACKENDS.get(route.backend)
-        asset = (
-            _SOURCE_ASSETS.get(route.entry_point)
-            if route.backend is LoweringBackend.CHECKED_CUDA_ASSET
-            else None
-        )
+        asset = (_SOURCE_ASSETS.get(route.entry_point)
+                 if route.backend is LoweringBackend.CHECKED_CUDA_ASSET else None)
+        semantic_sha256 = _semantic_schedule_sha256(schedule)
         if route.backend is LoweringBackend.CHECKED_CUDA_ASSET and asset is None:
-            findings.append(
-                Finding(
-                    "SOURCE_ASSET_UNSUPPORTED",
-                    "lowering.entry_point",
-                    f"checked source asset {route.entry_point!r} is not bound by this Revision",
-                    FindingCategory.HARDWARE_CONFORMANCE,
-                    blocks_acceptance=False,
-                )
-            )
+            findings.append(Finding(
+                "SOURCE_ASSET_UNSUPPORTED", "lowering.entry_point",
+                f"checked source asset {route.entry_point!r} is not bound by this Revision",
+                FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
+            ))
         elif asset is not None:
             asset_findings = asset.preflight(typed_schedule)
             findings.extend(asset_findings)
-            if (
-                _semantic_schedule_sha256(schedule) != asset.semantic_sha256
-                and not asset_findings
-            ):
-                findings.append(
-                    Finding(
-                        "SOURCE_ASSET_SEMANTICS_MISMATCH",
-                        "lowering",
-                        "Schedule semantics differ from the checked source asset",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                        blocks_acceptance=False,
-                    )
-                )
+            if semantic_sha256 != asset.semantic_sha256 and not asset_findings:
+                findings.append(Finding(
+                    "SOURCE_ASSET_SEMANTICS_MISMATCH", "lowering",
+                    "Schedule semantics differ from the checked source asset",
+                    FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
+                ))
         elif backend is not None:
-            # A kind this backend has no body for cannot be lowered wherever it
-            # is placed, and that is knowable here rather than when emission raises. The
-            # Schedule is not ill-formed -- the IR expresses the kind and the Target
-            # supports it -- so this blocks lowering and not acceptance, and it names the
-            # backend rather than the author.
-            for index, buffer in enumerate(buffers):
-                dtype = buffer.get("dtype") if isinstance(buffer, Mapping) else None
-                if dtype not in _DTYPE_BYTES:
-                    continue
-                if DType(dtype) not in backend.module.SUPPORTED_DTYPES:
-                    findings.append(
-                        Finding(
-                            "BACKEND_DTYPE_UNEMITTABLE",
-                            f"buffers[{index}].dtype",
-                            f"backend {route.backend.value!r} cannot name dtype {dtype!r}",
-                            FindingCategory.HARDWARE_CONFORMANCE,
-                            blocks_acceptance=False,
-                        )
-                    )
-            for index, operation in enumerate(operations):
-                kind = operation.get("kind")
-                if kind not in _SUPPORTED_OPERATION_KINDS:
-                    continue
-                if OperationKind(kind) not in backend.module.SUPPORTED_OPERATION_KINDS:
-                    findings.append(
-                        Finding(
-                            "BACKEND_OPERATION_UNEMITTABLE",
-                            f"operations[{index}].kind",
-                            f"backend {route.backend.value!r} has no body for operation "
-                            f"kind {kind!r}",
-                            FindingCategory.HARDWARE_CONFORMANCE,
-                            blocks_acceptance=False,
-                        )
-                    )
-            # The pinned Triton automatic-warp-specialization pass requires every
-            # reduction in the specialized loop to have one result. `reduce_argmin`
-            # returns both value and index, so this exact combination is a known
-            # backend legality failure rather than an in-process toolchain crash.
+            for index, buffer in enumerate(typed_schedule.buffers):
+                if buffer.dtype not in backend.module.SUPPORTED_DTYPES:
+                    findings.append(Finding(
+                        "BACKEND_DTYPE_UNEMITTABLE", f"buffers[{index}].dtype",
+                        f"backend {route.backend.value!r} cannot name dtype {buffer.dtype.value!r}",
+                        FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
+                    ))
+            for index, operation in enumerate(typed_schedule.operations):
+                if operation.kind not in backend.module.SUPPORTED_OPERATION_KINDS:
+                    findings.append(Finding(
+                        "BACKEND_OPERATION_UNEMITTABLE", f"operations[{index}].kind",
+                        f"backend {route.backend.value!r} has no body for operation "
+                        f"kind {operation.kind.value!r}",
+                        FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
+                    ))
             if backend.module is emit_triton:
-                operations_by_id = {
-                    operation.get("id"): operation for operation in operations
-                }
-                for index, loop in enumerate(
-                    _objects(schedule.get("tile_loops", []), "tile_loops")
-                ):
-                    options = _object(
-                        loop.get("range_options"),
-                        f"tile_loops[{index}].range_options",
-                    )
-                    body = _strings(loop.get("body"), f"tile_loops[{index}].body")
-                    if options.get("warp_specialize") and any(
-                        operations_by_id.get(operation_id, {}).get("kind")
-                        == OperationKind.REDUCE_ARGMIN.value
-                        for operation_id in body
+                for index, loop in enumerate(typed_schedule.tile_loops):
+                    if loop.range_options.warp_specialize and any(
+                        (operation := typed_schedule.operation(operation_id)) is not None
+                        and operation.kind is OperationKind.REDUCE_ARGMIN
+                        for operation_id in loop.body
                     ):
-                        findings.append(
-                            Finding(
-                                "TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED",
-                                f"tile_loops[{index}].range_options.warp_specialize",
-                                "the pinned Triton backend cannot warp-specialize a "
-                                "loop containing the value-and-index argmin reduction",
-                                FindingCategory.HARDWARE_CONFORMANCE,
-                                blocks_acceptance=False,
-                            )
-                        )
-        findings.extend(self._contract_findings(typed_schedule, target))
+                        findings.append(Finding(
+                            "TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED",
+                            f"tile_loops[{index}].range_options.warp_specialize",
+                            "the pinned Triton backend cannot warp-specialize a "
+                            "loop containing the value-and-index argmin reduction",
+                            FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
+                        ))
 
-        # The backend owns these predicates and its direct emitter consumes the same
-        # preflight.  Project them only for an otherwise-lowerable Schedule: common
-        # structural/Target Findings remain the more precise authority when present.
-        if (
-            backend is not None
-            and target_definition is not None
-            and not any(finding.blocks_lowering for finding in findings)
-        ):
-            typed_target = target_definition
-            for failure in backend.module.preflight(typed_schedule, typed_target):
-                findings.append(
-                    Finding(
-                        failure.code,
-                        failure.path,
-                        failure.message,
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                        blocks_acceptance=False,
-                    )
-                )
-
+        if target_definition is not None:
+            findings.extend(verify_contracts(typed_schedule, target_definition))
+        if (backend is not None and target_definition is not None
+                and not any(finding.blocks_lowering for finding in findings)):
+            for failure in backend.module.preflight(typed_schedule, target_definition):
+                findings.append(Finding(
+                    failure.code, failure.path, failure.message,
+                    FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
+                ))
         if backend is not None and backend.module is emit_metal and not any(
             finding.blocks_lowering for finding in findings
         ):
@@ -699,38 +380,31 @@ class Compiler:
             ))
 
         accepted = not any(finding.blocks_acceptance for finding in findings)
-        lowering_eligible = accepted and not any(
-            finding.blocks_lowering for finding in findings
-        )
-        semantic_sha256 = _semantic_schedule_sha256(schedule)
-        analysis = MappingProxyType(
-            {
-                "grid": parsed_grid,
-                "operation_counts": dict(sorted(operation_counts.items())),
-                "role_count": len(roles),
-                "total_warps": len(used_warps),
-                "semantic_sha256": semantic_sha256,
-            }
-        )
+        lowering_eligible = accepted and not any(finding.blocks_lowering for finding in findings)
+        analysis = MappingProxyType({
+            "grid": resolve_grid(typed_schedule),
+            "operation_counts": dict(sorted(Counter(
+                operation.kind.value for operation in typed_schedule.operations
+            ).items())),
+            "role_count": len(typed_schedule.roles),
+            "total_warps": len({warp for role in typed_schedule.roles for warp in role.warps}),
+            "semantic_sha256": semantic_sha256,
+        })
         return Assessment(
             compiler_revision_id=self._revision.revision_id,
             compiler_revision_sha256=self._revision.canonical_sha256,
-            schedule_id=schedule_id,
+            schedule_id=typed_schedule.schedule_id,
             schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
             target=target,
             route=route,
             accepted=accepted,
             lowering_eligible=lowering_eligible,
-            findings=tuple(
-                finding for finding in findings if finding.severity is not FindingSeverity.HINT
-            ),
+            findings=tuple(finding for finding in findings if finding.severity is not FindingSeverity.HINT),
             analysis=analysis,
-            lowering_parameters=MappingProxyType(dict(lowering_parameters)),
+            lowering_parameters=MappingProxyType({}),
             calibration_available=semantic_sha256 in self._revision.calibration_coverage,
             schedule_bytes=_canonical_json_bytes(schedule),
-            guidance=tuple(
-                finding for finding in findings if finding.severity is FindingSeverity.HINT
-            ),
+            guidance=tuple(finding for finding in findings if finding.severity is FindingSeverity.HINT),
         )
 
     def _structural_rejection(
@@ -808,15 +482,6 @@ class Compiler:
             ),
         )
 
-    def _contract_findings(
-        self, schedule: Schedule, target: str
-    ) -> list[Finding]:
-        """Retain every typed verifier diagnostic, including non-blocking hints."""
-
-        definition = self._revision.targets.get(target)
-        if definition is None:
-            return []
-        return list(verify_contracts(schedule, definition))
 
     def profile(self, assessment: Assessment, *, compiled_resources: CompiledResources | None = None,
                 cost_model: EmpiricalCostModel | None = None):

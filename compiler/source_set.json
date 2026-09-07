@@ -103,7 +103,13 @@
     "src/open_cake_ir/compiler/target.py",
     "src/open_cake_ir/compiler/utilization.py",
     "src/open_cake_ir/compiler/work.py",
-    "src/open_cake_ir/compiler/verifier.py",
+    "src/open_cake_ir/compiler/diagnostics.py",
+    "src/open_cake_ir/compiler/verifier/__init__.py",
+    "src/open_cake_ir/compiler/verifier/_collector.py",
+    "src/open_cake_ir/compiler/verifier/schedule_semantics.py",
+    "src/open_cake_ir/compiler/verifier/hardware_conformance.py",
+    "src/open_cake_ir/compiler/verifier/data_consistency.py",
+    "src/open_cake_ir/compiler/verifier/program_safety.py",
     "corpus/schedules/fma-b8-smoke-access-dimension-drift.json",
     "corpus/schedules/fma-b8-smoke-cross-dimension-drift.json",
     "corpus/schedules/fma-b8-smoke-load-shape-drift.json",
@@ -134,6 +140,9 @@
     "examples/python/b300_rmsnorm.py",
     "examples/python/b300_gemm_bias.py",
     "examples/python/b300_indexed_gather.py",
-    "corpus/schedules/b300-indexed-tile-reuse-refusal.json"
+    "corpus/schedules/b300-indexed-tile-reuse-refusal.json",
+    "src/open_cake_ir/compiler/revision.py",
+    "src/open_cake_ir/compiler/corpus.py",
+    "src/open_cake_ir/compiler/errors.py"
   ]
 }

@@ -25,7 +25,8 @@ from .empirical_cost import EmpiricalCostModel
 from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
 from .profile_model import MetricEstimate, ProfileEnvelope, profile_envelope
 from .target import Target, TargetParseError
-from .verifier import Finding, FindingCategory, FindingSeverity, verify
+from .diagnostics import Finding, FindingCategory, FindingSeverity
+from .verifier import verify
 
 __all__ = [
     "Assessment",
