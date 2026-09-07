@@ -393,7 +393,7 @@ class Compiler:
         The released Revision owns calibration coverage. An eligible candidate from an
         uncovered semantic domain is returned as withheld rather than being assigned precision
         that the Revision does not claim. The order carries no predicted time;
-        `compiler/ranking.py` defines the dormant structural primitive and
+        `compiler/performance/ranking.py` defines the dormant structural primitive and
         `docs/ANALYSIS_CALIBRATION.md` records the measurements required to activate it.
         """
 

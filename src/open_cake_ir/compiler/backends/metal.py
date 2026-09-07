@@ -74,7 +74,7 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
 
 
-def preflight(schedule: Schedule, target: Target) -> tuple[refusal, vocabulary_findings, ...]:
+def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     """Refuse every declaration this emitter cannot faithfully realize."""
     findings = list(requirements(schedule))
     if findings:

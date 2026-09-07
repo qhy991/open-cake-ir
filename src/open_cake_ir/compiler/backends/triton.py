@@ -191,7 +191,7 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     return tuple(findings)
 
 
-def preflight(schedule: Schedule, target: Target) -> tuple[refusal, vocabulary_findings, ...]:
+def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     """Return the constructor's backend-owned lowering requirements.
 
     The Compiler projects these into Findings and direct emitter users fail on the same

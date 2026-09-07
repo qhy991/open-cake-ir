@@ -15,8 +15,6 @@ class EmitError(ValueError):
     """The Schedule does not determine the source to emit."""
 
 
-
-
 @dataclass(frozen=True)
 class Emission:
     source: str

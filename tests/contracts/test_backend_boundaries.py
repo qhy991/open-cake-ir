@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
+from typing import get_args, get_origin, get_type_hints
 from unittest.mock import patch
 
 from open_cake_ir.compiler import Compiler, EmitError, Finding, FindingSeverity
-from open_cake_ir.compiler.backends import BACKENDS, cutedsl, metal, triton
+from open_cake_ir.compiler.backends import BACKENDS, BackendModule, common, cutedsl, metal, triton
+from open_cake_ir.compiler.diagnostics import Finding as DiagnosticFinding
 from open_cake_ir.compiler.ir import DType, LoweringBackend, Schedule, ScheduleParseError
 from open_cake_ir.compiler.target import Target
 
@@ -24,6 +26,20 @@ class BackendBoundaryTests(unittest.TestCase):
     def setUpClass(cls):
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         cls.target = Target.load(ROOT / "compiler/targets/sm_100a.json")
+
+    def test_public_backend_return_annotations_share_the_canonical_finding_type(self):
+        self.assertIs(Finding, DiagnosticFinding)
+        self.assertIs(get_type_hints(common.refusal)["return"], DiagnosticFinding)
+        entries = [("common.vocabulary_findings", common.vocabulary_findings)]
+        for entry in ("requirements", "preflight"):
+            entries.append(("BackendModule." + entry, getattr(BackendModule, entry)))
+            entries.extend((backend.value + "." + entry, getattr(descriptor.module, entry))
+                           for backend, descriptor in BACKENDS.items())
+        for name, entry in entries:
+            with self.subTest(entry=name):
+                annotation = get_type_hints(entry)["return"]
+                self.assertIs(get_origin(annotation), tuple)
+                self.assertEqual(get_args(annotation), (DiagnosticFinding, Ellipsis))
 
     def test_retired_asset_documents_are_structural_refusals_without_a_route(self):
         for name in ("tinygemm2-stage4-split-k", "tinygemm2-stage4-split-k-reduction-drift"):
