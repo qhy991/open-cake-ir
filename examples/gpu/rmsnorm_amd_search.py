@@ -426,6 +426,9 @@ def _correctness(
     records = []
     expected_artifacts = artifact_records(candidate.artifacts)
     for case_id, material in cases.items():
+        # Correctness must observe this invocation's complete output. Initialization
+        # stays here, outside the separate paired timing launch path.
+        candidate.outputs[case_id].fill_(float("nan"))
         compiled = candidate.launch(case_id, material)
         torch.cuda.synchronize()
         if artifact_records(extract_artifacts(compiled)) != expected_artifacts:
@@ -433,6 +436,11 @@ def _correctness(
         metrics = rmsnorm_metrics(
             workload, candidate.outputs[case_id], material.reference
         )
+        # An unwritten NaN has no finite error magnitude. Keep actual mismatch and
+        # nonfinite counts, while retaining the rejection in strict JSON evidence.
+        for key in ("max_abs_error", "max_rel_error"):
+            if key in metrics and not math.isfinite(metrics[key]):
+                metrics[key] = None
         inputs_unchanged = _inputs_unchanged(material, torch)
         output = candidate.outputs[case_id]
         output_contract = {

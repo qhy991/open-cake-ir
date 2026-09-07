@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import subprocess
 import struct
 import sys
@@ -9,6 +10,7 @@ import tempfile
 import unittest
 from hashlib import sha256
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -643,6 +645,10 @@ class _FakeTensor:
             dtype=self.dtype,
         )
 
+    def fill_(self, value: float) -> "_FakeTensor":
+        self.value = value
+        return self
+
     def view(self, dtype: object) -> "_FakeTensor":
         assert dtype is _FakeTorch.uint8
         return _FakeTensor(struct.pack("<f", self.value), self.pointer)
@@ -687,6 +693,82 @@ class _FakeCandidate:
         return object()
 
 
+class _MetricTensor:
+    """Two-element CPU facade for the real metrics, with explicit NaN semantics."""
+
+    def __init__(self, values, pointer=30):
+        self.values = list(values)
+        self.pointer = pointer
+        self.shape = (1, 1, len(self.values))
+        self.dtype = "fp32"
+        self.device = "modeled"
+
+    def binary(self, other, function):
+        right = other.values
+        if len(right) == 1:
+            right = right * len(self.values)
+        return _MetricTensor(function(a, b) for a, b in zip(self.values, right, strict=True))
+
+    def __sub__(self, other):
+        return self.binary(other, lambda a, b: a - b)
+
+    def __truediv__(self, other):
+        return self.binary(other, lambda a, b: a / b)
+
+    def __invert__(self):
+        return _MetricTensor(not value for value in self.values)
+
+    def abs(self):
+        return _MetricTensor(abs(value) for value in self.values)
+
+    def max(self):
+        value = float("nan") if any(math.isnan(v) for v in self.values) else max(self.values)
+        return _MetricTensor([value])
+
+    def sum(self):
+        return _MetricTensor([sum(self.values)])
+
+    def all(self):
+        return _MetricTensor([all(self.values)])
+
+    def item(self):
+        assert len(self.values) == 1
+        return self.values[0]
+
+    def numel(self):
+        return len(self.values)
+
+    def data_ptr(self):
+        return self.pointer
+
+    def is_contiguous(self):
+        return True
+
+    def clone(self):
+        return _MetricTensor(self.values, self.pointer + 100)
+
+    def fill_(self, value):
+        self.values[:] = [value] * len(self.values)
+        return self
+
+    def view(self, dtype):
+        assert dtype == "uint8"
+        return _MetricTensor(struct.pack("<" + "f" * len(self.values), *self.values), self.pointer)
+
+
+def _metric_torch():
+    return SimpleNamespace(
+        float32="fp32", uint8="uint8",
+        cuda=SimpleNamespace(synchronize=lambda: None),
+        equal=lambda a, b: a.values == b.values,
+        tensor=lambda value, **kwargs: _MetricTensor([value]),
+        maximum=lambda a, b: a.binary(b, max),
+        isfinite=lambda tensor: _MetricTensor(math.isfinite(value) for value in tensor.values),
+        isclose=lambda a, b, rtol, atol: a.binary(b, lambda x, y:
+            math.isfinite(x) and abs(x - y) <= atol + rtol * abs(y)),
+    )
+
+
 class AmdRmsNormRuntimeCorrectnessTests(unittest.TestCase):
     def _material(self) -> object:
         inputs = (_FakeTensor(1.0, 10), _FakeTensor(2.0, 20))
@@ -697,6 +779,48 @@ class AmdRmsNormRuntimeCorrectnessTests(unittest.TestCase):
             input_snapshots=tuple(value.clone() for value in inputs),
             input_data_ptrs=tuple(value.data_ptr() for value in inputs),
         )
+
+    def test_each_correctness_invocation_must_write_the_complete_output(self) -> None:
+        torch = _metric_torch()
+        workload = SimpleNamespace(document={"validation": {"rtol": 5e-5, "atol": 5e-6}})
+        artifacts = {role: b"fixture" for role in ("source", "ttir", "ttgir", "llir", "amdgcn")}
+        artifacts["hsaco"] = b"\x7fELFfixture"
+        compiled = SimpleNamespace(asm=artifacts)
+        inputs = (_MetricTensor([1.0, 2.0], 10), _MetricTensor([3.0, 4.0], 20))
+        reference = _MetricTensor([42.0, -3.0], 40)
+        material = search_runner._CaseMaterial(
+            inputs=inputs, reference=reference, shape=(1, 1, 2),
+            input_snapshots=tuple(value.clone() for value in inputs),
+            input_data_ptrs=tuple(value.data_ptr() for value in inputs),
+        )
+        output = reference.clone()
+        invocations = []
+
+        def launch(case_id, case):
+            self.assertTrue(all(math.isnan(value) for value in output.values))
+            invocations.append(mode)
+            if mode == "full":
+                output.values[:] = case.reference.values
+            elif mode == "partial":
+                output.values[0] = case.reference.values[0]
+            return compiled
+
+        candidate = SimpleNamespace(artifacts=artifacts, outputs={"case": output}, launch=launch)
+        for mode in ("full", "none", "full", "partial", "full"):
+            with self.subTest(mode=mode, invocation=len(invocations)):
+                with patch.dict(sys.modules, {"torch": torch}):
+                    # Keep actual artifact extraction, metrics and record production.
+                    result = search_runner._correctness(candidate, workload, {"case": material}, torch)
+                record = result["cases"][0]
+                self.assertEqual(result["passed"], mode == "full")
+                self.assertTrue(result["inputs_unchanged"])
+                missing = {"full": 0, "none": 2, "partial": 1}[mode]
+                self.assertEqual(record["mismatch_count"], missing)
+                self.assertEqual(record["nonfinite_output_count"], missing)
+                self.assertEqual(record["max_abs_error"], 0.0 if mode == "full" else None)
+                self.assertEqual(record["max_rel_error"], 0.0 if mode == "full" else None)
+                json.dumps(result, allow_nan=False)
+        self.assertEqual(invocations, ["full", "none", "full", "partial", "full"])
 
     def test_correctness_fails_if_a_kernel_mutates_an_input(self) -> None:
         workload = object()
