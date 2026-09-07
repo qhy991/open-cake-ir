@@ -82,8 +82,45 @@ class ProviderRuntimeContractTests(unittest.TestCase):
             self.assertEqual(resolve_codex_code_mode_host(executable)["path"], str(resource))
             with patch.dict(os.environ, {"CODEX_MANAGED_BY_NPM": "1"}):
                 self.assertEqual(resolve_codex_code_mode_host(executable)["path"], str(sibling))
-        with patch.dict(os.environ, {"CODEX_HOME": str(self.root / "other")}, clear=True):
+        with patch.dict(os.environ, {"CODEX_HOME": str(self.root)}, clear=True):
             self.assertEqual(resolve_codex_code_mode_host(executable)["path"], str(sibling))
+
+    def test_explicit_invalid_codex_home_refuses_binding_and_both_turns(self):
+        with patch("open_cake_ir.lab.providers.sanitized_environment", return_value={}):
+            builder = self.builder()
+        for value in ("home", ".", "", str(self.root / "missing"), str(self.executable), "/bad\x00home"):
+            with self.subTest(home=value), patch(
+                "open_cake_ir.lab.providers.sanitized_environment", return_value={"CODEX_HOME": value},
+            ), patch("open_cake_ir.lab.providers.os.open") as open_helper:
+                with self.assertRaisesRegex(ValueError, "CODEX_HOME.*absolute directory"):
+                    self.builder()
+                for thread in (None, "01234567-89ab-cdef-0123-456789abcdef"):
+                    with self.assertRaisesRegex(ValueError, "CODEX_HOME.*absolute directory"):
+                        builder.build("request", thread_id=thread)
+                open_helper.assert_not_called()
+
+    def test_absolute_codex_home_selects_same_helper_across_invocation_cwds(self):
+        codex_home = self.root / "home"
+        executable = self.write(codex_home / "packages/standalone/releases/0.153.4/codex")
+        self.write(executable.with_name("codex-code-mode-host"), b"sibling")
+        resource = self.write(executable.parent / "codex-resources/codex-code-mode-host", b"resource")
+        workspace = self.root / "workspace"
+        workspace.mkdir()
+        original_cwd = Path.cwd()
+        try:
+            with patch("open_cake_ir.lab.providers.sanitized_environment",
+                       return_value={"CODEX_HOME": str(codex_home)}):
+                os.chdir(self.root)
+                builder = self.builder(executable, workspace=workspace)
+                self.assertEqual(builder.configuration["code_mode_host"]["path"], str(resource))
+                for thread in (None, "01234567-89ab-cdef-0123-456789abcdef"):
+                    invocation = builder.build("request", thread_id=thread)
+                    os.chdir(invocation.cwd)
+                    self.assertEqual(resolve_codex_code_mode_host(executable),
+                                     builder.configuration["code_mode_host"])
+                    os.chdir(self.root)
+        finally:
+            os.chdir(original_cwd)
 
     def test_unsafe_selected_helpers_fail_closed(self):
         for mode in (0o600, 0o722):
