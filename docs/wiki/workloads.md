@@ -37,7 +37,7 @@ GPU 编译、正确性、计时、profiler 和框架验收仍待 R2 验证。
 - **输出：** 每个点最近的中心编号。
 - **判对：** 独立距离参考与合同的同距规则；不能临时要求所有同距情况都返回同一编号。
 - **合同：** [v1](../../contracts/workloads/flash-kmeans-assign.json)、[v2](../../contracts/workloads/flash-kmeans-assign-v2.json)。
-- **代码入口：** [flash_kmeans.py](../../src/open_cake_ir/evaluation/flash_kmeans.py)、[教学工具](../../examples/gpu/flash_kmeans_quickstart.py)。
+- **代码入口：** [flash_kmeans.py](../../src/open_cake_ir/tasks/flash_kmeans/workload.py)、[教学工具](../../examples/gpu/flash_kmeans_quickstart.py)。
 
 v2 是后继合同，旧实验继续使用它原来固定的版本。学习 Compiler 时可以先看 [对应计划](../../corpus/schedules/flash-kmeans-b32-smoke-v2.json)。
 
@@ -69,7 +69,7 @@ v2 是后继合同，旧实验继续使用它原来固定的版本。学习 Comp
 - **输出：** 完整 QSA 任务范围内的结果，不含前面的投影、RoPE、缓存更新或服务调度。
 - **合同：** [QSA prefill v1](../../contracts/workloads/qsa-prefill-t32768-v1.json)。
 - **执行说明：** 多个阶段需要完整 Program；只测一个 top-k 或 attention kernel 不能替代完整 Program 计时。
-  [专用评测工具](../../tools/evaluate_qsa_candidate.py)保留这个边界。
+  [专用评测工具](../../src/open_cake_ir/tasks/qsa/evaluate.py)保留这个边界。
 
 较小检查形状与目标形状分别在合同中列出。它们是任务声明的几何，不等于某个模型 checkpoint 的完整配置。
 

@@ -1,6 +1,7 @@
 """Concrete B200 assay for one frozen exact-shape portfolio."""
 
 from __future__ import annotations
+from open_cake_ir.evaluation.benchmark import CuptiBenchmark,StrictCuptiBenchmark
 
 import json
 import math
@@ -10,90 +11,17 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Callable, Mapping, Protocol, Sequence
 
-from .cuda_driver import CudaTensorContract, LoadedCudaCandidate, TensorLike
-from .flash_kmeans import (
-    assignment_raw_sha256,
-    classify_flash_kmeans_output,
-    flash_kmeans_oracle,
-    generate_flash_kmeans_case,
-)
-from .portfolio import (
-    ExactShapeDispatcher,
-    PortfolioArtifact,
-    PortfolioCaseObservation,
-    PortfolioEvaluationReceipt,
-    SemanticKey,
-    evaluate_portfolio_observations,
-)
-from .workload import WorkloadContract
-
-
-class CuptiBenchmark(Protocol):
-    """The retained FlashInfer CUPTI timing boundary."""
-
-    def __call__(
-        self,
-        function: Callable[[], None],
-        *,
-        dry_run_iters: int,
-        repeat_iters: int,
-        cold_l2_cache: bool,
-        use_cuda_graph: bool,
-    ) -> Sequence[float]: ...
-
-
-class StrictCuptiBenchmark:
-    """Forbid CUDA-event/graph fallback around the retained CUPTI helper."""
-
-    def __init__(self, helper_module: object) -> None:
-        required = (
-            "bench_gpu_time_with_cupti",
-            "bench_gpu_time_with_cuda_event",
-            "bench_gpu_time_with_cudagraph",
-        )
-        if any(not callable(getattr(helper_module, name, None)) for name in required):
-            raise ValueError("CUPTI helper surface differs")
-        self._helper = helper_module
-
-    def __call__(
-        self,
-        function: Callable[[], None],
-        *,
-        dry_run_iters: int,
-        repeat_iters: int,
-        cold_l2_cache: bool,
-        use_cuda_graph: bool,
-    ) -> Sequence[float]:
-        original_event = self._helper.bench_gpu_time_with_cuda_event
-        original_graph = self._helper.bench_gpu_time_with_cudagraph
-
-        def forbidden(*_args: object, **_kwargs: object) -> None:
-            raise RuntimeError("CUPTI timing fallback is forbidden")
-
-        self._helper.bench_gpu_time_with_cuda_event = forbidden
-        self._helper.bench_gpu_time_with_cudagraph = forbidden
-        try:
-            with warnings.catch_warnings(record=True) as captured:
-                warnings.simplefilter("always")
-                values = self._helper.bench_gpu_time_with_cupti(
-                    function,
-                    dry_run_iters=dry_run_iters,
-                    repeat_iters=repeat_iters,
-                    cold_l2_cache=cold_l2_cache,
-                    use_cuda_graph=use_cuda_graph,
-                )
-            if captured:
-                raise RuntimeError("CUPTI helper emitted a warning")
-            return values
-        finally:
-            self._helper.bench_gpu_time_with_cuda_event = original_event
-            self._helper.bench_gpu_time_with_cudagraph = original_graph
+from open_cake_ir.tasks.flash_kmeans.cuda import CudaTensorContract
+from open_cake_ir.evaluation.cuda_driver import LoadedCudaCandidate, TensorLike
+from open_cake_ir.tasks.flash_kmeans.workload import assignment_raw_sha256, classify_flash_kmeans_output, flash_kmeans_oracle, generate_flash_kmeans_case
+from open_cake_ir.tasks.flash_kmeans.portfolio import ExactShapeDispatcher, PortfolioArtifact, PortfolioCaseObservation, PortfolioEvaluationReceipt, ExactShape, evaluate_portfolio_observations
+from open_cake_ir.evaluation.workload import WorkloadContract
 
 
 @dataclass
 class _CaseState:
     case_id: str
-    key: SemanticKey
+    key: ExactShape
     tokens: object
     centroids: object
     centroid_sq: object
@@ -119,7 +47,7 @@ class _LoadedLauncher:
 
     def launch(self, candidate, arguments) -> None:
         case_id = self._by_candidate[candidate.candidate_sha256]
-        key = SemanticKey(
+        key = ExactShape(
             int(arguments[0].shape[0]),
             int(arguments[0].shape[1]),
             int(arguments[1].shape[1]),
@@ -185,7 +113,7 @@ class CuptiPortfolioAssay:
 
     def _case_state(self, case_id: str) -> _CaseState:
         case = self._workload.case(case_id)
-        key = SemanticKey.from_case(case)
+        key = ExactShape.from_case(case)
         tokens, centroids = generate_flash_kmeans_case(
             self._workload, case_id, device=self._device
         )

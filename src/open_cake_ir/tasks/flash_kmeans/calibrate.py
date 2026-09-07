@@ -23,12 +23,16 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.flash_kmeans.environment import FlashTritonToolchainBuilder
+from open_cake_ir.tasks.workloads import load_workload
 from open_cake_ir.compiler import Compiler, EmpiricalCostModel
-from open_cake_ir.evaluation import CudaLaunchManifest, LaunchableCandidate, WorkloadContract, summarize_cohort
+from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
+from open_cake_ir.evaluation import LaunchableCandidate, WorkloadContract, summarize_cohort
 from open_cake_ir.lab.core import _empirical_filter
-from open_cake_ir.lab.environments import CandidateSubmission, OpenCakeEnvironment, TritonToolchainBuilder, _EmpiricalSelection, _empirical_context
+from open_cake_ir.lab.environments import CandidateSubmission, TritonToolchainBuilder, _EmpiricalSelection, _empirical_context
+from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
 from open_cake_ir.lab.executor import ExecutorRevision, _external_file
 from open_cake_ir.lab.process import sanitized_environment
 
@@ -115,12 +119,12 @@ def _authorities(plan):
     executor_ref = plan["executor_revision"]
     executor = ExecutorRevision.load(ROOT, _external_file(ROOT, executor_ref["path"], "Executor"))
     _equal(dict(executor.reference), executor_ref, "Executor reference")
-    if not {"tools/calibrate_flash_cost.py", "tools/evaluate_flash_candidate.py"}.issubset({row["path"] for row in executor.document["sources"]}):
+    if not {"src/open_cake_ir/tasks/flash_kmeans/calibrate.py", "src/open_cake_ir/tasks/evaluate.py"}.issubset({row["path"] for row in executor.document["sources"]}):
         raise ValueError("Executor must bind both collection instrument and common evaluator")
     ref = plan["workload"]
     if set(ref) != {"path", "workload_id", "canonical_sha256"}:
         raise ValueError("Workload reference differs")
-    workload = WorkloadContract.load(_external_file(ROOT, ref["path"], "Workload"))
+    workload = load_workload(_external_file(ROOT, ref["path"], "Workload"))
     if workload.workload_id != ref["workload_id"] or workload.canonical_sha256 != ref["canonical_sha256"] or workload.document["operator"] != "flash_kmeans_assign":
         raise ValueError("Flash Workload reference differs")
     workload.case(plan["case_id"])
@@ -148,7 +152,7 @@ def _task(task, executor, workload):
         source_root = Path(stage["judge"]["cwd"])
         if not source_root.is_absolute():
             raise ValueError("judge source root must be absolute")
-        _equal(stage["judge"]["command"], [executor.document["host_environment"]["python"]["invocation_path"], str(source_root / "tools/calibrate_flash_cost.py"), "collect"], "collection command")
+        _equal(stage["judge"]["command"], [executor.document["host_environment"]["python"]["invocation_path"], str(source_root / "src/open_cake_ir/tasks/flash_kmeans/calibrate.py"), "collect"], "collection command")
     if stages[0]["judge"]["cwd"] != stages[1]["judge"]["cwd"] or "resources" in stages[0]:
         raise ValueError("stage source root or CPU-only compile differs")
     resources = stages[1]["resources"]
@@ -195,7 +199,7 @@ def _compile(candidate_root, stage, plan, compiler, executor, workload):
     if os.environ.get("CUDA_VISIBLE_DEVICES") or os.environ.get("GPUQ_JOB_ID"):
         raise ValueError("local compile must not inherit a GPU allocation")
     executor.admit_host()
-    environment = OpenCakeEnvironment(compiler, TritonToolchainBuilder(), authority_document={"lowering_route": {"backend": "triton", "entry_point": "cake_flash_kmeans_assign"}}, workload=workload, case_id=plan["case_id"], executor=executor)
+    environment = OpenCakeEnvironment(compiler, FlashTritonToolchainBuilder(), authority_document={"lowering_route": {"backend": "triton", "entry_point": "cake_flash_kmeans_assign"}}, workload=workload, case_id=plan["case_id"], executor=executor)
     for spec in plan["pool"]:
         source = _external_file(candidate_root, spec["schedule"], "pool Schedule").read_bytes()
         assessment, _ = _assessment(compiler, plan, json.loads(source))
@@ -376,7 +380,7 @@ def _measure(run, stage, plan, executor, compiled, task):
         candidate, _ = compiled[spec["candidate_id"]]
         directory = stage / spec["id"]
         _seal(directory, candidate, plan, ROOT)
-        command = [executor.document["host_environment"]["python"]["invocation_path"], str(ROOT / "tools/evaluate_flash_candidate.py"), "--request", str(directory / "request.json"), "--output", str(directory / "result.json")]
+        command = [executor.document["host_environment"]["python"]["invocation_path"], str(ROOT / "src/open_cake_ir/tasks/evaluate.py"), "--request", str(directory / "request.json"), "--output", str(directory / "result.json")]
         # GPU Infra/broker already owns this process group. A new session would
         # let the evaluator escape lease cancellation. run kills/reaps its direct
         # child on timeout; broker cancellation reaches the inherited group.

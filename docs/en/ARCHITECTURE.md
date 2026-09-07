@@ -34,3 +34,5 @@ Lab prepares TASK.md for the problem and AGENTS.md for tool rules. An external R
 `matched_search` handles fixed-task search. A separate `portfolio` Study combines qualified specialists through the same Lab path. Artifact-only optimization is a claim scope, not a third runtime. Serving needs later integration and evaluation.
 
 Correctness, measurement stability, and application benefit are different facts. Faster operator code does not by itself make a model or service faster. Compiler changes happen between frozen Campaigns and update types, verification, analysis, and lowering together, followed by the full Corpus and independent review. Executor fixes a different closure: Lab, evaluation, evidence tools, and environment. Read the [Glossary](GLOSSARY.md) and [maintenance guide](wiki/maintaining.md) for exact ownership.
+
+Concrete implementations live under `src/open_cake_ir/tasks/`. Tasks supply contract validation, oracles and preparation; the common Lab and Evaluation never import concrete tasks. See [task ownership](TASKS.md).

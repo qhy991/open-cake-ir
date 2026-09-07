@@ -35,3 +35,14 @@ uses the complete original Git tree at `966eba4`, including the descriptor's ori
 path, Compiler v52 and all required source files; it must not load against current
 sources. Both commits remain in the integration ancestry. The R2 GPU records keep
 their original binding, and the combined runtime requires a separately derived successor.
+
+Concurrent task-boundary and paired-Ralph branches also produced v55 on 2026-09-07.
+The task-boundary release at `6d9a198e69098cd51d427b9bffbe967a6f62de90` keeps
+`runtime/executors/open-cake-ir-b200-v55.json` with its original 80-source closure.
+The paired release at `ef3623298024f2f5dc58ffcb4308fa17e58cf40d` retains its
+original 56-source descriptor bytes as
+`runtime/executors/open-cake-ir-b200-v55-paired.json`. Its `executor_id` remains
+v55; this alias reserves the historical identity and is not a release for current
+sources. Replay uses the complete `ef362329` tree and original descriptor path.
+Both Git histories and inventory records are preserved. The combined source needs
+a newly derived Executor; neither earlier review or host binding transfers to it.

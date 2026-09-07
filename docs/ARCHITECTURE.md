@@ -109,3 +109,5 @@ Executor 固定的是 Lab、评测、证据工具和机器环境。它与 Compil
 已发布 Executor 的身份不重复使用，见 [ADR 0049](zh-CN/adr/0049-released-executor-descriptors-reserve-their-identities.md)。
 
 文档、代码、合同与历史记录分别维护，具体做法见 [文档维护](wiki/maintaining.md)。
+
+具体任务的代码现集中在 `src/open_cake_ir/tasks/`。任务层提供合同校验、参考实现和准备函数；通用 Lab 与 Evaluation 不导入具体任务。见[任务目录说明](TASKS.md)。

@@ -12,7 +12,7 @@ import struct
 import sys
 from collections.abc import Mapping, Sequence
 
-from .workload import TensorABI, WorkloadContract, _name, _object
+from open_cake_ir.evaluation.workload import TensorABI, WorkloadContract, _name, _object
 
 
 def source_schedule_path(document: Mapping[str, object]) -> str:
@@ -51,7 +51,7 @@ def validate_tile_contract(document: Mapping[str, object]) -> None:
         semantics.get("target") != ("sm_100a" if revision == "1" else "sm_103a")
         or semantics.get("input_effects") != "unchanged"
         or semantics.get("output_storage") != "fresh_contiguous_nonaliasing"
-        or oracle.get("callable") != "open_cake_ir.evaluation.tile_workloads.reference_outputs"
+        or oracle.get("callable") != 'open_cake_ir.evaluation.tile_workloads.reference_outputs'
         or oracle.get("output_rounding") != "round_to_nearest_ties_to_even"
         or validation.get("primary_case") not in workload.case_ids
         or validation.get("all_cases_required") is not True

@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.flash_kmeans.environment import FlashTritonToolchainBuilder
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
@@ -98,7 +99,7 @@ def main() -> int:
             entry_point=lowering.route.entry_point,
             toolchain_requirements=lowering.toolchain_requirements,
         )
-        candidate = TritonToolchainBuilder().build(request)
+        candidate = FlashTritonToolchainBuilder().build(request)
         references = [
             evidence.put(payload, media_type=_media_type(role)).reference(role)
             for role, payload in sorted(candidate.artifact_payloads.items())

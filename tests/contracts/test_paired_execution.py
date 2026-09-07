@@ -20,14 +20,16 @@ from open_cake_ir.evaluation.core import EvaluationReceipt, LaunchableCandidate,
 from open_cake_ir.evaluation.paired import (
     candidate_identity, paired_protocol, paired_summary, validate_pair_candidates, validate_receipt_policy, validate_paired_broker,
 )
-from open_cake_ir.evaluation.tile_workloads import reference_outputs
+from open_cake_ir.tasks.tiles.workload import reference_outputs
+from open_cake_ir.tasks.workloads import load_workload
+from open_cake_ir.tasks.runtime import TaskLab as Lab
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, resolve_execution_bindings
-from open_cake_ir.lab.core import Lab, CampaignLock, StudyContract, _validate_receipt_authority
+from open_cake_ir.lab.core import CampaignLock, StudyContract, _validate_receipt_authority
 from open_cake_ir.lab.pairing import bind_baseline
 from open_cake_ir.lab.runtime import CommandBrokerSubmitter
 from tests.contracts.test_native_triton_pairing import DraftCompilerFixture
-from tools import evaluate_flash_candidate as worker
+from open_cake_ir.tasks import evaluate as worker
 
 ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE = ROOT / 'contracts/studies/matched-search-triton-b300-optimization-template.json'
@@ -56,7 +58,7 @@ def sealed(workload, role, *, case_id='tiny'):
 
 class PairedExecutionTests(unittest.TestCase):
     def setUp(self):
-        self.workload = WorkloadContract.load(ROOT / 'contracts/workloads/rmsnorm-fp32-v2.json')
+        self.workload = load_workload(ROOT / 'contracts/workloads/rmsnorm-fp32-v2.json')
         self.candidate, self.manifest = sealed(self.workload, 'candidate')
         self.baseline, _ = sealed(self.workload, 'baseline')
         self.directory = tempfile.TemporaryDirectory()
@@ -178,12 +180,33 @@ class PairedExecutionTests(unittest.TestCase):
             protocol_sha256=sha256(encoded(self.protocol)).hexdigest(), cwd=ROOT,
             executor=executor, service_user=pwd.getpwuid(os.geteuid()).pw_name,
             service_group=grp.getgrgid(os.getegid()).gr_name,
-            evaluation_protocol=self.protocol, baseline=self.baseline)
+            evaluation_protocol=self.protocol, baseline=self.baseline,
+            workload_loader=load_workload)
         with patch('open_cake_ir.lab.runtime.run_supervised', side_effect=command):
             attempt = submitter.submit(self.candidate, case_id='tiny', purpose='search', attempt=1)
         self.assertEqual(attempt.receipt.canonical_sha256, retained.canonical_sha256)
         self.assertEqual(len(requests), 1)
         self.assertTrue(all(value.startswith('baseline-') for value in requests[0]['baseline']['artifact_paths'].values()))
+
+    def test_paired_dispatch_requires_the_strict_task_loader_before_process_start(self):
+        document = self.workload.document
+        document['semantics']['epsilon'] = 0
+        path = self.output / 'invalid-workload.json'
+        path.write_bytes(encoded(document))
+        arguments = dict(command=('CPU-fixture',), workload_path=path,
+            workload_sha256=sha256(encoded(document)).hexdigest(),
+            protocol_sha256=sha256(encoded(self.protocol)).hexdigest(), cwd=ROOT,
+            executor=SimpleNamespace(reference={}),
+            service_user=pwd.getpwuid(os.geteuid()).pw_name,
+            service_group=grp.getgrgid(os.getegid()).gr_name,
+            evaluation_protocol=self.protocol, baseline=self.baseline)
+        with self.assertRaisesRegex(ValueError, 'requires the task Workload loader'):
+            CommandBrokerSubmitter(**arguments)
+        submitter = CommandBrokerSubmitter(**arguments, workload_loader=load_workload)
+        with patch('open_cake_ir.lab.runtime.run_supervised') as process:
+            with self.assertRaisesRegex(ValueError, 'RMSNorm epsilon'):
+                submitter.submit(self.candidate, case_id='tiny', purpose='search', attempt=1)
+            process.assert_not_called()
 
     def test_correct_slower_candidate_is_a_valid_observation(self):
         self.latencies['candidate'] = 2.0
@@ -394,7 +417,7 @@ class PairedExecutionTests(unittest.TestCase):
             stack.enter_context(patch('open_cake_ir.lab.core.Compiler.load', return_value=draft))
             toolchain = stack.enter_context(patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler'))
             toolchain.return_value.canonical_sha256 = 'b'*64
-            stack.enter_context(patch('open_cake_ir.lab.compose.broker_execution_sha256', return_value='c'*64))
+            stack.enter_context(patch('open_cake_ir.lab.runtime.broker_execution_sha256', return_value='c'*64))
             lock = Lab(project).preflight(template, execution_bindings_path=bp)
             resolver.assert_called_once_with(project, {'binding': 'current_release'}, 'study.execution', template=True)
             self.assertEqual(lock.document['execution']['executor_revision'], executor_ref)
@@ -414,13 +437,28 @@ class PairedExecutionTests(unittest.TestCase):
             self.assertEqual(lock.document['resolved_inputs']['arm_environments']['native_triton']['provider']['model'], 'gpt-5.6-sol')
             self.assertFalse((self.output / 'new-author-workspaces').exists())
             self.assertEqual(CampaignLock.from_dict(lock.document).canonical_sha256, lock.canonical_sha256)
-            from open_cake_ir.lab import render_task_package
             for arm in ('open_cake', 'native_triton'):
-                package = render_task_package(project, lock, arm + '-1')
+                package = Lab(project).task_package(lock, arm + '-1')
                 self.assertIn('"sm_103a"', package.task_markdown)
                 self.assertIn('candidate-set.json', package.agents_markdown)
                 self.assertNotIn('prompt_template', package.task_markdown)
                 self.assertNotIn('"sm_100a"', package.task_markdown)
+                if arm == 'native_triton':
+                    self.assertIn('candidate-baseline.triton.json', package.task_markdown)
+                else:
+                    self.assertIn('restricted Python', package.agents_markdown)
+
+            invalid_workload = self.workload.document
+            invalid_workload['semantics']['epsilon'] = 0
+            invalid_workload_path = project / 'contracts/workloads/invalid-rmsnorm.json'
+            invalid_workload_path.write_bytes(encoded(invalid_workload))
+            invalid_study = copy.deepcopy(study.document)
+            invalid_study['workload'] = {'path': invalid_workload_path.relative_to(project).as_posix(),
+                'canonical_sha256': sha256(encoded(invalid_workload)).hexdigest()}
+            invalid_study_path = self.output / 'invalid-rmsnorm-study.json'
+            invalid_study_path.write_bytes(encoded(invalid_study))
+            with self.assertRaisesRegex(ValueError, 'RMSNorm epsilon'):
+                Lab(project).preflight(invalid_study_path, execution_bindings_path=bp)
 
             # Missing policy cannot mint a new live native Campaign under an old-looking template.
             unpaired = copy.deepcopy(study.document)

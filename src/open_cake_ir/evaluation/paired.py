@@ -79,14 +79,15 @@ def candidate_from_identity(value, payloads=None):
 
 
 def validate_pair_candidates(candidate, baseline, workload, case_id):
-    from .core import TensorLaunchManifest, parse_launch_manifest
+    from .core import TensorLaunchManifest
     manifests = {}
     for role, item in [('candidate', candidate), ('baseline', baseline)]:
         if not item.artifact_payloads or 'launch_manifest' not in item.artifact_payloads:
             raise ValueError('paired participant has no sealed launch manifest')
-        manifest = parse_launch_manifest(json.loads(item.artifact_payloads['launch_manifest']))
-        if not isinstance(manifest, TensorLaunchManifest):
+        document = json.loads(item.artifact_payloads['launch_manifest'])
+        if not isinstance(document, Mapping) or document.get('abi') != 'workload_tensors_v1':
             raise ValueError('paired policy requires the explicit Workload tensor ABI')
+        manifest = TensorLaunchManifest.from_dict(document)
         manifest.check_workload(workload, case_id)
         if (item.target != manifest.target or item.entry_point != manifest.kernel_name
             or item.launch_spec_sha256 != manifest.canonical_sha256):

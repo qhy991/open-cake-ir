@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.evaluation import CudaLaunchManifest  # noqa: E402
+from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
 
 
 class CudaManifestFeedbackTest(unittest.TestCase):

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
-from evaluate_qsa_candidate import _component_timing, _profile_target  # noqa: E402
+from open_cake_ir.tasks.qsa.evaluate import _component_timing, _profile_target  # noqa: E402
 
 
 @dataclass(frozen=True)

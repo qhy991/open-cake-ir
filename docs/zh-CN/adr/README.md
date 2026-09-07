@@ -66,3 +66,5 @@ ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭�
 | 0052 | [独立代理会话也可以审查编译器发布](0052-independent-agent-release-review.md) | [Independent agent sessions may review Compiler releases](../../adr/0052-independent-agent-release-review.md) |
 
 - [0054：Lab 只使用 Ralph](0054-lab-uses-only-ralph.md)
+- [0055：任务实现从通用 Lab 中分离](0055-task-implementations-live-outside-the-common-lab.md)
+- [0056：每个候选都与固定基线成对测量](0056-fixed-baseline-paired-execution.md)

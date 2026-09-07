@@ -1,5 +1,6 @@
 """CPU boundary probes; fixture CUBINs and drivers are not GPU qualification."""
 from __future__ import annotations
+from open_cake_ir.tasks.workloads import load_workload
 
 from dataclasses import replace
 from hashlib import sha256
@@ -13,8 +14,10 @@ from open_cake_ir.compiler.frontend import parse, FrontendError
 from open_cake_ir.compiler.target import cuda_architecture, cuda_target
 from open_cake_ir.evaluation import CudaDeviceAdmission, LaunchableCandidate, LoadedCudaCandidate, WorkloadContract
 from open_cake_ir.evaluation.core import TensorLaunchManifest
-from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec, CudaLaunchManifest
-from open_cake_ir.lab import CandidateSubmission, NativeTritonEnvironment, OpenCakeEnvironment, TritonToolchainBuilder
+from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
+from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
+from open_cake_ir.lab import CandidateSubmission, NativeTritonEnvironment, TritonToolchainBuilder
+from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
 from open_cake_ir.lab.pairing import bind_baseline, native_baseline
 from examples.paired_triton.prepare import baseline_schedule
 from tests.contracts.test_cuda_driver import CUBIN, FakeDriver, FakeTensor
@@ -33,10 +36,10 @@ class B300ContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
-        cls.workload = WorkloadContract.load(ROOT / 'contracts/workloads/rmsnorm-fp32-v2.json')
+        cls.workload = load_workload(ROOT / 'contracts/workloads/rmsnorm-fp32-v2.json')
 
     def test_three_b300_ralph_templates_are_stable_and_require_external_bindings(self):
-        from open_cake_ir.lab import Lab
+        from open_cake_ir.tasks.runtime import TaskLab as Lab
         from open_cake_ir.lab.core import StudyContract
         from open_cake_ir.lab.providers import CODEX_DISABLED_FEATURES
         for suffix in ('', '-gemm', '-gather'):
@@ -63,8 +66,8 @@ class B300ContractTests(unittest.TestCase):
     def test_fifteen_successor_cases_preserve_math_and_lower_to_b300(self):
         count = 0
         for name in ('rmsnorm-fp32', 'gemm-bias-bf16-fp32', 'indexed-gather-bf16'):
-            old = WorkloadContract.load(ROOT / f'contracts/workloads/{name}-v1.json')
-            new = WorkloadContract.load(ROOT / f'contracts/workloads/{name}-v2.json')
+            old = load_workload(ROOT / f'contracts/workloads/{name}-v1.json')
+            new = load_workload(ROOT / f'contracts/workloads/{name}-v2.json')
             for field in ('cases', 'tensors', 'oracle'):
                 self.assertEqual(old.document[field], new.document[field])
             self.assertEqual({k: v for k, v in old.document['semantics'].items() if k != 'target'},
@@ -87,7 +90,7 @@ class B300ContractTests(unittest.TestCase):
         for file, name in (('b300_rmsnorm', 'rmsnorm-fp32'), ('b300_gemm_bias', 'gemm-bias-bf16-fp32'),
                            ('b300_indexed_gather', 'indexed-gather-bf16')):
             with self.subTest(example=file):
-                workload = WorkloadContract.load(ROOT / f'contracts/workloads/{name}-v2.json')
+                workload = load_workload(ROOT / f'contracts/workloads/{name}-v2.json')
                 document = parse((ROOT / f'examples/python/{file}.py').read_text()).document
                 authored = self.compiler.lower(self.compiler.assess(bind_baseline(document, workload, 'primary')))
                 baseline = self.compiler.lower(self.compiler.assess(baseline_schedule(workload, 'primary')))

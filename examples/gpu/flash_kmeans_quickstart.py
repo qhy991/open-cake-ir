@@ -14,25 +14,16 @@ from typing import Mapping, cast
 ROOT = Path(__file__).resolve().parents[2]
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.flash_kmeans.environment import FlashTritonToolchainBuilder
+from open_cake_ir.tasks.workloads import load_workload
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
-from open_cake_ir.evaluation import (  # noqa: E402
-    CudaLaunchManifest,
-    CudaTensorContract,
-    EvaluationProtocol,
-    LaunchableCandidate,
-    LaunchObservation,
-    WorkloadContract,
-    evaluate_flash_kmeans,
-    launch_candidate_once,
-    observe_exclusive_b200,
-)
-from open_cake_ir.lab import (  # noqa: E402
-    CandidateSubmission,
-    ExecutorRevision,
-    OpenCakeEnvironment,
-    TritonToolchainBuilder,
-)
+from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
+from open_cake_ir.tasks.flash_kmeans.cuda import CudaTensorContract
+from open_cake_ir.evaluation import EvaluationProtocol, LaunchableCandidate, LaunchObservation, WorkloadContract, launch_candidate_once, observe_exclusive_b200
+from open_cake_ir.tasks.flash_kmeans.evaluation import evaluate_flash_kmeans
+from open_cake_ir.lab import CandidateSubmission, ExecutorRevision, TritonToolchainBuilder
+from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
 
 _CASE_ID = "b32_smoke"
 
@@ -81,7 +72,7 @@ def _summary(project_root: Path, schedule_bytes: bytes) -> dict[str, object]:
     if not assessment.lowering_eligible:
         return summary
 
-    workload = WorkloadContract.load(
+    workload = load_workload(
         project_root / "contracts/workloads/flash-kmeans-assign-v2.json"
     )
     case = workload.case(_CASE_ID)
@@ -167,12 +158,12 @@ def _run_gpu(
     }
     admission = observe_exclusive_b200()
     compiler = Compiler.load(project_root, project_root / "compiler/revision.lock.json")
-    workload = WorkloadContract.load(
+    workload = load_workload(
         project_root / "contracts/workloads/flash-kmeans-assign-v2.json"
     )
     environment = OpenCakeEnvironment(
         compiler,
-        TritonToolchainBuilder(),
+        FlashTritonToolchainBuilder(),
         authority_document={
             "lowering_route": {
                 "backend": "triton",

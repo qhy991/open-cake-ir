@@ -81,7 +81,7 @@ def resolve_execution_bindings(
     project_root: str | Path, study, bindings_path: str | Path | None
 ) -> tuple[dict[str, object], ExecutorRevision | None]:
     """Return resolved runtime leaves and the Executor already validated for them."""
-    from .compose import broker_execution_sha256
+    from .runtime import broker_execution_sha256
     from .providers import ProviderQualificationReceipt
     from .triton_build import IsolatedTritonCompiler
 

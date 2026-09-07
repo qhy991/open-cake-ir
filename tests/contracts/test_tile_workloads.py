@@ -11,11 +11,12 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+from open_cake_ir.tasks.workloads import load_workload
 sys.path.insert(0, str(ROOT / "src"))
 
 from examples.paired_triton.prepare import baseline_schedule, prepare_baseline
 from open_cake_ir.compiler import Compiler
-from open_cake_ir.evaluation.tile_workloads import materialize_case, reference_outputs
+from open_cake_ir.tasks.tiles.workload import materialize_case, reference_outputs
 from open_cake_ir.evaluation.workload import WorkloadContract
 
 
@@ -23,7 +24,7 @@ class TileWorkloadTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.workloads = {
-            name: WorkloadContract.load(ROOT / f"contracts/workloads/{name}-v1.json")
+            name: load_workload(ROOT / f"contracts/workloads/{name}-v1.json")
             for name in ("rmsnorm-fp32", "gemm-bias-bf16-fp32", "indexed-gather-bf16")
         }
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
@@ -32,7 +33,7 @@ class TileWorkloadTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "workload.json"
             path.write_text(json.dumps(document), encoding="utf-8")
-            return WorkloadContract.load(path)
+            return load_workload(path)
 
     def test_primary_shapes_dtypes_and_order_are_preserved(self) -> None:
         expected = {
@@ -126,7 +127,7 @@ class TileWorkloadTest(unittest.TestCase):
     def test_materialization_rounds_bf16_ties_to_even(self) -> None:
         workload = self.workloads["gemm-bias-bf16-fp32"]
         for random_value, expected in ((0.7509765625, 0.5), (0.7529296875, 0.5078125)):
-            with self.subTest(random_value=random_value), patch("open_cake_ir.evaluation.tile_workloads.random.Random") as rng:
+            with self.subTest(random_value=random_value), patch("open_cake_ir.tasks.tiles.workload.random.Random") as rng:
                 rng.return_value.random.return_value = random_value
                 inputs = materialize_case(workload, "tiny")
                 self.assertEqual(inputs["a"][0], expected)
@@ -239,7 +240,7 @@ class TileWorkloadTest(unittest.TestCase):
             self.assertLessEqual(max(map(abs, inputs["gamma"])), 0.25)
             reference_outputs(workload, case_id, inputs)
     def test_historical_workload_admission_does_not_infer_new_abi(self) -> None:
-        workload = WorkloadContract.load(ROOT / "contracts/workloads/dsa-attention-sparse-mla-decode-v1.json")
+        workload = load_workload(ROOT / "contracts/workloads/dsa-attention-sparse-mla-decode-v1.json")
         self.assertTrue(workload.case_ids)
         with self.assertRaises(ValueError):
             workload.tensor_abi(workload.case_ids[0])

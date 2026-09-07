@@ -1,6 +1,7 @@
 """Manifest-driven exact-shape portfolio and fail-closed dispatch."""
 
 from __future__ import annotations
+from .seed import ExactShape
 
 import json
 import math
@@ -11,8 +12,8 @@ from statistics import median
 from types import MappingProxyType
 from typing import Mapping, Protocol, Sequence
 
-from .core import LaunchableCandidate
-from .workload import WorkloadContract
+from open_cake_ir.evaluation.core import LaunchableCandidate
+from open_cake_ir.evaluation.workload import WorkloadContract
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
@@ -27,39 +28,6 @@ def _canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
-@dataclass(frozen=True, order=True)
-class SemanticKey:
-    """Workload-owned B/N/K/D lookup key."""
-
-    batch: int
-    tokens: int
-    centroids: int
-    features: int
-
-    def __post_init__(self) -> None:
-        if any(
-            not isinstance(value, int) or isinstance(value, bool) or value <= 0
-            for value in self.as_tuple()
-        ):
-            raise ValueError("portfolio semantic key differs")
-
-    @classmethod
-    def from_case(cls, case: Mapping[str, object]) -> "SemanticKey":
-        shape = case.get("shape")
-        if not isinstance(shape, Mapping) or set(shape) != {"B", "N", "K", "D"}:
-            raise ValueError("Workload case shape differs")
-        return cls(
-            int(shape["B"]),
-            int(shape["N"]),
-            int(shape["K"]),
-            int(shape["D"]),
-        )
-
-    def as_tuple(self) -> tuple[int, int, int, int]:
-        return self.batch, self.tokens, self.centroids, self.features
-
-    def as_dict(self) -> dict[str, int]:
-        return {"B": self.batch, "N": self.tokens, "K": self.centroids, "D": self.features}
 
 
 @dataclass(frozen=True)
@@ -67,7 +35,7 @@ class PortfolioEntry:
     """One Workload case mapped to one sealed launchable candidate."""
 
     case_id: str
-    semantic_key: SemanticKey
+    semantic_key: ExactShape
     candidate: LaunchableCandidate
 
 
@@ -93,11 +61,11 @@ class PortfolioArtifact:
         if _DIGEST.fullmatch(seed_sha256) is None or not candidates:
             raise ValueError("portfolio seed or candidates differ")
         entries: list[PortfolioEntry] = []
-        seen_keys: set[SemanticKey] = set()
+        seen_keys: set[ExactShape] = set()
         for case_id in sorted(candidates):
             candidate = candidates[case_id]
             case = workload.case(case_id)
-            key = SemanticKey.from_case(case)
+            key = ExactShape.from_case(case)
             if key in seen_keys:
                 raise ValueError("portfolio semantic keys must be unique")
             seen_keys.add(key)
@@ -167,7 +135,7 @@ class PortfolioArtifact:
             entries.append(
                 PortfolioEntry(
                     str(raw["case_id"]),
-                    SemanticKey(
+                    ExactShape(
                         int(key["B"]), int(key["N"]), int(key["K"]), int(key["D"])
                     ),
                     candidate,
@@ -247,7 +215,7 @@ class ExactShapeDispatcher:
         shapes = tuple(tuple(int(axis) for axis in value.shape) for value in arguments)
         if len(shapes[0]) != 3 or len(shapes[1]) != 3:
             self._reject("dispatcher tensor ranks differ")
-        key = SemanticKey(shapes[0][0], shapes[0][1], shapes[1][1], shapes[0][2])
+        key = ExactShape(shapes[0][0], shapes[0][1], shapes[1][1], shapes[0][2])
         if (
             shapes[1] != (key.batch, key.centroids, key.features)
             or shapes[2] != (key.batch, key.centroids)

@@ -17,15 +17,10 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
-from open_cake_ir.lab import (  # noqa: E402
-    ExecutorRevision,
-    Lab,
-    NvccToolchainBuilder,
-    ProviderQualificationReceipt,
-    broker_execution_sha256,
-    required_live_provider_qualification_scope,
-    scientific_matched_analysis_plan_v2,
-)
+from open_cake_ir.lab import ExecutorRevision, ProviderQualificationReceipt, required_live_provider_qualification_scope, scientific_matched_analysis_plan_v2
+from open_cake_ir.tasks.runtime import TaskLab
+from open_cake_ir.tasks.flash_kmeans.environment import NvccToolchainBuilder
+from open_cake_ir.lab.runtime import broker_execution_sha256
 
 from open_cake_ir.lab.pairing import comparison_arm, triton_optimization_analysis_plan
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
@@ -308,7 +303,7 @@ def main() -> int:
         temporary = Path(stream.name)
         stream.write(_canonical_json_bytes(study) + b"\n")
     try:
-        lock = Lab(root).preflight(temporary)
+        lock = TaskLab(root).preflight(temporary)
         analysis = _object(study.get("analysis_plan"), "study.analysis_plan")
         if (
             lock.claim_scope != study.get("claim_scope")

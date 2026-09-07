@@ -84,7 +84,7 @@ launch 线程数；不按 Schedule 显示名称猜测匹配。记录携带原编
 同一观察可以进入已有 agent 反馈：
 
 ```bash
-python3 tools/project_qsa_feedback.py compiler \
+python3 src/open_cake_ir/tasks/qsa/project_feedback.py compiler \
   --revision compiler/revision.lock.json \
   --compiled-report /tmp/cake-compiled-profile/report.json \
   corpus/schedules/gemm-bias-b1-smoke.json
@@ -94,11 +94,11 @@ Python 调用通过 `compiler.profile(assessment, compiled_resources=resources)`
 公开方法先重放 Assessment，防止把修改过的 Schedule 与旧编译观察组合。
 省略 `compiled_resources` 就只做静态分析；不会隐式申请 GPU 或启动编译工具链。
 
-## QSA 下一轮反馈
+## QSA 评测反馈
 
 QSA evaluator 为已通过 Compiler 检查的节点保留局部 Finding，包括代码、位置、
 消息和原有的两个阻止阶段标志。终态结果经过 `qsa_evaluation_feedback`、
-`qsa_next_turn_request` 或 `tools/project_qsa_feedback.py evaluation|turn` 时，
+或 `python -m open_cake_ir.tasks.qsa.project_feedback evaluation` 时，
 各节点仍保留驻留分析的 `coverage` 与逐资源 `bounds`、profile 的 `abstentions`，
 以及 NCU 指标已有的原因和缺失观察。上界、定性风险和未知值的含义不变。
 
@@ -141,7 +141,7 @@ python3 tools/report_schedule_profile.py --json \
 Python 接口使用 `EmpiricalCostModel.load(path)`，然后调用
 `compiler.profile(assessment, cost_model=model)`。现有 Python agent 反馈接口可以直接
 消费该结果：`qsa_compiler_feedback(assessment, static_profile=profile.as_dict())`。
-`tools/project_qsa_feedback.py` 属于历史 Executor 的冻结闭包，其命令参数保持不变。
+任务入口已迁入 QSA 目录，只保留 `compiler` 和 `evaluation`；Ralph 负责生成下一轮状态。
 
 模型用一个通用表示覆盖不同算子：每条曲线固定一个完整 Schedule 模板，明确列出
 共同变化的 Buffer 维度、允许的整数对齐和测量区间，再按维度大小插值。这里没有

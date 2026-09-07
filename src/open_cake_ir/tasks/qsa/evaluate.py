@@ -12,47 +12,28 @@ import sys
 from pathlib import Path, PurePosixPath
 from typing import Mapping, cast
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.workloads import load_workload
 
-from open_cake_ir.compiler import (  # noqa: E402
-    Compiler,
-    Schedule,
-    Target,
-    profile_envelope,
-)
-from open_cake_ir.evaluation import (  # noqa: E402
-    NCU_ATTRIBUTION_METRICS,
-    ProgramContract,
-    WorkloadContract,
-    audit_qsa_output,
-    build_ncu_attribution_profile,
-    materialize_qsa_case,
-    ncu_attribution_feedback,
-    qsa_block_scores,
-    reference_qsa_output,
-)
-from open_cake_ir.evaluation.portfolio_runtime import (  # noqa: E402
-    StrictCuptiBenchmark,
-)
-from open_cake_ir.evaluation.qsa_cuda import (  # noqa: E402
-    LoadedQsaProgram,
-    QsaProgramArtifact,
-    qsa_program_tensors,
-)
-from open_cake_ir.lab import (  # noqa: E402
-    BuildRequest,
-    ExecutorRevision,
-    TritonToolchainBuilder,
-    qsa_compiler_feedback,
-)
+from open_cake_ir.compiler import Compiler, Schedule, Target, profile_envelope
+from open_cake_ir.evaluation import NCU_ATTRIBUTION_METRICS, WorkloadContract, build_ncu_attribution_profile, ncu_attribution_feedback
+from open_cake_ir.tasks.qsa.program import ProgramContract
+from open_cake_ir.tasks.qsa.evaluation import audit_qsa_output, materialize_qsa_case, qsa_block_scores, reference_qsa_output
+from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
+from open_cake_ir.tasks.qsa.cuda import LoadedQsaProgram, QsaProgramArtifact, qsa_program_tensors
+from open_cake_ir.lab import BuildRequest, ExecutorRevision
+from open_cake_ir.compiler.toolchain import compile_triton
+from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
+from dataclasses import asdict
+from open_cake_ir.tasks.qsa.feedback import qsa_compiler_feedback
 
 _STAGE_SCHEMA = "kernelinfra.stage-result.v1"
 _WORKLOAD_ID = "qsa-prefill-t32768"
 _PROGRAM_PATH = "contracts/programs/qsa-prefill-t32768-v2.json"
 _WORKLOAD_PATH = "contracts/workloads/qsa-prefill-t32768-v1.json"
-_DIRECT_SOURCE = "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.cu"
-_DIRECT_MANIFEST = "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.json"
+_DIRECT_SOURCE = "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu"
+_DIRECT_MANIFEST = "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json"
 _OPEN_CAKE_ORDER = ("pool", "layernorm", "score_topk", "expand", "attention")
 _DIRECT_ORDER = ("pool_layernorm", "score_topk", "expand", "attention")
 
@@ -189,6 +170,29 @@ def _global_abi(schedule: Schedule) -> dict[str, tuple[tuple[int, ...], str]]:
     }
 
 
+def _compile_node(request: BuildRequest) -> dict[str, bytes]:
+    """Compile a QSA node; only the QSA Program owns its tensor ABI."""
+    requirements = request.toolchain_requirements
+    compilation = compile_triton(request.source, requirements)
+    if (compilation.target != request.target
+        or compilation.entry_point != requirements["kernel_entry_point"]):
+        raise ValueError("QSA node compilation target or entry point differs")
+    launch = CudaKernelSpec.from_dict({
+        "target": request.target,
+        "kernel_name": compilation.entry_point,
+        "grid": requirements["grid"],
+        "block": [compilation.threads_per_cta, 1, 1],
+        "dynamic_shared_memory_bytes": compilation.dynamic_shared_bytes,
+        "hidden_null_pointer_parameters": 2,
+    })
+    return {
+        "lowered_source": request.source,
+        "ptx": compilation.artifacts["ptx"],
+        "cubin": compilation.artifacts["cubin"],
+        "launch_manifest": json.dumps(asdict(launch), sort_keys=True, separators=(",", ":")).encode(),
+    }
+
+
 def _compile_open_cake(
     root: Path,
     candidate_root: Path,
@@ -217,7 +221,6 @@ def _compile_open_cake(
     output.mkdir(parents=True, exist_ok=False)
     manifest_kernels: list[dict[str, object]] = []
     node_profiles: dict[str, object] = {}
-    toolchain = TritonToolchainBuilder()
     target = Target.load(root / "compiler/targets/sm_100a.json")
     canonical_nodes = {node.node_id: node for node in program.nodes}
     for node_id in _OPEN_CAKE_ORDER:
@@ -259,7 +262,7 @@ def _compile_open_cake(
             toolchain_requirements=lowering.toolchain_requirements,
         )
         try:
-            launchable = toolchain.build(request)
+            artifacts = _compile_node(request)
         except Exception as error:
             raise _CandidateRejected(
                 f"Open Cake node {node_id!r} toolchain rejected the lowering: {error}",
@@ -276,8 +279,8 @@ def _compile_open_cake(
         node_root = output / node_id
         node_root.mkdir()
         for role in ("lowered_source", "ptx", "cubin"):
-            (node_root / role).write_bytes(launchable.artifact_payloads[role])
-        launch = json.loads(launchable.artifact_payloads["launch_manifest"])
+            (node_root / role).write_bytes(artifacts[role])
+        launch = json.loads(artifacts["launch_manifest"])
         manifest_kernels.append(
             {
                 "id": node_id,
@@ -539,7 +542,7 @@ def _load_program(build_root: Path, name: str) -> LoadedQsaProgram:
 
 
 def _case(root: Path):
-    workload = WorkloadContract.load(root / _WORKLOAD_PATH)
+    workload = load_workload(root / _WORKLOAD_PATH)
     inputs = materialize_qsa_case(workload, "target_t32768", "cuda")
     return workload, inputs
 

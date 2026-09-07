@@ -21,7 +21,7 @@ from open_cake_ir.compiler import (  # noqa: E402
 )
 from open_cake_ir.compiler.release import build_release  # noqa: E402
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
-from open_cake_ir.lab import KernelSeed, lower_specialists  # noqa: E402
+from open_cake_ir.tasks.flash_kmeans.seed import KernelSeed, lower_specialists
 
 
 

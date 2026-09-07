@@ -110,7 +110,7 @@ every output and verifies inputs remain unchanged. `TorchTensorLauncher` allocat
 the ABI and calls the existing admitted CUDA Driver module/launch/unload lifecycle. It never
 executes candidate host wrappers. Outputs begin with poison values so an unwritten output
 cannot pass merely because allocation returned zeros. The existing evaluator command at
-`tools/evaluate_flash_candidate.py` also accepts `workload_tensors_v1`; its historical name
+`src/open_cake_ir/tasks/evaluate.py` also accepts `workload_tensors_v1`; its historical name
 remains the command boundary for existing frozen consumers. A `LoadedTorchTensorCandidate`
 keeps the CUBIN and inputs loaded across preflight, CUPTI cohorts and postflight. Each
 timing callback receives a separate poisoned output, prepared and synchronized before

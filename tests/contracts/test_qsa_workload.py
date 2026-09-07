@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.workloads import load_workload
 
 from open_cake_ir.evaluation import WorkloadContract  # noqa: E402
 
@@ -18,7 +19,7 @@ class QsaWorkloadContractTest(unittest.TestCase):
         self.path = ROOT / "contracts/workloads/qsa-prefill-t32768-v1.json"
 
     def test_qsa_contract_freezes_target_and_non_checkpoint_boundary(self) -> None:
-        workload = WorkloadContract.load(self.path)
+        workload = load_workload(self.path)
 
         self.assertEqual(
             workload.case_ids,
@@ -33,8 +34,8 @@ class QsaWorkloadContractTest(unittest.TestCase):
         self.assertFalse(semantics["checkpoint_configuration_claimed"])
 
     def test_qsa_oracle_source_is_the_bound_external_implementation(self) -> None:
-        workload = WorkloadContract.load(self.path)
-        source = ROOT / "src/open_cake_ir/evaluation/qsa.py"
+        workload = load_workload(self.path)
+        source = ROOT / "src/open_cake_ir/tasks/qsa/evaluation.py"
 
         self.assertEqual(
             sha256(source.read_bytes()).hexdigest(),
@@ -61,7 +62,7 @@ class QsaWorkloadContractTest(unittest.TestCase):
                 path = Path(directory) / "workload.json"
                 path.write_text(json.dumps(document), encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "QSA workload semantics differ"):
-                    WorkloadContract.load(path)
+                    load_workload(path)
 
 
 if __name__ == "__main__":

@@ -16,11 +16,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.lab.pairing import comparison_arm, triton_optimization_analysis_plan  # noqa: E402
-from open_cake_ir.lab import (  # noqa: E402
-    ExecutorRevision,
-    Lab,
-    scientific_matched_analysis_plan_v2,
-)
+from open_cake_ir.lab import ExecutorRevision, scientific_matched_analysis_plan_v2
+from open_cake_ir.tasks.runtime import TaskLab
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -215,7 +212,7 @@ def main() -> int:
         temporary = Path(stream.name)
         stream.write(_canonical_json_bytes(document) + b"\n")
     try:
-        lock = Lab(root).preflight(temporary)
+        lock = TaskLab(root).preflight(temporary)
         if lock.study_id != arguments.study_id:
             raise ValueError("Study successor identity did not survive preflight")
         temporary.replace(output)

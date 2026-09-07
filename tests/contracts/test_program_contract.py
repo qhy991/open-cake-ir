@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
-from open_cake_ir.evaluation import ProgramContract  # noqa: E402
+from open_cake_ir.tasks.qsa.program import ProgramContract
 
 
 class ProgramContractTest(unittest.TestCase):

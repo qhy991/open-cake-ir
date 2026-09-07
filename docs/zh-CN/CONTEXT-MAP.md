@@ -36,3 +36,5 @@ Lab 调用 Compiler，也通过 Evaluation 保存 Evidence；Evidence 的只读�
 新的数学题目或实验设计建立后继合同；反复出现的编译器问题形成 ADR、编译器后继和 Corpus Gate。纠正旧观察另写勘误；新论文版本另立来源。运行证据只能促成提案，不能直接改正在用的编译器。
 
 初学者按[系统全貌](../ARCHITECTURE.md) → [入门教程](../GETTING_STARTED.md) → [术语表](../GLOSSARY.md)读。实验操作人员继续读[论文对照](PAPER_CONTRACT.md)、[Lab 职责](contexts/lab/CONTEXT.md)和[执行手册](RUNBOOK.md)。维护者继续读[验收规则](ACCEPTANCE_GATES.md)、状态页和本次审查绑定的原始证据。
+
+任务实现的目录和依赖方向见[任务说明](../TASKS.md)。

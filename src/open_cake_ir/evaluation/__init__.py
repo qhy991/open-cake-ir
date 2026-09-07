@@ -7,60 +7,14 @@ from .attempts import (
     evaluate_with_admission_recovery,
     is_resubmittable_admission_failure,
 )
-from .core import (
-    CandidateLauncher,
-    EvaluationProtocol,
-    EvaluationReceipt,
-    LaunchableCandidate,
-    LaunchObservation,
-    evaluate_flash_kmeans,
-)
-from .correctness import CorrectnessObservation, audit_flash_kmeans_assignment
-from .cuda_driver import (
-    CudaDeviceAdmission,
-    CudaDriverLaunchReceipt,
-    CudaLifecycleError,
-    CudaTensorContract,
-    LoadedCudaCandidate,
-    launch_candidate_once,
-    launch_cubin_once,
-)
-from .cuda_manifest import CudaLaunchManifest, parse_cuda_launch_manifest
-from .flash_kmeans import (
-    assignment_raw_sha256,
-    classify_flash_kmeans_output,
-    flash_kmeans_metrics,
-    flash_kmeans_oracle,
-    generate_flash_kmeans_case,
-    tensor_raw_sha256,
-)
-from .legacy_r45 import replay_legacy_r45_result
-from .portfolio import (
-    DispatchReceipt,
-    ExactShapeDispatcher,
-    PortfolioArtifact,
-    PortfolioCaseObservation,
-    PortfolioEntry,
-    PortfolioEvaluationReceipt,
-    SemanticKey,
-    evaluate_portfolio_observations,
-    replay_portfolio_receipt,
-)
-from .portfolio_runtime import CuptiBenchmark, CuptiPortfolioAssay, StrictCuptiBenchmark
+from open_cake_ir.evaluation.core import EvaluationProtocol, EvaluationReceipt, LaunchableCandidate, LaunchObservation
+from open_cake_ir.evaluation.cuda_driver import CudaDeviceAdmission, CudaDriverLaunchReceipt, CudaLifecycleError, LoadedCudaCandidate, launch_candidate_once, launch_cubin_once
+from open_cake_ir.evaluation.benchmark import CuptiBenchmark, StrictCuptiBenchmark
 from .profiler import (
     NCU_ATTRIBUTION_METRICS,
     build_ncu_attribution_profile,
     load_ncu_attribution_profile,
     ncu_attribution_feedback,
-)
-from .program import ProgramContract, ProgramNode
-from .qsa import (
-    QsaCorrectnessObservation,
-    audit_qsa_output,
-    materialize_qsa_case,
-    qsa_block_scores,
-    qsa_selection_mask,
-    reference_qsa_output,
 )
 from .timing import (
     PairedTimingObservation,
@@ -68,21 +22,11 @@ from .timing import (
     derive_paired_timing,
     summarize_cohort,
 )
-from .tinygemm import (
-    TinyGemmLauncher,
-    evaluate_tinygemm,
-    generate_tinygemm_case,
-    tinygemm_metrics,
-    tinygemm_oracle,
-)
 from .workload import WorkloadContract
 
 __all__ = [
     "PairedTimingObservation",
     "PairedTimingProtocol",
-    "CorrectnessObservation",
-    "CandidateLauncher",
-    "CudaLaunchManifest",
     "EvaluationProtocol",
     "EvaluationReceipt",
     "LaunchableCandidate",
@@ -90,54 +34,20 @@ __all__ = [
     "CudaDriverLaunchReceipt",
     "CudaLifecycleError",
     "CudaDeviceAdmission",
-    "CudaTensorContract",
     "LoadedCudaCandidate",
     "WorkloadContract",
-    "ProgramContract",
-    "ProgramNode",
-    "QsaCorrectnessObservation",
-    "audit_qsa_output",
-    "materialize_qsa_case",
-    "qsa_block_scores",
-    "qsa_selection_mask",
-    "reference_qsa_output",
-    "TinyGemmLauncher",
-    "evaluate_tinygemm",
-    "generate_tinygemm_case",
-    "tinygemm_metrics",
-    "tinygemm_oracle",
     "CuptiBenchmark",
-    "CuptiPortfolioAssay",
     "StrictCuptiBenchmark",
     "NCU_ATTRIBUTION_METRICS",
     "build_ncu_attribution_profile",
     "load_ncu_attribution_profile",
     "ncu_attribution_feedback",
-    "replay_legacy_r45_result",
     "observe_exclusive_b200",
     "observe_exclusive_cuda",
-    "DispatchReceipt",
-    "ExactShapeDispatcher",
-    "PortfolioArtifact",
-    "PortfolioEntry",
-    "PortfolioCaseObservation",
-    "PortfolioEvaluationReceipt",
-    "SemanticKey",
-    "evaluate_portfolio_observations",
-    "replay_portfolio_receipt",
     "BrokerAttempt",
     "LogicalEvaluationAttempt",
     "evaluate_with_admission_recovery",
     "is_resubmittable_admission_failure",
-    "audit_flash_kmeans_assignment",
-    "assignment_raw_sha256",
-    "classify_flash_kmeans_output",
-    "flash_kmeans_metrics",
-    "flash_kmeans_oracle",
-    "generate_flash_kmeans_case",
-    "evaluate_flash_kmeans",
-    "tensor_raw_sha256",
-    "parse_cuda_launch_manifest",
     "launch_cubin_once",
     "launch_candidate_once",
     "derive_paired_timing",

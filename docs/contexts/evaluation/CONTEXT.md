@@ -39,3 +39,5 @@ Timing CV failure is Measurement Quality evidence, not Candidate incorrectness. 
 correctness-qualified profiler launch supplies diagnosis but no profiler-free latency
 sample. “Source” must name its role—authored source, lowered source, expanded source, PTX,
 CUBIN, or SASS—rather than collapse distinct artifacts.
+
+Operator materializers, oracles and exact semantic validators live in task modules. This context supplies their shared contracts and measurement mechanisms; see [task ownership](../../en/TASKS.md).

@@ -12,8 +12,7 @@ from typing import Mapping, cast
 
 from open_cake_ir.compiler import Assessment
 
-from .core import TurnRequest
-from .routing import CANDIDATE, VERIFIER, route_rejection
+from open_cake_ir.lab.routing import CANDIDATE, VERIFIER, route_rejection
 
 _RUN_SCHEMA = "kernelinfra.run-result.v1"
 _ARMS = {"open_cake", "direct_cuda"}
@@ -269,28 +268,3 @@ def qsa_evaluation_feedback(
         )
         feedback["summary"] = summary
     return _freeze(feedback)
-
-
-def qsa_next_turn_request(
-    *,
-    run_id: str,
-    arm: str,
-    turn: int,
-    cumulative_provider_tokens: int,
-    thread_id: str | None,
-    maximum_candidates_per_turn: int,
-    result: Mapping[str, object],
-) -> TurnRequest:
-    """Connect a terminal QSA result to the canonical same-thread provider request."""
-
-    if turn <= 1:
-        raise ValueError("QSA feedback can resume only a later provider Turn")
-    return TurnRequest(
-        run_id,
-        arm,
-        turn,
-        cumulative_provider_tokens,
-        thread_id,
-        qsa_evaluation_feedback(result, arm=arm),
-        maximum_candidates_per_turn,
-    )

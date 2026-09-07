@@ -1,3 +1,4 @@
+from open_cake_ir.tasks.workloads import load_workload
 """CPU protocol regressions for the shared Workload-tensor GPU worker."""
 import json
 from pathlib import Path
@@ -6,14 +7,12 @@ import tempfile
 import unittest
 from unittest import mock
 
-from open_cake_ir.evaluation.core import (
-    EvaluationProtocol, EvaluationReceipt, LoadedTorchTensorCandidate, TensorLaunchManifest,
-    evaluate_tile_workload,
-)
-from open_cake_ir.evaluation.tile_workloads import materialize_case, reference_outputs
+from open_cake_ir.evaluation.core import EvaluationProtocol, EvaluationReceipt, LoadedTorchTensorCandidate, TensorLaunchManifest
+from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload
+from open_cake_ir.tasks.tiles.workload import materialize_case, reference_outputs
 from open_cake_ir.evaluation.workload import WorkloadContract
 from tests.contracts.test_native_triton_pairing import encoded
-from tools import evaluate_flash_candidate as worker
+from open_cake_ir.tasks import evaluate as worker
 from hashlib import sha256
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class TileGpuWorkerTests(unittest.TestCase):
     def setUp(self):
-        self.workload = WorkloadContract.load(ROOT / 'contracts/workloads/rmsnorm-fp32-v1.json')
+        self.workload = load_workload(ROOT / 'contracts/workloads/rmsnorm-fp32-v1.json')
         self.manifest = TensorLaunchManifest.for_workload(self.workload, 'tiny', target='sm_100a',
             kernel_name='fixture', grid=[1, 1, 1], block=[128, 1, 1],
             dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=2)

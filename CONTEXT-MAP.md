@@ -84,3 +84,5 @@ release approval, and a released successor can change Compiler semantics.
 3. [`docs/ACCEPTANCE_GATES.md`](docs/ACCEPTANCE_GATES.md)
 4. [`reports/current/STATUS.md`](reports/current/STATUS.md)
 5. [`docs/adr/`](docs/adr/) and the exact retained Evidence being audited
+
+Task implementation ownership and composition: [Tasks](docs/en/TASKS.md).

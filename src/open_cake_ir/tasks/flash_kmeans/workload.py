@@ -6,7 +6,7 @@ import math
 from hashlib import sha256
 from typing import Mapping, cast
 
-from .workload import WorkloadContract
+from open_cake_ir.evaluation.workload import WorkloadContract
 
 
 def _torch():

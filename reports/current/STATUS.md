@@ -19,7 +19,7 @@
 
 - 版本： `open-cake-ir-b200-v55`
 - 状态： `released`
-- 绑定源码： `56` 个文件
+- 绑定源码： `80` 个文件
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 - 描述文件： [`runtime/executors/open-cake-ir-b200-v55.json`](../../runtime/executors/open-cake-ir-b200-v55.json)
 

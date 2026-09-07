@@ -1,4 +1,4 @@
-# ADR 0055 — One fixed-baseline paired assay per candidate
+# ADR 0056 — One fixed-baseline paired assay per candidate
 
 Status: proposed Executor successor; requires independent review and release.
 
@@ -63,3 +63,10 @@ locks, Executor descriptors and prior evidence remain unchanged. This change
 needs an Executor successor including the new binding and paired-validation
 modules, host qualification, an actual paired B300 canary and independent review
 before scientific runs. No Compiler primitive or calibration is added.
+
+Task composition stays under `tasks`: `TaskLab` supplies the strict workload,
+schedule and manifest hooks to the common Lab, and `tasks.compose` injects the
+same strict workload loader into the paired broker. The worker is
+`open_cake_ir.tasks.evaluate`. Common Lab and Evaluation import no task
+implementation. Broker command identity belongs to `lab.runtime`; external
+locators and sealed baseline bundles remain owned by `lab.bindings`.

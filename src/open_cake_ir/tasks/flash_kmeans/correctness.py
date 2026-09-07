@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping, cast
 
-from .workload import WorkloadContract
+from open_cake_ir.evaluation.workload import WorkloadContract
 
 
 @dataclass(frozen=True)

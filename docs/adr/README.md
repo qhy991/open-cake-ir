@@ -29,3 +29,5 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - **rejected：** 保留被拒绝的方案及理由，不据此实施。
 
 - [0054: Lab uses only Ralph](0054-lab-uses-only-ralph.md)
+- [0055: Task implementations live outside the common Lab](0055-task-implementations-live-outside-the-common-lab.md)
+- [0056: One fixed-baseline paired assay per candidate](0056-fixed-baseline-paired-execution.md)

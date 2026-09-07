@@ -7,11 +7,12 @@ import json
 import os
 import pwd
 import re
+import shutil
 import stat
 import tempfile
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
-from typing import Mapping, Protocol
+from typing import Callable, Mapping, Protocol
 
 from open_cake_ir.evaluation import (
     BrokerAttempt,
@@ -48,6 +49,52 @@ def _canonical_json_bytes(value: object) -> bytes:
         ensure_ascii=False,
         allow_nan=False,
     ).encode()
+
+
+def broker_execution_sha256(
+    command: tuple[str, ...],
+    *,
+    cwd: Path,
+    project_root: Path,
+    timeout_seconds: int,
+    service_user: str,
+    service_group: str,
+) -> str:
+    if not command:
+        raise ValueError("external command is empty")
+    if (
+        cwd.resolve(strict=True) != project_root
+        or timeout_seconds <= 0
+        or not service_user
+        or not service_group
+    ):
+        raise ValueError("broker cwd policy or timeout differs")
+    executable = shutil.which(command[0])
+    if executable is None:
+        raise ValueError(f"external command {command[0]!r} is unavailable")
+    files: dict[str, str] = {
+        str(Path(executable).resolve(strict=True)): sha256(
+            Path(executable).resolve(strict=True).read_bytes()
+        ).hexdigest()
+    }
+    for value in command[1:]:
+        path = Path(value)
+        if path.is_absolute() and path.is_file() and not path.is_symlink():
+            files[str(path.resolve(strict=True))] = sha256(path.read_bytes()).hexdigest()
+    return sha256(
+        json.dumps(
+            {
+                "argv": list(command),
+                "files": files,
+                "cwd_policy": "project_root",
+                "timeout_seconds": timeout_seconds,
+                "service_user": service_user,
+                "service_group": service_group,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
 
 
 class BrokerSubmitter(Protocol):
@@ -122,6 +169,7 @@ class CommandBrokerSubmitter:
         timeout_seconds: int = 1800,
         evaluation_protocol: Mapping[str, object] | None = None,
         baseline: LaunchableCandidate | None = None,
+        workload_loader: Callable | None = None,
     ) -> None:
         if (
             not command
@@ -142,6 +190,9 @@ class CommandBrokerSubmitter:
         self._timeout = timeout_seconds
         self._protocol = json.loads(_canonical_json_bytes(evaluation_protocol)) if evaluation_protocol is not None else None
         self._baseline = baseline
+        self._load_workload = workload_loader
+        if baseline is not None and not callable(workload_loader):
+            raise ValueError('paired broker requires the task Workload loader')
         if self._protocol is not None:
             if sha256(_canonical_json_bytes(self._protocol)).hexdigest() != protocol_sha256:
                 raise ValueError('broker evaluation protocol differs')
@@ -198,8 +249,7 @@ class CommandBrokerSubmitter:
         ):
             raise ValueError("broker attempt number or Candidate custody differs")
         if self._baseline is not None:
-            from open_cake_ir.evaluation import WorkloadContract
-            workload = WorkloadContract.load(self._workload_path)
+            workload = self._load_workload(self._workload_path)
             if workload.canonical_sha256 != self._workload_sha256:
                 raise ValueError('broker Workload authority differs')
             validate_pair_candidates(candidate, self._baseline, workload, case_id)

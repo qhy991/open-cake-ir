@@ -73,8 +73,9 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                 ROOT / "src/open_cake_ir/lab",
                 ROOT / "src/open_cake_ir/evaluation",
                 ROOT / "src/open_cake_ir/evidence",
+                ROOT / "src/open_cake_ir/tasks",
             )
-            for path in directory.glob("*.py")
+            for path in directory.rglob("*.py")
         } | {
             "compiler/targets/sm_100a.json",
             "compiler/targets/sm_103a.json",
@@ -83,14 +84,10 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             "examples/gpu/flash_kmeans_quickstart.py",
             "src/open_cake_ir/__init__.py",
             "src/open_cake_ir/cli.py",
-            "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.cu",
-            "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.json",
-            "tools/calibrate_flash_cost.py",
+            "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu",
+            "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json",
             "tools/capture_executor_host.py",
-            "tools/evaluate_flash_candidate.py",
-            "tools/evaluate_qsa_candidate.py",
             "tools/observe_target_peak.py",
-            "tools/project_qsa_feedback.py",
         }
 
         self.assertEqual(observed, expected)

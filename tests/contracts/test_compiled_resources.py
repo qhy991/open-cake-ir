@@ -138,7 +138,7 @@ runpy.run_path('tools/report_schedule_profile.py',run_name='__main__')
             profile = json.loads(result.stdout)["rows"][0]["profile"]
             self.assertEqual(profile["compiled_resources"], self.resources.as_dict())
             feedback = subprocess.run([
-                sys.executable, "-B", "tools/project_qsa_feedback.py", "compiler",
+                sys.executable, "-B", "src/open_cake_ir/tasks/qsa/project_feedback.py", "compiler",
                 "--revision", "compiler/revision.json", "--compiled-report", str(path), str(self.path),
             ], cwd=ROOT, capture_output=True, text=True)
             self.assertEqual(feedback.returncode, 0, feedback.stderr)

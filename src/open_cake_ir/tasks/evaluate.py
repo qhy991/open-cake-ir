@@ -16,41 +16,25 @@ from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import Mapping, cast
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.workloads import load_workload
 
-from open_cake_ir.evaluation import (  # noqa: E402
-    CudaDeviceAdmission,
-    CudaLaunchManifest,
-    CudaTensorContract,
-    LaunchableCandidate,
-    LoadedCudaCandidate,
-    StrictCuptiBenchmark,
-    WorkloadContract,
-    assignment_raw_sha256,
-    build_ncu_attribution_profile,
-    classify_flash_kmeans_output,
-    flash_kmeans_oracle,
-    generate_flash_kmeans_case,
-    NCU_ATTRIBUTION_METRICS,
-    summarize_cohort,
-)
-from open_cake_ir.evaluation.paired import (  # noqa: E402
+from open_cake_ir.evaluation import CudaDeviceAdmission, LaunchableCandidate, LoadedCudaCandidate, WorkloadContract, build_ncu_attribution_profile, NCU_ATTRIBUTION_METRICS, summarize_cohort
+from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
+from open_cake_ir.tasks.flash_kmeans.cuda import CudaTensorContract
+from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
+from open_cake_ir.tasks.flash_kmeans.workload import assignment_raw_sha256, classify_flash_kmeans_output, flash_kmeans_oracle, generate_flash_kmeans_case
+from open_cake_ir.lab.executor import ExecutorRevision
+from open_cake_ir.evaluation.admission import observe_exclusive_cuda
+from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs
+from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload
+from open_cake_ir.tasks.launch import parse_launch_manifest
+from open_cake_ir.tasks.tiles.workload import materialize_case, reference_outputs
+from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, run_supervised, sanitized_environment
+from open_cake_ir.evaluation.paired import (
     PAIRED_KIND, paired_protocol, paired_summary, candidate_identity,
     candidate_from_identity, validate_pair_candidates,
-)
-from open_cake_ir.lab.executor import ExecutorRevision  # noqa: E402
-from open_cake_ir.evaluation.admission import observe_exclusive_cuda  # noqa: E402
-from open_cake_ir.evaluation.core import (  # noqa: E402
-    EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest,
-    compare_tile_outputs, evaluate_tile_workload, parse_launch_manifest,
-)
-from open_cake_ir.evaluation.tile_workloads import materialize_case, reference_outputs  # noqa: E402
-from open_cake_ir.lab.process import (  # noqa: E402
-    SupervisedProcessOutputLimit,
-    SupervisedProcessTimeout,
-    run_supervised,
-    sanitized_environment,
 )
 
 
@@ -143,7 +127,7 @@ def _load_authority(request_path: Path) -> _Authority:
         for role, payload in payloads.items()
     ):
         raise ValueError("candidate artifact bytes differ")
-    workload = WorkloadContract.load(Path(str(request["workload_path"])).resolve(strict=True))
+    workload = load_workload(Path(str(request["workload_path"])).resolve(strict=True))
     if workload.canonical_sha256 != request["workload_sha256"]:
         raise ValueError("worker Workload bytes differ")
     manifest = parse_launch_manifest(json.loads(payloads["launch_manifest"]))

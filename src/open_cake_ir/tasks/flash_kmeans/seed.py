@@ -60,6 +60,16 @@ class ExactShape:
             cast(int, value["D"]),
         )
 
+    def as_tuple(self) -> tuple[int, int, int, int]:
+        return self.batch, self.tokens, self.centroids, self.features
+
+    @classmethod
+    def from_case(cls, case: Mapping[str, object]) -> "ExactShape":
+        shape = case.get("shape")
+        if not isinstance(shape, Mapping):
+            raise ValueError("Workload case shape differs")
+        return cls.from_mapping(shape)
+
     def as_dict(self) -> dict[str, int]:
         return {"B": self.batch, "N": self.tokens, "K": self.centroids, "D": self.features}
 

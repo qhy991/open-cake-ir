@@ -350,3 +350,5 @@ remote target, and rollback plan immediately before cutover. Never run two activ
 Rollback likewise requires explicit authorization. Stop active writers and retain their
 terminal state, then create a new empty checkout from the verified legacy bundle. Do not
 modify either existing tree or copy new Evidence into legacy state.
+
+Task-specific Python/CLI entrypoints now live under `src/open_cake_ir/tasks/`; see [task ownership](en/TASKS.md).

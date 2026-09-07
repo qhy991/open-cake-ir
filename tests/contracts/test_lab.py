@@ -17,6 +17,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.workloads import load_workload
 
 from open_cake_ir.evaluation import (  # noqa: E402
     BrokerAttempt,
@@ -27,28 +28,8 @@ from open_cake_ir.evaluation import (  # noqa: E402
     build_ncu_attribution_profile,
 )
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
-from open_cake_ir.lab import (  # noqa: E402
-    CANDIDATE_SET_ENVELOPE_V1,
-    CODEX_DISABLED_FEATURES,
-    BoundedBrokerEvaluator,
-    CampaignLock,
-    CommandBrokerSubmitter,
-    EnvironmentResult,
-    ExecutorRevision,
-    Lab,
-    ProviderAuxiliaryActivity,
-    ProviderQualificationReceipt,
-    ProviderTurn,
-    RunProtocolFault,
-    RalphBudget,
-    RalphController,
-    TASK_AGENTS_RALPH_V1,
-    TurnObservation,
-    materialize_task_package,
-    project_checkpoints,
-    render_task_package,
-    verify_task_package,
-)
+from open_cake_ir.lab import CANDIDATE_SET_ENVELOPE_V1, CODEX_DISABLED_FEATURES, BoundedBrokerEvaluator, CampaignLock, CommandBrokerSubmitter, EnvironmentResult, ExecutorRevision, ProviderAuxiliaryActivity, ProviderQualificationReceipt, ProviderTurn, RunProtocolFault, RalphBudget, RalphController, TASK_AGENTS_RALPH_V1, TurnObservation, materialize_task_package, project_checkpoints, verify_task_package
+from open_cake_ir.tasks.runtime import TaskLab
 
 
 def _profile_fixture(candidate_sha256: str, case_id: str, kernel_name: str) -> bytes:
@@ -70,7 +51,7 @@ def _profile_fixture(candidate_sha256: str, case_id: str, kernel_name: str) -> b
 
 def _execute(lab, lock, evidence_root, *, provider, **kwargs):
     provider.packages = {
-        run_id: render_task_package(lab._root, lock, run_id)
+        run_id: TaskLab(lab._root).task_package(lock, run_id)
         for run_id in lock.run_order
     }
     return lab.execute(lock, evidence_root, provider=provider, **kwargs)
@@ -458,12 +439,12 @@ class FindingRoutingContractTests(unittest.TestCase):
 
 class LabContractTests(unittest.TestCase):
     def test_execute_refuses_evidence_inside_the_checkout_before_side_effects(self) -> None:
-        lock = Lab(ROOT).preflight(ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json")
+        lock = TaskLab(ROOT).preflight(ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json")
         with tempfile.TemporaryDirectory(prefix=".campaign-custody-", dir=ROOT) as directory:
             evidence_root = Path(directory) / "evidence"
 
             with self.assertRaisesRegex(ValueError, "outside the project checkout"):
-                Lab(ROOT).execute(
+                TaskLab(ROOT).execute(
                     lock,
                     evidence_root,
                     provider=object(),
@@ -498,7 +479,7 @@ class LabContractTests(unittest.TestCase):
                 name,
             )
 
-            lock = Lab(ROOT).preflight(path)
+            lock = TaskLab(ROOT).preflight(path)
             executor = lock.document["execution"]["executor_revision"]
             current = json.loads(
                 (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
@@ -526,7 +507,7 @@ class LabContractTests(unittest.TestCase):
     def test_study_revision_binding_forms_are_closed_by_state(self) -> None:
         source = ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         template = json.loads(source.read_text(encoding="utf-8"))
-        resolved = Lab(ROOT).preflight(source).document
+        resolved = TaskLab(ROOT).preflight(source).document
         exact_compiler = dict(resolved["compiler_revision"])
         exact_executor = dict(resolved["execution"]["executor_revision"])
         cases = (
@@ -569,10 +550,10 @@ class LabContractTests(unittest.TestCase):
                     path = Path(directory) / f"{name}.json"
                     path.write_text(json.dumps(study), encoding="utf-8")
                     with self.assertRaisesRegex(ValueError, error):
-                        Lab(ROOT).preflight(path)
+                        TaskLab(ROOT).preflight(path)
 
     def test_v25_retains_the_reference_bundle_or_records_a_missing_endpoint(self) -> None:
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
         )
@@ -606,7 +587,7 @@ class LabContractTests(unittest.TestCase):
             report = lab.audit(campaign)
             evidence = EvidenceStore.open(campaign.evidence_root)
             for run_id in lock.run_order:
-                expected = render_task_package(ROOT, lock, run_id)
+                expected = TaskLab(ROOT).task_package(lock, run_id)
                 for event in evidence.replay_events(run_id):
                     if event["kind"] != "provider_turn_completed":
                         continue
@@ -669,7 +650,7 @@ class LabContractTests(unittest.TestCase):
 
 
     def test_system_qualification_preflight_binds_non_scientific_one_run_per_arm(self) -> None:
-        lock = Lab(ROOT).preflight(
+        lock = TaskLab(ROOT).preflight(
             ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
         )
 
@@ -678,7 +659,7 @@ class LabContractTests(unittest.TestCase):
         self.assertIsNone(lock.estimand)
 
     def test_artifact_optimization_preflight_binds_full_features_without_an_estimand(self) -> None:
-        lock = Lab(ROOT).preflight(
+        lock = TaskLab(ROOT).preflight(
             ROOT / "contracts/studies/artifact-optimization-ralph-template.json"
         )
 
@@ -721,7 +702,7 @@ class LabContractTests(unittest.TestCase):
                 ValueError,
                 "provider qualification bytes or capability differs",
             ):
-                Lab(ROOT).preflight(path)
+                TaskLab(ROOT).preflight(path)
 
     def test_fixture_provider_qualification_forbids_an_external_anchor(self) -> None:
         study = json.loads(
@@ -739,7 +720,7 @@ class LabContractTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 ValueError, "fixture provider qualification anchor must be null"
             ):
-                Lab(ROOT).preflight(path)
+                TaskLab(ROOT).preflight(path)
 
     def test_system_qualification_rejects_a_scientific_estimand(self) -> None:
         study = json.loads(
@@ -755,7 +736,7 @@ class LabContractTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 ValueError, "system qualification Analysis Plan differs"
             ):
-                Lab(ROOT).preflight(path)
+                TaskLab(ROOT).preflight(path)
 
     def test_preflight_rejects_a_changed_direct_candidate_skeleton(self) -> None:
         study = json.loads(
@@ -768,7 +749,7 @@ class LabContractTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 ValueError, "direct candidate skeleton bytes differ"
             ):
-                Lab(ROOT).preflight(path)
+                TaskLab(ROOT).preflight(path)
 
     def test_reasoning_effort_requires_its_matching_qualification(self) -> None:
         study = json.loads(
@@ -782,7 +763,7 @@ class LabContractTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 ValueError, "provider qualification bytes or capability differs"
             ):
-                Lab(ROOT).preflight(path)
+                TaskLab(ROOT).preflight(path)
 
     def test_system_qualification_passes_with_replayed_evaluations_below_checkpoint(self) -> None:
         class UnderCheckpointProvider(FakeProvider):
@@ -810,7 +791,7 @@ class LabContractTests(unittest.TestCase):
                     reference_bundle=observed.reference_bundle,
                 )
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
         )
@@ -950,7 +931,7 @@ class LabContractTests(unittest.TestCase):
                     ),
                 )
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-ralph-template.json")
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1023,7 +1004,7 @@ class LabContractTests(unittest.TestCase):
                     {"stage": "compile", "passed": False},
                 )
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
         )
@@ -1233,7 +1214,7 @@ class LabContractTests(unittest.TestCase):
             path = Path(directory) / "study.json"
             path.write_text(json.dumps(study))
             with self.assertRaisesRegex(ValueError, "released"):
-                Lab(ROOT).preflight(path)
+                TaskLab(ROOT).preflight(path)
 
     def test_preflight_rejects_an_unsupported_analysis_plan(self) -> None:
         study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-template.json").read_text())
@@ -1242,7 +1223,7 @@ class LabContractTests(unittest.TestCase):
             path = Path(directory) / "study.json"
             path.write_text(json.dumps(study))
             with self.assertRaisesRegex(ValueError, "analysis_plan"):
-                Lab(ROOT).preflight(path)
+                TaskLab(ROOT).preflight(path)
 
     def test_preflight_rejects_an_unknown_event_vocabulary(self) -> None:
         study = json.loads(
@@ -1256,10 +1237,10 @@ class LabContractTests(unittest.TestCase):
             path = Path(directory) / "study.json"
             path.write_text(json.dumps(study))
             with self.assertRaisesRegex(ValueError, "study.evidence"):
-                Lab(ROOT).preflight(path)
+                TaskLab(ROOT).preflight(path)
 
     def test_lab_owns_two_turn_resume_budget_evaluation_and_terminal(self) -> None:
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-template.json")
         provider = FakeProvider()
         resolved = lock.document["resolved_inputs"]
@@ -1322,7 +1303,7 @@ class LabContractTests(unittest.TestCase):
                     )
                 return super().build(submission)
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         )
@@ -1372,7 +1353,7 @@ class LabContractTests(unittest.TestCase):
                     raise RunProtocolFault("provider_fault", "fixture provider fault")
                 return super().turn(request)
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         )
@@ -1415,7 +1396,7 @@ class LabContractTests(unittest.TestCase):
         )
 
     def test_missing_archive_is_counted_as_missing_data(self) -> None:
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         )
@@ -1462,7 +1443,7 @@ class LabContractTests(unittest.TestCase):
                     },
                 )
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-template.json")
         provider = FakeProvider()
         arm_environments = lock.document["resolved_inputs"]["arm_environments"]
@@ -1496,7 +1477,7 @@ class LabContractTests(unittest.TestCase):
             self.assertEqual(request.feedback["findings"], diagnostics)
 
     def test_semantic_replay_rejects_raw_broker_counter_that_differs_from_ledger(self) -> None:
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         )
@@ -1561,7 +1542,7 @@ class LabContractTests(unittest.TestCase):
                     reference_bundle=observed.reference_bundle,
                 )
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         )
@@ -1597,7 +1578,7 @@ class LabContractTests(unittest.TestCase):
     def test_invalid_provider_set_identity_stops_before_build_or_gpu(self) -> None:
         """The Lab owns the authoring bound and the raw provider-event seal."""
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         )
@@ -1674,7 +1655,7 @@ class LabContractTests(unittest.TestCase):
                 )
 
     def test_r42_turn_discrete_missing_cell_keeps_estimand_unavailable(self) -> None:
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-template.json")
         legacy = json.loads(
             (ROOT / "evidence/historical/legacy/r42-index.json").read_text()
@@ -1736,7 +1717,7 @@ class LabContractTests(unittest.TestCase):
         self.assertFalse(direct_three.conditional_performance_included)
 
     def test_candidate_rejection_is_observed_and_later_turn_cannot_backfill(self) -> None:
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         )
@@ -1789,7 +1770,7 @@ class LabContractTests(unittest.TestCase):
         )
 
     def test_protocol_failures_are_intact_but_not_included(self) -> None:
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-template.json")
         with tempfile.TemporaryDirectory() as directory:
             evidence = EvidenceStore.create(Path(directory).resolve() / "evidence")
@@ -1809,7 +1790,7 @@ class LabContractTests(unittest.TestCase):
         self.assertEqual({item.reason for item in report.run_inclusion}, {"protocol_deviation"})
 
     def test_contamination_uses_the_same_terminal_schema_without_replacement(self) -> None:
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         )
@@ -1876,20 +1857,16 @@ class LabContractTests(unittest.TestCase):
         self.assertIsNone(r42_cuda_three[0].best_candidate_sha256)
 
     def test_portfolio_semantic_replay_keeps_correctness_separate_from_timing(self) -> None:
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-template.json"
         )
         from open_cake_ir.compiler import Compiler
-        from open_cake_ir.evaluation import (
-            PortfolioArtifact,
-            PortfolioCaseObservation,
-            WorkloadContract,
-            evaluate_portfolio_observations,
-        )
-        from open_cake_ir.lab import KernelSeed, lower_specialists
+        from open_cake_ir.tasks.flash_kmeans.portfolio import PortfolioArtifact, PortfolioCaseObservation, evaluate_portfolio_observations
+        from open_cake_ir.evaluation import WorkloadContract
+        from open_cake_ir.tasks.flash_kmeans.seed import KernelSeed, lower_specialists
 
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         seed = KernelSeed.load(
@@ -2021,10 +1998,10 @@ class LabContractTests(unittest.TestCase):
         self.assertFalse(report.claim_view.paper_result_reproduced)
 
     def test_preflight_resolves_variant_specific_inputs_into_one_lock(self) -> None:
-        matched = Lab(ROOT).preflight(
+        matched = TaskLab(ROOT).preflight(
             ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         )
-        portfolio = Lab(ROOT).preflight(
+        portfolio = TaskLab(ROOT).preflight(
             ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-template.json"
         )
 
@@ -2122,7 +2099,7 @@ class CandidateSetFilterTest(unittest.TestCase):
                     reference_bundle=observed.reference_bundle,
                 )
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         source = ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         _enable_candidate_set(document, 3)
@@ -2202,8 +2179,8 @@ class CandidateSetFilterTest(unittest.TestCase):
                     "-c",
                     (
                         "import sys; sys.path.insert(0, sys.argv[3] + '/src'); "
-                        "from open_cake_ir.lab import CampaignLock, Lab; "
-                        "lock=CampaignLock.load(sys.argv[1]); lab=Lab(sys.argv[3]); "
+                        "from open_cake_ir.lab import CampaignLock; from open_cake_ir.tasks.runtime import TaskLab; "
+                        "lock=CampaignLock.load(sys.argv[1]); lab=TaskLab(sys.argv[3]); "
                         "report=lab.audit(lab.reference_campaign(lock, sys.argv[2])); "
                         "raise SystemExit(0 if report.semantic_replay_passed else 1)"
                     ),
@@ -2421,7 +2398,7 @@ class CandidateSetFilterTest(unittest.TestCase):
                     ),
                 )
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         lock = lab.preflight(
             ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         )
@@ -2582,7 +2559,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
                     final_receipt=receipt,
                 )
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         source = ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         current_lock = lab.preflight(source)
@@ -2665,7 +2642,7 @@ class SearchBudgetTest(unittest.TestCase):
     """
 
     def _preflight(self, value, materiality=None, maximum_candidates=None):
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         source = ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         if value is None:
@@ -2766,7 +2743,7 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
                     reference_bundle=observed.reference_bundle,
                 )
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         source = ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = 2
@@ -2997,7 +2974,7 @@ class QualifiedCandidateSelectionTest(unittest.TestCase):
                     receipt,
                 )
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         source = ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = 2
@@ -3139,7 +3116,7 @@ class CostModelRouteTest(unittest.TestCase):
                     reference_bundle=observed.reference_bundle,
                 )
 
-        lab = Lab(ROOT)
+        lab = TaskLab(ROOT)
         source = ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         document = json.loads(source.read_text(encoding="utf-8"))
         document["evaluation_protocol"]["searches_per_turn"] = searches_per_turn
@@ -3222,7 +3199,7 @@ class BrokerExecutionDigestTest(unittest.TestCase):
     """
 
     def _digest(self, argv, root, **overrides):
-        from open_cake_ir.lab import broker_execution_sha256
+        from open_cake_ir.lab.runtime import broker_execution_sha256
 
         arguments = {
             "cwd": root,
@@ -3301,8 +3278,8 @@ class RalphTaskInterfaceTests(unittest.TestCase):
             study["arms"]["open_cake"]["prompt_template"] = {"path": "missing.md"}
             path.write_text(json.dumps(study))
             with self.assertRaisesRegex(ValueError, "Authoring Environment fields"):
-                Lab(ROOT).preflight(path)
-        lock = Lab(ROOT).preflight(template)
+                TaskLab(ROOT).preflight(path)
+        lock = TaskLab(ROOT).preflight(template)
         legacy_lock = json.loads(json.dumps(lock.document))
         del legacy_lock["resolved_inputs"]["agent_interface"]
         with self.assertRaisesRegex(ValueError, "Ralph interface"):
@@ -3406,13 +3383,13 @@ class RalphTaskInterfaceTests(unittest.TestCase):
         )
 
     def test_task_package_is_complete_read_only_and_arm_specific(self) -> None:
-        lock = Lab(ROOT).preflight(
+        lock = TaskLab(ROOT).preflight(
             ROOT
             / "contracts/studies/matched-search-system-qualification-ralph-template.json"
         )
         self.assertEqual(lock.agent_interface, TASK_AGENTS_RALPH_V1)
-        open_package = render_task_package(ROOT, lock, "open_cake-1")
-        cuda_package = render_task_package(ROOT, lock, "direct_cuda-1")
+        open_package = TaskLab(ROOT).task_package(lock, "open_cake-1")
+        cuda_package = TaskLab(ROOT).task_package(lock, "direct_cuda-1")
         self.assertIn("schedule-skeleton.json", open_package.task_markdown)
         self.assertIn("schedule-authoring.md", open_package.task_markdown)
         self.assertNotIn("candidate-skeleton.cu", open_package.task_markdown)
@@ -3437,13 +3414,13 @@ class RalphTaskInterfaceTests(unittest.TestCase):
                     verify_task_package(workspace, package)
 
     def test_ralph_system_qualification_executes_two_turns_and_replays(self) -> None:
-        lab = Lab(ROOT, clock=lambda: 0.0)
+        lab = TaskLab(ROOT, clock=lambda: 0.0)
         lock = lab.preflight(
             ROOT
             / "contracts/studies/matched-search-system-qualification-ralph-template.json"
         )
         packages = {
-            run_id: render_task_package(ROOT, lock, run_id)
+            run_id: TaskLab(ROOT).task_package(lock, run_id)
             for run_id in lock.run_order
         }
         resolved = lock.document["resolved_inputs"]
@@ -3582,7 +3559,7 @@ class RalphTaskInterfaceTests(unittest.TestCase):
         self.assertIsNone(report.estimate)
 
     def test_ralph_artifact_template_keeps_promotion_non_scientific(self) -> None:
-        lock = Lab(ROOT).preflight(
+        lock = TaskLab(ROOT).preflight(
             ROOT / "contracts/studies/artifact-optimization-ralph-template.json"
         )
         self.assertEqual(lock.agent_interface, TASK_AGENTS_RALPH_V1)
@@ -3617,7 +3594,7 @@ class RuntimeReferenceCustodyTest(unittest.TestCase):
     """
 
     def _resolve(self, root, path_value, digest=None, name="reference"):
-        from open_cake_ir.lab.compose import _raw_reference_path
+        from open_cake_ir.tasks.compose import _raw_reference_path
 
         if digest is None:
             candidate = root / path_value if isinstance(path_value, str) else None
@@ -3671,7 +3648,7 @@ class RuntimeReferenceCustodyTest(unittest.TestCase):
                     self._resolve(root, "inner/runtime.json", digest="0" * 64)
 
             with self.subTest(refusal="fields differ"):
-                from open_cake_ir.lab.compose import _raw_reference_path
+                from open_cake_ir.tasks.compose import _raw_reference_path
 
                 with self.assertRaisesRegex(ValueError, "fields differ"):
                     _raw_reference_path(root, {"path": "inner/runtime.json"}, "reference")
@@ -3708,8 +3685,8 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
             raise RuntimeError(prepared.stdout.decode() + prepared.stderr.decode())
         inventory = json.loads(inventory_path.read_text())
         cls.executor = ExecutorRevision.load(cls.root, cls.root / inventory["current"]["path"])
-        cls.lab = Lab(cls.root)
-        cls.workload = WorkloadContract.load(cls.root / "contracts/workloads/flash-kmeans-assign-v2.json")
+        cls.lab = TaskLab(cls.root)
+        cls.workload = load_workload(cls.root / "contracts/workloads/flash-kmeans-assign-v2.json")
         cls.compiler = Compiler.load(cls.root, cls.root / "compiler/revision.lock.json")
         cls.study = json.loads((cls.root / "contracts/studies/artifact-optimization-ralph-template.json").read_text())
         cls.study["arms"]["open_cake"]["candidate_selection"] = {"kind": "external_empirical_advisory_v1"}
@@ -3793,7 +3770,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
 
     def test_policy_refuses_unproven_native_and_tile_assays(self):
         from open_cake_ir.evaluation import WorkloadContract
-        from open_cake_ir.lab import OpenCakeEnvironment
+        from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
 
         paired = json.loads((self.root / "contracts/studies/matched-search-triton-optimization-template.json").read_text())
         paired["claim_scope"] = "artifact_optimization_only"
@@ -3802,7 +3779,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
             self.preflight(study=paired)
 
         workload_path = "contracts/workloads/rmsnorm-fp32-v1.json"
-        workload = WorkloadContract.load(self.root / workload_path)
+        workload = load_workload(self.root / workload_path)
         direct_tile = json.loads(json.dumps(self.study))
         direct_tile["workload"] = {"path": workload_path, "canonical_sha256": workload.canonical_sha256}
         with self.assertRaisesRegex(ValueError, "Flash/direct-CUDA assay"):
@@ -3828,11 +3805,12 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
             name: sha256(json.dumps(arm, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
             for name, arm in arms.items()
         }
-        with self.assertRaisesRegex(ValueError, "Flash/direct-CUDA assay"):
+        with self.assertRaisesRegex(ValueError, "complete-Schedule/direct-CUDA assay"):
             CampaignLock.from_dict(changed)
 
     def test_both_author_interfaces_keep_full_model_only_in_the_lock(self):
         from open_cake_ir.lab.task_package import build_run_reference_documents
+        from open_cake_ir.tasks.authoring import prepare_schedule
         model = json.loads(json.dumps(self.model))
         model["reported_evidence"]["raw_observations"] = list(range(10000))
         model["reported_evidence"]["unbounded_report"] = "private supplier report" * 10000
@@ -3844,7 +3822,9 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
             with self.subTest(interface=interface):
                 lock, _, _ = self.preflight(model=model, study=study)
                 arm = lock.document["resolved_inputs"]["arm_environments"]["open_cake"]
-                documents = build_run_reference_documents(self.root, lock, arm)
+                documents = build_run_reference_documents(self.root, lock, arm,
+                    workload_contract=load_workload(self.root / lock.document["workload"]["path"]),
+                    prepare_schedule=prepare_schedule)
                 authority = json.loads(documents["run-authority.json"])
                 projected = authority["authoring_environment"]["candidate_selection"]
                 self.assertEqual(projected, {
@@ -3856,14 +3836,14 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
                 self.assertLess(len(documents["run-authority.json"]), 10000)
                 visible = b"\n".join(documents.values()).decode()
                 if interface == "ralph":
-                    package = render_task_package(self.root, lock, "open_cake-1")
+                    package = TaskLab(self.root).task_package(lock, "open_cake-1")
                     visible += package.task_markdown + package.agents_markdown
                 for forbidden in ("raw_observations", "unbounded_report", "private supplier report", "varying_dimensions"):
                     self.assertNotIn(forbidden, visible)
                 self.assertEqual(arm["candidate_selection"]["model"], model)
 
     def run_campaign(self, *, model=None, include_rejected=False, via_cli=False):
-        from open_cake_ir.lab import OpenCakeEnvironment
+        from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
         lock, directory, model_path = self.preflight(model=model)
         if via_cli:
             cli_lock = directory / "cli-campaign.lock.json"

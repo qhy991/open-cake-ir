@@ -1,6 +1,7 @@
 """Prepare matched IR/native baselines through Compiler; never execute target code."""
 
 from __future__ import annotations
+from open_cake_ir.tasks.workloads import load_workload
 
 import argparse
 import json
@@ -8,7 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from open_cake_ir.compiler import Compiler
-from open_cake_ir.evaluation.tile_workloads import source_schedule_path
+from open_cake_ir.tasks.tiles.workload import source_schedule_path
 from open_cake_ir.evaluation.workload import WorkloadContract
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -116,4 +117,4 @@ if __name__ == "__main__":
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--compiler-revision", type=Path)
     args = parser.parse_args()
-    print(json.dumps(prepare_baseline(WorkloadContract.load(args.workload), args.case, args.output_root, compiler_revision=args.compiler_revision), indent=2))
+    print(json.dumps(prepare_baseline(load_workload(args.workload), args.case, args.output_root, compiler_revision=args.compiler_revision), indent=2))

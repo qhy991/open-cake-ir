@@ -200,7 +200,7 @@ runpy.run_path(script,run_name='__main__')
             result = subprocess.run(args, cwd=ROOT, text=True, capture_output=True, check=True)
             profile = json.loads(result.stdout)["rows"][0]["profile"]
             self.assertEqual(profile["empirical_cost"]["predicted_kernel_us"], 10)
-            from open_cake_ir.lab import qsa_compiler_feedback
+            from open_cake_ir.tasks.qsa.feedback import qsa_compiler_feedback
             assessment = self.compiler.assess(self.schedule("fma-b8-smoke.json"))
             feedback = qsa_compiler_feedback(assessment, static_profile=profile)
             self.assertIn("empirical_cost", str(feedback))

@@ -9,19 +9,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.workloads import load_workload
 
 from open_cake_ir.compiler import Compiler, Schedule, ScheduleParseError  # noqa: E402
-from open_cake_ir.evaluation import (  # noqa: E402
-    LaunchableCandidate,
-    WorkloadContract,
-    parse_cuda_launch_manifest,
-)
-from open_cake_ir.lab import (  # noqa: E402
-    BuildRequest,
-    CandidateSubmission,
-    Lab,
-    OpenCakeEnvironment,
-)
+from open_cake_ir.evaluation import LaunchableCandidate, WorkloadContract
+from open_cake_ir.tasks.flash_kmeans.cuda_manifest import parse_cuda_launch_manifest
+from open_cake_ir.lab import BuildRequest, CandidateSubmission
+from open_cake_ir.tasks.runtime import TaskLab
+from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
 from open_cake_ir.lab.environments import _EMPIRICAL_SELECTION, _empirical_context  # noqa: E402
 from open_cake_ir.lab.executor import ExecutorRevision  # noqa: E402
 
@@ -88,7 +83,7 @@ def _headline_schedule(workload: WorkloadContract) -> dict[str, object]:
 class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
     def test_empirical_flash_environment_preserves_native_gates_and_rank(self) -> None:
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-        workload = WorkloadContract.load(ROOT / "contracts/workloads/flash-kmeans-assign-v2.json")
+        workload = load_workload(ROOT / "contracts/workloads/flash-kmeans-assign-v2.json")
         schedule = _headline_schedule(workload)
         assessment = compiler.assess(schedule)
         compiler_ref = {
@@ -132,9 +127,8 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         self.assertIsNone(rejected.empirical_cost)
 
     def test_task_package_retains_the_declared_lowering_route(self) -> None:
-        from open_cake_ir.lab import render_task_package
-        lock = Lab(ROOT).preflight(ROOT / "contracts/studies/matched-search-clean-start-reference-template.json")
-        package = render_task_package(ROOT, lock, "open_cake-1")
+        lock = TaskLab(ROOT).preflight(ROOT / "contracts/studies/matched-search-clean-start-reference-template.json")
+        package = TaskLab(ROOT).task_package(lock, "open_cake-1")
         self.assertIn('"lowering_route"', package.task_markdown)
         self.assertIn('"cake_flash_kmeans_assign"', package.task_markdown)
         self.assertNotIn('"prompt_template"', package.task_markdown)
@@ -144,9 +138,9 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
             ROOT
             / "contracts/studies/matched-search-clean-start-reference-template.json"
         )
-        lock = Lab(ROOT).preflight(study_path)
+        lock = TaskLab(ROOT).preflight(study_path)
         study = json.loads(study_path.read_text(encoding="utf-8"))
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         shape = workload.case("headline_b32")["shape"]
@@ -257,7 +251,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
 
     def test_complete_r16_skeleton_for_study_workload_builds_headline_candidate(self) -> None:
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         study = json.loads(
@@ -302,7 +296,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         # the accepted path, because a bound that blocks is a rejection instead. Emitting
         # an empty findings list here would compute the attribution and then discard it.
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         study = json.loads(
@@ -349,7 +343,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
 
     def test_r25_schedule_is_rejected_by_r16_study_before_toolchain(self) -> None:
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         study = json.loads(
@@ -391,7 +385,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
 
     def test_wrong_workload_binding_is_rejected_before_toolchain(self) -> None:
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         study = json.loads(
@@ -424,7 +418,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
 
     def test_non_object_metadata_is_candidate_feedback_not_a_harness_fault(self) -> None:
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         study = json.loads(
@@ -473,7 +467,7 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
 
     def _rejection(self, mutate):
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-        workload = WorkloadContract.load(
+        workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         study = json.loads(

@@ -25,17 +25,18 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.tasks.workloads import load_workload
 sys.path.insert(0, str(ROOT / "tools"))
-import calibrate_flash_cost as instrument
-import evaluate_flash_candidate as common
+import open_cake_ir.tasks.flash_kmeans.calibrate as instrument
+import open_cake_ir.tasks.evaluate as common
 import release_executor
 from open_cake_ir.compiler import Compiler, EmpiricalCostModel
 from open_cake_ir.compiler.release import build_gate_report, build_release
 from open_cake_ir.compiler.toolchain import TritonCompilation
 from open_cake_ir.evaluation import WorkloadContract
-from open_cake_ir.lab import environments
+from open_cake_ir.tasks.flash_kmeans import environment as environments
 from open_cake_ir.lab.executor import ExecutorRevision
-from open_cake_ir.lab.portfolio import ExactShape, KernelSeed
+from open_cake_ir.tasks.flash_kmeans.seed import ExactShape, KernelSeed
 
 
 def write(path, value):
@@ -53,7 +54,7 @@ class FlashCalibrationTest(unittest.TestCase):
         cls.project.mkdir()
         paths = set(json.loads((ROOT / "compiler/source_set.json").read_text())["paths"])
         paths.update(p.relative_to(ROOT).as_posix() for p in release_executor._source_paths(ROOT))
-        paths.update({"compiler/revision.json", "compiler/source_set.json", "corpus/manifest.json", "tools/calibrate_flash_cost.py", "contracts/workloads/flash-kmeans-assign-v2.json", "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"})
+        paths.update({"compiler/revision.json", "compiler/source_set.json", "corpus/manifest.json", "src/open_cake_ir/tasks/flash_kmeans/calibrate.py", "contracts/workloads/flash-kmeans-assign-v2.json", "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"})
         for relative in paths:
             destination = cls.project / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -74,11 +75,11 @@ class FlashCalibrationTest(unittest.TestCase):
         executor_path.parent.mkdir(parents=True)
         # Prospective closure extension belongs to integration in production.
         # This temporary fixture uses the actual source-binding release helper.
-        with patch.object(release_executor, "_SOURCE_FILES", (*release_executor._SOURCE_FILES, "tools/calibrate_flash_cost.py")), patch.object(sys, "argv", ["release_executor", "--project-root", str(cls.project), "--proposal", str(executor_proposal), "--output", str(executor_path)]), contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(release_executor, "_SOURCE_FILES", (*release_executor._SOURCE_FILES, "src/open_cake_ir/tasks/flash_kmeans/calibrate.py")), patch.object(sys, "argv", ["release_executor", "--project-root", str(cls.project), "--proposal", str(executor_proposal), "--output", str(executor_path)]), contextlib.redirect_stdout(io.StringIO()):
             if release_executor.main() != 0:
                 raise AssertionError("prospective synthetic Executor construction failed")
         cls.executor = ExecutorRevision.load(cls.project, executor_path)
-        cls.workload = WorkloadContract.load(cls.project / "contracts/workloads/flash-kmeans-assign-v2.json")
+        cls.workload = load_workload(cls.project / "contracts/workloads/flash-kmeans-assign-v2.json")
         cls.seed = KernelSeed.load(cls.project, cls.project / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json")
 
     def setUp(self):
@@ -101,7 +102,7 @@ class FlashCalibrationTest(unittest.TestCase):
 
     def _fake_evaluator(self, command, **kwargs):
         self.calls.append(command)
-        self.assertEqual(command[:2], [self.executor.document["host_environment"]["python"]["invocation_path"], str(self.project / "tools/evaluate_flash_candidate.py")])
+        self.assertEqual(command[:2], [self.executor.document["host_environment"]["python"]["invocation_path"], str(self.project / "src/open_cake_ir/tasks/evaluate.py")])
         self.assertEqual(command[2], "--request")
         self.assertEqual(command[4], "--output")
         self.assertEqual(kwargs["cwd"], self.project)
@@ -147,7 +148,7 @@ class FlashCalibrationTest(unittest.TestCase):
             # this new derived Schedule; never edit or relabel the frozen seed.
             schedule["metadata"]["workload_contract_sha256"] = self.workload.canonical_sha256
             write(candidate / spec["schedule"], schedule)
-        judge = {"identity": f"{self.executor.executor_id}@{self.executor.canonical_sha256}", "cwd": str(self.project), "command": [self.executor.document["host_environment"]["python"]["invocation_path"], str(self.project / "tools/calibrate_flash_cost.py"), "collect"]}
+        judge = {"identity": f"{self.executor.executor_id}@{self.executor.canonical_sha256}", "cwd": str(self.project), "command": [self.executor.document["host_environment"]["python"]["invocation_path"], str(self.project / "src/open_cake_ir/tasks/flash_kmeans/calibrate.py"), "collect"]}
         task = {"schema": "kernelinfra.task.v1", "task_id": "SYNTHETIC-no-GPU-task", "workloads": [self.workload.workload_id], "comparison": {"primary_workloads": [self.workload.workload_id], "relative_noise_floor": .05}, "stages": [{"id": "compile", "kind": "compile", "execution": "local", "judge": judge}, {"id": "collection", "kind": "judge", "resources": {"mode": "exclusive", "gpu_count": 1, "run_timeout_s": 3600}, "judge": judge}]}
         write(run / "task.json", task)
         principal = {"pid": 200, "parent_pid": 100, "uid": 321, "gid": 654, "broker_peer": [100, 321, 654], "broker_socket": "/SYNTHETIC/no-broker.sock", "job_id": None, "visible_device": "7", "run_id": "SYNTHETIC-NOT-A-GPU-RUN"}
@@ -431,7 +432,7 @@ class FlashCalibrationTest(unittest.TestCase):
     def test_owned_cpu_evaluator_inherits_group_and_is_reaped_on_timeout_or_cancellation(self):
         run = self.fixture()
         cpu_root = self.directory / "owned-CPU-process-fixture"
-        evaluator = cpu_root / "tools/evaluate_flash_candidate.py"
+        evaluator = cpu_root / "src/open_cake_ir/tasks/evaluate.py"
         evaluator.parent.mkdir(parents=True)
         evaluator.write_text("""import json,os,time
 from pathlib import Path
@@ -442,7 +443,7 @@ time.sleep(30)
         controller_code = """import json,signal,sys,types,subprocess
 from pathlib import Path
 sys.path.insert(0,sys.argv[1])
-import calibrate_flash_cost as i
+import open_cake_ir.tasks.flash_kmeans.calibrate as i
 source,run,cpu,stage,outcome=map(Path,sys.argv[2:7])
 plan=i._read(run/'candidate/plan.json')
 name=plan['baseline']
