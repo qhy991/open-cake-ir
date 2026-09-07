@@ -426,6 +426,56 @@ class Rocprofv3MalformedBoundaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_kernel_stats_csv(_stats(), kernel_name=KERNEL, expected_calls=True)
 
+    def projections(self) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+        return (
+            parse_kernel_trace_csv(_csv_bytes(HEADER, [_trace_row()]), _expectation()),
+            parse_kernel_stats_csv(_stats(), kernel_name=KERNEL, expected_calls=1),
+            parse_results_json(_results_json(), _expectation()),
+        )
+
+    def test_matching_missing_launch_or_resource_facts_are_refused(self) -> None:
+        for trace_path, result_path in (
+            (("launch",), ("launch",)),
+            (("launch", "workgroup_size"), ("launch", "workgroup_size")),
+            (("launch", "grid_size"), ("launch", "grid_size")),
+            (("resources", "scratch_size"), ("resources", "private_segment_size")),
+            *((('resources', name), ('resources', name))
+              for name in ("vgpr_count", "accum_vgpr_count", "sgpr_count")),
+        ):
+            trace, stats, result = self.projections()
+            for value, path in ((trace, trace_path), (result, result_path)):
+                parent = value if len(path) == 1 else value[path[0]]
+                parent.pop(path[-1])
+            with self.subTest(trace_path=trace_path), self.assertRaises(ValueError):
+                validate_cross_output_agreement(trace, stats, result)
+
+    def test_matching_invalid_resource_sizes_or_counts_are_refused(self) -> None:
+        for trace_name, result_name in (
+            ("lds_allocation_block_bytes", "group_segment_size"),
+            ("scratch_size", "private_segment_size"),
+            *((name, name) for name in ("vgpr_count", "accum_vgpr_count", "sgpr_count")),
+        ):
+            for invalid in (-512, True, 0.0, None):
+                trace, stats, result = self.projections()
+                trace["resources"][trace_name] = invalid
+                result["resources"][result_name] = invalid
+                with self.subTest(resource=trace_name, invalid=invalid), self.assertRaises(ValueError):
+                    validate_cross_output_agreement(trace, stats, result)
+        for invalid in (0, -1, True):
+            trace, stats, result = self.projections()
+            trace["resources"]["lds_allocation_granularity_bytes"] = invalid
+            with self.subTest(granularity=invalid), self.assertRaises(ValueError):
+                validate_cross_output_agreement(trace, stats, result)
+
+    def test_matching_invalid_launch_geometry_is_refused(self) -> None:
+        for dimension in ("workgroup_size", "grid_size"):
+            for invalid in (None, [1, 1], [1, 1, 1, 1], [0, 1, 1], [-1, 1, 1], [True, 1, 1], [1.0, 1, 1]):
+                trace, stats, result = self.projections()
+                trace["launch"][dimension] = invalid
+                result["launch"][dimension] = invalid
+                with self.subTest(dimension=dimension, invalid=invalid), self.assertRaises(ValueError):
+                    validate_cross_output_agreement(trace, stats, result)
+
     def test_cross_output_boundary_rejects_malformed_projections(self) -> None:
         for trace in (None, {}, {"kernel_name": KERNEL, "dispatch_count": True}):
             with self.assertRaises(ValueError):

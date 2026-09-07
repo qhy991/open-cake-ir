@@ -438,34 +438,54 @@ def validate_cross_output_agreement(
 
     if any(not isinstance(value, Mapping) for value in (trace, stats, result_json)):
         raise ValueError("rocprofv3 projections must be objects")
-    if (
-        not isinstance(trace.get("kernel_name"), str) or not trace["kernel_name"]
-        or type(trace.get("dispatch_count")) is not int or trace["dispatch_count"] <= 0
-        or type(stats.get("calls")) is not int
-        or type(result_json.get("dispatch_count")) is not int
-    ):
-        raise ValueError("rocprofv3 projection target identity differs")
+    _json_integer(stats.get("calls"), "stats.calls", positive=True)
+    for label, projection in (("trace", trace), ("result", result_json)):
+        launch = projection.get("launch")
+        if not isinstance(launch, Mapping) or any(
+            not isinstance(launch.get(name), list)
+            for name in ("workgroup_size", "grid_size")
+        ):
+            raise ValueError(f"rocprofv3 {label} launch projection differs")
+        # Projected geometry retains the raw dispatch expectation's domain.
+        Rocprofv3KernelTraceExpectation(
+            kernel_name=projection.get("kernel_name"),
+            dispatch_count=projection.get("dispatch_count"),
+            workgroup_size=tuple(launch["workgroup_size"]),
+            grid_size=tuple(launch["grid_size"]),
+        )
     trace_resources = trace.get("resources")
     json_resources = result_json.get("resources")
     if not isinstance(trace_resources, Mapping) or not isinstance(
         json_resources, Mapping
     ):
         raise ValueError("rocprofv3 resource projections differ")
-    group_segment = json_resources.get("group_segment_size")
-    granularity = trace_resources.get("lds_allocation_granularity_bytes")
-    if type(group_segment) is not int or type(granularity) is not int or granularity <= 0:
-        raise ValueError("rocprofv3 LDS projection differs")
+    group_segment = _json_integer(
+        json_resources.get("group_segment_size"), "result.group_segment_size"
+    )
+    lds_allocation = _json_integer(
+        trace_resources.get("lds_allocation_block_bytes"), "trace.lds_allocation_block_bytes"
+    )
+    granularity = _json_integer(
+        trace_resources.get("lds_allocation_granularity_bytes"),
+        "trace.lds_allocation_granularity_bytes", positive=True,
+    )
+    resource_pairs = (
+        ("scratch_size", "private_segment_size"),
+        ("vgpr_count", "vgpr_count"),
+        ("accum_vgpr_count", "accum_vgpr_count"),
+        ("sgpr_count", "sgpr_count"),
+    )
+    for trace_name, json_name in resource_pairs:
+        _json_integer(trace_resources.get(trace_name), f"trace.{trace_name}")
+        _json_integer(json_resources.get(json_name), f"result.{json_name}")
     expected_lds_allocation = (
         (group_segment + granularity - 1) // granularity
     ) * granularity
     shared_resources_agree = (
-        trace_resources.get("lds_allocation_block_bytes")
-        == expected_lds_allocation
-        and trace_resources.get("scratch_size")
-        == json_resources.get("private_segment_size")
+        lds_allocation == expected_lds_allocation
         and all(
-            trace_resources.get(name) == json_resources.get(name)
-            for name in ("vgpr_count", "accum_vgpr_count", "sgpr_count")
+            trace_resources[trace_name] == json_resources[json_name]
+            for trace_name, json_name in resource_pairs
         )
         and trace_resources.get("occupancy_derived") is False
         and json_resources.get("occupancy_derived") is False
