@@ -35,6 +35,7 @@ jobs:
           tests.contracts.test_backend_boundaries
           tests.contracts.test_performance_architecture
           tests.contracts.test_runtime_config
+          tests.contracts.test_freeze_live_matched_study
           tests.contracts.test_cuda_driver
           tests.contracts.test_analysis
           tests.contracts.test_emit_triton
