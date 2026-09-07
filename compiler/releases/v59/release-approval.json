@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "4544a3c30e2bfb386e3b2db972a81f8450b637b6285e5a2fc01b5b182431772c"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a07b5d-92cb-7690-8da9-bb05acb394f9",
+    "author_session_id": "01a07b5d-8b59-7f70-aeb7-3cb9eec5d4ca"
+  },
+  "approval_basis": "Independently reviewed exact combined source 4323f4c2b71551b6e25dbe64635bbd9fcb6c5ee9 and prepared Gate commit f6e044c3d937284d9a1916041e2d91516a874dbe. Reviewed worker implementations and combined facade preserve one Revision owner, typed Target reuse, canonical verifier/diagnostic ownership, localized rejection domains, legacy Mapping container/name exception priority (including unknown Targets), and Assessment replay. Fresh independent evidence: 106 CPU contract tests passed; 92 captured behavior records and 52 complete emitted sources/maps/toolchain records matched the original source baseline; 36 original Python Mapping cases, eight extra error-order cases and seven missing-reference rejection domains passed. The canonical build_gate_report reconstruction, normalized with the release module canonical JSON representation, exactly matches the persistent v59-draft Gate: 92 of 92 cases and 143 bound sources. Compiler source, source_set and Corpus expectations are unchanged between the reviewed source and prepared Gate commits. Prior v56 Gate, approval and lock bytes are preserved; the archived source_set is the cycle-owned JSON projection of the same released source sequence, with only JSON key-order formatting differing. Actual reviewer gpt-6-astra/max and distinct session identity were verified from session metadata. This approval binds only the exact reviewed Gate and supports Compiler source release governance; it does not qualify GPU behavior, performance, a new Executor, provider/serving results, later CodeMode/backend integration or final main acceptance. Detailed independent evidence and retained reviewer-check limitations are in the campaign reviewer/combined-4323f4c and reviewer/gate-f6e044c reports."
+}
