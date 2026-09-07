@@ -147,6 +147,7 @@ Choose by question, not by historical sequence number:
 | Does the two-file Ralph path compose with time/token/Evaluation budgets? | `matched-search-system-qualification-ralph-template.json` |
 | What is the best confirmed artifact through the two-file Ralph loop? | `artifact-optimization-ralph-template.json` |
 | Does an implementation-free matched reference boundary hold? | `matched-search-clean-start-reference-template.json` |
+| Can Cake and native Triton optimize the same B300 baseline through Ralph? | `matched-search-triton-b300-optimization-template.json` |
 | Does a frozen exact-shape specialist set generalize to its declared cases? | `portfolio` Study |
 
 Template names are discovery aids; the content-bound Study Contract is the authority.
@@ -220,6 +221,10 @@ python tools/qualify_codex_provider.py \
   --maximum-candidates-per-turn 3 \
   --feature-policy provider_defaults_optimization
 ```
+
+For the B300 Cake/native-Triton template, pass
+`contracts/providers/codex-triton-optimization-output-schema-v1.json` as `--output-schema`.
+The qualifier derives the two arms from this schema and validates both add/update paths.
 
 Both policies use Ralph: two immutable task files and one candidate-set envelope.
 There is no agent-interface selector or legacy prompt qualification.

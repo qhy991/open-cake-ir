@@ -247,8 +247,6 @@ def scientific_matched_analysis_plan_v2() -> Mapping[str, object]:
     )
 
 
-
-
 def _matched_evidence_policy_version(
     policy: Mapping[str, object], context: str
 ) -> str:
@@ -1630,7 +1628,6 @@ class _SearchedCandidate:
     attribution: EvaluationReceipt | None
 
 
-
 class Lab:
     """Resolve, execute and audit preregistered studies over frozen dependencies."""
 
@@ -2467,7 +2464,7 @@ class Lab:
         resolved_inputs = _object(
             lock.document["resolved_inputs"], "campaign_lock.resolved_inputs"
         )
-        matched_event_vocabulary = _matched_evidence_policy_version(
+        _matched_evidence_policy_version(
             _object(
                 resolved_inputs["evidence_policy"],
                 "campaign_lock.resolved_inputs.evidence_policy",
@@ -2820,21 +2817,7 @@ class Lab:
                                 result.disposition == "launchable"
                                 for _, result in built
                             ),
-                            "order": (
-                                filter_rows
-                                if matched_event_vocabulary
-                                in {
-                                                            _MATCHED_RALPH_EVENT_VOCABULARY_V1,
-                                }
-                                else [
-                                    {
-                                        key: value
-                                        for key, value in row.items()
-                                        if key != "semantic_sha256"
-                                    }
-                                    for row in filter_rows
-                                ]
-                            ),
+                            "order": filter_rows,
                             **({"candidate_selection": selection_summary} if empirical_enabled else {}),
                         },
                     )
@@ -3671,55 +3654,36 @@ class Lab:
                 != ({"checkpoints", "ralph"})
             ):
                 return False
-            fault_fields_present = any(
-                field in fault_payload
-                for field in ("turn", "stage", "terminal_provider_tokens")
+            terminal_tokens = fault_payload.get("terminal_provider_tokens")
+            if (
+                set(("turn", "stage", "terminal_provider_tokens"))
+                - set(fault_payload)
+                or fault_payload.get("turn") != 1
+                or fault_payload.get("stage") != "provider"
+                or not isinstance(terminal_tokens, int)
+                or isinstance(terminal_tokens, bool)
+                or terminal_tokens < 0
+            ):
+                return False
+            replay_budget = _object(
+                _object(lock.document["resolved_inputs"], "resolved_inputs")[
+                    "budget"
+                ],
+                "resolved_inputs.budget",
             )
-            if fault_fields_present:
-                terminal_tokens = fault_payload.get("terminal_provider_tokens")
-                if (
-                    set(("turn", "stage", "terminal_provider_tokens"))
-                    - set(fault_payload)
-                    or fault_payload.get("turn") != 1
-                    or fault_payload.get("stage") != "provider"
-                    or not isinstance(terminal_tokens, int)
-                    or isinstance(terminal_tokens, bool)
-                    or terminal_tokens < 0
-                ):
-                    return False
-                replay_budget = _object(
-                    _object(lock.document["resolved_inputs"], "resolved_inputs")[
-                        "budget"
-                    ],
-                    "resolved_inputs.budget",
+            expected_checkpoints = [
+                {
+                    "provider_tokens": item.provider_tokens,
+                    "state": item.state,
+                    "best_candidate_sha256": item.best_candidate_sha256,
+                    "best_confirmed_latency_ms": item.best_confirmed_latency_ms,
+                }
+                for item in project_checkpoints(
+                    turns=(),
+                    checkpoints=cast(list[int], replay_budget["checkpoints"]),
+                    terminal_provider_tokens=terminal_tokens,
                 )
-                expected_checkpoints = [
-                    {
-                        "provider_tokens": item.provider_tokens,
-                        "state": item.state,
-                        "best_candidate_sha256": item.best_candidate_sha256,
-                        "best_confirmed_latency_ms": item.best_confirmed_latency_ms,
-                    }
-                    for item in project_checkpoints(
-                        turns=(),
-                        checkpoints=cast(list[int], replay_budget["checkpoints"]),
-                        terminal_provider_tokens=terminal_tokens,
-                    )
-                ]
-            else:
-                # Frozen evidence predating explicit fault location could only prove
-                # that no checkpoint had been reached.
-                expected_checkpoints = (
-                    checkpoints
-                    if isinstance(checkpoints, list)
-                    and bool(checkpoints)
-                    and all(
-                        isinstance(item, Mapping)
-                        and item.get("state") == "unreached"
-                        for item in checkpoints
-                    )
-                    else None
-                )
+            ]
             return (
                 fault_payload.get("fault") == audit.protocol_adherence
                 and audit.endpoint_observation == "missing"
@@ -3929,7 +3893,6 @@ class Lab:
                 raw_events,
                 expected_terminal_message=expected_terminal,
                 event_contract=event_contract,
-
             )
             turn_tokens = payload.get("turn_provider_tokens")
             if (
@@ -3993,36 +3956,32 @@ class Lab:
                 return False
             if fault_payload.get("fault") != audit.protocol_adherence:
                 return False
-            if "terminal_provider_tokens" in fault_payload:
-                fault_turn_value = fault_payload.get("turn")
-                fault_stage = fault_payload.get("stage")
-                fault_terminal_value = fault_payload.get("terminal_provider_tokens")
-                if (
-                    not isinstance(fault_turn_value, int)
-                    or isinstance(fault_turn_value, bool)
-                    or fault_turn_value <= 0
-                    or fault_stage not in {"provider", "environment", "evaluation"}
-                    or not isinstance(fault_terminal_value, int)
-                    or isinstance(fault_terminal_value, bool)
-                    or fault_terminal_value < prior_cumulative
-                    or (
-                        fault_stage == "provider"
-                        and fault_turn_value != len(provider_events) + 1
+            fault_turn_value = fault_payload.get("turn")
+            fault_stage = fault_payload.get("stage")
+            fault_terminal_value = fault_payload.get("terminal_provider_tokens")
+            if (
+                not isinstance(fault_turn_value, int)
+                or isinstance(fault_turn_value, bool)
+                or fault_turn_value <= 0
+                or fault_stage not in {"provider", "environment", "evaluation"}
+                or not isinstance(fault_terminal_value, int)
+                or isinstance(fault_terminal_value, bool)
+                or fault_terminal_value < prior_cumulative
+                or (
+                    fault_stage == "provider"
+                    and fault_turn_value != len(provider_events) + 1
+                )
+                or (
+                    fault_stage in {"environment", "evaluation"}
+                    and (
+                        fault_turn_value != len(provider_events)
+                        or fault_terminal_value != prior_cumulative
                     )
-                    or (
-                        fault_stage in {"environment", "evaluation"}
-                        and (
-                            fault_turn_value != len(provider_events)
-                            or fault_terminal_value != prior_cumulative
-                        )
-                    )
-                ):
-                    return False
-                fault_turn = fault_turn_value
-                fault_terminal_tokens = fault_terminal_value
-            else:
-                fault_turn = max(provider_candidates_by_turn)
-                fault_terminal_tokens = prior_cumulative
+                )
+            ):
+                return False
+            fault_turn = fault_turn_value
+            fault_terminal_tokens = fault_terminal_value
 
         attempt_events = [
             event for event in events if event.get("kind") == "evaluation_attempt_completed"

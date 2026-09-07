@@ -86,8 +86,6 @@ def _read_candidate_nofollow(path: Path) -> bytes:
         os.close(descriptor)
 
 
-
-
 def _plain_json(value: object) -> object:
     if isinstance(value, Mapping):
         if any(not isinstance(key, str) for key in value):
@@ -777,7 +775,6 @@ class CodexRunProvider:
     """Canonical Campaign-Lock-compatible provider from Turn to normalized evidence."""
 
 
-
     def __init__(
         self,
         *,
@@ -864,7 +861,6 @@ class CodexRunProvider:
             or not isinstance(request.maximum_candidates_per_turn, int)
             or isinstance(request.maximum_candidates_per_turn, bool)
             or request.maximum_candidates_per_turn <= 0
-
         ):
             raise ValueError("Codex Run or arm is outside the Campaign Lock")
         workspace = builder.workspace.absolute()

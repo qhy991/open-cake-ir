@@ -47,6 +47,7 @@ AKA 是拿来提出问题的外部题库，不能直接当作编译器的正式�
 | 用 Ralph 多轮改进一个产物 | `artifact-optimization-ralph-template.json` |
 | 从头写程序时，参考材料是否没有泄露目标实现 | `matched-search-clean-start-reference-template.json` |
 | 已验证的专用方案能否覆盖事先声明的输入集合 | `portfolio` Study |
+| 在 B300 上用 Ralph 比较 Cake 与原生 Triton | `matched-search-triton-b300-optimization-template.json` |
 
 这些名字只是找文件的线索，真正的约定是被固定的 Study 内容。`preflight` 把结果写入仓库外的新 CampaignLock。修改 provider、执行器、模型、推理强度、broker 命令、运行配置或文件保管规则时，需要明确的后继 Study，不能悄悄改正在跑的任务。
 
@@ -61,6 +62,8 @@ Provider 是真正调用 AI 的程序。显示“已登录”不代表它能遵�
 所有实验都使用两文件 Ralph 接口。资格验证有两种工具策略：封闭研究环境，以及允许 provider 默认功能的产物优化环境。它们的完整命令在[英文第 4 节](../RUNBOOK.md#4-qualify-the-provider-without-gpu)。带 `<…>` 或 `/new/…` 的位置是操作人员要替换的参数，不是可以直接粘贴执行的成品命令。
 
 失败也要封存，不能删掉后伪装成同一次成功。完成必要的环境处理后，另用新的 Run 身份。资格记录固定的推理强度没有隐含默认值，变更它需要对应的新资格和新 Study。通过这项检查，只证明 AI 工具的传输和交互边界；没有授予 GPU 运行资格，也没有科学结果。
+
+B300 的 Cake / 原生 Triton 对照使用 `contracts/providers/codex-triton-optimization-output-schema-v1.json` 作为资格验证的 `--output-schema`。工具从协议读取两端名称，并验证各自的首次提交和继续更新。
 
 Ralph 的预算包括：token、检查点、最多轮数、每轮最多候选、总墙上时间、AI 实际写作时间，以及搜索、确认、分析瓶颈各自的评测次数。排队和评测不计入 AI 写作时间，但计入总时间。下一轮的最坏评测需求放不进剩余预算时，控制器不能开始它。
 

@@ -89,6 +89,22 @@ def _expected_submission(
             for index in range(maximum_candidates_per_turn)
         ]
         projected = tuple(_canonical_json_bytes(member) for member in members)
+    elif arm == "native_triton":
+        members = [
+            {
+                "kernel_source": (
+                    "import triton\nimport triton.language as tl\n\n@triton.jit\n"
+                    f"def qualification_{turn}_{index}(x, y):\n"
+                    "    value = tl.load(x)\n    tl.store(y, value)\n"
+                    f"# frozen reference: {reference_nonce}\n"
+                ),
+                "compile_constants": {},
+                "compile_options": {"num_warps": 4},
+                "grid": [1, 1, 1],
+            }
+            for index in range(maximum_candidates_per_turn)
+        ]
+        projected = tuple(_canonical_json_bytes(member) for member in members)
     else:
         members = [
             (
@@ -257,9 +273,12 @@ def main() -> int:
     removed_environment = tuple(args.removed_environment or ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"))
     maximum_candidates_per_turn = args.maximum_candidates_per_turn or 1
     submission_contract = CANDIDATE_SET_ENVELOPE_V1
-    qualification_arms = (
-        ("open_cake", "direct_cuda")
-    )
+    schema = json.loads(output_schema.read_text(encoding="utf-8"))
+    arm_schema = schema.get("properties", {}).get("arm", {})
+    arms = arm_schema.get("enum")
+    if arms not in (["open_cake", "direct_cuda"], ["open_cake", "native_triton"]):
+        raise ValueError("qualification output schema must declare one supported arm pair")
+    qualification_arms = tuple(arms)
     if args.feature_policy == "closed_research":
         disabled_features = CODEX_DISABLED_FEATURES
         event_contract = "closed_file_change_v1"

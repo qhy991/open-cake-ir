@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
+from open_cake_ir.lab.pairing import comparison_arm, triton_optimization_analysis_plan  # noqa: E402
 from open_cake_ir.lab import (  # noqa: E402
     ExecutorRevision,
     Lab,
@@ -126,7 +127,10 @@ def main() -> int:
     else:
         arms = _object(document.get("arms"), "Study.arms")
         open_cake = _object(arms.get("open_cake"), "Study.arms.open_cake")
-        direct_cuda = _object(arms.get("direct_cuda"), "Study.arms.direct_cuda")
+        comparison = comparison_arm(arms)
+        direct_cuda = _object(arms.get(comparison), f"Study.arms.{comparison}")
+        if comparison == "native_triton" and any(value is not None for value in skeletons):
+            raise ValueError("paired Triton baseline belongs to the Study; CUDA skeleton options do not apply")
         open_cake["compiler_revision"] = compiler_reference
         if skeletons[0] is not None and skeletons[1] is not None:
             schedule_path = skeletons[0].resolve(strict=True)
@@ -154,7 +158,8 @@ def main() -> int:
             }
         if document.get("claim_scope") == "scientific_matched_search":
             document["analysis_plan"] = dict(
-                scientific_matched_analysis_plan_v2()
+                triton_optimization_analysis_plan()
+                if comparison == "native_triton" else scientific_matched_analysis_plan_v2()
             )
         if arguments.maximum_candidates_per_turn is not None:
             if arguments.maximum_candidates_per_turn <= 0:

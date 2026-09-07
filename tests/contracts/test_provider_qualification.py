@@ -51,7 +51,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 arm = arm_lines[0].split("=", 1)[1] if arm_lines else "open_cake"
                 thread_id = (
                     "11234567-89ab-cdef-0123-456789abcdef"
-                    if arm == "direct_cuda"
+                    if arm != "open_cake"
                     else "01234567-89ab-cdef-0123-456789abcdef"
                 )
                 reported_thread_id = (
@@ -69,6 +69,10 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     raise SystemExit(36)
                 if resumed and arguments[-2] != thread_id:
                     raise SystemExit(34)
+                schema_path = Path(arguments[arguments.index("--output-schema") + 1])
+                allowed_arms = json.loads(schema_path.read_text())["properties"]["arm"]["enum"]
+                if arm not in allowed_arms:
+                    raise SystemExit(37)
                 turn = 2 if resumed else 1
                 change = "update" if resumed else "add"
                 if candidate.exists() is not resumed:
@@ -176,6 +180,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         feature_policy: str = "closed_research",
         maximum_candidates_per_turn: int | None = None,
         reasoning_effort: str = "max",
+        output_schema: Path | None = None,
     ) -> tuple[subprocess.CompletedProcess[bytes], Path, Path, Path]:
         receipt_path = root / "provider-qualification.json"
         anchor_path = root / "provider-qualification-anchor.json"
@@ -189,7 +194,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 provider_revision,
                 "--output-schema",
                 str(
-                    ROOT
+                    output_schema or ROOT
                     / (
                         "contracts/providers/codex-turn-output-schema-v2.json"
                         if feature_policy == "provider_defaults_optimization"
@@ -402,6 +407,32 @@ class ProviderQualificationContractTests(unittest.TestCase):
             audit = evidence.audit_run("codex-provider-ralph")
             self.assertTrue(audit.archive_integrity)
             self.assertEqual(audit.endpoint_observation, "qualified")
+
+    def test_native_triton_schema_qualifies_its_actual_pair_through_ralph(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable)
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root, executable, provider_revision="native-ralph-fixture",
+                run_id="native-ralph", maximum_candidates_per_turn=2,
+                output_schema=ROOT / "contracts/providers/codex-triton-optimization-output-schema-v1.json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertTrue(ProviderQualificationReceipt.load(receipt_path).qualified)
+            evidence = EvidenceStore.open(evidence_root)
+            observed = next(event["payload"] for event in evidence.replay_events("native-ralph")
+                            if event["kind"] == "provider_qualification_observed")
+            self.assertEqual(set(observed["arms"]), {"open_cake", "native_triton"})
+            self.assertNotEqual(observed["arms"]["open_cake"]["thread_id"],
+                                observed["arms"]["native_triton"]["thread_id"])
+            envelope = json.loads((root / "workspace/native_triton/candidate-set.json").read_text())
+            self.assertEqual(envelope["arm"], "native_triton")
+            self.assertEqual(len(envelope["candidates"]), 2)
+            for member in envelope["candidates"]:
+                self.assertEqual(set(member), {"kernel_source", "compile_constants", "compile_options", "grid"})
+                self.assertIn("def qualification_2_", member["kernel_source"])
+            self.assertTrue(evidence.audit_run("native-ralph").archive_integrity)
 
     def test_incomplete_two_turn_observation_cannot_issue_a_live_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

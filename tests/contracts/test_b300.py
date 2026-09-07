@@ -35,6 +35,59 @@ class B300ContractTests(unittest.TestCase):
         cls.compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         cls.workload = WorkloadContract.load(ROOT / 'contracts/workloads/rmsnorm-fp32-v2.json')
 
+    def test_b300_ralph_task_and_frozen_successor_keep_native_treatment(self):
+        import os
+        import shutil
+        import subprocess
+        import sys
+        import tempfile
+        from open_cake_ir.lab import Lab, render_task_package
+        from tests.contracts.test_lab import FakeProvider
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "project"
+            shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns(".git", "__pycache__", ".venv"))
+            template = root / "contracts/studies/matched-search-triton-b300-optimization-template.json"
+            study = json.loads(template.read_text())
+            # This receipt is only a CPU fixture; the shipped template stays pending.
+            provider = study["arms"]["open_cake"]["provider"]
+            configuration = {**FakeProvider.configuration,
+                             "output_schema_sha256": provider["output_schema"]["sha256"]}
+            receipt = json.loads((root / "contracts/providers/fixture-provider-candidate-set-ralph-v1.json").read_text())
+            receipt["configuration_sha256"] = sha256(encoded(configuration)).hexdigest()
+            qualification = root / "contracts/providers/b300-ralph-fixture.json"
+            qualification.write_bytes(encoded(receipt))
+            for arm in study["arms"].values():
+                arm["provider"]["revision"] = receipt["provider_revision"]
+                arm["provider"]["qualification"] = {
+                    "path": qualification.relative_to(root).as_posix(),
+                    "canonical_sha256": sha256(encoded(receipt)).hexdigest(),
+                }
+            template.write_text(json.dumps(study))
+            lock = Lab(root).preflight(template)
+            for arm in ("open_cake", "native_triton"):
+                package = render_task_package(root, lock, arm + "-1")
+                self.assertIn('"sm_103a"', package.task_markdown)
+                self.assertIn("candidate-set.json", package.agents_markdown)
+                self.assertNotIn("prompt_template", package.task_markdown)
+                self.assertNotIn('"sm_100a"', package.task_markdown)
+                if arm == "native_triton":
+                    self.assertIn("candidate-baseline.triton.json", package.task_markdown)
+                else:
+                    self.assertIn("restricted Python", package.agents_markdown)
+            output = root / "contracts/studies/b300-ralph-fixture-successor.json"
+            result = subprocess.run([
+                sys.executable, str(root / "tools/create_study_successor.py"),
+                "--project-root", str(root), "--source", str(template),
+                "--output", str(output), "--study-id", "b300-ralph-fixture-successor",
+            ], cwd=root, env={**os.environ, "PYTHONPATH": str(root / "src")},
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            successor = Lab(root).preflight(output)
+            self.assertEqual(successor.analysis_plan, lock.analysis_plan)
+            self.assertEqual(successor.agent_interface, "task_agents_ralph_v1")
+            self.assertEqual(successor.document["execution"]["target"], "sm_103a")
+
     def test_fifteen_successor_cases_preserve_math_and_lower_to_b300(self):
         count = 0
         for name in ('rmsnorm-fp32', 'gemm-bias-bf16-fp32', 'indexed-gather-bf16'):
