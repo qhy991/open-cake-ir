@@ -27,3 +27,5 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - **accepted：** 决策已被接受；具体权限范围仍看该记录和当前任务授权。
 - **superseded：** 后继记录负责当前决定，旧记录保留背景。
 - **rejected：** 保留被拒绝的方案及理由，不据此实施。
+
+- [0054: Lab uses only Ralph](0054-lab-uses-only-ralph.md)

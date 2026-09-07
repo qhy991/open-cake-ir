@@ -171,7 +171,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--template",
                 str(
                     project
-                    / "contracts/studies/matched-search-system-qualification-template.json"
+                    / "contracts/studies/matched-search-system-qualification-ralph-template.json"
                 ),
                 "--qualification",
                 str(qualification_path),

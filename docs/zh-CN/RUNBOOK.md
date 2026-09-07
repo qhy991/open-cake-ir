@@ -43,9 +43,7 @@ AKA 是拿来提出问题的外部题库，不能直接当作编译器的正式�
 | 真正想回答的问题 | 选择 |
 | --- | --- |
 | 不用 GPU，流程能否接通 | `matched-search-infrastructure-template.json` |
-| 一次受限 GPU 运行能否走完整条系统路径 | `matched-search-system-qualification-template.json` |
 | 两个任务文件加 Ralph 控制器能否按预算运行 | `matched-search-system-qualification-ralph-template.json` |
-| 每次独立尝试能找到什么确认合格的产物 | `artifact-optimization-template.json` |
 | 用 Ralph 多轮改进一个产物 | `artifact-optimization-ralph-template.json` |
 | 从头写程序时，参考材料是否没有泄露目标实现 | `matched-search-clean-start-reference-template.json` |
 | 已验证的专用方案能否覆盖事先声明的输入集合 | `portfolio` Study |
@@ -60,7 +58,7 @@ AKA 是拿来提出问题的外部题库，不能直接当作编译器的正式�
 
 Provider 是真正调用 AI 的程序。显示“已登录”不代表它能遵守本次实验要求。资格检查要在新工作区里完成首次提交和继续一轮，并检查模型用量、沙箱、工作目录、会话连续性、候选格式、功能限制和参考可见范围。
 
-有三种示例：封闭研究环境、允许 provider 默认功能的产物优化环境、两文件 Ralph 接口。它们的完整命令在[英文第 4 节](../RUNBOOK.md#4-qualify-the-provider-without-gpu)。带 `<…>` 或 `/new/…` 的位置是操作人员要替换的参数，不是可以直接粘贴执行的成品命令。
+所有实验都使用两文件 Ralph 接口。资格验证有两种工具策略：封闭研究环境，以及允许 provider 默认功能的产物优化环境。它们的完整命令在[英文第 4 节](../RUNBOOK.md#4-qualify-the-provider-without-gpu)。带 `<…>` 或 `/new/…` 的位置是操作人员要替换的参数，不是可以直接粘贴执行的成品命令。
 
 失败也要封存，不能删掉后伪装成同一次成功。完成必要的环境处理后，另用新的 Run 身份。资格记录固定的推理强度没有隐含默认值，变更它需要对应的新资格和新 Study。通过这项检查，只证明 AI 工具的传输和交互边界；没有授予 GPU 运行资格，也没有科学结果。
 

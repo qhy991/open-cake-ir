@@ -39,14 +39,6 @@ class CompilerRevisionWitnessTests(unittest.TestCase):
         )
         # This unresolved historical name is still unavailable for reuse.
         self.assertIn("open-cake-ir-sm100a-v6", identities)
-        self.assertTrue(
-            any(
-                item.revision_id == "open-cake-ir-sm100a-v4"
-                and item.path
-                == "contracts/studies/matched-search-infrastructure-v4.json"
-                for item in witnesses
-            )
-        )
 
     def test_the_collision_incident_accounts_for_every_observed_v4_digest(self) -> None:
         witnesses = compiler_revision_witnesses(ROOT)

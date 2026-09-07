@@ -493,11 +493,11 @@ class PairedLabFixtureTests(unittest.TestCase):
             for name in ('contracts', 'corpus', 'compiler', 'src', 'docs'):
                 shutil.copytree(ROOT / name, root / name)
             document = json.loads((root / 'contracts/studies/matched-search-triton-optimization-template.json').read_text())
-            document['budget'] = {'unit':'provider_tokens', 'limit':80000, 'checkpoints':[80000], 'maximum_turns':1, 'maximum_candidates_per_turn':1}
+            document['budget'].update({'unit':'provider_tokens', 'limit':80000, 'checkpoints':[80000], 'maximum_turns':1, 'maximum_candidates_per_turn':1})
             document['evaluation_protocol'] = {'case_id':'primary', 'search_evaluation':'correctness_then_paired_cupti',
                 'confirmatory_evaluation':'fresh_fixed_candidate_correctness_then_paired_cupti'}
             configuration = {**FakeProvider.configuration, 'output_schema_sha256': document['arms']['open_cake']['provider']['output_schema']['sha256']}
-            qualification = json.loads((root / 'contracts/providers/fixture-provider-candidate-set-v1.json').read_text())
+            qualification = json.loads((root / 'contracts/providers/fixture-provider-candidate-set-ralph-v1.json').read_text())
             qualification['configuration_sha256'] = sha256(encoded(configuration)).hexdigest()
             qp = root / 'contracts/providers/native-fixture.json'; qp.write_bytes(encoded(qualification))
             for arm, value in document['arms'].items():
@@ -531,6 +531,8 @@ class PairedLabFixtureTests(unittest.TestCase):
                     payload = encoded(member)
                     return dataclasses.replace(original,candidates=(payload,),candidate_sha256s=(sha256(payload).hexdigest(),))
             provider = Provider(); provider.configuration = configuration
+            from open_cake_ir.lab import render_task_package
+            provider.packages = {run_id: render_task_package(root, lock, run_id) for run_id in lock.run_order}
             provider.qualification_sha256 = sha256(encoded(qualification)).hexdigest()
             class Evaluator(FakeEvaluator):
                 def evaluate(self,candidate,*,case_id,purpose):

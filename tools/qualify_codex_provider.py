@@ -19,12 +19,10 @@ from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
-    SINGLE_CANDIDATE_V1,
     CodexInvocationBuilder,
     CodexProviderAdapter,
     ProviderInvocation,
     ProviderQualificationReceipt,
-    read_frozen_reference_bundle,
 )
 from open_cake_ir.lab.task_package import TASK_AGENTS_RALPH_V1  # noqa: E402
 
@@ -61,58 +59,17 @@ def _turn_prompt(
     *,
     arm: str,
     expected_submission: object,
-    maximum_candidates_per_turn: int,
-    submission_contract: str,
     tool_instruction: str,
-    reference_bundle_sha256: str,
-    reference_bundle: str,
-    prompt_template: Path,
-    agent_interface: str,
 ) -> str:
     change = "add" if turn == 1 else "update"
-    if agent_interface == TASK_AGENTS_RALPH_V1:
-        return (
-            "Read TASK.md and AGENTS.md completely. Continue the same Ralph "
-            f"qualification thread. {tool_instruction}\n"
-            f"CANDIDATE_PATH_JSON={json.dumps(str(candidate.absolute()))}\n"
-            f"ARM={arm}\n"
-            f"EXPECTED_CANDIDATE_SET_JSON={json.dumps(expected_submission, sort_keys=True, separators=(',', ':'), ensure_ascii=False)}\n"
-            f"{change.capitalize()} only {candidate.name}; keep TASK.md and AGENTS.md unchanged."
-        )
-    template = prompt_template.read_text(encoding="utf-8")
-    replacements = {
-        "{{CANDIDATE_PATH_JSON}}": json.dumps(str(candidate.absolute())),
-        "{{EXPECTED_CHANGE}}": change,
-        "{{REFERENCE_BUNDLE_SHA256}}": reference_bundle_sha256,
-        "{{REFERENCE_BUNDLE}}": reference_bundle,
-    }
-    if submission_contract == CANDIDATE_SET_ENVELOPE_V1:
-        replacements.update(
-            {
-                "{{ARM}}": arm,
-                "{{MAXIMUM_CANDIDATES_PER_TURN}}": str(
-                    maximum_candidates_per_turn
-                ),
-                "{{EXPECTED_CANDIDATE_SET_JSON}}": json.dumps(
-                    expected_submission,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                ),
-                "{{TOOL_INSTRUCTION}}": tool_instruction,
-            }
-        )
-    else:
-        replacements["{{EXPECTED_CANDIDATE_JSON}}"] = json.dumps(
-            expected_submission,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    for marker, value in replacements.items():
-        if template.count(marker) != 1:
-            raise ValueError(f"qualification prompt marker {marker!r} differs")
-        template = template.replace(marker, value)
-    return template
+    return (
+        "Read TASK.md and AGENTS.md completely. Continue the same Ralph "
+        f"qualification thread. {tool_instruction}\n"
+        f"CANDIDATE_PATH_JSON={json.dumps(str(candidate.absolute()))}\n"
+        f"ARM={arm}\n"
+        f"EXPECTED_CANDIDATE_SET_JSON={json.dumps(expected_submission, sort_keys=True, separators=(',', ':'), ensure_ascii=False)}\n"
+        f"{change.capitalize()} only {candidate.name}; keep TASK.md and AGENTS.md unchanged."
+    )
 
 
 def _expected_submission(
@@ -122,12 +79,6 @@ def _expected_submission(
     maximum_candidates_per_turn: int,
     submission_contract: str,
 ) -> tuple[object, tuple[bytes, ...]]:
-    if submission_contract == SINGLE_CANDIDATE_V1:
-        document = {
-            "qualification_turn": turn,
-            "reference_nonce": reference_nonce,
-        }
-        return document, (_canonical_json_bytes(document),)
     if arm == "open_cake":
         members: list[object] = [
             {
@@ -281,18 +232,13 @@ def main() -> int:
     parser.add_argument(
         "--maximum-candidates-per-turn",
         type=int,
-        default=None,
-        help="qualify the canonical candidate-set envelope for both arms",
+        default=3,
+        help="maximum candidates in the Ralph envelope for both arms",
     )
     parser.add_argument(
         "--feature-policy",
         choices=("closed_research", "provider_defaults_optimization"),
         default="closed_research",
-    )
-    parser.add_argument(
-        "--agent-interface",
-        choices=("legacy_prompt_v1", TASK_AGENTS_RALPH_V1),
-        default="legacy_prompt_v1",
     )
     parser.add_argument(
         "--remove-env",
@@ -305,35 +251,23 @@ def main() -> int:
     executable = args.executable.resolve(strict=True)
     output_schema = args.output_schema.resolve(strict=True)
     workspace = _new_path(args.workspace)
-    references = workspace.parent / f"{workspace.name}-references"
     receipt_output = _new_path(args.receipt_output)
     evidence_root = _new_path(args.evidence_root)
     anchor_output = _new_path(args.anchor_output)
     removed_environment = tuple(args.removed_environment or ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"))
     maximum_candidates_per_turn = args.maximum_candidates_per_turn or 1
-    submission_contract = (
-        CANDIDATE_SET_ENVELOPE_V1
-        if args.maximum_candidates_per_turn is not None
-        else SINGLE_CANDIDATE_V1
-    )
-    task_interface = args.agent_interface == TASK_AGENTS_RALPH_V1
-    if task_interface and submission_contract != CANDIDATE_SET_ENVELOPE_V1:
-        raise ValueError("Ralph qualification requires a candidate-set envelope")
+    submission_contract = CANDIDATE_SET_ENVELOPE_V1
     qualification_arms = (
         ("open_cake", "direct_cuda")
-        if submission_contract == CANDIDATE_SET_ENVELOPE_V1
-        else ("open_cake",)
     )
     if args.feature_policy == "closed_research":
         disabled_features = CODEX_DISABLED_FEATURES
         event_contract = "closed_file_change_v1"
-        prompt_template = ROOT / "contracts/providers/codex-qualification-prompt-v1.md"
         tool_instruction = "Do not invoke auxiliary tools."
         receipt_scope = "live_two_turn_current_provider"
     else:
         disabled_features = ()
         event_contract = "tool_rich_candidate_v1"
-        prompt_template = ROOT / "contracts/providers/codex-qualification-prompt-v2.md"
         tool_instruction = (
             "First use the shell tool to run `pwd` without writing a file or "
             "invoking a network/GPU operation."
@@ -346,8 +280,6 @@ def main() -> int:
         or not args.provider_revision
         or workspace.exists()
         or workspace.is_symlink()
-        or references.exists()
-        or references.is_symlink()
         or receipt_output.exists()
         or receipt_output.is_symlink()
         or anchor_output.exists()
@@ -363,22 +295,13 @@ def main() -> int:
         raise ValueError("Codex qualification input custody differs")
     workspace.mkdir(mode=0o750)
     workspaces = {"open_cake": workspace}
-    if submission_contract == CANDIDATE_SET_ENVELOPE_V1:
-        workspaces = {}
-        for arm in qualification_arms:
-            arm_workspace = workspace / arm
-            arm_workspace.mkdir(mode=0o750)
-            workspaces[arm] = arm_workspace
-        prompt_template = (
-            ROOT
-            / "contracts/providers/codex-qualification-candidate-set-prompt-v1.md"
-        )
-    references.mkdir(mode=0o755)
+    workspaces = {}
+    for arm in qualification_arms:
+        arm_workspace = workspace / arm
+        arm_workspace.mkdir(mode=0o750)
+        workspaces[arm] = arm_workspace
     executable_sha256 = sha256(executable.read_bytes()).hexdigest()
     output_schema_sha256 = sha256(output_schema.read_bytes()).hexdigest()
-    qualification_prompt_sha256 = sha256(
-        prompt_template.read_bytes()
-    ).hexdigest()
     reference_nonce = sha256(
         _canonical_json_bytes(
             {
@@ -387,57 +310,44 @@ def main() -> int:
                 "output_schema_sha256": output_schema_sha256,
                 **(
                     {"submission_contract": submission_contract}
-                    if submission_contract == CANDIDATE_SET_ENVELOPE_V1
-                    else {}
                 ),
             }
         )
     ).hexdigest()
-    reference_path = references / "qualification-authority.json"
-    with reference_path.open("xb") as stream:
-        stream.write(
-            _canonical_json_bytes(
-                {"schema_version": 1, "qualification_nonce": reference_nonce}
-            )
-        )
-    reference_path.chmod(0o444)
-    references.chmod(0o555)
-    reference_bundle_sha256, reference_bundle = read_frozen_reference_bundle(references)
     task_files_by_arm: dict[str, tuple[bytes, bytes]] = {}
-    if task_interface:
-        for arm, arm_workspace in workspaces.items():
-            task_payload = (
-                "# TASK.md — provider qualification\n\n"
-                f"Prove two-Turn `{arm}` candidate-set add/update behavior.\n\n"
-                f"Frozen qualification nonce: `{reference_nonce}`.\n"
-            ).encode()
-            agents_payload = (
-                "# AGENTS.md — provider qualification\n\n"
-                "Read TASK.md. Write only candidate-set.json. Keep both task files "
-                "unchanged. Do not use a GPU or network.\n"
-            ).encode()
-            for name, payload in (
-                ("TASK.md", task_payload),
-                ("AGENTS.md", agents_payload),
-            ):
-                path = arm_workspace / name
-                path.write_bytes(payload)
-                path.chmod(0o444)
-            task_files_by_arm[arm] = (task_payload, agents_payload)
-        task_bundle = {
-            arm: {
-                "task_markdown": values[0].decode(),
-                "agents_markdown": values[1].decode(),
-            }
-            for arm, values in task_files_by_arm.items()
+    for arm, arm_workspace in workspaces.items():
+        task_payload = (
+            "# TASK.md — provider qualification\n\n"
+            f"Prove two-Turn `{arm}` candidate-set add/update behavior.\n\n"
+            f"Frozen qualification nonce: `{reference_nonce}`.\n"
+        ).encode()
+        agents_payload = (
+            "# AGENTS.md — provider qualification\n\n"
+            "Read TASK.md. Write only candidate-set.json. Keep both task files "
+            "unchanged. Do not use a GPU or network.\n"
+        ).encode()
+        for name, payload in (
+            ("TASK.md", task_payload),
+            ("AGENTS.md", agents_payload),
+        ):
+            path = arm_workspace / name
+            path.write_bytes(payload)
+            path.chmod(0o444)
+        task_files_by_arm[arm] = (task_payload, agents_payload)
+    task_bundle = {
+        arm: {
+            "task_markdown": values[0].decode(),
+            "agents_markdown": values[1].decode(),
         }
-        reference_bundle = json.dumps(
-            task_bundle,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        reference_bundle_sha256 = sha256(reference_bundle.encode()).hexdigest()
+        for arm, values in task_files_by_arm.items()
+    }
+    reference_bundle = json.dumps(
+        task_bundle,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    reference_bundle_sha256 = sha256(reference_bundle.encode()).hexdigest()
     authority = {
         "schema_version": 1,
         "kind": "codex_provider_two_turn_qualification",
@@ -447,31 +357,21 @@ def main() -> int:
         "reasoning_effort": args.reasoning_effort,
         "service_tier": args.service_tier,
         "output_schema_sha256": output_schema_sha256,
-        "qualification_prompt_sha256": qualification_prompt_sha256,
         "removed_environment": list(removed_environment),
         "reference_bundle_sha256": reference_bundle_sha256,
         "disabled_features": list(disabled_features),
         "event_contract": event_contract,
         "feature_policy": args.feature_policy,
         "sandbox": "workspace-write",
-        "cwd_policy": (
-            "same_new_task_workspace"
-            if task_interface
-            else "same_new_empty_workspace"
-        ),
-        "reference_visibility": (
-            "workspace_task_files"
-            if task_interface
-            else "embedded_frozen_bundle"
-        ),
-        "agent_interface": args.agent_interface,
+        "cwd_policy": "same_new_task_workspace",
+        "reference_visibility": "workspace_task_files",
+        "agent_interface": TASK_AGENTS_RALPH_V1,
         "turns": ["initial_add", "same_thread_resume_update"],
         "gpu_execution_authorized": False,
     }
-    if submission_contract == CANDIDATE_SET_ENVELOPE_V1:
-        authority["submission_contract"] = submission_contract
-        authority["maximum_candidates_per_turn"] = maximum_candidates_per_turn
-        authority["arms"] = list(qualification_arms)
+    authority["submission_contract"] = submission_contract
+    authority["maximum_candidates_per_turn"] = maximum_candidates_per_turn
+    authority["arms"] = list(qualification_arms)
     authority_sha256 = sha256(_canonical_json_bytes(authority)).hexdigest()
     evidence = (
         EvidenceStore.writer(evidence_root)
@@ -489,11 +389,7 @@ def main() -> int:
         configuration_sha256s: set[str] = set()
         for arm in qualification_arms:
             arm_workspace = workspaces[arm]
-            candidate = arm_workspace / (
-                "candidate-set.json"
-                if submission_contract == CANDIDATE_SET_ENVELOPE_V1
-                else "candidate.json"
-            )
+            candidate = arm_workspace / "candidate-set.json"
             builder = CodexInvocationBuilder(
                 executable=executable,
                 provider_revision=args.provider_revision,
@@ -506,16 +402,8 @@ def main() -> int:
                 disabled_features=disabled_features,
                 event_contract=event_contract,
                 submission_contract=submission_contract,
-                cwd_policy=(
-                    "independent_task_workspace"
-                    if task_interface
-                    else "independent_empty_workspace"
-                ),
-                reference_visibility=(
-                    "workspace_task_files"
-                    if task_interface
-                    else "embedded_frozen_bundle"
-                ),
+                cwd_policy="independent_task_workspace",
+                reference_visibility="workspace_task_files",
             )
             configuration_sha256s.add(builder.configuration_sha256)
             expected_initial, initial_candidates = _expected_submission(
@@ -531,13 +419,7 @@ def main() -> int:
                     1,
                     arm=arm,
                     expected_submission=expected_initial,
-                    maximum_candidates_per_turn=maximum_candidates_per_turn,
-                    submission_contract=submission_contract,
                     tool_instruction=tool_instruction,
-                    reference_bundle_sha256=reference_bundle_sha256,
-                    reference_bundle=reference_bundle,
-                    prompt_template=prompt_template,
-                    agent_interface=args.agent_interface,
                 ),
                 thread_id=None,
             )
@@ -555,21 +437,15 @@ def main() -> int:
                 ),
                 event_contract=event_contract,
                 submission_contract=submission_contract,
-                arm=(
-                    arm
-                    if submission_contract == CANDIDATE_SET_ENVELOPE_V1
-                    else None
-                ),
+                arm=arm,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
             _validate_workspace(
-                arm_workspace, candidate, task_files=task_interface
+                arm_workspace, candidate, task_files=True
             )
             initial_submission = candidate.read_bytes()
             if (
                 initial.candidates != initial_candidates
-                if submission_contract == CANDIDATE_SET_ENVELOPE_V1
-                else json.loads(initial.candidates[0]) != expected_initial
             ):
                 raise ValueError("Codex initial candidate bytes differ")
 
@@ -586,13 +462,7 @@ def main() -> int:
                     2,
                     arm=arm,
                     expected_submission=expected_resumed,
-                    maximum_candidates_per_turn=maximum_candidates_per_turn,
-                    submission_contract=submission_contract,
                     tool_instruction=tool_instruction,
-                    reference_bundle_sha256=reference_bundle_sha256,
-                    reference_bundle=reference_bundle,
-                    prompt_template=prompt_template,
-                    agent_interface=args.agent_interface,
                 ),
                 thread_id=initial.thread_id,
             )
@@ -615,22 +485,16 @@ def main() -> int:
                 ),
                 event_contract=event_contract,
                 submission_contract=submission_contract,
-                arm=(
-                    arm
-                    if submission_contract == CANDIDATE_SET_ENVELOPE_V1
-                    else None
-                ),
+                arm=arm,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
             _validate_workspace(
-                arm_workspace, candidate, task_files=task_interface
+                arm_workspace, candidate, task_files=True
             )
             resumed_submission = candidate.read_bytes()
             if (
                 (
                     resumed.candidates != resumed_candidates
-                    if submission_contract == CANDIDATE_SET_ENVELOPE_V1
-                    else json.loads(resumed.candidates[0]) != expected_resumed
                 )
                 or resumed.thread_id != initial.thread_id
                 or initial.provider_tokens <= 0
@@ -680,13 +544,7 @@ def main() -> int:
             or sha256(executable.read_bytes()).hexdigest() != executable_sha256
             or sha256(output_schema.read_bytes()).hexdigest() != output_schema_sha256
             or (
-                not task_interface
-                and read_frozen_reference_bundle(references)[0]
-                != reference_bundle_sha256
-            )
-            or (
-                task_interface
-                and any(
+                any(
                     (workspaces[arm] / "TASK.md").read_bytes() != values[0]
                     or (workspaces[arm] / "AGENTS.md").read_bytes() != values[1]
                     for arm, values in task_files_by_arm.items()
@@ -712,7 +570,7 @@ def main() -> int:
             resumed = observation["resumed"]
             initial_invocation = observation["initial_invocation"]
             resumed_invocation = observation["resumed_invocation"]
-            prefix = "" if submission_contract == SINGLE_CANDIDATE_V1 else f"{arm}_"
+            prefix = f"{arm}_"
             objects.extend(
                 [
                     evidence.put(
@@ -731,40 +589,28 @@ def main() -> int:
                     ).reference(f"{prefix}resumed_invocation"),
                 ]
             )
-            if submission_contract == SINGLE_CANDIDATE_V1:
+            objects.extend(
+                [
+                    evidence.put(
+                        observation["initial_submission"],
+                        media_type="application/json",
+                    ).reference(f"{arm}_initial_submission_envelope"),
+                    evidence.put(
+                        observation["resumed_submission"],
+                        media_type="application/json",
+                    ).reference(f"{arm}_resumed_submission_envelope"),
+                ]
+            )
+            candidate_media_type = (
+                "application/json" if arm == "open_cake" else "text/x-cuda"
+            )
+            for phase, turn in (("initial", initial), ("resumed", resumed)):
                 objects.extend(
-                    [
-                        evidence.put(
-                            initial.candidates[0], media_type="application/json"
-                        ).reference("initial_candidate"),
-                        evidence.put(
-                            resumed.candidates[0], media_type="application/json"
-                        ).reference("resumed_candidate"),
-                    ]
-                )
-            else:
-                objects.extend(
-                    [
-                        evidence.put(
-                            observation["initial_submission"],
-                            media_type="application/json",
-                        ).reference(f"{arm}_initial_submission_envelope"),
-                        evidence.put(
-                            observation["resumed_submission"],
-                            media_type="application/json",
-                        ).reference(f"{arm}_resumed_submission_envelope"),
-                    ]
-                )
-                candidate_media_type = (
-                    "application/json" if arm == "open_cake" else "text/x-cuda"
-                )
-                for phase, turn in (("initial", initial), ("resumed", resumed)):
-                    objects.extend(
-                        evidence.put(candidate, media_type=candidate_media_type).reference(
-                            f"{arm}_{phase}_candidate_{index:04d}"
-                        )
-                        for index, candidate in enumerate(turn.candidates)
+                    evidence.put(candidate, media_type=candidate_media_type).reference(
+                        f"{arm}_{phase}_candidate_{index:04d}"
                     )
+                    for index, candidate in enumerate(turn.candidates)
+                )
             arm_payloads[arm] = {
                 "thread_id": initial.thread_id,
                 "initial_provider_tokens": initial.provider_tokens,
@@ -786,33 +632,17 @@ def main() -> int:
                     "qualification_receipt"
                 ),
                 evidence.put(
-                    reference_path.read_bytes(), media_type="application/json"
+                    reference_bundle.encode(), media_type="application/json"
                 ).reference("qualification_reference"),
             ]
         )
-        if submission_contract == SINGLE_CANDIDATE_V1:
-            legacy = arm_payloads["open_cake"]
-            observed_payload = {
-                "thread_id": legacy["thread_id"],
-                "initial_provider_tokens": legacy["initial_provider_tokens"],
-                "resumed_provider_tokens": legacy["resumed_provider_tokens"],
-                "initial_normalization": legacy["initial_normalization"],
-                "resumed_normalization": legacy["resumed_normalization"],
-                "initial_candidate_sha256": legacy["initial_candidate_sha256s"][0],
-                "resumed_candidate_sha256": legacy["resumed_candidate_sha256s"][0],
-                "objects": objects,
-                "reference_bundle_sha256": reference_bundle_sha256,
-                "initial_auxiliary_activity": legacy["initial_auxiliary_activity"],
-                "resumed_auxiliary_activity": legacy["resumed_auxiliary_activity"],
-            }
-        else:
-            observed_payload = {
-                "submission_contract": submission_contract,
-                "maximum_candidates_per_turn": maximum_candidates_per_turn,
-                "arms": arm_payloads,
-                "objects": objects,
-                "reference_bundle_sha256": reference_bundle_sha256,
-            }
+        observed_payload = {
+            "submission_contract": submission_contract,
+            "maximum_candidates_per_turn": maximum_candidates_per_turn,
+            "arms": arm_payloads,
+            "objects": objects,
+            "reference_bundle_sha256": reference_bundle_sha256,
+        }
         ledger.append(
             "provider_qualification_observed",
             observed_payload,
@@ -831,10 +661,9 @@ def main() -> int:
             "feature_policy": args.feature_policy,
             "event_contract": event_contract,
         }
-        if submission_contract == CANDIDATE_SET_ENVELOPE_V1:
-            endpoint["submission_contract"] = submission_contract
-            endpoint["arms_qualified"] = list(qualification_arms)
-            endpoint["maximum_candidates_per_turn"] = maximum_candidates_per_turn
+        endpoint["submission_contract"] = submission_contract
+        endpoint["arms_qualified"] = list(qualification_arms)
+        endpoint["maximum_candidates_per_turn"] = maximum_candidates_per_turn
         ledger.seal(
             protocol_adherence="adhered",
             endpoint_observation="qualified",

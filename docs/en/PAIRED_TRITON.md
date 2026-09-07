@@ -10,7 +10,10 @@ The Compiler's static diagnostics and native source restrictions are treatment c
 ## Contract and owners
 
 `contracts/studies/matched-search-triton-optimization-template.json` is a stable scientific
-optimization template. Its `scientific_matched_search` scope declares qualification-rate
+optimization template using the sole `task_agents_ralph_v1` interface. Each Run receives
+immutable `TASK.md` and `AGENTS.md`; the same provider thread updates `candidate-set.json`
+from the external controller StateCard until a Ralph budget stops it. No prompt template
+is loaded. Its `scientific_matched_search` scope declares qualification-rate
 and conditional confirmed-latency endpoints, three independent Runs per arm, no replacement
 Runs, and observed candidate failures versus missing external faults. Provider, scaffold,
 case, Workload/oracle, backend, exact toolchain, ABI, budget and common Evaluation remain

@@ -19,7 +19,6 @@ from .core import (
     StudyContract,
     StudyReport,
     TurnRequest,
-    matched_evidence_policy_v1,
     scientific_matched_analysis_plan_v2,
 )
 from .environments import (
@@ -81,7 +80,6 @@ __all__ = [
     "TurnRequest",
     "TurnObservation",
     "project_checkpoints",
-    "matched_evidence_policy_v1",
     "scientific_matched_analysis_plan_v2",
     "AuthoringEnvironment",
     "BuildRequest",

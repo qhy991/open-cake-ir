@@ -176,7 +176,6 @@ class ProviderQualificationContractTests(unittest.TestCase):
         feature_policy: str = "closed_research",
         maximum_candidates_per_turn: int | None = None,
         reasoning_effort: str = "max",
-        agent_interface: str = "legacy_prompt_v1",
     ) -> tuple[subprocess.CompletedProcess[bytes], Path, Path, Path]:
         receipt_path = root / "provider-qualification.json"
         anchor_path = root / "provider-qualification-anchor.json"
@@ -211,8 +210,6 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 reasoning_effort,
                 "--feature-policy",
                 feature_policy,
-                "--agent-interface",
-                agent_interface,
             ]
         if maximum_candidates_per_turn is not None:
             command.extend(
@@ -256,7 +253,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 if event["kind"] == "provider_qualification_observed"
             )
             self.assertEqual(
-                observed["payload"]["initial_auxiliary_activity"][0]["item_type"],
+                observed["payload"]["arms"]["open_cake"]["initial_auxiliary_activity"][0]["item_type"],
                 "command_execution",
             )
 
@@ -286,10 +283,10 @@ class ProviderQualificationContractTests(unittest.TestCase):
             self.assertTrue(receipt.usage_observed)
             self.assertTrue(receipt.qualified)
             self.assertEqual(receipt.scope, "live_two_turn_current_provider")
-            candidate = json.loads((workspace / "candidate.json").read_text())
+            candidate = json.loads((workspace / "open_cake" / "candidate-set.json").read_text())["candidates"][0]
             self.assertEqual(candidate["qualification_turn"], 2)
             self.assertEqual(len(candidate["reference_nonce"]), 64)
-            self.assertEqual([path.name for path in workspace.iterdir()], ["candidate.json"])
+            self.assertEqual({path.name for path in workspace.iterdir()}, {"open_cake", "direct_cuda"})
 
             evidence = EvidenceStore.open(evidence_root)
             audit = evidence.audit_run("codex-provider-two-turn-contract")
@@ -313,19 +310,11 @@ class ProviderQualificationContractTests(unittest.TestCase):
             ]
             self.assertEqual(len(observed), 1)
             roles = {item["role"] for item in observed[0]["payload"]["objects"]}
-            self.assertEqual(
-                roles,
-                {
-                    "initial_candidate",
-                    "initial_invocation",
-                    "initial_provider_events",
-                    "qualification_receipt",
-                    "qualification_reference",
-                    "resumed_candidate",
-                    "resumed_invocation",
-                    "resumed_provider_events",
-                },
-            )
+            self.assertTrue({"qualification_receipt", "qualification_reference"} <= roles)
+            for arm in ("open_cake", "direct_cuda"):
+                for turn in ("initial", "resumed"):
+                    self.assertIn(f"{arm}_{turn}_provider_events", roles)
+                    self.assertIn(f"{arm}_{turn}_invocation", roles)
 
     def test_candidate_set_qualification_covers_both_arm_projections(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -394,7 +383,6 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 provider_revision="codex-ralph-fixture-v1",
                 run_id="codex-provider-ralph",
                 maximum_candidates_per_turn=2,
-                agent_interface="task_agents_ralph_v1",
             )
 
             self.assertEqual(completed.returncode, 0, completed.stderr.decode())

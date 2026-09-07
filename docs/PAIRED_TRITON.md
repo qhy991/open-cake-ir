@@ -6,6 +6,8 @@
 提取的 kernel 开始，固定 Workload、case、ABI、oracle、后端、工具链和预算。这个处理条件
 比较 agent 搜索效果，不代表完整 Triton、clean-start 或仅语法的因果比较。
 
+所有 Run 使用 Ralph：先读只读的 `TASK.md`、`AGENTS.md`，再根据每轮 StateCard 更新 `candidate-set.json`，由外部控制器管理预算和停止。不再读取旧 prompt 模板。
+
 稳定科学 Study 模板为 `contracts/studies/matched-search-triton-optimization-template.json`。
 每臂三个预先安排的独立 Run，候选失败是观察结果，外部故障是 missing，不补跑；资格率和
 条件确认延迟保留各自含义。Provider 的新输出 schema 需重新资格验证，模板中的 pending

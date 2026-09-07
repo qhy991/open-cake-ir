@@ -18,8 +18,6 @@ from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.lab import (  # noqa: E402
     ExecutorRevision,
     Lab,
-    ProviderQualificationReceipt,
-    matched_evidence_policy_v1,
     scientific_matched_analysis_plan_v2,
 )
 
@@ -74,6 +72,8 @@ def main() -> int:
     ):
         raise ValueError("Study successor custody or identity differs")
     document = _object(json.loads(source.read_text(encoding="utf-8")), "Study")
+    if document.get("kind") == "matched_search" and document.get("schema_version") != 2:
+        raise ValueError("only Ralph Study successors are supported")
     if document.get("state") not in {"template", "frozen"}:
         raise ValueError("Study successor source state differs")
     skeletons = (
@@ -124,10 +124,6 @@ def main() -> int:
             raise ValueError("portfolio does not use matched-search authoring options")
         document["compiler_revision"] = compiler_reference
     else:
-        # A matched successor closes the semantic event vocabulary even when its
-        # source predates that policy. Frozen source Studies keep their bytes.
-        if document.get("schema_version") == 1:
-            document["evidence"] = dict(matched_evidence_policy_v1())
         arms = _object(document.get("arms"), "Study.arms")
         open_cake = _object(arms.get("open_cake"), "Study.arms.open_cake")
         direct_cuda = _object(arms.get("direct_cuda"), "Study.arms.direct_cuda")
@@ -157,9 +153,6 @@ def main() -> int:
                 "sha256": sha256(candidate_path.read_bytes()).hexdigest(),
             }
         if document.get("claim_scope") == "scientific_matched_search":
-            # A successor adopts the current canonical Analysis Plan. Frozen source
-            # Studies keep their bytes and remain readable through the bounded legacy
-            # adapter in Lab preflight/audit.
             document["analysis_plan"] = dict(
                 scientific_matched_analysis_plan_v2()
             )
@@ -179,47 +172,6 @@ def main() -> int:
                 evaluation["search_materiality_ratio"] = (
                     arguments.search_materiality_ratio
                 )
-            if document.get("schema_version") == 1:
-                optimization = document.get("claim_scope") == "artifact_optimization_only"
-                receipt_path = (
-                    "contracts/providers/fixture-provider-optimization-candidate-set-v1.json"
-                    if optimization
-                    else "contracts/providers/fixture-provider-candidate-set-v1.json"
-                )
-                receipt = ProviderQualificationReceipt.load(root / receipt_path)
-                prompt_paths = {
-                    "open_cake": (
-                        "src/open_cake_ir/lab/prompts/"
-                        + (
-                            "open_cake_optimization_candidate_set_turn_v1.md"
-                            if optimization
-                            else "open_cake_candidate_set_turn_v1.md"
-                        )
-                    ),
-                    "direct_cuda": (
-                        "src/open_cake_ir/lab/prompts/"
-                        + (
-                            "direct_cuda_optimization_candidate_set_turn_v1.md"
-                            if optimization
-                            else "direct_cuda_candidate_set_turn_v1.md"
-                        )
-                    ),
-                }
-                for arm_name, raw_environment in arms.items():
-                    environment = _object(raw_environment, f"Study.arms.{arm_name}")
-                    provider = _object(
-                        environment.get("provider"), f"Study.arms.{arm_name}.provider"
-                    )
-                    provider["revision"] = receipt.provider_revision
-                    provider["qualification"] = {
-                        "path": receipt_path,
-                        "canonical_sha256": receipt.canonical_sha256,
-                    }
-                    prompt_path = prompt_paths[arm_name]
-                    environment["prompt_template"] = {
-                        "path": prompt_path,
-                        "sha256": sha256((root / prompt_path).read_bytes()).hexdigest(),
-                    }
         elif any(
             value is not None
             for value in (

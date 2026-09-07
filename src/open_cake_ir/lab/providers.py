@@ -23,7 +23,6 @@ from .task_package import TaskPackage, verify_task_package
 
 _THREAD_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _MAX_CANDIDATE_BYTES = 64 * 1024 * 1024
-SINGLE_CANDIDATE_V1 = "single_candidate_v1"
 CANDIDATE_SET_ENVELOPE_V1 = "candidate_set_envelope_v1"
 CODEX_DISABLED_FEATURES = (
     "apps",
@@ -87,44 +86,6 @@ def _read_candidate_nofollow(path: Path) -> bytes:
         os.close(descriptor)
 
 
-def read_frozen_reference_bundle(root: Path) -> tuple[str, str]:
-    """Read and hash one immutable external reference directory."""
-
-    resolved = root.resolve(strict=True)
-    if root.is_symlink() or not resolved.is_dir() or resolved.stat().st_mode & 0o222:
-        raise ValueError("provider reference root custody differs")
-    documents: list[tuple[str, bytes]] = []
-    for path in sorted(resolved.iterdir()):
-        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-        try:
-            metadata = os.fstat(descriptor)
-            if (
-                not stat.S_ISREG(metadata.st_mode)
-                or metadata.st_nlink != 1
-                or metadata.st_uid != os.geteuid()
-                or metadata.st_mode & 0o222
-                or metadata.st_size <= 0
-                or metadata.st_size > 16 * 1024 * 1024
-            ):
-                raise ValueError("provider reference file custody differs")
-            payload = os.read(descriptor, metadata.st_size)
-            if len(payload) != metadata.st_size or os.read(descriptor, 1):
-                raise ValueError("provider reference file changed while reading")
-        finally:
-            os.close(descriptor)
-        documents.append((path.name, payload))
-    if not documents:
-        raise ValueError("provider reference bundle is empty")
-    digest = sha256(
-        b"".join(name.encode() + b"\0" + payload + b"\0" for name, payload in documents)
-    ).hexdigest()
-    try:
-        rendered = "\n\n".join(
-            f"===== {name} =====\n{payload.decode('utf-8')}" for name, payload in documents
-        )
-    except UnicodeError as error:
-        raise ValueError("provider reference bundle is not UTF-8") from error
-    return digest, rendered
 
 
 def _plain_json(value: object) -> object:
@@ -164,10 +125,6 @@ def _project_candidate_submission(
         or maximum_candidates_per_turn <= 0
     ):
         raise ValueError("provider maximum candidates per Turn differs")
-    if submission_contract == SINGLE_CANDIDATE_V1:
-        if maximum_candidates_per_turn != 1 or arm is not None:
-            raise ValueError("legacy provider submission contract differs")
-        return (payload,)
     if submission_contract != CANDIDATE_SET_ENVELOPE_V1 or arm not in {
         "open_cake",
         "direct_cuda",
@@ -372,7 +329,6 @@ def parse_codex_turn_events(
     *,
     expected_terminal_message: str,
     event_contract: str = "closed_file_change_v1",
-    legacy_candidate_name: str | None = None,
 ) -> ParsedCodexTurnEvents:
     """Parse the complete closed Codex JSONL Turn without reading its candidate."""
 
@@ -448,17 +404,8 @@ def parse_codex_turn_events(
             raise ValueError("provider item payload differs")
         item_type = item.get("type")
         changes = item.get("changes")
-        candidate_file_change = item_type == "file_change" and (
-            event_contract == "closed_file_change_v1"
-            or (
-                legacy_candidate_name is not None
-                and isinstance(changes, list)
-                and len(changes) == 1
-                and isinstance(changes[0], Mapping)
-                and isinstance(changes[0].get("path"), str)
-                and Path(cast(str, changes[0]["path"])).name
-                == legacy_candidate_name
-            )
+        candidate_file_change = (
+            item_type == "file_change" and event_contract == "closed_file_change_v1"
         )
         if candidate_file_change:
             file_events.append((index, event, cast(Mapping[str, object], item)))
@@ -696,7 +643,7 @@ def normalize_codex_turn(
     expected_change: str,
     expected_terminal_message: str,
     event_contract: str = "closed_file_change_v1",
-    submission_contract: str = SINGLE_CANDIDATE_V1,
+    submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
     arm: str | None = None,
     maximum_candidates_per_turn: int = 1,
 ) -> ProviderTurn:
@@ -759,7 +706,7 @@ class CodexProviderAdapter:
         expected_change: str,
         expected_terminal_message: str,
         event_contract: str = "closed_file_change_v1",
-        submission_contract: str = SINGLE_CANDIDATE_V1,
+        submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
         arm: str | None = None,
         maximum_candidates_per_turn: int = 1,
     ) -> ProviderTurn:
@@ -829,49 +776,23 @@ class TurnRequestLike(Protocol):
 class CodexRunProvider:
     """Canonical Campaign-Lock-compatible provider from Turn to normalized evidence."""
 
-    _SINGLE_CANDIDATE_NAMES = {
-        "open_cake": "candidate.json",
-        "direct_cuda": "candidate.cu",
-        "native_triton": "candidate.triton.json",
-    }
+
 
     def __init__(
         self,
         *,
         qualification: ProviderQualificationReceipt,
         builders: Mapping[str, CodexInvocationBuilder],
-        reference_roots: Mapping[str, Path],
-        prompt_templates: Mapping[str, Path],
-        task_packages: Mapping[str, TaskPackage] | None = None,
+        task_packages: Mapping[str, TaskPackage],
         adapter: CodexProviderAdapter | None = None,
     ) -> None:
-        task_packages = dict(task_packages or {})
-        task_mode = bool(task_packages)
-        if not task_mode:
-            comparison_arm(prompt_templates)
         if (
             not qualification.qualified
-            or qualification.scope
-            not in {
-                "live_two_turn_current_provider",
-                "live_two_turn_tool_rich_provider",
+            or qualification.scope not in {
+                "live_two_turn_current_provider", "live_two_turn_tool_rich_provider",
             }
             or not builders
-            or (
-                task_mode
-                and (
-                    set(task_packages) != set(builders)
-                    or reference_roots
-                    or prompt_templates
-                )
-            )
-            or (
-                not task_mode
-                and (
-                    set(reference_roots) != set(builders)
-                    or not {run_id.rsplit("-", 1)[0] for run_id in builders} <= set(prompt_templates)
-                )
-            )
+            or set(task_packages) != set(builders)
         ):
             raise ValueError("live Codex Run Provider authority differs")
         revisions = {builder.provider_revision for builder in builders.values()}
@@ -881,13 +802,6 @@ class CodexRunProvider:
         executable = next(iter(executables))
         if sha256(executable.read_bytes()).hexdigest() != qualification.executable_sha256:
             raise ValueError("Codex executable bytes differ from provider qualification")
-        templates: dict[str, str] = {}
-        if not task_mode:
-            for arm, path in prompt_templates.items():
-                source = path.resolve(strict=True)
-                if source.is_symlink() or not source.is_file():
-                    raise ValueError("Codex prompt template custody differs")
-                templates[arm] = source.read_text(encoding="utf-8")
         workspaces = [builder.workspace.absolute() for builder in builders.values()]
         if len(set(workspaces)) != len(workspaces):
             raise ValueError("each Run requires an independent workspace")
@@ -912,77 +826,32 @@ class CodexRunProvider:
             self.configuration.get("event_contract", "closed_file_change_v1")
         )
         self._submission_contract = str(
-            self.configuration.get("submission_contract", SINGLE_CANDIDATE_V1)
+            self.configuration.get("submission_contract")
         )
-        if self._submission_contract not in {
-            SINGLE_CANDIDATE_V1,
-            CANDIDATE_SET_ENVELOPE_V1,
-        }:
+        if self._submission_contract != CANDIDATE_SET_ENVELOPE_V1:
             raise ValueError("Codex submission contract differs")
-        self._references = {}
-        if not task_mode:
-            self._references = {
-                run_id: (path.resolve(strict=True), *read_frozen_reference_bundle(path))
-                for run_id, path in reference_roots.items()
-            }
-            if any(
-                builder.workspace in self._references[run_id][0].parents
-                or self._references[run_id][0] in builder.workspace.parents
-                for run_id, builder in builders.items()
-            ):
-                raise ValueError("provider references must be outside each writable workspace")
-        else:
-            for run_id, package in task_packages.items():
-                if package.run_id != run_id:
-                    raise ValueError("Ralph task package Run identity differs")
-                verify_task_package(builders[run_id].workspace, package)
+        for run_id, package in task_packages.items():
+            if package.run_id != run_id:
+                raise ValueError("Ralph task package Run identity differs")
+            verify_task_package(builders[run_id].workspace, package)
         self._builders = dict(builders)
-        self._templates = templates
         self._task_packages = task_packages
         self._adapter = adapter or CodexProviderAdapter()
 
-    def _render_prompt(self, request: TurnRequestLike, candidate_path: Path) -> str:
-        if self._task_packages:
-            if request.state_card is None:
-                raise ValueError("Ralph Turn requires a controller StateCard")
-            state = json.dumps(
-                _plain_json(request.state_card),
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            )
-            return (
-                "Read TASK.md and AGENTS.md completely. Continue the same Ralph Run "
-                "under those immutable rules. Write only candidate-set.json. The "
-                f"external controller StateCard for this iteration is: {state}"
-            )
-        feedback = json.dumps(
-            _plain_json(request.feedback),
+    def _render_prompt(self, request: TurnRequestLike) -> str:
+        if request.state_card is None:
+            raise ValueError("Ralph Turn requires a controller StateCard")
+        state = json.dumps(
+            _plain_json(request.state_card),
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
         )
-        replacements = {
-            "{{RUN_ID}}": request.run_id,
-            "{{ARM}}": request.arm,
-            "{{TURN}}": str(request.turn),
-            "{{CANDIDATE_PATH}}": str(candidate_path),
-            "{{CUMULATIVE_PROVIDER_TOKENS}}": str(request.cumulative_provider_tokens),
-            "{{FEEDBACK_JSON}}": feedback,
-            "{{REFERENCE_BUNDLE}}": self._references[request.run_id][2],
-        }
-        if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1:
-            replacements["{{MAXIMUM_CANDIDATES_PER_TURN}}"] = str(
-                request.maximum_candidates_per_turn
-            )
-        prompt = self._templates[request.arm]
-        if set(re.findall(r"\{\{[A-Z0-9_]+\}\}", prompt)) != set(replacements):
-            raise ValueError("Codex prompt template marker set differs")
-        for marker, value in replacements.items():
-            if prompt.count(marker) != 1:
-                raise ValueError(f"Codex prompt template marker {marker!r} differs")
-            prompt = prompt.replace(marker, value)
-        return prompt
+        return (
+            "Read TASK.md and AGENTS.md completely. Continue the same Ralph Run "
+            "under those immutable rules. Write only candidate-set.json. The "
+            f"external controller StateCard for this iteration is: {state}"
+        )
 
     def turn(self, request: TurnRequestLike) -> ProviderTurn:
         """Execute initial/add or same-thread resume/update under one environment."""
@@ -990,32 +859,20 @@ class CodexRunProvider:
         builder = self._builders.get(request.run_id)
         if (
             builder is None
-            or request.arm not in self._SINGLE_CANDIDATE_NAMES
+            or request.arm not in {"open_cake", "direct_cuda", "native_triton"}
             or request.turn <= 0
             or not isinstance(request.maximum_candidates_per_turn, int)
             or isinstance(request.maximum_candidates_per_turn, bool)
             or request.maximum_candidates_per_turn <= 0
-            or (
-                self._submission_contract == SINGLE_CANDIDATE_V1
-                and request.maximum_candidates_per_turn != 1
-            )
+
         ):
             raise ValueError("Codex Run or arm is outside the Campaign Lock")
         workspace = builder.workspace.absolute()
-        if self._task_packages:
-            package = self._task_packages[request.run_id]
-            verify_task_package(workspace, package)
-            reference_root = None
-            reference_sha256 = None
-        else:
-            reference_root, reference_sha256, _ = self._references[request.run_id]
-            if read_frozen_reference_bundle(reference_root)[0] != reference_sha256:
-                raise ValueError("provider references changed before Turn")
+        package = self._task_packages[request.run_id]
+        verify_task_package(workspace, package)
         if request.turn == 1:
             expected_initial_entries = (
                 {workspace / "TASK.md", workspace / "AGENTS.md"}
-                if self._task_packages
-                else set()
             )
             if (
                 request.thread_id is not None
@@ -1025,17 +882,13 @@ class CodexRunProvider:
                 raise ValueError("initial Codex Turn requires one empty workspace")
         elif request.thread_id is None:
             raise ValueError("resumed Codex Turn requires the existing thread")
-        candidate_path = workspace / (
-            "candidate-set.json"
-            if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1
-            else self._SINGLE_CANDIDATE_NAMES[request.arm]
-        )
+        candidate_path = workspace / "candidate-set.json"
         expected_change = "add" if request.turn == 1 else "update"
         if (expected_change == "add" and candidate_path.exists()) or (
             expected_change == "update" and not candidate_path.is_file()
         ):
             raise ValueError("Codex candidate lifecycle differs before invocation")
-        prompt = self._render_prompt(request, candidate_path)
+        prompt = self._render_prompt(request)
         terminal_document: dict[str, object] = {
             "arm": request.arm,
             "candidate_written": True,
@@ -1057,40 +910,28 @@ class CodexRunProvider:
             expected_terminal_message=terminal,
             event_contract=self._event_contract,
             submission_contract=self._submission_contract,
-            arm=(
-                request.arm
-                if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1
-                else None
-            ),
+            arm=request.arm,
             maximum_candidates_per_turn=request.maximum_candidates_per_turn,
         )
-        if self._submission_contract == CANDIDATE_SET_ENVELOPE_V1:
-            entries = list(workspace.iterdir())
-            expected_entries = {candidate_path}
-            if self._task_packages:
-                expected_entries.update({workspace / "TASK.md", workspace / "AGENTS.md"})
-            if (
-                set(entries) != expected_entries
-                or candidate_path.is_symlink()
-                or not candidate_path.is_file()
-            ):
-                raise RunProtocolFault(
-                    "provider_fault",
-                    "Codex candidate-set workspace custody differs",
-                )
-        if self._task_packages:
-            try:
-                verify_task_package(workspace, package)
-            except ValueError as error:
-                raise RunProtocolFault("contamination", str(error)) from error
-            reference_bundle = package.evidence_bundle(
-                cast(Mapping[str, object], request.state_card)
+        entries = list(workspace.iterdir())
+        expected_entries = {candidate_path}
+        expected_entries.update({workspace / "TASK.md", workspace / "AGENTS.md"})
+        if (
+            set(entries) != expected_entries
+            or candidate_path.is_symlink()
+            or not candidate_path.is_file()
+        ):
+            raise RunProtocolFault(
+                "provider_fault",
+                "Codex candidate-set workspace custody differs",
             )
-        else:
-            assert reference_root is not None and reference_sha256 is not None
-            if read_frozen_reference_bundle(reference_root)[0] != reference_sha256:
-                raise RunProtocolFault("contamination", "provider references changed during Turn")
-            reference_bundle = self._references[request.run_id][2].encode("utf-8")
+        try:
+            verify_task_package(workspace, package)
+        except ValueError as error:
+            raise RunProtocolFault("contamination", str(error)) from error
+        reference_bundle = package.evidence_bundle(
+            cast(Mapping[str, object], request.state_card)
+        )
         return replace(
             result,
             reference_bundle=reference_bundle,
@@ -1113,9 +954,9 @@ class CodexInvocationBuilder:
         removed_environment: tuple[str, ...],
         disabled_features: tuple[str, ...] = CODEX_DISABLED_FEATURES,
         event_contract: str = "closed_file_change_v1",
-        submission_contract: str = SINGLE_CANDIDATE_V1,
-        cwd_policy: str = "independent_empty_workspace",
-        reference_visibility: str = "embedded_frozen_bundle",
+        submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
+        cwd_policy: str = "independent_task_workspace",
+        reference_visibility: str = "workspace_task_files",
     ) -> None:
         values = (provider_revision, model, reasoning_effort, service_tier)
         if any(not value for value in values) or not removed_environment:
@@ -1132,13 +973,9 @@ class CodexInvocationBuilder:
             ((), "tool_rich_candidate_v1"),
         }:
             raise ValueError("Codex feature and event contracts differ")
-        if submission_contract not in {
-            SINGLE_CANDIDATE_V1,
-            CANDIDATE_SET_ENVELOPE_V1,
-        }:
+        if submission_contract != CANDIDATE_SET_ENVELOPE_V1:
             raise ValueError("Codex submission contract differs")
         if (cwd_policy, reference_visibility) not in {
-            ("independent_empty_workspace", "embedded_frozen_bundle"),
             ("independent_task_workspace", "workspace_task_files"),
         }:
             raise ValueError("Codex workspace/reference policy differs")
@@ -1183,8 +1020,7 @@ class CodexInvocationBuilder:
         }
         if self._event_contract != "closed_file_change_v1":
             configuration["event_contract"] = self._event_contract
-        if self._submission_contract != SINGLE_CANDIDATE_V1:
-            configuration["submission_contract"] = self._submission_contract
+        configuration["submission_contract"] = self._submission_contract
         return configuration
 
     @property

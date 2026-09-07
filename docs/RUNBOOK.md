@@ -144,9 +144,7 @@ Choose by question, not by historical sequence number:
 | Question | Template or Study kind |
 | --- | --- |
 | Does the zero-GPU matched control plane compose? | `matched-search-infrastructure-template.json` |
-| Does the bounded real GPU path compose without arm comparison? | `matched-search-system-qualification-template.json` |
 | Does the two-file Ralph path compose with time/token/Evaluation budgets? | `matched-search-system-qualification-ralph-template.json` |
-| What is the best confirmed artifact inside each Run? | `artifact-optimization-template.json` |
 | What is the best confirmed artifact through the two-file Ralph loop? | `artifact-optimization-ralph-template.json` |
 | Does an implementation-free matched reference boundary hold? | `matched-search-clean-start-reference-template.json` |
 | Does a frozen exact-shape specialist set generalize to its declared cases? | `portfolio` Study |
@@ -164,7 +162,7 @@ through Lab preflight. It does not refresh a live worker command. Use
 `tools/freeze_live_matched_study.py` when provider qualification, Executor, runtime
 configuration, broker command, model, reasoning effort, or custody changes.
 
-For `task_agents_ralph_v1`, Preflight renders no Prompt template. Live composition creates
+All matched-search Studies use `task_agents_ralph_v1`; Preflight renders no Prompt template. Live composition creates
 one read-only `TASK.md` and `AGENTS.md` in each Run workspace and retains their exact bytes
 with every StateCard. The workspace may contain only those files plus
 `candidate-set.json` after a Turn.
@@ -223,24 +221,8 @@ python tools/qualify_codex_provider.py \
   --feature-policy provider_defaults_optimization
 ```
 
-Two-file Ralph qualification uses the closed or provider-default feature policy as usual,
-but adds the interface and requires a candidate-set envelope:
-
-```bash
-python tools/qualify_codex_provider.py \
-  --executable /absolute/path/to/codex \
-  --provider-revision codex-cli-<version>-sha<digest-prefix> \
-  --output-schema contracts/providers/codex-turn-output-schema-v1.json \
-  --workspace /new/external/path/ralph-provider-workspace \
-  --receipt-output contracts/providers/<new-ralph-receipt>.json \
-  --anchor-output evidence/qualifications/<new-ralph-anchor>.json \
-  --evidence-root /new/external/path/ralph-provider-evidence \
-  --run-id <new-ralph-provider-run> \
-  --reasoning-effort xhigh \
-  --maximum-candidates-per-turn 3 \
-  --feature-policy closed_research \
-  --agent-interface task_agents_ralph_v1
-```
+Both policies use Ralph: two immutable task files and one candidate-set envelope.
+There is no agent-interface selector or legacy prompt qualification.
 
 Failure remains a sealed observation and issues no passing receipt. Reauthenticate before
 using another Run id; never delete or rewrite a failed archive.
@@ -251,7 +233,7 @@ current Executor descriptor, and exact runtime configuration:
 ```bash
 python tools/freeze_live_matched_study.py \
   --project-root . \
-  --template contracts/studies/matched-search-system-qualification-template.json \
+  --template contracts/studies/matched-search-system-qualification-ralph-template.json \
   --qualification contracts/providers/<new-closed-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-closed-anchor>.json \
   --executor "$(jq -r '.current.path' inventory/EXECUTOR_REVISIONS.json)" \
@@ -266,7 +248,7 @@ Reasoning effort has no implicit default. Changing it requires a matching provid
 qualification and successor Study. A provider transport qualification neither authorizes
 GPU work nor supplies a scientific result.
 
-A Ralph Study additionally freezes one budget vector in its `budget` object:
+Every matched-search Study freezes one budget vector in its `budget` object:
 
 - provider-token limit and checkpoints;
 - maximum Turns and Candidates per Turn;

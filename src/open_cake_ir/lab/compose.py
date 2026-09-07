@@ -35,7 +35,6 @@ from .faults import RunProtocolFault
 from .portfolio import KernelSeed, lower_specialists
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1,
-    SINGLE_CANDIDATE_V1,
     CodexInvocationBuilder,
     CodexProviderAdapter,
     CodexRunProvider,
@@ -46,8 +45,6 @@ from .pairing import comparison_arm, bind_baseline
 from .triton_build import IsolatedTritonCompiler
 from .runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter
 from .task_package import (
-    TASK_AGENTS_RALPH_V1,
-    build_run_reference_documents,
     materialize_task_package,
     render_task_package,
 )
@@ -138,24 +135,6 @@ def broker_execution_sha256(
             separators=(",", ":"),
         ).encode()
     ).hexdigest()
-
-
-def _write_reference(path: Path, payload: bytes) -> None:
-    with path.open("xb") as stream:
-        stream.write(payload)
-    path.chmod(0o444)
-
-
-def _materialize_run_references(
-    root: Path,
-    references: Path,
-    lock: CampaignLock,
-    arm: Mapping[str, object],
-) -> None:
-    references.mkdir(mode=0o755)
-    for name, payload in build_run_reference_documents(root, lock, arm).items():
-        _write_reference(references / name, payload)
-    references.chmod(0o555)
 
 
 class _LivePortfolioAssay:
@@ -403,22 +382,6 @@ def execute_matched_from_config(
             direct_arm["candidate_skeleton"],
             "arm_environments.direct_cuda.candidate_skeleton",
         )
-    ralph_interface = lock.agent_interface == TASK_AGENTS_RALPH_V1
-    prompt_templates = (
-        {}
-        if ralph_interface
-        else {
-            arm: _raw_reference_path(
-                root,
-                document["prompt_template"],
-                f"arm_environments.{arm}.prompt_template",
-            )
-            for arm, document in (
-                ("open_cake", open_arm),
-                (comparison, direct_arm),
-            )
-        }
-    )
     compiler_ref = _object(lock.document["compiler_revision"], "compiler_revision")
     compiler = Compiler.load(root, root / str(compiler_ref["path"]))
     compiler_gate = compiler.check_corpus()
@@ -473,30 +436,15 @@ def execute_matched_from_config(
 
     workspace_root = Path(str(provider_config["workspace_root"])).absolute()
     workspace_root.mkdir(mode=0o750, parents=False, exist_ok=False)
-    references_root = workspace_root / "_references" if not ralph_interface else None
-    if references_root is not None:
-        references_root.mkdir(mode=0o755)
     builders = {}
-    reference_roots = {}
     task_packages = {}
     for run_id in lock.run_order:
         workspace = workspace_root / run_id
         workspace.mkdir(mode=0o750)
         arm_name = run_id.rsplit("-", 1)[0]
-        if ralph_interface:
-            package = render_task_package(root, lock, run_id)
-            materialize_task_package(workspace, package)
-            task_packages[run_id] = package
-        else:
-            assert references_root is not None
-            reference_root = references_root / run_id
-            _materialize_run_references(
-                root,
-                reference_root,
-                lock,
-                _object(arms[arm_name], f"arm_environments.{arm_name}"),
-            )
-            reference_roots[run_id] = reference_root
+        package = render_task_package(root, lock, run_id)
+        materialize_task_package(workspace, package)
+        task_packages[run_id] = package
         builders[run_id] = CodexInvocationBuilder(
             executable=executable,
             provider_revision=qualification.provider_revision,
@@ -517,19 +465,13 @@ def execute_matched_from_config(
             ),
             submission_contract=(
                 CANDIDATE_SET_ENVELOPE_V1
-                if "maximum_candidates_per_turn" in budget
-                else SINGLE_CANDIDATE_V1
             ),
             cwd_policy=str(provider_authority["cwd_policy"]),
             reference_visibility=str(provider_authority["reference_visibility"]),
         )
-    if references_root is not None:
-        references_root.chmod(0o555)
     provider = CodexRunProvider(
         qualification=qualification,
         builders=builders,
-        reference_roots=reference_roots,
-        prompt_templates=prompt_templates,
         task_packages=task_packages,
         adapter=CodexProviderAdapter(),
     )

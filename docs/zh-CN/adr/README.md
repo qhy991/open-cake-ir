@@ -64,3 +64,5 @@ ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭�
 | 0050 | [发布过的编译器 lock 也永久保留身份](0050-released-compiler-locks-reserve-their-identities.md) | [a released Compiler lock reserves its identity](../../adr/0050-released-compiler-locks-reserve-their-identities.md) |
 | 0051 | [load 的结果形状必须符合地址实际读出的范围](0051-load-values-follow-the-access-domain.md) | [load values follow the access domain](../../adr/0051-load-values-follow-the-access-domain.md) |
 | 0052 | [独立代理会话也可以审查编译器发布](0052-independent-agent-release-review.md) | [Independent agent sessions may review Compiler releases](../../adr/0052-independent-agent-release-review.md) |
+
+- [0054：Lab 只使用 Ralph](0054-lab-uses-only-ralph.md)

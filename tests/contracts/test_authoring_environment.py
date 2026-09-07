@@ -131,22 +131,13 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         self.assertEqual(rejected.disposition, "rejected")
         self.assertIsNone(rejected.empirical_cost)
 
-    def test_current_prompts_name_the_only_route_spelling(self) -> None:
-        templates = (
-            "artifact-optimization-template.json",
-            "matched-search-clean-start-reference-template.json",
-            "matched-search-infrastructure-template.json",
-            "matched-search-system-qualification-template.json",
-        )
-        for name in templates:
-            with self.subTest(template=name):
-                study = json.loads(
-                    (ROOT / "contracts" / "studies" / name).read_text(encoding="utf-8")
-                )
-                relative = study["arms"]["open_cake"]["prompt_template"]["path"]
-                prompt = (ROOT / relative).read_text(encoding="utf-8")
-                self.assertIn("preserve its lowering route", prompt)
-                self.assertNotIn("preserve its profile", prompt)
+    def test_task_package_retains_the_declared_lowering_route(self) -> None:
+        from open_cake_ir.lab import render_task_package
+        lock = Lab(ROOT).preflight(ROOT / "contracts/studies/matched-search-clean-start-reference-template.json")
+        package = render_task_package(ROOT, lock, "open_cake-1")
+        self.assertIn('"lowering_route"', package.task_markdown)
+        self.assertIn('"cake_flash_kmeans_assign"', package.task_markdown)
+        self.assertNotIn('"prompt_template"', package.task_markdown)
 
     def test_clean_start_starters_expose_contract_without_implementation(self) -> None:
         study_path = (

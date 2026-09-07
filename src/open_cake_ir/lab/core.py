@@ -64,7 +64,7 @@ _ARM_ARTIFACT_ROLES = {
     "direct_cuda": {"authored_source", "ptx", "cubin", "sass", "launch_manifest"},
     "native_triton": {"authored_source", "compiler_expanded_source", "ptx", "cubin", "launch_manifest"},
 }
-_STUDY_FIELDS = {
+_RALPH_STUDY_FIELDS = {
     "schema_version",
     "study_id",
     "state",
@@ -72,6 +72,7 @@ _STUDY_FIELDS = {
     "claim_scope",
     "workload",
     "arms",
+    "agent_interface",
     "allocation",
     "budget",
     "run_protocol",
@@ -80,7 +81,6 @@ _STUDY_FIELDS = {
     "analysis_plan",
     "evidence",
 }
-_RALPH_STUDY_FIELDS = _STUDY_FIELDS | {"agent_interface"}
 _PORTFOLIO_STUDY_FIELDS = {
     "schema_version",
     "study_id",
@@ -121,7 +121,6 @@ _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN = {
     "pooling": "forbidden",
     "scientific_inclusion": "forbidden",
 }
-_MATCHED_EVENT_VOCABULARY_V1 = "matched_run_v1"
 _MATCHED_RALPH_EVENT_VOCABULARY_V1 = "matched_ralph_v1"
 _MATCHED_EVENT_KINDS_V1 = frozenset(
     {
@@ -139,19 +138,10 @@ _MATCHED_EVENT_KINDS_V1 = frozenset(
         "run_terminal",
     }
 )
-_MATCHED_EVIDENCE_POLICY_V1 = {
-    "schema_version": 2,
-    "terminal_archive_required_for_every_run": True,
-    "event_vocabulary": _MATCHED_EVENT_VOCABULARY_V1,
-}
 _MATCHED_RALPH_EVIDENCE_POLICY_V1 = {
     "schema_version": 3,
     "terminal_archive_required_for_every_run": True,
     "event_vocabulary": _MATCHED_RALPH_EVENT_VOCABULARY_V1,
-}
-_LEGACY_MATCHED_EVIDENCE_POLICY = {
-    "schema_version": 2,
-    "terminal_archive_required_for_every_run": True,
 }
 _SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2 = {
     "experimental_unit": "run",
@@ -171,9 +161,7 @@ _SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2 = {
         "replacement": "forbidden",
     },
     "pooling": "forbidden_without_successor_analysis_plan",
-    "availability": (
-        "all_prescheduled_runs_observed_and_each_arm_has_qualified_run"
-    ),
+    "availability": "all_prescheduled_runs_observed_and_each_arm_has_qualified_run",
     "summary_statistics": {
         "qualification": "arm_rate",
         "qualification_contrast": "open_cake_rate_minus_direct_cuda_rate",
@@ -259,80 +247,28 @@ def scientific_matched_analysis_plan_v2() -> Mapping[str, object]:
     )
 
 
-def matched_evidence_policy_v1() -> Mapping[str, object]:
-    """Return the sole current matched semantic Evidence policy projection."""
-
-    return cast(
-        Mapping[str, object],
-        json.loads(_canonical_json_bytes(_MATCHED_EVIDENCE_POLICY_V1)),
-    )
 
 
 def _matched_evidence_policy_version(
     policy: Mapping[str, object], context: str
 ) -> str:
-    """Admit the closed vocabulary plus bounded frozen-policy compatibility."""
+    """Admit only the Ralph evidence contract."""
 
-    if policy == _MATCHED_EVIDENCE_POLICY_V1:
-        return _MATCHED_EVENT_VOCABULARY_V1
     if policy == _MATCHED_RALPH_EVIDENCE_POLICY_V1:
         return _MATCHED_RALPH_EVENT_VOCABULARY_V1
-    if policy == _LEGACY_MATCHED_EVIDENCE_POLICY:
-        return "legacy_open"
     raise ValueError(f"{context} is unsupported")
 
 
 def _scientific_analysis_plan_version(
     analysis: Mapping[str, object], context: str
 ) -> str:
-    """Admit the current plan plus bounded read compatibility for frozen v1 plans."""
+    """Admit the current scientific plans for the two supported comparisons."""
 
     if analysis == triton_optimization_analysis_plan():
         return "triton_optimization_v1"
     if analysis == _SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2:
         return "two_part_v2"
-    if set(analysis) != {
-        "experimental_unit",
-        "target_population",
-        "primary_endpoint",
-        "contrast",
-        "estimand",
-        "missingness",
-        "pooling",
-        "availability",
-        "summary_statistics",
-        "direction",
-    }:
-        raise ValueError(f"{context} fields differ")
-    if (
-        analysis.get("experimental_unit") != "run"
-        or analysis.get("primary_endpoint")
-        != ["qualified_by_budget", "best_confirmed_latency_ms_if_qualified"]
-        or analysis.get("contrast")
-        != "open_cake_minus_direct_cuda_descriptive"
-        or analysis.get("missingness")
-        != {
-            "candidate_failure": "observed_outcome",
-            "external_fault": "missing",
-            "replacement": "forbidden",
-        }
-        or analysis.get("pooling")
-        != "forbidden_without_successor_analysis_plan"
-        or analysis.get("availability")
-        != "all_prescheduled_runs_qualified_at_final_checkpoint"
-        or analysis.get("summary_statistics")
-        != {
-            "qualification": "arm_rate",
-            "conditional_latency": "arm_median_ms",
-            "contrast": "direct_cuda_median_divided_by_open_cake_median",
-            "uncertainty": "per_arm_observed_range_ms",
-        }
-        or analysis.get("direction") != "lower_latency_is_better"
-    ):
-        raise ValueError(f"{context} is unsupported")
-    _name(analysis.get("target_population"), f"{context}.target_population")
-    _name(analysis.get("estimand"), f"{context}.estimand")
-    return "legacy_v1"
+    raise ValueError(f"{context} is unsupported")
 
 
 def _project_path(root: Path, value: object, context: str) -> tuple[str, Path]:
@@ -614,9 +550,7 @@ def _replay_broker_attempt_ledger(
         "timing_samples",
         "fallback_calls",
     )
-    if set(document) != root_fields or document.get("candidate_sha256") != (
-        candidate.candidate_sha256
-    ):
+    if set(document) != root_fields or document.get("candidate_sha256") != candidate.candidate_sha256:
         raise ValueError("broker attempt ledger authority differs")
     attempts = document.get("attempts")
     if not isinstance(attempts, list) or len(attempts) not in {1, 2}:
@@ -1279,8 +1213,6 @@ class StudyContract:
         fields = (
             _RALPH_STUDY_FIELDS
             if kind == "matched_search" and schema_version == 2
-            else _STUDY_FIELDS
-            if kind == "matched_search" and schema_version == 1
             else _PORTFOLIO_STUDY_FIELDS
             if kind == "portfolio" and schema_version == 1
             else set()
@@ -1406,29 +1338,16 @@ class CampaignLock:
         if study_kind == "matched_search":
             if claim_scope not in _MATCHED_CLAIM_SCOPES:
                 raise ValueError("matched Campaign Lock claim scope differs")
-            legacy_resolved_fields = {
-                "arm_environments",
-                "arm_environment_sha256",
-                "budget",
-                "run_protocol",
-                "evidence_policy",
-            }
-            ralph_resolved_fields = legacy_resolved_fields | {"agent_interface"}
-            if frozenset(resolved) not in {
-                frozenset(legacy_resolved_fields),
-                frozenset(ralph_resolved_fields),
+            if set(resolved) != {
+                "arm_environments", "arm_environment_sha256", "budget",
+                "run_protocol", "evidence_policy", "agent_interface",
             }:
-                raise ValueError("matched Campaign Lock inputs differ")
-            if "agent_interface" in resolved:
-                interface = _object(
-                    resolved["agent_interface"],
-                    "campaign_lock.resolved_inputs.agent_interface",
-                )
-                if interface != {"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}:
-                    raise ValueError("Campaign Lock Ralph agent interface differs")
-                agent_interface = TASK_AGENTS_RALPH_V1
-            else:
-                agent_interface = "legacy_prompt_v1"
+                raise ValueError("matched Campaign Lock requires the Ralph interface")
+            interface = _object(resolved["agent_interface"], "campaign_lock.agent_interface")
+            if interface != {"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}:
+                raise ValueError("Campaign Lock Ralph agent interface differs")
+            agent_interface = TASK_AGENTS_RALPH_V1
+            RalphBudget.from_mapping(_object(resolved["budget"], "campaign_lock.budget"))
             arms = _object(
                 resolved.get("arm_environments"),
                 "campaign_lock.resolved_inputs.arm_environments",
@@ -1445,6 +1364,8 @@ class CampaignLock:
                     arms.get(arm_name),
                     f"campaign_lock.resolved_inputs.arm_environments.{arm_name}",
                 )
+                if "prompt_template" in environment:
+                    raise ValueError("Ralph arms cannot contain prompt_template")
                 digest = _digest(
                     arm_hashes.get(arm_name),
                     f"campaign_lock.resolved_inputs.{arm_name}.sha256",
@@ -1480,12 +1401,10 @@ class CampaignLock:
                 resolved.get("evidence_policy"),
                 "campaign_lock.resolved_inputs.evidence_policy",
             )
-            matched_policy = _matched_evidence_policy_version(
+            _matched_evidence_policy_version(
                 evidence_policy,
                 "campaign_lock.resolved_inputs.evidence_policy",
             )
-            if selection is not None and matched_policy == "legacy_open":
-                raise ValueError("empirical selection requires the closed matched event vocabulary")
             expected_arms = (
                 sorted([comparison, "open_cake"])
                 if claim_scope in _ONE_RUN_PER_ARM_SCOPES
@@ -1493,11 +1412,6 @@ class CampaignLock:
             )
             if sorted(name.rsplit("-", 1)[0] for name in run_order) != expected_arms:
                 raise ValueError("matched Campaign Lock Run allocation differs")
-            if agent_interface == "legacy_prompt_v1" and claim_scope == "system_qualification_only" and (
-                budget.get("checkpoints") != [budget.get("limit")]
-                or budget.get("maximum_turns") != 1
-            ):
-                raise ValueError("system qualification Campaign Lock budget differs")
         elif study_kind == "portfolio":
             agent_interface = "portfolio_v1"
             if claim_scope != "bounded_local_b200_reconstruction":
@@ -1739,7 +1653,6 @@ class Lab:
             if empirical_cost_model_path is not None:
                 raise ValueError("empirical selection requires artifact_optimization_only matched search")
             return self._preflight_portfolio(study)
-        ralph_interface = study.schema_version == 2
         workload_ref = _object(study.document.get("workload"), "study.workload")
         if set(workload_ref) != {"path", "canonical_sha256"}:
             raise ValueError("study workload reference fields differ")
@@ -1799,9 +1712,6 @@ class Lab:
                 or direct_cuda.get("baseline") != {"binding": "open_cake_lowering"}
                 or open_cake.get("toolchain_sha256") != direct_cuda.get("toolchain_sha256")):
                 raise ValueError("paired Triton input, baseline or common toolchain binding differs")
-        if not ralph_interface:
-            open_cake_fields.add("prompt_template")
-            direct_cuda_fields.add("prompt_template")
         if set(open_cake) != open_cake_fields or set(direct_cuda) != direct_cuda_fields:
             raise ValueError("Study Contract Authoring Environment fields differ")
         if open_cake.get("environment_kind") != "open_cake" or direct_cuda.get(
@@ -1842,9 +1752,6 @@ class Lab:
         ) or open_cake.get("scaffold") != direct_cuda.get("scaffold"):
             raise ValueError("matched Authoring Environments differ in provider or scaffold")
         _digest(direct_cuda.get("toolchain_sha256"), "study.arms.direct_cuda.toolchain_sha256")
-        candidate_set_submission = "maximum_candidates_per_turn" in _object(
-            study.document.get("budget"), "study.budget"
-        )
         provider = _object(open_cake.get("provider"), "study.arms.provider")
         provider_fields = {
             "revision",
@@ -1887,17 +1794,9 @@ class Lab:
             or provider.get("service_tier") != "default"
             or provider.get("sandbox") != "workspace-write"
             or provider.get("cwd_policy")
-            != (
-                "independent_task_workspace"
-                if ralph_interface
-                else "independent_empty_workspace"
-            )
+            != "independent_task_workspace"
             or provider.get("reference_visibility")
-            != (
-                "workspace_task_files"
-                if ralph_interface
-                else "embedded_frozen_bundle"
-            )
+            != "workspace_task_files"
             or provider.get("disabled_features") != expected_disabled_features
             or provider.get("event_contract", "closed_file_change_v1")
             != expected_event_contract
@@ -1947,8 +1846,6 @@ class Lab:
                             {
                                 "submission_contract": CANDIDATE_SET_ENVELOPE_V1
                             }
-                            if candidate_set_submission
-                            else {}
                         ),
                     }
                 )
@@ -2077,48 +1974,6 @@ class Lab:
                 "study.arms.direct_cuda.candidate_skeleton.sha256",
             ) != sha256(candidate_skeleton_path.read_bytes()).hexdigest():
                 raise ValueError("Study Contract direct candidate skeleton bytes differ")
-        if not ralph_interface:
-            for arm_name, environment in (
-                ("open_cake", open_cake),
-                (comparison, direct_cuda),
-            ):
-                prompt = _object(
-                    environment.get("prompt_template"),
-                    f"study.arms.{arm_name}.prompt_template",
-                )
-                if set(prompt) != {"path", "sha256"}:
-                    raise ValueError("Study Contract prompt reference differs")
-                _, prompt_path = _project_path(
-                    self._root,
-                    prompt.get("path"),
-                    f"study.arms.{arm_name}.prompt_template.path",
-                )
-                if _digest(
-                    prompt.get("sha256"),
-                    f"study.arms.{arm_name}.prompt_template.sha256",
-                ) != sha256(prompt_path.read_bytes()).hexdigest():
-                    raise ValueError("Study Contract prompt bytes differ")
-                expected_prompt_markers = {
-                    "{{RUN_ID}}",
-                    "{{ARM}}",
-                    "{{TURN}}",
-                    "{{CANDIDATE_PATH}}",
-                    "{{CUMULATIVE_PROVIDER_TOKENS}}",
-                    "{{FEEDBACK_JSON}}",
-                    "{{REFERENCE_BUNDLE}}",
-                }
-                if candidate_set_submission:
-                    expected_prompt_markers.add("{{MAXIMUM_CANDIDATES_PER_TURN}}")
-                prompt_text = prompt_path.read_text(encoding="utf-8")
-                if (
-                    set(re.findall(r"\{\{[A-Z0-9_]+\}\}", prompt_text))
-                    != expected_prompt_markers
-                    or any(
-                        prompt_text.count(marker) != 1
-                        for marker in expected_prompt_markers
-                    )
-                ):
-                    raise ValueError("Study Contract prompt marker set differs")
         if open_cake.get("tool_surface") != (["submit_schedule_or_python"] if paired_triton else ["submit_schedule"]) or direct_cuda.get(
             "tool_surface"
         ) != (["submit_triton_kernel"] if paired_triton else ["submit_cuda"]):
@@ -2188,16 +2043,14 @@ class Lab:
         maximum_turns = budget.get("maximum_turns")
         maximum_candidates_per_turn = budget.get("maximum_candidates_per_turn", 1)
         budget_fields = {"unit", "limit", "checkpoints", "maximum_turns"}
-        if candidate_set_submission:
-            budget_fields.add("maximum_candidates_per_turn")
-        if ralph_interface:
-            budget_fields.update(
-                {
-                    "wall_time_seconds",
-                    "active_authoring_time_seconds",
-                    "evaluation_limits",
-                }
-            )
+        budget_fields.add("maximum_candidates_per_turn")
+        budget_fields.update(
+            {
+                "wall_time_seconds",
+                "active_authoring_time_seconds",
+                "evaluation_limits",
+            }
+        )
         if (
             set(budget) != budget_fields
             or
@@ -2218,18 +2071,10 @@ class Lab:
             or maximum_candidates_per_turn <= 0
         ):
             raise ValueError("Study Contract budget grid differs")
-        if ralph_interface:
-            RalphBudget.from_mapping(budget)
-        if not ralph_interface and claim_scope == "system_qualification_only" and (
-            checkpoints != [limit] or maximum_turns != 1
-        ):
-            raise ValueError("system qualification requires one bounded Turn and checkpoint")
-
+        RalphBudget.from_mapping(budget)
         run_protocol = _object(study.document.get("run_protocol"), "study.run_protocol")
         expected_workspace = (
             run_protocol.get("workspace_seed") == "task_agents_only"
-            if ralph_interface
-            else run_protocol.get("empty_workspace") is True
         )
         if (
             run_protocol.get("independent_thread") is not True
@@ -2252,17 +2097,16 @@ class Lab:
             raise ValueError(
                 "Study Contract searches_per_turn exceeds maximum_candidates_per_turn"
             )
-        if ralph_interface:
-            ralph_limits = _object(
-                budget.get("evaluation_limits"), "study.budget.evaluation_limits"
-            )
-            required_attribution = searches if attribution_evaluation == _ATTRIBUTION_EVALUATION else 0
-            if (
-                int(ralph_limits.get("search", 0)) < searches
-                or int(ralph_limits.get("confirmatory", 0)) < 1
-                or int(ralph_limits.get("attribution", 0)) < required_attribution
-            ):
-                raise ValueError("Ralph budget cannot admit one complete Turn")
+        ralph_limits = _object(
+            budget.get("evaluation_limits"), "study.budget.evaluation_limits"
+        )
+        required_attribution = searches if attribution_evaluation == _ATTRIBUTION_EVALUATION else 0
+        if (
+            int(ralph_limits.get("search", 0)) < searches
+            or int(ralph_limits.get("confirmatory", 0)) < 1
+            or int(ralph_limits.get("attribution", 0)) < required_attribution
+        ):
+            raise ValueError("Ralph budget cannot admit one complete Turn")
         # How much faster the measurement has to be before the order counts as wrong.
         # A Study that searches more than one candidate has to say, because without it
         # every inversion inside the noise would be routed to the cost model as a defect
@@ -2329,12 +2173,8 @@ class Lab:
         evidence_version = _matched_evidence_policy_version(
             evidence_policy, "study.evidence"
         )
-        if ralph_interface != (
-            evidence_version == _MATCHED_RALPH_EVENT_VOCABULARY_V1
-        ):
+        if evidence_version != _MATCHED_RALPH_EVENT_VOCABULARY_V1:
             raise ValueError("Study agent interface and Evidence policy differ")
-        if has_empirical_policy and evidence_version == "legacy_open":
-            raise ValueError("empirical selection requires the closed matched event vocabulary")
 
         resolved_arms = cast(
             dict[str, object], json.loads(_canonical_json_bytes(arms))
@@ -2385,8 +2225,6 @@ class Lab:
                 "evidence_policy": evidence_policy,
                 **(
                     {"agent_interface": study.document["agent_interface"]}
-                    if ralph_interface
-                    else {}
                 ),
             },
             "run_order": list(run_order),
@@ -2649,8 +2487,7 @@ class Lab:
         profile_each_search_survivor = (
             attribution_evaluation == _ATTRIBUTION_EVALUATION
         )
-        ralph_enabled = lock.agent_interface == TASK_AGENTS_RALPH_V1
-        ralph_budget = RalphBudget.from_mapping(budget) if ralph_enabled else None
+        ralph_budget = RalphBudget.from_mapping(budget)
         expected_protocol_sha256 = sha256(
             _canonical_json_bytes(evaluation_protocol)
         ).hexdigest()
@@ -2725,10 +2562,9 @@ class Lab:
             expected_provider_configuration["event_contract"] = provider_document[
                 "event_contract"
             ]
-        if "maximum_candidates_per_turn" in budget:
-            expected_provider_configuration[
-                "submission_contract"
-            ] = CANDIDATE_SET_ENVELOPE_V1
+        expected_provider_configuration[
+            "submission_contract"
+        ] = CANDIDATE_SET_ENVELOPE_V1
         if (
             getattr(provider, "configuration", None) != expected_provider_configuration
             or qualification.canonical_sha256
@@ -2752,18 +2588,6 @@ class Lab:
             ),
             "campaign_lock.workload.canonical_sha256",
         )
-        executor_id = str(
-            _object(
-                _object(lock.document["execution"], "campaign_lock.execution")[
-                    "executor_revision"
-                ],
-                "campaign_lock.execution.executor_revision",
-            )["executor_id"]
-        )
-        executor_match = re.fullmatch(r"open-cake-ir-b200-v(\d+)", executor_id)
-        if executor_match is None:
-            raise ValueError("Campaign Lock Executor identity differs")
-        reference_bundle_required = int(executor_match.group(1)) >= 25
         evidence = EvidenceStore.create(root)
         record_confirmation_time = comparison_arm(environments) == "native_triton"
         for sequence, run_id in enumerate(lock.run_order, start=1):
@@ -2800,28 +2624,25 @@ class Lab:
                     profile_each_search_survivor=profile_each_search_survivor,
                     clock=self._clock,
                 )
-                if ralph_enabled
-                else None
             )
             ralph_stop_reason: str | None = None
             try:
                 for turn_number in range(1, maximum_turns + 1):
                     state_card = None
-                    if ralph is not None:
-                        ralph_stop_reason = ralph.stop_reason(
-                            turn=turn_number,
-                            cumulative_provider_tokens=cumulative_tokens,
-                        )
-                        if ralph_stop_reason is not None:
-                            break
-                        state_card = ralph.state_card(
-                            turn=turn_number,
-                            cumulative_provider_tokens=cumulative_tokens,
-                            feedback=feedback,
-                        )
+                    ralph_stop_reason = ralph.stop_reason(
+                        turn=turn_number,
+                        cumulative_provider_tokens=cumulative_tokens,
+                    )
+                    if ralph_stop_reason is not None:
+                        break
+                    state_card = ralph.state_card(
+                        turn=turn_number,
+                        cumulative_provider_tokens=cumulative_tokens,
+                        feedback=feedback,
+                    )
                     live_stage = "provider"
                     authoring_started = (
-                        ralph.begin_authoring() if ralph is not None else None
+                        ralph.begin_authoring()
                     )
                     try:
                         provider_turn = provider.turn(
@@ -2837,20 +2658,17 @@ class Lab:
                             )
                         )
                     finally:
-                        if ralph is not None and authoring_started is not None:
-                            ralph.end_authoring(authoring_started)
+                        ralph.end_authoring(authoring_started)
                     if thread_id is not None and provider_turn.thread_id != thread_id:
                         raise ValueError("provider resume thread identity differs")
                     thread_id = provider_turn.thread_id
                     cumulative_tokens += provider_turn.provider_tokens
                     reference_bundle = provider_turn.reference_bundle
                     if reference_bundle is None:
-                        if reference_bundle_required:
-                            raise RunProtocolFault(
-                                "harness_fault",
-                                "provider reference bundle observation is missing",
-                            )
-                        reference_object = None
+                        raise RunProtocolFault(
+                            "harness_fault",
+                            "provider reference bundle observation is missing",
+                        )
                     else:
                         if (
                             not isinstance(reference_bundle, bytes)
@@ -3006,8 +2824,7 @@ class Lab:
                                 filter_rows
                                 if matched_event_vocabulary
                                 in {
-                                    _MATCHED_EVENT_VOCABULARY_V1,
-                                    _MATCHED_RALPH_EVENT_VOCABULARY_V1,
+                                                            _MATCHED_RALPH_EVENT_VOCABULARY_V1,
                                 }
                                 else [
                                     {
@@ -3094,8 +2911,7 @@ class Lab:
                         def evaluate_attribution(
                             candidate: LaunchableCandidate,
                         ) -> EvaluationReceipt:
-                            if ralph is not None:
-                                ralph.record_evaluation("attribution")
+                            ralph.record_evaluation("attribution")
                             attempt = evaluator.evaluate(
                                 candidate,
                                 case_id=case_id,
@@ -3176,8 +2992,7 @@ class Lab:
                                 },
                             )
                             live_stage = "evaluation"
-                            if ralph is not None:
-                                ralph.record_evaluation("search")
+                            ralph.record_evaluation("search")
                             entry_attempt = evaluator.evaluate(
                                 entry_launchable,
                                 case_id=case_id,
@@ -3287,8 +3102,7 @@ class Lab:
 
                         confirmed: EvaluationReceipt | None = None
                         if qualified_search:
-                            if ralph is not None:
-                                ralph.record_evaluation("confirmatory")
+                            ralph.record_evaluation("confirmatory")
                             confirmed_attempt = evaluator.evaluate(
                                 launchable,
                                 case_id=case_id,
@@ -3419,10 +3233,9 @@ class Lab:
                         fault_payload["artifact_rejections"] = rejected_roles
                 ledger.append("run_fault", fault_payload)
                 protocol_adherence = fault
-                if ralph is not None:
-                    ralph_stop_reason = fault
+                ralph_stop_reason = fault
 
-            if ralph is not None and ralph_stop_reason is None:
+            if ralph_stop_reason is None:
                 ralph_stop_reason = ralph.stop_reason(
                     turn=min(maximum_turns + 1, len(observations) + 1),
                     cumulative_provider_tokens=cumulative_tokens,
@@ -3444,15 +3257,14 @@ class Lab:
                         for item in projected
                     ]
             }
-            if ralph is not None:
-                checkpoint_payload["ralph"] = dict(
-                    ralph.state_card(
-                        turn=min(maximum_turns + 1, len(observations) + 1),
-                        cumulative_provider_tokens=cumulative_tokens,
-                        feedback=feedback,
-                        terminal_reason=ralph_stop_reason,
-                    )
+            checkpoint_payload["ralph"] = dict(
+                ralph.state_card(
+                    turn=min(maximum_turns + 1, len(observations) + 1),
+                    cumulative_provider_tokens=cumulative_tokens,
+                    feedback=feedback,
+                    terminal_reason=ralph_stop_reason,
                 )
+            )
             ledger.append("checkpoints_projected", checkpoint_payload)
             final_checkpoint = projected[-1]
             endpoint_observation, endpoint = _matched_endpoint_from_checkpoint(
@@ -3769,63 +3581,57 @@ class Lab:
             ),
             "resolved_inputs.evidence_policy",
         )
-        ralph_events = event_vocabulary == _MATCHED_RALPH_EVENT_VOCABULARY_V1
-        strict_events = event_vocabulary in {
-            _MATCHED_EVENT_VOCABULARY_V1,
-            _MATCHED_RALPH_EVENT_VOCABULARY_V1,
-        }
         arm = audit.run_id.rsplit("-", 1)[0]
-        if strict_events:
-            kinds = [event.get("kind") for event in events]
-            if (
-                any(kind not in _MATCHED_EVENT_KINDS_V1 for kind in kinds)
-                or kinds.count("run_started") != 1
-                or kinds.count("checkpoints_projected") != 1
-                or kinds.count("run_terminal") != 1
-                or kinds[0] != "run_started"
-                or kinds[-2:] != ["checkpoints_projected", "run_terminal"]
-                or audit.run_id not in lock.run_order
-            ):
-                return False
-            start_payload = _object(
-                events[0].get("payload"), "run_started.payload"
-            )
-            if start_payload != {
-                "sequence": lock.run_order.index(audit.run_id) + 1,
-                "assigned_arm": arm,
-                "automatic_retries": 0,
-                "replacement_run": False,
-            }:
-                return False
-            terminal_payload = _object(
-                events[-1].get("payload"), "run_terminal.payload"
-            )
-            if terminal_payload != {
-                "protocol_adherence": audit.protocol_adherence,
-                "endpoint_observation": audit.endpoint_observation,
-                "endpoint": dict(audit.endpoint) if audit.endpoint is not None else None,
-            }:
-                return False
-            turn_events = [
-                _object(event.get("payload"), f"event.{event.get('kind')}.payload")[
-                    "turn"
-                ]
-                for event in events[1:-2]
-                if "turn"
-                in _object(
-                    event.get("payload"), f"event.{event.get('kind')}.payload"
-                )
+        kinds = [event.get("kind") for event in events]
+        if (
+            any(kind not in _MATCHED_EVENT_KINDS_V1 for kind in kinds)
+            or kinds.count("run_started") != 1
+            or kinds.count("checkpoints_projected") != 1
+            or kinds.count("run_terminal") != 1
+            or kinds[0] != "run_started"
+            or kinds[-2:] != ["checkpoints_projected", "run_terminal"]
+            or audit.run_id not in lock.run_order
+        ):
+            return False
+        start_payload = _object(
+            events[0].get("payload"), "run_started.payload"
+        )
+        if start_payload != {
+            "sequence": lock.run_order.index(audit.run_id) + 1,
+            "assigned_arm": arm,
+            "automatic_retries": 0,
+            "replacement_run": False,
+        }:
+            return False
+        terminal_payload = _object(
+            events[-1].get("payload"), "run_terminal.payload"
+        )
+        if terminal_payload != {
+            "protocol_adherence": audit.protocol_adherence,
+            "endpoint_observation": audit.endpoint_observation,
+            "endpoint": dict(audit.endpoint) if audit.endpoint is not None else None,
+        }:
+            return False
+        turn_events = [
+            _object(event.get("payload"), f"event.{event.get('kind')}.payload")[
+                "turn"
             ]
-            if (
-                any(
-                    not isinstance(turn, int)
-                    or isinstance(turn, bool)
-                    or turn <= 0
-                    for turn in turn_events
-                )
-                or turn_events != sorted(turn_events)
-            ):
-                return False
+            for event in events[1:-2]
+            if "turn"
+            in _object(
+                event.get("payload"), f"event.{event.get('kind')}.payload"
+            )
+        ]
+        if (
+            any(
+                not isinstance(turn, int)
+                or isinstance(turn, bool)
+                or turn <= 0
+                for turn in turn_events
+            )
+            or turn_events != sorted(turn_events)
+        ):
+            return False
         provider_events = [event for event in events if event.get("kind") == "provider_turn_completed"]
         checkpoint_events = [event for event in events if event.get("kind") == "checkpoints_projected"]
         if len(checkpoint_events) != 1:
@@ -3839,33 +3645,32 @@ class Lab:
                 checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
             )
             checkpoints = checkpoint_payload.get("checkpoints")
-            if strict_events:
-                required_fault_fields = {
-                    "fault",
-                    "exception_type",
-                    "turn",
-                    "stage",
-                    "terminal_provider_tokens",
-                }
-                if (
-                    [event.get("kind") for event in events]
-                    != [
-                        "run_started",
-                        "run_fault",
-                        "checkpoints_projected",
-                        "run_terminal",
-                    ]
-                    or not required_fault_fields <= set(fault_payload)
-                    or set(fault_payload)
-                    - required_fault_fields
-                    - {"objects", "artifact_rejections"}
-                    or not isinstance(fault_payload.get("exception_type"), str)
-                    or not fault_payload.get("exception_type")
-                    or not _artifact_outcomes_are_closed(fault_payload)
-                    or set(checkpoint_payload)
-                    != ({"checkpoints", "ralph"} if ralph_events else {"checkpoints"})
-                ):
-                    return False
+            required_fault_fields = {
+                "fault",
+                "exception_type",
+                "turn",
+                "stage",
+                "terminal_provider_tokens",
+            }
+            if (
+                [event.get("kind") for event in events]
+                != [
+                    "run_started",
+                    "run_fault",
+                    "checkpoints_projected",
+                    "run_terminal",
+                ]
+                or not required_fault_fields <= set(fault_payload)
+                or set(fault_payload)
+                - required_fault_fields
+                - {"objects", "artifact_rejections"}
+                or not isinstance(fault_payload.get("exception_type"), str)
+                or not fault_payload.get("exception_type")
+                or not _artifact_outcomes_are_closed(fault_payload)
+                or set(checkpoint_payload)
+                != ({"checkpoints", "ralph"})
+            ):
+                return False
             fault_fields_present = any(
                 field in fault_payload
                 for field in ("turn", "stage", "terminal_provider_tokens")
@@ -3933,7 +3738,6 @@ class Lab:
         maximum_candidates_per_turn = int(
             replay_budget.get("maximum_candidates_per_turn", 1)
         )
-        candidate_set_submission = "maximum_candidates_per_turn" in replay_budget
         arm_environments = _object(
             resolved_inputs["arm_environments"], "resolved_inputs.arm_environments"
         )
@@ -3961,43 +3765,22 @@ class Lab:
         )
         expected_task_package = (
             render_task_package(self._root, lock, audit.run_id)
-            if ralph_events
-            else None
-        )
-        executor_revision = _object(
-            _object(lock.document["execution"], "execution")["executor_revision"],
-            "execution.executor_revision",
-        )
-        executor_match = re.fullmatch(
-            r"open-cake-ir-b200-v(\d+)", str(executor_revision.get("executor_id"))
-        )
-        reference_bundle_required = (
-            executor_match is not None and int(executor_match.group(1)) >= 25
-        )
-        # Tool-rich Executors before v16 projected the fixed Candidate lifecycle
-        # separately from auxiliary activity. Preserve that frozen replay boundary;
-        # current Turns use the final no-follow file as their sole submission authority.
-        legacy_candidate_projection = (
-            event_contract == "tool_rich_candidate_v1"
-            and executor_match is not None
-            and int(executor_match.group(1)) < 16
         )
         for expected_turn, event in enumerate(provider_events, start=1):
             payload = _object(event.get("payload"), "provider_turn.payload")
-            if strict_events:
-                expected_provider_fields = {
-                    "turn",
-                    "thread_id",
-                    "turn_provider_tokens",
-                    "cumulative_provider_tokens",
-                    "normalization",
-                    "candidate_count",
-                    "objects",
-                }
-                if "event_contract" in provider_authority:
-                    expected_provider_fields.add("auxiliary_activity")
-                if set(payload) != expected_provider_fields:
-                    return False
+            expected_provider_fields = {
+                "turn",
+                "thread_id",
+                "turn_provider_tokens",
+                "cumulative_provider_tokens",
+                "normalization",
+                "candidate_count",
+                "objects",
+            }
+            if "event_contract" in provider_authority:
+                expected_provider_fields.add("auxiliary_activity")
+            if set(payload) != expected_provider_fields:
+                return False
             if payload.get("turn") != expected_turn:
                 return False
             thread_id = payload.get("thread_id")
@@ -4024,42 +3807,31 @@ class Lab:
                 and item.get("role") == "provider_reference_bundle"
             ]
             candidate_count = payload.get("candidate_count")
-            legacy_single_candidate = "candidate_count" not in payload
-            if legacy_single_candidate:
-                candidate_count = 1
-                candidate_references = [
-                    cast(Mapping[str, object], item)
-                    for item in objects
-                    if isinstance(item, Mapping)
-                    and item.get("role") == "candidate_submission"
-                ]
-            else:
-                candidate_set_turns.add(expected_turn)
-                indexed_references: dict[int, Mapping[str, object]] = {}
-                for item in objects:
-                    if not isinstance(item, Mapping):
-                        continue
-                    role = item.get("role")
-                    match = (
-                        re.fullmatch(r"candidate_submission_(\d{4})", role)
-                        if isinstance(role, str)
-                        else None
-                    )
-                    if match is not None:
-                        index = int(match.group(1))
-                        if index in indexed_references:
-                            return False
-                        indexed_references[index] = item
-                candidate_references = [
-                    indexed_references[index]
-                    for index in range(len(indexed_references))
-                ]
+            candidate_set_turns.add(expected_turn)
+            indexed_references: dict[int, Mapping[str, object]] = {}
+            for item in objects:
+                if not isinstance(item, Mapping):
+                    continue
+                role = item.get("role")
+                match = (
+                    re.fullmatch(r"candidate_submission_(\d{4})", role)
+                    if isinstance(role, str)
+                    else None
+                )
+                if match is not None:
+                    index = int(match.group(1))
+                    if index in indexed_references:
+                        return False
+                    indexed_references[index] = item
+            candidate_references = [
+                indexed_references[index]
+                for index in range(len(indexed_references))
+            ]
             if (
                 len(event_references) != 1
                 or len(reference_bundle_references) > 1
                 or (
-                    reference_bundle_required
-                    and len(reference_bundle_references) != 1
+                    len(reference_bundle_references) != 1
                 )
                 or not isinstance(candidate_count, int)
                 or isinstance(candidate_count, bool)
@@ -4100,41 +3872,40 @@ class Lab:
             if reference_bundle is not None:
                 try:
                     decoded_reference = reference_bundle.decode("utf-8")
-                    if expected_task_package is not None:
-                        bundle = _object(
-                            json.loads(decoded_reference),
-                            "provider Ralph task package",
-                        )
-                        state = _object(
-                            bundle.get("state_card"),
-                            "provider Ralph StateCard",
-                        )
-                        if (
-                            set(bundle)
-                            != {
-                                "schema_version",
-                                "kind",
-                                "run_id",
-                                "arm",
-                                "task_markdown",
-                                "agents_markdown",
-                                "state_card",
-                            }
-                            or bundle.get("schema_version") != 1
-                            or bundle.get("kind") != TASK_AGENTS_RALPH_V1
-                            or bundle.get("run_id") != audit.run_id
-                            or bundle.get("arm") != arm
-                            or bundle.get("task_markdown")
-                            != expected_task_package.task_markdown
-                            or bundle.get("agents_markdown")
-                            != expected_task_package.agents_markdown
-                            or state.get("kind") != "ralph_state_v1"
-                            or state.get("iteration") != expected_turn
-                            or state.get("cumulative_provider_tokens")
-                            != prior_cumulative
-                            or state.get("terminal_reason") is not None
-                        ):
-                            return False
+                    bundle = _object(
+                        json.loads(decoded_reference),
+                        "provider Ralph task package",
+                    )
+                    state = _object(
+                        bundle.get("state_card"),
+                        "provider Ralph StateCard",
+                    )
+                    if (
+                        set(bundle)
+                        != {
+                            "schema_version",
+                            "kind",
+                            "run_id",
+                            "arm",
+                            "task_markdown",
+                            "agents_markdown",
+                            "state_card",
+                        }
+                        or bundle.get("schema_version") != 1
+                        or bundle.get("kind") != TASK_AGENTS_RALPH_V1
+                        or bundle.get("run_id") != audit.run_id
+                        or bundle.get("arm") != arm
+                        or bundle.get("task_markdown")
+                        != expected_task_package.task_markdown
+                        or bundle.get("agents_markdown")
+                        != expected_task_package.agents_markdown
+                        or state.get("kind") != "ralph_state_v1"
+                        or state.get("iteration") != expected_turn
+                        or state.get("cumulative_provider_tokens")
+                        != prior_cumulative
+                        or state.get("terminal_reason") is not None
+                    ):
+                        return False
                 except (UnicodeError, json.JSONDecodeError, ValueError):
                     return False
             terminal_document: dict[str, object] = {
@@ -4153,20 +3924,12 @@ class Lab:
             expected_change = "add" if expected_turn == 1 else "update"
             expected_name = (
                 "candidate-set.json"
-                if candidate_set_submission
-                else (
-                    "candidate.json"
-                    if audit.run_id.startswith("open_cake-")
-                    else "candidate.cu"
-                )
             )
             parsed = parse_codex_turn_events(
                 raw_events,
                 expected_terminal_message=expected_terminal,
                 event_contract=event_contract,
-                legacy_candidate_name=(
-                    expected_name if legacy_candidate_projection else None
-                ),
+
             )
             turn_tokens = payload.get("turn_provider_tokens")
             if (
@@ -4211,24 +3974,23 @@ class Lab:
         fault_terminal_tokens: int | None = None
         if faults:
             fault_payload = _object(faults[0].get("payload"), "run_fault.payload")
-            if strict_events:
-                required_fault_fields = {
-                    "fault",
-                    "exception_type",
-                    "turn",
-                    "stage",
-                    "terminal_provider_tokens",
-                }
-                if (
-                    not required_fault_fields <= set(fault_payload)
-                    or set(fault_payload)
-                    - required_fault_fields
-                    - {"objects", "artifact_rejections"}
-                    or not isinstance(fault_payload.get("exception_type"), str)
-                    or not fault_payload.get("exception_type")
-                    or not _artifact_outcomes_are_closed(fault_payload)
-                ):
-                    return False
+            required_fault_fields = {
+                "fault",
+                "exception_type",
+                "turn",
+                "stage",
+                "terminal_provider_tokens",
+            }
+            if (
+                not required_fault_fields <= set(fault_payload)
+                or set(fault_payload)
+                - required_fault_fields
+                - {"objects", "artifact_rejections"}
+                or not isinstance(fault_payload.get("exception_type"), str)
+                or not fault_payload.get("exception_type")
+                or not _artifact_outcomes_are_closed(fault_payload)
+            ):
+                return False
             if fault_payload.get("fault") != audit.protocol_adherence:
                 return False
             if "terminal_provider_tokens" in fault_payload:
@@ -4326,29 +4088,28 @@ class Lab:
                 turn = payload.get("turn")
                 candidate_sha256 = payload.get("candidate_sha256")
                 feedback = payload.get("feedback")
-                if strict_events:
-                    required_rejection_fields = {
-                        "turn",
-                        "candidate_sha256",
-                        "feedback",
-                        "routed_to",
-                        "routing_reason",
-                    }
-                    if (
-                        not required_rejection_fields <= set(payload)
-                        or set(payload)
-                        - required_rejection_fields
-                        - {"objects", "artifact_rejections"}
-                        or not isinstance(feedback, Mapping)
-                        or not _artifact_outcomes_are_closed(payload)
-                    ):
-                        return False
-                    decision = route_rejection(feedback)
-                    if (
-                        payload.get("routed_to") != decision.destination
-                        or payload.get("routing_reason") != decision.reason
-                    ):
-                        return False
+                required_rejection_fields = {
+                    "turn",
+                    "candidate_sha256",
+                    "feedback",
+                    "routed_to",
+                    "routing_reason",
+                }
+                if (
+                    not required_rejection_fields <= set(payload)
+                    or set(payload)
+                    - required_rejection_fields
+                    - {"objects", "artifact_rejections"}
+                    or not isinstance(feedback, Mapping)
+                    or not _artifact_outcomes_are_closed(payload)
+                ):
+                    return False
+                decision = route_rejection(feedback)
+                if (
+                    payload.get("routed_to") != decision.destination
+                    or payload.get("routing_reason") != decision.reason
+                ):
+                    return False
                 if (
                     not isinstance(turn, int)
                     or isinstance(turn, bool)
@@ -4363,7 +4124,7 @@ class Lab:
                 purpose = payload.get("purpose")
                 candidate_sha256 = payload.get("candidate_sha256")
                 if (
-                    (strict_events and set(payload) != ({
+                    (set(payload) != ({
                         "turn", "purpose", "candidate_sha256", "objects",
                     } | ({"elapsed_wall_seconds"} if purpose == "confirmatory" and
                          comparison_arm(lock.document["resolved_inputs"]["arm_environments"]) == "native_triton" else set())))
@@ -4434,7 +4195,7 @@ class Lab:
                     for role, raw in sorted(raw_payloads.items())
                 }:
                     return False
-                if strict_events and {
+                if {
                     item.get("role")
                     for item in objects
                     if isinstance(item, Mapping)
@@ -4538,8 +4299,7 @@ class Lab:
                     "disposition",
                     "cost",
                 }
-                if strict_events:
-                    expected_row_fields.add("semantic_sha256")
+                expected_row_fields.add("semantic_sha256")
                 if empirical_selection is not None:
                     expected_row_fields.add("empirical_cost")
                 if not isinstance(row, Mapping) or set(row) != expected_row_fields:
@@ -4567,8 +4327,7 @@ class Lab:
                         )
                     )
                     or (
-                        strict_events
-                        and semantic_sha256 is not None
+                        semantic_sha256 is not None
                         and (
                             not isinstance(semantic_sha256, str)
                             or _DIGEST.fullmatch(semantic_sha256) is None
@@ -4610,15 +4369,14 @@ class Lab:
             filter_order[turn] = tuple(candidates)
             filter_disposition[turn] = dispositions
 
-        if candidate_set_submission:
-            expected_rejections = {
-                (turn, candidate_sha256)
-                for turn, dispositions in filter_disposition.items()
-                for candidate_sha256, disposition in dispositions.items()
-                if disposition == "rejected"
-            }
-            if set(rejected) != expected_rejections:
-                return False
+        expected_rejections = {
+            (turn, candidate_sha256)
+            for turn, dispositions in filter_disposition.items()
+            for candidate_sha256, disposition in dispositions.items()
+            if disposition == "rejected"
+        }
+        if set(rejected) != expected_rejections:
+            return False
 
         selection_events = [
             event for event in events if event.get("kind") == "candidate_selected"
@@ -4661,21 +4419,20 @@ class Lab:
         )
         attribution_evaluation = evaluation_protocol.get("attribution_evaluation")
         expected_searches: dict[int, list[str]] = {}
-        if strict_events:
-            expected_diagnoses, expected_searches = _expected_matched_diagnoses_v1(
-                filters=filters,
-                receipts=receipts,
-                receipt_order=receipt_order,
-                searches_per_turn=searches_per_turn,
-                materiality_ratio=float(
-                    evaluation_protocol.get("search_materiality_ratio", math.inf)
-                ),
-            )
-            _validate_matched_diagnoses_v1(
-                events,
-                expected=expected_diagnoses,
-                fault_turn=fault_turn,
-            )
+        expected_diagnoses, expected_searches = _expected_matched_diagnoses_v1(
+            filters=filters,
+            receipts=receipts,
+            receipt_order=receipt_order,
+            searches_per_turn=searches_per_turn,
+            materiality_ratio=float(
+                evaluation_protocol.get("search_materiality_ratio", math.inf)
+            ),
+        )
+        _validate_matched_diagnoses_v1(
+            events,
+            expected=expected_diagnoses,
+            fault_turn=fault_turn,
+        )
         for turn, provider_candidates in sorted(provider_candidates_by_turn.items()):
             if turn in candidate_set_turns:
                 if turn not in filters:
@@ -4726,8 +4483,7 @@ class Lab:
                     or [order.index(value) for value in searched_candidates]
                     != sorted(order.index(value) for value in searched_candidates)
                     or (
-                        strict_events
-                        and searched_candidates
+                        searched_candidates
                         != (
                             expected_searches[turn][
                                 : len(searched_candidates)
@@ -4905,53 +4661,52 @@ class Lab:
             checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
         )
         expected_checkpoint_fields = (
-            {"checkpoints", "ralph"} if ralph_events else {"checkpoints"}
+            {"checkpoints", "ralph"}
         )
         if (
-            (strict_events and set(checkpoint_payload) != expected_checkpoint_fields)
+            (set(checkpoint_payload) != expected_checkpoint_fields)
             or checkpoint_payload.get("checkpoints") != expected_projection
         ):
             return False
-        if ralph_events:
-            ralph_state = _object(
-                checkpoint_payload.get("ralph"), "checkpoints_projected.ralph"
-            )
-            expected_counts = {
-                purpose: sum(key[1] == purpose for key in receipts)
-                for purpose in ("search", "confirmatory", "attribution")
-            }
-            state_turn = ralph_state.get("iteration")
-            elapsed_wall = ralph_state.get("elapsed_wall_seconds")
-            active_authoring = ralph_state.get("active_authoring_seconds")
-            if (
-                not isinstance(state_turn, int)
-                or isinstance(state_turn, bool)
-                or not isinstance(elapsed_wall, (int, float))
-                or isinstance(elapsed_wall, bool)
-                or not isinstance(active_authoring, (int, float))
-                or isinstance(active_authoring, bool)
-            ):
-                return False
-            expected_stop_reason = derive_ralph_stop_reason(
-                RalphBudget.from_mapping(budget),
-                turn=state_turn,
-                cumulative_provider_tokens=max(cumulative_by_turn.values()),
-                elapsed_wall_seconds=float(elapsed_wall),
-                active_authoring_seconds=float(active_authoring),
-                evaluation_counts=expected_counts,
-                searches_per_turn=searches_per_turn,
-                profile_each_search_survivor=(
-                    attribution_evaluation == _ATTRIBUTION_EVALUATION
-                ),
-            )
-            if (
-                ralph_state.get("kind") != "ralph_state_v1"
-                or ralph_state.get("cumulative_provider_tokens")
-                != max(cumulative_by_turn.values())
-                or ralph_state.get("evaluation_counts") != expected_counts
-                or ralph_state.get("terminal_reason") != expected_stop_reason
-            ):
-                return False
+        ralph_state = _object(
+            checkpoint_payload.get("ralph"), "checkpoints_projected.ralph"
+        )
+        expected_counts = {
+            purpose: sum(key[1] == purpose for key in receipts)
+            for purpose in ("search", "confirmatory", "attribution")
+        }
+        state_turn = ralph_state.get("iteration")
+        elapsed_wall = ralph_state.get("elapsed_wall_seconds")
+        active_authoring = ralph_state.get("active_authoring_seconds")
+        if (
+            not isinstance(state_turn, int)
+            or isinstance(state_turn, bool)
+            or not isinstance(elapsed_wall, (int, float))
+            or isinstance(elapsed_wall, bool)
+            or not isinstance(active_authoring, (int, float))
+            or isinstance(active_authoring, bool)
+        ):
+            return False
+        expected_stop_reason = derive_ralph_stop_reason(
+            RalphBudget.from_mapping(budget),
+            turn=state_turn,
+            cumulative_provider_tokens=max(cumulative_by_turn.values()),
+            elapsed_wall_seconds=float(elapsed_wall),
+            active_authoring_seconds=float(active_authoring),
+            evaluation_counts=expected_counts,
+            searches_per_turn=searches_per_turn,
+            profile_each_search_survivor=(
+                attribution_evaluation == _ATTRIBUTION_EVALUATION
+            ),
+        )
+        if (
+            ralph_state.get("kind") != "ralph_state_v1"
+            or ralph_state.get("cumulative_provider_tokens")
+            != max(cumulative_by_turn.values())
+            or ralph_state.get("evaluation_counts") != expected_counts
+            or ralph_state.get("terminal_reason") != expected_stop_reason
+        ):
+            return False
         expected_observation, expected_endpoint = _matched_endpoint_from_checkpoint(
             projected[-1], audit.protocol_adherence
         )
@@ -5143,9 +4898,7 @@ class Lab:
                     {
                         "run_id": audit.run_id,
                         "archive_integrity": audit.archive_integrity,
-                        "filesystem_custody_verified": (
-                            audit.filesystem_custody_verified
-                        ),
+                        "filesystem_custody_verified": audit.filesystem_custody_verified,
                         "protocol_adherence": audit.protocol_adherence,
                         "endpoint_observation": audit.endpoint_observation,
                         "evaluation_receipt_count": evaluation_receipt_counts.get(
@@ -5241,11 +4994,11 @@ class Lab:
                 for audit in observed
                 if audit.endpoint_observation == "qualified"
             ]
-            denominator = len(arm_audits) if analysis_version == "legacy_v1" else len(observed)
+            denominator = len(observed)
             qualification_rate[arm] = (
                 len(qualified) / denominator
                 if denominator
-                else (0.0 if analysis_version == "legacy_v1" else None)
+                else (None)
             )
             endpoint_counts[arm] = {
                 "prescheduled": prescheduled,
@@ -5277,9 +5030,7 @@ class Lab:
             and semantic_replay_passed
             and missing_run_count == 0
             and (
-                all(audit.endpoint_observation == "qualified" for audit in audits)
-                if analysis_version == "legacy_v1"
-                else all(medians[arm] is not None for arm in arm_runs)
+                all(medians[arm] is not None for arm in arm_runs)
             )
         )
         paired: list[dict[str, object]] = []
@@ -5300,25 +5051,18 @@ class Lab:
                     ),
                 }
             )
-        if analysis_version == "legacy_v1":
-            descriptive: Mapping[str, object] = {
-                "qualification_rate": qualification_rate,
-                "median_confirmed_latency_ms": medians,
-                "paired_runs": paired,
-            }
-        else:
-            descriptive = {
-                "endpoint_counts": endpoint_counts,
-                "qualification_rate_among_observed": qualification_rate,
-                "qualification_rate_difference_among_observed": (
-                    cast(float, qualification_rate["open_cake"])
-                    - cast(float, qualification_rate[comparison])
-                    if all(value is not None for value in qualification_rate.values())
-                    else None
-                ),
-                "median_confirmed_latency_ms": medians,
-                "paired_runs": paired,
-            }
+        descriptive = {
+            "endpoint_counts": endpoint_counts,
+            "qualification_rate_among_observed": qualification_rate,
+            "qualification_rate_difference_among_observed": (
+                cast(float, qualification_rate["open_cake"])
+                - cast(float, qualification_rate[comparison])
+                if all(value is not None for value in qualification_rate.values())
+                else None
+            ),
+            "median_confirmed_latency_ms": medians,
+            "paired_runs": paired,
+        }
         estimate: Mapping[str, object] | None = None
         uncertainty: Mapping[str, object] | None = None
         if estimand_available:

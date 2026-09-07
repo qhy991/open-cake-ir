@@ -68,6 +68,14 @@ def _profile_fixture(candidate_sha256: str, case_id: str, kernel_name: str) -> b
     )
 
 
+def _execute(lab, lock, evidence_root, *, provider, **kwargs):
+    provider.packages = {
+        run_id: render_task_package(lab._root, lock, run_id)
+        for run_id in lock.run_order
+    }
+    return lab.execute(lock, evidence_root, provider=provider, **kwargs)
+
+
 class FakeEnvironment:
     def __init__(self, arm: str, authority_document) -> None:
         self.arm = arm
@@ -127,8 +135,8 @@ class FakeEnvironment:
 
 
 class FakeProvider:
-    provider_revision = "fixture-provider-candidate-set-v1"
-    qualification_sha256 = "51e59c5014ad559b3145ae1c8a84eb902977d5587e4336549743c8c196d0041a"
+    provider_revision = "fixture-provider-candidate-set-ralph-v1"
+    qualification_sha256 = "694132ea32f002c56f019a2d5cca80112700cb9bc6e54dfaf87d08a62cc2c979"
     executable_sha256 = "d" * 64
     configuration = {
         "model": "gpt-5.6-sol",
@@ -137,8 +145,8 @@ class FakeProvider:
         "output_schema_sha256": "5b3b813d98ddae93fe9ff5cf0f1568d64721fa31029cb77a0ad5f2dfc800ed18",
         "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
         "sandbox": "workspace-write",
-        "cwd_policy": "independent_empty_workspace",
-        "reference_visibility": "embedded_frozen_bundle",
+        "cwd_policy": "independent_task_workspace",
+        "reference_visibility": "workspace_task_files",
         "disabled_features": list(CODEX_DISABLED_FEATURES),
         "submission_contract": CANDIDATE_SET_ENVELOPE_V1,
     }
@@ -218,8 +226,8 @@ class FakeProvider:
             terminal_message_count=1,
             normalization="single_exact",
             reference_bundle=(
-                f"fixture reference bundle for {request.run_id}"
-            ).encode(),
+                self.packages[request.run_id].evidence_bundle(request.state_card)
+            ),
         )
 
 
@@ -265,14 +273,10 @@ def _enable_candidate_set(document: dict[str, object], maximum: int) -> None:
     budget = document["budget"]
     assert isinstance(budget, dict)
     budget["maximum_candidates_per_turn"] = maximum
-    receipt_path = "contracts/providers/fixture-provider-candidate-set-v1.json"
+    receipt_path = "contracts/providers/fixture-provider-candidate-set-ralph-v1.json"
     receipt = ProviderQualificationReceipt.load(ROOT / receipt_path)
     arms = document["arms"]
     assert isinstance(arms, dict)
-    prompts = {
-        "open_cake": "src/open_cake_ir/lab/prompts/open_cake_candidate_set_turn_v1.md",
-        "direct_cuda": "src/open_cake_ir/lab/prompts/direct_cuda_candidate_set_turn_v1.md",
-    }
     for arm, raw_environment in arms.items():
         assert isinstance(raw_environment, dict)
         provider = raw_environment["provider"]
@@ -282,11 +286,7 @@ def _enable_candidate_set(document: dict[str, object], maximum: int) -> None:
             "path": receipt_path,
             "canonical_sha256": receipt.canonical_sha256,
         }
-        prompt_path = prompts[arm]
-        raw_environment["prompt_template"] = {
-            "path": prompt_path,
-            "sha256": sha256((ROOT / prompt_path).read_bytes()).hexdigest(),
-        }
+
 
 
 class FakeEvaluator:
@@ -458,7 +458,7 @@ class FindingRoutingContractTests(unittest.TestCase):
 
 class LabContractTests(unittest.TestCase):
     def test_execute_refuses_evidence_inside_the_checkout_before_side_effects(self) -> None:
-        lock = CampaignLock.load(ROOT / "runtime/g8-system-r6.campaign.lock.json")
+        lock = Lab(ROOT).preflight(ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json")
         with tempfile.TemporaryDirectory(prefix=".campaign-custody-", dir=ROOT) as directory:
             evidence_root = Path(directory) / "evidence"
 
@@ -476,8 +476,8 @@ class LabContractTests(unittest.TestCase):
     def test_current_study_templates_resolve_exact_current_revisions(self) -> None:
         for name in (
             "matched-search-infrastructure-template.json",
-            "matched-search-system-qualification-template.json",
-            "artifact-optimization-template.json",
+            "matched-search-system-qualification-ralph-template.json",
+            "artifact-optimization-ralph-template.json",
             "flash-kmeans-r45-portfolio-reconstruction-template.json",
             "matched-search-clean-start-reference-template.json",
             "matched-search-system-qualification-ralph-template.json",
@@ -574,7 +574,7 @@ class LabContractTests(unittest.TestCase):
     def test_v25_retains_the_reference_bundle_or_records_a_missing_endpoint(self) -> None:
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-template.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -586,7 +586,7 @@ class LabContractTests(unittest.TestCase):
         ).hexdigest()
 
         def execute(provider, evidence_root):
-            return lab.execute(
+            return _execute(lab,
                 lock,
                 evidence_root,
                 provider=provider,
@@ -606,7 +606,7 @@ class LabContractTests(unittest.TestCase):
             report = lab.audit(campaign)
             evidence = EvidenceStore.open(campaign.evidence_root)
             for run_id in lock.run_order:
-                expected = f"fixture reference bundle for {run_id}".encode()
+                expected = render_task_package(ROOT, lock, run_id)
                 for event in evidence.replay_events(run_id):
                     if event["kind"] != "provider_turn_completed":
                         continue
@@ -616,7 +616,7 @@ class LabContractTests(unittest.TestCase):
                         if item["role"] == "provider_reference_bundle"
                     ]
                     self.assertEqual(len(references), 1)
-                    self.assertEqual(evidence.read_object(references[0]), expected)
+                    self.assertEqual(json.loads(evidence.read_object(references[0]))["task_markdown"], expected.task_markdown)
 
             self.assertTrue(report.archive_integrity_passed)
             self.assertTrue(report.semantic_replay_passed)
@@ -666,68 +666,11 @@ class LabContractTests(unittest.TestCase):
             {"harness_fault"},
         )
 
-    def test_historical_g8_r6_remains_a_non_scientific_replayable_qualification(self) -> None:
-        lab = Lab(ROOT)
-        lock = CampaignLock.load(ROOT / "runtime/g8-system-r6.campaign.lock.json")
-        report = lab.audit(
-            lab.reference_campaign(
-                lock,
-                ROOT / "evidence/campaigns/g8-system-r6",
-            )
-        )
 
-        self.assertTrue(report.system_qualification_passed)
-        self.assertTrue(report.campaign_complete)
-        self.assertTrue(report.archive_integrity_passed)
-        self.assertTrue(report.semantic_replay_passed)
-        self.assertIsNone(report.estimand)
-        self.assertIsNone(report.estimate)
-        self.assertIsNone(report.uncertainty)
-
-    def test_clone_modes_preserve_replay_but_cannot_support_a_claim(self) -> None:
-        lab = Lab(ROOT)
-        lock = CampaignLock.load(ROOT / "runtime/g8-system-r6.campaign.lock.json")
-        with tempfile.TemporaryDirectory() as directory:
-            clone = Path(directory) / "g8-system-r6"
-            shutil.copytree(ROOT / "evidence/campaigns/g8-system-r6", clone)
-            for current, directories, files in os.walk(clone):
-                os.chmod(current, 0o755)
-                for name in directories:
-                    os.chmod(Path(current) / name, 0o755)
-                for name in files:
-                    os.chmod(Path(current) / name, 0o644)
-            git_like = lab.audit(lab.reference_campaign(lock, clone))
-            self.assertTrue(git_like.filesystem_custody_verified)
-            self.assertTrue(git_like.system_qualification_passed)
-
-            for current, directories, files in os.walk(clone):
-                os.chmod(current, 0o770)
-                for name in directories:
-                    os.chmod(Path(current) / name, 0o770)
-                for name in files:
-                    os.chmod(Path(current) / name, 0o660)
-
-            report = lab.audit(lab.reference_campaign(lock, clone))
-
-        self.assertTrue(report.campaign_complete)
-        self.assertTrue(report.archive_integrity_passed)
-        self.assertTrue(report.semantic_replay_passed)
-        self.assertFalse(report.filesystem_custody_verified)
-        self.assertFalse(report.system_qualification_passed)
-        self.assertEqual(report.missing_run_count, len(lock.run_order))
-        self.assertTrue(
-            all(audit.archive_integrity for audit in report.run_audits)
-        )
-        self.assertTrue(
-            all(
-                not audit.filesystem_custody_verified
-                for audit in report.run_audits
-            )
-        )
 
     def test_system_qualification_preflight_binds_non_scientific_one_run_per_arm(self) -> None:
         lock = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-template.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
         )
 
         self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
@@ -736,7 +679,7 @@ class LabContractTests(unittest.TestCase):
 
     def test_artifact_optimization_preflight_binds_full_features_without_an_estimand(self) -> None:
         lock = Lab(ROOT).preflight(
-            ROOT / "contracts/studies/artifact-optimization-template.json"
+            ROOT / "contracts/studies/artifact-optimization-ralph-template.json"
         )
 
         self.assertEqual(lock.run_order, ("open_cake-1", "direct_cuda-1"))
@@ -748,26 +691,10 @@ class LabContractTests(unittest.TestCase):
             self.assertEqual(provider["disabled_features"], [])
             self.assertEqual(provider["event_contract"], "tool_rich_candidate_v1")
 
-    def test_historical_live_artifact_study_retains_its_tool_rich_qualification(self) -> None:
-        # Its Executor source closure belongs to the historical checkout, so current-tree
-        # preflight correctly refuses it. The provider authority remains inspectable; a
-        # runnable live successor must be re-frozen with its exact broker command.
-        study = json.loads(
-            (ROOT / "contracts/studies/artifact-optimization-verda-v7.json").read_text()
-        )
-        provider = study["arms"]["open_cake"]["provider"]
-
-        self.assertEqual(study["claim_scope"], "artifact_optimization_only")
-        self.assertEqual(
-            provider["qualification"]["canonical_sha256"],
-            "5a55787e42c3412ae8dc76653e1804faf205a9559dfc0b93cd62f609eaf0e0f6",
-        )
-        self.assertEqual(provider["disabled_features"], [])
-        self.assertEqual(provider["event_contract"], "tool_rich_candidate_v1")
 
     def test_closed_provider_receipt_cannot_authorize_artifact_optimization(self) -> None:
         study = json.loads(
-            (ROOT / "contracts/studies/artifact-optimization-template.json").read_text()
+            (ROOT / "contracts/studies/artifact-optimization-ralph-template.json").read_text()
         )
         for arm in study["arms"].values():
             provider = arm["provider"]
@@ -800,7 +727,7 @@ class LabContractTests(unittest.TestCase):
         study = json.loads(
             (
                 ROOT
-                / "contracts/studies/matched-search-system-qualification-template.json"
+                / "contracts/studies/matched-search-system-qualification-ralph-template.json"
             ).read_text()
         )
         anchor = {"path": "anchor.json", "canonical_sha256": "a" * 64}
@@ -818,7 +745,7 @@ class LabContractTests(unittest.TestCase):
         study = json.loads(
             (
                 ROOT
-                / "contracts/studies/matched-search-system-qualification-template.json"
+                / "contracts/studies/matched-search-system-qualification-ralph-template.json"
             ).read_text()
         )
         study["analysis_plan"]["estimand"] = "forbidden pilot contrast"
@@ -885,7 +812,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-template.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
         )
         provider = UnderCheckpointProvider()
         resolved = lock.document["resolved_inputs"]
@@ -897,7 +824,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory).resolve() / "evidence",
                 provider=provider,
@@ -913,7 +840,7 @@ class LabContractTests(unittest.TestCase):
             )
             report = lab.audit(campaign)
 
-        self.assertEqual(len(provider.requests), 2)
+        self.assertEqual(len(provider.requests), 4)
         self.assertTrue(report.system_qualification_passed)
         self.assertEqual(report.missing_run_count, 2)
         self.assertTrue(
@@ -944,9 +871,9 @@ class LabContractTests(unittest.TestCase):
 
     def test_artifact_optimization_promotes_per_run_without_scientific_analysis(self) -> None:
         class OptimizationProvider(FakeProvider):
-            provider_revision = "fixture-provider-optimization-candidate-set-v1"
+            provider_revision = "fixture-provider-optimization-candidate-set-ralph-v1"
             qualification_sha256 = (
-                "25d5a9ebe6aae21f5f7176b8fd29323b725f22e96171970303b582fc01bad6ec"
+                "fb39b90b6dec56953562879ff011fe9deab839928bfcdb1d32e6d8c6b79180d8"
             )
             configuration = {
                 "model": "gpt-5.6-sol",
@@ -957,8 +884,8 @@ class LabContractTests(unittest.TestCase):
                 ),
                 "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
                 "sandbox": "workspace-write",
-                "cwd_policy": "independent_empty_workspace",
-                "reference_visibility": "embedded_frozen_bundle",
+                "cwd_policy": "independent_task_workspace",
+                "reference_visibility": "workspace_task_files",
                 "disabled_features": [],
                 "event_contract": "tool_rich_candidate_v1",
                 "submission_contract": CANDIDATE_SET_ENVELOPE_V1,
@@ -1024,7 +951,7 @@ class LabContractTests(unittest.TestCase):
                 )
 
         lab = Lab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-template.json")
+        lock = lab.preflight(ROOT / "contracts/studies/artifact-optimization-ralph-template.json")
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
             json.dumps(
@@ -1034,7 +961,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory).resolve() / "evidence",
                 provider=OptimizationProvider(),
@@ -1098,7 +1025,7 @@ class LabContractTests(unittest.TestCase):
 
         lab = Lab(ROOT)
         lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-system-qualification-template.json"
+            ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
         )
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
@@ -1109,7 +1036,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory).resolve() / "evidence",
                 provider=FakeProvider(),
@@ -1345,7 +1272,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as parent:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(parent).resolve() / "campaign-evidence",
                 provider=provider,
@@ -1408,7 +1335,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory).resolve() / "evidence",
                 provider=FakeProvider(),
@@ -1458,7 +1385,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory).resolve() / "evidence",
                 provider=FaultDirectCudaTwo(),
@@ -1547,7 +1474,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as parent:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(parent).resolve() / "campaign-evidence",
                 provider=provider,
@@ -1582,7 +1509,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory).resolve() / "evidence",
                 provider=FakeProvider(),
@@ -1647,7 +1574,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory).resolve() / "evidence",
                 provider=ExtraItemProvider(),
@@ -1725,7 +1652,7 @@ class LabContractTests(unittest.TestCase):
                     protocol_sha256,
                     lock.document["workload"]["canonical_sha256"],
                 )
-                campaign = lab.execute(
+                campaign = _execute(lab,
                     lock,
                     Path(directory).resolve() / "evidence",
                     provider=InvalidProvider(),
@@ -1834,7 +1761,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory).resolve() / "evidence",
                 provider=FakeProvider(),
@@ -1906,7 +1833,7 @@ class LabContractTests(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory).resolve() / "evidence",
                 provider=ContaminatedProvider(),
@@ -2214,7 +2141,7 @@ class CandidateSetFilterTest(unittest.TestCase):
                     separators=(",", ":"),
                 ).encode()
             ).hexdigest()
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(parent).resolve() / "campaign-evidence",
                 provider=SetProvider(),
@@ -2424,7 +2351,7 @@ class CandidateSetFilterTest(unittest.TestCase):
                         separators=(",", ":"),
                     ).encode()
                 ).hexdigest()
-                campaign = lab.execute(
+                campaign = _execute(lab,
                     lock,
                     Path(parent).resolve() / "partial-order-evidence",
                     provider=SetProvider(),
@@ -2507,7 +2434,7 @@ class CandidateSetFilterTest(unittest.TestCase):
             ).encode()
         ).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory).resolve() / "evidence",
                 provider=ThreeCandidateProvider(),
@@ -2692,7 +2619,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
         ).hexdigest()
         with tempfile.TemporaryDirectory() as parent:
             provider = FakeProvider()
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(parent).resolve() / "campaign-evidence",
                 provider=provider,
@@ -2860,7 +2787,7 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
                     separators=(",", ":"),
                 ).encode()
             ).hexdigest()
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory) / "campaign-evidence",
                 provider=CandidateSetProvider(),
@@ -3097,7 +3024,7 @@ class QualifiedCandidateSelectionTest(unittest.TestCase):
                 protocol_sha256,
                 lock.document["workload"]["canonical_sha256"],
             )
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory) / "campaign-evidence",
                 provider=provider,
@@ -3235,7 +3162,7 @@ class CostModelRouteTest(unittest.TestCase):
                     separators=(",", ":"),
                 ).encode()
             ).hexdigest()
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory) / "campaign-evidence",
                 provider=TwoCandidateProvider(),
@@ -3359,6 +3286,33 @@ class BrokerExecutionDigestTest(unittest.TestCase):
 
 
 class RalphTaskInterfaceTests(unittest.TestCase):
+    def test_retired_study_and_lock_interfaces_are_refused(self) -> None:
+        from open_cake_ir.lab import StudyContract
+        template = ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
+        study = json.loads(template.read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "study.json"
+            legacy = json.loads(json.dumps(study))
+            legacy["schema_version"] = 1
+            del legacy["agent_interface"]
+            path.write_text(json.dumps(legacy))
+            with self.assertRaisesRegex(ValueError, "schema_version"):
+                StudyContract.load(path)
+            study["arms"]["open_cake"]["prompt_template"] = {"path": "missing.md"}
+            path.write_text(json.dumps(study))
+            with self.assertRaisesRegex(ValueError, "Authoring Environment fields"):
+                Lab(ROOT).preflight(path)
+        lock = Lab(ROOT).preflight(template)
+        legacy_lock = json.loads(json.dumps(lock.document))
+        del legacy_lock["resolved_inputs"]["agent_interface"]
+        with self.assertRaisesRegex(ValueError, "Ralph interface"):
+            CampaignLock.from_dict(legacy_lock)
+        legacy_lock = json.loads(json.dumps(lock.document))
+        arm = legacy_lock["resolved_inputs"]["arm_environments"]["open_cake"]
+        arm["prompt_template"] = {"path": "missing.md"}
+        with self.assertRaisesRegex(ValueError, "prompt_template"):
+            CampaignLock.from_dict(legacy_lock)
+
     def test_ralph_budget_controls_tokens_time_turns_and_evaluations(self) -> None:
         now = [10.0]
         budget = RalphBudget.from_mapping(
@@ -3502,7 +3456,7 @@ class RalphTaskInterfaceTests(unittest.TestCase):
         ).hexdigest()
         provider = RalphFakeProvider(packages)
         with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute(
+            campaign = _execute(lab,
                 lock,
                 Path(directory) / "evidence",
                 provider=provider,
@@ -3757,7 +3711,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         cls.lab = Lab(cls.root)
         cls.workload = WorkloadContract.load(cls.root / "contracts/workloads/flash-kmeans-assign-v2.json")
         cls.compiler = Compiler.load(cls.root, cls.root / "compiler/revision.lock.json")
-        cls.study = json.loads((cls.root / "contracts/studies/artifact-optimization-template.json").read_text())
+        cls.study = json.loads((cls.root / "contracts/studies/artifact-optimization-ralph-template.json").read_text())
         cls.study["arms"]["open_cake"]["candidate_selection"] = {"kind": "external_empirical_advisory_v1"}
         cls.study["evaluation_protocol"].pop("attribution_evaluation")
         cls.study["evaluation_protocol"].pop("search_materiality_ratio")
@@ -3807,7 +3761,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
             self.lab.preflight(path, empirical_cost_model_path=model_path)
         legacy = json.loads(json.dumps(self.study))
         del legacy["evidence"]["event_vocabulary"]
-        with self.assertRaisesRegex(ValueError, "closed matched event"):
+        with self.assertRaisesRegex(ValueError, "study.evidence is unsupported"):
             self.preflight(study=legacy)
         path = self.root / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-template.json"
         with self.assertRaisesRegex(ValueError, "artifact_optimization_only"):
@@ -3882,7 +3836,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         model = json.loads(json.dumps(self.model))
         model["reported_evidence"]["raw_observations"] = list(range(10000))
         model["reported_evidence"]["unbounded_report"] = "private supplier report" * 10000
-        for interface in ("legacy", "ralph"):
+        for interface in ("ralph",):
             study = json.loads(json.dumps(self.study))
             if interface == "ralph":
                 study = json.loads((self.root / "contracts/studies/artifact-optimization-ralph-template.json").read_text())
@@ -3965,7 +3919,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         toolchain = Toolchain()
         environment = OpenCakeEnvironment(self.compiler, toolchain, authority_document=arms["open_cake"], workload=self.workload, case_id="headline_b32", executor=self.executor)
         model_path.unlink()  # Runtime and replay must depend on the lock, not this file.
-        campaign = self.lab.execute(lock, directory / "evidence", provider=provider, environments={"open_cake": environment, "direct_cuda": FakeEnvironment("direct_cuda", arms["direct_cuda"])}, evaluator=FakeEvaluator(lock.document["evaluation_protocol"], sha256(json.dumps(lock.document["evaluation_protocol"], sort_keys=True, separators=(",", ":")).encode()).hexdigest(), lock.document["workload"]["canonical_sha256"]))
+        campaign = _execute(self.lab, lock, directory / "evidence", provider=provider, environments={"open_cake": environment, "direct_cuda": FakeEnvironment("direct_cuda", arms["direct_cuda"])}, evaluator=FakeEvaluator(lock.document["evaluation_protocol"], sha256(json.dumps(lock.document["evaluation_protocol"], sort_keys=True, separators=(",", ":")).encode()).hexdigest(), lock.document["workload"]["canonical_sha256"]))
         return campaign, provider, toolchain
 
     def test_actual_search_feedback_and_fresh_process_replay(self):

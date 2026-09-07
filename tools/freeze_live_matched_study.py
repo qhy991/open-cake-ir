@@ -23,7 +23,6 @@ from open_cake_ir.lab import (  # noqa: E402
     NvccToolchainBuilder,
     ProviderQualificationReceipt,
     broker_execution_sha256,
-    matched_evidence_policy_v1,
     required_live_provider_qualification_scope,
     scientific_matched_analysis_plan_v2,
 )
@@ -146,6 +145,7 @@ def main() -> int:
     )
     if (
         study.get("kind") != "matched_search"
+        or study.get("schema_version") != 2
         or study.get("state") not in {"template", "frozen"}
     ):
         raise ValueError("live matched Study template policy differs")
@@ -156,8 +156,6 @@ def main() -> int:
         if paired_triton and study.get("analysis_plan") != expected_analysis:
             raise ValueError("paired Triton scientific analysis differs")
         study["analysis_plan"] = expected_analysis
-    if study.get("schema_version") == 1:
-        study["evidence"] = dict(matched_evidence_policy_v1())
     _replace_artifact_feedback_budget(
         study,
         provider_token_limit=arguments.provider_token_limit,
@@ -236,8 +234,6 @@ def main() -> int:
         }
         _refresh_raw_reference(root, provider["output_schema"], "provider.output_schema")
         _refresh_raw_reference(root, arm["scaffold"], f"{arm_name}.scaffold")
-        if "prompt_template" in arm:
-            _refresh_raw_reference(root, arm["prompt_template"], f"{arm_name}.prompt")
     open_arm = _object(arms["open_cake"], "study.arms.open_cake")
     skeleton = _object(open_arm["schedule_skeleton"], "open_cake.schedule_skeleton")
     skeleton_document = json.loads((root / str(skeleton["path"])).read_text(encoding="utf-8"))

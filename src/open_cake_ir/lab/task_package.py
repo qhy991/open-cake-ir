@@ -80,7 +80,7 @@ def build_run_reference_documents(
     lock: CampaignLockLike,
     arm: Mapping[str, object],
 ) -> Mapping[str, bytes]:
-    """Build the sole run-authority projection shared by both Agent interfaces."""
+    """Build the sole run-authority projection used by the Ralph task package."""
 
     root = Path(project_root).resolve(strict=True)
     workload = _object(lock.document["workload"], "campaign_lock.workload")
@@ -99,8 +99,8 @@ def build_run_reference_documents(
     if "candidate_selection" in arm:
         selection = _object(arm["candidate_selection"], "arm.candidate_selection")
         model = _object(selection["model"], "arm.candidate_selection.model")
-        # Both author interfaces consume this projection. The complete supplier model
-        # belongs to the frozen CampaignLock, not TASK.md or the repeated prompt bundle.
+        # The Ralph task package consumes this projection. The complete supplier model
+        # belongs to the frozen CampaignLock, not TASK.md.
         authoring_environment = {
             **arm,
             "candidate_selection": {
@@ -312,7 +312,9 @@ the machine Contracts bound by the CampaignLock; do not edit them or infer newer
 {_document_sections(documents)}
 """
     arm_rule = (
-        "Author only Cake IR Schedules. Do not invoke CUDA, a GPU, the network, or another compiler."
+        "Author only Cake IR Schedules or restricted Python through the supplied frontend; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
+        if arm == "open_cake" and authority.get("input_format") == "schedule_or_python_v1"
+        else "Author only Cake IR Schedules; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
         if arm == "open_cake"
         else "Author only the supplied kernel-only Triton baseline and declared compile/launch metadata. Host Python is forbidden."
         if arm == "native_triton"
