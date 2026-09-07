@@ -7,7 +7,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from open_cake_ir.compiler import Assessment, Lowering, Schedule, frontend
 from tools.metal import adapter, check_correctness
@@ -48,21 +48,25 @@ class MetalRuntimeContracts(unittest.TestCase):
                                 self.inputs if inputs is None else inputs, self.directory,
                                 device_names=["Apple M2"])
 
-    def test_m1_pro_manifest_keeps_target_and_refuses_cross_device_names(self):
-        document = json.loads(self.assessment.schedule_bytes)
-        document["target"] = "apple_gpu_family7"
-        assessment = replace(self.assessment, target="apple_gpu_family7", schedule_bytes=json.dumps(document).encode())
-        lowering = replace(self.lowering, target="apple_gpu_family7", toolchain_requirements={
-            **self.lowering.toolchain_requirements, "target": "apple_gpu_family7"})
-        for names in (["Apple M2"], ["Apple M1"], ["Apple M1 Pro", "Apple M2"]):
-            with self.subTest(names=names), self.assertRaisesRegex(ValueError, "target/device"):
-                adapter.manifest(assessment, lowering, self.inputs, self.directory, device_names=names)
-            self.assertEqual(list(self.directory.iterdir()), [])
-        result = adapter.manifest(assessment, lowering, self.inputs, self.directory, device_names=["Apple M1 Pro"])
-        self.assertEqual(result["target"], "apple_gpu_family7")
-        self.assertEqual(result["device_names"], ["Apple M1 Pro"])
-        for operator in ("elementwise", "row_sum", "row_max", "rmsnorm"):
-            self.assertEqual(check_correctness.schedule_document(operator, 2, 7, "apple_gpu_family7")["target"], "apple_gpu_family7")
+    def test_exact_targets_refuse_other_device_names_before_writing(self):
+        for target, device in (("apple_gpu_family7", "Apple M1 Pro"),
+                               ("apple_gpu_family8", "Apple M2")):
+            document = json.loads(self.assessment.schedule_bytes)
+            document["target"] = target
+            assessment = replace(self.assessment, target=target, schedule_bytes=json.dumps(document).encode())
+            lowering = replace(self.lowering, target=target, toolchain_requirements={
+                **self.lowering.toolchain_requirements, "target": target})
+            directory = self.directory / target
+            directory.mkdir()
+            for names in ([], ["Apple M1"], ["Apple M1 Max"], ["Apple M2 Pro"],
+                          ["Apple M2" if target == "apple_gpu_family7" else "Apple M1 Pro"],
+                          ["Apple M1 Pro", "Apple M2"]):
+                with self.subTest(target=target, names=names), self.assertRaises(ValueError):
+                    adapter.manifest(assessment, lowering, self.inputs, directory, device_names=names)
+                self.assertEqual(list(directory.iterdir()), [])
+            result = adapter.manifest(assessment, lowering, self.inputs, directory, device_names=[device])
+            self.assertEqual(result["target"], target)
+            self.assertEqual(result["device_names"], [device])
 
     def test_manifest_preserves_odd_shapes_order_and_output_poison_contract(self):
         result = self.project()
@@ -136,15 +140,35 @@ class MetalRuntimeContracts(unittest.TestCase):
                 check_correctness.compare(payload, expected, tolerance)
 
     def test_varied_shapes_and_distributions_use_canonical_frontend(self):
-        for operator in ("elementwise", "row_sum", "row_max"):
-            for rows, columns in check_correctness.SHAPES:
-                schedule = Schedule.from_dict(check_correctness.schedule_document(operator, rows, columns))
-                self.assertEqual(schedule.buffer("x").shape, (rows, columns))
-                self.assertEqual(schedule.buffer("out").shape,
-                                 (rows, columns) if operator == "elementwise" else (rows,))
+        for target in ("apple_gpu_family7", "apple_gpu_family8"):
+            for operator in ("elementwise", "row_sum", "row_max", "rmsnorm"):
+                for rows, columns in check_correctness.SHAPES:
+                    with self.subTest(target=target, operator=operator, shape=(rows, columns)):
+                        schedule = Schedule.from_dict(check_correctness.schedule_document(operator, rows, columns, target))
+                        self.assertEqual(schedule.target, target)
+                        self.assertEqual(schedule.buffer("x").shape, (rows, columns))
+                        self.assertEqual(schedule.buffer("out").shape,
+                                         (rows,) if operator in {"row_sum", "row_max"} else (rows, columns))
         first = check_correctness.values(19, "uniform", 7)
         self.assertEqual(first, check_correctness.values(19, "uniform", 7))
         self.assertNotEqual(first, check_correctness.values(19, "uniform", 8))
+
+    def test_candidate_refusal_stops_before_cost_ranking_and_lowering(self):
+        for accepted, eligible in ((False, False), (True, False)):
+            with self.subTest(accepted=accepted, lowering_eligible=eligible):
+                compiler = Mock()
+                compiler.assess.return_value = replace(self.assessment, accepted=accepted,
+                                                       lowering_eligible=eligible)
+                case = {}
+                with self.assertRaisesRegex(ValueError, "Compiler refused"):
+                    check_correctness.prepare_case(compiler, {}, self.inputs, {}, self.directory,
+                                                   ["Apple M2"], case)
+                compiler.rank.assert_not_called()
+                compiler.lower.assert_not_called()
+                self.assertEqual(json.loads((self.directory / "assessment.json").read_text()), case)
+                self.assertEqual(case["static_accepted"], accepted)
+                self.assertFalse(case["lowering_eligible"])
+                self.assertFalse((self.directory / "manifest.json").exists())
 
     def test_failed_release_gate_prevents_host_build_and_dispatch(self):
         with patch.object(check_correctness, "fresh_receipt", return_value=self.directory), \

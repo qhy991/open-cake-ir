@@ -24,7 +24,7 @@ The [English guide](wiki/README.md) also links every learning page. Use the [Glo
 | Purpose | English page |
 | --- | --- |
 | Authoring Schedules in Python | [Python frontend](PYTHON_FRONTEND.md) |
-| Running and measuring FP32 elementwise, reductions and weighted RMSNorm on Apple M2 | [Metal guide](../metal.md) |
+| Running and measuring FP32 elementwise, reductions and weighted RMSNorm on Apple M1 Pro / M2 | [Metal guide](../metal.md) |
 | IR objects, implementation ownership and extension points | [IR guide](IR_GUIDE.md) |
 | Initialization, accumulation and stores in two nested TileLoops | [Triton loop scopes](TRITON_LOOP_SCOPES.md) |
 | Matched IR/native Triton optimization from one baseline | [Paired Triton](PAIRED_TRITON.md) |
