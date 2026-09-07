@@ -9,22 +9,16 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Sequence, cast
+from typing import Mapping, Sequence, cast
 
-from .backends import cutedsl, metal, triton
+from .backends import BACKENDS, Backend
 from .frontend import read_schedule
 from .backends.common import EmitError
 from .ir import (
     _SCHEDULE_OPTIONAL,
     _SCHEDULE_REQUIRED,
-    EpilogueParameters,
-    EpilogueFormula,
     LoweringBackend,
     LoweringRoute,
-    OperationKind,
-    ReduceOp,
-    ReduceParameters,
-    ReductionScope,
     Schedule,
     ScheduleParseError,
 )
@@ -32,9 +26,9 @@ from .corpus import CorpusCaseReport, CorpusGateReport, check_corpus
 from .errors import CompilerError
 from .revision import CompilerRevision, load_revision
 from .target import Target
-from .ranking import Cost, rank as rank_candidates
-from .compiled_resources import CompiledResources
-from .empirical_cost import EmpiricalCostModel
+from .performance.ranking import Cost, rank as rank_candidates
+from .performance.compiled_resources import CompiledResources
+from .performance.empirical_cost import EmpiricalCostModel
 from .diagnostics import Finding, FindingCategory, FindingSeverity
 from .verifier import name_conflicts, resolve_grid, verify as verify_contracts
 
@@ -67,9 +61,9 @@ class Assessment:
 class Lowering:
     """Inspectable target source materialized from one eligible Assessment.
 
-    `generated` distinguishes operation-emitting backends from the closed asset path.
-    Both are deterministic, but only the former generates the program from Schedule
-    operations; collapsing them would make that paper-relevant boundary unobservable.
+    Current lowerings are generated from Schedule operations. The `generated` field
+    remains part of the public result so historical materialized-source observations
+    retain their distinct meaning.
     """
 
     compiler_revision_id: str
@@ -89,97 +83,6 @@ class Lowering:
 # parsed cleanly and was then rejected as an unknown root field by this check.
 _REQUIRED_TOP_LEVEL_FIELDS = set(_SCHEDULE_REQUIRED)
 _OPTIONAL_TOP_LEVEL_FIELDS = set(_SCHEDULE_OPTIONAL)
-def _tinygemm2_asset_preflight(schedule: Schedule) -> list["Finding"]:
-    """Check only facts implemented by the retained source asset."""
-
-    if schedule.target != "sm_100a":
-        return [Finding("CUDA_ASSET_TARGET_UNSUPPORTED", "target",
-                        "the checked CUDA asset is compiled only for sm_100a",
-                        FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False)]
-
-    reduction = schedule.operation("reduce_partials")
-    parameters = reduction.parameters if reduction is not None else None
-    source = (
-        schedule.buffer(reduction.reads[0])
-        if reduction is not None and reduction.reads
-        else None
-    )
-    parts = (
-        source.shape[parameters.axis]
-        if source is not None
-        and isinstance(parameters, ReduceParameters)
-        and 0 <= parameters.axis < len(source.shape)
-        else None
-    )
-    findings: list[Finding] = []
-    if not (
-        reduction is not None
-        and reduction.kind is OperationKind.REDUCE
-        and isinstance(parameters, ReduceParameters)
-        and parameters.op is ReduceOp.SUM
-        and parts == 4
-        and parameters.scope is ReductionScope.CTA
-    ):
-        findings.append(
-            Finding(
-                "REDUCE_SUM_SEMANTICS",
-                "operations.reduce_partials.parameters.axis",
-                "the checked TinyGEMM2 asset requires a four-part CTA sum",
-                FindingCategory.HARDWARE_CONFORMANCE,
-                blocks_acceptance=False,
-            )
-        )
-    epilogue = schedule.operation("bias_epilogue")
-    epilogue_parameters = epilogue.parameters if epilogue is not None else None
-    if not (
-        epilogue is not None
-        and epilogue.kind is OperationKind.EPILOGUE
-        and isinstance(epilogue_parameters, EpilogueParameters)
-        and epilogue_parameters.formula is EpilogueFormula.BIAS_ADD_BF16_ROUND
-    ):
-        findings.append(
-            Finding(
-                "TINYGEMM_EPILOGUE_SEMANTICS",
-                "operations.bias_epilogue.parameters.formula",
-                "the checked TinyGEMM2 asset requires bias addition then BF16 rounding",
-                FindingCategory.HARDWARE_CONFORMANCE,
-                blocks_acceptance=False,
-            )
-        )
-    return findings
-
-
-@dataclass(frozen=True)
-class _GeneratedBackend:
-    module: Any
-    source_language: str
-    compiler: str
-
-
-@dataclass(frozen=True)
-class _SourceAsset:
-    path: str
-    placeholder: str
-    semantic_sha256: str
-    preflight: Callable[[Schedule], list[Finding]]
-
-
-_GENERATED_BACKENDS: Mapping[LoweringBackend, _GeneratedBackend] = {
-    LoweringBackend.METAL: _GeneratedBackend(metal, "metal", "MTLDevice.makeLibrary"),
-    LoweringBackend.TRITON: _GeneratedBackend(triton, "python", "triton"),
-    LoweringBackend.CUTLASS_CUTE_DSL: _GeneratedBackend(
-        cutedsl, "python", "cutlass_cute_dsl"
-    ),
-}
-_SOURCE_ASSETS: Mapping[str, _SourceAsset] = {
-    "cake_tinygemm2_stage4_split_k": _SourceAsset(
-        path="src/open_cake_ir/compiler/backends/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
-        placeholder="@@SCHEDULE_SHA256@@",
-        # Re-pinned by the route migration; the checked asset body itself is unchanged.
-        semantic_sha256="fea164e3667d99bdd1d26a9bd11ca7ee4dca08c2cad66d47dc4719dcd529ec2c",
-        preflight=_tinygemm2_asset_preflight,
-    )
-}
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -334,78 +237,16 @@ class Compiler:
             ))
 
         route = typed_schedule.lowering
-        backend = _GENERATED_BACKENDS.get(route.backend)
-        asset = (_SOURCE_ASSETS.get(route.entry_point)
-                 if route.backend is LoweringBackend.CHECKED_CUDA_ASSET else None)
+        backend = BACKENDS.get(route.backend)
         semantic_sha256 = _semantic_schedule_sha256(schedule)
-        if route.backend is LoweringBackend.CHECKED_CUDA_ASSET and asset is None:
-            findings.append(Finding(
-                "SOURCE_ASSET_UNSUPPORTED", "lowering.entry_point",
-                f"checked source asset {route.entry_point!r} is not bound by this Revision",
-                FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
-            ))
-        elif asset is not None:
-            asset_findings = asset.preflight(typed_schedule)
-            findings.extend(asset_findings)
-            if semantic_sha256 != asset.semantic_sha256 and not asset_findings:
-                findings.append(Finding(
-                    "SOURCE_ASSET_SEMANTICS_MISMATCH", "lowering",
-                    "Schedule semantics differ from the checked source asset",
-                    FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
-                ))
-        elif backend is not None:
-            for index, buffer in enumerate(typed_schedule.buffers):
-                if buffer.dtype not in backend.module.SUPPORTED_DTYPES:
-                    findings.append(Finding(
-                        "BACKEND_DTYPE_UNEMITTABLE", f"buffers[{index}].dtype",
-                        f"backend {route.backend.value!r} cannot name dtype {buffer.dtype.value!r}",
-                        FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
-                    ))
-            for index, operation in enumerate(typed_schedule.operations):
-                if operation.kind not in backend.module.SUPPORTED_OPERATION_KINDS:
-                    findings.append(Finding(
-                        "BACKEND_OPERATION_UNEMITTABLE", f"operations[{index}].kind",
-                        f"backend {route.backend.value!r} has no body for operation "
-                        f"kind {operation.kind.value!r}",
-                        FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
-                    ))
-            if backend.module is triton:
-                for index, loop in enumerate(typed_schedule.tile_loops):
-                    if loop.range_options.warp_specialize and any(
-                        (operation := typed_schedule.operation(operation_id)) is not None
-                        and operation.kind is OperationKind.REDUCE_ARGMIN
-                        for operation_id in loop.body
-                    ):
-                        findings.append(Finding(
-                            "TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED",
-                            f"tile_loops[{index}].range_options.warp_specialize",
-                            "the pinned Triton backend cannot warp-specialize a "
-                            "loop containing the value-and-index argmin reduction",
-                            FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
-                        ))
+        if backend is not None:
+            findings.extend(backend.module.requirements(typed_schedule))
 
         if target_definition is not None:
             findings.extend(verify_contracts(typed_schedule, target_definition))
         if (backend is not None and target_definition is not None
                 and not any(finding.blocks_lowering for finding in findings)):
-            for failure in backend.module.preflight(typed_schedule, target_definition):
-                findings.append(Finding(
-                    failure.code, failure.path, failure.message,
-                    FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
-                ))
-        if backend is not None and backend.module is metal and not any(
-            finding.blocks_lowering for finding in findings
-        ):
-            findings.append(Finding(
-                "METAL_SIMD_EXECUTION", "lowering",
-                "Metal stripes flattened values over 32 lanes with uniform SIMD "
-                "collectives and uniquely owned stores. Peak live lane-owned Buffer "
-                f"storage: {metal.private_values_per_thread(typed_schedule)} FP32 values; "
-                "temporary registers and spills are unmodeled. No occupancy, cost or "
-                "GPU correctness is inferred. Local-slot then SIMD reduction order and "
-                "precise rsqrt use Metal rounding/denormal behavior, without PTX RN equivalence.",
-                FindingCategory.HARDWARE_CONFORMANCE, FindingSeverity.REPORT,
-            ))
+            findings.extend(backend.module.preflight(typed_schedule, target_definition))
 
         accepted = not any(finding.blocks_acceptance for finding in findings)
         lowering_eligible = accepted and not any(finding.blocks_lowering for finding in findings)
@@ -468,7 +309,7 @@ class Compiler:
             schedule_bytes=_canonical_json_bytes(schedule),
         )
 
-    def _emit(self, assessment: Assessment, backend: _GeneratedBackend) -> Lowering:
+    def _emit(self, assessment: Assessment, backend: Backend) -> Lowering:
         """Generate the target source from the Schedule."""
 
         definition = self._revision.targets.get(assessment.target)
@@ -518,7 +359,7 @@ class Compiler:
         Reuse lower's full Assessment replay so compiled facts cannot be paired with a
         changed Schedule that happens to retain its display name.
         """
-        from .profile_model import profile_envelope
+        from .performance.profile import profile_envelope
 
         lowering = self.lower(assessment)
         schedule = Schedule.from_dict(
@@ -611,37 +452,10 @@ class Compiler:
         route = assessment.route
         if route is None:
             raise CompilerError("assessment has no lowering route")
-        backend = _GENERATED_BACKENDS.get(route.backend)
+        backend = BACKENDS.get(route.backend)
         if backend is not None:
             return self._emit(assessment, backend)
-        asset = _SOURCE_ASSETS.get(route.entry_point)
-        if route.backend is not LoweringBackend.CHECKED_CUDA_ASSET or asset is None:
-            raise CompilerError(f"lowering route {route!r} is not implemented")
-        template_path = self._revision.project_root / asset.path
-        template = template_path.read_text(encoding="utf-8")
-        if template.count(asset.placeholder) != 1:
-            raise CompilerError("checked source asset has an invalid placeholder")
-        source = template.replace(asset.placeholder, assessment.schedule_sha256)
-        source_map = _source_map(source)
-        return Lowering(
-            compiler_revision_id=self._revision.revision_id,
-            compiler_revision_sha256=self._revision.canonical_sha256,
-            schedule_id=assessment.schedule_id,
-            schedule_sha256=assessment.schedule_sha256,
-            target=assessment.target,
-            route=route,
-            generated=False,
-            source=source,
-            source_sha256=sha256(source.encode("utf-8")).hexdigest(),
-            source_map=MappingProxyType(source_map),
-            toolchain_requirements=MappingProxyType(
-                {
-                    "source_language": "cuda_cpp",
-                    "compiler": "nvcc",
-                    "target": assessment.target,
-                }
-            ),
-        )
+        raise CompilerError(f"lowering route {route!r} is not implemented")
 
 
 def _source_map(source: str) -> dict[str, tuple[int, int]]:

@@ -16,7 +16,7 @@ SPEC = importlib.util.spec_from_file_location("empirical_fitter", ROOT / "tools/
 instrument = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(instrument)
 from open_cake_ir.compiler import Compiler
-from open_cake_ir.compiler.compiled_resources import CompiledResources
+from open_cake_ir.compiler.performance.compiled_resources import CompiledResources
 
 
 def write(path, document):

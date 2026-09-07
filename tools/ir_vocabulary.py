@@ -24,11 +24,10 @@ from enum import Enum
 from pathlib import Path
 
 from open_cake_ir.compiler import ir
-from open_cake_ir.compiler.backends import cutedsl, triton
+from open_cake_ir.compiler.backends import BACKENDS
 
 ROOT = Path(__file__).resolve().parents[1]
 
-_BACKENDS = {"triton": triton, "cute-dsl": cutedsl}
 
 
 def _used_members() -> set[Enum]:
@@ -121,9 +120,9 @@ def main() -> int:
         # rather than a kernel? That question found `int64`.
         print("\n".join(idle) if idle else "(every member is selected by some Schedule)")
 
-        print(f"\n# what a backend can lower")
-        names = sorted(_BACKENDS)
-        print(f"{'':18s} " + "  ".join(f"{name:9s}" for name in names))
+        print(f"\n# backend dtype/operation vocabulary (preflight decides complete schedules)")
+        names = sorted(BACKENDS, key=lambda backend: backend.value)
+        print(f"{'':18s} " + "  ".join(f"{name.value:19s}" for name in names))
         unreachable = []
         for members, attribute in (
             (ir.OperationKind, "SUPPORTED_OPERATION_KINDS"),
@@ -131,9 +130,9 @@ def main() -> int:
         ):
             for member in members:
                 marks = [
-                    member in getattr(_BACKENDS[name], attribute) for name in names
+                    member in getattr(BACKENDS[name].module, attribute) for name in names
                 ]
-                cells = "  ".join(f"{'yes' if mark else '--':9s}" for mark in marks)
+                cells = "  ".join(f"{'yes' if mark else '--':19s}" for mark in marks)
                 print(f"{member.value:18s} {cells}")
                 if not any(marks):
                     unreachable.append(member.value)
@@ -141,7 +140,7 @@ def main() -> int:
             # A kind the IR can express and nothing can lower. Not a defect on its own --
             # the vocabulary may lead the backends deliberately -- but it should be a
             # thing someone chose rather than a thing an author discovers.
-            print(f"\nno backend lowers: {', '.join(unreachable)}")
+            print(f"\nno backend vocabulary support: {', '.join(unreachable)}")
         return 0
 
     # A word can match a field name, an enum member, or an enum type. Reporting which

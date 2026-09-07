@@ -13,7 +13,7 @@ from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.backends.triton import emit, preflight
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import Target
-from open_cake_ir.compiler.work import operation_repetitions, work_bound
+from open_cake_ir.compiler.performance.work import operation_repetitions, work_bound
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler/targets/sm_100a.json")

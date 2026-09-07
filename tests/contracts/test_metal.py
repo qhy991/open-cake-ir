@@ -22,10 +22,10 @@ import unittest
 from open_cake_ir.compiler import Compiler, CompilerError
 from open_cake_ir.compiler import frontend
 from open_cake_ir.compiler.backends import metal
-from open_cake_ir.compiler.analysis import residency_upper_bound
+from open_cake_ir.compiler.performance.residency import residency_upper_bound
 from open_cake_ir.compiler.core import _canonical_json_bytes
 from open_cake_ir.compiler.ir import Schedule
-from open_cake_ir.compiler.ranking import cost
+from open_cake_ir.compiler.performance.ranking import cost
 from open_cake_ir.compiler.target import Target, TargetParseError
 
 ROOT = Path(__file__).resolve().parents[2]

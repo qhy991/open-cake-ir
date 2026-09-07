@@ -153,9 +153,10 @@ class QsaFeedbackTest(unittest.TestCase):
         self.assertEqual(finding["severity"], "blocking")
 
     def test_guidance_reaches_the_agent_without_becoming_a_rejection_or_measurement(self) -> None:
-        assessment = self.compiler.assess_file(
-            ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json"
-        )
+        document = json.loads((ROOT / "corpus/schedules/flash-kmeans-assignment-full.json").read_text())
+        for buffer in document["buffers"]:
+            buffer.pop("swizzle", None)
+        assessment = self.compiler.assess(document)
         feedback = qsa_compiler_feedback(assessment)
         hints = [item for item in feedback["findings"] if item["severity"] == "hint"]
         self.assertTrue(hints)

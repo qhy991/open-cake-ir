@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .ir import (
+from ..ir import (
     AccessIndexKind,
     ElementwiseOp,
     ElementwiseParameters,

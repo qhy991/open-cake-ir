@@ -14,7 +14,7 @@ from ..ir import (
     OperationKind,
     Schedule,
 )
-from ..analysis import (
+from ..performance.residency import (
     logical_register_pressure_per_thread,
     residency_upper_bound,
 )

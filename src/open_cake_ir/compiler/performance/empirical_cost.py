@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .ir import Schedule
+from ..ir import Schedule
 
 
 def _object(value: object, keys: set[str], label: str) -> dict:

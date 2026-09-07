@@ -9,7 +9,6 @@ from ..ir import (
     AccessIndexKind,
     BufferMode,
     LoadMovement,
-    LoweringBackend,
     MemorySpace,
     DType,
     ElementwiseOp,
@@ -500,24 +499,6 @@ def verify(schedule: Schedule, out: _Collector) -> None:
                     category,
                 )
 
-            if schedule.lowering.backend is LoweringBackend.TRITON:
-                options = loop.range_options
-                unsupported = (
-                    ("loop_unroll_factor", options.loop_unroll_factor, 1),
-                    ("warp_specialize", options.warp_specialize, False),
-                    ("flatten", options.flatten, False),
-                )
-                for field, actual, admitted in unsupported:
-                    if actual == admitted:
-                        continue
-                    out.add(
-                        "TRITON_TOP_K_TWO_TILE_CONTROL_FLOW_UNSUPPORTED",
-                        f"tile_loops[{schedule.tile_loops.index(loop)}].range_options.{field}",
-                        f"the current Triton two-source-tile top_k control flow "
-                        f"requires {field}={admitted!r}, got {actual!r}; the Compiler "
-                        "does not silently rewrite a declared loop option",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
         for op_id in loop.body:
             operation = schedule.operation(op_id)
             if operation is None or operation.kind is not OperationKind.ONLINE_SOFTMAX:

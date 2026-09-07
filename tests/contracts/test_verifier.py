@@ -45,6 +45,8 @@ SWIGLU = ROOT / "corpus" / "schedules" / "swiglu-b8-smoke.json"
 
 def _mutated(path: Path, mutate) -> Schedule:
     document = json.loads(path.read_text(encoding="utf-8"))
+    if path == TINYGEMM:
+        document["lowering"]["backend"] = "cutlass_cute_dsl"
     mutate(document)
     return Schedule.from_dict(document)
 
@@ -154,7 +156,12 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         )["target_definitions"]
         for path in paths:
             with self.subTest(schedule=path.name):
-                schedule = Schedule.load(path)
+                document = json.loads(path.read_text())
+                if document["lowering"]["backend"] == "checked_cuda_asset":
+                    with self.assertRaisesRegex(ScheduleParseError, "schedule.lowering.backend is unsupported"):
+                        Schedule.from_dict(document)
+                    continue
+                schedule = Schedule.from_dict(document)
                 target = Target.load(ROOT / targets[schedule.target]["path"])
                 self.assertEqual(_blocking(verify(schedule, target)), ())
 

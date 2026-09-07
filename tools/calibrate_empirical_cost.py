@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.compiler import Compiler, EmpiricalCostModel
 from open_cake_ir.compiler.toolchain import compile_triton, inspect_triton_resources
-from open_cake_ir.compiler.compiled_resources import CompiledResources, load_compiled_resources
+from open_cake_ir.compiler.performance.compiled_resources import CompiledResources, load_compiled_resources
 from open_cake_ir.evaluation.cuda_driver import _DYNAMIC_SHARED_OPT_IN_THRESHOLD, _driver_call
 
 

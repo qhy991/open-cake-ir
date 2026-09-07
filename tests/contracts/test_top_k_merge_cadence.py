@@ -8,6 +8,8 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from open_cake_ir.compiler import Compiler, EmitError
+from open_cake_ir.compiler.backends import triton
 from open_cake_ir.compiler.ir import Schedule, ScheduleParseError
 from open_cake_ir.compiler.schema import schedule_schema
 from open_cake_ir.compiler.target import Target
@@ -116,10 +118,18 @@ class LegalityTest(unittest.TestCase):
 
                 findings = [
                     item
-                    for item in verify(schedule, TARGET)
+                    for item in triton.preflight(schedule, TARGET)
                     if item.code == "TRITON_TOP_K_TWO_TILE_CONTROL_FLOW_UNSUPPORTED"
                 ]
                 self.assertEqual(len(findings), 1)
+                self.assertFalse(findings[0].blocks_acceptance)
+                self.assertTrue(findings[0].blocks_lowering)
+                self.assertNotIn(findings[0].code, {item.code for item in verify(schedule, TARGET)})
+                assessment = Compiler.load(ROOT, ROOT / "compiler/revision.json").assess(document)
+                self.assertTrue(assessment.accepted)
+                self.assertFalse(assessment.lowering_eligible)
+                with self.assertRaisesRegex(EmitError, "two-source-tile top_k control flow"):
+                    triton.emit(schedule, TARGET)
                 self.assertEqual(
                     findings[0].path,
                     f"tile_loops[0].range_options.{field}",

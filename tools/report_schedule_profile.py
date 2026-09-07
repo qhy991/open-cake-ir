@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler, EmpiricalCostModel  # noqa: E402
 from open_cake_ir.compiler.toolchain import compile_triton, inspect_triton_resources  # noqa: E402
-from open_cake_ir.compiler.compiled_resources import load_compiled_resources  # noqa: E402
+from open_cake_ir.compiler.performance.compiled_resources import load_compiled_resources  # noqa: E402
 
 
 def _display_path(path: Path) -> str:

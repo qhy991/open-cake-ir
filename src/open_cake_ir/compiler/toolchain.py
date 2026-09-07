@@ -18,7 +18,7 @@ import tempfile
 from types import MappingProxyType
 from typing import Mapping
 
-from .compiled_resources import CompiledResources, parse_cuobjdump_resources
+from .performance.compiled_resources import CompiledResources
 
 
 @dataclass(frozen=True)
@@ -207,6 +207,29 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
         )
 
 
+def _parse_cuobjdump_resources(report: str, entry_point: str) -> dict[str, int]:
+    """Read one unambiguous per-function block from cuobjdump --dump-resource-usage.
+
+    https://docs.nvidia.com/cuda/cuda-binary-utilities/index.html documents REG as a
+    count and STACK/SHARED/LOCAL as bytes. Unknown fields are not interpreted.
+    """
+    blocks = re.findall(
+        r"^\s*Function\s+([^\s:]+)\s*:\s*\n(.*?)(?=^\s*Function\s+|\Z)",
+        report, flags=re.MULTILINE | re.DOTALL,
+    )
+    matches = [body for name, body in blocks if name == entry_point]
+    if len(matches) != 1:
+        raise ValueError("CUBIN resource report does not name exactly one requested kernel")
+    result: dict[str, int] = {}
+    for label, name in (("REG", "registers_per_thread"), ("STACK", "stack_bytes"),
+                        ("SHARED", "static_shared_bytes"), ("LOCAL", "local_bytes")):
+        values = re.findall(rf"(?<!\S){label}:(\d+)(?=\s|$)", matches[0])
+        if len(values) != 1:
+            raise ValueError(f"CUBIN resource report has missing or ambiguous {label}")
+        result[name] = int(values[0])
+    return result
+
+
 def inspect_triton_resources(compilation: TritonCompilation, cuobjdump: str | Path) -> CompiledResources:
     """Inspect compiler output using NVIDIA's binary utility, with no GPU runtime."""
     inspector = str(Path(cuobjdump).resolve(strict=True))
@@ -224,5 +247,5 @@ def inspect_triton_resources(compilation: TritonCompilation, cuobjdump: str | Pa
         threads_per_cta=compilation.threads_per_cta,
         dynamic_shared_bytes=compilation.dynamic_shared_bytes,
         compiler_version=compilation.compiler_version, inspector_version=version,
-        **parse_cuobjdump_resources(report, compilation.entry_point),
+        **_parse_cuobjdump_resources(report, compilation.entry_point),
     )

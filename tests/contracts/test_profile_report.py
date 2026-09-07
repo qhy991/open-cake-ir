@@ -99,7 +99,13 @@ class ProfileReportTest(unittest.TestCase):
         self.assertIn("runtime-indexed global buffer v", output)
 
     def test_accepted_schedule_preserves_advisory_guidance_in_json_and_text(self) -> None:
-        schedule = self._schedule("tinygemm2-stage4-split-k.json")
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        schedule = Path(directory.name) / "guided-cute.json"
+        fixture = json.loads(self._schedule("flash-kmeans-assignment-full.json").read_text())
+        for buffer in fixture["buffers"]:
+            buffer.pop("swizzle", None)
+        schedule.write_text(json.dumps(fixture))
         assessment = self.compiler.assess_file(schedule)
         self.assertTrue(assessment.accepted)
         self.assertTrue(assessment.lowering_eligible)

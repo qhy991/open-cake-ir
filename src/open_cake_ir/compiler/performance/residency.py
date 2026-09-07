@@ -20,10 +20,11 @@ it names the missing domain and abstains.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 from .compiled_resources import CompiledResources
-from .ir import MemorySpace, Operation, OperationKind, Schedule, TopKParameters
-from .target import Target
+from ..ir import MemorySpace, Operation, OperationKind, Schedule, TopKParameters
+from ..target import Target
 from .work import loop_trip_distribution, program_tiles
 
 REGISTER_BYTES = 4
@@ -90,56 +91,6 @@ class TopKMergeStructure:
     whole_grid_tail_flush_merge_count: int | None
     whole_grid_merge_update_count: int | None
     count_missing: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class TopKSelectionStructure:
-    """Triton 3.7.1 frontend comparison work for one merge selection.
-
-    ``comparison_lane_work`` counts input lanes participating in compare/select work in
-    the pinned ``standard.py`` network: both lanes of compare-exchange and both inputs
-    of its pairwise top-k reduction.  It is a toolchain-specific structural model, not a
-    public API guarantee, cycle estimate, instruction count, or physical resource fact.
-    The optimized algorithm is admitted only when public ``sort`` plus
-    ``bitonic_merge`` removes at least one third of that baseline work.
-    """
-
-    algorithm: str
-    comparison_model: str
-    baseline_comparison_lane_work: int | None
-    selected_comparison_lane_work: int | None
-    comparison_lane_reduction_fraction: float | None
-
-
-def top_k_selection_structure(
-    k: int,
-    merge_width: int,
-    source_tiles_per_merge: int,
-) -> TopKSelectionStructure:
-    """Choose the exact batched-source selector whose structural saving is material."""
-
-    if k <= 0 or k & (k - 1) or merge_width != 2 * k:
-        return TopKSelectionStructure(
-            "triton_topk", "triton_3_7_1_standard_py", None, None, None
-        )
-    log_k = k.bit_length() - 1
-    baseline = k * (log_k**2 + 2 * log_k + 2)
-    half_selection = k * (log_k + 1) * (log_k + 4) // 2
-    if source_tiles_per_merge != 2 or 3 * half_selection > 2 * baseline:
-        return TopKSelectionStructure(
-            "triton_topk",
-            "triton_3_7_1_standard_py",
-            baseline,
-            baseline,
-            0.0,
-        )
-    return TopKSelectionStructure(
-        "sorted_source_half_bitonic_merge",
-        "triton_3_7_1_standard_py",
-        baseline,
-        half_selection,
-        (baseline - half_selection) / baseline,
-    )
 
 
 def _containing_loop(schedule: Schedule, operation: Operation):
@@ -240,10 +191,13 @@ def top_k_merge_structure(
     )
 
 
-def _pending_top_k_bytes_by_operation(schedule: Schedule) -> dict[str, int]:
+def _pending_top_k_bytes_by_operation(
+    schedule: Schedule, top_k_structures: Mapping[int, TopKMergeStructure | None] | None = None
+) -> dict[str, int]:
     pending: dict[str, int] = {}
-    for operation in schedule.operations:
-        structure = top_k_merge_structure(schedule, operation)
+    for index, operation in enumerate(schedule.operations):
+        structure = (top_k_merge_structure(schedule, operation)
+                     if top_k_structures is None else top_k_structures.get(index))
         if structure is None or not structure.pending_source_state_bytes:
             continue
         loop = _containing_loop(schedule, operation)
@@ -292,7 +246,9 @@ def _storage_classes(schedule: Schedule, registers) -> dict[str, str]:
     return {name: find(name) for name in registers}
 
 
-def _logical_register_pressure_bytes(schedule: Schedule) -> int:
+def _logical_register_pressure_bytes(
+    schedule: Schedule, top_k_structures: Mapping[int, TopKMergeStructure | None] | None = None
+) -> int:
     """Peak live logical bytes after simple aliasing and derived pending top-k state.
 
     Summing them charges a Schedule for every temporary it ever names, which reads the
@@ -337,7 +293,7 @@ def _logical_register_pressure_bytes(schedule: Schedule) -> int:
                 last_read[classes[name]] = position
 
     total = len(schedule.operations)
-    pending_top_k = _pending_top_k_bytes_by_operation(schedule)
+    pending_top_k = _pending_top_k_bytes_by_operation(schedule, top_k_structures)
     peak = 0
     for position in range(total):
         live = pending_top_k.get(schedule.operations[position].op_id, 0)
@@ -353,7 +309,7 @@ def _logical_register_pressure_bytes(schedule: Schedule) -> int:
     return peak
 
 
-def _allocation_bytes(schedule: Schedule, space: MemorySpace) -> int:
+def allocation_bytes(schedule: Schedule, space: MemorySpace) -> int:
     return sum(
         allocation.size_bytes
         for allocation in schedule.allocations
@@ -400,7 +356,7 @@ def residency_upper_bound(
         ))
     shared = (
         compiled_resources.shared_bytes if compiled_resources is not None
-        else _allocation_bytes(schedule, MemorySpace.SHARED)
+        else allocation_bytes(schedule, MemorySpace.SHARED)
     )
     if shared:
         bounds.append(
@@ -414,7 +370,7 @@ def residency_upper_bound(
 
     # Tensor memory is not shared between resident CTAs on this Target, so an
     # allocation that fills it admits one CTA and nothing else changes that.
-    tensor = _allocation_bytes(schedule, MemorySpace.TENSOR)
+    tensor = allocation_bytes(schedule, MemorySpace.TENSOR)
     if tensor:
         capacity = target.resource_limits.maximum_tensor_memory_bytes
         bounds.append(
@@ -425,7 +381,8 @@ def residency_upper_bound(
 
 
 def logical_register_pressure_per_thread(
-    schedule: Schedule, target: Target
+    schedule: Schedule, target: Target, *,
+    top_k_structures: Mapping[int, TopKMergeStructure | None] | None = None,
 ) -> int | None:
     """Normalize live logical register-Buffer bytes across the CTA threads.
 
@@ -437,5 +394,5 @@ def logical_register_pressure_per_thread(
     threads = schedule.total_warp_extent * target.warp_size
     if not threads:
         return None
-    registers = _logical_register_pressure_bytes(schedule) // REGISTER_BYTES
+    registers = _logical_register_pressure_bytes(schedule, top_k_structures) // REGISTER_BYTES
     return (registers + threads - 1) // threads if registers else 0

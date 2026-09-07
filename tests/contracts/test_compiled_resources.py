@@ -17,10 +17,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import CompiledResources, Compiler  # noqa: E402
-from open_cake_ir.compiler.compiled_resources import (  # noqa: E402
-    load_compiled_resources, parse_cuobjdump_resources,
+from open_cake_ir.compiler.performance.compiled_resources import (  # noqa: E402
+    load_compiled_resources,
 )
-from open_cake_ir.compiler.toolchain import compile_triton  # noqa: E402
+from open_cake_ir.compiler.toolchain import compile_triton, _parse_cuobjdump_resources  # noqa: E402
 
 RESOURCE_TEXT = """Resource usage:
  Common:
@@ -53,16 +53,16 @@ class CompiledResourceTests(unittest.TestCase):
         )
 
     def test_inspection_selects_one_function_and_keeps_storage_units(self) -> None:
-        self.assertEqual(parse_cuobjdump_resources(RESOURCE_TEXT, self.resources.entry_point), {
+        self.assertEqual(_parse_cuobjdump_resources(RESOURCE_TEXT, self.resources.entry_point), {
             "registers_per_thread": 128, "stack_bytes": 376,
             "static_shared_bytes": 1024, "local_bytes": 0,
         })
         for report in (RESOURCE_TEXT.replace("REG:128", ""), RESOURCE_TEXT + RESOURCE_TEXT):
             with self.subTest(report=report):
                 with self.assertRaises(ValueError):
-                    parse_cuobjdump_resources(report, self.resources.entry_point)
+                    _parse_cuobjdump_resources(report, self.resources.entry_point)
         with self.assertRaises(ValueError):
-            parse_cuobjdump_resources(RESOURCE_TEXT, "absent")
+            _parse_cuobjdump_resources(RESOURCE_TEXT, "absent")
 
     def test_public_profile_tightens_the_resource_bound_without_predicting_stalls(self) -> None:
         before = self.compiler.profile(self.assessment).as_dict()

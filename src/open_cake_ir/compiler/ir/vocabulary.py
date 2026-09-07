@@ -81,7 +81,6 @@ class LoweringBackend(str, Enum):
     METAL = "metal"
     TRITON = "triton"
     CUTLASS_CUTE_DSL = "cutlass_cute_dsl"
-    CHECKED_CUDA_ASSET = "checked_cuda_asset"
 
 
 class ScanOp(str, Enum):

@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 
 from open_cake_ir.compiler import Compiler, CompilerError
-from open_cake_ir.compiler.analysis import (
+from open_cake_ir.compiler.performance.residency import (
     logical_register_pressure_per_thread,
     residency_upper_bound,
     top_k_merge_structure,
@@ -224,7 +224,14 @@ class ReportTest(unittest.TestCase):
             )["cases"]
         ):
             with self.subTest(schedule=path.name):
-                schedule = Schedule.load(path)
+                document = json.loads(path.read_text())
+                if document["lowering"]["backend"] == "checked_cuda_asset":
+                    # Retired syntax is a parser refusal, not a resource report.
+                    assessment = Compiler.load(ROOT, ROOT / "compiler/revision.json").assess(document)
+                    self.assertFalse(assessment.accepted)
+                    self.assertEqual([f.code for f in assessment.findings], ["SCHEDULE_STRUCTURE"])
+                    continue
+                schedule = Schedule.from_dict(document)
                 reference = targets.get(schedule.target)
                 if reference is None:
                     compiler = Compiler.load(ROOT, revision_path)
@@ -274,7 +281,7 @@ class NoCostEstimateTest(unittest.TestCase):
         """The Target declares no clock and no bandwidth, so nothing here predicts one."""
 
         source = (
-            ROOT / "src" / "open_cake_ir" / "compiler" / "analysis.py"
+            ROOT / "src" / "open_cake_ir" / "compiler" / "performance" / "residency.py"
         ).read_text(encoding="utf-8")
         for absent in ("clock", "bandwidth", "seconds", "latency_ms", "flops"):
             with self.subTest(term=absent):
@@ -320,7 +327,7 @@ class RankingTest(unittest.TestCase):
             yield Schedule.from_dict(document)
 
     def test_the_order_is_total_and_independent_of_input_order(self) -> None:
-        from open_cake_ir.compiler import ranking
+        from open_cake_ir.compiler.performance import ranking as ranking
 
         candidates = list(self._variants())
         forward, _ = ranking.rank(candidates, TARGET)
@@ -332,7 +339,7 @@ class RankingTest(unittest.TestCase):
         self.assertEqual(len(forward), len(candidates))
 
     def test_a_non_performance_tie_break_cannot_choose_a_survivor(self) -> None:
-        from open_cake_ir.compiler.ranking import Cost, rank_for_cut
+        from open_cake_ir.compiler.performance.ranking import Cost, rank_for_cut
 
         tied = [
             Cost("author-first", 32, 8, "registers", 0.25),
@@ -347,7 +354,7 @@ class RankingTest(unittest.TestCase):
         self.assertEqual(ordered[0].schedule_id, "fuller")
 
     def test_a_cost_carries_no_predicted_time(self) -> None:
-        from open_cake_ir.compiler import ranking
+        from open_cake_ir.compiler.performance import ranking as ranking
 
         cost = ranking.cost(next(iter(self._variants())), TARGET)
         assert cost is not None
@@ -366,7 +373,7 @@ class RankingTest(unittest.TestCase):
         left to say past one round, so it says nothing instead of saying it confidently.
         """
 
-        from open_cake_ir.compiler import ranking
+        from open_cake_ir.compiler.performance import ranking as ranking
         from open_cake_ir.compiler.ir import Schedule
 
         base = json.loads(
@@ -392,7 +399,7 @@ class RankingTest(unittest.TestCase):
         self.assertEqual(unscored, ("rmsnorm-b512",))
 
     def test_an_unscorable_candidate_is_named_not_dropped(self) -> None:
-        from open_cake_ir.compiler import ranking
+        from open_cake_ir.compiler.performance import ranking as ranking
         from open_cake_ir.compiler.target import Target
 
         document = json.loads(

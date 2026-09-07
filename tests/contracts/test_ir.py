@@ -70,6 +70,8 @@ def _document(path: Path) -> dict:
 
 def _mutated(path: Path, mutate) -> dict:
     document = _document(path)
+    if path == TINYGEMM:
+        document["lowering"]["backend"] = "cutlass_cute_dsl"
     mutate(document)
     return document
 
@@ -119,6 +121,10 @@ class RetainedScheduleTest(unittest.TestCase):
         self.assertTrue(CORPUS)
         for path in CORPUS:
             with self.subTest(schedule=path.name):
+                if _document(path)["lowering"]["backend"] == "checked_cuda_asset":
+                    with self.assertRaisesRegex(ScheduleParseError, "schedule.lowering.backend is unsupported"):
+                        Schedule.load(path)
+                    continue
                 schedule = Schedule.load(path)
                 self.assertEqual(schedule.schema_version, 1)
                 self.assertEqual(schedule.target, _document(path)["target"])
@@ -143,6 +149,9 @@ class RetainedScheduleTest(unittest.TestCase):
                     validator.iter_errors(_document(path)),
                     key=lambda error: tuple(str(part) for part in error.absolute_path),
                 )
+                if _document(path)["lowering"]["backend"] == "checked_cuda_asset":
+                    self.assertEqual([tuple(error.absolute_path) for error in errors], [("lowering", "backend")])
+                    continue
                 self.assertEqual(
                     errors,
                     [],
@@ -229,7 +238,7 @@ class RetainedScheduleTest(unittest.TestCase):
         self.assertIsNone(b32.grid)
         self.assertIsNotNone(b32.program_map)
 
-        tinygemm = Schedule.load(TINYGEMM)
+        tinygemm = Schedule.from_dict(_mutated(TINYGEMM, lambda document: None))
         self.assertEqual(tinygemm.grid, (64, 1, 1))
         self.assertIsNone(tinygemm.program_map)
 
@@ -243,7 +252,7 @@ class UnifiedVocabularyTest(unittest.TestCase):
     """
 
     def test_a_reduction_keeps_its_kind_and_parameters(self) -> None:
-        schedule = Schedule.load(TINYGEMM)
+        schedule = Schedule.from_dict(_mutated(TINYGEMM, lambda document: None))
         operation = schedule.operation("reduce_partials")
         assert operation is not None
         self.assertIs(operation.kind, OperationKind.REDUCE)
@@ -256,7 +265,7 @@ class UnifiedVocabularyTest(unittest.TestCase):
         )
 
     def test_epilogue_keeps_its_kind_and_parameters(self) -> None:
-        schedule = Schedule.load(TINYGEMM)
+        schedule = Schedule.from_dict(_mutated(TINYGEMM, lambda document: None))
         operation = schedule.operation("bias_epilogue")
         assert operation is not None
         self.assertIs(operation.kind, OperationKind.EPILOGUE)

@@ -40,9 +40,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from .analysis import ResidencyUpperBound, residency_upper_bound
-from .ir import Schedule
-from .target import Target
+from .residency import ResidencyUpperBound, residency_upper_bound
+from ..ir import Schedule
+from ..target import Target
 
 
 @dataclass(frozen=True)
