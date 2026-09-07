@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "workload_id": "gemm-bias-bf16-fp32-v2",
+  "revision": "2",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "source_schedule",
+      "path": "corpus/schedules/gemm-bias-b1-smoke-b300.json",
+      "source_commit": "0c21d3974b994cde0badbb3a040bd164bf01263a",
+      "scope": "standalone_B300_target_adaptation_not_framework_equivalence"
+    },
+    {
+      "kind": "target_adaptation_parent",
+      "path": "corpus/schedules/gemm-bias-b1-smoke.json",
+      "source_commit": "ee233f48824a7d1955e449db9636da974d93253f",
+      "scope": "same_mathematics_and_schedule_choices_with_explicit_B300_target"
+    }
+  ],
+  "operator": "gemm_bias_bf16_fp32",
+  "cases": [
+    {
+      "case_id": "primary",
+      "shape": {
+        "M": 512,
+        "N": 256,
+        "K": 256
+      },
+      "seed": 0,
+      "mode": "uniform"
+    },
+    {
+      "case_id": "tail",
+      "shape": {
+        "M": 3,
+        "N": 5,
+        "K": 65
+      },
+      "seed": 1,
+      "mode": "uniform"
+    },
+    {
+      "case_id": "tiny",
+      "shape": {
+        "M": 2,
+        "N": 3,
+        "K": 65
+      },
+      "seed": 2,
+      "mode": "uniform"
+    },
+    {
+      "case_id": "zeros",
+      "shape": {
+        "M": 1,
+        "N": 2,
+        "K": 65
+      },
+      "seed": 0,
+      "mode": "zeros"
+    },
+    {
+      "case_id": "cancellation",
+      "shape": {
+        "M": 2,
+        "N": 3,
+        "K": 66
+      },
+      "seed": 0,
+      "mode": "alternating"
+    }
+  ],
+  "tensors": {
+    "a": {
+      "shape": [
+        "M",
+        "K"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "finite_only": true,
+      "max_abs": 16.0
+    },
+    "b": {
+      "shape": [
+        "N",
+        "K"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "finite_only": true,
+      "max_abs": 16.0
+    },
+    "bias": {
+      "shape": [
+        "N"
+      ],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major",
+      "finite_only": true,
+      "max_abs": 16.0
+    },
+    "c": {
+      "shape": [
+        "M",
+        "N"
+      ],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major",
+      "finite_only": true
+    }
+  },
+  "semantics": {
+    "definition": "c[m,n] = sum_k a[m,k] * b[n,k] + bias[n]",
+    "candidate_abi": {
+      "inputs": [
+        "a",
+        "b",
+        "bias"
+      ],
+      "outputs": [
+        "c"
+      ]
+    },
+    "target": "sm_103a",
+    "input_effects": "unchanged",
+    "output_storage": "fresh_contiguous_nonaliasing",
+    "arithmetic": {
+      "operands": "bf16",
+      "accumulator": "fp32",
+      "reduction_order": "backend_defined_within_tolerance",
+      "bias": "fp32_after_contraction",
+      "output": "fp32"
+    },
+    "rhs_storage": "N_K",
+    "padding": "masked_K_loads_are_zero_and_M_N_tail_stores_are_suppressed"
+  },
+  "oracle": {
+    "kind": "real_gemm_bias_fsum_then_fp32",
+    "callable": "open_cake_ir.evaluation.tile_workloads.reference_outputs",
+    "implementation": "independent_standard_library_math_no_compiler_or_generated_source",
+    "output_rounding": "round_to_nearest_ties_to_even"
+  },
+  "validation": {
+    "primary_case": "primary",
+    "all_cases_required": true,
+    "equal_nan": false,
+    "qualification": "B300_device_compile_correctness_timing_profiler_and_framework_evaluation_pending",
+    "comparison": "elementwise_atol_rtol",
+    "atol": 0.001,
+    "rtol": 0.001,
+    "tolerance_rationale": "Predeclared FP32 accumulation-order allowance for finite BF16 inputs and cancellation; all elements must pass, with device validation pending."
+  }
+}

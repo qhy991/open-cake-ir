@@ -1,5 +1,12 @@
 # Workload Contract ownership
 
+The B300 successors are [`rmsnorm-fp32-v2.json`](rmsnorm-fp32-v2.json),
+[`gemm-bias-bf16-fp32-v2.json`](gemm-bias-bf16-fp32-v2.json) and
+[`indexed-gather-bf16-v2.json`](indexed-gather-bf16-v2.json). They preserve the
+v1 mathematics, ABI, 15 cases and tolerances while explicitly selecting
+`sm_103a`. See the [B300 guide](../../docs/en/B300.md) for Python starting points
+and the separate device/experiment qualification boundaries.
+
 Every file in this directory is an immutable, content-bound Workload Contract. No README
 entry makes one globally current: a Study Contract selects the exact Workload authority it
 uses, and historical Studies continue to reference their frozen version.

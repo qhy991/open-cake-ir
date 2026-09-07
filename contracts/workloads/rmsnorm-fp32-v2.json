@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "workload_id": "rmsnorm-fp32-v2",
+  "revision": "2",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "source_schedule",
+      "path": "corpus/schedules/rmsnorm-b8-smoke-b300.json",
+      "source_commit": "0c21d3974b994cde0badbb3a040bd164bf01263a",
+      "scope": "standalone_B300_target_adaptation_not_framework_equivalence"
+    },
+    {
+      "kind": "target_adaptation_parent",
+      "path": "corpus/schedules/rmsnorm-b8-smoke.json",
+      "source_commit": "ee233f48824a7d1955e449db9636da974d93253f",
+      "scope": "same_mathematics_and_schedule_choices_with_explicit_B300_target"
+    }
+  ],
+  "operator": "rmsnorm_fp32",
+  "cases": [
+    {
+      "case_id": "primary",
+      "shape": {
+        "B": 8,
+        "N": 512,
+        "D": 128
+      },
+      "seed": 0,
+      "mode": "uniform"
+    },
+    {
+      "case_id": "row_tail",
+      "shape": {
+        "B": 2,
+        "N": 65,
+        "D": 128
+      },
+      "seed": 1,
+      "mode": "uniform"
+    },
+    {
+      "case_id": "tiny",
+      "shape": {
+        "B": 1,
+        "N": 2,
+        "D": 4
+      },
+      "seed": 2,
+      "mode": "uniform"
+    },
+    {
+      "case_id": "zeros",
+      "shape": {
+        "B": 1,
+        "N": 1,
+        "D": 4
+      },
+      "seed": 0,
+      "mode": "zeros"
+    },
+    {
+      "case_id": "near_zero",
+      "shape": {
+        "B": 1,
+        "N": 2,
+        "D": 4
+      },
+      "seed": 0,
+      "mode": "near_zero"
+    },
+    {
+      "case_id": "alternating",
+      "shape": {
+        "B": 1,
+        "N": 1,
+        "D": 8
+      },
+      "seed": 0,
+      "mode": "alternating"
+    }
+  ],
+  "tensors": {
+    "x": {
+      "shape": [
+        "B",
+        "N",
+        "D"
+      ],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major",
+      "finite_only": true,
+      "max_abs": 16.0
+    },
+    "gamma": {
+      "shape": [
+        "D"
+      ],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major",
+      "finite_only": true,
+      "max_abs": 16.0
+    },
+    "y": {
+      "shape": [
+        "B",
+        "N",
+        "D"
+      ],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major",
+      "finite_only": true
+    }
+  },
+  "semantics": {
+    "definition": "y[b,n,d] = x[b,n,d] * gamma[d] / sqrt(sum_j x[b,n,j]^2 / D + epsilon)",
+    "candidate_abi": {
+      "inputs": [
+        "x",
+        "gamma"
+      ],
+      "outputs": [
+        "y"
+      ]
+    },
+    "target": "sm_103a",
+    "input_effects": "unchanged",
+    "output_storage": "fresh_contiguous_nonaliasing",
+    "arithmetic": {
+      "intermediates": "fp32",
+      "reduction_order": "backend_defined_within_tolerance",
+      "rsqrt": "backend_approximation_within_tolerance",
+      "output": "fp32"
+    },
+    "epsilon": 1e-06
+  },
+  "oracle": {
+    "kind": "real_rmsnorm_fsum_then_fp32",
+    "callable": "open_cake_ir.evaluation.tile_workloads.reference_outputs",
+    "implementation": "independent_standard_library_math_no_compiler_or_generated_source",
+    "output_rounding": "round_to_nearest_ties_to_even"
+  },
+  "validation": {
+    "primary_case": "primary",
+    "all_cases_required": true,
+    "equal_nan": false,
+    "qualification": "B300_device_compile_correctness_timing_profiler_and_framework_evaluation_pending",
+    "comparison": "elementwise_atol_rtol",
+    "atol": 2e-06,
+    "rtol": 2e-05,
+    "tolerance_rationale": "Predeclared FP32 reduction and rsqrt approximation allowance against the real-valued formula; not a device calibration."
+  }
+}

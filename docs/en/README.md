@@ -2,6 +2,8 @@
 
 [中文](../zh-CN/README.md) · [Complete bilingual catalog](../README.md) · [Repository home](../../README.md)
 
+See the [B300 guide](B300.md) for the three Python operator starting points.
+
 **Write an explicit GPU computation plan, check it, generate source, and validate the result.** open-cake-ir independently reconstructs parts of the public CAKE research ideas; it is not the paper's unpublished implementation.
 
 A Workload defines the problem, a Schedule describes workers and data, the Compiler checks and translates it, Evaluation checks outputs and measurements, and Evidence preserves observations. A Study fixes a research question and fair comparison before execution.

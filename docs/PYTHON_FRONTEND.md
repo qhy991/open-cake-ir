@@ -42,6 +42,7 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 - [FMA](../examples/python/fma.py)：对应位置的三输入融合乘加。
 - [Softmax](../examples/python/softmax.py)：读取、行归约、显式广播和写回。
 - [CuTe 流水线](../examples/python/kmeans_pipeline.py)：共享存储与 tensor memory、四种角色、同步和两层符号循环。
+- [B300 起点](B300.md)：RMSNorm、GEMM+bias 与 indexed gather，对应各自 v2 Workload。
 
 例子沿用既有算子的固定形状。新例子的名称和元数据不继承旧实验的身份或正确性结论。
 `id=` 仅用于显式命名操作、与既有计划对照；省略时由结果变量或目标 Buffer 推导。
@@ -67,6 +68,12 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 
 变量只赋值一次。前端从读写关系推导依赖，包含覆写前的读取；`depends_on` 可补充已有操作 id，
 但它不能代替跨角色同步。`waits`、`signals`、`pipeline` 仍由作者指定并由 Verifier 检查。
+
+`lm.load(rows[expert_index, row_index, :])` 使用现有 buffer-index AccessMap。
+索引必须是一维 INT32 寄存器 Buffer，且长度相同。它们逐项配对，长度 J 只在结果形状中
+出现一次，因此这个例子的结果为 `[J,D]`；不是两个 J 维的笛卡尔积。索引 Buffer 会成为
+load 的显式读取和依赖，重复使用同一个索引不会产生重复读取边。`out=` 也执行相同验证。
+这段语法当前只用于 global load，不扩展 indexed store、atomic 或算术的语义。
 
 `lm.range(buffer, dimension=..., tile=..., name=...)` 声明循环，循环体里的操作只构造一次。
 其 `num_stages` 和 `loop_unroll_factor` 默认为 1，其余现有布尔 range options 默认为 false；

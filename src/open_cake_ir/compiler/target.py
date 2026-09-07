@@ -39,7 +39,7 @@ def cuda_target(target_id: str) -> "Target":
     """
     architecture = cuda_architecture(target_id)
     path = Path(__file__).resolve().parents[3] / "compiler" / "targets" / f"{target_id}.json"
-    target = Target.from_dict(json.loads(path.read_text(encoding="utf-8")))
+    target = Target.load(path)
     if target.target_id != target_id or target.compute_capability != divmod(architecture, 10):
         raise TargetParseError("CUDA target identity and compute capability differ")
     return target

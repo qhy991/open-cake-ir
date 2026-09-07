@@ -1,0 +1,269 @@
+{
+  "allocation": {
+    "method": "predeclared_balanced_blocks",
+    "order": [
+      "open_cake-1",
+      "native_triton-1",
+      "native_triton-2",
+      "open_cake-2",
+      "open_cake-3",
+      "native_triton-3"
+    ]
+  },
+  "analysis_plan": {
+    "experimental_unit": "run",
+    "target_population": "prescheduled_runs_under_exact_campaign_lock",
+    "primary_endpoint": [
+      "qualified_by_budget",
+      "best_confirmed_latency_ms_if_qualified"
+    ],
+    "contrast": "two_part_open_cake_vs_native_triton",
+    "estimand": "terminal-budget qualification-rate difference and conditional confirmed performance from the same known baseline",
+    "treatment": {
+      "open_cake": "Schedule_or_restricted_Python_IR_to_frozen_Triton",
+      "native_triton": "kernel_only_Triton_same_frozen_backend",
+      "reference_access": "known_baseline_optimization",
+      "baseline": "same_Compiler_lowering_kernel_and_compile_launch_metadata",
+      "held_fixed": [
+        "workload",
+        "case",
+        "oracle",
+        "backend",
+        "toolchain",
+        "launch_abi",
+        "provider",
+        "scaffold",
+        "budget",
+        "evaluation"
+      ]
+    },
+    "missingness": {
+      "candidate_failure": "observed_outcome",
+      "external_fault": "missing",
+      "replacement": "forbidden"
+    },
+    "pooling": "forbidden_without_successor_analysis_plan",
+    "availability": "all_prescheduled_runs_observed_and_each_arm_has_qualified_run",
+    "summary_statistics": {
+      "qualification": "arm_rate",
+      "qualification_contrast": "open_cake_rate_minus_native_triton_rate",
+      "conditional_latency": "arm_median_ms",
+      "contrast": "native_triton_median_divided_by_open_cake_median",
+      "uncertainty": "per_arm_observed_range_ms"
+    },
+    "direction": "lower_latency_is_better",
+    "confirmation": "fresh_fixed_candidate_correctness_then_paired_cupti",
+    "threshold_view": "descriptive_first_fresh_confirmation_from_retained_events_no_search_latency_substitution"
+  },
+  "arms": {
+    "open_cake": {
+      "compiler_revision": {
+        "binding": "current_release"
+      },
+      "environment_kind": "open_cake",
+      "feedback": [
+        "findings",
+        "correctness",
+        "qualified_timing",
+        "profile"
+      ],
+      "prompt_template": {
+        "path": "src/open_cake_ir/lab/prompts/paired_triton_turn_v1.md",
+        "sha256": "8cda65444d77b6daadf558e2f034b3daef40c40fd1e4df5481274610bafeedaa"
+      },
+      "provider": {
+        "cwd_policy": "independent_empty_workspace",
+        "disabled_features": [
+          "apps",
+          "auth_elicitation",
+          "browser_use",
+          "browser_use_external",
+          "browser_use_full_cdp_access",
+          "code_mode_host",
+          "computer_use",
+          "goals",
+          "guardian_approval",
+          "hooks",
+          "image_generation",
+          "in_app_browser",
+          "multi_agent",
+          "plugin_sharing",
+          "plugins",
+          "remote_plugin",
+          "shell_tool",
+          "skill_mcp_dependency_install",
+          "tool_call_mcp_elicitation",
+          "tool_suggest",
+          "workspace_dependencies"
+        ],
+        "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "model": "gpt-5.6-sol",
+        "output_schema": {
+          "path": "contracts/providers/codex-triton-optimization-output-schema-v1.json",
+          "sha256": "3045cbfae6ba5c624ac83489336b86af3be6585d737009f6d0be1ee3252cd921"
+        },
+        "qualification": {
+          "path": "contracts/providers/triton-optimization-provider-pending.json",
+          "canonical_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "qualification_anchor": null,
+        "reasoning_effort": "max",
+        "reference_visibility": "embedded_frozen_bundle",
+        "removed_environment": [
+          "OPENAI_API_KEY",
+          "ANTHROPIC_API_KEY"
+        ],
+        "revision": "triton-optimization-provider-pending",
+        "sandbox": "workspace-write",
+        "service_tier": "default"
+      },
+      "scaffold": {
+        "path": "contracts/scaffolds/matched-search-v1.md",
+        "sha256": "3d8d0acee1ac6d314464f25cfc2ee0151c8b133e2ac0539b84391fd791c036fe"
+      },
+      "lowering_route": {
+        "backend": "triton",
+        "entry_point": "cake_rmsnorm_b8_smoke"
+      },
+      "schedule_skeleton": {
+        "path": "corpus/schedules/rmsnorm-b8-smoke-b300.json",
+        "canonical_sha256": "ca93f8996b655bd54c2e3bb89e64e2090defef2337046e2821bcc66337497758"
+      },
+      "tool_surface": [
+        "submit_schedule_or_python"
+      ],
+      "input_format": "schedule_or_python_v1",
+      "toolchain_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "native_triton": {
+      "environment_kind": "native_triton",
+      "feedback": [
+        "compile",
+        "correctness",
+        "qualified_timing",
+        "profile"
+      ],
+      "prompt_template": {
+        "path": "src/open_cake_ir/lab/prompts/paired_triton_turn_v1.md",
+        "sha256": "8cda65444d77b6daadf558e2f034b3daef40c40fd1e4df5481274610bafeedaa"
+      },
+      "provider": {
+        "cwd_policy": "independent_empty_workspace",
+        "disabled_features": [
+          "apps",
+          "auth_elicitation",
+          "browser_use",
+          "browser_use_external",
+          "browser_use_full_cdp_access",
+          "code_mode_host",
+          "computer_use",
+          "goals",
+          "guardian_approval",
+          "hooks",
+          "image_generation",
+          "in_app_browser",
+          "multi_agent",
+          "plugin_sharing",
+          "plugins",
+          "remote_plugin",
+          "shell_tool",
+          "skill_mcp_dependency_install",
+          "tool_call_mcp_elicitation",
+          "tool_suggest",
+          "workspace_dependencies"
+        ],
+        "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "model": "gpt-5.6-sol",
+        "output_schema": {
+          "path": "contracts/providers/codex-triton-optimization-output-schema-v1.json",
+          "sha256": "3045cbfae6ba5c624ac83489336b86af3be6585d737009f6d0be1ee3252cd921"
+        },
+        "qualification": {
+          "path": "contracts/providers/triton-optimization-provider-pending.json",
+          "canonical_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "qualification_anchor": null,
+        "reasoning_effort": "max",
+        "reference_visibility": "embedded_frozen_bundle",
+        "removed_environment": [
+          "OPENAI_API_KEY",
+          "ANTHROPIC_API_KEY"
+        ],
+        "revision": "triton-optimization-provider-pending",
+        "sandbox": "workspace-write",
+        "service_tier": "default"
+      },
+      "scaffold": {
+        "path": "contracts/scaffolds/matched-search-v1.md",
+        "sha256": "3d8d0acee1ac6d314464f25cfc2ee0151c8b133e2ac0539b84391fd791c036fe"
+      },
+      "tool_surface": [
+        "submit_triton_kernel"
+      ],
+      "toolchain_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "baseline": {
+        "binding": "open_cake_lowering"
+      }
+    }
+  },
+  "budget": {
+    "checkpoints": [
+      50000,
+      100000,
+      150000
+    ],
+    "limit": 150000,
+    "maximum_candidates_per_turn": 3,
+    "maximum_turns": 4,
+    "unit": "provider_tokens"
+  },
+  "claim_scope": "scientific_matched_search",
+  "evaluation_protocol": {
+    "attribution_evaluation": "correctness_then_profile_each_search_survivor",
+    "case_id": "primary",
+    "confirmatory_evaluation": "fresh_fixed_candidate_correctness_then_paired_cupti",
+    "search_evaluation": "correctness_then_paired_cupti",
+    "search_materiality_ratio": 1.05,
+    "searches_per_turn": 2
+  },
+  "evidence": {
+    "event_vocabulary": "matched_run_v1",
+    "schema_version": 2,
+    "terminal_archive_required_for_every_run": true
+  },
+  "execution": {
+    "broker_execution_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "executor_revision": {
+      "binding": "current_release"
+    },
+    "gpu": {
+      "count": 1,
+      "mode": "exclusive",
+      "name": "NVIDIA B300 SXM6 AC"
+    },
+    "sandbox": "workspace-write",
+    "target": "sm_103a"
+  },
+  "kind": "matched_search",
+  "run_protocol": {
+    "automatic_retries": 0,
+    "empty_workspace": true,
+    "independent_thread": true,
+    "replacement_runs": 0,
+    "resume_invariants": [
+      "authority",
+      "cwd",
+      "sandbox",
+      "provider",
+      "scaffold",
+      "arm_environment"
+    ]
+  },
+  "schema_version": 1,
+  "state": "template",
+  "study_id": "matched-search-triton-b300-known-baseline-optimization-template",
+  "workload": {
+    "path": "contracts/workloads/rmsnorm-fp32-v2.json",
+    "canonical_sha256": "946f8ef156383eddc8834497fb3d3afdfb9a0014624347d7b5f5ab2ca0d67b63"
+  }
+}

@@ -9,6 +9,11 @@ The canonical hardware facts live in separate Target documents. Their consumers
 share those documents rather than maintain separate device/resource tables.
 
 No IR primitive, layout language, operator route table or Lab mode is added.
+Python buffer indexing for loads now elaborates to the existing indexed-load
+IR: rank-one INT32 register indices share one zipped shape, appear once in the
+ordered read set, and participate in normal dependency/lifetime analysis.
+Explicit destinations cannot bypass index validation; other indexed operations
+remain refused by this frontend slice.
 Workload v2 successors retain the three operators' mathematics, ABI, input domains,
 15 cases and tolerances, and explicitly select B300 corpus seeds. Historical
 Workloads, B200 Target bytes, releases, calibrations and evidence stay immutable.

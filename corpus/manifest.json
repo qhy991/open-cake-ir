@@ -1189,6 +1189,65 @@
         "schedule_sha256": "f7dbcdd71cfd1d9ec8e56ca1c7f21a451a9ef13db008f8868e114bf5164e23cd",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "rmsnorm-b8-smoke-b300",
+      "schedule": "corpus/schedules/rmsnorm-b8-smoke-b300.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "ca93f8996b655bd54c2e3bb89e64e2090defef2337046e2821bcc66337497758",
+        "lowering_source_sha256": "49ae8ffb8ad1c0b599c41de39709823246d4597225d228b7084611c590152c6f"
+      }
+    },
+    {
+      "case_id": "gemm-bias-b1-smoke-b300",
+      "schedule": "corpus/schedules/gemm-bias-b1-smoke-b300.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "a952cd109d1bb78b7bd24149aac53e3c68d8c8a76e2834006fdc1c76512e8818",
+        "lowering_source_sha256": "d255824ccb5a1ecfdef946c770ae10b54457b7c4b6751672b92941b9d27ba8dd"
+      }
+    },
+    {
+      "case_id": "indexed-gather-b8-smoke-b300",
+      "schedule": "corpus/schedules/indexed-gather-b8-smoke-b300.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "923de0818262be701729a989dd0045971f313130f134117263566cd320e0e053",
+        "lowering_source_sha256": "4cb5b0b4b1de117ccf30e3a6192e320d2dda3e6a2d7ecfda54bf87e79c597e90"
+      }
+    },
+    {
+      "case_id": "b300-cute-target-refusal",
+      "schedule": "corpus/schedules/b300-cute-target-refusal.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "CUTE_TARGET_UNSUPPORTED"
+        ],
+        "schedule_sha256": "14ef8162e9b731ac93a338183d1eca9ca77c99f535a80f6842d9abfa34d5e67d",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "b300-persistent-target-facts-missing",
+      "schedule": "corpus/schedules/b300-persistent-target-facts-missing.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TRITON_PERSISTENT_TARGET_FACTS_MISSING"
+        ],
+        "schedule_sha256": "64d896502df0e3ae770883ecb51fd2cfec584a862f2fa9ba20352c1abfd91134",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

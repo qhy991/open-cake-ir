@@ -2,6 +2,8 @@
 
 [中文入门](zh-CN/README.md) · [English start](en/README.md) · [职责与文档归属](../CONTEXT-MAP.md)
 
+B300： [中文](B300.md) · [English](en/B300.md)
+
 这里把原始 Markdown 文档对应到中文和英文阅读入口。初学者先按语言首页的路线读，不需要从第一份历史报告读到最后一份。
 
 This catalog pairs original Markdown documents with Chinese and English reading routes. Start with a language home rather than reading the archive sequentially.

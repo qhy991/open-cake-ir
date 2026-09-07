@@ -130,6 +130,9 @@
     "corpus/schedules/gemm-bias-b1-smoke-b300.json",
     "corpus/schedules/indexed-gather-b8-smoke-b300.json",
     "corpus/schedules/b300-cute-target-refusal.json",
-    "corpus/schedules/b300-persistent-target-facts-missing.json"
+    "corpus/schedules/b300-persistent-target-facts-missing.json",
+    "examples/python/b300_rmsnorm.py",
+    "examples/python/b300_gemm_bias.py",
+    "examples/python/b300_indexed_gather.py"
   ]
 }

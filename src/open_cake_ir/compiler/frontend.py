@@ -256,6 +256,7 @@ class _Builder:
         if len(components) != len(buffer.shape):
             self.fail(node, "indexing must name every buffer dimension")
         indices = []
+        index_shape = None
         for dimension, component in enumerate(components):
             if isinstance(component, ast.Slice):
                 if component.step is not None:
@@ -271,6 +272,18 @@ class _Builder:
                     item["extent"] = stop - start
             else:
                 index = self.value(component)
+                if isinstance(index, _Ref) and index.collection == "buffers":
+                    index_buffer = self.buffer(index, component)
+                    if (index_buffer.dtype.value != "int32" or index_buffer.space.value != "register"
+                        or len(index_buffer.shape) != 1):
+                        self.fail(component, "gather indices require rank-one INT32 register buffers")
+                    if buffer.space.value != "global":
+                        self.fail(node, "buffer-indexed loads require global source storage")
+                    if index_shape is not None and index_buffer.shape != index_shape:
+                        self.fail(component, "gather index buffers require the same zipped shape")
+                    index_shape = index_buffer.shape
+                    indices.append(dict(source="buffer", name=index.name))
+                    continue
                 if not isinstance(index, _Ref) or index.collection not in {"program", "loop"}:
                     self.fail(component, "indices must be program coordinates, loop tiles or static slices")
                 source = "loop_tile" if index.collection == "loop" else (
@@ -284,8 +297,14 @@ class _Builder:
             self.fail(node, "a load without an explicit destination requires indexed source coordinates")
         source = self.buffer(access.buffer, node)
         shape = []
+        index_shape = None
         for item in access.indices:
-            if item["source"] == "dimension":
+            if item["source"] == "buffer":
+                current = self.buffer(self.symbols[item["name"]], node).shape
+                if index_shape is None:
+                    index_shape = current
+                    shape.extend(current)
+            elif item["source"] == "dimension":
                 shape.append(item.get("extent", source.shape[item["dimension"]] - item.get("offset", 0)))
             elif item["source"] != "program":
                 shape.append(self.record(self.symbols[item["name"]])["tile"])
@@ -403,6 +422,13 @@ class _Builder:
             if isinstance(value, _Access):
                 accesses.append(value)
             reads.append(ref)
+        if kind == "load":
+            for access in accesses:
+                for item in access.indices:
+                    if item["source"] == "buffer":
+                        index = self.symbols[item["name"]]
+                        if index not in reads:
+                            reads.append(index)
         outputs = controls.pop("out", None)
         if outputs is None:
             if not reads:
@@ -438,6 +464,11 @@ class _Builder:
             self.fail(node, "out requires at least one result buffer")
         writes = [self.reference(value.buffer if isinstance(value, _Access) else value, node) for value in outputs]
         accesses.extend(value for value in outputs if isinstance(value, _Access))
+        if any(isinstance(value, _Access) and any(item['source'] == 'buffer' for item in value.indices)
+               for value in outputs):
+            self.fail(node, "buffer-indexed destinations are not supported by this frontend")
+        if kind != 'load' and any(item['source'] == 'buffer' for access in accesses for item in access.indices):
+            self.fail(node, "buffer-indexed views are supported only by load")
         op_id = controls.pop("id", target or f"{kind}_{writes[0].name}")
         if not isinstance(op_id, str) or op_id in self.ancestors:
             self.fail(node, "operation ids must be unique strings; use id for repeated destination writes")

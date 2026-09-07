@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "workload_id": "indexed-gather-bf16-v2",
+  "revision": "2",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "source_schedule",
+      "path": "corpus/schedules/indexed-gather-b8-smoke-b300.json",
+      "source_commit": "0c21d3974b994cde0badbb3a040bd164bf01263a",
+      "scope": "standalone_B300_target_adaptation_not_framework_equivalence"
+    },
+    {
+      "kind": "target_adaptation_parent",
+      "path": "corpus/schedules/indexed-gather-b8-smoke.json",
+      "source_commit": "ee233f48824a7d1955e449db9636da974d93253f",
+      "scope": "same_mathematics_and_schedule_choices_with_explicit_B300_target"
+    }
+  ],
+  "operator": "indexed_gather_bf16",
+  "cases": [
+    {
+      "case_id": "primary",
+      "shape": {
+        "E": 4,
+        "R": 8,
+        "D": 16,
+        "B": 8,
+        "J": 8
+      },
+      "seed": 0,
+      "mode": "uniform"
+    },
+    {
+      "case_id": "tiny",
+      "shape": {
+        "E": 2,
+        "R": 3,
+        "D": 4,
+        "B": 1,
+        "J": 4
+      },
+      "seed": 2,
+      "mode": "uniform"
+    },
+    {
+      "case_id": "index_boundaries",
+      "shape": {
+        "E": 2,
+        "R": 3,
+        "D": 4,
+        "B": 2,
+        "J": 8
+      },
+      "seed": 0,
+      "mode": "index_boundaries"
+    },
+    {
+      "case_id": "repeated_indices",
+      "shape": {
+        "E": 2,
+        "R": 3,
+        "D": 4,
+        "B": 1,
+        "J": 8
+      },
+      "seed": 0,
+      "mode": "repeated_indices"
+    }
+  ],
+  "tensors": {
+    "expert_rows": {
+      "shape": [
+        "E",
+        "R",
+        "D"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "finite_only": true,
+      "max_abs": 16.0
+    },
+    "expert_ids": {
+      "shape": [
+        "B",
+        "J"
+      ],
+      "dtype": "int32",
+      "layout": "contiguous_row_major"
+    },
+    "row_ids": {
+      "shape": [
+        "B",
+        "J"
+      ],
+      "dtype": "int32",
+      "layout": "contiguous_row_major"
+    },
+    "gathered_rows": {
+      "shape": [
+        "B",
+        "J",
+        "D"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "finite_only": true
+    }
+  },
+  "semantics": {
+    "definition": "gathered_rows[b,j,d] = expert_rows[expert_ids[b,j],row_ids[b,j],d] for valid paired IDs; positive zero otherwise",
+    "candidate_abi": {
+      "inputs": [
+        "expert_rows",
+        "expert_ids",
+        "row_ids"
+      ],
+      "outputs": [
+        "gathered_rows"
+      ]
+    },
+    "target": "sm_103a",
+    "input_effects": "unchanged",
+    "output_storage": "fresh_contiguous_nonaliasing",
+    "arithmetic": {
+      "values": "bf16_copy_without_arithmetic",
+      "indices": "signed_int32",
+      "output": "bf16"
+    },
+    "indexing": {
+      "pairing": "zipped",
+      "valid": "0 <= expert_id < E and 0 <= row_id < R",
+      "invalid": "positive_zero",
+      "negative_indices": "invalid_no_wraparound"
+    }
+  },
+  "oracle": {
+    "kind": "paired_index_selection",
+    "callable": "open_cake_ir.evaluation.tile_workloads.reference_outputs",
+    "implementation": "independent_standard_library_math_no_compiler_or_generated_source",
+    "output_rounding": "round_to_nearest_ties_to_even"
+  },
+  "validation": {
+    "primary_case": "primary",
+    "all_cases_required": true,
+    "equal_nan": false,
+    "qualification": "B300_device_compile_correctness_timing_profiler_and_framework_evaluation_pending",
+    "comparison": "bitwise_bf16",
+    "atol": 0.0,
+    "rtol": 0.0,
+    "tolerance_rationale": "Selection performs no arithmetic; every output bit, including signed zero, must match."
+  }
+}
