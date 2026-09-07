@@ -15,6 +15,7 @@ handling from the operation, and the host-side contract from the global buffers.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from .analysis import top_k_selection_structure
 from .emit import BackendPrecondition, Emission, EmitError, require as _require
@@ -448,6 +449,7 @@ class _TritonEmitter:
         self.schedule = schedule
         self.target = target
         self.lines: list[str] = []
+        self._scratch_names: set[str] = set()
         # The route owns the external symbol; the emitter derives its signature from
         # global Buffers rather than consulting an operator-named profile.
         self.entry_point = entry_point or schedule.lowering.entry_point
@@ -474,6 +476,27 @@ class _TritonEmitter:
             )
 
     # ---------------------------------------------------------------- derivation
+
+    def _fresh_local(self, preferred: str) -> str:
+        """Allocate scratch without overwriting author or already-emitted symbols.
+
+        Only the XOR and packed-Store helpers use this allocator. Keep their readable
+        preferred names when free, and reserve each result before the next allocation.
+        """
+        occupied = {buffer.name for buffer in self.schedule.buffers}
+        occupied.update(self.constants())
+        if self.schedule.program_map is not None:
+            occupied.update(axis.name for axis in self.schedule.program_map.axes)
+        occupied.update(loop.iterator for loop in self.schedule.tile_loops)
+        occupied.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", "\n".join(self.lines)))
+        occupied.update(self._scratch_names)
+        name = preferred
+        suffix = 1
+        while name in occupied:
+            name = f"{preferred}_{suffix}"
+            suffix += 1
+        self._scratch_names.add(name)
+        return name
 
     def _single(self, kind: OperationKind, label: str):
         matches = [op for op in self.schedule.operations if op.kind is kind]
@@ -1371,11 +1394,11 @@ class _TritonEmitter:
         current = operation.reads[0]
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         for half in (16, 8, 4, 2, 1):
-            shaped = f"{operation.op_id}_xor_{half}_shaped"
-            paired = f"{operation.op_id}_xor_{half}_paired"
-            lower = f"{operation.op_id}_xor_{half}_lower"
-            upper = f"{operation.op_id}_xor_{half}_upper"
-            stage = f"{operation.op_id}_xor_{half}"
+            shaped = self._fresh_local(f"{operation.op_id}_xor_{half}_shaped")
+            paired = self._fresh_local(f"{operation.op_id}_xor_{half}_paired")
+            lower = self._fresh_local(f"{operation.op_id}_xor_{half}_lower")
+            upper = self._fresh_local(f"{operation.op_id}_xor_{half}_upper")
+            stage = self._fresh_local(f"{operation.op_id}_xor_{half}")
             self.line(
                 f"{pad}{shaped} = tl.reshape({current}, {prefix + (2, half)})"
             )
@@ -2053,10 +2076,10 @@ class _TritonEmitter:
 
         record_index = f"{destination.name}_d0_offsets"
         record_stride = self._extent(destination.name, relation.record_axis)
-        record_ptrs = f"{operation.op_id}_record_ptrs"
-        d_bits = f"{operation.op_id}_d_bits"
-        s_bits = f"{operation.op_id}_s_bits"
-        q_offsets = f"{operation.op_id}_q_offsets"
+        record_ptrs = self._fresh_local(f"{operation.op_id}_record_ptrs")
+        d_bits = self._fresh_local(f"{operation.op_id}_d_bits")
+        s_bits = self._fresh_local(f"{operation.op_id}_s_bits")
+        q_offsets = self._fresh_local(f"{operation.op_id}_q_offsets")
         d_value, s_value, q_value = operation.reads
 
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")

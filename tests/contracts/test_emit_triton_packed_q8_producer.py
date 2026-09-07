@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import unittest
+import json
+from unittest.mock import MagicMock
 import math
 import struct
 from types import SimpleNamespace
 from pathlib import Path
 
-from open_cake_ir.compiler import emit_triton
+from open_cake_ir.compiler import Compiler, emit_triton
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.verifier import FindingSeverity, verify
@@ -122,6 +124,99 @@ class PackedQ8ProducerTritonTests(unittest.TestCase):
 
     def test_generated_source_is_valid_python(self) -> None:
         compile(self.emission.source, "<packed-q8-producer>", "exec")
+
+
+class ScratchNameCollisionTests(unittest.TestCase):
+    @staticmethod
+    def rename(value, old, new):
+        if isinstance(value, str):
+            return new if value == old else value
+        if isinstance(value, list):
+            return [ScratchNameCollisionTests.rename(item, old, new) for item in value]
+        if isinstance(value, dict):
+            return {key: ScratchNameCollisionTests.rename(item, old, new) for key, item in value.items()}
+        return value
+
+    def lower(self, renames):
+        document = json.loads(SCHEDULE.read_text())
+        for old, new in renames:
+            document = self.rename(document, old, new)
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        assessment = compiler.assess(document)
+        self.assertTrue(assessment.accepted, assessment.findings)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        source = compiler.lower(assessment).source
+        self.assertEqual(source, compiler.lower(assessment).source)
+        return source
+
+    @staticmethod
+    def region(source, start_op, end_marker):
+        lines = source.splitlines()
+        start = next(index for index, line in enumerate(lines) if f"# CAKE_OP:{start_op}" in line)
+        end = next(index for index, line in enumerate(lines[start:], start) if end_marker in line)
+        return "\n".join(line.strip() for line in lines[start:end])
+
+    def test_xor_scratch_preserves_a_renamed_live_buffer_through_its_next_reduction(self):
+        class Tensor:
+            def __init__(self, shape, origin="activation"):
+                self.shape, self.origin = tuple(shape), origin
+            def __add__(self, other):
+                if self.shape != other.shape:
+                    raise ValueError("addition shapes differ")
+                return Tensor(self.shape, self.origin)
+
+        def reshape(value, shape):
+            if math.prod(value.shape) != math.prod(shape):
+                raise ValueError(f"cannot reshape {value.shape} into {shape}")
+            return Tensor(shape, value.origin)
+
+        tl = SimpleNamespace(
+            reshape=reshape,
+            abs=lambda value: Tensor(value.shape, "absolute"),
+            maximum=lambda left, right: left + right,
+            permute=lambda value, axes: Tensor(tuple(value.shape[axis] for axis in axes), value.origin),
+            split=lambda value: (Tensor(value.shape[:-1], value.origin), Tensor(value.shape[:-1], value.origin)),
+        )
+        collision = "reduce_amax_xor_16_lower"
+        for occupy_first_suffix in (False, True):
+            with self.subTest(occupy_first_suffix=occupy_first_suffix):
+                renames = [("x_blocks", collision)]
+                if occupy_first_suffix:
+                    renames.append(("abs_x", collision + "_1"))
+                source = self.lower(renames)
+                scope = {"tl": tl, "x_flat": Tensor((512,))}
+                exec(self.region(source, "reshape_blocks", "# CAKE_OP:make_d_fp32"), {"__builtins__": {}}, scope)
+                self.assertEqual(scope[collision].shape, (16, 32))
+                self.assertEqual(scope[collision].origin, "activation")
+                self.assertEqual(scope["sum_x"].shape, (16,))
+                self.assertEqual(scope["sum_x"].origin, "activation")
+                if occupy_first_suffix:
+                    self.assertEqual(scope[collision + "_1"].shape, (16, 32))
+                    self.assertEqual(scope[collision + "_1"].origin, "absolute")
+
+    def test_packed_scratch_preserves_renamed_qs_until_the_payload_store(self):
+        collision = "store_q8_workspace_d_bits"
+        for occupy_first_suffix in (False, True):
+            with self.subTest(occupy_first_suffix=occupy_first_suffix):
+                d_name = collision + "_1" if occupy_first_suffix else "d_fp16"
+                renames = [("q_i8", collision)]
+                if occupy_first_suffix:
+                    renames.append(("d_fp16", d_name))
+                source = self.lower(renames)
+                qs, d, s = MagicMock(name="qs"), MagicMock(name="d"), MagicMock(name="s")
+                tl = MagicMock(name="tl")
+                scope = {
+                    "tl": tl, collision: qs, d_name: d, "s_fp16": s,
+                    "q8_workspace": MagicMock(name="workspace"),
+                    "q8_workspace_d0_offsets": MagicMock(name="record_offsets"),
+                    "D_Q8_WORKSPACE_1": 36,
+                }
+                exec(self.region(source, "store_q8_workspace", "# CAKE_KERNEL_END"), {"__builtins__": {}}, scope)
+                self.assertIs(scope[collision], qs)
+                self.assertIs(scope[d_name], d)
+                self.assertEqual(tl.store.call_count, 5)
+                self.assertIs(tl.store.call_args.args[1], qs.to.return_value)
+                qs.to.assert_called_once_with(tl.uint8, bitcast=True)
 
 
 if __name__ == "__main__":
