@@ -497,15 +497,17 @@ def _failure_class(stage: str) -> str:
 def _admit_device(project_root: Path = ROOT) -> tuple[object, object]:
     target = Target.load(project_root / "compiler/targets/gfx1151.json")
     torch = importlib.import_module("torch")
-    if not getattr(torch.version, "hip", None):
+    if (not getattr(torch.version, "hip", None)
+            or getattr(torch.version, "cuda", None) is not None):
         raise RuntimeError("a ROCm PyTorch build is required")
-    if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
+    count = torch.cuda.device_count()
+    if not torch.cuda.is_available() or type(count) is not int or count != 1:
         raise RuntimeError("the AITER baseline requires exactly one visible HIP GPU")
     properties = torch.cuda.get_device_properties(0)
     if (
         getattr(properties, "gcnArchName", None) != target.target_id
         or type(getattr(properties, "warp_size", None)) is not int
-        or properties.warp_size != target.threads_per_warp
+        or properties.warp_size != target.execution_group_width
     ):
         raise RuntimeError("the HIP device is not exact gfx1151 wave32")
     return torch, properties

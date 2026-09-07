@@ -732,5 +732,32 @@ class AmdRmsNormRuntimeCorrectnessTests(unittest.TestCase):
         self.assertFalse(mutated["inputs_unchanged"])
 
 
+    def test_byte_and_storage_mutations_fail_even_when_numeric_metrics_pass(self) -> None:
+        for mutation in ("none", "signed_zero", "storage"):
+            with self.subTest(mutation=mutation):
+                material = self._material()
+                material.inputs[0].value = 0.0
+                material.input_snapshots[0].value = 0.0
+                candidate = _FakeCandidate(mutate_input=False)
+
+                def launch(case_id: str, inputs: object) -> object:
+                    if mutation == "signed_zero":
+                        inputs.inputs[0].value = -0.0
+                    elif mutation == "storage":
+                        inputs.inputs[0].pointer += 1
+                    return object()
+
+                candidate.launch = launch
+                with (
+                    patch.object(search_runner, "artifact_records", return_value={}),
+                    patch.object(search_runner, "extract_artifacts", return_value={}),
+                    patch.object(search_runner, "rmsnorm_metrics", return_value={"passed": True}),
+                ):
+                    result = search_runner._correctness(
+                        candidate, object(), {"case": material}, _FakeTorch,
+                    )
+                self.assertEqual(result["passed"], mutation == "none")
+                self.assertEqual(result["inputs_unchanged"], mutation == "none")
+
 if __name__ == "__main__":
     unittest.main()

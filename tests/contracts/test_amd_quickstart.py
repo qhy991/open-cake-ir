@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -314,6 +314,69 @@ class AmdQuickstartContractTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("outside the checkout", completed.stderr)
         self.assertFalse(blocked.exists())
+
+
+class AmdQuickstartInputContractTests(unittest.TestCase):
+    def test_oracle_precedes_kernel_and_input_bytes_and_storage_are_preserved(self) -> None:
+        from tests.contracts.test_amd_rmsnorm_search import _FakeTensor, _FakeTorch
+        for mutation in ("none", "signed_zero", "storage"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                order = []
+                first = _FakeTensor(0.0, 10, shape=(1, 1, 1), dtype=_FakeTorch.float32)
+                second = _FakeTensor(1.0, 20, shape=first.shape, dtype=first.dtype)
+                torch = SimpleNamespace(
+                    version=SimpleNamespace(hip="fixture"), float32=_FakeTorch.float32,
+                    uint8=_FakeTorch.uint8, cuda=_FakeTorch.cuda, equal=_FakeTorch.equal,
+                    isfinite=lambda value: SimpleNamespace(all=lambda: SimpleNamespace(item=lambda: True)),
+                    empty=lambda shape, **kwargs: _FakeTensor(0.0, 30, shape=shape),
+                )
+                properties = SimpleNamespace(name="fixture", gcnArchName="gfx1151",
+                    warp_size=32, multi_processor_count=1, total_memory=1024)
+                compiled = SimpleNamespace(
+                    metadata=SimpleNamespace(name="fixture", shared=0),
+                    asm={role: (b"\x7fELFfixture" if role == "hsaco" else b"fixture")
+                        for role in ("source", "ttir", "ttgir", "llir", "amdgcn", "hsaco")},
+                )
+
+                def launch(*args, **kwargs):
+                    order.append("kernel")
+                    if mutation == "signed_zero":
+                        first.value = -0.0
+                    elif mutation == "storage":
+                        second.pointer += 1
+                    return compiled
+
+                def oracle(*args):
+                    order.append("oracle")
+                    return object()
+
+                requirements = {"kernel_entry_point": "kernel", "compile_constants": {},
+                    "compile_options": {"num_warps": 1}, "grid": [1, 1, 1],
+                    "triton_target": {"backend": "hip", "arch": "gfx1151", "warp_size": 32}}
+                lowering = SimpleNamespace(toolchain_requirements=requirements, source="fixture")
+                workload = SimpleNamespace(case_ids=("case",),
+                    case=lambda _: {"shape": {"B": 1, "N": 1, "D": 1}})
+                spec = SimpleNamespace(generate=lambda *args, **kwargs: (first, second),
+                    oracle=oracle, metrics=lambda *args: {"passed": True})
+                executor = SimpleNamespace(reference={}, admit_hip_host=lambda: SimpleNamespace(
+                    torch_hip_version="fixture", device_monitor={}, profilers=()))
+                summary = {}
+                with (
+                    patch.object(quickstart, "_admit_released_compiler"),
+                    patch.object(quickstart, "_git_state", return_value={"tree_clean": True}),
+                    patch.object(quickstart, "_admit_runtime", return_value=(torch, object(), properties)),
+                    patch.object(quickstart, "_load_generated", return_value=(
+                        SimpleNamespace(kernel=SimpleNamespace(run=launch)), SimpleNamespace(cleanup=lambda: None))),
+                    patch.object(quickstart.importlib.metadata, "version", return_value="fixture"),
+                ):
+                    result = quickstart._run_gpu_impl(
+                        ROOT, object(), executor, lowering, workload, spec, summary, {},
+                        artifact_dir=Path(directory),
+                    )
+                self.assertEqual(order, ["oracle", "kernel"])
+                self.assertEqual(result, 0 if mutation == "none" else 2)
+                self.assertEqual(summary["evaluation"]["cases"][0]["inputs_unchanged"], mutation == "none")
+                self.assertFalse(summary["evaluation"]["performance_measured"])
 
 
 if __name__ == "__main__":

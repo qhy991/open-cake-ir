@@ -316,7 +316,8 @@ def _run_gpu_impl(
             }:
                 raise RuntimeError("the two correctness cases used different artifacts")
             inputs_unchanged = all(
-                int(value.data_ptr()) == pointer and bool(torch.equal(value.view(torch.uint8), snapshot.view(torch.uint8)))
+                int(value.data_ptr()) == pointer
+                and bool(torch.equal(value.view(torch.uint8), snapshot.view(torch.uint8)))
                 for value, pointer, snapshot in zip(
                     inputs, input_pointers, input_snapshots, strict=True
                 )

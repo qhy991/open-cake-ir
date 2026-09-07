@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import subprocess
 import sys
@@ -99,6 +100,88 @@ class LlamaQ81AmdQuickstartTests(unittest.TestCase):
                          {"activation": "*fp32", "q8_workspace": "*u8"})
         self.assertFalse(result["evaluation"]["gpu_submitted"])
         self.assertFalse(result["scope"]["workload_claim_complete"])
+
+    def test_lowering_rejects_target_artifact_and_producer_abi_drift(self) -> None:
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        lowering = compiler.lower(compiler.assess_file(ROOT / quickstart.SCHEDULE))
+        original = dict(lowering.toolchain_requirements)
+        quickstart._validate_lowering(ROOT, original)
+        for label, mutate in {
+            "arch": lambda r: r["triton_target"].__setitem__("arch", "gfx942"),
+            "wave": lambda r: r["triton_target"].__setitem__("warp_size", True),
+            "binary": lambda r: r.__setitem__("binary_role", "cubin"),
+            "assembly": lambda r: r.pop("assembly_role"),
+            "store_domain": lambda r: r["grid"].__setitem__(0, 2),
+            "input_type": lambda r: r["signature"].__setitem__("activation", "*fp16"),
+        }.items():
+            with self.subTest(drift=label):
+                requirements = copy.deepcopy(original)
+                mutate(requirements)
+                with self.assertRaises(ValueError):
+                    quickstart._validate_lowering(ROOT, requirements)
+
+    def test_matching_q8_bytes_still_reject_input_byte_or_storage_mutation(self) -> None:
+        from tests.contracts.test_amd_rmsnorm_search import _FakeTensor, _FakeTorch
+        from open_cake_ir.compiler.target import Target
+        workload = WorkloadContract.load(WORKLOAD)
+        target = Target.load(ROOT / "compiler/targets/gfx1151.json")
+        requirements = {**copy.deepcopy(quickstart._PRODUCER_ABI),
+            "target": target.target_id, "triton_target": dict(target.triton_target)}
+        lowering = SimpleNamespace(toolchain_requirements=requirements, source="fixture")
+        expected = [q4_mmvq_reference(workload, materialize_q4_mmvq_case(workload, case)).q8_1_workspace
+                    for case in workload.case_ids]
+        for mutation in ("none", "signed_zero", "storage"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                class Tensor(_FakeTensor):
+                    def detach(self):
+                        return self
+
+                torch = SimpleNamespace(
+                    version=SimpleNamespace(hip="fixture"), float32=_FakeTorch.float32,
+                    uint8=_FakeTorch.uint8, cuda=_FakeTorch.cuda, equal=_FakeTorch.equal,
+                    tensor=lambda values, **kwargs: Tensor(values[0], 10),
+                    full=lambda shape, *args, **kwargs: Tensor(0.0, 30, shape=shape),
+                )
+                properties = SimpleNamespace(name="fixture", gcnArchName="gfx1151",
+                    warp_size=32, multi_processor_count=1, total_memory=1024)
+                compiled = SimpleNamespace(
+                    metadata=SimpleNamespace(name="fixture", shared=0),
+                    asm={role: (b"\x7fELFfixture" if role == "hsaco" else b"fixture")
+                        for role in ("source", "ttir", "ttgir", "llir", "amdgcn", "hsaco")},
+                )
+
+                def launch(activation, output, **kwargs):
+                    if mutation == "signed_zero" and activation.value == 0.0:
+                        activation.value = -0.0
+                    elif mutation == "storage":
+                        activation.pointer += 1
+                    return compiled
+
+                executor = _executor(owns_runner=True)
+                executor.reference = {}
+                executor.admit_hip_host = lambda: SimpleNamespace(
+                    torch_hip_version="fixture", device_monitor={}, profilers=())
+                summary = {}
+                with (
+                    patch.object(quickstart, "_admit_released_compiler_lock"),
+                    patch.object(quickstart, "git_state", return_value={"tree_clean": True}),
+                    patch.object(quickstart, "admit_exact_hip", return_value=(torch, object(), properties)),
+                    patch.object(quickstart, "load_generated_module", return_value=(
+                        SimpleNamespace(**{requirements["kernel_entry_point"]: SimpleNamespace(run=launch)}),
+                        SimpleNamespace(cleanup=lambda: None))),
+                    patch.object(quickstart, "_tensor_bytes", side_effect=expected),
+                    patch.object(quickstart.importlib.metadata, "version", return_value="fixture"),
+                ):
+                    code = quickstart._run_live_impl(
+                        ROOT, ROOT / "compiler/revision.lock.json", object(), executor,
+                        lowering, workload, summary, {}, Path(directory),
+                    )
+                self.assertEqual(code, 0 if mutation == "none" else 2)
+                records = summary["evaluation"]["cases"]
+                self.assertEqual(len(records), 7)
+                self.assertTrue(all(record["q8_workspace_byte_exact"] for record in records))
+                self.assertEqual(all(record["activation_unchanged"] for record in records), mutation == "none")
+                self.assertFalse(summary["evaluation"]["workload_claim_complete"])
 
     def test_live_fails_at_compiler_before_executor_host_or_runtime(self) -> None:
         compiler = SimpleNamespace(state="draft", check_corpus=Mock())

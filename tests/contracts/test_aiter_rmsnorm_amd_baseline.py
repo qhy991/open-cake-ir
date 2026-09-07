@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import sys
 import tempfile
 import unittest
@@ -534,9 +535,73 @@ class AiterRmsnormAuthorityTests(unittest.TestCase):
         source = (ROOT / baseline.RUNNER_SOURCE).read_text(encoding="utf-8")
         self.assertNotIn("import torch", source)
         self.assertNotIn("import aiter", source)
-        self.assertNotIn("open_cake_ir.compiler", source)
+        compiler_imports = [
+            (node.module, tuple(alias.name for alias in node.names))
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.ImportFrom)
+            and (node.module or "").startswith("open_cake_ir.compiler")
+        ]
+        self.assertEqual(compiler_imports, [("open_cake_ir.compiler.target", ("Target",))])
         self.assertIn('importlib.import_module("torch")', source)
         self.assertIn('importlib.import_module("aiter.ops.rmsnorm")', source)
+
+
+class AiterRmsnormDeviceContractTests(unittest.TestCase):
+    def test_exact_target_is_read_from_compiler_and_runtime_drift_is_refused(self) -> None:
+        for arch, width, count, cuda_version, accepted in (
+            ("gfx1151", 32, 1, None, True),
+            ("gfx942", 32, 1, None, False),
+            ("gfx1151", 64, 1, None, False),
+            ("gfx1151", "32", 1, None, False),
+            ("gfx1151", True, 1, None, False),
+            ("gfx1151", 32, True, None, False),
+            ("gfx1151", 32, 1, "12.0", False),
+        ):
+            with self.subTest(arch=arch, width=width, count=count, cuda=cuda_version):
+                properties = SimpleNamespace(gcnArchName=arch, warp_size=width)
+                torch = SimpleNamespace(
+                    version=SimpleNamespace(hip="7.2.1", cuda=cuda_version),
+                    cuda=SimpleNamespace(is_available=lambda: True,
+                        device_count=lambda: count,
+                        get_device_properties=lambda _: properties),
+                )
+                with patch.object(baseline.importlib, "import_module", return_value=torch):
+                    if accepted:
+                        self.assertEqual(baseline._admit_device(ROOT), (torch, properties))
+                    else:
+                        with self.assertRaises(RuntimeError):
+                            baseline._admit_device(ROOT)
+
+    def test_byte_and_storage_mutations_reject_an_otherwise_correct_baseline(self) -> None:
+        from tests.contracts.test_amd_rmsnorm_search import _FakeTensor, _FakeTorch
+        workload = SimpleNamespace(
+            document={"semantics": {"epsilon": 1e-6}}, case_ids=("case",),
+        )
+        for mutation in ("none", "signed_zero", "storage"):
+            with self.subTest(mutation=mutation):
+                x = _FakeTensor(0.0, 10, shape=(8, 512, 128), dtype=_FakeTorch.float32)
+                gamma = _FakeTensor(1.0, 20, shape=(128,), dtype=_FakeTorch.float32)
+                output = _FakeTensor(0.0, 30, shape=x.shape, dtype=x.dtype)
+                torch = SimpleNamespace(
+                    float32=_FakeTorch.float32, uint8=_FakeTorch.uint8,
+                    cuda=_FakeTorch.cuda, equal=_FakeTorch.equal,
+                    empty_like=lambda _: output,
+                )
+
+                def entry_point(out, value, weight, *args):
+                    if mutation == "signed_zero":
+                        value.value = -0.0
+                    elif mutation == "storage":
+                        weight.pointer += 1
+
+                with (
+                    patch.object(baseline, "generate_rmsnorm_case", return_value=(x, gamma)),
+                    patch.object(baseline, "rmsnorm_oracle", return_value=object()),
+                    patch.object(baseline, "rmsnorm_metrics", return_value={"passed": True}),
+                ):
+                    records = baseline._evaluate_cases(torch, entry_point, workload)
+                self.assertEqual(records[0]["passed"], mutation == "none")
+                self.assertEqual(records[0]["input_unchanged"], mutation == "none")
 
 
 if __name__ == "__main__":
