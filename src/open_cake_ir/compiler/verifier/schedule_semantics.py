@@ -2,24 +2,68 @@
 
 from __future__ import annotations
 
-from typing import (
-    Iterable,
-)
-from ..ir import (
-    Schedule,
-)
+from dataclasses import dataclass
+from typing import Iterable
+
+from ..ir import Schedule
 from ..diagnostics import FindingCategory
 from ._collector import _Collector
 
 
-def _duplicates(values: Iterable[str]) -> list[str]:
+@dataclass(frozen=True)
+class NameConflict:
+    """First repeated occurrence of one name in a declared collection.
+
+    These are Target-independent facts, not an exception policy. In particular,
+    the facade must interleave operation-id conflicts with its existing per-op
+    input checks rather than raise every conflict before inspecting operations.
+    """
+
+    collection: str
+    index: int
+    field: str
+    name: str
+
+
+def _duplicate_positions(values: Iterable[str]) -> list[tuple[int, str]]:
     seen: set[str] = set()
     repeated: set[str] = set()
-    for value in values:
-        if value in seen:
+    positions: list[tuple[int, str]] = []
+    for index, value in enumerate(values):
+        if value in seen and value not in repeated:
             repeated.add(value)
+            positions.append((index, value))
         seen.add(value)
-    return sorted(repeated)
+    return positions
+
+
+def _duplicates(values: Iterable[str]) -> list[str]:
+    return sorted(name for _, name in _duplicate_positions(values))
+
+
+def name_conflicts(schedule: Schedule) -> tuple[NameConflict, ...]:
+    """Return named-collection conflicts without consulting a Target.
+
+    Collections follow the legacy declaration/operation phases; positions follow
+    source order within a collection. Each collection/name occurs once, at its
+    first repeated position. Tile-loop names are the final, verifier-only group.
+    Consumers choose their diagnostic or exception projection from these facts.
+    """
+
+    groups = (
+        ("roles", "name", (item.name for item in schedule.roles)),
+        ("allocations", "name", (item.name for item in schedule.allocations)),
+        ("buffers", "name", (item.name for item in schedule.buffers)),
+        ("pipelines", "name", (item.name for item in schedule.pipelines)),
+        ("barriers", "name", (item.name for item in schedule.barriers)),
+        ("operations", "id", (item.op_id for item in schedule.operations)),
+        ("tile_loops", "name", (item.name for item in schedule.tile_loops)),
+    )
+    return tuple(
+        NameConflict(collection, index, field, name)
+        for collection, field, names in groups
+        for index, name in _duplicate_positions(names)
+    )
 
 
 def verify(schedule: Schedule, out: _Collector) -> None:
@@ -33,23 +77,15 @@ def verify(schedule: Schedule, out: _Collector) -> None:
             category,
         )
 
-    groups = {
-        "roles": [item.name for item in schedule.roles],
-        "allocations": [item.name for item in schedule.allocations],
-        "buffers": [item.name for item in schedule.buffers],
-        "pipelines": [item.name for item in schedule.pipelines],
-        "barriers": [item.name for item in schedule.barriers],
-        "operations": [item.op_id for item in schedule.operations],
-        "tile_loops": [item.name for item in schedule.tile_loops],
-    }
-    for group, names in groups.items():
-        for duplicate in _duplicates(names):
-            out.add(
-                "NAME_DUPLICATE",
-                group,
-                f"duplicate {group[:-1]} name {duplicate!r}",
-                category,
-            )
+    # Preserve the prior per-name diagnostic order. Exception consumers instead
+    # use the helper's source positions to preserve their own first-error phase.
+    for conflict in sorted(name_conflicts(schedule), key=lambda item: (item.collection, item.name)):
+        out.add(
+            "NAME_DUPLICATE",
+            conflict.collection,
+            f"duplicate {conflict.collection[:-1]} name {conflict.name!r}",
+            category,
+        )
 
     owner_by_warp: dict[int, str] = {}
     for index, role in enumerate(schedule.roles):

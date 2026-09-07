@@ -13,8 +13,12 @@ from ..target import Target
 from . import data_consistency, hardware_conformance, program_safety, schedule_semantics
 from ._collector import _Collector
 from .hardware_conformance import resolve_grid
+from .schedule_semantics import NameConflict, name_conflicts
 
-__all__ = ["Finding", "FindingCategory", "FindingSeverity", "resolve_grid", "verify"]
+__all__ = [
+    "Finding", "FindingCategory", "FindingSeverity", "NameConflict",
+    "name_conflicts", "resolve_grid", "verify",
+]
 
 
 def verify(schedule: Schedule, target: Target) -> tuple[Finding, ...]:

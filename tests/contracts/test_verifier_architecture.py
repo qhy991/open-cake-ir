@@ -159,6 +159,86 @@ class VerifierArchitectureTests(unittest.TestCase):
                 self.assertIs(matches[0].category, diagnostics.FindingCategory.SCHEDULE_SEMANTICS)
                 self.assertTrue(matches[0].blocks_acceptance)
 
+    def test_name_conflicts_need_no_target_and_keep_first_repeated_positions(self) -> None:
+        document = json.loads((ROOT / "corpus/schedules/flash-kmeans-assignment-full.json").read_text())
+        document["target"] = "unbound_target"
+        for collection in (
+            "roles", "allocations", "buffers", "pipelines", "barriers", "operations", "tile_loops"
+        ):
+            with self.subTest(collection=collection):
+                mutated = copy.deepcopy(document)
+                items = mutated[collection]
+                index = len(items)
+                duplicate = copy.deepcopy(items[0])
+                items.extend((duplicate, copy.deepcopy(duplicate)))
+                field = "id" if collection == "operations" else "name"
+                self.assertEqual(
+                    verifier.name_conflicts(Schedule.from_dict(mutated)),
+                    (verifier.NameConflict(collection, index, field, duplicate[field]),),
+                )
+
+    def test_name_conflicts_preserve_declaration_then_operation_phases(self) -> None:
+        document = json.loads((ROOT / "corpus/schedules/flash-kmeans-assignment-full.json").read_text())
+        expected = []
+        for collection in (
+            "roles", "allocations", "buffers", "pipelines", "barriers", "operations", "tile_loops"
+        ):
+            items = document[collection]
+            field = "id" if collection == "operations" else "name"
+            expected.append(verifier.NameConflict(collection, len(items), field, items[0][field]))
+            items.append(copy.deepcopy(items[0]))
+        self.assertEqual(verifier.name_conflicts(Schedule.from_dict(document)), tuple(expected))
+
+    def test_source_conflict_order_and_typed_diagnostic_order_are_preserved(self) -> None:
+        document = _document()
+        document["pipelines"] = [
+            {"name": name, "stages": 1} for name in ("z", "a", "z", "a", "z")
+        ]
+        self.assertEqual(
+            verifier.name_conflicts(Schedule.from_dict(document)),
+            (
+                verifier.NameConflict("pipelines", 2, "name", "z"),
+                verifier.NameConflict("pipelines", 3, "name", "a"),
+            ),
+        )
+        self.assertEqual(
+            [f.to_dict() for f in _findings(document) if f.code == "NAME_DUPLICATE"],
+            [
+                diagnostics.Finding(
+                    "NAME_DUPLICATE", "pipelines", f"duplicate pipeline name {name!r}",
+                    diagnostics.FindingCategory.SCHEDULE_SEMANTICS,
+                ).to_dict()
+                for name in ("a", "z")
+            ],
+        )
+
+    def test_operation_conflicts_keep_positions_among_raw_tuple_fields(self) -> None:
+        for variant, expected in (
+            ("early_tuple", verifier.NameConflict("operations", 5, "id", "load_b")),
+            ("late_tuple", verifier.NameConflict("operations", 1, "id", "load_a")),
+            ("same_operation", verifier.NameConflict("operations", 1, "id", "load_a")),
+            ("declaration", verifier.NameConflict("roles", 1, "name", "compute")),
+        ):
+            with self.subTest(variant=variant):
+                document = _document()
+                operations = document["operations"]
+                if variant == "early_tuple":
+                    operations[0]["reads"] = tuple(operations[0]["reads"])
+                    operations.append(copy.deepcopy(operations[1]))
+                elif variant == "declaration":
+                    document["roles"].append(copy.deepcopy(document["roles"][0]))
+                    operations[0]["reads"] = tuple(operations[0]["reads"])
+                else:
+                    operations.insert(1, copy.deepcopy(operations[0]))
+                    index = 3 if variant == "late_tuple" else 1
+                    operations[index]["reads"] = tuple(operations[index]["reads"])
+                # The typed name helper neither reads raw container types nor
+                # chooses their public exception priority. Its index lets the
+                # facade consume a conflict at the original operation phase.
+                self.assertEqual(
+                    verifier.name_conflicts(Schedule.from_dict(document)), (expected,)
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
