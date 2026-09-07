@@ -20,8 +20,8 @@ import unittest
 from pathlib import Path
 
 from open_cake_ir.compiler import Compiler
-from open_cake_ir.compiler.emit_cutedsl import EmitError
-from open_cake_ir.compiler.emit_triton import emit
+from open_cake_ir.compiler.backends.common import EmitError
+from open_cake_ir.compiler.backends.triton import emit
 from open_cake_ir.compiler.ir import Schedule, ScheduleParseError
 from open_cake_ir.compiler.target import Target
 
@@ -440,7 +440,7 @@ class ElementwiseArityTest(unittest.TestCase):
     """
 
     def test_every_template_uses_exactly_the_operands_its_arity_declares(self) -> None:
-        from open_cake_ir.compiler.emit_triton import _TritonEmitter
+        from open_cake_ir.compiler.backends.triton import _TritonEmitter
         from open_cake_ir.compiler.ir import ElementwiseOp
 
         templates = _TritonEmitter._ELEMENTWISE_TEXT

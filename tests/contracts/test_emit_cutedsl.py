@@ -17,7 +17,8 @@ import re
 import unittest
 from pathlib import Path
 
-from open_cake_ir.compiler.emit_cutedsl import EmitError, emit
+from open_cake_ir.compiler.backends.common import EmitError
+from open_cake_ir.compiler.backends.cutedsl import emit
 from open_cake_ir.compiler.ir import BarrierMechanism, PipelineKind, Schedule
 from open_cake_ir.compiler.target import Target
 
@@ -208,12 +209,12 @@ class BackendCoverageTest(unittest.TestCase):
     """
 
     def test_every_table_entry_names_a_method_that_exists(self) -> None:
-        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+        from open_cake_ir.compiler.backends import cutedsl, triton
 
         tables = (
-            (emit_cutedsl, "_Emitter", emit_cutedsl.BODY_EMITTERS),
-            (emit_triton, "_TritonEmitter", emit_triton.OUTSIDE_LOOP_EMITTERS),
-            (emit_triton, "_TritonEmitter", emit_triton.INSIDE_LOOP_EMITTERS),
+            (cutedsl, "_Emitter", cutedsl.BODY_EMITTERS),
+            (triton, "_TritonEmitter", triton.OUTSIDE_LOOP_EMITTERS),
+            (triton, "_TritonEmitter", triton.INSIDE_LOOP_EMITTERS),
         )
         for module, class_name, table in tables:
             emitter_class = getattr(module, class_name)
@@ -231,11 +232,11 @@ class BackendCoverageTest(unittest.TestCase):
         It is gone; this holds the shape that let it hide.
         """
 
-        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+        from open_cake_ir.compiler.backends import cutedsl, triton
 
         for module, tables in (
-            (emit_triton, (emit_triton._TL_DTYPE, emit_triton._TORCH_DTYPE)),
-            (emit_cutedsl, (emit_cutedsl._CUTLASS_DTYPE, emit_cutedsl._TORCH_DTYPE)),
+            (triton, (triton._TL_DTYPE, triton._TORCH_DTYPE)),
+            (cutedsl, (cutedsl._CUTLASS_DTYPE, cutedsl._TORCH_DTYPE)),
         ):
             with self.subTest(backend=module.__name__):
                 first, second = (frozenset(table) for table in tables)
@@ -243,10 +244,10 @@ class BackendCoverageTest(unittest.TestCase):
                 self.assertEqual(module.SUPPORTED_DTYPES, first)
 
     def test_every_dtype_the_ir_admits_has_a_backend(self) -> None:
-        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+        from open_cake_ir.compiler.backends import cutedsl, triton
         from open_cake_ir.compiler.ir import DType
 
-        covered = emit_cutedsl.SUPPORTED_DTYPES | emit_triton.SUPPORTED_DTYPES
+        covered = cutedsl.SUPPORTED_DTYPES | triton.SUPPORTED_DTYPES
         # Same rule the operation kinds live under: a word the vocabulary offers and no
         # backend can keep is a promise, not a capability.
         self.assertEqual(set(DType) - covered, set())
@@ -256,19 +257,19 @@ class BackendCoverageTest(unittest.TestCase):
     # IR enum has to be total: a member with no entry is a KeyError from emission rather
     # than a diagnosis, which is how int64 hid.
     DECLARED_PARTIAL = {
-        ("emit_triton", "INSIDE_LOOP_EMITTERS"),
-        ("emit_triton", "OUTSIDE_LOOP_EMITTERS"),
-        ("emit_triton", "_TL_DTYPE"),
-        ("emit_triton", "_TORCH_DTYPE"),
-        ("emit_cutedsl", "BODY_EMITTERS"),
+        ("triton", "INSIDE_LOOP_EMITTERS"),
+        ("triton", "OUTSIDE_LOOP_EMITTERS"),
+        ("triton", "_TL_DTYPE"),
+        ("triton", "_TORCH_DTYPE"),
+        ("cutedsl", "BODY_EMITTERS"),
     }
 
     def test_every_other_enum_keyed_table_is_total(self) -> None:
         from enum import Enum
 
-        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+        from open_cake_ir.compiler.backends import cutedsl, triton
 
-        for module in (emit_triton, emit_cutedsl):
+        for module in (triton, cutedsl):
             short = module.__name__.rsplit(".", 1)[-1]
             for name, table in sorted(vars(module).items()):
                 if not isinstance(table, dict) or not table:
@@ -285,30 +286,30 @@ class BackendCoverageTest(unittest.TestCase):
                     )
 
     def test_the_declared_coverage_is_the_dispatch(self) -> None:
-        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+        from open_cake_ir.compiler.backends import cutedsl, triton
 
         self.assertEqual(
-            emit_cutedsl.SUPPORTED_OPERATION_KINDS, frozenset(emit_cutedsl.BODY_EMITTERS)
+            cutedsl.SUPPORTED_OPERATION_KINDS, frozenset(cutedsl.BODY_EMITTERS)
         )
         self.assertEqual(
-            emit_triton.SUPPORTED_OPERATION_KINDS,
-            frozenset(emit_triton.OUTSIDE_LOOP_EMITTERS)
-            | frozenset(emit_triton.INSIDE_LOOP_EMITTERS),
+            triton.SUPPORTED_OPERATION_KINDS,
+            frozenset(triton.OUTSIDE_LOOP_EMITTERS)
+            | frozenset(triton.INSIDE_LOOP_EMITTERS),
         )
         # The two backends genuinely differ, which is the reason a profile has to be
         # asked rather than the Target: both of these lower for sm_100a.
         self.assertNotEqual(
-            emit_cutedsl.SUPPORTED_OPERATION_KINDS, emit_triton.SUPPORTED_OPERATION_KINDS
+            cutedsl.SUPPORTED_OPERATION_KINDS, triton.SUPPORTED_OPERATION_KINDS
         )
 
     def test_backend_constructor_requirements_have_one_preflight_owner(self) -> None:
-        from open_cake_ir.compiler import emit_cutedsl, emit_triton
+        from open_cake_ir.compiler.backends import cutedsl, triton
 
         triton_document = json.loads(
             (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
         triton_document["roles"].append({"name": "unused", "warps": [4]})
-        triton_failures = emit_triton.preflight(
+        triton_failures = triton.preflight(
             Schedule.from_dict(triton_document), TARGET
         )
         self.assertIn("TRITON_ROLE_COUNT", {item.code for item in triton_failures})
@@ -319,7 +320,7 @@ class BackendCoverageTest(unittest.TestCase):
             for operation in cute_document["operations"]
             if operation["kind"] == "epilogue"
         )["parameters"]["formula"] = "bias_add_bf16_round"
-        cute_failures = emit_cutedsl.preflight(
+        cute_failures = cutedsl.preflight(
             Schedule.from_dict(cute_document), TARGET
         )
         self.assertEqual(
@@ -377,7 +378,7 @@ class BodyEmissionTest(unittest.TestCase):
         self.source = emit(self.schedule, TARGET).source
 
     def test_loop_nesting_and_scope_come_from_the_schedule(self) -> None:
-        from open_cake_ir.compiler.emit_cutedsl import _Emitter
+        from open_cake_ir.compiler.backends.cutedsl import _Emitter
 
         emitter = _Emitter(self.schedule, TARGET)
         scopes = {
@@ -399,7 +400,7 @@ class BodyEmissionTest(unittest.TestCase):
         )
 
     def test_pipeline_class_is_one_typed_derived_fact(self) -> None:
-        from open_cake_ir.compiler.emit_cutedsl import _Emitter
+        from open_cake_ir.compiler.backends.cutedsl import _Emitter
 
         emitter = _Emitter(self.schedule, TARGET)
         kinds = {
@@ -594,7 +595,7 @@ class RangeOptionsAreRefusedNotIgnoredTest(unittest.TestCase):
 
     def _assert_option_refused(self, document: dict, index: int, field: str) -> None:
         from open_cake_ir.compiler import CompilerError
-        from open_cake_ir.compiler.emit_cutedsl import preflight
+        from open_cake_ir.compiler.backends.cutedsl import preflight
 
         schedule = Schedule.from_dict(document)
         failures = preflight(schedule, TARGET)
@@ -654,7 +655,7 @@ class RangeOptionsAreRefusedNotIgnoredTest(unittest.TestCase):
         self.assertEqual(emit(Schedule.from_dict(document), TARGET).source, baseline)
 
     def test_existing_pipeline_preserves_its_structural_controls(self) -> None:
-        from open_cake_ir.compiler.emit_cutedsl import preflight
+        from open_cake_ir.compiler.backends.cutedsl import preflight
 
         for path in (SCHEDULE, ROOT / "examples/python/kmeans_pipeline.py"):
             with self.subTest(path=path):

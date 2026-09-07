@@ -20,7 +20,8 @@ import tempfile
 import unittest
 
 from open_cake_ir.compiler import Compiler, CompilerError
-from open_cake_ir.compiler import emit_metal, frontend
+from open_cake_ir.compiler import frontend
+from open_cake_ir.compiler.backends import metal
 from open_cake_ir.compiler.analysis import residency_upper_bound
 from open_cake_ir.compiler.core import _canonical_json_bytes
 from open_cake_ir.compiler.ir import Schedule
@@ -389,7 +390,7 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
         self.assertIn("float v3[128]", lowering.source)
         self.assertNotIn("float v3[4096]", lowering.source)
         # Three arrays overlap at the add, although four are declared over the DAG.
-        self.assertEqual(emit_metal.private_values_per_thread(Schedule.from_dict(document)), 384)
+        self.assertEqual(metal.private_values_per_thread(Schedule.from_dict(document)), 384)
         excessive = self.compiler.assess(make_document(rows=1, width=16384))
         self.assertFalse(excessive.lowering_eligible)
         self.assertIn("METAL_PRIVATE_STORAGE_LIMIT", [f.code for f in excessive.findings])
@@ -427,8 +428,8 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
                     self.assertEqual(matching[0].path, path)
                 with self.assertRaises(CompilerError):
                     self.compiler.lower(result)
-                with self.assertRaises(emit_metal.EmitError):
-                    emit_metal.emit(Schedule.from_dict(document), self.target)
+                with self.assertRaises(metal.EmitError):
+                    metal.emit(Schedule.from_dict(document), self.target)
 
     def test_missing_access_maps_are_refused_at_the_public_boundary(self):
         for absent in (False, True):
@@ -445,8 +446,8 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
                 self.assertEqual(missing, ["operations[0].reads[0]", "operations[1].reads[0]", "operations[4].writes[0]"])
                 with self.assertRaisesRegex(CompilerError, "METAL_ACCESS_MAP_REQUIRED"):
                     self.compiler.lower(result)
-                with self.assertRaisesRegex(emit_metal.EmitError, "exactly one access map"):
-                    emit_metal.emit(Schedule.from_dict(document), self.target)
+                with self.assertRaisesRegex(metal.EmitError, "exactly one access map"):
+                    metal.emit(Schedule.from_dict(document), self.target)
 
     def test_store_address_domain_cannot_discard_or_invent_private_axes(self):
         for component_index, component in (
@@ -462,8 +463,8 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
                 self.assertEqual([f.path for f in findings], ["access_maps[2].indices"])
                 with self.assertRaisesRegex(CompilerError, "METAL_ACCESS_VALUE_SHAPE"):
                     self.compiler.lower(result)
-                with self.assertRaisesRegex(emit_metal.EmitError, "access has value shape"):
-                    emit_metal.emit(Schedule.from_dict(document), self.target)
+                with self.assertRaisesRegex(metal.EmitError, "access has value shape"):
+                    metal.emit(Schedule.from_dict(document), self.target)
 
     def test_store_owns_every_varying_program_axis(self):
         document = make_document()
@@ -477,8 +478,8 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
         self.assertIn("other", ownership[0].message)
         with self.assertRaisesRegex(CompilerError, "METAL_STORE_OWNERSHIP"):
             self.compiler.lower(result)
-        with self.assertRaisesRegex(emit_metal.EmitError, "does not own varying program axes"):
-            emit_metal.emit(Schedule.from_dict(document), self.target)
+        with self.assertRaisesRegex(metal.EmitError, "does not own varying program axes"):
+            metal.emit(Schedule.from_dict(document), self.target)
 
         # An omitted extent-one coordinate creates no second threadgroup writer.
         next(buffer for buffer in document["buffers"] if buffer["name"] == "y")["shape"][0] = 1
@@ -497,8 +498,8 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
         self.assertIn("BUFFER_MULTIPLE_WRITERS", [f.code for f in result.findings])
         with self.assertRaises(CompilerError):
             self.compiler.lower(result)
-        with self.assertRaises(emit_metal.EmitError):
-            emit_metal.emit(Schedule.from_dict(document), self.target)
+        with self.assertRaises(metal.EmitError):
+            metal.emit(Schedule.from_dict(document), self.target)
 
     def test_identifiers_preserve_source_map_and_entry_point_identity(self):
         separators = ("\n", "\r", "\r\n", "\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029")
@@ -513,8 +514,8 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
                 self.assertIn("METAL_OPERATION_ID_UNSUPPORTED", [f.code for f in result.findings])
                 with self.assertRaises(CompilerError):
                     self.compiler.lower(result)
-                with self.assertRaises(emit_metal.EmitError):
-                    emit_metal.emit(Schedule.from_dict(document), self.target)
+                with self.assertRaises(metal.EmitError):
+                    metal.emit(Schedule.from_dict(document), self.target)
         document = make_document()
         document["lowering"]["entry_point"] = "kernel__SCHEDULE_SHA256__tail"
         result = self.compiler.assess(document)
@@ -522,8 +523,8 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
         self.assertIn("METAL_ENTRY_POINT_UNSUPPORTED", [f.code for f in result.findings])
         with self.assertRaises(CompilerError):
             self.compiler.lower(result)
-        with self.assertRaises(emit_metal.EmitError):
-            emit_metal.emit(Schedule.from_dict(document), self.target)
+        with self.assertRaises(metal.EmitError):
+            metal.emit(Schedule.from_dict(document), self.target)
 
         # Ordinary non-ASCII comment ids remain exact; source projection is the oracle.
         document = make_document()
@@ -546,8 +547,8 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
                 self.assertEqual([f.path for f in findings], ["operations[4].id"])
                 with self.assertRaisesRegex(CompilerError, "METAL_OPERATION_ID_UNSUPPORTED"):
                     self.compiler.lower(result)
-                with self.assertRaisesRegex(emit_metal.EmitError, "lexical line continuation"):
-                    emit_metal.emit(Schedule.from_dict(document), self.target)
+                with self.assertRaisesRegex(metal.EmitError, "lexical line continuation"):
+                    metal.emit(Schedule.from_dict(document), self.target)
 
     def test_unsupported_tile_dtype_and_instruction_do_not_fall_back(self):
         tiled = frontend.parse(make_source().replace('tile=1', 'tile=2')).document

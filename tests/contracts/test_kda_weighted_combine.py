@@ -13,7 +13,7 @@ import jsonschema
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler.emit_triton import emit
+from open_cake_ir.compiler.backends.triton import emit
 from open_cake_ir.compiler.ir import OperationKind, Schedule
 from open_cake_ir.compiler.schema import schedule_schema
 from open_cake_ir.compiler.target import Target

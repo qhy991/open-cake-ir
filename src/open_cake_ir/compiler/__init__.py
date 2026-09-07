@@ -6,10 +6,11 @@ The Compiler owns four things, in the order a Schedule meets them:
 * `target` -- the exact hardware contract a Schedule is verified against.
 * `verifier` -- target-derived hard gates, grouped by the four contract classes the
   paper's harness reports, each finding naming a path and a violated contract.
-* `emit_cutedsl` -- lowering that derives what the artifact used to hardcode.
+* `backends` -- Triton, CuTe-DSL and Metal emission with shared result/error types.
 
 `Compiler.assess` composes the first three; `Compiler.lower` dispatches accepted Schedules
-to deterministic target emitters.
+to deterministic target emitters. Direct emission uses an explicit backend, for example
+`from open_cake_ir.compiler.backends.triton import emit`; there is no generic emitter.
 """
 
 from .core import (
@@ -20,7 +21,7 @@ from .core import (
     CorpusGateReport,
     Lowering,
 )
-from .emit_cutedsl import EmitError, Emission, emit
+from .backends.common import EmitError, Emission
 from .compiled_resources import CompiledResources
 from .empirical_cost import EmpiricalCostModel
 from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
@@ -50,7 +51,6 @@ __all__ = [
     "ScheduleParseError",
     "Target",
     "TargetParseError",
-    "emit",
     "profile_envelope",
     "verify",
 ]

@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .analysis import top_k_selection_structure
-from .emit import BackendPrecondition, Emission, EmitError, require as _require
-from .ir import (
+from ..analysis import top_k_selection_structure
+from .common import BackendPrecondition, Emission, EmitError, require as _require
+from ..ir import (
     ElementwiseOp,
     LoadReuse,
     AccessIndexKind,
@@ -37,7 +37,7 @@ from .ir import (
     Schedule,
     TileLoop,
 )
-from .target import Target
+from ..target import Target
 
 _TL_DTYPE = {
     DType.BF16: "tl.bfloat16",

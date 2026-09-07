@@ -8,8 +8,8 @@ import json
 import unittest
 from pathlib import Path
 
-from open_cake_ir.compiler.emit_cutedsl import preflight as cute_preflight
-from open_cake_ir.compiler.emit_triton import emit, preflight as triton_preflight
+from open_cake_ir.compiler.backends.cutedsl import preflight as cute_preflight
+from open_cake_ir.compiler.backends.triton import emit, preflight as triton_preflight
 from open_cake_ir.compiler.ir import Schedule, ScheduleParseError
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.verifier import FindingCategory, verify
