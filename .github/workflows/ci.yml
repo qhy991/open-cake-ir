@@ -41,6 +41,11 @@ jobs:
           tests.contracts.test_qsa_component_timing
           tests.contracts.test_routing
           tests.contracts.test_release_approval
+          tests.contracts.test_compiler.FindingFeedbackContractTests
+          tests.contracts.test_compiler.CompilerContractTests.test_release_cycle_prepares_but_cannot_write_its_own_approval
+          tests.contracts.test_executor.ExecutorRevisionContractTests.test_release_cycle_preserves_released_ids_without_local_run_witnesses
+          tests.contracts.test_executor_host_capture
+          tests.contracts.test_release_runtime
           tests.contracts.test_compiled_resources
           tests.contracts.test_empirical_cost
           tests.contracts.test_profile_model
