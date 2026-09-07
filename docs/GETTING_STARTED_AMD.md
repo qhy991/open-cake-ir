@@ -161,7 +161,9 @@ B300 branch's host merely because that descriptor reserves a higher historical i
 
 The first main synchronization used
 `6d9a198e69098cd51d427b9bffbe967a6f62de90`; the final paired-runtime alignment uses
-`49fa65bba5a8603ccca4a6a27c5743c12f6f02b7`. Main and the accepted refresh independently
+`49fa65bba5a8603ccca4a6a27c5743c12f6f02b7`. The latest aligned main commit is
+`da2dc2ebc8ad844778a4ed37a84e8202d3c65dc2`, which adds only historical Compiler
+reservation metadata and changes no active Compiler or runtime source. Main and the accepted refresh independently
 released different B200 v53 descriptors. Main's descriptor keeps its original path;
 the unchanged AMD variant is reserved as
 [`open-cake-ir-b200-v53-amd-refresh.json`](../runtime/executors/open-cake-ir-b200-v53-amd-refresh.json).

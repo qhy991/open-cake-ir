@@ -145,6 +145,8 @@ PYTHONPATH=src "$AMD_PYTHON" tools/release_gfx1151_executor_cycle.py \
 
 首次同步使用 main `6d9a198e69098cd51d427b9bffbe967a6f62de90`；
 最终 paired-runtime 对齐使用 `49fa65bba5a8603ccca4a6a27c5743c12f6f02b7`。
+最新对齐的 main 提交是 `da2dc2ebc8ad844778a4ed37a84e8202d3c65dc2`，
+它只增加历史 Compiler 身份材料，不改变当前 Compiler 或 runtime 源码。
 main 和已验收 refresh 曾分别发布不同的 B200 v53 描述文件。main 保留原路径，
 AMD 原字节以
 [`open-cake-ir-b200-v53-amd-refresh.json`](../../runtime/executors/open-cake-ir-b200-v53-amd-refresh.json)
