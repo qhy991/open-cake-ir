@@ -159,8 +159,9 @@ declaration explicitly. Updating that source binding did not repeat live host ad
 actual execution must still admit the recorded host. It does not inherit the concurrent
 B300 branch's host merely because that descriptor reserves a higher historical id.
 
-The subsequent main synchronization uses pinned main
-`6d9a198e69098cd51d427b9bffbe967a6f62de90`. Main and the accepted refresh independently
+The first main synchronization used
+`6d9a198e69098cd51d427b9bffbe967a6f62de90`; the final paired-runtime alignment uses
+`49fa65bba5a8603ccca4a6a27c5743c12f6f02b7`. Main and the accepted refresh independently
 released different B200 v53 descriptors. Main's descriptor keeps its original path;
 the unchanged AMD variant is reserved as
 [`open-cake-ir-b200-v53-amd-refresh.json`](../runtime/executors/open-cake-ir-b200-v53-amd-refresh.json).
@@ -169,6 +170,11 @@ Replay that variant only at `b2d0a424`, using its original
 does not describe the rebased runtime. [Compiler v57](../compiler/releases/v57/README.md)
 is likewise preserved with its original approval; changed combined sources require
 coordinated successor release and independent review.
+
+The synchronized B200 runtime inherits the host declaration of main's v56 Executor.
+Its new source binding covers both paired/Ralph execution and the AMD task modules;
+it records no fresh live-host admission. gfx1151 still requires its own new capture
+and admitted successor before a live run.
 
 The earlier refresh reserved Compiler v56 and B200 Executor v52 from the concurrent
 B300 branch at `bfc446e384b87634daf5a289a35bc1e36bbad9ff` through

@@ -143,7 +143,8 @@ PYTHONPATH=src "$AMD_PYTHON" tools/release_gfx1151_executor_cycle.py \
 这一步没有重新验证实机；真正执行前仍须通过主机 admission。
 另一个 B300 描述文件虽然保留了更高的历史编号，也不能因此改变本轮采用的主机声明。
 
-后续同步固定使用 main `6d9a198e69098cd51d427b9bffbe967a6f62de90`。
+首次同步使用 main `6d9a198e69098cd51d427b9bffbe967a6f62de90`；
+最终 paired-runtime 对齐使用 `49fa65bba5a8603ccca4a6a27c5743c12f6f02b7`。
 main 和已验收 refresh 曾分别发布不同的 B200 v53 描述文件。main 保留原路径，
 AMD 原字节以
 [`open-cake-ir-b200-v53-amd-refresh.json`](../../runtime/executors/open-cake-ir-b200-v53-amd-refresh.json)
@@ -151,6 +152,10 @@ AMD 原字节以
 `runtime/executors/open-cake-ir-b200-v53.json` 路径；别名不代表 rebased runtime。
 [Compiler v57](../../compiler/releases/v57/README.md)的原批准同样保留，
 变化后的组合源码还需要协调后继发布并重新独立审查。
+
+同步后的 B200 runtime 继承 main 的 v56 Executor 主机声明，新源码绑定同时包含
+paired/Ralph 执行和 AMD task 模块；它没有重新验证实机。
+gfx1151 真正运行前，仍需要自己的新 capture 和通过 admission 的后继 Executor。
 
 另一个 B300 分支的 `bfc446e384b87634daf5a289a35bc1e36bbad9ff` 已经使用 Compiler v56 和
 B200 Executor v52。前一轮 refresh 仅保留[身份材料](../../compiler/releases/v56/README.md)，没有迁入其实现；
