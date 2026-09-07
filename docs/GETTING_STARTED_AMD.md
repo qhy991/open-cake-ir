@@ -154,8 +154,8 @@ source for its old descriptors. The unchanged
 original dates, source commits and evidence meaning. Their observations do not qualify
 the successor source tree.
 
-The common runtime's B200 source-bound successor preserves the baseline v51 host
-declaration explicitly. Updating that source binding does not repeat live host admission;
+The accepted refresh's B200 v53 preserved the baseline v51 host
+declaration explicitly. Updating that source binding did not repeat live host admission;
 actual execution must still admit the recorded host. It does not inherit the concurrent
 B300 branch's host merely because that descriptor reserves a higher historical id.
 
@@ -170,10 +170,11 @@ does not describe the rebased runtime. [Compiler v57](../compiler/releases/v57/R
 is likewise preserved with its original approval; changed combined sources require
 coordinated successor release and independent review.
 
-The concurrent B300 branch at `bfc446e384b87634daf5a289a35bc1e36bbad9ff` already used
-Compiler v56 and B200 Executor v52. Only its
-[release reservation metadata](../compiler/releases/v56/README.md) is retained here;
-the AMD migration does not import its implementation. The old AMD branch's colliding
+The earlier refresh reserved Compiler v56 and B200 Executor v52 from the concurrent
+B300 branch at `bfc446e384b87634daf5a289a35bc1e36bbad9ff` through
+[release metadata](../compiler/releases/v56/README.md). That first refresh imported no
+B300 implementation; the later synchronization preserves the B300 implementation now
+present on main. The old AMD branch's colliding
 Compiler v28 archive also stays at its original Git revision. Existing main archives
 are preserved. [ADR 0049](adr/0049-released-executor-descriptors-reserve-their-identities.md),
 [ADR 0050](adr/0050-released-compiler-locks-reserve-their-identities.md), and
