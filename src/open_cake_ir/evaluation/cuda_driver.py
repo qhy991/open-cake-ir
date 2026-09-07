@@ -25,14 +25,18 @@ _DYNAMIC_SHARED_OPT_IN_THRESHOLD = 49_152
 
 
 class CudaLifecycleError(RuntimeError):
-    """Preserve both the primary CUDA failure and teardown failure."""
+    """Preserve the primary failure and every failure encountered during teardown."""
 
-    def __init__(self, primary: BaseException, teardown: BaseException) -> None:
-        super().__init__(
-            f"CUDA lifecycle failed in {type(primary).__name__} and teardown {type(teardown).__name__}"
-        )
+    def __init__(
+        self, primary: BaseException, teardown: BaseException, *remaining: BaseException
+    ) -> None:
         self.primary = primary
         self.teardown = teardown
+        self.teardown_errors = (teardown, *remaining)
+        super().__init__(
+            f"CUDA lifecycle failed in {type(primary).__name__}: {primary}; teardown: "
+            + "; ".join(f"{type(error).__name__}: {error}" for error in self.teardown_errors)
+        )
 
 
 class TensorLike(Protocol):
@@ -77,6 +81,93 @@ def _handle_identity(value: object) -> object:
         return int(value)
     except (TypeError, ValueError):
         return value
+
+
+class CudaModules:
+    """Own loaded module handles in one current context, without owning execution.
+
+    Failed unloads remain owned for a later close attempt. Once teardown starts, no
+    caller may launch or load again, even if a failed unload leaves a handle resident.
+    ``closed`` means every owned handle was successfully unloaded.
+    """
+
+    def __init__(self, api: object) -> None:
+        self.api = api
+        (context,) = _driver_call(api, "cuCtxGetCurrent", outputs=1)
+        if _is_null(context):
+            raise RuntimeError("CUDA Driver requires a current CUDA context")
+        self._context = _handle_identity(context)
+        self._modules: list[object] = []
+        self._teardown_started = False
+
+    @property
+    def closed(self) -> bool:
+        return self._teardown_started and not self._modules
+
+    def check_context(self) -> None:
+        (context,) = _driver_call(self.api, "cuCtxGetCurrent", outputs=1)
+        if _is_null(context) or _handle_identity(context) != self._context:
+            raise ValueError("CUDA context changed")
+
+    def check_open(self) -> None:
+        if self._teardown_started:
+            raise ValueError("CUDA module teardown has started")
+        self.check_context()
+
+    def load(self, cubin: bytes) -> object:
+        self.check_open()
+        (module,) = _driver_call(self.api, "cuModuleLoadData", cubin, outputs=1)
+        if _is_null(module):
+            raise RuntimeError("CUDA Driver loaded a null module")
+        self._modules.append(module)
+        return module
+
+    def function(self, module: object, name: str) -> object:
+        self.check_open()
+        (function,) = _driver_call(
+            self.api, "cuModuleGetFunction", module, name.encode("ascii"), outputs=1
+        )
+        if _is_null(function):
+            raise RuntimeError("CUDA Driver resolved a null function")
+        return function
+
+    def close(
+        self, *, synchronize: Callable[[], None] | None = None,
+        primary: BaseException | None = None,
+    ) -> None:
+        """Attempt every unload in reverse order and retain all observed failures."""
+        if self.closed:
+            raise ValueError("CUDA modules are already closed")
+        errors = [] if primary is None else [primary]
+        try:
+            self.check_context()
+        except BaseException as error:
+            errors.append(error)
+        else:
+            self._teardown_started = True
+            if synchronize is not None:
+                try:
+                    synchronize()
+                except BaseException as error:
+                    errors.append(error)
+            for index in range(len(self._modules) - 1, -1, -1):
+                try:
+                    self.check_context()
+                except BaseException as error:
+                    # No module belongs to the replacement context. Leave the remaining
+                    # handles owned so cleanup can resume when the caller restores it.
+                    errors.append(error)
+                    break
+                try:
+                    _driver_call(self.api, "cuModuleUnload", self._modules[index], outputs=0)
+                except BaseException as error:
+                    errors.append(error)
+                else:
+                    del self._modules[index]
+        if len(errors) > 1:
+            raise CudaLifecycleError(errors[0], errors[1], *errors[2:]) from errors[0]
+        if errors:
+            raise errors[0]
 
 
 def _tensor_contract(
@@ -234,23 +325,23 @@ class LoadedCudaCandidate:
         cubin: bytes,
         manifest: LaunchManifest,
         admission: CudaDeviceAdmission,
-        api: object,
-        module: object,
+        modules: CudaModules,
         function: object,
         resources: dict[str, int],
-        context: object,
     ) -> None:
         self.candidate = candidate
         self.cubin = cubin
         self.manifest = manifest
         self.admission = admission
-        self._api = api
-        self._module = module
+        self._api = modules.api
+        self._modules = modules
         self._function = function
-        self._context = _handle_identity(context)
         self.resources = resources
         self.launch_calls = 0
-        self.closed = False
+
+    @property
+    def closed(self) -> bool:
+        return self._modules.closed
 
     @classmethod
     def load(
@@ -275,41 +366,22 @@ class LoadedCudaCandidate:
         ):
             raise ValueError("persistent candidate launch authority differs")
         api = _load_cuda_driver() if driver is None else driver
-        (context,) = _driver_call(api, "cuCtxGetCurrent", outputs=1)
-        if _is_null(context):
-            raise RuntimeError("CUDA Driver requires a current CUDA context")
-        module: object | None = None
+        modules = CudaModules(api)
         try:
-            (module,) = _driver_call(api, "cuModuleLoadData", cubin, outputs=1)
-            if _is_null(module):
-                raise RuntimeError("CUDA Driver loaded a null module")
-            (function,) = _driver_call(
-                api,
-                "cuModuleGetFunction",
-                module,
-                manifest.kernel_name.encode("ascii"),
-                outputs=1,
-            )
-            if _is_null(function):
-                raise RuntimeError("CUDA Driver resolved a null function")
+            module = modules.load(cubin)
+            function = modules.function(module, manifest.kernel_name)
             resources = _function_resources(api, function, manifest)
             return cls(
                 candidate=candidate,
                 cubin=cubin,
                 manifest=manifest,
                 admission=admission,
-                api=api,
-                module=module,
+                modules=modules,
                 function=function,
                 resources=resources,
-                context=context,
             )
         except BaseException as primary:
-            if module is not None:
-                try:
-                    _driver_call(api, "cuModuleUnload", module, outputs=0)
-                except BaseException as teardown:
-                    raise CudaLifecycleError(primary, teardown) from primary
+            modules.close(primary=primary)
             raise
 
     def launch(
@@ -326,9 +398,7 @@ class LoadedCudaCandidate:
         if tensor_contract.target != self.candidate.target:
             raise ValueError("persistent candidate tensor Target differs")
         observed, pointers = _tensor_contract(arguments, tensor_contract)
-        (current_context,) = _driver_call(self._api, "cuCtxGetCurrent", outputs=1)
-        if _is_null(current_context) or _handle_identity(current_context) != self._context:
-            raise ValueError("persistent candidate CUDA context changed")
+        self._modules.check_open()
         devices = {
             str(cast(Mapping[str, object], value)["device"])
             for value in observed.values()
@@ -368,23 +438,7 @@ class LoadedCudaCandidate:
 
         if self.closed:
             raise ValueError("persistent candidate is already closed")
-        (current_context,) = _driver_call(self._api, "cuCtxGetCurrent", outputs=1)
-        if _is_null(current_context) or _handle_identity(current_context) != self._context:
-            raise ValueError("persistent candidate CUDA context changed before teardown")
-        primary: BaseException | None = None
-        try:
-            synchronize()
-        except BaseException as error:
-            primary = error
-        try:
-            _driver_call(self._api, "cuModuleUnload", self._module, outputs=0)
-            self.closed = True
-        except BaseException as teardown:
-            if primary is not None:
-                raise CudaLifecycleError(primary, teardown) from primary
-            raise
-        if primary is not None:
-            raise primary
+        self._modules.close(synchronize=synchronize)
 
 
 def launch_cubin_once(
@@ -409,31 +463,18 @@ def launch_cubin_once(
         raise ValueError("CUDA Driver manifest and tensor Target differ")
     observed_tensor_contract, pointers = _tensor_contract(arguments, tensor_contract)
     api = _load_cuda_driver() if driver is None else driver
-    (context,) = _driver_call(api, "cuCtxGetCurrent", outputs=1)
-    if _is_null(context):
-        raise RuntimeError("CUDA Driver requires a current CUDA context")
+    modules = CudaModules(api)
 
-    module: object | None = None
     synchronized = False
     unloaded = False
     launch_calls = 0
     resources: dict[str, int] = {}
     primary_error: BaseException | None = None
     try:
-        (module,) = _driver_call(api, "cuModuleLoadData", cubin, outputs=1)
-        if _is_null(module):
-            raise RuntimeError("CUDA Driver loaded a null module")
+        module = modules.load(cubin)
         if sha256(cubin).hexdigest() != before:
             raise ValueError("CUDA Driver CUBIN SHA256 changed after load")
-        (function,) = _driver_call(
-            api,
-            "cuModuleGetFunction",
-            module,
-            manifest.kernel_name.encode("ascii"),
-            outputs=1,
-        )
-        if _is_null(function):
-            raise RuntimeError("CUDA Driver resolved a null function")
+        function = modules.function(module, manifest.kernel_name)
         resources = {name: _attribute(api, name, function) for name in _ATTRIBUTES}
         if resources["CU_FUNC_ATTRIBUTE_BINARY_VERSION"] != 100:
             raise ValueError("CUDA Driver function binary version differs")
@@ -498,16 +539,9 @@ def launch_cubin_once(
             raise ValueError("CUDA Driver CUBIN SHA256 changed after synchronization")
     except BaseException as error:
         primary_error = error
-        raise
     finally:
-        if module is not None:
-            try:
-                _driver_call(api, "cuModuleUnload", module, outputs=0)
-                unloaded = True
-            except BaseException as teardown:
-                if primary_error is not None:
-                    raise CudaLifecycleError(primary_error, teardown) from primary_error
-                raise
+        modules.close(primary=primary_error)
+        unloaded = modules.closed
     if not unloaded:
         raise RuntimeError("CUDA Driver module was not unloaded")
     return CudaDriverLaunchReceipt(

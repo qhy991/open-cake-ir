@@ -5,7 +5,6 @@ from open_cake_ir.tasks.flash_kmeans.environment import FlashTritonToolchainBuil
 from open_cake_ir.tasks.workloads import load_workload
 
 import json
-import shlex
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import Mapping, cast
@@ -28,7 +27,7 @@ from open_cake_ir.tasks.flash_kmeans.seed import KernelSeed, lower_specialists
 from open_cake_ir.lab.providers import CANDIDATE_SET_ENVELOPE_V1, CodexInvocationBuilder, CodexProviderAdapter, CodexRunProvider, ProviderQualificationReceipt, required_live_provider_qualification_scope
 from open_cake_ir.lab.pairing import comparison_arm, bind_baseline
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
-from open_cake_ir.lab.runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter, broker_execution_sha256
+from open_cake_ir.lab.runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter, broker_execution_sha256, load_runtime_config
 from open_cake_ir.lab.task_package import materialize_task_package
 from open_cake_ir.lab.bindings import qualification_path, load_baseline_bundle, external_file
 from open_cake_ir.evaluation.paired import candidate_identity, paired_protocol
@@ -65,13 +64,9 @@ def _raw_reference_path(
 
 def _admit_executor(root: Path, lock: CampaignLock) -> tuple[ExecutorRevision, object]:
     execution = _object(lock.document["execution"], "campaign_lock.execution")
-    reference = _object(execution["executor_revision"], "execution.executor_revision")
-    revision = ExecutorRevision.load(root, root / str(reference["path"]))
-    if (
-        revision.canonical_sha256 != reference["canonical_sha256"]
-        or revision.executor_id != reference["executor_id"]
-    ):
-        raise ValueError("live Executor Revision differs")
+    revision = ExecutorRevision.load_reference(
+        root, execution["executor_revision"], "execution.executor_revision"
+    )
     return revision, revision.admit_host()
 
 
@@ -235,27 +230,12 @@ def execute_matched_from_config(
         raise ValueError("live matched composition requires a matched Campaign Lock")
     root = Path(project_root).resolve(strict=True)
     executor, _ = _admit_executor(root, lock)
-    config = _object(
-        json.loads(Path(runtime_config_path).read_text(encoding="utf-8")),
-        "runtime_config",
-    )
-    if set(config) != {"schema_version", "provider", "toolchain", "broker"} or config.get(
-        "schema_version"
-    ) != 1:
-        raise ValueError("runtime configuration fields differ")
-    provider_config = _object(config["provider"], "runtime_config.provider")
-    toolchain_config = _object(config["toolchain"], "runtime_config.toolchain")
-    broker_config = _object(config["broker"], "runtime_config.broker")
     resolved = _object(lock.document["resolved_inputs"], "campaign_lock.resolved_inputs")
     arms = _object(resolved["arm_environments"], "arm_environments")
     comparison = comparison_arm(arms)
     paired_triton = comparison == "native_triton"
-    toolchain_fields = ({"python", "bubblewrap", "runtime_roots", "triton_version", "timeout_seconds"}
-                        if paired_triton else {"nvcc", "cuobjdump"})
-    if set(provider_config) != {"executable", "workspace_root"} or set(toolchain_config) != toolchain_fields or set(broker_config) != {
-        "command", "cwd", "timeout_seconds", "service_user", "service_group",
-    }:
-        raise ValueError("runtime configuration section fields differ")
+    config = load_runtime_config(runtime_config_path, toolchain_kind="triton" if paired_triton else "nvcc")
+    provider_config, toolchain_config, broker_config = (config[name] for name in ("provider", "toolchain", "broker"))
     open_arm = _object(arms["open_cake"], "arm_environments.open_cake")
     direct_arm = _object(arms[comparison], f"arm_environments.{comparison}")
     provider_authority = _object(open_arm["provider"], "arm_environments.provider")
@@ -274,27 +254,22 @@ def execute_matched_from_config(
     output_schema = _object(
         provider_authority["output_schema"], "arm_environments.provider.output_schema"
     )
-    executable = Path(str(provider_config["executable"])).resolve(strict=True)
+    executable = Path(provider_config["executable"]).resolve(strict=True)
     if sha256(executable.read_bytes()).hexdigest() != provider_authority["executable_sha256"]:
         raise ValueError("runtime provider executable differs from the Campaign Lock")
     toolchain = (IsolatedTritonCompiler(**toolchain_config) if paired_triton else
-                 NvccToolchainBuilder(nvcc=str(toolchain_config["nvcc"]), cuobjdump=str(toolchain_config["cuobjdump"])))
+                 NvccToolchainBuilder(nvcc=toolchain_config["nvcc"], cuobjdump=toolchain_config["cuobjdump"]))
     if paired_triton:
-        toolchain.check_executor(executor, author_workspace=str(provider_config["workspace_root"]))
+        toolchain.check_executor(executor, author_workspace=provider_config["workspace_root"])
     if toolchain.canonical_sha256 != direct_arm["toolchain_sha256"] or (
         paired_triton and open_arm["toolchain_sha256"] != direct_arm["toolchain_sha256"]):
         raise ValueError("runtime toolchain differs from the Campaign Lock")
-    command_value = broker_config["command"]
-    command = (
-        tuple(str(value) for value in command_value)
-        if isinstance(command_value, list)
-        else tuple(shlex.split(str(command_value)))
-    )
+    command = broker_config["command"]
     execution = _object(lock.document["execution"], "campaign_lock.execution")
-    broker_cwd = Path(str(broker_config["cwd"])).resolve(strict=True)
-    broker_timeout = int(broker_config["timeout_seconds"])
-    broker_user = str(broker_config["service_user"])
-    broker_group = str(broker_config["service_group"])
+    broker_cwd = Path(broker_config["cwd"]).resolve(strict=True)
+    broker_timeout = broker_config["timeout_seconds"]
+    broker_user = broker_config["service_user"]
+    broker_group = broker_config["service_group"]
     if (
         broker_execution_sha256(
             command,

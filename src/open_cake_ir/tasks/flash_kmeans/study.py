@@ -11,7 +11,9 @@ from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.tasks.workloads import load_workload
 from .seed import KernelSeed
 from .portfolio import PortfolioArtifact,PortfolioEvaluationReceipt,replay_portfolio_receipt
-from open_cake_ir.lab.core import _ARM_ARTIFACT_ROLES, CampaignLock, CampaignRef, StudyContract, _candidate_artifact_media_type, _canonical_json_bytes, _digest, _object, _project_path, _resolve_compiler_reference, _resolve_executor_reference, _validate_executor_revision
+from open_cake_ir.lab.bindings import resolve_executor
+from open_cake_ir.lab.executor import ExecutorRevision
+from open_cake_ir.lab.core import _ARM_ARTIFACT_ROLES, CampaignLock, CampaignRef, StudyContract, _candidate_artifact_media_type, _canonical_json_bytes, _digest, _object, _project_path, _resolve_compiler_reference
 
 def _portfolio_endpoint(receipt: PortfolioEvaluationReceipt) -> dict[str, object]:
     return {
@@ -178,12 +180,13 @@ class PortfolioStudyMixin:
             raise ValueError("portfolio execution fields differ")
         if execution.get("target") != "sm_100a" or execution.get("sandbox") != "workspace-write":
             raise ValueError("portfolio execution target or sandbox differs")
-        executor_reference = _resolve_executor_reference(
+        executor = resolve_executor(
             self._root,
             execution.get("executor_revision"),
             "study.execution",
             template=study.state == "template",
         )
+        executor_reference = dict(executor.reference)
         if _object(execution.get("gpu"), "study.execution.gpu") != {
             "name": "NVIDIA B200",
             "count": 1,
@@ -268,10 +271,10 @@ class PortfolioStudyMixin:
 
         if lock.study_kind != "portfolio" or lock.run_order != ("portfolio-1",):
             raise ValueError("portfolio execution requires a portfolio Campaign Lock")
-        _validate_executor_revision(
+        ExecutorRevision.load_reference(
             self._root,
-            _object(lock.document["execution"], "campaign_lock.execution"),
-            "campaign_lock.execution",
+            _object(lock.document["execution"], "campaign_lock.execution").get("executor_revision"),
+            "campaign_lock.execution.executor_revision",
         )
         root = admit_new_campaign_path(
             self._root,

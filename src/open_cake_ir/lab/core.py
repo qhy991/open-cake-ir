@@ -21,7 +21,10 @@ from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from .checkpoints import TurnObservation, project_checkpoints
 from .custody import admit_new_campaign_path
-from .bindings import qualification_path as _qualification_path, resolve_execution_bindings, load_baseline_bundle
+from .bindings import (
+    qualification_path as _qualification_path, resolve_execution_bindings, load_baseline_bundle,
+    resolve_executor, CURRENT_RELEASE_BINDING as _CURRENT_RELEASE_BINDING,
+)
 from .environments import (
     AuthoringEnvironment, CandidateSubmission, EnvironmentResult,
     _EMPIRICAL_SELECTION, _EmpiricalSelection, _empirical_context,
@@ -46,7 +49,6 @@ from .ralph import RalphBudget, RalphController, derive_ralph_stop_reason
 from .task_package import TASK_AGENTS_RALPH_V1, render_task_package
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_CURRENT_RELEASE_BINDING = {"binding": "current_release"}
 _ARM_ARTIFACT_ROLES = {
     "open_cake": {
         "lowered_source",
@@ -272,62 +274,6 @@ def _project_path(root: Path, value: object, context: str) -> tuple[str, Path]:
     if root not in path.parents:
         raise ValueError(f"{context} escapes project root")
     return relative, path
-
-
-def _validate_executor_revision(
-    root: Path,
-    execution: Mapping[str, object],
-    context: str,
-) -> ExecutorRevision:
-    reference = _object(execution.get("executor_revision"), f"{context}.executor_revision")
-    if set(reference) != {"path", "canonical_sha256", "executor_id"}:
-        raise ValueError(f"{context}.executor_revision fields differ")
-    _, path = _project_path(root, reference["path"], f"{context}.executor_revision.path")
-    revision = ExecutorRevision.load(root, path)
-    if (
-        revision.executor_id != reference["executor_id"]
-        or revision.canonical_sha256
-        != _digest(
-            reference["canonical_sha256"],
-            f"{context}.executor_revision.canonical_sha256",
-        )
-    ):
-        raise ValueError(f"{context} Executor Revision differs")
-    return revision
-
-
-def _resolve_executor_reference(
-    root: Path,
-    value: object,
-    context: str,
-    *,
-    template: bool,
-) -> dict[str, object]:
-    """Resolve the one Executor spelling allowed by this Study state."""
-
-    reference = _object(value, f"{context}.executor_revision")
-    if template:
-        if reference != _CURRENT_RELEASE_BINDING:
-            raise ValueError("Study template Executor binding differs")
-        inventory = _object(
-            json.loads((root / "inventory/EXECUTOR_REVISIONS.json").read_text()),
-            "Executor inventory",
-        )
-        current = _object(inventory.get("current"), "current Executor")
-        exact = {
-            field: current[field]
-            for field in ("executor_id", "path", "canonical_sha256")
-        }
-    else:
-        if reference == _CURRENT_RELEASE_BINDING:
-            raise ValueError("frozen Study cannot follow the current Executor")
-        exact = dict(reference)
-    _validate_executor_revision(
-        root,
-        {"executor_revision": exact},
-        context,
-    )
-    return exact
 
 
 def _resolve_compiler_reference(
@@ -2165,16 +2111,17 @@ class Lab:
         )
         # External binding has already applied the original template grammar and
         # verified this Executor. Preserve that resolution and the Study identity.
-        executor_reference = (
-            dict(bound_executor.reference)
+        executor = (
+            bound_executor
             if bound_executor is not None
-            else _resolve_executor_reference(
+            else resolve_executor(
                 self._root,
                 execution.get("executor_revision"),
                 "study.execution",
                 template=study.state == "template",
             )
         )
+        executor_reference = dict(executor.reference)
         gpu = _object(execution.get("gpu"), "study.execution.gpu")
         target = cuda_target(execution['target'])
         if (set(gpu) != {'name', 'count', 'mode'} or gpu.get('name') not in target.device_names
@@ -2303,10 +2250,10 @@ class Lab:
             raise ValueError("Campaign Authoring Environment set differs")
         if lock.study_kind != "matched_search":
             raise ValueError("Lab.execute matched-search path requires a matched Campaign Lock")
-        _validate_executor_revision(
+        ExecutorRevision.load_reference(
             self._root,
-            _object(lock.document["execution"], "campaign_lock.execution"),
-            "campaign_lock.execution",
+            _object(lock.document["execution"], "campaign_lock.execution").get("executor_revision"),
+            "campaign_lock.execution.executor_revision",
         )
         resolved_inputs = _object(
             lock.document["resolved_inputs"], "campaign_lock.resolved_inputs"
@@ -3295,7 +3242,7 @@ class Lab:
         empirical_selection = None
         selection_binding = arm_environments[arm].get("candidate_selection")
         if selection_binding is not None:
-            executor = _validate_executor_revision(self._root, lock.document["execution"], "execution")
+            executor = ExecutorRevision.load_reference(self._root, lock.document["execution"]["executor_revision"], "execution.executor_revision")
             compiler_ref = lock.document["compiler_revision"]
             empirical_selection = _EmpiricalSelection(
                 selection_binding,

@@ -21,11 +21,43 @@ from open_cake_ir.tasks.runtime import TaskLab
 
 
 class FindingCliContractTests(unittest.TestCase):
+    def test_compiler_cli_does_not_import_application_runtime(self) -> None:
+        import os
+        import subprocess
+
+        script = """
+import importlib.abc, json, sys
+from pathlib import Path
+class NoApplicationImports(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.startswith(('open_cake_ir.lab', 'open_cake_ir.tasks', 'open_cake_ir.evaluation', 'open_cake_ir.evidence')):
+            raise AssertionError('Compiler CLI imported ' + fullname)
+sys.meta_path.insert(0, NoApplicationImports())
+from open_cake_ir import cli
+assert Path(cli.__file__).resolve() == Path.cwd() / 'src/open_cake_ir/cli.py'
+assert cli.main(['--project-root', str(Path.cwd()), 'compiler', 'assess', '--revision',
+                 'compiler/revision.json', 'corpus/schedules/fma-b8-smoke.json']) == 0
+"""
+        environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+        result = subprocess.run([sys.executable, "-c", script], cwd=ROOT,
+                                env=environment, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout)["accepted"])
+
     def test_json_and_text_preserve_gate_findings_and_typed_guidance(self) -> None:
+        # Exercise real generated-backend guidance without depending on the
+        # task-specific checked asset retired by the parallel Compiler change.
+        temporary = tempfile.TemporaryDirectory(prefix="cake-cli-guidance-")
+        self.addCleanup(temporary.cleanup)
+        document = json.loads((ROOT / "corpus/schedules/flash-kmeans-assignment-full.json").read_text())
+        for buffer in document["buffers"]:
+            buffer.pop("swizzle", None)
+        schedule = Path(temporary.name) / "guidance.json"
+        schedule.write_text(json.dumps(document))
         arguments = [
             "--project-root", str(ROOT), "compiler", "assess",
             "--revision", str(ROOT / "compiler/revision.json"),
-            str(ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json"),
+            str(schedule),
         ]
         with redirect_stdout(StringIO()) as output:
             self.assertEqual(main(arguments), 0)
@@ -35,7 +67,7 @@ class FindingCliContractTests(unittest.TestCase):
         self.assertTrue(result["guidance"])
         self.assertTrue(all(item["severity"] == "report" for item in result["findings"]))
         self.assertEqual({item["category"] for item in result["guidance"]},
-                         {"hardware_conformance", "program_safety"})
+                         {"hardware_conformance"})
         for finding in result["guidance"]:
             self.assertEqual(finding["severity"], "hint")
             self.assertFalse(finding["blocks_acceptance"])
@@ -76,7 +108,7 @@ class CliContractTests(unittest.TestCase):
                              "--empirical-cost-model", "/external/model.json"]
                 if binding is not None:
                     arguments.extend(["--execution-bindings", str(binding)])
-                with patch("open_cake_ir.cli.TaskLab.preflight", return_value=lock) as preflight:
+                with patch("open_cake_ir.tasks.runtime.TaskLab.preflight", return_value=lock) as preflight:
                     with redirect_stdout(StringIO()):
                         self.assertEqual(main(arguments), 0)
                 preflight.assert_called_once_with(
@@ -337,9 +369,9 @@ class CliContractTests(unittest.TestCase):
             )
             output = StringIO()
             with (
-                patch("open_cake_ir.cli.CampaignLock.load", return_value=lock),
-                patch("open_cake_ir.cli.TaskLab.reference_campaign", return_value=object()),
-                patch("open_cake_ir.cli.TaskLab.audit", return_value=report),
+                patch("open_cake_ir.lab.CampaignLock.load", return_value=lock),
+                patch("open_cake_ir.tasks.runtime.TaskLab.reference_campaign", return_value=object()),
+                patch("open_cake_ir.tasks.runtime.TaskLab.audit", return_value=report),
                 redirect_stdout(output),
             ):
                 code = main(

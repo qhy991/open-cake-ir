@@ -107,15 +107,7 @@ class _Authority:
 def _load_authority(request_path: Path) -> _Authority:
     request_root = request_path.parent
     request = _object(json.loads(request_path.read_text(encoding="utf-8")), "request")
-    executor_ref = _object(request.get("executor_revision"), "request.executor_revision")
-    if set(executor_ref) != {"path", "canonical_sha256", "executor_id"}:
-        raise ValueError("worker Executor reference fields differ")
-    executor = ExecutorRevision.load(ROOT, ROOT / str(executor_ref["path"]))
-    if (
-        executor.canonical_sha256 != executor_ref["canonical_sha256"]
-        or executor.executor_id != executor_ref["executor_id"]
-    ):
-        raise ValueError("worker Executor Revision differs")
+    executor = ExecutorRevision.load_reference(ROOT, request.get("executor_revision"), "request.executor_revision")
     artifact_paths = _object(request.get("artifact_paths"), "request.artifact_paths")
     artifact_roles = _object(request.get("artifact_roles"), "request.artifact_roles")
     payloads = {

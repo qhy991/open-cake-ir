@@ -284,5 +284,88 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                 {"open-cake-ir-b200-v42", "open-cake-ir-b200-v47"},
             )
 
+
+class ExecutorReferenceTests(unittest.TestCase):
+    """Exact-reference admission with a tiny independent CPU source closure."""
+
+    def setUp(self):
+        from types import SimpleNamespace
+
+        temporary = tempfile.TemporaryDirectory(prefix="cake-executor-reference-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.source = self.root / "source.py"
+        self.source.write_bytes(b"CPU reference fixture; no host admission.\n")
+        self.path = self.root / "executor.json"
+        self.document = {
+            "schema_version": 1, "executor_id": "reference-fixture", "state": "released",
+            "sources": [{"path": self.source.name, "sha256": sha256(self.source.read_bytes()).hexdigest(),
+                         "size_bytes": self.source.stat().st_size}],
+            "host_environment": json.loads(CURRENT_EXECUTOR.read_text())["host_environment"],
+        }
+        payload = json.dumps(self.document, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        self.path.write_bytes(payload)
+        self.reference = {"path": self.path.name, "executor_id": self.document["executor_id"],
+                          "canonical_sha256": sha256(payload).hexdigest()}
+        self.lock = SimpleNamespace(document={"execution": {"executor_revision": self.reference}})
+
+    def test_current_and_frozen_binding_return_the_verified_object_once(self):
+        from unittest.mock import patch
+        from open_cake_ir.lab.bindings import resolve_executor
+
+        executor = ExecutorRevision.load_reference(self.root, self.reference, "fixture")
+        inventory = self.root / "inventory/EXECUTOR_REVISIONS.json"
+        inventory.parent.mkdir()
+        inventory.write_text(json.dumps({"current": self.reference}))
+        with patch.object(ExecutorRevision, "load", return_value=executor) as loader:
+            current = resolve_executor(self.root, {"binding": "current_release"}, "study.execution", template=True)
+            self.assertIs(current, executor)
+            loader.assert_called_once_with(self.root, self.path)
+        with patch.object(ExecutorRevision, "load", return_value=executor) as loader:
+            frozen = resolve_executor(self.root, self.reference, "study.execution", template=False)
+            self.assertIs(frozen, executor)
+            loader.assert_called_once_with(self.root, self.path)
+        for value, template in ((self.reference, True), ({"binding": "current_release"}, False)):
+            with self.subTest(template=template), self.assertRaises(ValueError):
+                resolve_executor(self.root, value, "study.execution", template=template)
+
+    def test_reference_fields_identity_and_paths_are_checked(self):
+        specimens = [None, {}, {**self.reference, "extra": True},
+                     {**self.reference, "executor_id": "other"},
+                     {**self.reference, "canonical_sha256": "0" * 64}]
+        for path in (True, "../executor.json", str(self.path), "dir\\executor.json"):
+            specimens.append({**self.reference, "path": path})
+        for reference in specimens:
+            with self.subTest(reference=reference), self.assertRaises(ValueError):
+                ExecutorRevision.load_reference(self.root, reference, "fixture")
+        alias = self.root / "alias.json"
+        alias.symlink_to(self.path)
+        with self.assertRaisesRegex(ValueError, "custody"):
+            ExecutorRevision.load_reference(self.root, {**self.reference, "path": alias.name}, "fixture")
+
+    def test_every_load_rechecks_the_source_closure_without_host_admission(self):
+        from unittest.mock import patch
+
+        with patch.object(ExecutorRevision, "admit_host", side_effect=AssertionError("archive loading is not live host admission")):
+            ExecutorRevision.load_reference(self.root, self.reference, "first")
+            self.source.write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "file.*differs"):
+                ExecutorRevision.load_reference(self.root, self.reference, "replay")
+
+    def test_composition_and_worker_each_refuse_a_forged_exact_reference(self):
+        from unittest.mock import patch
+        from open_cake_ir.tasks.compose import _admit_executor
+        from open_cake_ir.tasks import evaluate as worker
+
+        self.reference["extra"] = True
+        with patch.object(ExecutorRevision, "admit_host", side_effect=AssertionError("must reject before live host")):
+            with self.assertRaisesRegex(ValueError, "fields differ"):
+                _admit_executor(self.root, self.lock)
+        request = self.root / "request.json"
+        request.write_text(json.dumps({"executor_revision": self.reference}))
+        with patch.object(worker, "ROOT", self.root):
+            with self.assertRaisesRegex(ValueError, "fields differ"):
+                worker._load_authority(request)
+
 if __name__ == "__main__":
     unittest.main()
