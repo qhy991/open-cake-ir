@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import sys
 from hashlib import sha256
 from pathlib import Path
 
@@ -17,9 +19,17 @@ _SOURCE_ROOTS = (
 _SOURCE_FILES = (
     "compiler/targets/sm_100a.json",
     "compiler/targets/sm_103a.json",
+    "compiler/targets/gfx1151.json",
     "src/open_cake_ir/compiler/target.py",
     "docs/en/PAIRED_TRITON.md",
+    "examples/gpu/aiter_rmsnorm_amd_baseline.py",
+    "examples/gpu/amd_triton_quickstart.py",
     "examples/gpu/flash_kmeans_quickstart.py",
+    "examples/gpu/llama_q8_1_amd_quickstart.py",
+    "examples/gpu/rmsnorm_amd_quickstart.py",
+    "examples/gpu/rmsnorm_amd_rocprofv3.py",
+    "examples/gpu/rmsnorm_amd_search.py",
+    "examples/gpu/swiglu_amd_quickstart.py",
     "src/open_cake_ir/__init__.py",
     "src/open_cake_ir/cli.py",
     "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu",
@@ -27,6 +37,25 @@ _SOURCE_FILES = (
     "tools/capture_executor_host.py",
     "tools/observe_target_peak.py",
 )
+
+
+def _validate_output_boundary(
+    root: Path,
+    output: Path,
+    *,
+    schema_version: int,
+    executor_id: str,
+) -> None:
+    if schema_version != 2:
+        return
+    if re.fullmatch(r"open-cake-ir-gfx1151-v[1-9][0-9]*", executor_id) is None:
+        raise ValueError("Executor schema v2 gfx1151 identity differs")
+    runtime = (root / "runtime/executors").resolve(strict=True)
+    candidate = rf"\.{re.escape(executor_id)}\.candidate\.[1-9][0-9]*\.json"
+    if output.parent != runtime or re.fullmatch(candidate, output.name) is None:
+        raise ValueError(
+            "schema v2 writer may only assemble a hidden candidate for live admission"
+        )
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -80,12 +109,26 @@ def main() -> int:
             "sources",
             "host_environment",
         }
-        or document.get("schema_version") != 1
+        or type(document.get("schema_version")) is not int
+        or document["schema_version"] not in {1, 2}
         or document.get("state") != "draft"
         or not isinstance(document.get("executor_id"), str)
         or not document["executor_id"]
     ):
         raise ValueError("Executor proposal fields, schema, or state differ")
+    _validate_output_boundary(
+        root,
+        output,
+        schema_version=document["schema_version"],
+        executor_id=document["executor_id"],
+    )
+    if document["schema_version"] == 2:
+        sys.path.insert(0, str(root / "src"))
+        from open_cake_ir.lab.executor import ExecutorRevision
+
+        ExecutorRevision._validate_host_document(
+            document["host_environment"], schema_version=2
+        )
     for released_path in _released_executor_paths(root):
         released = json.loads(released_path.read_text(encoding="utf-8"))
         if (

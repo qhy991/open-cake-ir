@@ -31,6 +31,17 @@ B300 的 Python 起点和单独的实验资格要求见 [B300 指南](../B300.md
 源码，供明确声明的共同优化起点使用。当前交付范围是合同、CPU 参考与源码准备；
 GPU 编译、正确性、计时、profiler 和框架验收仍待 R2 验证。
 
+## AMD 叶子路径：SwiGLU、RMSNorm 与量化记录
+
+| 合同 | 计算与边界 |
+| --- | --- |
+| [SwiGLU FP32 v1](../../contracts/workloads/swiglu-fp32-v1.json) | 两张独立输入做门控；保持输入不变，按 CPU FP64 oracle 判对。 |
+| [RMSNorm+Mul FP32 v1](../../contracts/workloads/llama-rmsnorm-mul-fp32-v1.json)、[v2](../../contracts/workloads/llama-rmsnorm-mul-fp32-v2.json) | 按合同归一化后乘权重；两个分布及具体容差由选用版本负责。 |
+| [Q4_0/Q8_1 MMVQ FP32 v1](../../contracts/workloads/llama-q4_0-q8_1-mmvq-f32-v1.json) | 保存原始记录与组合计算的标准答案；本轮只接回 Q8 producer，Q4 consumer 尚未实现。 |
+
+这些合同和 [AMD 入口](../zh-CN/GETTING_STARTED_AMD.md)不提供新的 GPU 或性能验收结论。
+正式 RMSNorm Search Contract 与当前源码的实机 Executor 仍待完成。
+
 ## Flash-KMeans
 
 - **输入：** 一批点和聚类中心，BF16 存储；距离计算与累加遵守 FP32 约定。

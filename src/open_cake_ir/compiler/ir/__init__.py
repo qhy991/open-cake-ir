@@ -25,6 +25,8 @@ from .vocabulary import (
     BarrierMechanism,
     BoundaryPolicy,
     BufferMode,
+    ByteOrder,
+    PackedBlockFormat,
     DType,
     ElementwiseOp,
     EpilogueFormula,
@@ -39,6 +41,9 @@ from .vocabulary import (
     OperationKind,
     PipelineKind,
     ReduceOp,
+    ReductionAlgorithm,
+    RoundingMode,
+    OverflowPolicy,
     ReductionScope,
     ScanDirection,
     ScanOp,
@@ -49,6 +54,10 @@ from .vocabulary import (
 )
 
 from .resources import (
+    PACKED_BLOCK_FORMATS,
+    PackedBlockContract,
+    PackedBlockField,
+    PackedBlockRelation,
     Allocation,
     Barrier,
     Buffer,
@@ -72,6 +81,7 @@ from .mapping import (
 from .operations import (
     AtomicRmwParameters,
     CastParameters,
+    ReshapeParameters,
     CopyAtom,
     ElementwiseInstruction,
     ElementwiseParameters,

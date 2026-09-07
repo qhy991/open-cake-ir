@@ -177,11 +177,29 @@ class Peak:
 
 @dataclass(frozen=True)
 class ResourceLimits:
-    maximum_threads_per_cta: int
-    maximum_warps_per_cta: int
-    maximum_shared_memory_bytes: int
-    maximum_tensor_memory_bytes: int
+    maximum_threads_per_workgroup: int
+    maximum_execution_groups_per_workgroup: int
+    maximum_threadgroup_memory_bytes: int
+    maximum_tensor_memory_bytes: int | None
     maximum_grid: tuple[int, int, int]
+
+    @property
+    def maximum_threads_per_cta(self) -> int:
+        """Schema-v1 compatibility spelling."""
+
+        return self.maximum_threads_per_workgroup
+
+    @property
+    def maximum_warps_per_cta(self) -> int:
+        """Schema-v1 compatibility spelling."""
+
+        return self.maximum_execution_groups_per_workgroup
+
+    @property
+    def maximum_shared_memory_bytes(self) -> int:
+        """Schema-v1 compatibility spelling."""
+
+        return self.maximum_threadgroup_memory_bytes
 
     def capacity(self, space: MemorySpace) -> int | None:
         """Byte budget for one CTA in `space`, or None when the space is unbudgeted.
@@ -192,15 +210,17 @@ class ResourceLimits:
         """
 
         if space is MemorySpace.SHARED:
-            return self.maximum_shared_memory_bytes
+            return self.maximum_threadgroup_memory_bytes
         if space is MemorySpace.TENSOR:
             return self.maximum_tensor_memory_bytes
         return None
 
     @classmethod
-    def from_dict(cls, value: Any, context: str) -> "ResourceLimits":
+    def from_v1(cls, value: Any, context: str) -> "ResourceLimits":
         if not isinstance(value, Mapping):
             raise TargetParseError(f"{context} must be an object")
+        if set(value) != {"maximum_threads_per_cta", "maximum_warps_per_cta", "maximum_shared_memory_bytes", "maximum_tensor_memory_bytes", "grid"}:
+            raise TargetParseError(f"{context} fields differ")
         grid = value.get("grid")
         if not isinstance(grid, Mapping) or set(grid) != {"x", "y", "z"}:
             raise TargetParseError(f"{context}.grid must declare x, y and z")
@@ -220,6 +240,67 @@ class ResourceLimits:
                 _int_field(grid["x"], f"{context}.grid.x"),
                 _int_field(grid["y"], f"{context}.grid.y"),
                 _int_field(grid["z"], f"{context}.grid.z"),
+            ),
+        )
+
+    @classmethod
+    def from_v2(
+        cls,
+        value: Any,
+        context: str,
+        *,
+        execution_group_width: int,
+        has_tensor_memory: bool,
+    ) -> "ResourceLimits":
+        required = {
+            "maximum_threads_per_workgroup",
+            "maximum_threadgroup_memory_bytes",
+            "maximum_grid",
+        }
+        optional = {"maximum_tensor_memory_bytes"}
+        if not isinstance(value, Mapping) or not required <= set(value) <= required | optional:
+            raise TargetParseError(f"{context} fields differ")
+        tensor_limit_declared = "maximum_tensor_memory_bytes" in value
+        if has_tensor_memory and not tensor_limit_declared:
+            raise TargetParseError(
+                f"{context} requires a tensor memory limit when target.memory_spaces "
+                "contains tensor"
+            )
+        if tensor_limit_declared and not has_tensor_memory:
+            raise TargetParseError(
+                f"{context} declares a tensor memory limit without tensor memory"
+            )
+        maximum_threads = _int_field(
+            value.get("maximum_threads_per_workgroup"),
+            f"{context}.maximum_threads_per_workgroup",
+        )
+        if maximum_threads % execution_group_width:
+            raise TargetParseError(
+                f"{context}.maximum_threads_per_workgroup must contain whole "
+                "execution groups"
+            )
+        grid = value.get("maximum_grid")
+        if not isinstance(grid, Mapping) or set(grid) != {"x", "y", "z"}:
+            raise TargetParseError(f"{context}.maximum_grid must declare x, y and z")
+        return cls(
+            maximum_threads,
+            maximum_threads // execution_group_width,
+            _int_field(
+                value.get("maximum_threadgroup_memory_bytes"),
+                f"{context}.maximum_threadgroup_memory_bytes",
+            ),
+            (
+                _int_field(
+                    value.get("maximum_tensor_memory_bytes"),
+                    f"{context}.maximum_tensor_memory_bytes",
+                )
+                if tensor_limit_declared
+                else None
+            ),
+            (
+                _int_field(grid["x"], f"{context}.maximum_grid.x"),
+                _int_field(grid["y"], f"{context}.maximum_grid.y"),
+                _int_field(grid["z"], f"{context}.maximum_grid.z"),
             ),
         )
 
@@ -254,8 +335,11 @@ class Occupancy:
 
 @dataclass(frozen=True)
 class Target:
+    schema_version: int
     target_id: str
     architecture: str
+    execution_group_width: int
+    register_budget_group_width: int | None
     device_names: tuple[str, ...]
     compute_capability: tuple[int, int] | None
     memory_spaces: frozenset[MemorySpace]
@@ -267,25 +351,33 @@ class Target:
     peak: Peak | None
 
     @property
-    def warp_size(self) -> int:
-        """Width of a role slot: NVIDIA warp or Apple8 SIMD group.
+    def triton_target(self) -> Mapping[str, object] | None:
+        """Exact Triton device projection shared by lowering and Executor admission."""
+        if self.target_id == "gfx1151":
+            if self.architecture != "gfx1151" or self.execution_group_width != 32 or self.compute_capability is not None:
+                return None
+            return MappingProxyType({"backend": "hip", "arch": self.architecture, "warp_size": self.execution_group_width})
+        if self.compute_capability is not None:
+            major, minor = self.compute_capability
+            return MappingProxyType({"backend": "cuda", "arch": major * 10 + minor, "warp_size": self.execution_group_width})
+        return None
 
-        Metal execution additionally checks the compiled pipeline threadExecutionWidth.
-        This is no claim that Apple supports CUDA warpgroup instructions.
-        """
-        return 32
+    @property
+    def warp_size(self) -> int:
+        """Compatibility spelling for the Target-owned execution-group width."""
+
+        return self.execution_group_width
 
     @property
     def warps_per_warpgroup(self) -> int | None:
-        """Warps that issue a warpgroup-wide instruction together.
+        """Execution groups that issue one register-budget instruction together.
 
-        A constant of the ISA rather than a device observation, like `warp_size`, so it
-        lives here instead of in a Target document. `setmaxnreg` is warpgroup-wide, which
-        is what makes this a legality rule on a role's warp range rather than a
-        preference.
+        Schema v1 retains Blackwell's four-warp ``setmaxnreg`` scope.  Schema v2 leaves
+        this absent unless the Target has an independently declared equivalent; another
+        architecture must not inherit the CUDA issue width.
         """
 
-        return 4 if self.compute_capability is not None else None
+        return self.register_budget_group_width
 
     @classmethod
     def load(cls, path: str | Path) -> "Target":
@@ -295,25 +387,82 @@ class Target:
     def from_dict(cls, value: Any) -> "Target":
         if not isinstance(value, Mapping):
             raise TargetParseError("target must be an object")
-        if value.get("schema_version") != 1:
-            raise TargetParseError("target.schema_version must be 1")
+        schema_version = value.get("schema_version")
+        if type(schema_version) is not int or schema_version not in (1, 2):
+            raise TargetParseError("target.schema_version must be 1 or 2")
+
+        if schema_version == 2:
+            if "execution_group_width" not in value:
+                raise TargetParseError(
+                    "target.execution_group_width must be a positive integer"
+                )
+            required = {
+                "schema_version",
+                "target_id",
+                "architecture",
+                "execution_group_width",
+                "memory_spaces",
+                "operation_kinds",
+                "resource_limits",
+                "instruction_contracts",
+                "synchronization_contracts",
+                "citations",
+            }
+            optional = {
+                "device_names",
+                "compute_capability",
+                "register_budget_group_width",
+            }
+            if not required <= set(value) <= required | optional:
+                raise TargetParseError("target fields differ")
 
         def string_tuple(field: str, *, allow_empty: bool = False) -> tuple[str, ...]:
             items = value.get(field)
             if not isinstance(items, list) or (not items and not allow_empty):
-                raise TargetParseError(f"target.{field} must be a non-empty list")
+                qualifier = "a list" if allow_empty else "a non-empty list"
+                raise TargetParseError(f"target.{field} must be {qualifier}")
             return tuple(_string(item, f"target.{field}[]") for item in items)
 
         capability = value.get("compute_capability")
         if capability is not None and (
-            not isinstance(capability, list) or len(capability) != 2
-            or any(type(item) is not int or item < 0 for item in capability)
+            not isinstance(capability, list)
+            or len(capability) != 2
+            or any(
+                not isinstance(item, int) or isinstance(item, bool) or item < 0
+                for item in capability
+            )
         ):
-            raise TargetParseError("target.compute_capability must be a nonnegative integer pair")
-        if capability is None and value.get("architecture") != "apple8":
-            raise TargetParseError("target.compute_capability is required for CUDA targets")
+            raise TargetParseError(
+                "target.compute_capability must be a non-negative pair"
+            )
+        if schema_version == 1 and capability is None and value.get("architecture") != "apple8":
+            raise TargetParseError("target.compute_capability must be a pair")
+
         if value.get("architecture") == "apple8" and "compute_capability" in value:
             raise TargetParseError("Apple GPU targets have no CUDA compute capability")
+        if value.get("architecture") == "apple8" and ("occupancy" in value or "peak" in value):
+            raise TargetParseError("Apple8 has no admitted occupancy or peak calibration")
+
+        execution_group_width = (
+            32
+            if schema_version == 1
+            else _int_field(
+                value.get("execution_group_width"),
+                "target.execution_group_width",
+            )
+        )
+        register_budget_group_width = (
+            (4 if capability is not None else None)
+            if schema_version == 1
+            else (
+                None
+                if value.get("register_budget_group_width") is None
+                else _int_field(
+                    value.get("register_budget_group_width"),
+                    "target.register_budget_group_width",
+                )
+            )
+        )
 
         try:
             spaces = frozenset(
@@ -327,30 +476,54 @@ class Target:
         except ScheduleParseError as error:
             raise TargetParseError(str(error)) from error
 
-        if value.get("architecture") == "apple8" and ("occupancy" in value or "peak" in value):
-            raise TargetParseError("Apple8 has no admitted occupancy or peak calibration")
+        device_names = (
+            string_tuple("device_names")
+            if schema_version == 1 or "device_names" in value
+            else ()
+        )
+        limits = (
+            ResourceLimits.from_v1(value.get("resource_limits"), "target.resource_limits")
+            if schema_version == 1
+            else ResourceLimits.from_v2(
+                value.get("resource_limits"),
+                "target.resource_limits",
+                execution_group_width=execution_group_width,
+                has_tensor_memory=MemorySpace.TENSOR in spaces,
+            )
+        )
 
         instruction_contracts = frozenset(string_tuple("instruction_contracts", allow_empty=True))
         return cls(
+            schema_version=schema_version,
             target_id=_string(value.get("target_id"), "target.target_id"),
             architecture=_string(value.get("architecture"), "target.architecture"),
-            device_names=string_tuple("device_names"),
-            compute_capability=None if capability is None else (capability[0], capability[1]),
+            execution_group_width=execution_group_width,
+            register_budget_group_width=register_budget_group_width,
+            device_names=device_names,
+            compute_capability=(
+                None
+                if capability is None
+                else (capability[0], capability[1])
+            ),
             memory_spaces=spaces,
             operation_kinds=kinds,
-            resource_limits=ResourceLimits.from_dict(
-                value.get("resource_limits"), "target.resource_limits"
+            resource_limits=limits,
+            instruction_contracts=frozenset(
+                string_tuple(
+                    "instruction_contracts",
+                    allow_empty=True,
+                )
             ),
-            instruction_contracts=instruction_contracts,
-            synchronization_contracts=frozenset(string_tuple("synchronization_contracts", allow_empty=True)),
+            synchronization_contracts=frozenset(
+                string_tuple(
+                    "synchronization_contracts",
+                    allow_empty=True,
+                )
+            ),
             occupancy=(
                 Occupancy.from_dict(value["occupancy"], "target.occupancy")
                 if "occupancy" in value
                 else None
             ),
-            peak=(
-                Peak.from_dict(value["peak"], instruction_contracts, "target.peak")
-                if "peak" in value
-                else None
-            ),
+            peak=(Peak.from_dict(value["peak"], instruction_contracts, "target.peak") if "peak" in value else None),
         )

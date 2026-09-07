@@ -36,6 +36,9 @@ from .vocabulary import (
     OperationKind,
     PipelineKind,
     ReduceOp,
+    ReductionAlgorithm,
+    RoundingMode,
+    OverflowPolicy,
     ReductionScope,
     ScanDirection,
     ScanOp,
@@ -197,6 +200,7 @@ class ReduceParameters:
     axis: int
     scope: ReductionScope
     across_loop: bool = True
+    algorithm: ReductionAlgorithm = ReductionAlgorithm.BACKEND
 
 
 @dataclass(frozen=True)
@@ -257,6 +261,8 @@ class CastParameters:
     """One explicit numeric representation conversion."""
 
     to: DType
+    rounding: RoundingMode | None = None
+    overflow: OverflowPolicy | None = None
 
 
 @dataclass(frozen=True)
@@ -271,6 +277,13 @@ class AtomicRmwParameters:
     value: int
     order: AtomicMemoryOrder
     scope: AtomicMemoryScope
+
+
+@dataclass(frozen=True)
+class ReshapeParameters:
+    """A register-only shape view; input and output Buffers own both shapes."""
+
+    pass
 
 
 @dataclass(frozen=True)
@@ -305,6 +318,7 @@ class ElementwiseParameters:
     scalar: float | None
     broadcast_axis: int | None
     instruction: ElementwiseInstruction | None
+    rounding: RoundingMode | None = None
     """Which axis of the result a narrower operand spans.
 
     Trailing-axis alignment is the array convention, but it only covers half the cases
@@ -340,6 +354,7 @@ OperationParameters = Union[
     OnlineSoftmaxParameters,
     AtomicRmwParameters,
     CastParameters,
+    ReshapeParameters,
     ElementwiseParameters,
     StoreParameters,
     FenceProxyParameters,
@@ -449,7 +464,7 @@ def _operation_parameters(
         obj = _strict_object(
             value,
             required={"op", "axis", "scope"},
-            optional={"across_loop"},
+            optional={"across_loop", "algorithm"},
             context=context,
         )
         if obj.get("across_loop") is True:
@@ -465,6 +480,7 @@ def _operation_parameters(
                 if "across_loop" in obj
                 else True
             ),
+            _enum(ReductionAlgorithm, obj.get("algorithm", "backend"), f"{context}.algorithm"),
         )
 
     if kind is OperationKind.SCAN:
@@ -548,8 +564,18 @@ def _operation_parameters(
         )
 
     if kind is OperationKind.CAST:
-        obj = _strict_object(value, required={"to"}, context=context)
-        return CastParameters(_enum(DType, obj["to"], f"{context}.to"))
+        obj = _strict_object(value, required={"to"}, optional={"rounding", "overflow"}, context=context)
+        if ("rounding" in obj) != ("overflow" in obj):
+            raise ScheduleParseError(f"{context} cast requires both rounding and overflow when either is explicit")
+        return CastParameters(
+            _enum(DType, obj["to"], f"{context}.to"),
+            _enum(RoundingMode, obj["rounding"], f"{context}.rounding") if "rounding" in obj else None,
+            _enum(OverflowPolicy, obj["overflow"], f"{context}.overflow") if "overflow" in obj else None,
+        )
+
+    if kind is OperationKind.RESHAPE:
+        _strict_object(value, required=set(), context=context)
+        return ReshapeParameters()
 
     if kind is OperationKind.ATOMIC_RMW:
         obj = _strict_object(
@@ -571,7 +597,7 @@ def _operation_parameters(
         obj = _strict_object(
             value,
             required={"op"},
-            optional={"scalar", "broadcast_axis", "instruction"},
+            optional={"scalar", "broadcast_axis", "instruction", "rounding"},
             context=context,
         )
         op = _enum(ElementwiseOp, obj["op"], f"{context}.op")
@@ -590,6 +616,15 @@ def _operation_parameters(
                 f"{context}: fma requires three same-shaped register operands; "
                 "scalar and broadcast_axis are not admitted"
             )
+        rounding = _enum(RoundingMode, obj["rounding"], f"{context}.rounding") if "rounding" in obj else None
+        if op is ElementwiseOp.ROUND:
+            if rounding is not RoundingMode.NEAREST_AWAY_FROM_ZERO:
+                raise ScheduleParseError(f"{context}.rounding must be nearest_away_from_zero for round")
+            for field in ("scalar", "broadcast_axis"):
+                if field in obj:
+                    raise ScheduleParseError(f"{context}.{field} has no defined effect for round")
+        elif rounding is not None:
+            raise ScheduleParseError(f"{context}.rounding has no defined effect for {op.value}")
         scalar = obj.get("scalar")
         if scalar is not None and (
             not isinstance(scalar, (int, float)) or isinstance(scalar, bool)
@@ -605,6 +640,7 @@ def _operation_parameters(
             else ElementwiseInstruction.from_dict(
                 instruction, f"{context}.instruction"
             ),
+            rounding,
         )
 
     if kind is OperationKind.STORE:

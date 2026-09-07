@@ -14,6 +14,10 @@
     "sm_103a": {
       "path": "compiler/targets/sm_103a.json",
       "canonical_sha256": "924973447e3176d332a2460f673a80740c58ed20c4c5af1372911c7904bf69e5"
+    },
+    "gfx1151": {
+      "path": "compiler/targets/gfx1151.json",
+      "canonical_sha256": "7cadc20341101bcf2f0bc196ee60d030908a4d19a304e18483c1a685e7645969"
     }
   },
   "corpus_manifest": "corpus/manifest.json",

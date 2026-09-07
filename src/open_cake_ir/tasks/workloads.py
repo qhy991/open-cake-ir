@@ -10,8 +10,12 @@ from .qsa.workload import _validate_qsa_contract
 from .dsa.contract import _validate_dsa_contract
 from .kda.contract import _validate_kda_fused_decode_contract, _validate_kda_decode_megaop_b200_contract
 from .tiles.workload import validate_tile_contract
+from .amd.contract import _validate_swiglu_contract, _validate_llama_rmsnorm_contract, _validate_llama_q4_mmvq_contract
 
 _TASKS = {
+    "swiglu_fp32": (_validate_swiglu_contract, WorkloadContract),
+    "rmsnorm_mul_fp32": (_validate_llama_rmsnorm_contract, WorkloadContract),
+    "llama_q4_0_q8_1_mmvq_f32": (_validate_llama_q4_mmvq_contract, WorkloadContract),
     "flash_kmeans_assign": (_validate_flash_contract, FlashWorkloadContract),
     "tinygemm2_bf16_linear": (_validate_tinygemm_contract, WorkloadContract),
     "qsa_prefill": (_validate_qsa_contract, WorkloadContract),
