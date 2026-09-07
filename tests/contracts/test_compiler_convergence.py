@@ -69,8 +69,8 @@ class CompilerConvergenceContractTests(unittest.TestCase):
             mock.patch.object(TargetSource, "document", new_callable=mock.PropertyMock,
                               side_effect=AssertionError("provenance used as hardware")),
             mock.patch.object(core, "verify_contracts", wraps=core.verify_contracts) as verify_call,
-            mock.patch.object(core.emit_triton, "preflight", wraps=core.emit_triton.preflight) as preflight,
-            mock.patch.object(core.emit_triton, "emit", wraps=core.emit_triton.emit) as emit,
+            mock.patch.object(core.triton, "preflight", wraps=core.triton.preflight) as preflight,
+            mock.patch.object(core.triton, "emit", wraps=core.triton.emit) as emit,
             mock.patch.object(core, "rank_candidates", wraps=core.rank_candidates) as rank,
         ):
             assessment = compiler.assess(document)
