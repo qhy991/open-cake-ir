@@ -426,123 +426,160 @@ class CompilerContractTests(unittest.TestCase):
         self.assertTrue(released_gate.passed)
 
     def test_release_cycle_prepares_but_cannot_write_its_own_approval(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            project = Path(directory) / "open-cake-ir"
+        prior_id = json.loads((ROOT / "compiler/revision.lock.json").read_text())["revision_id"]
+        archive_name = prior_id.rsplit("-", 1)[-1]
+        for archive_was_present in (False, True):
+            with self.subTest(archive_was_present=archive_was_present), tempfile.TemporaryDirectory() as directory:
+                project = Path(directory) / "open-cake-ir"
 
-            def ignored(path: str, names: list[str]) -> set[str]:
-                omitted = {".git", "__pycache__", ".pytest_cache"}
-                if Path(path).resolve() == ROOT:
-                    omitted |= {"evidence", "migration", "runtime", "tests", "contracts", "inventory"}
-                return omitted & set(names)
+                def ignored(path: str, names: list[str]) -> set[str]:
+                    omitted = {".git", "__pycache__", ".pytest_cache"}
+                    if Path(path).resolve() == ROOT:
+                        omitted |= {"evidence", "migration", "runtime", "tests", "contracts", "inventory"}
+                    if Path(path).resolve() == ROOT / "compiler/releases":
+                        # Construct both states before execution, independently of
+                        # whether the real checkout already preserves this release.
+                        omitted.add(archive_name)
+                    return omitted & set(names)
 
-            shutil.copytree(ROOT, project, ignore=ignored)
-            approval_path = project / "compiler/release-approval.json"
-            lock_path = project / "compiler/revision.lock.json"
-            prior_approval = approval_path.read_bytes()
-            prior_lock = lock_path.read_bytes()
-            prior = json.loads(prior_lock)
-            prior_id = prior["revision_id"]
-            prior_gate = (project / "compiler/corpus-gate-report.json").read_bytes()
-            prior_sources = (project / "compiler/source_set.json").read_bytes()
-            from tools.compiler_revision_witnesses import compiler_revision_witnesses
-            self.assertNotIn(prior_id, {item.revision_id for item in compiler_revision_witnesses(project)})
-            authoring_contract = project / "compiler/AUTHORING_CONTRACT.md"
-            authoring_contract.write_text(
-                authoring_contract.read_text(encoding="utf-8")
-                + "\nTemporary release-protocol fixture.\n",
-                encoding="utf-8",
-            )
-            environment = {**os.environ, "OPEN_CAKE_PYTHON": sys.executable}
+                shutil.copytree(ROOT, project, ignore=ignored)
+                approval_path = project / "compiler/release-approval.json"
+                lock_path = project / "compiler/revision.lock.json"
+                prior_approval = approval_path.read_bytes()
+                prior_lock = lock_path.read_bytes()
+                prior = json.loads(prior_lock)
+                self.assertEqual(prior["revision_id"], prior_id)
+                prior_gate = (project / "compiler/corpus-gate-report.json").read_bytes()
+                prior_sources = (project / "compiler/source_set.json").read_bytes()
+                from tools.compiler_revision_witnesses import compiler_revision_witnesses
+                archive = project / "compiler/releases" / archive_name
+                authority_bytes = {
+                    "revision.lock.json": prior_lock,
+                    "corpus-gate-report.json": prior_gate,
+                    "release-approval.json": prior_approval,
+                    "source_set.json": prior_sources,
+                }
+                self.assertFalse(archive.exists())
+                if archive_was_present:
+                    archive.mkdir(parents=True)
+                    for name, payload in authority_bytes.items():
+                        (archive / name).write_bytes(payload)
 
-            first = subprocess.run(
-                ["bash", "tools/release_compiler_cycle.sh"],
-                cwd=project,
-                env=environment,
-                capture_output=True,
-                text=True,
-            )
+                def archive_bytes() -> dict[str, bytes]:
+                    return {name: (archive / name).read_bytes() for name in authority_bytes}
 
-            self.assertEqual(first.returncode, 3, first.stdout + first.stderr)
-            self.assertIn("external approval required", first.stderr)
-            self.assertEqual(approval_path.read_bytes(), prior_approval)
-            self.assertEqual(lock_path.read_bytes(), prior_lock)
-            gate_path = project / "compiler/corpus-gate-report.json"
-            gate = json.loads(gate_path.read_text(encoding="utf-8"))
-            self.assertEqual(gate["matched_case_count"], gate["case_count"])
-            draft_id = gate["compiler_revision_id"]
-            self.assertNotEqual(draft_id.removesuffix("-draft"), prior_id)
-            archive = project / "compiler/releases" / prior_id.rsplit("-", 1)[-1]
-            self.assertEqual((archive / "revision.lock.json").read_bytes(), prior_lock)
-            self.assertEqual((archive / "corpus-gate-report.json").read_bytes(), prior_gate)
-            self.assertEqual((archive / "release-approval.json").read_bytes(), prior_approval)
-            self.assertEqual(json.loads((archive / "source_set.json").read_text()), json.loads(prior_sources))
-            repeat = subprocess.run(
-                ["bash", "tools/release_compiler_cycle.sh"], cwd=project,
-                env=environment, capture_output=True, text=True,
-            )
-            self.assertEqual(repeat.returncode, 3, repeat.stdout + repeat.stderr)
-            self.assertEqual(json.loads(gate_path.read_text())["compiler_revision_id"], draft_id)
-            self.assertEqual(lock_path.read_bytes(), prior_lock)
-            self.assertEqual(approval_path.read_bytes(), prior_approval)
-            gate_sha256 = sha256(
-                json.dumps(
-                    gate,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                ).encode()
-            ).hexdigest()
-            approval = {
-                "schema_version": 2,
-                "decision": "approved",
-                "gate_report": {
-                    "path": "compiler/corpus-gate-report.json",
-                    "canonical_sha256": gate_sha256,
-                },
-                "reviewer": {
-                    "kind": "agent_session",
-                    "model": "gpt-6-astra",
-                    "session_id": "fixture-review-session",
-                    "author_session_id": "fixture-author-session",
-                },
-                "approval_basis": "Reviewed the exact temporary Gate diff.",
-            }
-            approval_path.write_text(
-                json.dumps(approval, indent=2) + "\n", encoding="utf-8"
-            )
+                witnessed = {item.revision_id for item in compiler_revision_witnesses(project)}
+                if archive_was_present:
+                    self.assertIn(prior_id, witnessed)
+                    self.assertEqual(archive_bytes(), authority_bytes)
+                else:
+                    self.assertNotIn(prior_id, witnessed)
+                authoring_contract = project / "compiler/AUTHORING_CONTRACT.md"
+                authoring_contract.write_text(
+                    authoring_contract.read_text(encoding="utf-8")
+                    + "\nTemporary release-protocol fixture.\n",
+                    encoding="utf-8",
+                )
+                environment = {**os.environ, "OPEN_CAKE_PYTHON": sys.executable}
 
-            second = subprocess.run(
-                ["bash", "tools/release_compiler_cycle.sh"],
-                cwd=project,
-                env=environment,
-                capture_output=True,
-                text=True,
-            )
+                first = subprocess.run(
+                    ["bash", "tools/release_compiler_cycle.sh"],
+                    cwd=project,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                )
 
-            self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-            released = json.loads(lock_path.read_text(encoding="utf-8"))
-            self.assertEqual(released["state"], "released")
-            self.assertEqual(released["revision_id"], draft_id.removesuffix("-draft"))
-            self.assertEqual(
-                released["release_approval"]["canonical_sha256"],
-                sha256(
+                self.assertEqual(first.returncode, 3, first.stdout + first.stderr)
+                self.assertIn("external approval required", first.stderr)
+                self.assertEqual(approval_path.read_bytes(), prior_approval)
+                self.assertEqual(lock_path.read_bytes(), prior_lock)
+                gate_path = project / "compiler/corpus-gate-report.json"
+                gate = json.loads(gate_path.read_text(encoding="utf-8"))
+                self.assertEqual(gate["matched_case_count"], gate["case_count"])
+                draft_id = gate["compiler_revision_id"]
+                self.assertNotEqual(draft_id.removesuffix("-draft"), prior_id)
+                self.assertNotIn(draft_id.removesuffix("-draft"), witnessed)
+                self.assertEqual((archive / "revision.lock.json").read_bytes(), prior_lock)
+                self.assertEqual((archive / "corpus-gate-report.json").read_bytes(), prior_gate)
+                self.assertEqual((archive / "release-approval.json").read_bytes(), prior_approval)
+                self.assertEqual(json.loads((archive / "source_set.json").read_text()), json.loads(prior_sources))
+                if archive_was_present:
+                    self.assertEqual(archive_bytes(), authority_bytes)
+                expected_archive = archive_bytes()
+                repeat = subprocess.run(
+                    ["bash", "tools/release_compiler_cycle.sh"], cwd=project,
+                    env=environment, capture_output=True, text=True,
+                )
+                self.assertEqual(repeat.returncode, 3, repeat.stdout + repeat.stderr)
+                self.assertEqual(json.loads(gate_path.read_text())["compiler_revision_id"], draft_id)
+                self.assertEqual(lock_path.read_bytes(), prior_lock)
+                self.assertEqual(approval_path.read_bytes(), prior_approval)
+                self.assertEqual(archive_bytes(), expected_archive)
+                gate_sha256 = sha256(
                     json.dumps(
-                        approval,
+                        gate,
                         sort_keys=True,
                         separators=(",", ":"),
                         ensure_ascii=False,
                     ).encode()
-                ).hexdigest(),
-            )
-            released_lock = lock_path.read_bytes()
-            unchanged = subprocess.run(
-                ["bash", "tools/release_compiler_cycle.sh"], cwd=project,
-                env=environment, capture_output=True, text=True,
-            )
-            self.assertEqual(unchanged.returncode, 0, unchanged.stdout + unchanged.stderr)
-            self.assertIn("no successor is needed", unchanged.stdout)
-            self.assertEqual(lock_path.read_bytes(), released_lock)
-            self.assertEqual((archive / "revision.lock.json").read_bytes(), prior_lock)
+                ).hexdigest()
+                approval = {
+                    "schema_version": 2,
+                    "decision": "approved",
+                    "gate_report": {
+                        "path": "compiler/corpus-gate-report.json",
+                        "canonical_sha256": gate_sha256,
+                    },
+                    "reviewer": {
+                        "kind": "agent_session",
+                        "model": "gpt-6-astra",
+                        "session_id": "fixture-review-session",
+                        "author_session_id": "fixture-author-session",
+                    },
+                    "approval_basis": "Reviewed the exact temporary Gate diff.",
+                }
+                approval_path.write_text(
+                    json.dumps(approval, indent=2) + "\n", encoding="utf-8"
+                )
+                reviewed_approval_bytes = approval_path.read_bytes()
+
+                second = subprocess.run(
+                    ["bash", "tools/release_compiler_cycle.sh"],
+                    cwd=project,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+                self.assertEqual(approval_path.read_bytes(), reviewed_approval_bytes)
+                self.assertEqual(archive_bytes(), expected_archive)
+                released = json.loads(lock_path.read_text(encoding="utf-8"))
+                self.assertEqual(released["state"], "released")
+                self.assertEqual(released["revision_id"], draft_id.removesuffix("-draft"))
+                self.assertEqual(
+                    released["release_approval"]["canonical_sha256"],
+                    sha256(
+                        json.dumps(
+                            approval,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=False,
+                        ).encode()
+                    ).hexdigest(),
+                )
+                released_lock = lock_path.read_bytes()
+                unchanged = subprocess.run(
+                    ["bash", "tools/release_compiler_cycle.sh"], cwd=project,
+                    env=environment, capture_output=True, text=True,
+                )
+                self.assertEqual(unchanged.returncode, 0, unchanged.stdout + unchanged.stderr)
+                self.assertIn("no successor is needed", unchanged.stdout)
+                self.assertEqual(lock_path.read_bytes(), released_lock)
+                self.assertEqual(approval_path.read_bytes(), reviewed_approval_bytes)
+                self.assertEqual(archive_bytes(), expected_archive)
+                self.assertEqual((archive / "revision.lock.json").read_bytes(), prior_lock)
 
     def test_the_architecture_map_names_the_lowering_mechanisms(self) -> None:
         """The architecture documents mechanisms, not a growing use-case registry."""
