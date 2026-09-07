@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "schedule_id": "int8-byte-copy-gfx1151-v1",
+  "target": "gfx1151",
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [0]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "src_raw",
+      "space": "global",
+      "dtype": "int8",
+      "shape": [4, 32],
+      "mode": "input"
+    },
+    {
+      "name": "dst_raw",
+      "space": "global",
+      "dtype": "int8",
+      "shape": [4, 32],
+      "mode": "output"
+    },
+    {
+      "name": "raw_tile",
+      "space": "register",
+      "dtype": "int8",
+      "shape": [32],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_raw",
+      "kind": "load",
+      "role": "compute",
+      "reads": ["src_raw"],
+      "writes": ["raw_tile"],
+      "parameters": {
+        "movement": "global",
+        "reuse": "streamed"
+      }
+    },
+    {
+      "id": "store_raw",
+      "kind": "store",
+      "role": "compute",
+      "reads": ["raw_tile"],
+      "writes": ["dst_raw"],
+      "depends_on": ["load_raw"],
+      "parameters": {
+        "coalesced": true
+      }
+    }
+  ],
+  "outputs": ["dst_raw"],
+  "program_map": {
+    "axes": [
+      {
+        "name": "record",
+        "axis": 0,
+        "buffer": "src_raw",
+        "dimension": 0,
+        "tile": 1
+      },
+      {
+        "name": "byte",
+        "axis": 1,
+        "buffer": "src_raw",
+        "dimension": 1,
+        "tile": 32
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_raw",
+      "buffer": "src_raw",
+      "indices": [
+        {
+          "source": "program",
+          "name": "record"
+        },
+        {
+          "source": "program_tile",
+          "name": "byte"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_raw",
+      "buffer": "dst_raw",
+      "indices": [
+        {
+          "source": "program",
+          "name": "record"
+        },
+        {
+          "source": "program_tile",
+          "name": "byte"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {},
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_int8_byte_copy_gfx1151"
+  }
+}

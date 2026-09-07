@@ -40,6 +40,8 @@ from .target import Target
 
 
 _CUTLASS_DTYPE = {
+    DType.UINT8: "cutlass.Uint8",
+    DType.INT8: "cutlass.Int8",
     DType.BF16: "cutlass.BFloat16",
     DType.FP16: "cutlass.Float16",
     DType.FP32: "cutlass.Float32",
@@ -48,6 +50,8 @@ _CUTLASS_DTYPE = {
 }
 
 _TORCH_DTYPE = {
+    DType.UINT8: "torch.uint8",
+    DType.INT8: "torch.int8",
     DType.BF16: "torch.bfloat16",
     DType.FP16: "torch.float16",
     DType.FP32: "torch.float32",
@@ -181,6 +185,8 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
                 "sub-range",
             )
     for index, buffer in enumerate(schedule.buffers):
+        add(buffer.packed_block is None, "CUTE_PACKED_BLOCK_UNSUPPORTED",
+            f"buffers[{index}].packed_block", "CuTe-DSL has no packed-record storage body")
         add(
             buffer.mode is not BufferMode.STATE,
             "CUTE_STATE_UNSUPPORTED",

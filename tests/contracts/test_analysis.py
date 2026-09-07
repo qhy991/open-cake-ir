@@ -281,6 +281,21 @@ class NoCostEstimateTest(unittest.TestCase):
                 self.assertNotIn(absent, source.lower().split('"""')[2].lower())
 
 
+class AmdAnalysisBoundaryTests(unittest.TestCase):
+    def test_gfx1151_does_not_inherit_residency_or_rank(self):
+        from open_cake_ir.compiler.ranking import cost
+        from open_cake_ir.compiler.work import work_bound
+        target = Target.load(ROOT / "compiler/targets/gfx1151.json")
+        schedule = Schedule.load(ROOT / "corpus/schedules/packed-q8_1-producer-gfx1151.json")
+        self.assertIsNone(residency_upper_bound(schedule, target))
+        self.assertIsNone(cost(schedule, target))
+        self.assertIsNone(target.peak)
+        work = work_bound(schedule)
+        self.assertEqual(set(work.uncounted_arithmetic), {"make_d_fp32", "scale_activation", "round_q"})
+        self.assertFalse(work.flops_exact)
+        self.assertGreater(logical_register_pressure_per_thread(schedule, target), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
 

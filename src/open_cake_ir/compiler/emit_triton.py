@@ -15,6 +15,7 @@ handling from the operation, and the host-side contract from the global buffers.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from .analysis import top_k_selection_structure
 from .emit import BackendPrecondition, Emission, EmitError, require as _require
@@ -25,6 +26,11 @@ from .ir import (
     AccessMap,
     Buffer,
     BufferMode,
+    ByteOrder,
+    PackedBlockFormat,
+    ReductionAlgorithm,
+    RoundingMode,
+    OverflowPolicy,
     DType,
     IndexTieBreak,
     LoadMovement,
@@ -40,6 +46,8 @@ from .ir import (
 from .target import Target
 
 _TL_DTYPE = {
+    DType.UINT8: "tl.uint8",
+    DType.INT8: "tl.int8",
     DType.BF16: "tl.bfloat16",
     DType.FP16: "tl.float16",
     DType.FP32: "tl.float32",
@@ -48,6 +56,8 @@ _TL_DTYPE = {
 }
 
 _TORCH_DTYPE = {
+    DType.UINT8: "torch.uint8",
+    DType.INT8: "torch.int8",
     DType.BF16: "torch.bfloat16",
     DType.FP16: "torch.float16",
     DType.FP32: "torch.float32",
@@ -96,6 +106,7 @@ SCANS: dict[ScanOp, str] = {
 # narrower in-loop effect contracts are checked below before any source is emitted.
 OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.LOAD: "_emit_load",
+    OperationKind.RESHAPE: "_emit_reshape",
     OperationKind.MMA: "_emit_mma",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
     OperationKind.REDUCE: "_emit_reduce",
@@ -159,9 +170,9 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
             findings.append(BackendPrecondition(code, path, message))
 
     add(
-        target.compute_capability is not None,
+        target.triton_target is not None,
         "BACKEND_TARGET_UNSUPPORTED", "target",
-        "the current Triton backend emits CUDA kernels and cannot target Metal",
+        "the Triton backend requires a CUDA target or the exact HIP gfx1151 wave32 target",
     )
 
     def arange(start: int, end: int, path: str) -> None:
@@ -181,7 +192,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
 
     if schedule.program_map is not None:
         for index, axis in enumerate(schedule.program_map.axes):
-            if axis.is_tiled:
+            if any(c.source is AccessIndexKind.PROGRAM_TILE and c.name == axis.name for access in schedule.access_maps for c in access.indices):
                 arange(0, axis.tile, f"program_map.axes[{index}].tile")
     for index, loop in enumerate(schedule.tile_loops):
         arange(0, loop.tile, f"tile_loops[{index}].tile")
@@ -287,6 +298,54 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
                 f"Target {target.target_id!r} does not admit "
                 f"{_ATOMIC_RMW_CONTRACT!r}",
             )
+        if operation.kind is OperationKind.STORE and len(operation.reads) == 3:
+            destination = (
+                schedule.buffer(operation.writes[0])
+                if len(operation.writes) == 1
+                else None
+            )
+            relation = destination.packed_block if destination is not None else None
+            if relation is None:
+                continue
+            access = (
+                schedule.access_map(operation.op_id, destination.name)
+                if destination is not None
+                else None
+            )
+            add(
+                relation is not None
+                and relation.format is PackedBlockFormat.GGML_Q8_1_V1,
+                "TRITON_PACKED_STORE_FORMAT",
+                f"operations[{index}].reads",
+                "the three-input Triton packed Store encodes exactly ggml_q8_1_v1",
+            )
+            add(
+                relation is not None
+                and relation.contract.byte_order is ByteOrder.LITTLE,
+                "TRITON_PACKED_STORE_BYTE_ORDER",
+                f"operations[{index}].writes",
+                "the admitted typed packed Store emits an explicitly little-endian record",
+            )
+            add(
+                destination is not None
+                and len(destination.shape) == 2
+                and destination.shape[1] == 36
+                and relation is not None
+                and relation.record_axis == 1,
+                "TRITON_PACKED_STORE_SHAPE",
+                f"operations[{index}].writes",
+                "the first typed packed Store slice emits a rank-two array of "
+                "contiguous 36-byte records",
+            )
+            add(
+                access is not None
+                and len(access.indices) == 1
+                and access.indices[0].source is AccessIndexKind.DIMENSION
+                and access.indices[0].dimension == 0,
+                "TRITON_PACKED_STORE_ACCESS",
+                "access_maps",
+                "the first typed packed Store slice spans the complete record-prefix axis",
+            )
 
     nested = len(schedule.tile_loops) > 1
     if nested:
@@ -390,6 +449,7 @@ class _TritonEmitter:
         self.schedule = schedule
         self.target = target
         self.lines: list[str] = []
+        self._scratch_names: set[str] = set()
         # The route owns the external symbol; the emitter derives its signature from
         # global Buffers rather than consulting an operator-named profile.
         self.entry_point = entry_point or schedule.lowering.entry_point
@@ -416,6 +476,27 @@ class _TritonEmitter:
             )
 
     # ---------------------------------------------------------------- derivation
+
+    def _fresh_local(self, preferred: str) -> str:
+        """Allocate scratch without overwriting author or already-emitted symbols.
+
+        Only the XOR and packed-Store helpers use this allocator. Keep their readable
+        preferred names when free, and reserve each result before the next allocation.
+        """
+        occupied = {buffer.name for buffer in self.schedule.buffers}
+        occupied.update(self.constants())
+        if self.schedule.program_map is not None:
+            occupied.update(axis.name for axis in self.schedule.program_map.axes)
+        occupied.update(loop.iterator for loop in self.schedule.tile_loops)
+        occupied.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", "\n".join(self.lines)))
+        occupied.update(self._scratch_names)
+        name = preferred
+        suffix = 1
+        while name in occupied:
+            name = f"{preferred}_{suffix}"
+            suffix += 1
+        self._scratch_names.add(name)
+        return name
 
     def _single(self, kind: OperationKind, label: str):
         matches = [op for op in self.schedule.operations if op.kind is kind]
@@ -452,6 +533,22 @@ class _TritonEmitter:
         _require(axis is not None, f"unknown program axis {name!r}")
         return axis
 
+    def _program_tile_axes(self) -> frozenset[str]:
+        """Axes whose AccessMaps request an offset vector.
+
+        `program` versus `program_tile` already owns scalar versus vector addressing.
+        Deriving the choice from tile width made a legal one-element vector impossible
+        and duplicated that AccessMap fact in `ProgramAxis.tile`.
+        """
+
+        return frozenset(
+            component.name
+            for access in self.schedule.access_maps
+            for component in access.indices
+            if component.source is AccessIndexKind.PROGRAM_TILE
+            and component.name is not None
+        )
+
     def constants(self) -> dict[str, int]:
         """Every constexpr the kernel takes, and where each one comes from."""
 
@@ -463,7 +560,7 @@ class _TritonEmitter:
                 values.setdefault(self._extent(buffer.name, dimension), extent)
         assert self.schedule.program_map is not None
         for axis in self.schedule.program_map.axes:
-            if axis.is_tiled:
+            if axis.name in self._program_tile_axes():
                 values[self._tile(axis.name)] = axis.tile
         for loop in self.schedule.tile_loops:
             values[self._tile(loop.name)] = loop.tile
@@ -779,6 +876,8 @@ class _TritonEmitter:
         )
 
     _POINTER = {
+        DType.UINT8: "*u8",
+        DType.INT8: "*i8",
         DType.BF16: "*bf16",
         DType.FP16: "*fp16",
         DType.FP32: "*fp32",
@@ -790,7 +889,7 @@ class _TritonEmitter:
         """The compile contract, derived rather than restated beside the source."""
 
         constants = self.constants()
-        return {
+        toolchain: dict[str, object] = {
             "kernel_entry_point": kernel,
             "signature": {
                 buffer.name: self._POINTER[buffer.dtype] for buffer in self._globals()
@@ -817,6 +916,15 @@ class _TritonEmitter:
             },
             "grid": list(self.grid()),
         }
+        if self.target.target_id == "gfx1151":
+            toolchain.update(
+                {
+                    "triton_target": dict(self.target.triton_target),
+                    "binary_role": "hsaco",
+                    "assembly_role": "amdgcn",
+                }
+            )
+        return toolchain
 
     def _emit_header(self) -> None:
         self.line(f"# Generated by open-cake-ir from {self.schedule.schedule_id}; DO NOT EDIT.")
@@ -828,9 +936,10 @@ class _TritonEmitter:
         self.line("import triton.language as tl")
         if any(
             operation.kind is OperationKind.ELEMENTWISE
-            and operation.parameters.op is ElementwiseOp.TANH
-            and operation.parameters.instruction is not None
-            and operation.parameters.instruction.contract == "libdevice.tanh.f32"
+            and (operation.parameters.op is ElementwiseOp.ROUND
+                 or (operation.parameters.op is ElementwiseOp.TANH
+                     and operation.parameters.instruction is not None
+                     and operation.parameters.instruction.contract == "libdevice.tanh.f32"))
             for operation in self.schedule.operations
         ):
             self.line("from triton.language.extra import libdevice")
@@ -859,8 +968,9 @@ class _TritonEmitter:
             for axis in program_map.axes:
                 self.line(f"    {axis.name} = tl.program_id({axis.axis})")
         pad = self._body_pad()
+        program_tile_axes = self._program_tile_axes()
         for axis in self.schedule.program_map.axes:
-            if axis.is_tiled:
+            if axis.name in program_tile_axes:
                 tile = self._tile(axis.name)
                 self.line(
                     f"{pad}{axis.name}_offsets = {axis.name} * {tile} + tl.arange(0, {tile})"
@@ -1049,8 +1159,9 @@ class _TritonEmitter:
 
     def _token_axis(self) -> ProgramAxis:
         assert self.schedule.program_map is not None
+        program_tile_axes = self._program_tile_axes()
         for axis in self.schedule.program_map.axes:
-            if axis.is_tiled:
+            if axis.name in program_tile_axes:
                 return axis
         raise EmitError("no tiled program axis")
 
@@ -1129,6 +1240,7 @@ class _TritonEmitter:
 
     _ELEMENTWISE_TEXT = {
         ElementwiseOp.SQUARE: "{a} * {a}",
+        ElementwiseOp.ABS: "tl.abs({a})",
         ElementwiseOp.RSQRT: "tl.rsqrt({a})",
         ElementwiseOp.EXP: "tl.exp({a})",
         ElementwiseOp.RELU: "tl.maximum({a}, 0.0)",
@@ -1147,6 +1259,17 @@ class _TritonEmitter:
             'is_pure=True, pack=1)'
         ),
     }
+
+    def _emit_reshape(self, operation, pad: str) -> None:
+        """Emit a register-only, order-preserving shape view."""
+
+        destination = self.schedule.buffer(operation.writes[0])
+        _require(destination is not None, "reshape writes an unknown buffer")
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(
+            f"{pad}{operation.writes[0]} = tl.reshape("
+            f"{operation.reads[0]}, {destination.shape})"
+        )
 
     def _emit_elementwise(self, operation, pad: str) -> None:
         """One arithmetic primitive, written once per backend rather than per operator.
@@ -1175,6 +1298,21 @@ class _TritonEmitter:
                 "the Triton tanh body requires the admitted libdevice.tanh.f32 contract",
             )
             expression = f"libdevice.tanh({operands[0]})"
+        elif parameters.op is ElementwiseOp.DIVIDE_NO_NAN:
+            denominator = operands[1]
+            safe = f"tl.where({denominator} == 0.0, 1.0, {denominator})"
+            expression = (
+                f"tl.where({denominator} == 0.0, 0.0, "
+                f"tl.div_rn({operands[0]}, {safe}))"
+            )
+        elif parameters.op is ElementwiseOp.ROUND:
+            _require(parameters.rounding is RoundingMode.NEAREST_AWAY_FROM_ZERO,
+                     "the Triton round body requires nearest-away-from-zero")
+            # Adding 0.5 before floor loses the FP32 value immediately below a tie.
+            # Compare the fractional magnitude, then restore the original sign.
+            magnitude = f"tl.abs({operands[0]})"
+            integral = f"tl.floor({magnitude})"
+            expression = f"libdevice.copysign({integral} + ({magnitude} - {integral} >= 0.5), {operands[0]})"
         else:
             template = self._ELEMENTWISE_TEXT[parameters.op]
             expression = template.format(
@@ -1216,6 +1354,9 @@ class _TritonEmitter:
             axis < len(source.shape),
             f"reduce axis {axis} is outside {source.name!r}",
         )
+        if operation.parameters.algorithm is ReductionAlgorithm.XOR_TREE_32:
+            self._emit_xor_tree_32(operation, source, pad)
+            return
         reduction = REDUCTIONS[operation.parameters.op]
         carried = (
             bool(self.schedule.enclosing_loops(operation))
@@ -1228,6 +1369,50 @@ class _TritonEmitter:
             + template.format(
                 out=operation.writes[0], src=operation.reads[0], axis=axis
             )
+        )
+
+    def _emit_xor_tree_32(self, operation, source: Buffer, pad: str) -> None:
+        """Spell the five source-ordered wave32 shuffle stages as tensor pairs.
+
+        Reshape+permute+split pairs lane ``i`` with ``i ^ offset`` while retaining only
+        the lower half needed by the eventual lane-zero result.  Each FP32 addition is
+        consequently visible in generated source instead of being delegated to a
+        backend-selected reduction tree.
+        """
+
+        _require(
+            operation.parameters.axis == len(source.shape) - 1
+            and source.shape[-1] == 32,
+            "xor_tree_32 requires a contiguous last axis of extent 32",
+        )
+        result = self.schedule.buffer(operation.writes[0])
+        _require(result is not None, "xor_tree_32 writes an unknown buffer")
+        prefix = source.shape[:-1]
+        prefix_rank = len(prefix)
+        permutation = tuple(range(prefix_rank)) + (prefix_rank + 1, prefix_rank)
+        combine = "+" if operation.parameters.op is ReduceOp.SUM else None
+        current = operation.reads[0]
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        for half in (16, 8, 4, 2, 1):
+            shaped = self._fresh_local(f"{operation.op_id}_xor_{half}_shaped")
+            paired = self._fresh_local(f"{operation.op_id}_xor_{half}_paired")
+            lower = self._fresh_local(f"{operation.op_id}_xor_{half}_lower")
+            upper = self._fresh_local(f"{operation.op_id}_xor_{half}_upper")
+            stage = self._fresh_local(f"{operation.op_id}_xor_{half}")
+            self.line(
+                f"{pad}{shaped} = tl.reshape({current}, {prefix + (2, half)})"
+            )
+            self.line(
+                f"{pad}{paired} = tl.permute({shaped}, {permutation})"
+            )
+            self.line(f"{pad}{lower}, {upper} = tl.split({paired})")
+            if combine is not None:
+                self.line(f"{pad}{stage} = {lower} {combine} {upper}")
+            else:
+                self.line(f"{pad}{stage} = tl.maximum({lower}, {upper})")
+            current = stage
+        self.line(
+            f"{pad}{operation.writes[0]} = tl.reshape({current}, {result.shape})"
         )
 
     def _emit_scan(self, operation, pad: str) -> None:
@@ -1804,13 +1989,12 @@ class _TritonEmitter:
         )
 
     def _emit_cast(self, operation, pad: str) -> None:
-        """Emit the conversion named by the written buffer's declared dtype."""
+        """Emit the canonical conversion and any explicitly declared policy."""
 
+        parameters = operation.parameters
+        suffix = ', fp_downcast_rounding="rtne"' if parameters.rounding is RoundingMode.NEAREST_EVEN else ''
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
-        self.line(
-            f"{pad}{operation.writes[0]} = "
-            f"{operation.reads[0]}.to({_TL_DTYPE[operation.parameters.to]})"
-        )
+        self.line(f"{pad}{operation.writes[0]} = {operation.reads[0]}.to({_TL_DTYPE[parameters.to]}{suffix})")
 
     def _emit_atomic_rmw(self, operation, pad: str) -> None:
         """Emit the one admitted state transition and its returned old values."""
@@ -1834,6 +2018,14 @@ class _TritonEmitter:
         self.line(f"{pad}{result} = tl.where({mask}, {old}, 0)")
 
     def _emit_store(self, operation, pad: str) -> None:
+        destination = self.schedule.buffer(operation.writes[0])
+        if (
+            destination is not None
+            and destination.packed_block is not None
+            and len(operation.reads) == 3
+        ):
+            self._emit_packed_q8_store(operation, destination, pad)
+            return
         access = self.schedule.access_map(operation.op_id, operation.writes[0])
         _require(access is not None, f"store {operation.op_id!r} has no access map")
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
@@ -1852,6 +2044,72 @@ class _TritonEmitter:
         self.line(f"{pad}    {operation.reads[0]},")
         if mask:
             self.line(f"{pad}    mask={mask},")
+        self.line(f"{pad})")
+
+    def _emit_packed_q8_store(
+        self, operation, destination: Buffer, pad: str
+    ) -> None:
+        """Encode registry-owned Q8_1 fields into explicit little-endian bytes."""
+
+        relation = destination.packed_block
+        _require(
+            relation is not None
+            and relation.format is PackedBlockFormat.GGML_Q8_1_V1
+            and relation.record_axis == 1
+            and relation.contract.byte_order is ByteOrder.LITTLE,
+            "typed Triton packed Store requires the little-endian Q8_1 relation",
+        )
+        access = self.schedule.access_map(operation.op_id, destination.name)
+        _require(
+            access is not None
+            and len(access.indices) == 1
+            and access.indices[0].source is AccessIndexKind.DIMENSION
+            and access.indices[0].dimension == 0,
+            "typed Triton packed Store spans one complete record-prefix axis",
+        )
+        d_field, s_field, q_field = relation.contract.fields
+        _require(
+            (d_field.name, s_field.name, q_field.name) == ("d", "s", "qs")
+            and q_field.elements == 32,
+            "the Q8_1 registry field layout is not the admitted d/s/qs relation",
+        )
+
+        record_index = f"{destination.name}_d0_offsets"
+        record_stride = self._extent(destination.name, relation.record_axis)
+        record_ptrs = self._fresh_local(f"{operation.op_id}_record_ptrs")
+        d_bits = self._fresh_local(f"{operation.op_id}_d_bits")
+        s_bits = self._fresh_local(f"{operation.op_id}_s_bits")
+        q_offsets = self._fresh_local(f"{operation.op_id}_q_offsets")
+        d_value, s_value, q_value = operation.reads
+
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(
+            f"{pad}{record_ptrs} = {destination.name} + "
+            f"{record_index} * {record_stride}"
+        )
+        self.line(f"{pad}{d_bits} = {d_value}.to(tl.uint16, bitcast=True)")
+        self.line(f"{pad}{s_bits} = {s_value}.to(tl.uint16, bitcast=True)")
+        for bits, offset in (
+            (d_bits, d_field.byte_offset),
+            (s_bits, s_field.byte_offset),
+        ):
+            self.line(
+                f"{pad}tl.store({record_ptrs} + {offset}, "
+                f"({bits} & 0xff).to(tl.uint8))"
+            )
+            self.line(
+                f"{pad}tl.store({record_ptrs} + {offset + 1}, "
+                f"(({bits} >> 8) & 0xff).to(tl.uint8))"
+            )
+        self.line(
+            f"{pad}{q_offsets} = tl.arange(0, {q_field.elements})"
+        )
+        self.line(f"{pad}tl.store(")
+        self.line(
+            f"{pad}    {record_ptrs}[:, None] + {q_field.byte_offset} + "
+            f"{q_offsets}[None, :],"
+        )
+        self.line(f"{pad}    {q_value}.to(tl.uint8, bitcast=True),")
         self.line(f"{pad})")
 
     def _emit_launch_options(self, constants: dict[str, int]) -> None:
@@ -1883,6 +2141,18 @@ class _TritonEmitter:
         constants = self.constants()
 
         self.line(f"def {entry}({names}, out=None):")
+        if self.target.target_id == "gfx1151":
+            self.line("    if torch.version.hip is None:")
+            self.line('        raise RuntimeError("this Target requires a ROCm PyTorch build")')
+            self.line(
+                f"    properties = torch.cuda.get_device_properties({inputs[0].name}.device)"
+            )
+            self.line(
+                f'    if getattr(properties, "gcnArchName", None) != "{self.target.architecture}":'
+            )
+            self.line(
+                '        raise RuntimeError("the active device differs from the exact gfx1151 Target")'
+            )
         self.line("    for tensor, shape, dtype in (")
         for buffer in inputs:
             self.line(
@@ -1894,7 +2164,10 @@ class _TritonEmitter:
         self.line("        if tensor.dtype != dtype:")
         self.line("            raise TypeError(\"an input differs from the frozen dtype\")")
         self.line("        if not tensor.is_cuda or not tensor.is_contiguous():")
-        self.line("            raise ValueError(\"every input must be contiguous on CUDA\")")
+        device_label = "the HIP device" if self.target.target_id == "gfx1151" else "CUDA"
+        self.line(
+            f'            raise ValueError("every input must be contiguous on {device_label}")'
+        )
         self.line(f"    if any(t.device != {inputs[0].name}.device for t in ({names},)):")
         self.line("        raise ValueError(\"every input must share one device\")")
         self._emit_output_binding(outputs, inputs[0].name)

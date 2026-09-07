@@ -6,6 +6,8 @@ from enum import Enum
 
 
 class DType(str, Enum):
+    UINT8 = "uint8"
+    INT8 = "int8"
     BF16 = "bf16"
     FP16 = "fp16"
     FP32 = "fp32"
@@ -18,6 +20,8 @@ class DType(str, Enum):
 
 
 _DTYPE_ITEMSIZE = {
+    DType.UINT8: 1,
+    DType.INT8: 1,
     DType.BF16: 2,
     DType.FP16: 2,
     DType.FP32: 4,
@@ -38,6 +42,24 @@ class BufferMode(str, Enum):
     OUTPUT = "output"
     STATE = "state"
     SCRATCH = "scratch"
+
+
+class PackedBlockFormat(str, Enum):
+    """Closed raw-record formats whose mechanical ABI is part of the IR.
+
+    A packed block is not a scalar dtype: one record contains metadata and a quant
+    payload with different scalar types.  This vocabulary owns only those physical
+    bytes.  Quantization, decode and dot semantics remain future operations.
+    """
+
+    GGML_Q4_0_V1 = "ggml_q4_0_v1"
+    GGML_Q8_1_V1 = "ggml_q8_1_v1"
+
+
+class ByteOrder(str, Enum):
+    """Byte order of multi-byte fields in a physical packed record."""
+
+    LITTLE = "little"
 
 
 # `tl.dot(a, trans(b))` and tcgen05 alike contract the last axis of both staged operands,
@@ -70,6 +92,7 @@ class OperationKind(str, Enum):
     ONLINE_SOFTMAX = "online_softmax"
     ATOMIC_RMW = "atomic_rmw"
     CAST = "cast"
+    RESHAPE = "reshape"
     ELEMENTWISE = "elementwise"
     SCAN = "scan"
     STORE = "store"
@@ -107,6 +130,13 @@ class ReduceOp(str, Enum):
 
     SUM = "sum"
     MAX = "max"
+
+
+class ReductionAlgorithm(str, Enum):
+    """The observable evaluation order of one reduction."""
+
+    BACKEND = "backend"
+    XOR_TREE_32 = "xor_tree_32"
 
 
 class LoadMovement(str, Enum):
@@ -170,6 +200,8 @@ class ElementwiseOp(str, Enum):
     """
 
     SQUARE = "square"
+    ABS = "abs"
+    ROUND = "round"
     RSQRT = "rsqrt"
     EXP = "exp"
     RELU = "relu"
@@ -178,6 +210,7 @@ class ElementwiseOp(str, Enum):
     SUB = "sub"
     MUL = "mul"
     DIV = "div"
+    DIVIDE_NO_NAN = "divide_no_nan"
     FMA = "fma"
 
     @property
@@ -189,6 +222,8 @@ class ElementwiseOp(str, Enum):
             if self
             in (
                 ElementwiseOp.SQUARE,
+                ElementwiseOp.ABS,
+                ElementwiseOp.ROUND,
                 ElementwiseOp.RSQRT,
                 ElementwiseOp.EXP,
                 ElementwiseOp.RELU,
@@ -196,6 +231,17 @@ class ElementwiseOp(str, Enum):
             )
             else 2
         )
+
+
+class RoundingMode(str, Enum):
+    NEAREST_AWAY_FROM_ZERO = "nearest_away_from_zero"
+    NEAREST_EVEN = "nearest_even"
+    TOWARD_ZERO = "toward_zero"
+
+
+class OverflowPolicy(str, Enum):
+    IEEE = "ieee"
+    FORBID = "forbid"
 
 
 class ReductionScope(str, Enum):
