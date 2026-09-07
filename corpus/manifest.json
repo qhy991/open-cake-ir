@@ -1240,7 +1240,7 @@
           "RESIDENCY_TARGET_UNMODELED"
         ],
         "schedule_sha256": "755da93f847eebf1769587be539037d4297a2044d1fb8f08a5cc6cf0bda97386",
-        "lowering_source_sha256": "14475c87a0c82f43321517813e5b9bf20c6dafd69c7876a3125e8a149d3cb6ac"
+        "lowering_source_sha256": "16007c91187aa16f6c9bd3e0a9c70660870e47e92077974206a6384fe6050764"
       }
     },
     {
@@ -1290,8 +1290,8 @@
         "lowering_eligible": false,
         "finding_codes": [
           "RESIDENCY_TARGET_UNMODELED",
-          "TRITON_ARANGE_EXTENT_UNSUPPORTED",
-          "TRITON_ARANGE_EXTENT_UNSUPPORTED"
+          "TRITON_ARANGE_RANGE_UNSUPPORTED",
+          "TRITON_ARANGE_RANGE_UNSUPPORTED"
         ],
         "schedule_sha256": "99cc36d2b9f9179576201a46f00d4599010f8b2d13a67aaa31fc428b02853fff",
         "lowering_source_sha256": null
@@ -1306,8 +1306,8 @@
         "finding_codes": [
           "RESIDENCY_TARGET_UNMODELED"
         ],
-        "schedule_sha256": "813bbcdd7e429203ae326b09a7ae8edf762f3ef16398a5a3f8d0c3a4605decd6",
-        "lowering_source_sha256": "874842aa41f017047f323854d42d52f2bcebd802c85476fc3e26c47b1af7b632"
+        "schedule_sha256": "362a18b0c93065adf2ba920e05cc684b7c04f0f161288a57825720c8e36f7af0",
+        "lowering_source_sha256": "d5dec77c3ba10e11fe7494cc5be1e6cc7bb9dbcf45decb128d820543db47dcc0"
       }
     },
     {
@@ -1320,7 +1320,7 @@
           "PACKED_BLOCK_STORE_RECORD_COUNT",
           "RESIDENCY_TARGET_UNMODELED"
         ],
-        "schedule_sha256": "105fb23dd1c93c11762cd299d537bb69903af4f15c30104c13f47cc8a159f64e",
+        "schedule_sha256": "8904235292543ded1d969626f39e82ed07b405ff63010b2744094dbf54b55ad9",
         "lowering_source_sha256": null
       }
     }
