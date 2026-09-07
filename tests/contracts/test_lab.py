@@ -26,10 +26,10 @@ from open_cake_ir.evaluation import (  # noqa: E402
     NCU_ATTRIBUTION_METRICS,
     build_ncu_attribution_profile,
 )
+from open_cake_ir.lab.providers import LEGACY_CODEX_DISABLED_FEATURES as CODEX_DISABLED_FEATURES
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
 from open_cake_ir.lab import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
-    CODEX_DISABLED_FEATURES,
     BoundedBrokerEvaluator,
     CampaignLock,
     CommandBrokerSubmitter,

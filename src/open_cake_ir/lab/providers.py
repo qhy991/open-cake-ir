@@ -25,7 +25,7 @@ _THREAD_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 _MAX_CANDIDATE_BYTES = 64 * 1024 * 1024
 SINGLE_CANDIDATE_V1 = "single_candidate_v1"
 CANDIDATE_SET_ENVELOPE_V1 = "candidate_set_envelope_v1"
-CODEX_DISABLED_FEATURES = (
+LEGACY_CODEX_DISABLED_FEATURES = (
     "apps",
     "auth_elicitation",
     "browser_use",
@@ -48,6 +48,10 @@ CODEX_DISABLED_FEATURES = (
     "tool_suggest",
     "workspace_dependencies",
 )
+
+# The current CLI model advertises code_mode_only; disabling the host alone
+# leaves a startup error. These explicit exclusions require a fresh qualification.
+CODEX_DISABLED_FEATURES = tuple(sorted((*LEGACY_CODEX_DISABLED_FEATURES, 'code_mode', 'code_mode_only')))
 
 
 def required_live_provider_qualification_scope(claim_scope: str) -> str:

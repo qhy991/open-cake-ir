@@ -25,6 +25,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         zero_usage: bool = False,
         exit_nonzero: bool = False,
         tool_rich: bool = False,
+        startup_error: bool = False,
     ) -> None:
         path.write_text(
             textwrap.dedent(
@@ -158,6 +159,9 @@ class ProviderQualificationContractTests(unittest.TestCase):
                         }},
                     }},
                 ])
+                if {startup_error!r}:
+                    events.insert(1, {{'type':'item.completed', 'item':{{'id':'startup-error',
+                        'type':'error', 'message':'Unable to start Code Mode without its host'}}}})
                 for event in events:
                     print(json.dumps(event, separators=(",", ":")))
                 """
@@ -498,6 +502,22 @@ class ProviderQualificationContractTests(unittest.TestCase):
             self.assertEqual(audit.endpoint_observation, "missing")
             self.assertIsNone(anchor["qualification_receipt_sha256"])
             self.assertEqual(anchor["terminal_seal_sha256"], audit.terminal_seal_sha256)
+
+    def test_startup_error_with_success_tail_cannot_issue_live_qualification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / 'codex'
+            self._write_provider(executable, startup_error=True)
+            completed, receipt_path, anchor_path, evidence_root = self._run_qualification(
+                root, executable, provider_revision='codex-startup-error-fixture',
+                run_id='codex-provider-startup-error')
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertFalse(receipt_path.exists())
+            audit = EvidenceStore.open(evidence_root).audit_run('codex-provider-startup-error')
+            self.assertTrue(audit.archive_integrity)
+            self.assertEqual(audit.protocol_adherence, 'provider_fault')
+            self.assertEqual(audit.endpoint_observation, 'missing')
+            self.assertIsNone(json.loads(anchor_path.read_bytes())['qualification_receipt_sha256'])
 
     def test_zero_token_turns_cannot_issue_a_usage_qualified_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -130,11 +130,11 @@
       },
       "lowering_route": {
         "backend": "triton",
-        "entry_point": "cake_rmsnorm_b8_smoke"
+        "entry_point": "cake_indexed_gather_b8_smoke"
       },
       "schedule_skeleton": {
-        "path": "corpus/schedules/rmsnorm-b8-smoke-b300.json",
-        "canonical_sha256": "ca93f8996b655bd54c2e3bb89e64e2090defef2337046e2821bcc66337497758"
+        "path": "corpus/schedules/indexed-gather-b8-smoke-b300.json",
+        "canonical_sha256": "923de0818262be701729a989dd0045971f313130f134117263566cd320e0e053"
       },
       "tool_surface": [
         "submit_schedule_or_python"
@@ -338,9 +338,9 @@
   },
   "schema_version": 1,
   "state": "template",
-  "study_id": "matched-search-triton-b300-known-baseline-optimization-template",
+  "study_id": "matched-search-triton-b300-gather-known-baseline-optimization-template",
   "workload": {
-    "path": "contracts/workloads/rmsnorm-fp32-v2.json",
-    "canonical_sha256": "946f8ef156383eddc8834497fb3d3afdfb9a0014624347d7b5f5ab2ca0d67b63"
+    "path": "contracts/workloads/indexed-gather-bf16-v2.json",
+    "canonical_sha256": "2d031c0821a12ad18178302ba4bfd95263f59381ddacbfa7cfac8382ea95a96c"
   }
 }

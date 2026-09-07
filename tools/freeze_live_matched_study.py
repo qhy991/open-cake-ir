@@ -149,6 +149,8 @@ def main() -> int:
         or study.get("state") not in {"template", "frozen"}
     ):
         raise ValueError("live matched Study template policy differs")
+    if study.get('execution', {}).get('fixed_baseline') == {'binding': 'campaign_lock'}:
+        raise ValueError('stable paired Study uses lab preflight --execution-bindings; it must not be rewritten as a frozen Study')
     comparison = comparison_arm(_object(study["arms"], "study.arms"))
     paired_triton = comparison == "native_triton"
     if study.get("claim_scope") == "scientific_matched_search":

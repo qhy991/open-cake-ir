@@ -21,6 +21,10 @@ from open_cake_ir.evaluation import (
     evaluate_with_admission_recovery,
 )
 
+from open_cake_ir.evaluation.paired import (
+    candidate_identity, paired_protocol, validate_pair_candidates, validate_receipt_policy, validate_paired_broker,
+)
+
 from .executor import ExecutorRevision
 from .faults import RunProtocolFault
 from .process import (
@@ -116,6 +120,8 @@ class CommandBrokerSubmitter:
         service_user: str,
         service_group: str,
         timeout_seconds: int = 1800,
+        evaluation_protocol: Mapping[str, object] | None = None,
+        baseline: LaunchableCandidate | None = None,
     ) -> None:
         if (
             not command
@@ -134,6 +140,15 @@ class CommandBrokerSubmitter:
         self._service_uid = pwd.getpwnam(service_user).pw_uid
         self._service_gid = grp.getgrnam(service_group).gr_gid
         self._timeout = timeout_seconds
+        self._protocol = json.loads(_canonical_json_bytes(evaluation_protocol)) if evaluation_protocol is not None else None
+        self._baseline = baseline
+        if self._protocol is not None:
+            if sha256(_canonical_json_bytes(self._protocol)).hexdigest() != protocol_sha256:
+                raise ValueError('broker evaluation protocol differs')
+            if (paired_protocol(self._protocol) is not None) != (baseline is not None):
+                raise ValueError('broker paired policy and fixed baseline differ')
+        elif baseline is not None:
+            raise ValueError('broker baseline requires an explicit evaluation protocol')
 
     def _read_output_artifact(self, root: Path, value: object, role: str) -> bytes:
         if not isinstance(value, str) or not value:
@@ -182,6 +197,12 @@ class CommandBrokerSubmitter:
             or not candidate.artifact_payloads
         ):
             raise ValueError("broker attempt number or Candidate custody differs")
+        if self._baseline is not None:
+            from open_cake_ir.evaluation import WorkloadContract
+            workload = WorkloadContract.load(self._workload_path)
+            if workload.canonical_sha256 != self._workload_sha256:
+                raise ValueError('broker Workload authority differs')
+            validate_pair_candidates(candidate, self._baseline, workload, case_id)
         with tempfile.TemporaryDirectory(prefix="open-cake-evaluation-") as directory:
             root = Path(directory).resolve()
             os.chown(root, -1, self._service_gid)
@@ -209,6 +230,19 @@ class CommandBrokerSubmitter:
                 "attempt": attempt,
                 "executor_revision": dict(self._executor.reference),
             }
+            if self._protocol is not None:
+                evaluator_arguments['evaluation_protocol'] = self._protocol
+            if self._baseline is not None:
+                baseline_paths = {}
+                for role, payload in self._baseline.artifact_payloads.items():
+                    path = root / f'baseline-{role}'
+                    path.write_bytes(payload)
+                    os.chown(path, -1, self._service_gid)
+                    path.chmod(0o640)
+                    baseline_paths[role] = path.name
+                evaluator_arguments['baseline'] = {
+                    **candidate_identity(self._baseline), 'artifact_paths': baseline_paths,
+                }
             request_path = root / "request.json"
             result_path = root / "result.json"
             request_path.write_bytes(_canonical_json_bytes(evaluator_arguments))
@@ -349,6 +383,12 @@ class CommandBrokerSubmitter:
                     timing=dict(timing) if timing is not None else None,
                     artifact_payloads=payloads,
                 )
+                if self._protocol is not None:
+                    validate_receipt_policy(receipt, self._protocol,
+                        candidate_identity(self._baseline) if self._baseline is not None else None,
+                        candidate)
+                validate_paired_broker(receipt, observed_job_id, counters)
+
             evaluator_authority = dict(evaluator_arguments)
             evaluator_authority.pop("attempt")
             evaluator_arguments_sha256 = sha256(

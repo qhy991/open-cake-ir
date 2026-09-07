@@ -299,7 +299,11 @@ class EvaluationReceipt:
                 self.candidate_sha256,
             }:
                 raise ValueError("EvaluationReceipt launch candidate differs")
-            if self.timing is not None:
+            paired_raw = isinstance(timing_raw, Mapping) and timing_raw.get('kind') == 'fixed_baseline_paired_cupti_v1'
+            if paired_raw:
+                from .paired import validate_paired_receipt
+                validate_paired_receipt(self, timing_raw, correctness_raw, launch_raw)
+            if self.timing is not None and not paired_raw:
                 cohorts_value = (
                     timing_raw.get("cohorts_ms")
                     if isinstance(timing_raw, Mapping)

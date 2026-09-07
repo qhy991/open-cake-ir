@@ -130,11 +130,11 @@
       },
       "lowering_route": {
         "backend": "triton",
-        "entry_point": "cake_rmsnorm_b8_smoke"
+        "entry_point": "cake_gemm_bias_b1_smoke"
       },
       "schedule_skeleton": {
-        "path": "corpus/schedules/rmsnorm-b8-smoke-b300.json",
-        "canonical_sha256": "ca93f8996b655bd54c2e3bb89e64e2090defef2337046e2821bcc66337497758"
+        "path": "corpus/schedules/gemm-bias-b1-smoke-b300.json",
+        "canonical_sha256": "a952cd109d1bb78b7bd24149aac53e3c68d8c8a76e2834006fdc1c76512e8818"
       },
       "tool_surface": [
         "submit_schedule_or_python"
@@ -338,9 +338,9 @@
   },
   "schema_version": 1,
   "state": "template",
-  "study_id": "matched-search-triton-b300-known-baseline-optimization-template",
+  "study_id": "matched-search-triton-b300-gemm-known-baseline-optimization-template",
   "workload": {
-    "path": "contracts/workloads/rmsnorm-fp32-v2.json",
-    "canonical_sha256": "946f8ef156383eddc8834497fb3d3afdfb9a0014624347d7b5f5ab2ca0d67b63"
+    "path": "contracts/workloads/gemm-bias-bf16-fp32-v2.json",
+    "canonical_sha256": "b3337c25ac111faf7084910696a4857c9c50c8fcb14826184ed4317bfc16caaf"
   }
 }

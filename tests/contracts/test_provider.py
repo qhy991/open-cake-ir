@@ -119,11 +119,35 @@ class ProviderContractTests(unittest.TestCase):
             ]
             self.assertEqual(observed_disabled, disabled)
             self.assertIn("apps", disabled)
-            self.assertIn("shell_tool", disabled)
+            for feature in ('code_mode', 'code_mode_only', 'code_mode_host', 'shell_tool'):
+                self.assertEqual(disabled.count(feature), 1)
         self.assertNotIn("resume", initial.argv)
         self.assertIn("resume", resumed.argv)
         self.assertIn('model_reasoning_effort="xhigh"', initial.argv)
         self.assertEqual(builder.configuration["reasoning_effort"], "xhigh")
+
+    def test_current_closed_builder_rejects_missing_code_mode_exclusions(self):
+        for feature in ('code_mode', 'code_mode_only'):
+            with self.subTest(feature=feature), self.assertRaisesRegex(ValueError, 'feature and event'):
+                CodexInvocationBuilder(executable=ROOT / 'pyproject.toml', provider_revision='fixture',
+                    model='gpt-5.6-sol', reasoning_effort='max', service_tier='default', workspace=ROOT,
+                    output_schema=ROOT / 'contracts/providers/codex-turn-output-schema-v1.json',
+                    removed_environment=('OPENAI_API_KEY', 'ANTHROPIC_API_KEY'),
+                    disabled_features=tuple(v for v in CODEX_DISABLED_FEATURES if v != feature))
+
+    def test_code_mode_startup_error_is_rejected_before_and_after_turn_started(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / 'candidate.json'
+            candidate.write_text('{"schedule":2}')
+            events = [json.loads(line) for line in self._events(candidate, duplicate=False).splitlines()]
+            error = {'type':'item.completed', 'item':{'id':'startup-error', 'type':'error',
+                'message':'Unable to start Code Mode without its host'}}
+            for position in (1, 2):
+                with self.subTest(position=position), self.assertRaises(ValueError):
+                    changed = events[:position] + [error] + events[position:]
+                    normalize_codex_turn(b''.join(json.dumps(v).encode() + b'\n' for v in changed),
+                        candidate_path=candidate, expected_change='add',
+                        expected_terminal_message='{"candidate_written":true}')
 
     def test_provider_default_features_emit_no_forced_disable_flags(self) -> None:
         builder = CodexInvocationBuilder(
