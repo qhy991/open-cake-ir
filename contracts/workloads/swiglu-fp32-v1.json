@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "workload_id": "swiglu-fp32-independent-v1",
+  "revision": "1",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "compiler_profile",
+      "profile": "swiglu_b8_smoke",
+      "first_revision": "open-cake-ir-sm100a-v13"
+    },
+    {
+      "kind": "target_qualification",
+      "target": "gfx1151",
+      "rocm": "7.2.1",
+      "observed": "2026-08-25"
+    }
+  ],
+  "operator": "swiglu_fp32",
+  "cases": [
+    {
+      "case_id": "seeded_random",
+      "shape": {"B": 8, "N": 512, "D": 128},
+      "seed": 20260825,
+      "mode": "random_standard_normal"
+    },
+    {
+      "case_id": "signed_saturation",
+      "shape": {"B": 8, "N": 512, "D": 128},
+      "seed": null,
+      "mode": "constructed_signed_saturation"
+    }
+  ],
+  "tensors": {
+    "up": {"shape": ["B", "N", "D"], "dtype": "fp32", "layout": "contiguous_row_major", "finite_only": true},
+    "gate": {"shape": ["B", "N", "D"], "dtype": "fp32", "layout": "contiguous_row_major", "finite_only": true},
+    "y": {"shape": ["B", "N", "D"], "dtype": "fp32", "layout": "contiguous_row_major"}
+  },
+  "semantics": {
+    "definition": "y = up * gate * 0.5 * (tanh(gate * 0.5) + 1.0)",
+    "input_dtype": "fp32",
+    "output_dtype": "fp32",
+    "nonfinite": "reject_before_oracle"
+  },
+  "oracle": {
+    "kind": "cpu_fp64_composition_then_fp32_round",
+    "source_sha256": "36161c3cd947d663d9d9e75dd7babb0dff2d799ad021ae80d55508150f217036"
+  },
+  "validation": {
+    "canonical": "torch_isclose_against_cpu_fp64_composition",
+    "atol": 0.000002,
+    "rtol": 0.00002,
+    "performance_measured": false
+  }
+}
