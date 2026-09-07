@@ -15,11 +15,10 @@ to deterministic target emitters.
 from .core import (
     Assessment,
     Compiler,
-    CompilerError,
-    CorpusCaseReport,
-    CorpusGateReport,
     Lowering,
 )
+from .corpus import CorpusCaseReport, CorpusGateReport
+from .errors import CompilerError
 from .emit_cutedsl import EmitError, Emission, emit
 from .compiled_resources import CompiledResources
 from .empirical_cost import EmpiricalCostModel

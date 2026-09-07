@@ -7,7 +7,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from hashlib import sha256
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence, cast
 
@@ -29,15 +29,13 @@ from .ir import (
     Schedule,
     ScheduleParseError,
 )
-from .target import Target, TargetParseError
+from .corpus import CorpusCaseReport, CorpusGateReport, check_corpus
+from .errors import CompilerError
+from .revision import CompilerRevision, load_revision
 from .ranking import Cost, rank as rank_candidates
 from .compiled_resources import CompiledResources
 from .empirical_cost import EmpiricalCostModel
 from .verifier import Finding, FindingCategory, FindingSeverity, verify as verify_contracts
-
-
-class CompilerError(ValueError):
-    """Raised when compiler authority or Schedule syntax cannot be interpreted."""
 
 
 @dataclass(frozen=True)
@@ -84,79 +82,6 @@ class Lowering:
     source_sha256: str
     source_map: Mapping[str, tuple[int, int]]
     toolchain_requirements: Mapping[str, object]
-
-
-@dataclass(frozen=True)
-class TargetDefinition:
-    """Revision-bound exact target capabilities used by assessment/lowering."""
-
-    target_id: str
-    canonical_sha256: str
-    device_names: tuple[str, ...]
-    compute_capability: tuple[int, int] | None
-    memory_spaces: frozenset[str]
-    operation_kinds: frozenset[str]
-    maximum_threads_per_cta: int
-    maximum_warps_per_cta: int
-    maximum_shared_memory_bytes: int
-    maximum_tensor_memory_bytes: int
-    maximum_grid: tuple[int, int, int]
-    instruction_contracts: frozenset[str]
-    synchronization_contracts: frozenset[str]
-    citations: tuple[Mapping[str, object], ...]
-    document: Mapping[str, object]
-    """The Revision-bound source document, retained so the contract verifier can build
-    its own typed Target from the same bytes this definition was parsed from."""
-
-
-@dataclass(frozen=True)
-class CorpusCaseReport:
-    """Observed-versus-expected result for one Compiler Corpus case."""
-
-    case_id: str
-    schedule_path: str
-    expected_accepted: bool
-    expected_lowering_eligible: bool
-    expected_finding_codes: tuple[str, ...]
-    expected_schedule_sha256: str
-    expected_lowering_source_sha256: str | None
-    observed_accepted: bool
-    observed_lowering_eligible: bool
-    observed_finding_codes: tuple[str, ...]
-    observed_schedule_sha256: str
-    observed_lowering_source_sha256: str | None
-    matched: bool
-
-
-@dataclass(frozen=True)
-class CorpusGateReport:
-    """Release-gate projection for the full declared Compiler Corpus."""
-
-    corpus_id: str
-    compiler_revision_id: str
-    compiler_revision_sha256: str
-    passed: bool
-    cases: tuple[CorpusCaseReport, ...]
-
-    @property
-    def case_count(self) -> int:
-        return len(self.cases)
-
-    @property
-    def accepted_case_count(self) -> int:
-        return sum(case.expected_accepted for case in self.cases)
-
-    @property
-    def rejected_case_count(self) -> int:
-        return self.case_count - self.accepted_case_count
-
-    @property
-    def lowerable_case_count(self) -> int:
-        return sum(case.expected_lowering_eligible for case in self.cases)
-
-    @property
-    def nonlowerable_case_count(self) -> int:
-        return self.case_count - self.lowerable_case_count
 
 
 # The IR owns the Schedule's field set. Restating it here meant a new top-level field
@@ -306,131 +231,6 @@ def _positive_int(value: object, path: str) -> int:
     return value
 
 
-def _digest(value: object, path: str, *, nullable: bool = False) -> str | None:
-    if value is None and nullable:
-        return None
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
-        raise CompilerError(f"{path} must be a lowercase SHA256 digest")
-    return value
-
-
-def _project_path(root: Path, value: object, context: str) -> tuple[str, Path]:
-    relative = _name(value, context)
-    parsed = PurePosixPath(relative)
-    if parsed.is_absolute() or ".." in parsed.parts or "\\" in relative:
-        raise CompilerError(f"{context} is unsafe")
-    path = (root / relative).resolve(strict=True)
-    if root not in path.parents:
-        raise CompilerError(f"{context} escapes project root")
-    return relative, path
-
-
-def _load_target_definition(
-    root: Path,
-    target_id: str,
-    value: object,
-    context: str,
-) -> TargetDefinition:
-    reference = _object(value, context)
-    if set(reference) != {"path", "canonical_sha256"}:
-        raise CompilerError(f"{context} fields differ")
-    _, path = _project_path(root, reference.get("path"), f"{context}.path")
-    document = _object(
-        json.loads(path.read_text(encoding="utf-8")),
-        f"target_definition.{target_id}",
-    )
-    expected_fields = {
-        "schema_version",
-        "target_id",
-        "architecture",
-        "device_names",
-        "memory_spaces",
-        "operation_kinds",
-        "resource_limits",
-        "instruction_contracts",
-        "synchronization_contracts",
-        "citations",
-    }
-    optional_fields = {"occupancy", "compute_capability"}
-    if (
-        not expected_fields <= set(document) <= expected_fields | optional_fields
-        or document.get("schema_version") != 1
-    ):
-        raise CompilerError(f"target definition {target_id!r} fields differ")
-    if document.get("target_id") != target_id:
-        raise CompilerError(f"target definition {target_id!r} identity differs")
-    canonical_sha256 = sha256(_canonical_json_bytes(document)).hexdigest()
-    if reference.get("canonical_sha256") != canonical_sha256:
-        raise CompilerError(f"target definition {target_id!r} bytes differ")
-    try:
-        typed_target = Target.from_dict(document)
-    except (TargetParseError, ScheduleParseError) as error:
-        raise CompilerError(f"target definition {target_id!r}: {error}") from error
-    limits = _object(document.get("resource_limits"), f"target_definition.{target_id}.resource_limits")
-    if set(limits) != {
-        "maximum_threads_per_cta",
-        "maximum_warps_per_cta",
-        "maximum_shared_memory_bytes",
-        "maximum_tensor_memory_bytes",
-        "grid",
-    }:
-        raise CompilerError(f"target definition {target_id!r} resource limits differ")
-    grid = _object(limits.get("grid"), f"target_definition.{target_id}.resource_limits.grid")
-    if set(grid) != {"x", "y", "z"}:
-        raise CompilerError(f"target definition {target_id!r} grid limits differ")
-    citations = _objects(document.get("citations"), f"target_definition.{target_id}.citations")
-    if not citations:
-        raise CompilerError(f"target definition {target_id!r} requires citations")
-    return TargetDefinition(
-        target_id=target_id,
-        canonical_sha256=canonical_sha256,
-        device_names=_strings(document.get("device_names"), f"target_definition.{target_id}.device_names"),
-        compute_capability=typed_target.compute_capability,
-        memory_spaces=frozenset(
-            _strings(document.get("memory_spaces"), f"target_definition.{target_id}.memory_spaces")
-        ),
-        operation_kinds=frozenset(
-            _strings(document.get("operation_kinds"), f"target_definition.{target_id}.operation_kinds")
-        ),
-        maximum_threads_per_cta=_positive_int(
-            limits.get("maximum_threads_per_cta"),
-            f"target_definition.{target_id}.maximum_threads_per_cta",
-        ),
-        maximum_warps_per_cta=_positive_int(
-            limits.get("maximum_warps_per_cta"),
-            f"target_definition.{target_id}.maximum_warps_per_cta",
-        ),
-        maximum_shared_memory_bytes=_positive_int(
-            limits.get("maximum_shared_memory_bytes"),
-            f"target_definition.{target_id}.maximum_shared_memory_bytes",
-        ),
-        maximum_tensor_memory_bytes=typed_target.resource_limits.maximum_tensor_memory_bytes,
-        maximum_grid=(
-            _positive_int(grid.get("x"), f"target_definition.{target_id}.grid.x"),
-            _positive_int(grid.get("y"), f"target_definition.{target_id}.grid.y"),
-            _positive_int(grid.get("z"), f"target_definition.{target_id}.grid.z"),
-        ),
-        instruction_contracts=frozenset(
-            _strings(
-                document.get("instruction_contracts"),
-                f"target_definition.{target_id}.instruction_contracts",
-            )
-        ),
-        synchronization_contracts=frozenset(
-            _strings(
-                document.get("synchronization_contracts"),
-                f"target_definition.{target_id}.synchronization_contracts",
-            )
-        ),
-        citations=tuple(MappingProxyType(dict(item)) for item in citations),
-        document=MappingProxyType(dict(document)),
-    )
-
-
 def _named(items: Sequence[Mapping[str, object]], path: str) -> dict[str, Mapping[str, object]]:
     result: dict[str, Mapping[str, object]] = {}
     for index, item in enumerate(items):
@@ -479,263 +279,25 @@ def _semantic_schedule_sha256(schedule: Mapping[str, object]) -> str:
 class Compiler:
     """Assess and lower Schedules independently of the Research Lab."""
 
-    def __init__(
-        self,
-        *,
-        project_root: Path,
-        revision_id: str,
-        revision_sha256: str,
-        state: str,
-        target_definitions: Mapping[str, TargetDefinition],
-        corpus_path: Path,
-        calibration_coverage: frozenset[str],
-    ) -> None:
-        self._project_root = project_root
-        self._revision_id = revision_id
-        self._revision_sha256 = revision_sha256
-        self._state = state
-        self._target_definitions = MappingProxyType(dict(target_definitions))
-        self._corpus_path = corpus_path
-        self._calibration_coverage = calibration_coverage
+    def __init__(self, revision: CompilerRevision) -> None:
+        self._revision = revision
 
     @property
     def state(self) -> str:
         """Return draft or released without exposing mutable manifest state."""
 
-        return self._state
+        return self._revision.state
 
     @classmethod
     def load(cls, project_root: str | Path, revision_path: str | Path) -> "Compiler":
         """Load a draft or released Compiler Revision manifest."""
 
-        root = Path(project_root).resolve(strict=True)
-        path = Path(revision_path).resolve(strict=True)
-        value = json.loads(path.read_text(encoding="utf-8"))
-        revision = _object(value, "compiler_revision")
-        draft_fields = {
-            "schema_version",
-            "revision_id",
-            "state",
-            "target_definitions",
-            "corpus_manifest",
-            "calibration_coverage",
-        }
-        released_fields = {
-            "schema_version",
-            "revision_id",
-            "state",
-            "target_definitions",
-            "corpus_manifest",
-            "calibration_coverage",
-            "corpus_gate",
-            "release_approval",
-            "sources",
-        }
-        state = revision.get("state")
-        expected_fields = draft_fields if state == "draft" else released_fields
-        if set(revision) != expected_fields or revision.get("schema_version") != 1:
-            raise CompilerError("compiler revision fields differ")
-        if state not in {"draft", "released"}:
-            raise CompilerError("compiler revision state must be draft or released")
-        revision_id = _name(revision.get("revision_id"), "compiler_revision.revision_id")
-        target_references = _object(
-            revision.get("target_definitions"),
-            "compiler_revision.target_definitions",
-        )
-        if not target_references:
-            raise CompilerError("compiler revision must bind at least one Target")
-        targets = {
-            _name(target_id, "compiler_revision.target_definitions key"): _load_target_definition(
-                root,
-                target_id,
-                reference,
-                f"compiler_revision.target_definitions.{target_id}",
-            )
-            for target_id, reference in target_references.items()
-        }
-        calibration = revision.get("calibration_coverage")
-        if not isinstance(calibration, list) or any(
-            not isinstance(item, str) or not item for item in calibration
-        ):
-            raise CompilerError("compiler revision calibration_coverage must be a list")
-        if state == "draft":
-            _, corpus_path = _project_path(
-                root, revision.get("corpus_manifest"), "compiler_revision.corpus_manifest"
-            )
-        else:
-            corpus = _object(revision.get("corpus_manifest"), "compiler_revision.corpus_manifest")
-            if set(corpus) != {"path", "canonical_sha256"}:
-                raise CompilerError("released corpus_manifest fields differ")
-            _, corpus_path = _project_path(
-                root, corpus.get("path"), "compiler_revision.corpus_manifest.path"
-            )
-            corpus_document = json.loads(corpus_path.read_text(encoding="utf-8"))
-            if corpus.get("canonical_sha256") != sha256(
-                _canonical_json_bytes(corpus_document)
-            ).hexdigest():
-                raise CompilerError("released corpus manifest bytes differ")
-            sources = revision.get("sources")
-            if not isinstance(sources, list) or not sources:
-                raise CompilerError("released Compiler Revision sources differ")
-            observed_paths: set[str] = set()
-            for index, source in enumerate(sources):
-                item = _object(source, f"compiler_revision.sources[{index}]")
-                if set(item) != {"path", "sha256", "size_bytes"}:
-                    raise CompilerError(f"compiler_revision.sources[{index}] fields differ")
-                relative, source_path = _project_path(
-                    root, item.get("path"), f"compiler_revision.sources[{index}].path"
-                )
-                if relative in observed_paths:
-                    raise CompilerError(f"released compiler source {relative!r} is duplicated")
-                observed_paths.add(relative)
-                payload = source_path.read_bytes()
-                if (
-                    item.get("sha256") != sha256(payload).hexdigest()
-                    or item.get("size_bytes") != len(payload)
-                ):
-                    raise CompilerError(f"released compiler source {relative!r} differs")
-            gate = _object(revision.get("corpus_gate"), "compiler_revision.corpus_gate")
-            if set(gate) != {
-                "path",
-                "canonical_sha256",
-                "case_count",
-                "matched_case_count",
-            }:
-                raise CompilerError("released corpus_gate fields differ")
-            _, gate_path = _project_path(
-                root, gate.get("path"), "compiler_revision.corpus_gate.path"
-            )
-            gate_document = json.loads(gate_path.read_text(encoding="utf-8"))
-            if gate.get("canonical_sha256") != sha256(
-                _canonical_json_bytes(gate_document)
-            ).hexdigest() or gate.get("case_count") != gate_document.get(
-                "case_count"
-            ) or gate.get("matched_case_count") != gate_document.get("matched_case_count"):
-                raise CompilerError("released Corpus Gate report bytes differ")
-            approval = _object(
-                revision.get("release_approval"), "compiler_revision.release_approval"
-            )
-            if set(approval) != {"path", "canonical_sha256"}:
-                raise CompilerError("released approval reference fields differ")
-            _, approval_path = _project_path(
-                root, approval.get("path"), "compiler_revision.release_approval.path"
-            )
-            approval_document = _object(
-                json.loads(approval_path.read_text(encoding="utf-8")),
-                "compiler_revision.release_approval.document",
-            )
-            approval_gate = _object(
-                approval_document.get("gate_report"),
-                "compiler_revision.release_approval.gate_report",
-            )
-            if (
-                approval.get("canonical_sha256")
-                != sha256(_canonical_json_bytes(approval_document)).hexdigest()
-                or approval_document.get("decision") != "approved"
-                or approval_gate.get("path") != gate.get("path")
-                or approval_gate.get("canonical_sha256") != gate.get("canonical_sha256")
-            ):
-                raise CompilerError("released Compiler approval bytes differ")
-        return cls(
-            project_root=root,
-            revision_id=revision_id,
-            revision_sha256=sha256(_canonical_json_bytes(revision)).hexdigest(),
-            state=cast(str, state),
-            target_definitions=targets,
-            corpus_path=corpus_path,
-            calibration_coverage=frozenset(cast(list[str], calibration)),
-        )
+        return cls(load_revision(project_root, revision_path))
 
     def check_corpus(self) -> CorpusGateReport:
-        """Assess every declared Corpus case through the public Compiler Interface."""
+        """Assess the declared Corpus through its canonical report owner."""
 
-        manifest = _object(
-            json.loads(self._corpus_path.read_text(encoding="utf-8")),
-            "corpus",
-        )
-        if set(manifest) != {"schema_version", "corpus_id", "state", "cases"}:
-            raise CompilerError("corpus manifest fields differ")
-        if manifest.get("schema_version") != 1 or manifest.get("state") not in {"draft", "released"}:
-            raise CompilerError("corpus manifest schema or state differs")
-        corpus_id = _name(manifest.get("corpus_id"), "corpus.corpus_id")
-        cases = _objects(manifest.get("cases"), "corpus.cases")
-        if not cases:
-            raise CompilerError("Compiler Corpus must contain at least one case")
-        reports: list[CorpusCaseReport] = []
-        observed_ids: set[str] = set()
-        for index, case in enumerate(cases):
-            if set(case) != {"case_id", "schedule", "expected"}:
-                raise CompilerError(f"corpus.cases[{index}] fields differ")
-            case_id = _name(case.get("case_id"), f"corpus.cases[{index}].case_id")
-            if case_id in observed_ids:
-                raise CompilerError(f"corpus case {case_id!r} is duplicated")
-            observed_ids.add(case_id)
-            relative = _name(case.get("schedule"), f"corpus.cases[{index}].schedule")
-            schedule_path = (self._project_root / relative).resolve(strict=True)
-            if self._project_root not in schedule_path.parents:
-                raise CompilerError(f"corpus case {case_id!r} escapes project root")
-            expected = _object(case.get("expected"), f"corpus.cases[{index}].expected")
-            if set(expected) != {
-                "accepted",
-                "lowering_eligible",
-                "finding_codes",
-                "schedule_sha256",
-                "lowering_source_sha256",
-            }:
-                raise CompilerError(f"corpus case {case_id!r} expected fields differ")
-            expected_accepted = expected.get("accepted")
-            expected_lowering = expected.get("lowering_eligible")
-            if not isinstance(expected_accepted, bool) or not isinstance(expected_lowering, bool):
-                raise CompilerError(f"corpus case {case_id!r} expected booleans differ")
-            expected_codes = _strings(
-                expected.get("finding_codes"), f"corpus.cases[{index}].expected.finding_codes"
-            )
-            expected_schedule_sha = _digest(
-                expected.get("schedule_sha256"),
-                f"corpus.cases[{index}].expected.schedule_sha256",
-            )
-            assert expected_schedule_sha is not None
-            expected_source_sha = _digest(
-                expected.get("lowering_source_sha256"),
-                f"corpus.cases[{index}].expected.lowering_source_sha256",
-                nullable=True,
-            )
-            assessment = self.assess_file(schedule_path)
-            observed_codes = tuple(finding.code for finding in assessment.findings)
-            observed_source_sha = (
-                self.lower(assessment).source_sha256 if assessment.lowering_eligible else None
-            )
-            matched = (
-                assessment.accepted is expected_accepted
-                and assessment.lowering_eligible is expected_lowering
-                and observed_codes == expected_codes
-                and assessment.schedule_sha256 == expected_schedule_sha
-                and observed_source_sha == expected_source_sha
-            )
-            reports.append(
-                CorpusCaseReport(
-                    case_id=case_id,
-                    schedule_path=relative,
-                    expected_accepted=expected_accepted,
-                    expected_lowering_eligible=expected_lowering,
-                    expected_finding_codes=expected_codes,
-                    expected_schedule_sha256=expected_schedule_sha,
-                    expected_lowering_source_sha256=expected_source_sha,
-                    observed_accepted=assessment.accepted,
-                    observed_lowering_eligible=assessment.lowering_eligible,
-                    observed_finding_codes=observed_codes,
-                    observed_schedule_sha256=assessment.schedule_sha256,
-                    observed_lowering_source_sha256=observed_source_sha,
-                    matched=matched,
-                )
-            )
-        return CorpusGateReport(
-            corpus_id=corpus_id,
-            compiler_revision_id=self._revision_id,
-            compiler_revision_sha256=self._revision_sha256,
-            passed=all(report.matched for report in reports),
-            cases=tuple(reports),
-        )
+        return check_corpus(self, self._revision.corpus_path)
 
     def assess_file(self, path: str | Path) -> Assessment:
         """Assess a JSON or Python Schedule without executing authored Python."""
@@ -766,13 +328,13 @@ class Compiler:
         schedule_id = _name(schedule.get("schedule_id"), "schedule.schedule_id")
         target = _name(schedule.get("target"), "schedule.target")
         findings: list[Finding] = []
-        target_definition = self._target_definitions.get(target)
+        target_definition = self._revision.targets.get(target)
         if target_definition is None:
             findings.append(
                 Finding(
                     "TARGET_UNSUPPORTED",
                     "target",
-                    f"target {target!r} is not defined by Compiler Revision {self._revision_id}",
+                    f"target {target!r} is not defined by Compiler Revision {self._revision.revision_id}",
                     FindingCategory.HARDWARE_CONFORMANCE,
                 )
             )
@@ -798,7 +360,7 @@ class Compiler:
         }
 
         if target_definition is not None:
-            for axis, (observed, maximum) in enumerate(zip(parsed_grid, target_definition.maximum_grid)):
+            for axis, (observed, maximum) in enumerate(zip(parsed_grid, target_definition.resource_limits.maximum_grid)):
                 if observed > maximum:
                     findings.append(
                         Finding(
@@ -827,7 +389,7 @@ class Compiler:
                 )
             allocation_spaces[space] += allocation_sizes[_name(allocation.get("name"), f"allocations[{index}].name")]
         if target_definition is not None:
-            if allocation_spaces["shared"] > target_definition.maximum_shared_memory_bytes:
+            if allocation_spaces["shared"] > target_definition.resource_limits.maximum_shared_memory_bytes:
                 findings.append(
                     Finding(
                         "TARGET_SHARED_MEMORY_LIMIT",
@@ -836,7 +398,7 @@ class Compiler:
                         FindingCategory.HARDWARE_CONFORMANCE,
                     )
                 )
-            if allocation_spaces["tensor"] > target_definition.maximum_tensor_memory_bytes:
+            if allocation_spaces["tensor"] > target_definition.resource_limits.maximum_tensor_memory_bytes:
                 findings.append(
                     Finding(
                         "TARGET_TENSOR_MEMORY_LIMIT",
@@ -1110,7 +672,7 @@ class Compiler:
             and target_definition is not None
             and not any(finding.blocks_lowering for finding in findings)
         ):
-            typed_target = Target.from_dict(dict(target_definition.document))
+            typed_target = target_definition
             for failure in backend.module.preflight(typed_schedule, typed_target):
                 findings.append(
                     Finding(
@@ -1151,8 +713,8 @@ class Compiler:
             }
         )
         return Assessment(
-            compiler_revision_id=self._revision_id,
-            compiler_revision_sha256=self._revision_sha256,
+            compiler_revision_id=self._revision.revision_id,
+            compiler_revision_sha256=self._revision.canonical_sha256,
             schedule_id=schedule_id,
             schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
             target=target,
@@ -1164,7 +726,7 @@ class Compiler:
             ),
             analysis=analysis,
             lowering_parameters=MappingProxyType(dict(lowering_parameters)),
-            calibration_available=semantic_sha256 in self._calibration_coverage,
+            calibration_available=semantic_sha256 in self._revision.calibration_coverage,
             schedule_bytes=_canonical_json_bytes(schedule),
             guidance=tuple(
                 finding for finding in findings if finding.severity is FindingSeverity.HINT
@@ -1186,8 +748,8 @@ class Compiler:
         schedule_id = schedule.get("schedule_id")
         target = schedule.get("target")
         return Assessment(
-            compiler_revision_id=self._revision_id,
-            compiler_revision_sha256=self._revision_sha256,
+            compiler_revision_id=self._revision.revision_id,
+            compiler_revision_sha256=self._revision.canonical_sha256,
             schedule_id=schedule_id if isinstance(schedule_id, str) else "",
             schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
             target=target if isinstance(target, str) else "",
@@ -1207,7 +769,7 @@ class Compiler:
     def _emit(self, assessment: Assessment, backend: _GeneratedBackend) -> Lowering:
         """Generate the target source from the Schedule."""
 
-        definition = self._target_definitions.get(assessment.target)
+        definition = self._revision.targets.get(assessment.target)
         if definition is None:
             raise CompilerError(f"Target {assessment.target!r} is not bound by this Revision")
         schedule = Schedule.from_dict(
@@ -1219,15 +781,15 @@ class Compiler:
         try:
             emission = backend.module.emit(
                 schedule,
-                Target.from_dict(dict(definition.document)),
+                definition,
                 entry_point=route.entry_point,
             )
         except EmitError as error:
             raise CompilerError(f"Schedule does not determine its source: {error}") from error
         source = emission.source.replace("__SCHEDULE_SHA256__", assessment.schedule_sha256)
         return Lowering(
-            compiler_revision_id=self._revision_id,
-            compiler_revision_sha256=self._revision_sha256,
+            compiler_revision_id=self._revision.revision_id,
+            compiler_revision_sha256=self._revision.canonical_sha256,
             schedule_id=assessment.schedule_id,
             schedule_sha256=assessment.schedule_sha256,
             target=assessment.target,
@@ -1251,14 +813,10 @@ class Compiler:
     ) -> list[Finding]:
         """Retain every typed verifier diagnostic, including non-blocking hints."""
 
-        definition = self._target_definitions.get(target)
+        definition = self._revision.targets.get(target)
         if definition is None:
             return []
-        try:
-            typed_target = Target.from_dict(dict(definition.document))
-        except TargetParseError:
-            return []
-        return list(verify_contracts(schedule, typed_target))
+        return list(verify_contracts(schedule, definition))
 
     def profile(self, assessment: Assessment, *, compiled_resources: CompiledResources | None = None,
                 cost_model: EmpiricalCostModel | None = None):
@@ -1273,15 +831,15 @@ class Compiler:
         schedule = Schedule.from_dict(
             _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
         )
-        target = Target.from_dict(dict(self._target_definitions[assessment.target].document))
+        target = self._revision.targets[assessment.target]
         profile = profile_envelope(
             schedule, target, lowering=lowering, compiled_resources=compiled_resources,
         )
         if cost_model is not None:
             from dataclasses import replace
             profile = replace(profile, empirical_cost=cost_model.estimate(
-                json.loads(assessment.schedule_bytes), compiler_revision_id=self._revision_id,
-                compiler_revision_sha256=self._revision_sha256,
+                json.loads(assessment.schedule_bytes), compiler_revision_id=self._revision.revision_id,
+                compiler_revision_sha256=self._revision.canonical_sha256,
                 target=assessment.target,
                 compiled_compiler_version=compiled_resources.compiler_version if compiled_resources else None,
             ))
@@ -1309,8 +867,8 @@ class Compiler:
         withheld: list[str] = []
         for assessment in assessments:
             if (
-                assessment.compiler_revision_id != self._revision_id
-                or assessment.compiler_revision_sha256 != self._revision_sha256
+                assessment.compiler_revision_id != self._revision.revision_id
+                or assessment.compiler_revision_sha256 != self._revision.canonical_sha256
             ):
                 raise CompilerError("assessment belongs to a different Compiler Revision")
             replayed = self.assess(
@@ -1326,7 +884,7 @@ class Compiler:
             if not assessment.calibration_available:
                 withheld.append(assessment.schedule_id)
                 continue
-            definition = self._target_definitions.get(assessment.target)
+            definition = self._revision.targets.get(assessment.target)
             if definition is None:
                 withheld.append(assessment.schedule_id)
                 continue
@@ -1337,9 +895,7 @@ class Compiler:
             )
         if not eligible:
             return (), tuple(withheld)
-        target = Target.from_dict(
-            dict(self._target_definitions[assessments[0].target].document)
-        )
+        target = self._revision.targets[assessments[0].target]
         scored, unscored = rank_candidates(eligible, target)
         return scored, tuple(withheld) + unscored
 
@@ -1347,8 +903,8 @@ class Compiler:
         """Lower an eligible Assessment to deterministic inspectable target source."""
 
         if (
-            assessment.compiler_revision_id != self._revision_id
-            or assessment.compiler_revision_sha256 != self._revision_sha256
+            assessment.compiler_revision_id != self._revision.revision_id
+            or assessment.compiler_revision_sha256 != self._revision.canonical_sha256
         ):
             raise CompilerError("assessment belongs to a different Compiler Revision")
         replayed = self.assess(
@@ -1368,15 +924,15 @@ class Compiler:
         asset = _SOURCE_ASSETS.get(route.entry_point)
         if route.backend is not LoweringBackend.CHECKED_CUDA_ASSET or asset is None:
             raise CompilerError(f"lowering route {route!r} is not implemented")
-        template_path = self._project_root / asset.path
+        template_path = self._revision.project_root / asset.path
         template = template_path.read_text(encoding="utf-8")
         if template.count(asset.placeholder) != 1:
             raise CompilerError("checked source asset has an invalid placeholder")
         source = template.replace(asset.placeholder, assessment.schedule_sha256)
         source_map = _source_map(source)
         return Lowering(
-            compiler_revision_id=self._revision_id,
-            compiler_revision_sha256=self._revision_sha256,
+            compiler_revision_id=self._revision.revision_id,
+            compiler_revision_sha256=self._revision.canonical_sha256,
             schedule_id=assessment.schedule_id,
             schedule_sha256=assessment.schedule_sha256,
             target=assessment.target,
