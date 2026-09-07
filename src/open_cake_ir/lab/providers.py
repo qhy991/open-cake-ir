@@ -62,6 +62,21 @@ def resolve_codex_code_mode_host(
     executable = executable.resolve(strict=True)
     if not executable.is_file() or not os.access(executable, os.X_OK):
         raise ValueError("Codex native executable is not an executable file")
+    environment = sanitized_environment(removed_environment)
+    if "CODEX_HOME" in environment:
+        # The CLI resolves this in invocation.cwd, which differs from our cwd.
+        # Only an existing absolute directory gives both processes one identity.
+        codex_home = Path(environment["CODEX_HOME"])
+        if not codex_home.is_absolute():
+            raise ValueError("Codex CODEX_HOME must be an existing absolute directory")
+        try:
+            codex_home = codex_home.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ValueError("Codex CODEX_HOME must be an existing absolute directory") from error
+        if not codex_home.is_dir():
+            raise ValueError("Codex CODEX_HOME must be an existing absolute directory")
+    else:
+        codex_home = (Path.home() / ".codex").resolve()
     directory = executable.parent
     package_bin = None
     if directory.name in {"bin", "codex-resources"}:
@@ -76,8 +91,6 @@ def resolve_codex_code_mode_host(
     candidates = []
     if package_bin is not None:
         candidates.append(package_bin.parent / "codex-resources" / "codex-code-mode-host")
-    environment = sanitized_environment(removed_environment)
-    codex_home = Path(environment.get("CODEX_HOME") or Path.home() / ".codex").resolve()
     release_dir = package_bin.parent if package_bin is not None else directory
     managed_override = any(name in environment for name in (
         "CODEX_MANAGED_BY_VITE_PLUS", "CODEX_MANAGED_BY_PNPM",
