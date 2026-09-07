@@ -133,36 +133,36 @@ final class Prepared {
         (manifest, inputData) = try loadManifest(path)
         grid = try size(manifest.threadgroups_per_grid, "threadgroups_per_grid")
         threads = try size(manifest.threads_per_threadgroup, "threads_per_threadgroup")
-    let exactDevice = manifest.target == "apple_gpu_family7" ? "Apple M1 Pro" : "Apple M2"
-    let exactFamily = manifest.target == "apple_gpu_family7"
-        ? device.supportsFamily(.apple7) && !device.supportsFamily(.apple8)
-        : device.supportsFamily(.apple8) && !device.supportsFamily(.apple9)
-    try require(manifest.device_names == [exactDevice] && device.name == exactDevice && exactFamily,
-                "exact target/device mismatch: observed \(device.name)")
-    try require(device.hasUnifiedMemory, "shared host buffers require unified memory")
-    let maxThreads = device.maxThreadsPerThreadgroup
-    try require(threads.width <= maxThreads.width && threads.height <= maxThreads.height &&
-                threads.depth <= maxThreads.depth, "thread dimensions exceed device limits")
-    for buffer in manifest.buffers {
-        try require(buffer.size_bytes <= device.maxBufferLength,
-                    "buffer exceeds device limit: \(buffer.name)")
-    }
-    let source = try String(contentsOfFile: manifest.source_path, encoding: .utf8)
-    let options = MTLCompileOptions()
-    options.languageVersion = .version2_3
-    options.mathMode = .safe
-    options.mathFloatingPointFunctions = .precise
-    let libraryStart = now()
-    let library = try device.makeLibrary(source: source, options: options)
-    guard let function = library.makeFunction(name: manifest.entry_point) else {
-        throw Refusal(description: "emitted entry point unavailable")
-    }
-    pipeline = try device.makeComputePipelineState(function: function)
-    try require(pipeline.maxTotalThreadsPerThreadgroup >= 32 &&
-                pipeline.threadExecutionWidth == 32 &&
-                pipeline.staticThreadgroupMemoryLength == 0,
-                "compiled pipeline violates thread/memory commitments")
-    coldLibraryPipelineSeconds = now() - libraryStart
+        let exactDevice = manifest.target == "apple_gpu_family7" ? "Apple M1 Pro" : "Apple M2"
+        let exactFamily = manifest.target == "apple_gpu_family7"
+            ? device.supportsFamily(.apple7) && !device.supportsFamily(.apple8)
+            : device.supportsFamily(.apple8) && !device.supportsFamily(.apple9)
+        try require(manifest.device_names == [exactDevice] && device.name == exactDevice && exactFamily,
+                    "exact target/device mismatch: observed \(device.name)")
+        try require(device.hasUnifiedMemory, "shared host buffers require unified memory")
+        let maxThreads = device.maxThreadsPerThreadgroup
+        try require(threads.width <= maxThreads.width && threads.height <= maxThreads.height &&
+                    threads.depth <= maxThreads.depth, "thread dimensions exceed device limits")
+        for buffer in manifest.buffers {
+            try require(buffer.size_bytes <= device.maxBufferLength,
+                        "buffer exceeds device limit: \(buffer.name)")
+        }
+        let source = try String(contentsOfFile: manifest.source_path, encoding: .utf8)
+        let options = MTLCompileOptions()
+        options.languageVersion = .version2_3
+        options.mathMode = .safe
+        options.mathFloatingPointFunctions = .precise
+        let libraryStart = now()
+        let library = try device.makeLibrary(source: source, options: options)
+        guard let function = library.makeFunction(name: manifest.entry_point) else {
+            throw Refusal(description: "emitted entry point unavailable")
+        }
+        pipeline = try device.makeComputePipelineState(function: function)
+        try require(pipeline.maxTotalThreadsPerThreadgroup >= 32 &&
+                    pipeline.threadExecutionWidth == 32 &&
+                    pipeline.staticThreadgroupMemoryLength == 0,
+                    "compiled pipeline violates thread/memory commitments")
+        coldLibraryPipelineSeconds = now() - libraryStart
 
         for (index, spec) in manifest.buffers.enumerated() {
             guard let buffer = device.makeBuffer(length: spec.size_bytes, options: .storageModeShared) else {
@@ -309,7 +309,7 @@ struct Batch: Decodable {
     let artifacts: [Artifact]
     let warmups: Int
     let pilot_samples: Int
-    let max_batch_dispatches: Int
+    let batch_powers: [Int]
     let target_command_seconds: Double
     let orders: [[[String]]]
 }
@@ -331,7 +331,7 @@ func executeBatch(path: String, device: MTLDevice, queue: MTLCommandQueue,
                   compileOnly: Bool) throws -> [String: Any] {
     let data = try Data(contentsOf: URL(fileURLWithPath: path))
     let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-    let fields: Set<String> = ["artifacts", "warmups", "pilot_samples", "max_batch_dispatches", "target_command_seconds", "orders"]
+    let fields: Set<String> = ["artifacts", "warmups", "pilot_samples", "batch_powers", "target_command_seconds", "orders"]
     try require(raw != nil && Set(raw!.keys) == fields, "unsupported batch field")
     guard let rawArtifacts = raw!["artifacts"] as? [[String: Any]] else {
         throw Refusal(description: "batch artifacts must be objects")
@@ -345,9 +345,10 @@ func executeBatch(path: String, device: MTLDevice, queue: MTLCommandQueue,
                 batch.artifacts.allSatisfy { ["compiler_generated", "handwritten_reference", "released_replay"].contains($0.origin) &&
                     $0.manifest_path.hasPrefix("/") && $0.oracle_path.hasPrefix("/") }, "invalid batch artifacts/provenance")
     try require((1...5).contains(batch.warmups) && (1...5).contains(batch.pilot_samples) &&
-                (1...128).contains(batch.max_batch_dispatches) &&
-                batch.target_command_seconds.isFinite && batch.target_command_seconds > 0 && batch.target_command_seconds <= 0.01 &&
-                (1...3).contains(batch.orders.count), "measurement budget differs")
+                !batch.batch_powers.isEmpty && batch.batch_powers == Array(Set(batch.batch_powers)).sorted() &&
+                batch.batch_powers.allSatisfy { (1...128).contains($0) && ($0 & ($0 - 1)) == 0 } &&
+                batch.target_command_seconds.isFinite && batch.target_command_seconds > 0 && batch.target_command_seconds <= 0.01,
+                "measurement budget differs")
     let candidateIDs = Set(batch.artifacts.filter { $0.origin == "compiler_generated" }.map { $0.id })
     let referenceIDs = ids.subtracting(candidateIDs)
     let confirmationIDs = referenceIDs.union(["__selected__"])
@@ -406,8 +407,7 @@ func executeBatch(path: String, device: MTLDevice, queue: MTLCommandQueue,
         }
         fastest = min(fastest, median(armTimes))
     }
-    let powers = [1, 2, 4, 8, 16, 32, 64, 128].filter { $0 <= batch.max_batch_dispatches }
-    let dispatches = powers.first { Double($0) * fastest >= batch.target_command_seconds } ?? powers.last!
+    let dispatches = batch.batch_powers.first { Double($0) * fastest >= batch.target_command_seconds } ?? batch.batch_powers.last!
     var selected: String?
     var samples: [[String: Any]] = []
     for (round, sweeps) in batch.orders.enumerated() {

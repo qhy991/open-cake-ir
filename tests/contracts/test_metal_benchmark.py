@@ -20,7 +20,7 @@ from tools.metal import benchmark, rmsnorm
 def protocol_fixture():
     artifacts = [{"id": id, "origin": "compiler_generated"} for id in rmsnorm.FORMULAS]
     artifacts += [{"id": id, "origin": "handwritten_reference"} for id in benchmark.REFERENCES]
-    job = {"artifacts": artifacts, "orders": benchmark.orders(list(rmsnorm.FORMULAS))}
+    job = benchmark.batch_job(artifacts)
     times = {"canonical": 1.0, "weight_first": 1.2, "prescaled_square": 1.3, "scale_weights": 1.4,
              "serial_reference": 10.0, "simd_reference": 2.0, "simd_reference_null": 2.0}
     samples = []
@@ -33,8 +33,17 @@ def protocol_fixture():
                     "dispatches": 8, "command_status": "completed", "gpu_command_buffer_seconds": gpu,
                     "warmed_host_call_seconds": gpu + 0.1, "amortized_dispatch_seconds": gpu / 8,
                     "validation": {"gpu_correctness": "passed", "input_immutability": "passed", "max_abs_error": 0.0}})
+    pilot = []
+    for id in benchmark.REFERENCES:
+        for index in range(benchmark.PROTOCOL["pilot_samples"]):
+            gpu = 0.0002 * (5 if id == "serial_reference" else 1)
+            pilot.append({"artifact": id, "sample": index, "dispatches": 1, "command_status": "completed",
+                          "gpu_command_buffer_seconds": gpu, "warmed_host_call_seconds": gpu + 0.0001,
+                          "amortized_dispatch_seconds": gpu,
+                          "validation": {"gpu_correctness": "passed", "input_immutability": "passed"}})
     result = {"status": "completed", "ordinary_samples_instrumented": False, "selected_candidate": "canonical",
-              "batch_dispatches": 8, "raw_samples": samples}
+              "batch_dispatches": 8, "raw_samples": samples, "pilot_samples": pilot,
+              "warmups_per_artifact": benchmark.PROTOCOL["warmups"]}
     return job, result
 
 
@@ -141,6 +150,37 @@ class MetalBenchmarkContracts(unittest.TestCase):
         altered = copy.deepcopy(original); altered["raw_samples"][0]["amortized_dispatch_seconds"] = 42.0; variants.append(altered)
         for result in variants:
             with self.assertRaises(ValueError):
+                benchmark.analyze(result, job)
+
+    def test_unvalidated_or_candidate_driven_pilot_cannot_qualify(self):
+        job, original = protocol_fixture()
+        for fault in ("missing", "candidate", "validation", "timer", "selection", "warmups"):
+            result = copy.deepcopy(original)
+            if fault == "missing":
+                result["pilot_samples"].pop()
+            elif fault == "candidate":
+                result["pilot_samples"][0]["artifact"] = "canonical"
+            elif fault == "validation":
+                result["pilot_samples"][0]["validation"]["gpu_correctness"] = "failed"
+            elif fault == "timer":
+                change_gpu(result["pilot_samples"][0], float("nan"))
+            elif fault == "selection":
+                result["batch_dispatches"] = 4
+                for sample in result["raw_samples"]:
+                    sample["dispatches"] = 4
+                    sample["amortized_dispatch_seconds"] = sample["gpu_command_buffer_seconds"] / 4
+            else:
+                result["warmups_per_artifact"] -= 1
+            with self.subTest(fault=fault), self.assertRaises(ValueError):
+                benchmark.analyze(result, job)
+
+    def test_changed_job_cannot_redefine_the_fixed_measurement_protocol(self):
+        original, result = protocol_fixture()
+        for field, value in (("batch_powers", [1, 8, 128]), ("warmups", 1), ("pilot_samples", 1),
+                             ("target_command_seconds", 0.002), ("orders", list(reversed(original["orders"])))):
+            job = copy.deepcopy(original)
+            job[field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "fixed protocol"):
                 benchmark.analyze(result, job)
 
     def test_uncommitted_runtime_blocks_benchmark_before_release_or_gpu(self):
@@ -319,7 +359,7 @@ class MetalBatchControlFlowContracts(unittest.TestCase):
         if compiled.returncode:
             raise AssertionError(compiled.stdout + compiled.stderr)
 
-    def execute(self, fault):
+    def execute(self, fault, *, batch_powers=None):
         directory = self.directory / fault
         directory.mkdir()
         names = ("candidate", "reference", "reference_null")
@@ -327,7 +367,7 @@ class MetalBatchControlFlowContracts(unittest.TestCase):
                       "oracle_path": str(directory / id / "oracle.json"),
                       "origin": "compiler_generated" if id == "candidate" else "handwritten_reference"}
                      for id in names]
-        job = {"artifacts": artifacts, "warmups": 1, "pilot_samples": 1, "max_batch_dispatches": 4,
+        job = {"artifacts": artifacts, "warmups": 1, "pilot_samples": 1, "batch_powers": [1, 2, 4] if batch_powers is None else batch_powers,
                "target_command_seconds": 0.003, "orders": [[list(names)],
                    [["reference", "__selected__", "reference_null"]],
                    [["reference_null", "__selected__", "reference"]]]}
@@ -348,6 +388,19 @@ class MetalBatchControlFlowContracts(unittest.TestCase):
                        (not e["output_correct"] or not e["input_intact"])]
                 self.assertEqual(len(bad), 1)
                 self.assertFalse(any(e["action"] == "profile_start" for e in evidence["trace"]))
+
+    def test_native_selection_consumes_the_declared_powers(self):
+        code, evidence = self.execute("declared_powers", batch_powers=[1, 2, 8])
+        self.assertEqual(code, 0)
+        self.assertEqual(evidence["result"]["batch_dispatches"], 8)
+
+    def test_invalid_power_budgets_refuse_before_preparation(self):
+        for index, powers in enumerate(([], [0, 2], [1, 3], [1, 2, 2], [4, 2], [1, 256])):
+            with self.subTest(powers=powers):
+                code, evidence = self.execute(f"invalid_powers_{index}", batch_powers=powers)
+                self.assertEqual(code, 1)
+                self.assertEqual(evidence["error"], "measurement budget differs")
+                self.assertEqual(evidence["trace"], [])
 
     def test_successful_observations_retain_separate_validation(self):
         code, evidence = self.execute("none")

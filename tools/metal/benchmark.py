@@ -45,7 +45,7 @@ REFERENCES = ("serial_reference", "simd_reference", "simd_reference_null")
 def orders(candidate_ids: list[str]) -> list:
     rng = random.Random(PROTOCOL["order_seed"])
     result = []
-    for round_index in range(3):
+    for round_index in range(PROTOCOL["search_rounds"] + PROTOCOL["confirmation_rounds"]):
         slots = [*REFERENCES, *(candidate_ids if round_index == 0 else ["__selected__"])]
         sweeps = []
         for _ in range(PROTOCOL["sweeps_per_round"]):
@@ -65,15 +65,56 @@ def describe(values: list[float]) -> dict:
             "relative_iqr": (quartiles[2] - quartiles[0]) / median}
 
 
+def batch_job(artifacts: list[dict]) -> dict:
+    """Project the Python-owned protocol into the native execution boundary."""
+    candidates = [a["id"] for a in artifacts if a["origin"] == "compiler_generated"]
+    return {"artifacts": artifacts, "warmups": PROTOCOL["warmups"],
+            "pilot_samples": PROTOCOL["pilot_samples"], "batch_powers": list(PROTOCOL["batch_powers"]),
+            "target_command_seconds": PROTOCOL["target_command_seconds"], "orders": orders(candidates)}
+
+
+def validate_sample(sample: dict, dispatches: int) -> None:
+    if type(sample["dispatches"]) is not int or sample["dispatches"] != dispatches or sample["command_status"] != "completed":
+        raise ValueError("sample dispatch count/completion differs")
+    validation = sample.get("validation", {})
+    if not isinstance(validation, dict) or validation.get("gpu_correctness") != "passed" or validation.get("input_immutability") != "passed":
+        raise ValueError("sample lacks successful output/input validation")
+    for field in ("warmed_host_call_seconds", "gpu_command_buffer_seconds", "amortized_dispatch_seconds"):
+        value = sample[field]
+        if type(value) not in (float, int) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f"invalid timer: {field}")
+    if not math.isclose(sample["amortized_dispatch_seconds"], sample["gpu_command_buffer_seconds"] / dispatches, rel_tol=1e-12):
+        raise ValueError("amortization differs from actual dispatch count")
+
+
 def analyze(result: dict, job: dict) -> dict:
     if result.get("status") != "completed" or result.get("ordinary_samples_instrumented") is not False:
         raise ValueError("ordinary measurement did not complete without instrumentation")
-    if len(job["orders"]) != 3 or any(len(r) != PROTOCOL["sweeps_per_round"] for r in job["orders"]):
-        raise ValueError("matched round/sweep count differs from fixed protocol")
+    if job != batch_job(job["artifacts"]):
+        raise ValueError("batch job differs from fixed protocol")
+    if result.get("warmups_per_artifact") != job["warmups"]:
+        raise ValueError("warmup count differs from fixed protocol")
     selected = result.get("selected_candidate")
     candidates = [a["id"] for a in job["artifacts"] if a["origin"] == "compiler_generated"]
+    references = [a["id"] for a in job["artifacts"] if a["origin"] == "handwritten_reference"]
+    if (len(set(candidates)) != len(candidates) or set(candidates) & set(REFERENCES) or
+            set(references) != set(REFERENCES) or len(references) != len(REFERENCES)):
+        raise ValueError("candidate/reference treatment slots differ")
     if selected not in candidates:
         raise ValueError("selected candidate is not a compiled treatment")
+    pilot = result["pilot_samples"]
+    expected_pilot = [(id, index) for id in references for index in range(job["pilot_samples"])]
+    if [(s["artifact"], s["sample"]) for s in pilot] != expected_pilot:
+        raise ValueError("pilot samples differ from reference-only protocol")
+    for sample in pilot:
+        validate_sample(sample, 1)
+    fastest = min(statistics.median(s["gpu_command_buffer_seconds"] for s in pilot if s["artifact"] == id)
+                  for id in references)
+    powers = job["batch_powers"]
+    expected_count = next((power for power in powers if power * fastest >= job["target_command_seconds"]), powers[-1])
+    count = result["batch_dispatches"]
+    if type(count) is not int or count != expected_count:
+        raise ValueError("batch count differs from reference-only pilot selection")
     samples = result["raw_samples"]
     expected = [(r, s, p, selected if slot == "__selected__" else slot)
                 for r, sweeps in enumerate(job["orders"]) for s, order in enumerate(sweeps)
@@ -81,20 +122,8 @@ def analyze(result: dict, job: dict) -> dict:
     observed = [(s["round"], s["sweep"], s["position"], s["artifact"]) for s in samples]
     if observed != expected:
         raise ValueError("raw sample identity/order differs from frozen matched protocol")
-    count = result["batch_dispatches"]
-    if type(count) is not int or count not in PROTOCOL["batch_powers"]:
-        raise ValueError("batch count is outside predeclared powers")
     for sample in samples:
-        if sample["dispatches"] != count or sample["command_status"] != "completed":
-            raise ValueError("sample dispatch count/completion differs")
-        validation = sample.get("validation", {})
-        if not isinstance(validation, dict) or validation.get("gpu_correctness") != "passed" or validation.get("input_immutability") != "passed":
-            raise ValueError("ordinary sample lacks successful output/input validation")
-        for field in ("warmed_host_call_seconds", "gpu_command_buffer_seconds", "amortized_dispatch_seconds"):
-            if not math.isfinite(sample[field]) or sample[field] <= 0:
-                raise ValueError(f"invalid timer: {field}")
-        if not math.isclose(sample["amortized_dispatch_seconds"], sample["gpu_command_buffer_seconds"] / count, rel_tol=1e-12):
-            raise ValueError("amortization differs from actual dispatch count")
+        validate_sample(sample, count)
     search_times = {id: describe([s["gpu_command_buffer_seconds"] for s in samples if s["round"] == 0 and s["artifact"] == id])
                     for id in candidates}
     observed_best = min(candidates, key=lambda id: (search_times[id]["median"], id))
@@ -103,7 +132,7 @@ def analyze(result: dict, job: dict) -> dict:
     by_slot = {(s["round"], s["sweep"], s["artifact"]): s for s in samples}
     arm_stats = {}
     null = []
-    for r in range(3):
+    for r in range(len(job["orders"])):
         ids = [*REFERENCES, *(candidates if r == 0 else [selected])]
         arm_stats[str(r)] = {id: {
             field: describe([by_slot[r, sweep, id][field] for sweep in range(PROTOCOL["sweeps_per_round"])])
@@ -120,7 +149,7 @@ def analyze(result: dict, job: dict) -> dict:
     comparisons = {}
     for reference in ("serial_reference", "simd_reference"):
         rounds = []
-        for r in range(3):
+        for r in range(len(job["orders"])):
             ratio = describe([by_slot[r, sweep, reference]["gpu_command_buffer_seconds"] /
                               by_slot[r, sweep, selected]["gpu_command_buffer_seconds"]
                               for sweep in range(PROTOCOL["sweeps_per_round"])])
@@ -203,9 +232,7 @@ def main() -> int:
             (directory / "oracle.json").write_text(json.dumps(oracles, allow_nan=False) + "\n")
             artifacts.append({"id": id, "manifest_path": str(directory / "manifest.json"),
                               "oracle_path": str(directory / "oracle.json"), "origin": "handwritten_reference"})
-        job = {"artifacts": artifacts, "warmups": PROTOCOL["warmups"], "pilot_samples": PROTOCOL["pilot_samples"],
-               "max_batch_dispatches": max(PROTOCOL["batch_powers"]), "target_command_seconds": PROTOCOL["target_command_seconds"],
-               "orders": orders(list(rmsnorm.FORMULAS))}
+        job = batch_job(artifacts)
         stage = "batch"
         current = None
         for candidate in summary["candidates"]:
