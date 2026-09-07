@@ -51,7 +51,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 arm = arm_lines[0].split("=", 1)[1] if arm_lines else "open_cake"
                 thread_id = (
                     "11234567-89ab-cdef-0123-456789abcdef"
-                    if arm == "direct_cuda"
+                    if arm != "open_cake"
                     else "01234567-89ab-cdef-0123-456789abcdef"
                 )
                 reported_thread_id = (
@@ -177,6 +177,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         maximum_candidates_per_turn: int | None = None,
         reasoning_effort: str = "max",
         agent_interface: str = "legacy_prompt_v1",
+        comparison_arm: str = "direct_cuda",
     ) -> tuple[subprocess.CompletedProcess[bytes], Path, Path, Path]:
         receipt_path = root / "provider-qualification.json"
         anchor_path = root / "provider-qualification-anchor.json"
@@ -192,6 +193,9 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 str(
                     ROOT
                     / (
+                        "contracts/providers/codex-triton-optimization-output-schema-v1.json"
+                        if comparison_arm == "native_triton"
+                        else
                         "contracts/providers/codex-turn-output-schema-v2.json"
                         if feature_policy == "provider_defaults_optimization"
                         else "contracts/providers/codex-turn-output-schema-v1.json"
@@ -213,6 +217,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 feature_policy,
                 "--agent-interface",
                 agent_interface,
+                "--comparison-arm",
+                comparison_arm,
             ]
         if maximum_candidates_per_turn is not None:
             command.extend(
@@ -382,6 +388,62 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 self.assertEqual(envelope["arm"], arm)
                 self.assertEqual(len(envelope["candidates"]), 3)
             self.assertEqual(receipt.scope, "live_two_turn_current_provider")
+
+    def test_native_triton_qualification_retains_json_candidates_across_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable)
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root,
+                executable,
+                provider_revision="codex-native-triton-fixture-v1",
+                run_id="codex-provider-native-triton",
+                maximum_candidates_per_turn=2,
+                comparison_arm="native_triton",
+                agent_interface="task_agents_ralph_v1",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertTrue(ProviderQualificationReceipt.load(receipt_path).qualified)
+            evidence = EvidenceStore.open(evidence_root)
+            audit = evidence.audit_run("codex-provider-native-triton")
+            self.assertTrue(audit.archive_integrity)
+            self.assertEqual(audit.endpoint["arms_qualified"], ["open_cake", "native_triton"])
+            observed = next(
+                event["payload"] for event in evidence.replay_events(audit.run_id)
+                if event["kind"] == "provider_qualification_observed"
+            )
+            self.assertNotEqual(
+                observed["arms"]["open_cake"]["thread_id"],
+                observed["arms"]["native_triton"]["thread_id"],
+            )
+            for phase, turn in (("initial", 1), ("resumed", 2)):
+                refs = [
+                    item for item in observed["objects"]
+                    if item["role"].startswith(f"native_triton_{phase}_candidate_")
+                ]
+                self.assertEqual(len(refs), 2)
+                for index, reference in enumerate(refs):
+                    self.assertEqual(reference["media_type"], "application/json")
+                    candidate = json.loads(evidence.read_object(reference))
+                    self.assertEqual(set(candidate), {
+                        "kernel_source", "compile_constants", "compile_options", "grid",
+                    })
+                    self.assertIn(f"candidate {index}; turn {turn};", candidate["kernel_source"])
+
+    def test_native_triton_single_candidate_is_rejected_before_creating_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable)
+            completed, receipt_path, anchor_path, evidence_root = self._run_qualification(
+                root, executable, provider_revision="codex-native-triton-fixture-v1",
+                run_id="codex-provider-native-invalid", comparison_arm="native_triton",
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(b"native Triton qualification requires a candidate-set envelope", completed.stderr)
+            for path in (receipt_path, anchor_path, evidence_root, root / "workspace"):
+                self.assertFalse(path.exists())
 
     def test_ralph_qualification_exposes_only_task_agents_and_candidate_set(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

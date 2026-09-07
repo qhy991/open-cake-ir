@@ -138,6 +138,24 @@ def _expected_submission(
             for index in range(maximum_candidates_per_turn)
         ]
         projected = tuple(_canonical_json_bytes(member) for member in members)
+    elif arm == "native_triton":
+        # Protocol fixtures exercise JSON projection, not kernel qualification.
+        members = [
+            {
+                "kernel_source": (
+                    f"# qualification candidate {index}; turn {turn}; "
+                    f"reference {reference_nonce}\n"
+                    "import triton\nimport triton.language as tl\n"
+                    "@triton.jit\ndef kernel(out):\n"
+                    "    tl.store(out, 0)\n"
+                ),
+                "compile_constants": {},
+                "compile_options": {"num_warps": 4},
+                "grid": [1],
+            }
+            for index in range(maximum_candidates_per_turn)
+        ]
+        projected = tuple(_canonical_json_bytes(member) for member in members)
     else:
         members = [
             (
@@ -279,6 +297,12 @@ def main() -> int:
     parser.add_argument("--service-tier", default="default")
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument(
+        "--comparison-arm",
+        choices=("direct_cuda", "native_triton"),
+        default="direct_cuda",
+        help="comparison arm to qualify alongside Open Cake in candidate-set mode",
+    )
+    parser.add_argument(
         "--maximum-candidates-per-turn",
         type=int,
         default=None,
@@ -319,8 +343,10 @@ def main() -> int:
     task_interface = args.agent_interface == TASK_AGENTS_RALPH_V1
     if task_interface and submission_contract != CANDIDATE_SET_ENVELOPE_V1:
         raise ValueError("Ralph qualification requires a candidate-set envelope")
+    if args.comparison_arm == "native_triton" and submission_contract != CANDIDATE_SET_ENVELOPE_V1:
+        raise ValueError("native Triton qualification requires a candidate-set envelope")
     qualification_arms = (
-        ("open_cake", "direct_cuda")
+        ("open_cake", args.comparison_arm)
         if submission_contract == CANDIDATE_SET_ENVELOPE_V1
         else ("open_cake",)
     )
@@ -756,7 +782,7 @@ def main() -> int:
                     ]
                 )
                 candidate_media_type = (
-                    "application/json" if arm == "open_cake" else "text/x-cuda"
+                    "text/x-cuda" if arm == "direct_cuda" else "application/json"
                 )
                 for phase, turn in (("initial", initial), ("resumed", resumed)):
                     objects.extend(
