@@ -52,6 +52,8 @@ Convert numerical storage type. More bits do not recover previously lost precisi
 The quantization producer uses this same cast operation. FP32-to-FP16 explicitly uses
 `rounding=nearest_even, overflow=ieee`; FP32-to-INT8 uses
 `rounding=toward_zero, overflow=forbid`. The rounding and overflow policies appear together.
+For `forbid`, the external input contract keeps values finite and within INT8 range;
+the Compiler does not prove that range or insert saturation.
 
 ## reshape
 

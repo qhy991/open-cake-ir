@@ -90,6 +90,7 @@ FP32 类型和形状规则约束，不能仅凭名称绕过完整计划检查。
 量化 producer 继续使用同一个 `cast`：FP32 到 FP16 明确声明
 `rounding=nearest_even, overflow=ieee`；FP32 到 INT8 使用
 `rounding=toward_zero, overflow=forbid`。舍入和溢出策略成对出现，不能只写一个。
+`forbid` 由外部输入合同保证转换值有限且在 INT8 范围内，Compiler 不证明该范围或插入饱和转换。
 
 ## reshape
 

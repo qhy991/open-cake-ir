@@ -67,6 +67,9 @@ wave32 XOR 归约、类型转换和按字段存储。类型转换只有 `cast` �
 - FP32 到 INT8：`rounding=toward_zero, overflow=forbid`。
 - Q8 存储按登记顺序接收 `d:fp16`、`s:fp16` 和 `qs:int8[32]`。
 
+这里的 `forbid` 要求外部输入合同保证数值有限且在 INT8 范围内；Compiler 不会证明数值范围，
+也不会自动把越界数压回边界。
+
 基本含义看[操作积木](../wiki/primitives.md)，完整组合看
 [Q8 producer 计划](../../corpus/schedules/packed-q8_1-producer-gfx1151.json)。
 “能生成这些指令”还不是“GPU 已经算对了所有字节”。

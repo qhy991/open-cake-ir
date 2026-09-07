@@ -68,7 +68,9 @@ The Q8 producer composes existing generic operations with the migrated primitive
 absolute value, zero-safe division, explicit half-away rounding, register-value
 reshaping, a wave32 XOR reduction and typed stores. The sole conversion operation
 is `cast`. FP32-to-FP16 uses `rounding=nearest_even, overflow=ieee`; FP32-to-INT8 uses
-`rounding=toward_zero, overflow=forbid`. The typed Q8 store takes `d:fp16`, `s:fp16` and
+`rounding=toward_zero, overflow=forbid`. Here `forbid` requires the external input
+contract to keep values finite and within INT8 range; the Compiler neither proves
+that range nor inserts saturation. The typed Q8 store takes `d:fp16`, `s:fp16` and
 `qs:int8[32]` in the record registry's order. See the
 [primitive guide](en/wiki/primitives.md) and the
 [Q8 producer Schedule](../corpus/schedules/packed-q8_1-producer-gfx1151.json).
