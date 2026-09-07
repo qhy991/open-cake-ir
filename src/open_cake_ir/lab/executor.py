@@ -258,87 +258,101 @@ class ExecutorRevision:
         )
 
     def admit_host(self) -> object:
-        """Verify the pinned B200 host and return its admitted CUPTI helper."""
+        """Verify the pinned host and return its admitted CUPTI helper."""
 
-        host = cast(Mapping[str, object], self.document["host_environment"])
-        python = cast(Mapping[str, object], host["python"])
-        expected_invocation = Path(str(python["invocation_path"])).absolute()
-        observed_invocation = Path(sys.executable).absolute()
-        if (
-            observed_invocation != expected_invocation
-            or sys.version.split()[0] != python["version"]
-            or sha256(observed_invocation.resolve(strict=True).read_bytes()).hexdigest()
-            != python["resolved_sha256"]
-        ):
-            raise ValueError("Executor Python runtime differs")
-        packages = cast(Mapping[str, object], host["packages"])
-        for distribution, expected in packages.items():
-            if importlib.metadata.version(distribution) != expected:
-                raise ValueError(f"Executor package {distribution!r} differs")
-
-        cupti = cast(Mapping[str, object], host["cupti_python"])
-        site = Path(str(cupti["site_packages_path"])).resolve(strict=True)
-        if not site.is_dir() or site.is_symlink():
-            raise ValueError("Executor CUPTI site-packages custody differs")
-        for index, value in enumerate(cast(list[object], cupti["files"])):
-            record = _file_record(value, f"executor.cupti_python.files[{index}]")
-            path = _external_file(site, record["path"], f"executor.cupti.files[{index}]")
-            payload = path.read_bytes()
-            if (
-                sha256(payload).hexdigest() != record["sha256"]
-                or len(payload) != record["size_bytes"]
-            ):
-                raise ValueError("Executor CUPTI runtime file differs")
-        if str(site) not in sys.path:
-            sys.path.append(str(site))
-        if importlib.metadata.version(str(cupti["distribution"])) != cupti["version"]:
-            raise ValueError("Executor CUPTI distribution differs")
-        from cupti import cupti as cupti_extension
-
-        if cupti_extension is None:
-            raise ValueError("Executor CUPTI extension is unavailable")
-
-        helper = cast(Mapping[str, object], host["flashinfer_helper"])
-        helper_path = Path(str(helper["path"]))
-        if helper_path.is_symlink() or not helper_path.is_file():
-            raise ValueError("Executor FlashInfer helper custody differs")
-        helper_payload = helper_path.read_bytes()
-        if (
-            sha256(helper_payload).hexdigest() != helper["sha256"]
-            or len(helper_payload) != helper["size_bytes"]
-            or importlib.metadata.version(str(helper["distribution"])) != helper["version"]
-        ):
-            raise ValueError("Executor FlashInfer helper differs")
-        module_spec = importlib.util.spec_from_file_location(
-            "open_cake_ir_pinned_flashinfer_testing_utils", helper_path
+        return admit_host_environment(
+            cast(Mapping[str, object], self.document["host_environment"])
         )
-        if module_spec is None or module_spec.loader is None:
-            raise ValueError("Executor FlashInfer helper specification failed")
-        module = importlib.util.module_from_spec(module_spec)
-        module_spec.loader.exec_module(module)
-        required = (
-            "bench_gpu_time_with_cupti",
-            "bench_gpu_time_with_cuda_event",
-            "bench_gpu_time_with_cudagraph",
-        )
-        if any(not callable(getattr(module, name, None)) for name in required):
-            raise ValueError("Executor FlashInfer helper surface differs")
-        return module
 
     def admit_profiler(self) -> Mapping[str, object]:
         """Verify and return the optional exact NCU executable for attribution."""
 
-        host = cast(Mapping[str, object], self.document["host_environment"])
-        if "nsight_compute" not in host:
-            raise ValueError("Executor Revision does not pin Nsight Compute")
-        profiler = cast(Mapping[str, object], host["nsight_compute"])
-        path = Path(str(profiler["path"]))
-        if path.is_symlink() or not path.is_file() or not os.access(path, os.X_OK):
-            raise ValueError("Executor Nsight Compute custody differs")
+        return admit_profiler_environment(
+            cast(Mapping[str, object], self.document["host_environment"])
+        )
+
+
+def admit_host_environment(host: Mapping[str, object]) -> object:
+    """Admit a schema-validated host environment and return its CUPTI helper."""
+
+    python = cast(Mapping[str, object], host["python"])
+    expected_invocation = Path(str(python["invocation_path"])).absolute()
+    observed_invocation = Path(sys.executable).absolute()
+    if (
+        observed_invocation != expected_invocation
+        or sys.version.split()[0] != python["version"]
+        or sha256(observed_invocation.resolve(strict=True).read_bytes()).hexdigest()
+        != python["resolved_sha256"]
+    ):
+        raise ValueError("Executor Python runtime differs")
+    packages = cast(Mapping[str, object], host["packages"])
+    for distribution, expected in packages.items():
+        if importlib.metadata.version(distribution) != expected:
+            raise ValueError(f"Executor package {distribution!r} differs")
+
+    cupti = cast(Mapping[str, object], host["cupti_python"])
+    site = Path(str(cupti["site_packages_path"])).resolve(strict=True)
+    if not site.is_dir() or site.is_symlink():
+        raise ValueError("Executor CUPTI site-packages custody differs")
+    for index, value in enumerate(cast(list[object], cupti["files"])):
+        record = _file_record(value, f"executor.cupti_python.files[{index}]")
+        path = _external_file(site, record["path"], f"executor.cupti.files[{index}]")
         payload = path.read_bytes()
         if (
-            sha256(payload).hexdigest() != profiler["sha256"]
-            or len(payload) != profiler["size_bytes"]
+            sha256(payload).hexdigest() != record["sha256"]
+            or len(payload) != record["size_bytes"]
         ):
-            raise ValueError("Executor Nsight Compute bytes differ")
-        return MappingProxyType(dict(profiler))
+            raise ValueError("Executor CUPTI runtime file differs")
+    if str(site) not in sys.path:
+        sys.path.append(str(site))
+    if importlib.metadata.version(str(cupti["distribution"])) != cupti["version"]:
+        raise ValueError("Executor CUPTI distribution differs")
+    from cupti import cupti as cupti_extension
+
+    if cupti_extension is None:
+        raise ValueError("Executor CUPTI extension is unavailable")
+
+    helper = cast(Mapping[str, object], host["flashinfer_helper"])
+    helper_path = Path(str(helper["path"]))
+    if helper_path.is_symlink() or not helper_path.is_file():
+        raise ValueError("Executor FlashInfer helper custody differs")
+    helper_payload = helper_path.read_bytes()
+    if (
+        sha256(helper_payload).hexdigest() != helper["sha256"]
+        or len(helper_payload) != helper["size_bytes"]
+        or importlib.metadata.version(str(helper["distribution"])) != helper["version"]
+    ):
+        raise ValueError("Executor FlashInfer helper differs")
+    module_spec = importlib.util.spec_from_file_location(
+        "open_cake_ir_pinned_flashinfer_testing_utils", helper_path
+    )
+    if module_spec is None or module_spec.loader is None:
+        raise ValueError("Executor FlashInfer helper specification failed")
+    module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+    required = (
+        "bench_gpu_time_with_cupti",
+        "bench_gpu_time_with_cuda_event",
+        "bench_gpu_time_with_cudagraph",
+    )
+    if any(not callable(getattr(module, name, None)) for name in required):
+        raise ValueError("Executor FlashInfer helper surface differs")
+    return module
+
+
+def admit_profiler_environment(host: Mapping[str, object]) -> Mapping[str, object]:
+    """Verify and return the optional exact NCU executable for attribution."""
+
+    if "nsight_compute" not in host:
+        raise ValueError("Executor Revision does not pin Nsight Compute")
+    profiler = cast(Mapping[str, object], host["nsight_compute"])
+    path = Path(str(profiler["path"]))
+    if path.is_symlink() or not path.is_file() or not os.access(path, os.X_OK):
+        raise ValueError("Executor Nsight Compute custody differs")
+    payload = path.read_bytes()
+    if (
+        sha256(payload).hexdigest() != profiler["sha256"]
+        or len(payload) != profiler["size_bytes"]
+    ):
+        raise ValueError("Executor Nsight Compute bytes differ")
+    return MappingProxyType(dict(profiler))

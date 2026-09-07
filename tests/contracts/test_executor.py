@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -81,6 +83,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.cu",
             "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.json",
             "tools/calibrate_flash_cost.py",
+            "tools/capture_executor_host.py",
             "tools/evaluate_flash_candidate.py",
             "tools/evaluate_qsa_candidate.py",
             "tools/observe_target_peak.py",
@@ -93,11 +96,14 @@ class ExecutorRevisionContractTests(unittest.TestCase):
 
     def test_current_executor_pins_the_attribution_profiler(self) -> None:
         profiler = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR).admit_profiler()
-        self.assertEqual(profiler["version"], "2026.1.1.0")
-        self.assertEqual(
-            profiler["sha256"],
-            sha256(Path(str(profiler["path"])).read_bytes()).hexdigest(),
+        completed = subprocess.run(
+            [str(profiler["path"]), "--version"], check=True, capture_output=True,
+            text=True, timeout=30,
         )
+        match = re.search(r"^Version (\S+)", completed.stdout, re.MULTILINE)
+        self.assertIsNotNone(match, completed.stdout)
+        assert match is not None
+        self.assertEqual(profiler["version"], match.group(1))
 
     def test_g8_inventory_resolves_the_complete_historical_executor(self) -> None:
         inventory = json.loads(
@@ -195,9 +201,13 @@ class ExecutorRevisionContractTests(unittest.TestCase):
         from tools.release_executor import _SOURCE_FILES
 
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory) / "project"
+            root.mkdir()
             shutil.copytree(ROOT / "src", root / "src", ignore=shutil.ignore_patterns("__pycache__"))
-            for relative in (*_SOURCE_FILES, "tools/release_executor.py", "tools/release_executor_cycle.sh"):
+            for relative in (
+                *_SOURCE_FILES, "tools/release_executor.py", "tools/release_executor_cycle.sh",
+                "tools/release_runtime.sh",
+            ):
                 destination = root / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / relative, destination)
@@ -228,8 +238,22 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             host["python"]["invocation_path"] = "/verified/executor/python"
             host_path = root / "verified-host.json"
             host_path.write_text(json.dumps(host))
+            runtime_log = root.parent / "runtime-invocations"
+            selected_python = root.parent / "selected python"
+            selected_python.write_text(
+                "#!/bin/sh\nprintf '%s\\n' \"$OPEN_CAKE_PYTHON\" >> "
+                + shlex.quote(str(runtime_log)) + "\nexec "
+                + shlex.quote(sys.executable) + ' "$@"\n'
+            )
+            selected_python.chmod(0o755)
+            commands = root.parent / "commands"
+            commands.mkdir()
+            fallback = commands / "python3"
+            fallback.write_text("#!/bin/sh\nexit 97\n")
+            fallback.chmod(0o755)
             environment = dict(os.environ)
-            environment["PATH"] = str(Path(sys.executable).parent) + os.pathsep + environment["PATH"]
+            environment["OPEN_CAKE_PYTHON"] = "./selected python"
+            environment["PATH"] = str(commands) + os.pathsep + environment["PATH"]
             environment.pop("OPEN_CAKE_REUSE_VERIFIED_HOST", None)
             command = [
                 "bash", str(root / "tools/release_executor_cycle.sh"),
@@ -237,7 +261,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             ]
             for version in (47, 48):
                 completed = subprocess.run(
-                    command, cwd=root, env=environment, capture_output=True, text=True,
+                    command, cwd=root.parent, env=environment, capture_output=True, text=True,
                     check=False, timeout=30,
                 )
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
@@ -248,6 +272,11 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                 for path, raw in preserved.items():
                     self.assertEqual(path.read_bytes(), raw)
                 preserved[released] = released.read_bytes()
+            self.assertGreater(len(runtime_log.read_text().splitlines()), 2)
+            self.assertEqual(
+                {Path(value).resolve() for value in runtime_log.read_text().splitlines()},
+                {selected_python.resolve()},
+            )
             inventory = json.loads(inventory_path.read_text())
             self.assertEqual(inventory["current"]["executor_id"], "open-cake-ir-b200-v48")
             self.assertEqual(
