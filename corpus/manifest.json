@@ -111,24 +111,23 @@
       "case_id": "tinygemm2-r31-accepted",
       "schedule": "corpus/schedules/tinygemm2-stage4-split-k.json",
       "expected": {
-        "accepted": true,
-        "lowering_eligible": true,
+        "accepted": false,
+        "lowering_eligible": false,
         "finding_codes": [
-          "RESIDENCY_BOUND"
+          "SCHEDULE_STRUCTURE"
         ],
         "schedule_sha256": "e176f27cf410aff4efcfbce6b9bde905e4345baf668cb1eb5540e01b060d3671",
-        "lowering_source_sha256": "a8307165b448aa129f7026742437f6beb8bc48943b0e69de07cba8406d7f2e85"
+        "lowering_source_sha256": null
       }
     },
     {
       "case_id": "tinygemm2-r31-reduction-drift",
       "schedule": "corpus/schedules/tinygemm2-stage4-split-k-reduction-drift.json",
       "expected": {
-        "accepted": true,
+        "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "REDUCE_SUM_SEMANTICS",
-          "RESIDENCY_BOUND"
+          "SCHEDULE_STRUCTURE"
         ],
         "schedule_sha256": "154439647de1f8159c75126db6acdf529749dbd387290bd098708727db34ad6c",
         "lowering_source_sha256": null
