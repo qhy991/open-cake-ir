@@ -68,6 +68,17 @@ from .timing import (
     derive_paired_timing,
     summarize_cohort,
 )
+from .swiglu import generate_swiglu_case, swiglu_metrics, swiglu_oracle
+from .rmsnorm import generate_rmsnorm_case, rmsnorm_metrics, rmsnorm_oracle
+from .llama_q4_mmvq import (
+    Q4MmvqMaterial,
+    Q4MmvqReference,
+    decode_q4_0_block,
+    materialize_q4_mmvq_case,
+    quantize_q8_1_block,
+    q4_mmvq_metrics,
+    q4_mmvq_reference,
+)
 from .tinygemm import (
     TinyGemmLauncher,
     evaluate_tinygemm,
@@ -141,4 +152,17 @@ __all__ = [
     "launch_candidate_once",
     "derive_paired_timing",
     "summarize_cohort",
+    "generate_swiglu_case",
+    "swiglu_metrics",
+    "swiglu_oracle",
+    "generate_rmsnorm_case",
+    "rmsnorm_metrics",
+    "rmsnorm_oracle",
+    "Q4MmvqMaterial",
+    "Q4MmvqReference",
+    "decode_q4_0_block",
+    "materialize_q4_mmvq_case",
+    "quantize_q8_1_block",
+    "q4_mmvq_metrics",
+    "q4_mmvq_reference",
 ]
