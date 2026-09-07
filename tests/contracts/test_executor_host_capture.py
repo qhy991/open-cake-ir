@@ -261,5 +261,93 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
             self.assertFalse(output.exists())
 
 
+class HipExecutorHostCaptureContractTests(unittest.TestCase):
+    def run_fixture_capture(
+        self, root: Path, *, import_failure: bool = False, changing_profiler: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        """Model Linux and importable HIP packages; no device API is exposed."""
+        site = root / "site"
+        for name in capture.HIP_PACKAGES:
+            metadata = site / f"{name}-1.0.dist-info"
+            metadata.mkdir(parents=True)
+            (metadata / "METADATA").write_text(f"Name: {name}\nVersion: 1.0\n")
+        torch = site / "torch.py"
+        torch.write_text(
+            "raise RuntimeError('cold HIP import failed')\n" if import_failure else
+            "from types import SimpleNamespace\n"
+            "version = SimpleNamespace(hip='7.2.1', cuda=None)\n"
+            "def __getattr__(name): raise AssertionError('device access: ' + name)\n"
+        )
+        paths = {}
+        for kind in (*capture.HIP_BUILD_TOOLS, "amd-smi", "rocprofv3"):
+            tool = root / kind
+            mutation = f"printf '# changed\\n' >> '{tool}'\n" if changing_profiler and kind == "rocprofv3" else ""
+            tool.write_text("#!/bin/sh\n" + mutation + "printf 'Version 1.0\\n'\n")
+            tool.chmod(0o755)
+            paths[kind] = tool
+        library = root / "libxml2.so.2"
+        library.write_bytes(b"modeled compatibility library")
+        arguments = ["--runtime-kind", "hip", "--amd-smi", str(paths["amd-smi"])]
+        for name in sorted(capture.HIP_PACKAGES):
+            arguments += ["--package", name]
+        for kind in sorted(capture.HIP_BUILD_TOOLS):
+            arguments += ["--hip-build-tool", kind, str(paths[kind])]
+        arguments += [
+            "--hip-profiler", "rocprofv3", str(paths["rocprofv3"]),
+            "--hip-runtime-library", "libxml2.so.2", str(library),
+            "--output", str(root / "host.json"),
+        ]
+        program = (
+            "import platform, runpy; platform.system = lambda: 'Linux'; "
+            f"runpy.run_path({str(ROOT / 'tools/capture_executor_host.py')!r}, run_name='__main__')"
+        )
+        return subprocess.run(
+            [sys.executable, "-c", program, *arguments], cwd=root,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
+                 "PYTHONPATH": os.pathsep.join((str(site), str(ROOT / "src")))},
+            capture_output=True, text=True, timeout=30,
+        )
+
+    def test_fresh_hip_capture_uses_canonical_software_admission_without_devices(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            completed = self.run_fixture_capture(root)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            host = json.loads((root / "host.json").read_text())
+            capture.ExecutorRevision._validate_host_document(host, schema_version=2)
+            self.assertEqual(host["runtime_kind"], "hip")
+            self.assertEqual(host["platform"]["system"], "Linux")
+            self.assertEqual(host["runtime"]["torch_hip_version"], "7.2.1")
+            self.assertEqual(set(host["packages"]), capture.HIP_PACKAGES)
+            self.assertEqual(host["tools"]["profilers"][0]["kind"], "rocprofv3")
+            self.assertTrue(json.loads(completed.stdout)["host_admitted"])
+
+    def test_cold_hip_import_failure_produces_no_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            completed = self.run_fixture_capture(root, import_failure=True)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("cold HIP import failed", completed.stderr)
+            self.assertFalse((root / "host.json").exists())
+
+    def test_hip_profiler_changed_during_version_probe_produces_no_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            completed = self.run_fixture_capture(root, changing_profiler=True)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("profilers[0] bytes differ", completed.stderr)
+            self.assertFalse((root / "host.json").exists())
+
+    def test_cuda_inputs_cannot_be_mixed_into_hip_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "host.json"
+            with self.assertRaisesRegex(ValueError, "HIP capture requires"):
+                capture.main([
+                    "--runtime-kind", "hip", "--package", "torch",
+                    "--cupti-distribution", "cupti-python", "--output", str(output),
+                ])
+            self.assertFalse(output.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
