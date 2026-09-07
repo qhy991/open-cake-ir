@@ -16,7 +16,7 @@ Acceptance compares the public vocabulary, parsed corpus, structural Schema, fin
 
 A Schedule describes a concrete GPU computation: participants, storage, operations, coordinates, synchronization and repetition. The Workload and its oracle own the mathematical problem and correctness criterion.
 
-Python authoring produces the same canonical document as JSON. `Schedule.from_dict` builds typed objects; the exact Target, Verifier and backend capability checks determine admissibility and lowering eligibility. Analysis reports modeled behavior. Eligible lowering produces generated source or a checked asset.
+Python authoring produces the same canonical document as JSON. `Schedule.from_dict` builds typed objects; the exact Target, Verifier and backend capability checks determine admissibility and lowering eligibility. Analysis reports modeled behavior. Eligible lowering produces generated target source. The dedicated checked-asset route is retired, and its original Schedules remain explicit structure-refusal cases.
 
 | Fields | Responsibility |
 | --- | --- |

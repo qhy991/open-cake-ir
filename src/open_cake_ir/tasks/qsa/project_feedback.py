@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler, Schedule, Target, profile_envelope
-from open_cake_ir.compiler.compiled_resources import load_compiled_resources
+from open_cake_ir.compiler.performance.compiled_resources import load_compiled_resources
 from open_cake_ir.tasks.qsa.feedback import qsa_compiler_feedback, qsa_evaluation_feedback
 
 

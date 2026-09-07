@@ -14,7 +14,7 @@ from types import MappingProxyType
 from typing import Callable, Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Compiler, CorpusGateReport
-from open_cake_ir.compiler.empirical_cost import EmpiricalCostModel
+from open_cake_ir.compiler.performance.empirical_cost import EmpiricalCostModel
 from open_cake_ir.evaluation import EvaluationReceipt, LaunchableCandidate, LogicalEvaluationAttempt
 from open_cake_ir.evaluation.core import _plain_json as _evaluation_plain_json
 from open_cake_ir.evidence import EvidenceStore, RunAudit

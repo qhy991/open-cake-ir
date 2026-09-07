@@ -25,7 +25,7 @@ open-cake-ir = "open_cake_ir.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-open_cake_ir = ["compiler/backends/assets/*.tmpl", "tasks/qsa/assets/*.cu", "tasks/qsa/assets/*.json"]
+open_cake_ir = ["tasks/qsa/assets/*.cu", "tasks/qsa/assets/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

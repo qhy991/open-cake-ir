@@ -138,10 +138,10 @@ class CliContractTests(unittest.TestCase):
             self.assertIn(diagnostic, text)
             self.assertIn("未运行 GPU", text)
 
-    def test_compiler_text_lower_preserves_generated_and_checked_source_origins(self) -> None:
+    def test_compiler_text_lower_preserves_generated_origin_and_refuses_retired_route(self) -> None:
         for schedule, origin in (
             ("fma-b8-smoke.json", "由执行计划生成"),
-            ("tinygemm2-stage4-split-k.json", "已核验的固定源码"),
+            ("metal-elementwise-odd.json", "由执行计划生成"),
         ):
             with self.subTest(schedule=schedule), tempfile.TemporaryDirectory() as directory:
                 target = Path(directory) / "source.txt"
@@ -160,6 +160,19 @@ class CliContractTests(unittest.TestCase):
                     self.assertEqual(main(arguments), 2)
                 self.assertIn("命令未完成", error.getvalue())
                 self.assertEqual(target.read_bytes(), original)
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "retired.cu"
+            with redirect_stdout(StringIO()) as output, redirect_stderr(StringIO()) as error:
+                code = main([
+                    "--project-root", str(ROOT), "compiler", "lower", "--format", "text",
+                    "--revision", str(ROOT / "compiler/revision.lock.json"),
+                    str(ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json"),
+                    "--output", str(target),
+                ])
+            self.assertEqual(code, 2)
+            self.assertEqual(output.getvalue(), "")
+            self.assertIn("SCHEDULE_STRUCTURE", error.getvalue())
+            self.assertFalse(target.exists())
 
     def test_compiler_text_reports_input_errors_without_a_traceback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -420,7 +433,7 @@ class CliContractTests(unittest.TestCase):
         )
         self.assertEqual(result["compiler_revision_id"], released["revision_id"])
 
-    def test_compiler_lower_exposes_whether_the_schedule_generated_the_source(self) -> None:
+    def test_compiler_json_lower_exposes_generated_source_and_refuses_retired_route(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "lowered.py"
             output = StringIO()
@@ -445,6 +458,16 @@ class CliContractTests(unittest.TestCase):
             self.assertEqual(
                 result["source_sha256"], sha256(target.read_bytes()).hexdigest()
             )
+            retired = Path(directory) / "retired.cu"
+            from open_cake_ir.compiler import CompilerError
+            with self.assertRaisesRegex(CompilerError, "SCHEDULE_STRUCTURE"):
+                main([
+                    "--project-root", str(ROOT), "compiler", "lower",
+                    "--revision", str(ROOT / "compiler/revision.lock.json"),
+                    str(ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json"),
+                    "--output", str(retired),
+                ])
+            self.assertFalse(retired.exists())
 
     def test_lab_preflight_emits_one_content_bound_campaign_lock(self) -> None:
         output = StringIO()

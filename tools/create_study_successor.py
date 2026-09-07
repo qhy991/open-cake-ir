@@ -16,7 +16,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.lab.pairing import comparison_arm, triton_optimization_analysis_plan  # noqa: E402
-from open_cake_ir.lab import ExecutorRevision, scientific_matched_analysis_plan_v2
+from open_cake_ir.lab import scientific_matched_analysis_plan_v2
+from open_cake_ir.lab.bindings import CURRENT_RELEASE_BINDING, resolve_executor
 from open_cake_ir.tasks.runtime import TaskLab
 
 
@@ -81,14 +82,7 @@ def main() -> int:
     if (skeletons[0] is None) != (skeletons[1] is None):
         raise ValueError("both Authoring Environment skeletons must be replaced together")
 
-    inventory = _object(
-        json.loads(
-            (root / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
-        ),
-        "Executor inventory",
-    )
-    current_executor = _object(inventory.get("current"), "current Executor")
-    executor = ExecutorRevision.load(root, root / str(current_executor["path"]))
+    executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "Study successor", template=True)
     execution = _object(document.get("execution"), "Study.execution")
     if (
         document.get("kind") != "portfolio"

@@ -2063,7 +2063,7 @@ class CandidateSetFilterTest(unittest.TestCase):
                 # ordering by arrival disagree -- which is what makes the assertion mean
                 # something.
                 index = json.loads(submission.payload)["variant"]
-                from open_cake_ir.compiler.ranking import Cost
+                from open_cake_ir.compiler.performance.ranking import Cost
 
                 if index == 1:
                     return EnvironmentResult(
@@ -3127,7 +3127,7 @@ class CostModelRouteTest(unittest.TestCase):
     ):
         class MisrankingEnvironment(FakeEnvironment):
             def build(self, submission):
-                from open_cake_ir.compiler.ranking import Cost
+                from open_cake_ir.compiler.performance.ranking import Cost
 
                 variant = json.loads(submission.payload)["variant"]
                 result = super().build(submission)

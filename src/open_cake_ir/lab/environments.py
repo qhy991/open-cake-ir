@@ -13,8 +13,8 @@ from typing import Mapping, Protocol, cast
 from open_cake_ir.compiler import (
     Assessment, Compiler, CompilerError, Finding, FindingCategory, FindingSeverity,
 )
-from open_cake_ir.compiler.empirical_cost import EmpiricalCostModel
-from open_cake_ir.compiler.ranking import Cost
+from open_cake_ir.compiler.performance.empirical_cost import EmpiricalCostModel
+from open_cake_ir.compiler.performance.ranking import Cost
 from open_cake_ir.compiler.toolchain import project_triton_kernel, validate_triton_kernel
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule, FrontendError
 from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
@@ -506,10 +506,10 @@ class NativeTritonEnvironment:
         self._abi = workload.tensor_abi(case_id)
         self._target = workload.document['semantics']['target']
         # The frozen Compiler owns backend spelling (for example int32 -> *i32).
-        # Consume its existing table instead of assuming Workload names are Triton ABI names.
-        from open_cake_ir.compiler.backends.triton import _TritonEmitter
+        # Consume its public spelling function instead of assuming Workload names are Triton ABI names.
+        from open_cake_ir.compiler.backends.triton import pointer_type
         from open_cake_ir.compiler.ir import DType
-        expected_signature = {arg.name: _TritonEmitter._POINTER[DType(arg.dtype)] for arg in self._abi}
+        expected_signature = {arg.name: pointer_type(DType(arg.dtype)) for arg in self._abi}
         signature = self._requirements.get('signature')
         if (self._requirements.get('compiler') != 'triton' or self._requirements.get('target') != self._target
             or signature != expected_signature):

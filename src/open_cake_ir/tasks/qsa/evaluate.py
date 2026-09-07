@@ -23,6 +23,7 @@ from open_cake_ir.tasks.qsa.evaluation import audit_qsa_output, materialize_qsa_
 from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 from open_cake_ir.tasks.qsa.cuda import LoadedQsaProgram, QsaProgramArtifact, qsa_program_tensors
 from open_cake_ir.lab import BuildRequest, ExecutorRevision
+from open_cake_ir.lab.bindings import CURRENT_RELEASE_BINDING, resolve_executor
 from open_cake_ir.compiler.toolchain import compile_triton
 from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
 from dataclasses import asdict
@@ -129,16 +130,7 @@ def _stage_result(
 
 
 def _executor(root: Path) -> ExecutorRevision:
-    inventory = json.loads(
-        (root / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
-    )
-    current = _object(inventory["current"], "Executor inventory current")
-    executor = ExecutorRevision.load(root, root / str(current["path"]))
-    if (
-        executor.executor_id != current["executor_id"]
-        or executor.canonical_sha256 != current["canonical_sha256"]
-    ):
-        raise ValueError("current Executor Revision differs")
+    executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "QSA evaluation", template=True)
     task = json.loads(_required_environment_path("KERNELINFRA_TASK").read_text())
     stage_id = os.environ.get("KERNELINFRA_STAGE_ID")
     stages = [stage for stage in task["stages"] if stage["id"] == stage_id]

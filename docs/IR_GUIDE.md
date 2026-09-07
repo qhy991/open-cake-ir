@@ -27,7 +27,7 @@ flowchart TD
     S --> V
     V --> A[Findings and modeled analysis]
     V --> L[Eligible lowering]
-    L --> E[Generated source or checked asset]
+    L --> E[Generated target source]
 ```
 
 [Python frontend](../src/open_cake_ir/compiler/frontend.py) 是编辑入口，最终也产生同一份 Schedule 文档。它支持受限的 Python AST，不能据此推断任意 Python 控制流都可编译。JSON 和 Python 最终经过同一 Compiler；源码位置是用于展示诊断的附加信息。
@@ -207,7 +207,7 @@ assert "fma.rn.f32" in lowering.source
 | `Schedule.from_dict` | 字段、词汇与参数结构可接受；失败抛出带路径的 `ScheduleParseError` | 所有跨对象语义或后端条件均正确 |
 | `schema.schedule_schema()` | 给作者和工具使用的结构约束投影 | 代替 Compiler 或证明 GPU 正确性 |
 | `Compiler.assess` | 语义、硬件、数据一致性、安全与后端能力检查的诊断及建模分析 | 实际设备已运行通过 |
-| `Compiler.lower` | 对可生成的计划产生可检查源码，或选取匹配的 checked asset | 工具链编译、数值正确性、性能提升 |
+| `Compiler.lower` | 对可生成的计划产生可检查源码；已退役路线明确拒绝 | 工具链编译、数值正确性、性能提升 |
 | Evaluation | 对固定合同进行实际正确性、计时与 profiler 检查 | 自动推广到其他形状、目标或完整服务 |
 
 `accepted`、`lowering_eligible`、`findings`、`analysis` 是不同的信息；调用方应读取对应字段。分析只覆盖建模的资源与行为，不能将逻辑寄存器压力写成真实寄存器占用，也不能把成本估计当成实测结果。
@@ -220,7 +220,7 @@ assert "fma.rn.f32" in lowering.source
 
 1. 在定义模块补最小 typed 结构与解析规则。词汇属于 `vocabulary.py`，资源关系属于 `resources.py`，地址与循环属于 `mapping.py`，操作与参数属于 `operations.py`；仅顶层组装需要改 `schedule.py`。
 2. 从公共入口导出需要给调用方使用的类型；生成 Schema 和 authoring 文档应与同一规范相符，不另加一套注册表或旧新 parser 路径。
-3. 同步更新 [Verifier](../src/open_cake_ir/compiler/verifier/__init__.py)、相关 [analysis](../src/open_cake_ir/compiler/analysis.py) / [work](../src/open_cake_ir/compiler/work.py) 及目标后端。不能先接受字段，再让 lowering 默默忽略它。
+3. 同步更新 [Verifier](../src/open_cake_ir/compiler/verifier/__init__.py)、相关 [residency](../src/open_cake_ir/compiler/performance/residency.py) / [work](../src/open_cake_ir/compiler/performance/work.py) 及目标后端。不能先接受字段，再让 lowering 默默忽略它。
 4. 对稳定接口或已复现错误补聚焦测试，并通过完整 Corpus Gate。期望变化需要单独审查，不能为了变绿而重写期望。
 5. 新文件纳入 [Compiler source set](../compiler/source_set.json)，按 [发布流程](RUNBOOK.md) 准备后继并独立审查。历史 release、Executor 与实验固定的源码使用原 Git 版本回放。
 

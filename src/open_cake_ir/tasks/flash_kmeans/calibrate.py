@@ -117,8 +117,7 @@ def _authorities(plan):
     if compiler.state != "released":
         raise ValueError("collection and fitting require the released Compiler")
     executor_ref = plan["executor_revision"]
-    executor = ExecutorRevision.load(ROOT, _external_file(ROOT, executor_ref["path"], "Executor"))
-    _equal(dict(executor.reference), executor_ref, "Executor reference")
+    executor = ExecutorRevision.load_reference(ROOT, executor_ref, "calibration.executor_revision")
     if not {"src/open_cake_ir/tasks/flash_kmeans/calibrate.py", "src/open_cake_ir/tasks/evaluate.py"}.issubset({row["path"] for row in executor.document["sources"]}):
         raise ValueError("Executor must bind both collection instrument and common evaluator")
     ref = plan["workload"]

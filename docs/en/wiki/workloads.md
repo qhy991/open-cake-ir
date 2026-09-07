@@ -31,7 +31,7 @@ Contracts: [v1](../../../contracts/workloads/flash-kmeans-assign.json), [v2](../
 
 A fixed small-batch linear layer computes input times transposed weight plus bias, then BF16 rounding. An independent FP32 reference and the declared output rules judge it. [v1](../../../contracts/workloads/tinygemm2-stage4.json) and [v2](../../../contracts/workloads/tinygemm2-stage4-v2.json) differ: v2 fixes materialized input, weight, bias, and reference bytes; a seed alone need not reproduce them.
 
-The retained [Schedule](../../../corpus/schedules/tinygemm2-stage4-split-k.json) selects checked_cuda_asset. This is fixed source selection, not arbitrary generation of this operator family.
+The retained [Schedule](../../../corpus/schedules/tinygemm2-stage4-split-k.json) records the historical `checked_cuda_asset` route. The current Compiler has retired that dedicated route and checks its explicit structural refusal. Original files and observations remain intact. Replay old fixed-source results at their pinned Git revision; the refusal case does not establish current TinyGEMM2 generation support.
 
 ## DSA: sparse MLA one-step decode
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shlex
 import sys
 import tempfile
 from hashlib import sha256
@@ -21,7 +20,7 @@ from open_cake_ir.lab import ExecutorRevision, ProviderQualificationReceipt, req
 from open_cake_ir.lab.providers import resolve_codex_code_mode_host
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.flash_kmeans.environment import NvccToolchainBuilder
-from open_cake_ir.lab.runtime import broker_execution_sha256
+from open_cake_ir.lab.runtime import broker_execution_sha256, load_runtime_config
 
 from open_cake_ir.lab.pairing import comparison_arm, triton_optimization_analysis_plan
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
@@ -176,32 +175,14 @@ def main() -> int:
     if anchor.get("qualification_receipt_sha256") != qualification.canonical_sha256:
         raise ValueError("provider qualification anchor differs")
 
-    config = _object(
-        json.loads(arguments.runtime_config.resolve(strict=True).read_text(encoding="utf-8")),
-        "runtime_config",
+    config = load_runtime_config(
+        arguments.runtime_config.resolve(strict=True),
+        toolchain_kind="triton" if paired_triton else "nvcc",
     )
-    if set(config) != {"schema_version", "provider", "toolchain", "broker"} or config.get(
-        "schema_version"
-    ) != 1:
-        raise ValueError("runtime configuration fields differ")
-    provider_config = _object(config["provider"], "runtime_config.provider")
-    toolchain_config = _object(config["toolchain"], "runtime_config.toolchain")
-    broker_config = _object(config["broker"], "runtime_config.broker")
-    if (
-        set(provider_config) != {"executable", "workspace_root"}
-        or set(toolchain_config) != ({"python", "bubblewrap", "runtime_roots", "triton_version", "timeout_seconds"}
-                                      if paired_triton else {"nvcc", "cuobjdump"})
-        or set(broker_config)
-        != {
-            "command",
-            "cwd",
-            "timeout_seconds",
-            "service_user",
-            "service_group",
-        }
-    ):
-        raise ValueError("runtime configuration section fields differ")
-    executable = Path(str(provider_config["executable"])).resolve(strict=True)
+    provider_config = config["provider"]
+    toolchain_config = config["toolchain"]
+    broker_config = config["broker"]
+    executable = Path(provider_config["executable"]).resolve(strict=True)
     executable_sha256 = sha256(executable.read_bytes()).hexdigest()
     if executable_sha256 != qualification.executable_sha256:
         raise ValueError("qualified provider executable differs")
@@ -251,27 +232,23 @@ def main() -> int:
         _refresh_raw_reference(root, direct_arm["launch_contract"], "direct.launch_contract")
         _refresh_raw_reference(root, direct_arm["candidate_skeleton"], "direct.candidate_skeleton")
         direct_arm["toolchain_sha256"] = NvccToolchainBuilder(
-            nvcc=str(toolchain_config["nvcc"]), cuobjdump=str(toolchain_config["cuobjdump"]),
+            nvcc=toolchain_config["nvcc"], cuobjdump=toolchain_config["cuobjdump"],
         ).canonical_sha256
 
-    command_value = broker_config["command"]
-    command = (
-        tuple(str(value) for value in command_value)
-        if isinstance(command_value, list)
-        else tuple(shlex.split(str(command_value)))
-    )
+    command = broker_config["command"]
     execution = _object(study["execution"], "study.execution")
+    # This CLI accepts a descriptor path, not a current-release or exact-reference object.
     executor = ExecutorRevision.load(root, arguments.executor)
     if paired_triton:
         isolated_toolchain.check_executor(executor, author_workspace=str(provider_config["workspace_root"]))
     execution["executor_revision"] = dict(executor.reference)
     execution["broker_execution_sha256"] = broker_execution_sha256(
         command,
-        cwd=Path(str(broker_config["cwd"])).resolve(strict=True),
+        cwd=Path(broker_config["cwd"]).resolve(strict=True),
         project_root=root,
-        timeout_seconds=int(broker_config["timeout_seconds"]),
-        service_user=str(broker_config["service_user"]),
-        service_group=str(broker_config["service_group"]),
+        timeout_seconds=broker_config["timeout_seconds"],
+        service_user=broker_config["service_user"],
+        service_group=broker_config["service_group"],
     )
     if arguments.enable_attribution:
         evaluation = _object(

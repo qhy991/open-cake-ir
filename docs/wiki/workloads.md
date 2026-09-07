@@ -49,8 +49,9 @@ v2 是后继合同，旧实验继续使用它原来固定的版本。学习 Comp
 - **合同：** [v1](../../contracts/workloads/tinygemm2-stage4.json)、[v2](../../contracts/workloads/tinygemm2-stage4-v2.json)。
 - **区别：** v2 还固定具体输入、权重、偏置与参考结果的物化内容；只保持随机种子不一定足以复现相同字节。
 
-其保留的 [Schedule](../../corpus/schedules/tinygemm2-stage4-split-k.json)使用 `checked_cuda_asset`：
-它选择经过核验的固定源码，不代表编译器能从任意新计划生成这一整类算子。
+保留的 [Schedule](../../corpus/schedules/tinygemm2-stage4-split-k.json)记录历史 `checked_cuda_asset` 路线。
+当前编译器已退役这条专用路线，只检查它被明确拒绝；原文件和旧结果保留。
+重放旧固定源码应使用其绑定的历史 Git 版本，不能把该拒绝用例当作当前 TinyGEMM2 生成能力。
 
 ## DSA：稀疏 MLA 单步解码
 

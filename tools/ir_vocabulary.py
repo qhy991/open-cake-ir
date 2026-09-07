@@ -20,13 +20,15 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import sys
 from enum import Enum
 from pathlib import Path
 
-from open_cake_ir.compiler import ir
-from open_cake_ir.compiler.backends import BACKENDS
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from open_cake_ir.compiler import ir  # noqa: E402
+from open_cake_ir.compiler.backends import BACKENDS  # noqa: E402
 
 
 

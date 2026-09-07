@@ -20,6 +20,7 @@ from open_cake_ir.compiler import Compiler
 from open_cake_ir.tasks.qsa.program import ProgramContract
 from open_cake_ir.evaluation import WorkloadContract
 from open_cake_ir.lab import ExecutorRevision
+from open_cake_ir.lab.bindings import CURRENT_RELEASE_BINDING, resolve_executor
 
 _RUNTIME_PATH = ROOT / "runtime/qsa-seed-gpu-infra-verda-v1.json"
 _PROGRAM_PATH = ROOT / "contracts/programs/qsa-prefill-t32768-v2.json"
@@ -61,14 +62,7 @@ def _git_commit() -> str:
 
 
 def _current_executor() -> ExecutorRevision:
-    inventory = json.loads(
-        (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
-    )
-    current = inventory["current"]
-    executor = ExecutorRevision.load(ROOT, ROOT / current["path"])
-    if executor.canonical_sha256 != current["canonical_sha256"]:
-        raise ValueError("current Executor inventory differs")
-    return executor
+    return resolve_executor(ROOT, CURRENT_RELEASE_BINDING, "QSA launch", template=True)
 
 
 def _preflight_authorities() -> tuple[ExecutorRevision, ProgramContract]:

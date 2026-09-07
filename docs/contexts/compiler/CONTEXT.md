@@ -25,8 +25,7 @@ relationships only.
 - Emit localized Findings for schedule semantics, hardware conformance, data consistency,
   program safety, and backend lowering preconditions.
 - Report modeled analysis coverage without presenting estimates as GPU truth.
-- Deterministically lower eligible Schedules to inspectable source or select the one
-  admitted checked asset.
+- Deterministically lower eligible Schedules to inspectable source for a current backend.
 - Release semantics only through the full Corpus Gate and external approval boundary.
 
 The Compiler does not own Workload semantics, input materialization, correctness oracles,
@@ -50,4 +49,3 @@ the Glossary.
 
 “Target `sm_100a` accepts this instruction contract” does not mean that a physical B200 is
 available or that another architecture inherits the same calibration.
-

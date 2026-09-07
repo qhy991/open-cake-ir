@@ -12,8 +12,7 @@ such as a declared residency bound; another Finding in the same Assessment may s
 block it. Acceptance and lowering eligibility are the aggregate decisions. Unsupported
 shapes, operations, instructions, memory spaces or uncalibrated analyses are explicit.
 An otherwise-lowerable `mma` in a generated backend names the Target instruction contract that determines its
-lowering; omitting it is a lowering-blocking candidate Finding rather than a late emitter failure. Instruction-free
-checked assets remain valid only when their asset-specific preflight proves the declared semantics match the asset.
+lowering; omitting it is a lowering-blocking candidate Finding rather than a late emitter failure.
 The Triton backend admits multiple existing `mma` DAG nodes. Each operation independently
 owns its instruction, operands, unique write and accumulation derivation; combining
 partial contractions requires an explicit typed consumer such as FP32 `elementwise add`.
@@ -126,7 +125,9 @@ remains observable through the argument.
 storage for another operation does not widen that semantic contract.
 
 `lowering` owns only the materialization mechanism and executable symbol. Its `backend` is
-one of `triton`, `cutlass_cute_dsl`, or `checked_cuda_asset`; `entry_point` is an identifier.
+one of `triton`, `cutlass_cute_dsl`, or `metal`; `entry_point` is an identifier.
+The retired `checked_cuda_asset` spelling is a structural refusal. Historical Schedules
+and results remain replay inputs for their pinned Git revisions, not a current source-selection path.
 The executable argument signature is derived from global Buffers and is never restated as
 an ABI label. Metadata may bind a Workload digest, but the Compiler does not infer a
 Workload from a route or hard-code its tensor shapes.

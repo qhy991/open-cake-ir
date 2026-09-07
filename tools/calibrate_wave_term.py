@@ -39,7 +39,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler.analysis import residency_upper_bound  # noqa: E402
+from open_cake_ir.compiler.performance.residency import residency_upper_bound  # noqa: E402
 from open_cake_ir.compiler.core import Compiler  # noqa: E402
 from open_cake_ir.compiler.ir import Schedule  # noqa: E402
 from open_cake_ir.compiler.target import Target  # noqa: E402

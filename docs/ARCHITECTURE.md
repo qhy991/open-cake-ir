@@ -65,10 +65,25 @@ Finding 保留具体位置、四类合同中的 `category`、`severity`，以及
 单独携带 `hint` 提示。提示不改变验收结果。CLI、Lab 和 profile 报告都会展示这些提示，
 但提示既不是 GPU 正确性证明，也不是测量结果。
 
-计划还会说明生成方式：Triton、CuTe DSL，或一个已经核验的固定 CUDA 源码。
-最后一种不是从任意计划生成任意 CUDA；输出中的 `generated` 字段会说明来源。
-代码中的名称分别是 `triton`、`cutlass_cute_dsl` 和 `checked_cuda_asset`。
-固定源码路线目前的入口是 `cake_tinygemm2_stage4_split_k`，对应 TinyGEMM2 的固定线性层任务。
+当前计划通过 Triton、CuTe DSL 或 Metal 生成源码，名字分别是 `triton`、
+`cutlass_cute_dsl` 和 `metal`。专用的 `checked_cuda_asset` 路线已退役：原 TinyGEMM2
+Schedule 留作结构拒绝用例，旧固定源码结果只能在绑定的历史 Git 版本中重放。
+当前 `Lowering.generated` 为真；历史记录中该字段的原有含义保留。
+
+### 编译器内部的负责位置
+
+- `core.py` 只连接公开接口；`revision.py` 负责加载版本，`corpus.py` 负责逐项对照预期。
+- `diagnostics.py` 拥有诊断类型；`verifier/` 拥有四类通用规则。后端专属限制由后端报告，阻止生成，不把可表达的计划误判为结构错误。
+- [backends](../src/open_cake_ir/compiler/backends/__init__.py) 的 `BACKENDS` 是唯一静态后端清单。每个后端实现 `requirements`、`preflight`、`emit`；Triton 的 `pointer_type(DType)` 负责指针类型拼写。
+- [performance](../src/open_cake_ir/compiler/performance/__init__.py) 归集工作量、驻留、profile、编译资源、经验成本、排序和利用率。同一输入的分析结果计算一次并显式传递，不另设全局缓存。
+
+新增后端时，先定义目标、输入、拒绝条件及上述三个方法，再在唯一清单登记。
+给支持与拒绝的真实组合补测试；CLI 词汇表直接读取同一清单。
+通过完整 Corpus Gate 和独立审查后才能发布后继。只增加后端名字不能代替实现或硬件验证。
+
+`tools/profile_lowered_kernel.py` 的新报告使用 schema 2：不再输出
+`predicted.registers_per_thread_lower_bound` 和 `verdict.register_floor_sound`。
+实测占用限制中的物理寄存器项称为 `registers`。测量值、单位与估计范围不变，历史 schema 1 报告保留原样。
 
 检查只覆盖模型中已经写明的规则。例如，声明了多少共享内存可以被检查；
 后端后来额外分配多少寄存器或共享内存，需要看编译产物和实际机器。
