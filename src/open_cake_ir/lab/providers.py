@@ -19,7 +19,7 @@ from .process import (
     run_supervised,
     sanitized_environment,
 )
-from .task_package import TaskPackage, verify_task_package
+from .task_package import TaskPackage, verify_task_package, render_task_request
 
 _THREAD_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _MAX_CANDIDATE_BYTES = 64 * 1024 * 1024
@@ -30,7 +30,9 @@ CODEX_DISABLED_FEATURES = (
     "browser_use",
     "browser_use_external",
     "browser_use_full_cdp_access",
+    "code_mode",
     "code_mode_host",
+    "code_mode_only",
     "computer_use",
     "goals",
     "guardian_approval",
@@ -835,21 +837,6 @@ class CodexRunProvider:
         self._task_packages = task_packages
         self._adapter = adapter or CodexProviderAdapter()
 
-    def _render_prompt(self, request: TurnRequestLike) -> str:
-        if request.state_card is None:
-            raise ValueError("Ralph Turn requires a controller StateCard")
-        state = json.dumps(
-            _plain_json(request.state_card),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        return (
-            "Read TASK.md and AGENTS.md completely. Continue the same Ralph Run "
-            "under those immutable rules. Write only candidate-set.json. The "
-            f"external controller StateCard for this iteration is: {state}"
-        )
-
     def turn(self, request: TurnRequestLike) -> ProviderTurn:
         """Execute initial/add or same-thread resume/update under one environment."""
 
@@ -866,6 +853,8 @@ class CodexRunProvider:
         workspace = builder.workspace.absolute()
         package = self._task_packages[request.run_id]
         verify_task_package(workspace, package)
+        if package.arm != request.arm:
+            raise ValueError('Ralph request arm differs from the task package')
         if request.turn == 1:
             expected_initial_entries = (
                 {workspace / "TASK.md", workspace / "AGENTS.md"}
@@ -884,7 +873,7 @@ class CodexRunProvider:
             expected_change == "update" and not candidate_path.is_file()
         ):
             raise ValueError("Codex candidate lifecycle differs before invocation")
-        prompt = self._render_prompt(request)
+        prompt, reference_bundle = render_task_request(package, request.state_card)
         terminal_document: dict[str, object] = {
             "arm": request.arm,
             "candidate_written": True,
@@ -925,9 +914,6 @@ class CodexRunProvider:
             verify_task_package(workspace, package)
         except ValueError as error:
             raise RunProtocolFault("contamination", str(error)) from error
-        reference_bundle = package.evidence_bundle(
-            cast(Mapping[str, object], request.state_card)
-        )
         return replace(
             result,
             reference_bundle=reference_bundle,

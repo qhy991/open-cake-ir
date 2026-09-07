@@ -7,7 +7,7 @@ import math
 import re
 import statistics
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
@@ -29,6 +29,7 @@ from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from .checkpoints import TurnObservation, project_checkpoints
 from .custody import admit_new_campaign_path
+from .bindings import qualification_path as _qualification_path, resolve_execution_bindings, load_baseline_bundle
 from .environments import (
     AuthoringEnvironment, CandidateSubmission, EnvironmentResult,
     _EMPIRICAL_SELECTION, _EmpiricalSelection, _empirical_context,
@@ -36,6 +37,8 @@ from .environments import (
 from .executor import ExecutorRevision
 from .faults import RunProtocolFault
 from .routing import CANDIDATE, COST_MODEL, route_rejection
+from open_cake_ir.evaluation.paired import paired_protocol, validate_receipt_policy, candidate_from_identity, validate_paired_broker
+
 from .pairing import comparison_arm, bind_baseline, native_baseline, triton_optimization_analysis_plan
 from open_cake_ir.evaluation.core import parse_launch_manifest
 from open_cake_ir.compiler.target import cuda_target
@@ -685,6 +688,7 @@ def _replay_broker_attempt_ledger(
                 or receipt.get("timing") != final_receipt.timing
             ):
                 raise ValueError("broker attempt raw receipt differs")
+            validate_paired_broker(final_receipt, str(result["job_id"]), counters)
         try:
             evaluator_result = _object(
                 json.loads(raw_payloads["evaluator_result"]),
@@ -904,6 +908,8 @@ def _validate_receipt_authority(
     protocol_sha256: str,
     case_id: str,
     purpose: str,
+    evaluation_protocol: Mapping[str, object] | None = None,
+    fixed_baseline: Mapping[str, object] | None = None,
 ) -> None:
     if (
         receipt.candidate_sha256 != candidate.candidate_sha256
@@ -913,6 +919,8 @@ def _validate_receipt_authority(
         or receipt.purpose != purpose
     ):
         raise ValueError("EvaluationReceipt does not match the Campaign Lock")
+    if evaluation_protocol is not None:
+        validate_receipt_policy(receipt, evaluation_protocol, fixed_baseline, candidate)
 
 
 def _receipt_latency_ms(receipt: EvaluationReceipt | None) -> float | None:
@@ -1440,6 +1448,39 @@ class CampaignLock:
             raise ValueError("Campaign Lock Study kind is unsupported")
         for field in ("evaluation_protocol", "execution"):
             _object(document.get(field), f"campaign_lock.{field}")
+        if paired_protocol(document['evaluation_protocol']) is not None:
+            execution = document['execution']
+            if set(execution) != {'target', 'executor_revision', 'broker_execution_sha256',
+                                  'gpu', 'sandbox', 'fixed_baseline', 'runtime_config'}:
+                raise ValueError('paired Campaign execution fields differ')
+            if study_kind != 'matched_search' or comparison != 'native_triton':
+                raise ValueError('paired Campaign requires the native Triton comparison')
+            _digest(execution['broker_execution_sha256'], 'execution.broker_execution_sha256')
+            executor = _object(execution['executor_revision'], 'execution.executor_revision')
+            if set(executor) != {'executor_id', 'path', 'canonical_sha256'}:
+                raise ValueError('paired Campaign Executor must be resolved')
+            _digest(executor['canonical_sha256'], 'execution.executor_revision.canonical_sha256')
+            runtime = _object(execution['runtime_config'], 'execution.runtime_config')
+            if (set(runtime) != {'path', 'sha256'} or not isinstance(runtime['path'], str)
+                or not Path(runtime['path']).is_absolute() or '..' in Path(runtime['path']).parts):
+                raise ValueError('paired Campaign runtime binding differs')
+            _digest(runtime['sha256'], 'runtime_config.sha256')
+            for arm in arms.values():
+                provider = arm['provider']
+                _digest(arm['toolchain_sha256'], 'arm.toolchain_sha256')
+                _digest(provider['executable_sha256'], 'provider.executable_sha256')
+                _name(provider['revision'], 'provider.revision')
+                for field in ('qualification', 'qualification_anchor'):
+                    reference = _object(provider[field], f'provider.{field}')
+                    if set(reference) != {'path', 'canonical_sha256'} or not Path(str(reference['path'])).is_absolute():
+                        raise ValueError('paired Campaign qualification binding differs')
+                    _digest(reference['canonical_sha256'], f'provider.{field}.canonical_sha256')
+            fixed = _object(document['execution'].get('fixed_baseline'), 'execution.fixed_baseline')
+            if set(fixed) != {'bundle_path', 'candidate'} or not Path(str(fixed['bundle_path'])).is_absolute():
+                raise ValueError('paired Campaign fixed baseline binding differs')
+            bound_baseline = candidate_from_identity(fixed['candidate'])
+            if bound_baseline.target != execution['target']:
+                raise ValueError('paired Campaign baseline target differs')
         analysis = _object(document.get("analysis_plan"), "campaign_lock.analysis_plan")
         analysis_sha = sha256(_canonical_json_bytes(analysis)).hexdigest()
         if document.get("analysis_plan_sha256") != analysis_sha:
@@ -1641,15 +1682,17 @@ class Lab:
         self._clock = clock
 
     def preflight(
-        self, study_path: str | Path, *, empirical_cost_model_path: str | Path | None = None
+        self, study_path: str | Path, *, empirical_cost_model_path: str | Path | None = None,
+        execution_bindings_path: str | Path | None = None
     ) -> CampaignLock:
         """Resolve one Study Contract without provider, GPU or evidence side effects."""
 
         study = StudyContract.load(study_path)
         if study.document["kind"] == "portfolio":
-            if empirical_cost_model_path is not None:
+            if empirical_cost_model_path is not None or execution_bindings_path is not None:
                 raise ValueError("empirical selection requires artifact_optimization_only matched search")
             return self._preflight_portfolio(study)
+        study = replace(study, document=resolve_execution_bindings(self._root, study, execution_bindings_path))
         workload_ref = _object(study.document.get("workload"), "study.workload")
         if set(workload_ref) != {"path", "canonical_sha256"}:
             raise ValueError("study workload reference fields differ")
@@ -1810,7 +1853,7 @@ class Lab:
         )
         if set(qualification_ref) != {"path", "canonical_sha256"}:
             raise ValueError("provider qualification reference fields differ")
-        _, qualification_path = _project_path(
+        _, qualification_path = _qualification_path(
             self._root,
             qualification_ref.get("path"),
             "study.arms.provider.qualification.path",
@@ -1859,6 +1902,9 @@ class Lab:
             or qualification_ref.get("canonical_sha256") != qualification.canonical_sha256
         ):
             raise ValueError("provider qualification bytes or capability differs")
+        if (paired_triton and qualification.scope != 'zero_gpu_contract_fixture_only'
+            and paired_protocol(study.document['evaluation_protocol']) is None):
+            raise ValueError('new live native Campaign requires explicit fixed-baseline paired policy')
         qualification_anchor = provider.get("qualification_anchor")
         if qualification.scope == "zero_gpu_contract_fixture_only":
             if qualification_anchor is not None:
@@ -1870,7 +1916,7 @@ class Lab:
             )
             if set(anchor_reference) != {"path", "canonical_sha256"}:
                 raise ValueError("provider qualification anchor reference differs")
-            _, anchor_path = _project_path(
+            _, anchor_path = _qualification_path(
                 self._root,
                 anchor_reference.get("path"),
                 "study.arms.provider.qualification_anchor.path",
@@ -2014,7 +2060,8 @@ class Lab:
             assessment = baseline_compiler.assess(baseline)
             if not assessment.lowering_eligible:
                 raise ValueError("paired optimization baseline is not lowerable")
-            native_baseline(baseline_compiler.lower(assessment))
+            baseline_lowering = baseline_compiler.lower(assessment)
+            native_baseline(baseline_lowering)
 
         allocation = _object(study.document.get("allocation"), "study.allocation")
         order = allocation.get("order")
@@ -2084,6 +2131,9 @@ class Lab:
             study.document.get("evaluation_protocol"), "study.evaluation_protocol"
         )
         workload.case(_name(evaluation.get("case_id"), "study.evaluation_protocol.case_id"))
+        assay = paired_protocol(evaluation)
+        if assay is not None and not paired_triton:
+            raise ValueError('fixed-baseline assay requires the paired Triton Study')
         # How many candidates a Turn search-evaluates. Checked here because a Study that
         # asks for none, or for a word, would otherwise fault partway through a run --
         # and a run that faults has already spent the GPU time this Lab exists to gate.
@@ -2124,14 +2174,30 @@ class Lab:
             # threshold nothing can cross.
             raise ValueError("search_materiality_ratio without searches_per_turn above one")
         execution = _object(study.document.get("execution"), "study.execution")
-        if set(execution) != {
-            "target",
-            "executor_revision",
-            "broker_execution_sha256",
-            "gpu",
-            "sandbox",
-        }:
+        expected_execution_fields = {'target', 'executor_revision', 'broker_execution_sha256', 'gpu', 'sandbox'}
+        if assay is not None:
+            expected_execution_fields.update({'fixed_baseline', 'runtime_config'})
+        if set(execution) != expected_execution_fields:
             raise ValueError("Study Contract execution fields differ")
+        if assay is not None:
+            from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates
+            fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
+            sealed_baseline = load_baseline_bundle(self._root, fixed['bundle_path'])
+            validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
+            import ast
+            from open_cake_ir.compiler.toolchain import project_triton_kernel
+            requirements = baseline_lowering.toolchain_requirements
+            source = sealed_baseline.artifact_payloads.get('lowered_source')
+            expected_source = project_triton_kernel(baseline_lowering.source.encode(), requirements)
+            if source is None:
+                raise ValueError('fixed baseline requires retained Compiler lowering source')
+            observed_source = project_triton_kernel(source, requirements)
+            manifest = parse_launch_manifest(json.loads(sealed_baseline.artifact_payloads['launch_manifest']))
+            if (fixed['candidate'] != candidate_identity(sealed_baseline)
+                or ast.dump(ast.parse(observed_source)) != ast.dump(ast.parse(expected_source))
+                or list(manifest.grid) != requirements['grid']
+                or manifest.block != (requirements['compile_options']['num_warps'] * 32, 1, 1)):
+                raise ValueError('fixed baseline differs from the frozen Compiler kernel or launch commitments')
         if (
             execution.get("target") != (workload.document['semantics'].get('target') if paired_triton else "sm_100a")
             or execution.get("sandbox") != "workspace-write"
@@ -2532,12 +2598,16 @@ class Lab:
             provider_document["qualification"],
             "arm_environments.open_cake.provider_qualification",
         )
-        _, qualification_path = _project_path(
+        _, qualification_path = _qualification_path(
             self._root,
             qualification_ref["path"],
             "arm_environments.open_cake.provider_qualification.path",
         )
         qualification = ProviderQualificationReceipt.load(qualification_path)
+        if (comparison_arm(arms) == 'native_triton' and qualification.scope != 'zero_gpu_contract_fixture_only'
+            and (paired_protocol(evaluation_protocol) is None
+                 or provider_document['disabled_features'] != list(CODEX_DISABLED_FEATURES))):
+            raise ValueError('new live native execution requires paired policy and current closed provider surface')
         if getattr(provider, "executable_sha256", None) != qualification.executable_sha256:
             raise ValueError("Run Provider executable does not match its qualification")
         output_schema = _object(
@@ -2923,6 +2993,8 @@ class Lab:
                                 protocol_sha256=expected_protocol_sha256,
                                 case_id=case_id,
                                 purpose="attribution",
+                                evaluation_protocol=evaluation_protocol,
+                                fixed_baseline=lock.document['execution'].get('fixed_baseline', {}).get('candidate'),
                             )
                             ledger.append(
                                 "candidate_evaluated",
@@ -3002,6 +3074,8 @@ class Lab:
                                 protocol_sha256=expected_protocol_sha256,
                                 case_id=case_id,
                                 purpose="search",
+                                evaluation_protocol=evaluation_protocol,
+                                fixed_baseline=lock.document['execution'].get('fixed_baseline', {}).get('candidate'),
                             )
                             ledger.append(
                                 "candidate_evaluated",
@@ -3113,6 +3187,8 @@ class Lab:
                                 protocol_sha256=expected_protocol_sha256,
                                 case_id=case_id,
                                 purpose="confirmatory",
+                                evaluation_protocol=evaluation_protocol,
+                                fixed_baseline=lock.document['execution'].get('fixed_baseline', {}).get('candidate'),
                             )
                             confirmed_references = _archive_evaluation_receipt(
                                 evidence, confirmed
@@ -4178,6 +4254,8 @@ class Lab:
                     ),
                     artifact_payloads=raw_payloads,
                 )
+                validate_receipt_policy(validated_receipt, lock.document['evaluation_protocol'],
+                    lock.document['execution'].get('fixed_baseline', {}).get('candidate'), launchable)
                 if validated_receipt.canonical_sha256 != sha256(
                     _canonical_json_bytes(receipt)
                 ).hexdigest():

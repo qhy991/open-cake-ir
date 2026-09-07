@@ -135,8 +135,8 @@ class FakeEnvironment:
 
 
 class FakeProvider:
-    provider_revision = "fixture-provider-candidate-set-ralph-v1"
-    qualification_sha256 = "694132ea32f002c56f019a2d5cca80112700cb9bc6e54dfaf87d08a62cc2c979"
+    provider_revision = "fixture-provider-candidate-set-ralph-v2"
+    qualification_sha256 = "d693060b7bb0af69dacf9205f51aeb07b89955800015cb6b4b7c53c91b987a0d"
     executable_sha256 = "d" * 64
     configuration = {
         "model": "gpt-5.6-sol",
@@ -236,8 +236,8 @@ class CandidateSetFakeProvider(FakeProvider):
 
 
 class RalphFakeProvider(FakeProvider):
-    provider_revision = "fixture-provider-candidate-set-ralph-v1"
-    qualification_sha256 = "694132ea32f002c56f019a2d5cca80112700cb9bc6e54dfaf87d08a62cc2c979"
+    provider_revision = "fixture-provider-candidate-set-ralph-v2"
+    qualification_sha256 = "d693060b7bb0af69dacf9205f51aeb07b89955800015cb6b4b7c53c91b987a0d"
     configuration = {
         "model": "gpt-5.6-sol",
         "reasoning_effort": "max",
@@ -273,7 +273,7 @@ def _enable_candidate_set(document: dict[str, object], maximum: int) -> None:
     budget = document["budget"]
     assert isinstance(budget, dict)
     budget["maximum_candidates_per_turn"] = maximum
-    receipt_path = "contracts/providers/fixture-provider-candidate-set-ralph-v1.json"
+    receipt_path = "contracts/providers/fixture-provider-candidate-set-ralph-v2.json"
     receipt = ProviderQualificationReceipt.load(ROOT / receipt_path)
     arms = document["arms"]
     assert isinstance(arms, dict)

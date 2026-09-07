@@ -251,6 +251,27 @@ class TaskPackage:
         ).encode()
 
 
+def render_task_request(
+    package: TaskPackage, state_card: Mapping[str, object]
+) -> tuple[str, bytes]:
+    """Deliver the verified two-file authority and retain that exact projection.
+
+    The caller verifies the materialized files before invocation. JSON quoting is
+    reversible: each document string is the original UTF-8 text, not a second
+    template. This proves delivered content, not whether the model read a file.
+    """
+
+    _object(state_card, 'Ralph controller StateCard')
+    bundle = package.evidence_bundle(state_card)
+    prompt = (
+        "Read the complete TASK.md and AGENTS.md content in the following canonical "
+        "task projection. Continue the same Ralph Run under those immutable rules. "
+        "The StateCard is the external controller's derived state for this iteration.\n\n"
+        + bundle.decode('utf-8')
+    )
+    return prompt, bundle
+
+
 def render_task_package(
     project_root: str | Path,
     lock: CampaignLockLike,

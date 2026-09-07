@@ -26,6 +26,7 @@ from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.task_package import (  # noqa: E402
     TaskPackage,
     materialize_task_package,
+    render_task_request,
 )
 
 
@@ -124,11 +125,35 @@ class ProviderContractTests(unittest.TestCase):
             ]
             self.assertEqual(observed_disabled, disabled)
             self.assertIn("apps", disabled)
-            self.assertIn("shell_tool", disabled)
+            for feature in ('code_mode', 'code_mode_only', 'code_mode_host', 'shell_tool'):
+                self.assertEqual(disabled.count(feature), 1)
         self.assertNotIn("resume", initial.argv)
         self.assertIn("resume", resumed.argv)
         self.assertIn('model_reasoning_effort="xhigh"', initial.argv)
         self.assertEqual(builder.configuration["reasoning_effort"], "xhigh")
+
+    def test_current_closed_builder_rejects_missing_code_mode_exclusions(self):
+        for feature in ('code_mode', 'code_mode_only'):
+            with self.subTest(feature=feature), self.assertRaisesRegex(ValueError, 'feature and event'):
+                CodexInvocationBuilder(executable=ROOT / 'pyproject.toml', provider_revision='fixture',
+                    model='gpt-5.6-sol', reasoning_effort='max', service_tier='default', workspace=ROOT,
+                    output_schema=ROOT / 'contracts/providers/codex-turn-output-schema-v1.json',
+                    removed_environment=('OPENAI_API_KEY', 'ANTHROPIC_API_KEY'),
+                    disabled_features=tuple(v for v in CODEX_DISABLED_FEATURES if v != feature))
+
+    def test_code_mode_startup_error_is_rejected_before_and_after_turn_started(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / 'candidate.json'
+            candidate.write_text('{"schedule":2}')
+            events = [json.loads(line) for line in self._events(candidate, duplicate=False).splitlines()]
+            error = {'type':'item.completed', 'item':{'id':'startup-error', 'type':'error',
+                'message':'Unable to start Code Mode without its host'}}
+            for position in (1, 2):
+                with self.subTest(position=position), self.assertRaises(ValueError):
+                    changed = events[:position] + [error] + events[position:]
+                    normalize_codex_turn(b''.join(json.dumps(v).encode() + b'\n' for v in changed),
+                        candidate_path=candidate, expected_change='add',
+                        expected_terminal_message='{"candidate_written":true}')
 
     def test_provider_default_features_emit_no_forced_disable_flags(self) -> None:
         builder = CodexInvocationBuilder(
@@ -829,6 +854,21 @@ class ProviderContractTests(unittest.TestCase):
 
 
 
+    def test_task_request_projects_unicode_newlines_and_state_without_mutating_task(self):
+        package = TaskPackage('native_triton-1', 'native_triton',
+                              '# TASK.md\n中文 "quoted" \\ path\n', '# AGENTS.md\nRules\n')
+        original = (package.task_markdown, package.agents_markdown, package.canonical_sha256)
+        for iteration in (1, 2):
+            prompt, bundle = render_task_request(package, {'iteration':iteration})
+            self.assertTrue(prompt.endswith(bundle.decode('utf-8')))
+            delivered = json.loads(bundle)
+            self.assertEqual(delivered['task_markdown'], package.task_markdown)
+            self.assertEqual(delivered['agents_markdown'], package.agents_markdown)
+            self.assertEqual(delivered['state_card'], {'iteration':iteration})
+        self.assertEqual((package.task_markdown, package.agents_markdown, package.canonical_sha256), original)
+        with self.assertRaisesRegex(ValueError, 'StateCard'):
+            render_task_request(package, None)
+
     def test_ralph_provider_exposes_only_task_agents_and_candidate_set(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -964,14 +1004,30 @@ class ProviderContractTests(unittest.TestCase):
                 {path.name for path in workspace.iterdir()},
                 {"TASK.md", "AGENTS.md", "candidate-set.json"},
             )
-            self.assertIn("Read TASK.md and AGENTS.md", adapter.invocations[0].argv[-1])
-            self.assertNotIn("Implement the frozen task", adapter.invocations[0].argv[-1])
+            for invocation, result in zip(adapter.invocations, (first, second), strict=True):
+                self.assertTrue(invocation.argv[-1].endswith(result.reference_bundle.decode()))
+                delivered = json.loads(invocation.argv[-1].split('\n\n', 1)[1])
+                self.assertEqual(delivered['task_markdown'].encode(), (workspace / 'TASK.md').read_bytes())
+                self.assertEqual(delivered['agents_markdown'].encode(), (workspace / 'AGENTS.md').read_bytes())
+            first_bundle, second_bundle = json.loads(first.reference_bundle), json.loads(second.reference_bundle)
+            self.assertEqual(first_bundle['task_markdown'], second_bundle['task_markdown'])
+            self.assertEqual(first_bundle['agents_markdown'], second_bundle['agents_markdown'])
+            self.assertNotEqual(first_bundle['state_card'], second_bundle['state_card'])
             self.assertIn("resume", adapter.invocations[1].argv)
             self.assertNotEqual(first.candidate_sha256s, second.candidate_sha256s)
             bundle = json.loads(second.reference_bundle)
             self.assertEqual(bundle["task_markdown"], package.task_markdown)
             self.assertEqual(bundle["agents_markdown"], package.agents_markdown)
             self.assertEqual(bundle["state_card"]["iteration"], 2)
+            # A modified immutable file is refused before another provider call.
+            (workspace / 'TASK.md').chmod(0o644)
+            (workspace / 'TASK.md').write_text('modified task')
+            with self.assertRaisesRegex(ValueError, 'task file TASK.md custody'):
+                provider.turn(SimpleNamespace(run_id='open_cake-1', arm='open_cake', turn=3,
+                    cumulative_provider_tokens=200, thread_id=first.thread_id, feedback={},
+                    maximum_candidates_per_turn=2, state_card=state))
+            self.assertEqual(len(adapter.invocations), 2)
+
 
 
 if __name__ == "__main__":

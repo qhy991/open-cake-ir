@@ -35,6 +35,10 @@ from open_cake_ir.evaluation import (  # noqa: E402
     NCU_ATTRIBUTION_METRICS,
     summarize_cohort,
 )
+from open_cake_ir.evaluation.paired import (  # noqa: E402
+    PAIRED_KIND, paired_protocol, paired_summary, candidate_identity,
+    candidate_from_identity, validate_pair_candidates,
+)
 from open_cake_ir.lab.executor import ExecutorRevision  # noqa: E402
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda  # noqa: E402
 from open_cake_ir.evaluation.core import (  # noqa: E402
@@ -113,6 +117,7 @@ class _Authority:
     candidate: LaunchableCandidate
     payloads: Mapping[str, bytes]
     case_id: str
+    baseline: LaunchableCandidate | None = None
 
 
 def _load_authority(request_path: Path) -> _Authority:
@@ -159,6 +164,23 @@ def _load_authority(request_path: Path) -> _Authority:
     workload.case(case_id)
     if isinstance(manifest, TensorLaunchManifest):
         manifest.check_workload(workload, case_id)
+    baseline = None
+    evaluation = request.get('evaluation_protocol')
+    if evaluation is not None:
+        evaluation = _object(evaluation, 'request.evaluation_protocol')
+        if sha256(_canonical_json_bytes(evaluation)).hexdigest() != request['evaluation_protocol_sha256']:
+            raise ValueError('worker evaluation policy identity differs')
+        if paired_protocol(evaluation) is not None:
+            partner = _object(request.get('baseline'), 'request.baseline')
+            paths = _object(partner.get('artifact_paths'), 'request.baseline.artifact_paths')
+            baseline = candidate_from_identity({k: v for k, v in partner.items() if k != 'artifact_paths'},
+                {role: _input_path(request_root, path, f'baseline.{role}').read_bytes()
+                 for role, path in paths.items()})
+            validate_pair_candidates(candidate, baseline, workload, case_id)
+        elif 'baseline' in request:
+            raise ValueError('worker baseline has no paired policy')
+    elif 'baseline' in request:
+        raise ValueError('worker baseline has no evaluation authority')
     return _Authority(
         request,
         request_root,
@@ -168,7 +190,122 @@ def _load_authority(request_path: Path) -> _Authority:
         candidate,
         payloads,
         case_id,
+        baseline,
     )
+
+
+def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
+                       samples_per_cohort, route_calls_per_cohort):
+    """The single retained CUPTI path for both historical and paired tensor assays."""
+    arguments = loaded.fresh_argument_sets(route_calls_per_cohort)
+    used = 0
+    def launch_fresh():
+        nonlocal used
+        if used >= len(arguments):
+            raise RuntimeError('CUPTI invocation budget exceeded; output reuse is forbidden')
+        loaded.launch(arguments[used])
+        used += 1
+    samples = [float(value) for value in strict_cupti(launch_fresh,
+        dry_run_iters=11, repeat_iters=samples_per_cohort, cold_l2_cache=True, use_cuda_graph=False)]
+    if len(samples) != samples_per_cohort:
+        raise ValueError('worker CUPTI sample count differs')
+    if used != len(arguments):
+        raise RuntimeError('retained CUPTI helper invocation count differs')
+    check = {'checked_launches': used, 'passed': True, 'output_mismatches': 0,
+             'max_abs_error': 0.0, 'inputs_unchanged': True}
+    for values in arguments:
+        observed, after = loaded.snapshot(values)
+        correct, observation = compare_tile_outputs(workload, inputs, expected, observed, after)
+        check['passed'] = check['passed'] and correct
+        check['output_mismatches'] += observation['output_mismatches']
+        check['max_abs_error'] = max(check['max_abs_error'], observation['max_abs_error'])
+        check['inputs_unchanged'] = check['inputs_unchanged'] and observation['inputs_unchanged']
+    return samples, check
+
+
+def _evaluate_paired_tile(authority, result, helper, admission):
+    """Execute both sealed participants in one allocation, in the frozen order."""
+    protocol = paired_protocol(authority.request['evaluation_protocol'])
+    candidates = {'candidate': authority.candidate, 'baseline': authority.baseline}
+    manifests = validate_pair_candidates(authority.candidate, authority.baseline,
+                                        authority.workload, authority.case_id)
+    inputs = materialize_case(authority.workload, authority.case_id)
+    expected = reference_outputs(authority.workload, authority.case_id, inputs)
+    loaded = {}
+    checks = {role: {'preflight': None, 'postflight': None, 'timed_output_checks': []}
+              for role in protocol.arms}
+    measurements = []
+    counters = result['counters']
+    correctness_protocol = EvaluationProtocol('workload-tensor-worker-correctness',
+        authority.request['purpose'], authority.workload.canonical_sha256, authority.case_id, 'none')
+    passed = True
+    metrics = {'output_mismatches': 0, 'max_abs_error': 0.0, 'inputs_unchanged': True}
+    correctness_calls = 0
+    def accumulate(check):
+        nonlocal passed
+        passed = passed and check['passed']
+        values = check.get('metrics', check)
+        metrics['output_mismatches'] += values['output_mismatches']
+        metrics['max_abs_error'] = max(metrics['max_abs_error'], values['max_abs_error'])
+        metrics['inputs_unchanged'] = metrics['inputs_unchanged'] and values['inputs_unchanged']
+    def correctness(role, phase):
+        nonlocal correctness_calls
+        receipt = evaluate_tile_workload(candidates[role], authority.workload,
+                                        correctness_protocol, loaded[role])
+        check = {'passed': receipt.correctness_passed, 'metrics': dict(receipt.correctness)}
+        checks[role][phase] = check
+        correctness_calls += 1
+        accumulate(check)
+    try:
+        for role in protocol.arms:
+            loaded[role] = LoadedTorchTensorCandidate(candidates[role], manifests[role], inputs, admission)
+            counters['module_loads'] += 1
+            correctness(role, 'preflight')
+            counters['preflight_calls'] += 1
+        if passed:
+            strict_cupti = StrictCuptiBenchmark(helper)
+            for index, order in enumerate(protocol.pair_order):
+                row = {'pair_index': index, 'order': list(order), 'arms': {}}
+                for position, role in enumerate(order):
+                    samples, check = _fresh_tile_cohort(loaded[role], strict_cupti,
+                        authority.workload, inputs, expected,
+                        samples_per_cohort=protocol.samples_per_cohort,
+                        route_calls_per_cohort=protocol.route_calls_per_cohort)
+                    counters['timing_samples'] += len(samples)
+                    checks[role]['timed_output_checks'].append(check)
+                    accumulate(check)
+                    row['arms'][role] = {'position': position,
+                        'candidate_record_sha256': candidates[role].canonical_sha256,
+                        'samples_ms': samples, 'summary': summarize_cohort(samples),
+                        'route_calls': check['checked_launches'], 'output_check': check}
+                measurements.append(row)
+            for role in protocol.arms:
+                correctness(role, 'postflight')
+        identities = {role: candidate_identity(item) for role, item in candidates.items()}
+        raw = {'kind': PAIRED_KIND, 'evaluation_protocol': authority.request['evaluation_protocol'],
+            'participants': identities, 'workload_sha256': authority.workload.canonical_sha256,
+            'case_id': authority.case_id, 'purpose': authority.request['purpose'],
+            'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
+            'measurements': measurements}
+        if not measurements:
+            raw['not_measured'] = 'correctness_rejected'
+        timing = paired_summary(raw) if measurements else None
+        _write_new(authority.request_root / 'timing-samples.json', raw)
+        _write_new(authority.request_root / 'correctness-output.json', {
+            'passed': passed, 'metrics': metrics, 'participants': checks})
+        _write_new(authority.request_root / 'launch-receipt.json', {
+            'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
+            'candidate_sha256': authority.candidate.candidate_sha256, 'participants': identities,
+            'correctness_launches': correctness_calls, 'fallback_calls': 0,
+            'resources': {role: item.loaded.resources for role, item in loaded.items()}})
+        result['receipt'] = {'correctness_passed': passed, 'correctness': metrics,
+            'kernel_calls': 1, 'fallback_calls': 0, 'timing': timing,
+            'artifacts': {'correctness_output': 'correctness-output.json',
+                          'launch_receipt': 'launch-receipt.json', 'timing_samples': 'timing-samples.json'}}
+    finally:
+        counters['kernel_calls'] = sum(item.loaded.launch_calls for item in loaded.values())
+        for item in loaded.values():
+            item.close()
 
 
 def _evaluate_tile_candidate(authority, result, helper, admission, collect_timing):
@@ -194,33 +331,9 @@ def _evaluate_tile_candidate(authority, result, helper, admission, collect_timin
             strict_cupti = StrictCuptiBenchmark(helper)
             expected = reference_outputs(authority.workload, authority.case_id, inputs)
             for _ in range(5):
-                # The retained FlashInfer helper makes six untimed estimation calls,
-                # then eleven warmups and twenty-five timed calls. Prepare every
-                # output before entering it; the callback contains only the CUBIN.
-                arguments = loaded.fresh_argument_sets(6 + 11 + 25)
-                used = 0
-                def launch_fresh():
-                    nonlocal used
-                    if used >= len(arguments):
-                        raise RuntimeError('CUPTI invocation budget exceeded; output reuse is forbidden')
-                    loaded.launch(arguments[used])
-                    used += 1
-                samples = [float(value) for value in strict_cupti(launch_fresh,
-                    dry_run_iters=11, repeat_iters=25, cold_l2_cache=True, use_cuda_graph=False)]
+                samples, check = _fresh_tile_cohort(loaded, strict_cupti, authority.workload,
+                    inputs, expected, samples_per_cohort=25, route_calls_per_cohort=42)
                 cohorts.append(samples)
-                if len(samples) != 25:
-                    raise ValueError('worker CUPTI sample count differs')
-                if used != len(arguments):
-                    raise RuntimeError('retained CUPTI helper invocation count differs')
-                check = {'checked_launches': used, 'passed': True, 'output_mismatches': 0,
-                         'max_abs_error': 0.0, 'inputs_unchanged': True}
-                for values in arguments:
-                    observed, after = loaded.snapshot(values)
-                    correct, observation = compare_tile_outputs(authority.workload, inputs, expected, observed, after)
-                    check['passed'] = check['passed'] and correct
-                    check['output_mismatches'] += observation['output_mismatches']
-                    check['max_abs_error'] = max(check['max_abs_error'], observation['max_abs_error'])
-                    check['inputs_unchanged'] = check['inputs_unchanged'] and observation['inputs_unchanged']
                 timed_checks.append(check)
                 passed = passed and check['passed']
                 metrics['output_mismatches'] += check['output_mismatches']
@@ -286,6 +399,9 @@ def _evaluate_candidate(
         != admission.gpu_uuid
     ):
         raise ValueError("profile child CUDA device differs from parent admission")
+    if authority.baseline is not None and collect_timing:
+        _evaluate_paired_tile(authority, result, helper, admission)
+        return
     if isinstance(authority.manifest, TensorLaunchManifest):
         _evaluate_tile_candidate(authority, result, helper, admission, collect_timing)
         return

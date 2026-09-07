@@ -3,112 +3,59 @@
     "method": "predeclared_balanced_blocks",
     "order": [
       "open_cake-1",
-      "direct_cuda-1",
-      "direct_cuda-2",
+      "native_triton-1",
+      "native_triton-2",
       "open_cake-2",
       "open_cake-3",
-      "direct_cuda-3"
+      "native_triton-3"
     ]
   },
   "analysis_plan": {
-    "availability": "all_prescheduled_runs_observed_and_each_arm_has_qualified_run",
-    "contrast": "two_part_open_cake_vs_direct_cuda",
-    "direction": "lower_latency_is_better",
-    "estimand": "terminal-budget qualification-rate difference and conditional confirmed performance",
     "experimental_unit": "run",
+    "target_population": "prescheduled_runs_under_exact_campaign_lock",
+    "primary_endpoint": [
+      "qualified_by_budget",
+      "best_confirmed_latency_ms_if_qualified"
+    ],
+    "contrast": "two_part_open_cake_vs_native_triton",
+    "estimand": "terminal-budget qualification-rate difference and conditional confirmed performance from the same known baseline",
+    "treatment": {
+      "open_cake": "Schedule_or_restricted_Python_IR_to_frozen_Triton",
+      "native_triton": "kernel_only_Triton_same_frozen_backend",
+      "reference_access": "known_baseline_optimization",
+      "baseline": "same_Compiler_lowering_kernel_and_compile_launch_metadata",
+      "held_fixed": [
+        "workload",
+        "case",
+        "oracle",
+        "backend",
+        "toolchain",
+        "launch_abi",
+        "provider",
+        "scaffold",
+        "budget",
+        "evaluation"
+      ]
+    },
     "missingness": {
       "candidate_failure": "observed_outcome",
       "external_fault": "missing",
       "replacement": "forbidden"
     },
     "pooling": "forbidden_without_successor_analysis_plan",
-    "primary_endpoint": [
-      "qualified_by_budget",
-      "best_confirmed_latency_ms_if_qualified"
-    ],
+    "availability": "all_prescheduled_runs_observed_and_each_arm_has_qualified_run",
     "summary_statistics": {
-      "conditional_latency": "arm_median_ms",
-      "contrast": "direct_cuda_median_divided_by_open_cake_median",
       "qualification": "arm_rate",
-      "qualification_contrast": "open_cake_rate_minus_direct_cuda_rate",
+      "qualification_contrast": "open_cake_rate_minus_native_triton_rate",
+      "conditional_latency": "arm_median_ms",
+      "contrast": "native_triton_median_divided_by_open_cake_median",
       "uncertainty": "per_arm_observed_range_ms"
     },
-    "target_population": "prescheduled_runs_under_exact_campaign_lock"
+    "direction": "lower_latency_is_better",
+    "confirmation": "fresh_fixed_candidate_correctness_then_paired_cupti",
+    "threshold_view": "descriptive_first_fresh_confirmation_from_retained_events_no_search_latency_substitution"
   },
   "arms": {
-    "direct_cuda": {
-      "candidate_skeleton": {
-        "path": "contracts/scaffolds/direct-cuda-headline-v1.cu",
-        "sha256": "0abb16224b8331ec808ac348648f5a68cc1542f013ebf921c6fca8ec786bd187"
-      },
-      "environment_kind": "direct_cuda",
-      "feedback": [
-        "compile",
-        "correctness",
-        "qualified_timing",
-        "profile"
-      ],
-      "launch_contract": {
-        "path": "contracts/launch/flash-kmeans-cuda-launch-v1.json",
-        "sha256": "ce3db9719334ef51dd5487b4f623dc7192f4579ab326724c729d72647324a3ab"
-      },
-      "provider": {
-        "cwd_policy": "independent_task_workspace",
-        "disabled_features": [
-          "apps",
-          "auth_elicitation",
-          "browser_use",
-          "browser_use_external",
-          "browser_use_full_cdp_access",
-          "code_mode",
-          "code_mode_host",
-          "code_mode_only",
-          "computer_use",
-          "goals",
-          "guardian_approval",
-          "hooks",
-          "image_generation",
-          "in_app_browser",
-          "multi_agent",
-          "plugin_sharing",
-          "plugins",
-          "remote_plugin",
-          "shell_tool",
-          "skill_mcp_dependency_install",
-          "tool_call_mcp_elicitation",
-          "tool_suggest",
-          "workspace_dependencies"
-        ],
-        "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        "model": "gpt-5.6-sol",
-        "output_schema": {
-          "path": "contracts/providers/codex-turn-output-schema-v1.json",
-          "sha256": "5b3b813d98ddae93fe9ff5cf0f1568d64721fa31029cb77a0ad5f2dfc800ed18"
-        },
-        "qualification": {
-          "path": "contracts/providers/fixture-provider-candidate-set-ralph-v2.json",
-          "canonical_sha256": "d693060b7bb0af69dacf9205f51aeb07b89955800015cb6b4b7c53c91b987a0d"
-        },
-        "qualification_anchor": null,
-        "reasoning_effort": "max",
-        "reference_visibility": "workspace_task_files",
-        "removed_environment": [
-          "OPENAI_API_KEY",
-          "ANTHROPIC_API_KEY"
-        ],
-        "revision": "fixture-provider-candidate-set-ralph-v2",
-        "sandbox": "workspace-write",
-        "service_tier": "default"
-      },
-      "scaffold": {
-        "path": "contracts/scaffolds/matched-search-v1.md",
-        "sha256": "3d8d0acee1ac6d314464f25cfc2ee0151c8b133e2ac0539b84391fd791c036fe"
-      },
-      "tool_surface": [
-        "submit_cuda"
-      ],
-      "toolchain_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    },
     "open_cake": {
       "compiler_revision": {
         "binding": "current_release"
@@ -147,24 +94,29 @@
           "tool_suggest",
           "workspace_dependencies"
         ],
-        "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "executable_sha256": {
+          "binding": "campaign_lock"
+        },
         "model": "gpt-5.6-sol",
         "output_schema": {
-          "path": "contracts/providers/codex-turn-output-schema-v1.json",
-          "sha256": "5b3b813d98ddae93fe9ff5cf0f1568d64721fa31029cb77a0ad5f2dfc800ed18"
+          "path": "contracts/providers/codex-triton-optimization-output-schema-v1.json",
+          "sha256": "3045cbfae6ba5c624ac83489336b86af3be6585d737009f6d0be1ee3252cd921"
         },
         "qualification": {
-          "path": "contracts/providers/fixture-provider-candidate-set-ralph-v2.json",
-          "canonical_sha256": "d693060b7bb0af69dacf9205f51aeb07b89955800015cb6b4b7c53c91b987a0d"
+          "binding": "campaign_lock"
         },
-        "qualification_anchor": null,
+        "qualification_anchor": {
+          "binding": "campaign_lock"
+        },
         "reasoning_effort": "max",
         "reference_visibility": "workspace_task_files",
         "removed_environment": [
           "OPENAI_API_KEY",
           "ANTHROPIC_API_KEY"
         ],
-        "revision": "fixture-provider-candidate-set-ralph-v2",
+        "revision": {
+          "binding": "campaign_lock"
+        },
         "sandbox": "workspace-write",
         "service_tier": "default"
       },
@@ -174,15 +126,94 @@
       },
       "lowering_route": {
         "backend": "triton",
-        "entry_point": "cake_flash_kmeans_assign"
+        "entry_point": "cake_gemm_bias_b1_smoke"
       },
       "schedule_skeleton": {
-        "canonical_sha256": "2ed70904bbca9d83346ef4280cef610717ae8aebd28a88e3f245c2ceb9524787",
-        "path": "corpus/schedules/flash-kmeans-b32-smoke-v2.json"
+        "path": "corpus/schedules/gemm-bias-b1-smoke-b300.json",
+        "canonical_sha256": "a952cd109d1bb78b7bd24149aac53e3c68d8c8a76e2834006fdc1c76512e8818"
       },
       "tool_surface": [
-        "submit_schedule"
-      ]
+        "submit_schedule_or_python"
+      ],
+      "input_format": "schedule_or_python_v1",
+      "toolchain_sha256": {
+        "binding": "campaign_lock"
+      }
+    },
+    "native_triton": {
+      "environment_kind": "native_triton",
+      "feedback": [
+        "compile",
+        "correctness",
+        "qualified_timing",
+        "profile"
+      ],
+      "provider": {
+        "cwd_policy": "independent_task_workspace",
+        "disabled_features": [
+          "apps",
+          "auth_elicitation",
+          "browser_use",
+          "browser_use_external",
+          "browser_use_full_cdp_access",
+          "code_mode",
+          "code_mode_host",
+          "code_mode_only",
+          "computer_use",
+          "goals",
+          "guardian_approval",
+          "hooks",
+          "image_generation",
+          "in_app_browser",
+          "multi_agent",
+          "plugin_sharing",
+          "plugins",
+          "remote_plugin",
+          "shell_tool",
+          "skill_mcp_dependency_install",
+          "tool_call_mcp_elicitation",
+          "tool_suggest",
+          "workspace_dependencies"
+        ],
+        "executable_sha256": {
+          "binding": "campaign_lock"
+        },
+        "model": "gpt-5.6-sol",
+        "output_schema": {
+          "path": "contracts/providers/codex-triton-optimization-output-schema-v1.json",
+          "sha256": "3045cbfae6ba5c624ac83489336b86af3be6585d737009f6d0be1ee3252cd921"
+        },
+        "qualification": {
+          "binding": "campaign_lock"
+        },
+        "qualification_anchor": {
+          "binding": "campaign_lock"
+        },
+        "reasoning_effort": "max",
+        "reference_visibility": "workspace_task_files",
+        "removed_environment": [
+          "OPENAI_API_KEY",
+          "ANTHROPIC_API_KEY"
+        ],
+        "revision": {
+          "binding": "campaign_lock"
+        },
+        "sandbox": "workspace-write",
+        "service_tier": "default"
+      },
+      "scaffold": {
+        "path": "contracts/scaffolds/matched-search-v1.md",
+        "sha256": "3d8d0acee1ac6d314464f25cfc2ee0151c8b133e2ac0539b84391fd791c036fe"
+      },
+      "tool_surface": [
+        "submit_triton_kernel"
+      ],
+      "toolchain_sha256": {
+        "binding": "campaign_lock"
+      },
+      "baseline": {
+        "binding": "open_cake_lowering"
+      }
     }
   },
   "budget": {
@@ -206,11 +237,65 @@
   "claim_scope": "scientific_matched_search",
   "evaluation_protocol": {
     "attribution_evaluation": "correctness_then_profile_each_search_survivor",
-    "case_id": "headline_b32",
+    "case_id": "primary",
     "confirmatory_evaluation": "fresh_fixed_candidate_correctness_then_paired_cupti",
     "search_evaluation": "correctness_then_paired_cupti",
     "search_materiality_ratio": 1.05,
-    "searches_per_turn": 2
+    "searches_per_turn": 2,
+    "paired_timing": {
+      "kind": "fixed_baseline_paired_cupti_v1",
+      "arms": [
+        "candidate",
+        "baseline"
+      ],
+      "pair_order": [
+        [
+          "candidate",
+          "baseline"
+        ],
+        [
+          "baseline",
+          "candidate"
+        ],
+        [
+          "candidate",
+          "baseline"
+        ],
+        [
+          "baseline",
+          "candidate"
+        ],
+        [
+          "candidate",
+          "baseline"
+        ],
+        [
+          "baseline",
+          "candidate"
+        ],
+        [
+          "candidate",
+          "baseline"
+        ],
+        [
+          "baseline",
+          "candidate"
+        ],
+        [
+          "candidate",
+          "baseline"
+        ],
+        [
+          "baseline",
+          "candidate"
+        ]
+      ],
+      "samples_per_cohort": 25,
+      "route_calls_per_cohort": 42,
+      "maximum_cv": 0.05,
+      "materiality_ratio": 1.05,
+      "required_pair_wins": 6
+    }
   },
   "evidence": {
     "schema_version": 3,
@@ -218,17 +303,22 @@
     "event_vocabulary": "matched_ralph_v1"
   },
   "execution": {
-    "broker_execution_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "broker_execution_sha256": {
+      "binding": "campaign_lock"
+    },
     "executor_revision": {
       "binding": "current_release"
     },
     "gpu": {
       "count": 1,
       "mode": "exclusive",
-      "name": "NVIDIA B200"
+      "name": "NVIDIA B300 SXM6 AC"
     },
     "sandbox": "workspace-write",
-    "target": "sm_100a"
+    "target": "sm_103a",
+    "fixed_baseline": {
+      "binding": "campaign_lock"
+    }
   },
   "kind": "matched_search",
   "run_protocol": {
@@ -248,10 +338,10 @@
   },
   "schema_version": 2,
   "state": "template",
-  "study_id": "open-cake-ir-matched-search-infrastructure-template",
+  "study_id": "matched-search-triton-b300-gemm-known-baseline-optimization-template",
   "workload": {
-    "canonical_sha256": "37e0f57020d9807a6c77c5ef6e56c8c771274c11c745b58022ae85091d567c3a",
-    "path": "contracts/workloads/flash-kmeans-assign-v2.json"
+    "path": "contracts/workloads/gemm-bias-bf16-fp32-v2.json",
+    "canonical_sha256": "b3337c25ac111faf7084910696a4857c9c50c8fcb14826184ed4317bfc16caaf"
   },
   "agent_interface": {
     "schema_version": 1,

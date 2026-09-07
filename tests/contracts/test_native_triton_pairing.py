@@ -341,6 +341,7 @@ class NativePairingContractTests(unittest.TestCase):
             executor = SimpleNamespace(document={'host_environment':{
                 'python':{'invocation_path':str(python)},'packages':{'triton':'fixture'}}})
             qualification = SimpleNamespace(scope='live_two_turn_current_provider',canonical_sha256='a'*64)
+            (root / 'fixture.json').write_text('{}')
             config = {'schema_version':1, 'provider':{'executable':str(executable),'workspace_root':str(root/'author')},
                 'toolchain':{'python':str(other),'bubblewrap':str(bwrap),'runtime_roots':[str(runtime)],
                              'triton_version':'fixture','timeout_seconds':1},
@@ -499,8 +500,10 @@ class PairedLabFixtureTests(unittest.TestCase):
             configuration = {**FakeProvider.configuration, 'output_schema_sha256': document['arms']['open_cake']['provider']['output_schema']['sha256']}
             qualification = json.loads((root / 'contracts/providers/fixture-provider-candidate-set-ralph-v1.json').read_text())
             qualification['configuration_sha256'] = sha256(encoded(configuration)).hexdigest()
+            qualification['provider_revision'] = 'native-ralph-pairing-cpu-fixture'
             qp = root / 'contracts/providers/native-fixture.json'; qp.write_bytes(encoded(qualification))
             for arm, value in document['arms'].items():
+                value['provider']['disabled_features'] = configuration['disabled_features']
                 value['provider']['revision'] = qualification['provider_revision']
                 value['provider']['qualification'] = {'path':'contracts/providers/native-fixture.json', 'canonical_sha256':sha256(encoded(qualification)).hexdigest()}
                 value['feedback'] = (['findings'] if arm == 'open_cake' else ['compile']) + ['correctness','qualified_timing']
@@ -531,6 +534,7 @@ class PairedLabFixtureTests(unittest.TestCase):
                     payload = encoded(member)
                     return dataclasses.replace(original,candidates=(payload,),candidate_sha256s=(sha256(payload).hexdigest(),))
             provider = Provider(); provider.configuration = configuration
+            provider.provider_revision = qualification['provider_revision']
             from open_cake_ir.lab import render_task_package
             provider.packages = {run_id: render_task_package(root, lock, run_id) for run_id in lock.run_order}
             provider.qualification_sha256 = sha256(encoded(qualification)).hexdigest()

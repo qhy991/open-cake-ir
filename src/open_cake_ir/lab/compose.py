@@ -22,6 +22,8 @@ from open_cake_ir.evaluation import (
 )
 
 from .core import CampaignLock, CampaignRef, Lab
+from .bindings import qualification_path, load_baseline_bundle, external_file
+from open_cake_ir.evaluation.paired import candidate_identity, paired_protocol
 from .environments import (
     BuildRequest,
     DirectCudaEnvironment,
@@ -325,7 +327,8 @@ def execute_matched_from_config(
     qualification_ref = _object(
         provider_authority["qualification"], "arm_environments.provider.qualification"
     )
-    qualification = ProviderQualificationReceipt.load(root / str(qualification_ref["path"]))
+    _, receipt_path = qualification_path(root, qualification_ref['path'], 'provider qualification')
+    qualification = ProviderQualificationReceipt.load(receipt_path)
     if (
         qualification.scope
         != required_live_provider_qualification_scope(lock.claim_scope)
@@ -392,6 +395,8 @@ def execute_matched_from_config(
     ):
         raise ValueError("runtime Compiler Revision differs from the Campaign Lock")
     protocol = _object(lock.document["evaluation_protocol"], "evaluation_protocol")
+    if paired_triton and paired_protocol(protocol) is None:
+        raise ValueError('new live native Campaign requires explicit fixed-baseline paired policy')
     workload = _object(lock.document["workload"], "workload")
     workload_contract = WorkloadContract.load(root / str(workload["path"]))
     if workload_contract.canonical_sha256 != workload["canonical_sha256"]:
@@ -418,6 +423,23 @@ def execute_matched_from_config(
         ),
         comparison: direct_environment,
     }
+    fixed_baseline = None
+    if paired_protocol(protocol) is not None:
+        anchor_ref = provider_authority['qualification_anchor']
+        _, anchor_path = qualification_path(root, anchor_ref['path'], 'provider qualification anchor')
+        anchor = json.loads(anchor_path.read_bytes())
+        if (sha256(json.dumps(anchor, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+            != anchor_ref['canonical_sha256'] or anchor.get('qualification_receipt_sha256') != qualification.canonical_sha256):
+            raise ValueError('runtime provider qualification anchor differs from Campaign Lock')
+        fixed = execution['fixed_baseline']
+        fixed_baseline = load_baseline_bundle(root, fixed['bundle_path'])
+        if candidate_identity(fixed_baseline) != fixed['candidate']:
+            raise ValueError('runtime fixed baseline differs from Campaign Lock')
+        runtime_ref = execution['runtime_config']
+        runtime_path = external_file(root, runtime_ref['path'], 'runtime configuration')
+        if (Path(runtime_config_path).resolve(strict=True) != runtime_path
+            or sha256(runtime_path.read_bytes()).hexdigest() != runtime_ref['sha256']):
+            raise ValueError('runtime configuration differs from Campaign Lock')
     protocol_sha256 = sha256(
         json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -431,6 +453,8 @@ def execute_matched_from_config(
         executor=executor,
         service_user=broker_user,
         service_group=broker_group,
+        evaluation_protocol=protocol,
+        baseline=fixed_baseline,
     )
     evaluator = BoundedBrokerEvaluator(protocol, submitter)
 

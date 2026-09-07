@@ -38,7 +38,9 @@
           "browser_use",
           "browser_use_external",
           "browser_use_full_cdp_access",
+          "code_mode",
           "code_mode_host",
+          "code_mode_only",
           "computer_use",
           "goals",
           "guardian_approval",
@@ -62,8 +64,8 @@
           "sha256": "5b3b813d98ddae93fe9ff5cf0f1568d64721fa31029cb77a0ad5f2dfc800ed18"
         },
         "qualification": {
-          "canonical_sha256": "694132ea32f002c56f019a2d5cca80112700cb9bc6e54dfaf87d08a62cc2c979",
-          "path": "contracts/providers/fixture-provider-candidate-set-ralph-v1.json"
+          "path": "contracts/providers/fixture-provider-candidate-set-ralph-v2.json",
+          "canonical_sha256": "d693060b7bb0af69dacf9205f51aeb07b89955800015cb6b4b7c53c91b987a0d"
         },
         "qualification_anchor": null,
         "reasoning_effort": "max",
@@ -72,7 +74,7 @@
           "OPENAI_API_KEY",
           "ANTHROPIC_API_KEY"
         ],
-        "revision": "fixture-provider-candidate-set-ralph-v1",
+        "revision": "fixture-provider-candidate-set-ralph-v2",
         "sandbox": "workspace-write",
         "service_tier": "default"
       },
@@ -108,7 +110,9 @@
           "browser_use",
           "browser_use_external",
           "browser_use_full_cdp_access",
+          "code_mode",
           "code_mode_host",
+          "code_mode_only",
           "computer_use",
           "goals",
           "guardian_approval",
@@ -132,8 +136,8 @@
           "sha256": "5b3b813d98ddae93fe9ff5cf0f1568d64721fa31029cb77a0ad5f2dfc800ed18"
         },
         "qualification": {
-          "canonical_sha256": "694132ea32f002c56f019a2d5cca80112700cb9bc6e54dfaf87d08a62cc2c979",
-          "path": "contracts/providers/fixture-provider-candidate-set-ralph-v1.json"
+          "path": "contracts/providers/fixture-provider-candidate-set-ralph-v2.json",
+          "canonical_sha256": "d693060b7bb0af69dacf9205f51aeb07b89955800015cb6b4b7c53c91b987a0d"
         },
         "qualification_anchor": null,
         "reasoning_effort": "max",
@@ -142,7 +146,7 @@
           "OPENAI_API_KEY",
           "ANTHROPIC_API_KEY"
         ],
-        "revision": "fixture-provider-candidate-set-ralph-v1",
+        "revision": "fixture-provider-candidate-set-ralph-v2",
         "sandbox": "workspace-write",
         "service_tier": "default"
       },
