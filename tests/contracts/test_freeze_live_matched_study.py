@@ -26,6 +26,17 @@ def _canonical_json_bytes(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
+def _provider_fixture(project: Path, payload: bytes) -> Path:
+    """Supply the native CLI and its mandatory host as isolated CPU fixtures."""
+    executable = project / "codex-fixture"
+    executable.write_bytes(payload)
+    executable.chmod(0o700)
+    helper = project / "codex-code-mode-host"
+    helper.write_bytes(b"CPU Code Mode host fixture")
+    helper.chmod(0o700)
+    return executable
+
+
 class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
     def test_artifact_feedback_budget_has_one_explicit_horizon(self) -> None:
         study: dict[str, object] = {
@@ -92,9 +103,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 project,
                 ignore=ignored,
             )
-            executable = project / "codex-fixture"
-            executable.write_bytes(b"qualified codex fixture")
-            executable.chmod(0o700)
+            executable = _provider_fixture(project, b"qualified codex fixture")
             provider_revision = "codex-live-contract-fixture"
             invocation = CodexInvocationBuilder(
                 executable=executable,
@@ -414,9 +423,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 return omitted & set(names)
 
             shutil.copytree(ROOT, project, ignore=ignored)
-            executable = project / "codex-fixture"
-            executable.write_bytes(b"qualified Ralph Codex fixture")
-            executable.chmod(0o700)
+            executable = _provider_fixture(project, b"qualified Ralph Codex fixture")
             provider_revision = "codex-live-ralph-contract-fixture"
             invocation = CodexInvocationBuilder(
                 executable=executable,

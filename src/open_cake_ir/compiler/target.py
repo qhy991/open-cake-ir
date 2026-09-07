@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
@@ -253,6 +253,26 @@ class Occupancy:
 
 
 @dataclass(frozen=True)
+class TargetSource:
+    """Revision-checked identity and source bytes retained for provenance.
+
+    The document is a fresh projection on each access. It cannot mutate the typed
+    hardware facts or become a second live hardware representation.
+    """
+
+    canonical_sha256: str
+    document_bytes: bytes
+
+    @property
+    def document(self) -> Mapping[str, object]:
+        return MappingProxyType(json.loads(self.document_bytes))
+
+    @property
+    def citations(self) -> tuple[Mapping[str, object], ...]:
+        return tuple(MappingProxyType(item) for item in json.loads(self.document_bytes)["citations"])
+
+
+@dataclass(frozen=True)
 class Target:
     target_id: str
     architecture: str
@@ -265,6 +285,7 @@ class Target:
     synchronization_contracts: frozenset[str]
     occupancy: Occupancy | None
     peak: Peak | None
+    source: TargetSource | None = field(default=None, repr=False, compare=False)
 
     @property
     def warp_size(self) -> int:

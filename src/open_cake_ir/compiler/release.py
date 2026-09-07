@@ -8,7 +8,8 @@ from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import Mapping, cast
 
-from .core import Compiler, CompilerError
+from .core import Compiler
+from .errors import CompilerError
 
 
 # Canonical model policy for independent agent reviewers (ADR 0052).
