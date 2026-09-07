@@ -31,6 +31,16 @@ from open_cake_ir.lab.task_package import (  # noqa: E402
 
 
 class ProviderContractTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.executable = Path(directory.name) / "codex"
+        self.executable.write_bytes(b"CPU CLI fixture")
+        self.executable.chmod(0o700)
+        helper = self.executable.with_name("codex-code-mode-host")
+        helper.write_bytes(b"CPU Code Mode host fixture")
+        helper.chmod(0o700)
+
     def test_claim_scope_owns_the_live_provider_capability(self) -> None:
         self.assertEqual(
             required_live_provider_qualification_scope("artifact_optimization_only"),
@@ -96,7 +106,7 @@ class ProviderContractTests(unittest.TestCase):
 
     def test_initial_and_resume_share_the_complete_authoring_environment(self) -> None:
         builder = CodexInvocationBuilder(
-            executable=ROOT / "pyproject.toml",
+            executable=self.executable,
             provider_revision="codex-fixture-v1",
             model="gpt-5.6-sol",
             reasoning_effort="xhigh",
@@ -125,17 +135,20 @@ class ProviderContractTests(unittest.TestCase):
             ]
             self.assertEqual(observed_disabled, disabled)
             self.assertIn("apps", disabled)
-            for feature in ('code_mode', 'code_mode_only', 'code_mode_host', 'shell_tool'):
-                self.assertEqual(disabled.count(feature), 1)
+            self.assertEqual(disabled.count('shell_tool'), 1)
+            self.assertIn('web_search="disabled"', invocation.argv)
+            self.assertEqual(invocation.argv.count('code_mode_host'), 1)
+            for feature in ('code_mode', 'code_mode_only', 'code_mode_host'):
+                self.assertNotIn(feature, disabled)
         self.assertNotIn("resume", initial.argv)
         self.assertIn("resume", resumed.argv)
         self.assertIn('model_reasoning_effort="xhigh"', initial.argv)
         self.assertEqual(builder.configuration["reasoning_effort"], "xhigh")
 
-    def test_current_closed_builder_rejects_missing_code_mode_exclusions(self):
-        for feature in ('code_mode', 'code_mode_only'):
+    def test_current_closed_builder_rejects_missing_tool_exclusions(self):
+        for feature in ('shell_tool', 'browser_use'):
             with self.subTest(feature=feature), self.assertRaisesRegex(ValueError, 'feature and event'):
-                CodexInvocationBuilder(executable=ROOT / 'pyproject.toml', provider_revision='fixture',
+                CodexInvocationBuilder(executable=self.executable, provider_revision='fixture',
                     model='gpt-5.6-sol', reasoning_effort='max', service_tier='default', workspace=ROOT,
                     output_schema=ROOT / 'contracts/providers/codex-turn-output-schema-v1.json',
                     removed_environment=('OPENAI_API_KEY', 'ANTHROPIC_API_KEY'),
@@ -157,7 +170,7 @@ class ProviderContractTests(unittest.TestCase):
 
     def test_provider_default_features_emit_no_forced_disable_flags(self) -> None:
         builder = CodexInvocationBuilder(
-            executable=ROOT / "pyproject.toml",
+            executable=self.executable,
             provider_revision="codex-fixture-full-v1",
             model="gpt-5.6-sol",
             reasoning_effort="max",
@@ -875,6 +888,9 @@ class ProviderContractTests(unittest.TestCase):
             executable = root / "codex"
             executable.write_bytes(b"fixture executable")
             executable.chmod(0o700)
+            helper = executable.with_name("codex-code-mode-host")
+            helper.write_bytes(b"CPU Code Mode host fixture")
+            helper.chmod(0o700)
             workspace = root / "workspace"
             workspace.mkdir()
             schema = root / "schema.json"

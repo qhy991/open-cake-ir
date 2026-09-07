@@ -409,6 +409,7 @@ def execute_matched_from_config(
         builders[run_id] = CodexInvocationBuilder(
             executable=executable,
             provider_revision=qualification.provider_revision,
+            code_mode_host=_object(provider_authority["code_mode_host"], "provider.code_mode_host"),
             model=str(provider_authority["model"]),
             reasoning_effort=str(provider_authority["reasoning_effort"]),
             service_tier=str(provider_authority["service_tier"]),

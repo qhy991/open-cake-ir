@@ -30,9 +30,6 @@ CODEX_DISABLED_FEATURES = (
     "browser_use",
     "browser_use_external",
     "browser_use_full_cdp_access",
-    "code_mode",
-    "code_mode_host",
-    "code_mode_only",
     "computer_use",
     "goals",
     "guardian_approval",
@@ -49,6 +46,92 @@ CODEX_DISABLED_FEATURES = (
     "tool_suggest",
     "workspace_dependencies",
 )
+
+
+def resolve_codex_code_mode_host(
+    executable: Path, *, expected: Mapping[str, object] | None = None,
+    removed_environment: tuple[str, ...] = (),
+) -> dict[str, str]:
+    """Bind the native CLI's selected local helper, never a helper override.
+
+    Lookup follows codex-rs/install-context at rust-v0.153.4: package resources,
+    legacy standalone resources, then the package bin or executable sibling.
+    The digest establishes the qualified runtime's byte identity, not correctness.
+    """
+
+    executable = executable.resolve(strict=True)
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise ValueError("Codex native executable is not an executable file")
+    environment = sanitized_environment(removed_environment)
+    if "CODEX_HOME" in environment:
+        # The CLI resolves this in invocation.cwd, which differs from our cwd.
+        # Only an existing absolute directory gives both processes one identity.
+        codex_home = Path(environment["CODEX_HOME"])
+        if not codex_home.is_absolute():
+            raise ValueError("Codex CODEX_HOME must be an existing absolute directory")
+        try:
+            codex_home = codex_home.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ValueError("Codex CODEX_HOME must be an existing absolute directory") from error
+        if not codex_home.is_dir():
+            raise ValueError("Codex CODEX_HOME must be an existing absolute directory")
+    else:
+        codex_home = (Path.home() / ".codex").resolve()
+    directory = executable.parent
+    package_bin = None
+    if directory.name in {"bin", "codex-resources"}:
+        package_bin = directory.parent / "bin"
+    elif (directory.name == "MacOS" and directory.parent.name == "Contents"
+          and directory.parent.parent.name == "CodexCLI.app"):
+        package_bin = directory.parent.parent.parent / "bin"
+    if package_bin is not None and not (
+        package_bin.is_dir() and (package_bin.parent / "codex-package.json").is_file()
+    ):
+        package_bin = None
+    candidates = []
+    if package_bin is not None:
+        candidates.append(package_bin.parent / "codex-resources" / "codex-code-mode-host")
+    release_dir = package_bin.parent if package_bin is not None else directory
+    managed_override = any(name in environment for name in (
+        "CODEX_MANAGED_BY_VITE_PLUS", "CODEX_MANAGED_BY_PNPM",
+        "CODEX_MANAGED_BY_NPM", "CODEX_MANAGED_BY_BUN",
+    ))
+    if (not managed_override
+        and release_dir.is_relative_to(codex_home / "packages/standalone/releases")):
+        candidates.append(release_dir / "codex-resources" / "codex-code-mode-host")
+    candidates.append((package_bin or directory) / "codex-code-mode-host")
+    # Native lookup falls back to the executable sibling if package bin has no helper.
+    candidates.append(directory / "codex-code-mode-host")
+    for helper in dict.fromkeys(candidates):
+        if helper.is_symlink():
+            raise ValueError("Codex Code Mode host must not be a symlink")
+        if not helper.is_file():
+            continue
+        if helper.resolve(strict=True) != helper:
+            raise ValueError("Codex Code Mode host path is not canonical")
+        descriptor = os.open(helper, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            before = os.fstat(descriptor)
+            if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid not in {0, os.geteuid()} or before.st_size <= 0
+                or before.st_mode & 0o022 or not os.access(helper, os.X_OK)):
+                raise ValueError("Codex Code Mode host custody or executable mode differs")
+            digest = sha256()
+            while chunk := os.read(descriptor, 1024 * 1024):
+                digest.update(chunk)
+            identity_fields = lambda value: (value.st_dev, value.st_ino, value.st_mode,
+                value.st_nlink, value.st_uid, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+            if (identity_fields(os.fstat(descriptor)) != identity_fields(before)
+                or identity_fields(helper.stat()) != identity_fields(before)
+                or helper.resolve(strict=True) != helper):
+                raise ValueError("Codex Code Mode host changed while binding")
+        finally:
+            os.close(descriptor)
+        identity = {"path": str(helper), "sha256": digest.hexdigest()}
+        if expected is not None and identity != expected:
+            raise ValueError("Codex Code Mode host differs from the bound runtime")
+        return identity
+    raise ValueError("Codex Code Mode host is missing beside the native CLI")
 
 
 def required_live_provider_qualification_scope(claim_scope: str) -> str:
@@ -939,6 +1022,7 @@ class CodexInvocationBuilder:
         submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
         cwd_policy: str = "independent_task_workspace",
         reference_visibility: str = "workspace_task_files",
+        code_mode_host: Mapping[str, object] | None = None,
     ) -> None:
         values = (provider_revision, model, reasoning_effort, service_tier)
         if any(not value for value in values) or not removed_environment:
@@ -961,7 +1045,10 @@ class CodexInvocationBuilder:
             ("independent_task_workspace", "workspace_task_files"),
         }:
             raise ValueError("Codex workspace/reference policy differs")
-        self._executable = executable
+        self._executable = executable.resolve(strict=True)
+        self._code_mode_host = resolve_codex_code_mode_host(
+            self._executable, expected=code_mode_host, removed_environment=removed_environment,
+        )
         self._provider_revision = provider_revision
         self._model = model
         self._reasoning_effort = reasoning_effort
@@ -999,7 +1086,10 @@ class CodexInvocationBuilder:
             "cwd_policy": self._cwd_policy,
             "reference_visibility": self._reference_visibility,
             "disabled_features": list(self._disabled_features),
+            "code_mode_host": dict(self._code_mode_host),
         }
+        if self._event_contract == "closed_file_change_v1":
+            configuration["web_search"] = "disabled"
         if self._event_contract != "closed_file_change_v1":
             configuration["event_contract"] = self._event_contract
         configuration["submission_contract"] = self._submission_contract
@@ -1022,6 +1112,10 @@ class CodexInvocationBuilder:
             raise ValueError("provider prompt is required")
         if thread_id is not None and _THREAD_ID.fullmatch(thread_id) is None:
             raise ValueError("provider thread_id is invalid")
+        resolve_codex_code_mode_host(
+            self._executable, expected=self._code_mode_host,
+            removed_environment=self._removed_environment,
+        )
         common = (
             "--ignore-user-config",
             "--ignore-rules",
@@ -1040,7 +1134,10 @@ class CodexInvocationBuilder:
             'sandbox_mode="workspace-write"',
             "--output-schema",
             str(self._output_schema),
-        ) + tuple(
+            "--enable",
+            "code_mode_host",
+        ) + (("--config", 'web_search="disabled"')
+             if self._event_contract == "closed_file_change_v1" else ()) + tuple(
             value
             for feature in self._disabled_features
             for value in ("--disable", feature)

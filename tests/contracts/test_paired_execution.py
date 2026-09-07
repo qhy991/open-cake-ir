@@ -12,7 +12,7 @@ import pwd
 from pathlib import Path
 import tempfile
 import shutil
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -24,8 +24,9 @@ from open_cake_ir.tasks.tiles.workload import reference_outputs
 from open_cake_ir.tasks.workloads import load_workload
 from open_cake_ir.tasks.runtime import TaskLab as Lab
 from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.evidence import EvidenceStore
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, resolve_execution_bindings
-from open_cake_ir.lab.core import CampaignLock, StudyContract, _validate_receipt_authority
+from open_cake_ir.lab.core import CampaignLock, StudyContract, _validate_receipt_authority, _archive_evaluation_receipt
 from open_cake_ir.lab.pairing import bind_baseline
 from open_cake_ir.lab.runtime import CommandBrokerSubmitter
 from tests.contracts.test_native_triton_pairing import DraftCompilerFixture
@@ -187,6 +188,28 @@ class PairedExecutionTests(unittest.TestCase):
         self.assertEqual(attempt.receipt.canonical_sha256, retained.canonical_sha256)
         self.assertEqual(len(requests), 1)
         self.assertTrue(all(value.startswith('baseline-') for value in requests[0]['baseline']['artifact_paths'].values()))
+
+    def test_nested_paired_receipt_archives_and_replays_against_raw_evidence(self):
+        receipt = self.execute()
+        self.assertIsInstance(receipt.timing['pooled_medians_ms'], MappingProxyType)
+        evidence = EvidenceStore.create(self.output / 'receipt-evidence')
+        references = _archive_evaluation_receipt(evidence, receipt)
+        stored = {item['role']: evidence.read_object(item) for item in references}
+        document = json.loads(stored.pop('evaluation_receipt'))
+        artifact_digests = document.pop('artifact_payload_sha256')
+        self.assertEqual(set(stored), {'correctness_output', 'launch_receipt', 'timing_samples'})
+        self.assertEqual(stored, receipt.artifact_payloads)
+        self.assertEqual(artifact_digests, {role: item['sha256'] for item in references
+                                        if (role := item['role']) != 'evaluation_receipt'})
+        self.assertEqual(document['timing'], self.result['receipt']['timing'])
+        replayed = EvaluationReceipt(**document, artifact_payloads=stored)
+        self.assertEqual(replayed.timing, receipt.timing)
+        self.assertEqual(replayed.correctness, receipt.correctness)
+        validate_receipt_policy(replayed, self.protocol, candidate_identity(self.baseline), self.candidate)
+        validate_paired_broker(replayed, 'gpuq-123456789abc', self.result['counters'])
+        document['timing']['pooled_medians_ms']['baseline'] *= 2
+        with self.assertRaisesRegex(ValueError, 'paired timing summary'):
+            EvaluationReceipt(**document, artifact_payloads=stored)
 
     def test_paired_dispatch_requires_the_strict_task_loader_before_process_start(self):
         document = self.workload.document
@@ -380,9 +403,14 @@ class PairedExecutionTests(unittest.TestCase):
         bundle.write_bytes(encoded({**candidate_identity(baseline), 'artifact_paths': {k:k for k in payloads}}))
         executable = self.output / 'provider'
         executable.write_bytes(b'CPU-provider-fixture')
+        executable.chmod(0o700)
+        helper = executable.with_name('codex-code-mode-host')
+        helper.write_bytes(b'CPU Code Mode host fixture')
+        helper.chmod(0o700)
         provider = study.document['arms']['open_cake']['provider']
         configuration = {key: provider[key] for key in ('model', 'reasoning_effort', 'service_tier',
-            'removed_environment', 'sandbox', 'cwd_policy', 'reference_visibility', 'disabled_features')}
+            'removed_environment', 'sandbox', 'cwd_policy', 'reference_visibility', 'disabled_features', 'web_search')}
+        configuration['code_mode_host'] = {'path': str(helper.resolve()), 'sha256': sha256(helper.read_bytes()).hexdigest()}
         configuration['output_schema_sha256'] = provider['output_schema']['sha256']
         configuration['submission_contract'] = 'candidate_set_envelope_v1'
         qualification = json.loads((ROOT / 'contracts/providers/fixture-provider-candidate-set-ralph-v1.json').read_bytes())

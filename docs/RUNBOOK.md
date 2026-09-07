@@ -186,7 +186,13 @@ checks reference access only; it does not create a paper-aligned Study.
 
 Provider qualification uses a fresh workspace, output paths, Evidence root, and Run id.
 Cached login status alone is insufficient; the qualification must execute the exact
-provider binary and frozen policy.
+provider binary and frozen policy. The native CLI's local Code Mode host is required
+and explicitly enabled. Its selected path and bytes belong to the existing provider
+configuration identity. Package resources take precedence over the native executable's
+sibling helper; a changed selection or changed bytes rejects both initial and resumed
+calls. Runtime configuration still supplies only the provider executable and workspace
+root, with no helper override. Closed research disables shell, browser and web search.
+The qualifier retains real file-change events and rejects startup or in-turn errors.
 
 Closed matched authoring example:
 

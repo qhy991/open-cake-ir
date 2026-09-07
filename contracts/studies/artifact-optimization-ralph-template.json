@@ -47,8 +47,8 @@
           "sha256": "c1166659951f1919b539a2a8a35b154ccff4c8a0121d233f7658e8dbc175a70a"
         },
         "qualification": {
-          "path": "contracts/providers/fixture-provider-optimization-candidate-set-ralph-v1.json",
-          "canonical_sha256": "fb39b90b6dec56953562879ff011fe9deab839928bfcdb1d32e6d8c6b79180d8"
+          "path": "contracts/providers/fixture-provider-optimization-candidate-set-ralph-v2.json",
+          "canonical_sha256": "13c3e36c93eaf1e1686e1f930159b7b86f8304602d95f595ba6082d8e4afeb47"
         },
         "qualification_anchor": null,
         "reasoning_effort": "max",
@@ -57,9 +57,13 @@
           "OPENAI_API_KEY",
           "ANTHROPIC_API_KEY"
         ],
-        "revision": "fixture-provider-optimization-candidate-set-ralph-v1",
+        "revision": "fixture-provider-optimization-candidate-set-ralph-v2",
         "sandbox": "workspace-write",
-        "service_tier": "default"
+        "service_tier": "default",
+        "code_mode_host": {
+          "path": "/cpu-fixture/codex-code-mode-host",
+          "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
       },
       "scaffold": {
         "path": "contracts/scaffolds/matched-search-v1.md",
@@ -92,8 +96,8 @@
           "sha256": "c1166659951f1919b539a2a8a35b154ccff4c8a0121d233f7658e8dbc175a70a"
         },
         "qualification": {
-          "path": "contracts/providers/fixture-provider-optimization-candidate-set-ralph-v1.json",
-          "canonical_sha256": "fb39b90b6dec56953562879ff011fe9deab839928bfcdb1d32e6d8c6b79180d8"
+          "path": "contracts/providers/fixture-provider-optimization-candidate-set-ralph-v2.json",
+          "canonical_sha256": "13c3e36c93eaf1e1686e1f930159b7b86f8304602d95f595ba6082d8e4afeb47"
         },
         "qualification_anchor": null,
         "reasoning_effort": "max",
@@ -102,9 +106,13 @@
           "OPENAI_API_KEY",
           "ANTHROPIC_API_KEY"
         ],
-        "revision": "fixture-provider-optimization-candidate-set-ralph-v1",
+        "revision": "fixture-provider-optimization-candidate-set-ralph-v2",
         "sandbox": "workspace-write",
-        "service_tier": "default"
+        "service_tier": "default",
+        "code_mode_host": {
+          "path": "/cpu-fixture/codex-code-mode-host",
+          "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
       },
       "scaffold": {
         "path": "contracts/scaffolds/matched-search-v1.md",

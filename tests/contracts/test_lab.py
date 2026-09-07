@@ -116,8 +116,8 @@ class FakeEnvironment:
 
 
 class FakeProvider:
-    provider_revision = "fixture-provider-candidate-set-ralph-v2"
-    qualification_sha256 = "d693060b7bb0af69dacf9205f51aeb07b89955800015cb6b4b7c53c91b987a0d"
+    provider_revision = "fixture-provider-candidate-set-ralph-v3"
+    qualification_sha256 = "fa599bda3e62aac76e385664afb7d7e66afba3c96fb5c239a0ab4d77f7b13d41"
     executable_sha256 = "d" * 64
     configuration = {
         "model": "gpt-5.6-sol",
@@ -129,6 +129,8 @@ class FakeProvider:
         "cwd_policy": "independent_task_workspace",
         "reference_visibility": "workspace_task_files",
         "disabled_features": list(CODEX_DISABLED_FEATURES),
+        "code_mode_host": {"path": "/cpu-fixture/codex-code-mode-host", "sha256": "e" * 64},
+        "web_search": "disabled",
         "submission_contract": CANDIDATE_SET_ENVELOPE_V1,
     }
 
@@ -217,8 +219,8 @@ class CandidateSetFakeProvider(FakeProvider):
 
 
 class RalphFakeProvider(FakeProvider):
-    provider_revision = "fixture-provider-candidate-set-ralph-v2"
-    qualification_sha256 = "d693060b7bb0af69dacf9205f51aeb07b89955800015cb6b4b7c53c91b987a0d"
+    provider_revision = "fixture-provider-candidate-set-ralph-v3"
+    qualification_sha256 = "fa599bda3e62aac76e385664afb7d7e66afba3c96fb5c239a0ab4d77f7b13d41"
     configuration = {
         "model": "gpt-5.6-sol",
         "reasoning_effort": "max",
@@ -229,6 +231,8 @@ class RalphFakeProvider(FakeProvider):
         "cwd_policy": "independent_task_workspace",
         "reference_visibility": "workspace_task_files",
         "disabled_features": list(CODEX_DISABLED_FEATURES),
+        "code_mode_host": {"path": "/cpu-fixture/codex-code-mode-host", "sha256": "e" * 64},
+        "web_search": "disabled",
         "submission_contract": CANDIDATE_SET_ENVELOPE_V1,
     }
 
@@ -254,7 +258,7 @@ def _enable_candidate_set(document: dict[str, object], maximum: int) -> None:
     budget = document["budget"]
     assert isinstance(budget, dict)
     budget["maximum_candidates_per_turn"] = maximum
-    receipt_path = "contracts/providers/fixture-provider-candidate-set-ralph-v2.json"
+    receipt_path = "contracts/providers/fixture-provider-candidate-set-ralph-v3.json"
     receipt = ProviderQualificationReceipt.load(ROOT / receipt_path)
     arms = document["arms"]
     assert isinstance(arms, dict)
@@ -852,9 +856,9 @@ class LabContractTests(unittest.TestCase):
 
     def test_artifact_optimization_promotes_per_run_without_scientific_analysis(self) -> None:
         class OptimizationProvider(FakeProvider):
-            provider_revision = "fixture-provider-optimization-candidate-set-ralph-v1"
+            provider_revision = "fixture-provider-optimization-candidate-set-ralph-v2"
             qualification_sha256 = (
-                "fb39b90b6dec56953562879ff011fe9deab839928bfcdb1d32e6d8c6b79180d8"
+                "13c3e36c93eaf1e1686e1f930159b7b86f8304602d95f595ba6082d8e4afeb47"
             )
             configuration = {
                 "model": "gpt-5.6-sol",
@@ -867,6 +871,7 @@ class LabContractTests(unittest.TestCase):
                 "sandbox": "workspace-write",
                 "cwd_policy": "independent_task_workspace",
                 "reference_visibility": "workspace_task_files",
+                "code_mode_host": {"path": "/cpu-fixture/codex-code-mode-host", "sha256": "e" * 64},
                 "disabled_features": [],
                 "event_contract": "tool_rich_candidate_v1",
                 "submission_contract": CANDIDATE_SET_ENVELOPE_V1,
@@ -3863,7 +3868,8 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         class Provider(FakeProvider):
             provider_revision = arms["open_cake"]["provider"]["revision"]
             qualification_sha256 = arms["open_cake"]["provider"]["qualification"]["canonical_sha256"]
-            configuration = {**FakeProvider.configuration, "disabled_features": [], "event_contract": "tool_rich_candidate_v1", "output_schema_sha256": arms["open_cake"]["provider"]["output_schema"]["sha256"]}
+            configuration = {key: value for key, value in FakeProvider.configuration.items() if key != "web_search"}
+            configuration.update(disabled_features=[], event_contract="tool_rich_candidate_v1", output_schema_sha256=arms["open_cake"]["provider"]["output_schema"]["sha256"])
 
             def turn(self, request):
                 observed = super().turn(request)
