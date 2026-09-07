@@ -3,7 +3,7 @@
 from .checkpoints import CheckpointObservation, TurnObservation, project_checkpoints
 from open_cake_ir.lab.core import AnalysisInclusion, CampaignLock, CampaignRef, Lab, RunEvaluator, RunProvider, StudyContract, StudyReport, TurnRequest, scientific_matched_analysis_plan_v2
 from open_cake_ir.lab.environments import AuthoringEnvironment, BuildRequest, CandidateSubmission, NativeTritonEnvironment, EnvironmentResult, OpenCakeEnvironment, ToolchainBuilder, TritonToolchainBuilder
-from .executor import ExecutorRevision
+from .executor import ExecutorRevision, HipHostAdmission
 from .faults import CandidateCompileRejected, RunProtocolFault
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1,
@@ -48,6 +48,7 @@ __all__ = [
     "NativeTritonEnvironment",
     "EnvironmentResult",
     "ExecutorRevision",
+    "HipHostAdmission",
     "OpenCakeEnvironment",
     "TritonToolchainBuilder",
     "ToolchainBuilder",

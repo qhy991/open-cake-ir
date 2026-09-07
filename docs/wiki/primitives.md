@@ -11,6 +11,7 @@
 | --- | --- |
 | 取数、存答案 | [load](#load)、[store](#store) |
 | 对应位置计算或换精度 | [elementwise](#elementwise)、[cast](#cast) |
+| 改变临时值的分组形状 | [reshape](#reshape) |
 | 矩阵乘加和收尾 | [mma](#mma)、[epilogue](#epilogue) |
 | 合并一组数、找编号、选前几名 | [reduce](#reduce)、[reduce_argmin](#reduce_argmin)、[top_k](#top_k) |
 | 前缀累计、展开编号 | [scan](#scan)、[index_expand](#index_expand) |
@@ -45,6 +46,9 @@
 例子：[普通状态更新](../../corpus/schedules/state-store-b8-smoke.json)、[按预留位置写入](../../corpus/schedules/reservation-owned-store-b8-smoke.json)。
 只更新状态的计划可以返回空元组，改变仍保留在传入的状态里。
 
+Q8_1 的 typed store 按记录登记顺序接收 `d:fp16`、`s:fp16`、`qs:int8[32]`。
+当前约束只允许一个 program 在 TileLoop 外写入，避免多组工作覆盖同一份量化记录。
+
 ## elementwise
 
 **对每个对应位置分别计算。** 例如 `[1,2] + [3,4] = [4,6]`。
@@ -53,6 +57,9 @@
 | `op` | 含义 | 小例子 |
 | --- | --- | --- |
 | `square` | 平方 | `3 → 9` |
+| `abs` | 绝对值 | `−3 → 3` |
+| `round` | 按声明的规则舍入为整数值 | `−2.5 → −3`，中点远离零 |
+| `divide_no_nan` | 分母为零时返回零，否则做除法 | `6÷3 → 2`，`6÷0 → 0` |
 | `rsqrt` | 平方根的倒数 | `4 → 1/2` |
 | `exp` | 指数，常用于 softmax | `0 → 1` |
 | `relu` | 负数变零，非负数保留 | `[-2,3] → [0,3]` |
@@ -66,6 +73,8 @@
 浮点数能存的精度有限。FMA 对 `a×b+c` 只做一次最终舍入；先乘再加可能舍入两次，最后几位会不同。
 本项目的 FMA 明确要求三个同形状 FP32 寄存器输入和 `ptx.fma.rn.f32`，不允许用标量或广播字段省掉输入。
 `tanh` 也要声明目标指令合同，不会自动把精确要求换成近似指令。
+`round` 要求 `rounding=nearest_away_from_zero`。这些量化组合操作仍受精确 Target、
+FP32 类型和形状规则约束，不能仅凭名称绕过完整计划检查。
 
 例子：[FMA](../../corpus/schedules/fma-b8-smoke.json)、[嵌套 FMA](../../corpus/schedules/fma-chain-b8-smoke.json)、[ReLU](../../corpus/schedules/relu-b8-smoke.json)。
 
@@ -77,6 +86,17 @@
 它不是改变表的尺寸，也不是挪动数据到另一块 GPU。
 允许哪些类型转换，由当前 Compiler 和后端检查。
 例子：[类型转换](../../corpus/schedules/cast-b8-smoke.json)。
+
+量化 producer 继续使用同一个 `cast`：FP32 到 FP16 明确声明
+`rounding=nearest_even, overflow=ieee`；FP32 到 INT8 使用
+`rounding=toward_zero, overflow=forbid`。舍入和溢出策略成对出现，不能只写一个。
+`forbid` 由外部输入合同保证转换值有限且在 INT8 范围内，Compiler 不证明该范围或插入饱和转换。
+
+## reshape
+
+**把同一批临时值重新分组。** 例如 4 个元素可以从 `[4]` 改看成 `[2,2]`，
+元素总数、顺序和类型保持不变。它不执行全局内存拷贝，也不声明新的 layout。
+Verifier 检查输入、结果和目标约束；量化 producer 用它把一组值按 32 个一组组织。
 
 ## mma
 
@@ -104,6 +124,10 @@
 **把一组数合成一个数。** `sum` 求和：`[2,5,1] → 8`；`max` 找最大值：`[2,5,1] → 5`。
 `axis` 说明合并哪一维；对表的列求和，会得到每行一个结果。
 `scope` 说明需要哪个范围的线程合作。
+
+普通归约使用 `algorithm=backend`。`xor_tree_32` 则明确要求常驻 FP32 值的最后一维为 32，
+按 XOR 偏移 16、8、4、2、1 的顺序合并，不跨 TileLoop。
+这个顺序属于数值合同，不能随意换成另一种求和树。
 
 归约与后面的 `scan` 不同：归约只给合并结果，scan 保留沿途结果。
 例子：[softmax 中的最大值和求和](../../corpus/schedules/softmax-b8-smoke.json)。

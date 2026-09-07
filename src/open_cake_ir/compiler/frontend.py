@@ -253,8 +253,9 @@ class _Builder:
         ref = self.reference(self.value(node.value), node)
         buffer = self.buffer(ref, node)
         components = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
-        if len(components) != len(buffer.shape):
-            self.fail(node, "indexing must name every buffer dimension")
+        packed_prefix = buffer.packed_block is not None and len(buffer.shape) == 2 and len(components) == 1
+        if len(components) != len(buffer.shape) and not packed_prefix:
+            self.fail(node, "indexing must name every buffer dimension or a packed-record prefix")
         indices = []
         index_shape = None
         for dimension, component in enumerate(components):
@@ -399,9 +400,9 @@ class _Builder:
         else:
             kind = method
         if kind == "store":
-            if len(values) != 2 or "out" in controls:
-                self.fail(node, "store takes destination coordinates followed by one value")
-            controls["out"], values = [values[0]], [values[1]]
+            if len(values) not in (2, 4) or "out" in controls:
+                self.fail(node, "store takes destination coordinates followed by one value or three packed Q8 fields")
+            controls["out"], values = [values[0]], values[1:]
             fields.setdefault("coalesced", True)
         if kind == "load":
             fields.setdefault("movement", "global")
@@ -452,7 +453,7 @@ class _Builder:
                     self.fail(node, "reduce requires a valid static axis")
                 shape = shape[:axis] + shape[axis + 1:] or [1]
             elif kind == "cast":
-                dtype = parameters.get("dtype")
+                dtype = parameters.get("to")
             elif kind == "mma":
                 if len(reads) != 2 or len(first.shape) != 2:
                     self.fail(node, "automatic MMA results require two rank-two operands")

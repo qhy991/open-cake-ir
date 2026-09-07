@@ -373,5 +373,26 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
                 self.assertIn(str(path.resolve()) + ":", stderr)
 
 
+class AmdPythonFrontendTests(unittest.TestCase):
+    SOURCE = 'from open_cake_ir.compiler import frontend as cake\n@cake.schedule(name="q8-python", target="gfx1151", backend="triton", entry_point="q8_python")\ndef candidate(lm, x: cake.Tensor((32,), "fp32"), q8: cake.Tensor((1,36), "uint8", mode="output", packed_block={"format":"ggml_q8_1_v1","record_axis":1})):\n    compute = lm.role(warps=[0])\n    tile = lm.program(x, axis=0, dimension=0, tile=32)\n    with compute:\n        flat = lm.load(x[tile])\n        blocks = lm.buffer(dtype="fp32", shape=(1,32))\n        lm.reshape(flat, out=blocks)\n        absolute = lm.abs(blocks)\n        amax = lm.reduce(absolute, op="max", axis=1, scope="cta", algorithm="xor_tree_32")\n        sums = lm.reduce(blocks, op="sum", axis=1, scope="cta", algorithm="xor_tree_32")\n        d = lm.divide_no_nan(amax, 127.0)\n        scaled = lm.divide_no_nan(blocks, lm.broadcast(d, axis=0))\n        rounded = lm.round(scaled, rounding="nearest_away_from_zero")\n        qs = lm.cast(rounded, to="int8", rounding="toward_zero", overflow="forbid")\n        half_d = lm.cast(d, to="fp16", rounding="nearest_even", overflow="ieee")\n        half_s = lm.cast(sums, to="fp16", rounding="nearest_even", overflow="ieee")\n        lm.store(q8[:], half_d, half_s, qs)\n'
+
+    def test_python_reaches_the_canonical_packed_q8_path(self):
+        source = parse(self.SOURCE)
+        compiler = Compiler.load(ROOT, DRAFT)
+        assessment = compiler.assess(source.document)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        casts = [op for op in source.document["operations"] if op["kind"] == "cast"]
+        self.assertEqual([op["parameters"]["to"] for op in casts], ["int8", "fp16", "fp16"])
+        self.assertEqual(Schedule.from_dict(source.document).buffer("qs").dtype.value, "int8")
+        lowering = compiler.lower(assessment)
+        self.assertEqual(lowering.toolchain_requirements["triton_target"], {"backend": "hip", "arch": "gfx1151", "warp_size": 32})
+        self.assertIn("record_ptrs", lowering.source)
+
+    def test_python_rejects_unpaired_cast_policy_and_bad_packed_prefix(self):
+        for value in (self.SOURCE.replace(', overflow="forbid"', ''), self.SOURCE.replace('q8[:]', 'q8[:, :, :]')):
+            with self.subTest(source=value), self.assertRaises(FrontendError):
+                parse(value)
+
+
 if __name__ == "__main__":
     unittest.main()

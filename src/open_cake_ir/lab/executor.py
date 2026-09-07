@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+import importlib
 import importlib.metadata
 import importlib.util
 import json
 import os
+import platform
+import re
 import sys
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Mapping, cast
+
+
+_GFX1151_EXECUTOR_ID = re.compile(r"open-cake-ir-gfx1151-v[1-9][0-9]*")
+HIP_PACKAGES = frozenset({"packaging", "pybind11", "psutil", "setuptools", "torch", "triton"})
+HIP_BUILD_TOOLS = frozenset({"cxx", "git", "hipcc", "hipconfig", "ninja", "rocminfo", "sh"})
+HIP_PROFILERS = frozenset({"rocprofv3", "rocprof", "omniperf"})
+HIP_RUNTIME_LIBRARIES = frozenset({"libxml2.so.2"})
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -89,6 +99,116 @@ def _file_record(value: object, context: str) -> Mapping[str, object]:
     return cast(Mapping[str, object], value)
 
 
+def _python_authority(value: object, context: str) -> Mapping[str, object]:
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != {"invocation_path", "version", "resolved_sha256"}
+        or not isinstance(value["invocation_path"], str)
+        or not Path(value["invocation_path"]).is_absolute()
+        or not isinstance(value["version"], str)
+        or not value["version"]
+    ):
+        raise ValueError(f"{context} authority differs")
+    _digest(value["resolved_sha256"], f"{context}.resolved_sha256")
+    return cast(Mapping[str, object], value)
+
+
+def _package_authority(value: object, context: str) -> Mapping[str, object]:
+    if (
+        not isinstance(value, Mapping)
+        or not value
+        or any(
+            not isinstance(name, str)
+            or not name
+            or not isinstance(version, str)
+            or not version
+            for name, version in value.items()
+        )
+    ):
+        raise ValueError(f"{context} requirements differ")
+    return cast(Mapping[str, object], value)
+
+
+def _executable_record(value: object, context: str) -> Mapping[str, object]:
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != {"kind", "path", "version", "sha256", "size_bytes"}
+        or not isinstance(value["kind"], str)
+        or not value["kind"]
+        or not isinstance(value["path"], str)
+        or not Path(value["path"]).is_absolute()
+        or not isinstance(value["version"], str)
+        or not value["version"]
+        or not isinstance(value["size_bytes"], int)
+        or isinstance(value["size_bytes"], bool)
+        or value["size_bytes"] <= 0
+    ):
+        raise ValueError(f"{context} authority differs")
+    _digest(value["sha256"], f"{context}.sha256")
+    return cast(Mapping[str, object], value)
+
+
+def _admit_executable(
+    value: object, context: str
+) -> Mapping[str, object]:
+    record = _executable_record(value, context)
+    unresolved = Path(str(record["path"]))
+    if not unresolved.is_file() or not os.access(unresolved, os.X_OK):
+        raise ValueError(f"{context} custody differs")
+    path = unresolved.resolve(strict=True)
+    payload = path.read_bytes()
+    if (
+        sha256(payload).hexdigest() != record["sha256"]
+        or len(payload) != record["size_bytes"]
+    ):
+        raise ValueError(f"{context} bytes differ")
+    return MappingProxyType(dict(record))
+
+
+def _shared_library_record(value: object, context: str) -> Mapping[str, object]:
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != {"soname", "path", "sha256", "size_bytes"}
+        or not isinstance(value["soname"], str)
+        or not value["soname"]
+        or not isinstance(value["path"], str)
+        or not Path(value["path"]).is_absolute()
+        or not isinstance(value["size_bytes"], int)
+        or isinstance(value["size_bytes"], bool)
+        or value["size_bytes"] <= 0
+    ):
+        raise ValueError(f"{context} authority differs")
+    _digest(value["sha256"], f"{context}.sha256")
+    return cast(Mapping[str, object], value)
+
+
+def _admit_shared_library(value: object, context: str) -> Mapping[str, object]:
+    record = _shared_library_record(value, context)
+    unresolved = Path(str(record["path"]))
+    if not unresolved.is_file():
+        raise ValueError(f"{context} custody differs")
+    payload = unresolved.resolve(strict=True).read_bytes()
+    if (
+        sha256(payload).hexdigest() != record["sha256"]
+        or len(payload) != record["size_bytes"]
+    ):
+        raise ValueError(f"{context} bytes differ")
+    return MappingProxyType(dict(record))
+
+
+@dataclass(frozen=True)
+class HipHostAdmission:
+    """Exact static ROCm host facts admitted before device-specific execution."""
+
+    executor_id: str
+    torch_hip_version: str
+    visible_device_count: int
+    device_monitor: Mapping[str, object]
+    profilers: tuple[Mapping[str, object], ...]
+    build_tools: Mapping[str, Mapping[str, object]]
+    runtime_libraries: Mapping[str, Mapping[str, object]]
+
+
 @dataclass(frozen=True)
 class ExecutorRevision:
     """One source and host-runtime closure for all experiment side effects."""
@@ -123,12 +243,18 @@ class ExecutorRevision:
                 "sources",
                 "host_environment",
             }
-            or document.get("schema_version") != 1
+            or type(document.get("schema_version")) is not int
+            or document["schema_version"] not in (1, 2)
             or document.get("state") != "released"
             or not isinstance(document.get("executor_id"), str)
             or not document["executor_id"]
         ):
             raise ValueError("Executor Revision fields, schema, or state differ")
+        if (
+            document["schema_version"] == 2
+            and _GFX1151_EXECUTOR_ID.fullmatch(document["executor_id"]) is None
+        ):
+            raise ValueError("Executor schema v2 gfx1151 identity differs")
         sources = document["sources"]
         host = document["host_environment"]
         if not isinstance(sources, list) or not sources or not isinstance(host, Mapping):
@@ -148,7 +274,9 @@ class ExecutorRevision:
                 or record["size_bytes"] != len(payload)
             ):
                 raise ValueError(f"Executor Revision file {relative!r} differs")
-        cls._validate_host_document(cast(Mapping[str, object], host))
+        cls._validate_host_document(
+            cast(Mapping[str, object], host), schema_version=document["schema_version"]
+        )
         detached = cast(
             Mapping[str, object],
             _freeze_json(json.loads(_canonical_json_bytes(document))),
@@ -162,7 +290,16 @@ class ExecutorRevision:
         )
 
     @staticmethod
-    def _validate_host_document(host: Mapping[str, object]) -> None:
+    def _validate_host_document(
+        host: Mapping[str, object], *, schema_version: int = 1,
+    ) -> None:
+        if not isinstance(host, Mapping) or type(schema_version) is not int:
+            raise ValueError("Executor host environment fields differ")
+        if schema_version == 2:
+            ExecutorRevision._validate_hip_host_document(host)
+            return
+        if schema_version != 1:
+            raise ValueError("Executor host environment schema differs")
         legacy_fields = {
             "python",
             "packages",
@@ -178,27 +315,8 @@ class ExecutorRevision:
         packages = host["packages"]
         cupti = host["cupti_python"]
         helper = host["flashinfer_helper"]
-        if (
-            not isinstance(python, Mapping)
-            or set(python) != {"invocation_path", "version", "resolved_sha256"}
-            or not isinstance(python["invocation_path"], str)
-            or not Path(python["invocation_path"]).is_absolute()
-            or not isinstance(python["version"], str)
-        ):
-            raise ValueError("Executor Python authority differs")
-        _digest(python["resolved_sha256"], "executor.python.resolved_sha256")
-        if (
-            not isinstance(packages, Mapping)
-            or not packages
-            or any(
-                not isinstance(name, str)
-                or not name
-                or not isinstance(version, str)
-                or not version
-                for name, version in packages.items()
-            )
-        ):
-            raise ValueError("Executor package requirements differ")
+        _python_authority(python, "Executor Python")
+        _package_authority(packages, "Executor package")
         if (
             not isinstance(cupti, Mapping)
             or set(cupti)
@@ -207,7 +325,7 @@ class ExecutorRevision:
             or not Path(cupti["site_packages_path"]).is_absolute()
             or not isinstance(cupti["distribution"], str)
             or not isinstance(cupti["version"], str)
-            or not isinstance(cupti["files"], list)
+            or not isinstance(cupti["files"], (list, tuple))
             or not cupti["files"]
         ):
             raise ValueError("Executor CUPTI Python authority differs")
@@ -245,6 +363,101 @@ class ExecutorRevision:
                 raise ValueError("Executor Nsight Compute authority differs")
             _digest(profiler["sha256"], "executor.nsight_compute.sha256")
 
+    @staticmethod
+    def _validate_hip_host_document(host: Mapping[str, object]) -> None:
+        if not isinstance(host, Mapping) or set(host) != {
+            "runtime_kind",
+            "platform",
+            "python",
+            "packages",
+            "runtime",
+            "runtime_libraries",
+            "tools",
+        } or host.get("runtime_kind") != "hip":
+            raise ValueError("Executor HIP host environment fields differ")
+        platform_value = host["platform"]
+        if (
+            not isinstance(platform_value, Mapping)
+            or set(platform_value) != {"system", "machine", "kernel_release"}
+            or any(
+                not isinstance(platform_value[field], str)
+                or not platform_value[field]
+                for field in platform_value
+            )
+        ):
+            raise ValueError("Executor HIP platform authority differs")
+        _python_authority(host["python"], "Executor HIP Python")
+        packages = _package_authority(host["packages"], "Executor HIP package")
+        if set(packages) != HIP_PACKAGES:
+            raise ValueError("Executor HIP package set differs")
+        runtime = host["runtime"]
+        if (
+            not isinstance(runtime, Mapping)
+            or set(runtime) != {
+                "backend",
+                "torch_hip_version",
+                "visible_device_count",
+            }
+            or runtime.get("backend") != "hip"
+            or not isinstance(runtime.get("torch_hip_version"), str)
+            or not runtime["torch_hip_version"]
+            or type(runtime.get("visible_device_count")) is not int
+            or runtime["visible_device_count"] != 1
+        ):
+            raise ValueError("Executor HIP runtime authority differs")
+        tools = host["tools"]
+        if not isinstance(tools, Mapping) or set(tools) != {
+            "build_tools",
+            "device_monitor",
+            "profilers",
+        }:
+            raise ValueError("Executor HIP tool authority differs")
+        monitor = _executable_record(
+            tools["device_monitor"], "Executor HIP device monitor"
+        )
+        if monitor["kind"] != "amd-smi":
+            raise ValueError("Executor HIP device monitor kind differs")
+        profilers = tools["profilers"]
+        if not isinstance(profilers, (list, tuple)):
+            raise ValueError("Executor HIP profiler authority differs")
+        seen: set[str] = set()
+        for index, value in enumerate(profilers):
+            profiler = _executable_record(
+                value, f"Executor HIP profilers[{index}]"
+            )
+            kind = cast(str, profiler["kind"])
+            if kind not in HIP_PROFILERS or kind in seen:
+                raise ValueError("Executor HIP profiler kind differs")
+            seen.add(kind)
+        build_tools = tools["build_tools"]
+        if not isinstance(build_tools, (list, tuple)):
+            raise ValueError("Executor HIP build-tool authority differs")
+        seen_build_tools: set[str] = set()
+        for index, value in enumerate(build_tools):
+            tool = _executable_record(
+                value, f"Executor HIP build_tools[{index}]"
+            )
+            kind = cast(str, tool["kind"])
+            if kind in seen_build_tools:
+                raise ValueError("Executor HIP build-tool kind differs")
+            seen_build_tools.add(kind)
+        if seen_build_tools != HIP_BUILD_TOOLS:
+            raise ValueError("Executor HIP build-tool set differs")
+        runtime_libraries = host["runtime_libraries"]
+        if not isinstance(runtime_libraries, (list, tuple)):
+            raise ValueError("Executor HIP runtime-library authority differs")
+        seen_libraries: set[str] = set()
+        for index, value in enumerate(runtime_libraries):
+            library = _shared_library_record(
+                value, f"Executor HIP runtime_libraries[{index}]"
+            )
+            soname = cast(str, library["soname"])
+            if soname in seen_libraries:
+                raise ValueError("Executor HIP runtime-library soname differs")
+            seen_libraries.add(soname)
+        if seen_libraries != HIP_RUNTIME_LIBRARIES:
+            raise ValueError("Executor HIP runtime-library set differs")
+
     @property
     def reference(self) -> Mapping[str, str]:
         """Return the exact Study/Campaign reference for this revision."""
@@ -260,9 +473,21 @@ class ExecutorRevision:
     def admit_host(self) -> object:
         """Verify the pinned host and return its admitted CUPTI helper."""
 
+        if self.document["schema_version"] != 1:
+            raise ValueError("B200 host admission requires Executor schema v1")
         return admit_host_environment(
             cast(Mapping[str, object], self.document["host_environment"])
         )
+
+    def admit_hip_host(self) -> HipHostAdmission:
+        """Admit the pinned software host; exact device admission follows lowering."""
+
+        if self.document["schema_version"] != 2:
+            raise ValueError("HIP host admission requires Executor schema v2")
+        return cast(HipHostAdmission, admit_host_environment(
+            cast(Mapping[str, object], self.document["host_environment"]),
+            executor_id=self.executor_id,
+        ))
 
     def admit_profiler(self) -> Mapping[str, object]:
         """Verify and return the optional exact NCU executable for attribution."""
@@ -272,10 +497,8 @@ class ExecutorRevision:
         )
 
 
-def admit_host_environment(host: Mapping[str, object]) -> object:
-    """Admit a schema-validated host environment and return its CUPTI helper."""
-
-    python = cast(Mapping[str, object], host["python"])
+def _admit_python_and_packages(host: Mapping[str, object]) -> None:
+    python = _python_authority(host["python"], "Executor Python")
     expected_invocation = Path(str(python["invocation_path"])).absolute()
     observed_invocation = Path(sys.executable).absolute()
     if (
@@ -285,10 +508,24 @@ def admit_host_environment(host: Mapping[str, object]) -> object:
         != python["resolved_sha256"]
     ):
         raise ValueError("Executor Python runtime differs")
-    packages = cast(Mapping[str, object], host["packages"])
+    packages = _package_authority(host["packages"], "Executor package")
     for distribution, expected in packages.items():
         if importlib.metadata.version(distribution) != expected:
             raise ValueError(f"Executor package {distribution!r} differs")
+
+
+def admit_host_environment(
+    host: Mapping[str, object], *, executor_id: str = "",
+) -> object:
+    """Validate and admit one CUDA or HIP software host through the canonical boundary."""
+
+    if not isinstance(host, Mapping):
+        raise ValueError("Executor host environment fields differ")
+    schema = 2 if host.get("runtime_kind") == "hip" else 1
+    ExecutorRevision._validate_host_document(host, schema_version=schema)
+    _admit_python_and_packages(host)
+    if schema == 2:
+        return _admit_hip_environment(host, executor_id=executor_id)
 
     cupti = cast(Mapping[str, object], host["cupti_python"])
     site = Path(str(cupti["site_packages_path"])).resolve(strict=True)
@@ -356,3 +593,67 @@ def admit_profiler_environment(host: Mapping[str, object]) -> Mapping[str, objec
     ):
         raise ValueError("Executor Nsight Compute bytes differ")
     return MappingProxyType(dict(profiler))
+
+
+def _admit_hip_environment(
+    host: Mapping[str, object], *, executor_id: str,
+) -> HipHostAdmission:
+    """Verify HIP software facts without querying or initializing a device."""
+
+    expected_platform = cast(Mapping[str, object], host["platform"])
+    observed_platform = {
+        "system": platform.system(),
+        "machine": platform.machine(),
+        "kernel_release": platform.release(),
+    }
+    if observed_platform["system"] != "Linux" or observed_platform != dict(expected_platform):
+        raise ValueError("Executor HIP platform differs")
+
+    runtime = cast(Mapping[str, object], host["runtime"])
+    torch = importlib.import_module("torch")
+    torch_version = getattr(torch, "version", None)
+    observed_hip = getattr(torch_version, "hip", None)
+    if (
+        not isinstance(observed_hip, str)
+        or observed_hip != runtime["torch_hip_version"]
+        or getattr(torch_version, "cuda", None) is not None
+    ):
+        raise ValueError("Executor HIP runtime differs")
+
+    tools = cast(Mapping[str, object], host["tools"])
+    monitor = _admit_executable(
+        tools["device_monitor"], "Executor HIP device monitor"
+    )
+    profilers = tuple(
+        _admit_executable(value, f"Executor HIP profilers[{index}]")
+        for index, value in enumerate(cast(tuple[object, ...], tools["profilers"]))
+    )
+    admitted_build_tools = tuple(
+        _admit_executable(value, f"Executor HIP build_tools[{index}]")
+        for index, value in enumerate(
+            cast(tuple[object, ...], tools["build_tools"])
+        )
+    )
+    build_tools = MappingProxyType(
+        {cast(str, value["kind"]): value for value in admitted_build_tools}
+    )
+    admitted_libraries = tuple(
+        _admit_shared_library(
+            value, f"Executor HIP runtime_libraries[{index}]"
+        )
+        for index, value in enumerate(
+            cast(tuple[object, ...], host["runtime_libraries"])
+        )
+    )
+    runtime_libraries = MappingProxyType(
+        {cast(str, value["soname"]): value for value in admitted_libraries}
+    )
+    return HipHostAdmission(
+        executor_id=executor_id,
+        torch_hip_version=cast(str, runtime["torch_hip_version"]),
+        visible_device_count=cast(int, runtime["visible_device_count"]),
+        device_monitor=monitor,
+        profilers=profilers,
+        build_tools=build_tools,
+        runtime_libraries=runtime_libraries,
+    )

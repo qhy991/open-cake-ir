@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "kind": "gfx1151_executor_external_evidence_registration",
+  "state": "frozen",
+  "observed_at": "2026-08-26T17:18:19+08:00",
+  "decision": "freeze_v1_and_require_v2_successor",
+  "historical_bindings": [
+    {
+      "role": "environment_blocked_attempt",
+      "executor": {
+        "executor_id": "open-cake-ir-gfx1151-v1",
+        "canonical_sha256": "8c6c10cedbe0eb3a7e88a10a6fa80c20316d4249d75ed3f0c0a1a181974b4f45"
+      },
+      "source_commit": "1e958dd9ccff415c46e86ed23925f7b92c19d530",
+      "external_evidence": {
+        "evidence_id": "aiter-rmsnorm-evidence-0fe319d",
+        "manifest_sha256": "d2d03b8934dcb20cfe6944b6ff0836f903739fb85ff445e3ec6e9affbfad2b5c",
+        "attempt_authority_sha256": "104afbe63c1ce04ee5d604cbfe9a80495b7b2506348af3c5c5c494650d1fc699",
+        "terminal_record": "failure.json",
+        "terminal_record_sha256": "a4adde8e445117cad6ea78a8fbaa99355f18d0cb0bbea2aad2d027c36dbc8ca5"
+      }
+    },
+    {
+      "role": "authority_blocked_attempt",
+      "executor": {
+        "executor_id": "open-cake-ir-gfx1151-v1",
+        "canonical_sha256": "fcb57b4e1404e3145e5f9929b805e23bd766019d92eefa559c68dbc09e168de8"
+      },
+      "source_commit": "138d02adac3d7a2a20931206ea51e708a8d77982",
+      "external_evidence": {
+        "evidence_id": "aiter-rmsnorm-evidence-185e9ef-r2",
+        "manifest_sha256": "2664775a74eae426d6dab462dd3aa740d5765d48f45176450d37724eee114db3",
+        "attempt_authority_sha256": "ad8a81c60f4813730410871f9a847b580cf280d85f3b2f5208b5e03b1cfd340e",
+        "terminal_record": "failure.json",
+        "terminal_record_sha256": "034760f47906fd1a63edf1b2b8ff912068cf44f59eff496a72b4f775f9963df3"
+      }
+    },
+    {
+      "role": "correctness_passed_attempt",
+      "executor": {
+        "executor_id": "open-cake-ir-gfx1151-v1",
+        "canonical_sha256": "2ae412eb92c324a4ea46d19f4299b5205ea771bba6db1f9732e84976f02d3012"
+      },
+      "source_commit": "45dec31c37174d18d4788ba75e3002b13eadfd3e",
+      "external_evidence": {
+        "evidence_id": "aiter-rmsnorm-evidence-1bc9c99-r4",
+        "manifest_sha256": "76a29deb3dfb434184ec21d6c578937d115a79a77f544299873241732e2a7cc0",
+        "attempt_authority_sha256": "0f68a521e302cd1a4ac98e7fa4589b2a025e5eb7ebc1d457c5d64163a049c462",
+        "terminal_record": "result.json",
+        "terminal_record_sha256": "adedb3df3b405f6eb4bdefd9bfe32d41effb7eabd9e561c19c306db12bde3199"
+      }
+    },
+    {
+      "role": "last_repository_working_descriptor_before_registration",
+      "executor": {
+        "executor_id": "open-cake-ir-gfx1151-v1",
+        "canonical_sha256": "6a081a224d7626a812861c25f5798b1243090eef19c07e8d0afe3d20157e8817",
+        "descriptor_raw_sha256": "d9a8b54c80b8731d109a3ee2ce5f0cb562dc5aaf954ba9eb9707e1f1507d7c3d"
+      },
+      "source_commit": "395b685770283c9cedaeb5dd11022ce433eedcc9"
+    }
+  ],
+  "invalid_release_attempt": {
+    "attempted_revision_id": "open-cake-ir-gfx1151-v1",
+    "source_commit": "cb351264da17a1ce3acb56a3fbd9f1a772502e7d",
+    "canonical_sha256": "01399a6b43e4387ea6396912e9fb9315ce50764a3ff9048fcd692477904b96d3",
+    "descriptor_raw_sha256": "279f803664fec4ddaf8fbcecd1eaa5ce35073a487931e4813673bec01297366c",
+    "source_count": 47,
+    "disposition": "INVALID_IDENTITY_COLLISION_NOT_PUBLISHED"
+  },
+  "invariant": "An Executor identity bound by any retained evidence is immutable even when that evidence root is outside the repository.",
+  "required_next_action": "Release the 47-source runtime closure as open-cake-ir-gfx1151-v2 from a clean successor commit."
+}

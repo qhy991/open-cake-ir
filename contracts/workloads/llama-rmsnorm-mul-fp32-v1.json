@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "workload_id": "llama-rmsnorm-mul-fp32-independent-v1",
+  "revision": "1",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "upstream_git",
+      "repository": "https://github.com/ggml-org/llama.cpp.git",
+      "revision": "f280b26983ad0fdb705a0d9ebf0503e76f2899b0"
+    },
+    {
+      "kind": "upstream_source",
+      "path": "ggml/src/ggml-cuda/norm.cu",
+      "sha256": "8cb872a9633a7c68c5e9fa8c1f7d39afe9e66636c1299b9fc610b1b4217e7307",
+      "symbols": ["rms_norm_f32", "rms_norm_mul_f32_cuda", "ggml_cuda_op_rms_norm_fused"]
+    },
+    {
+      "kind": "upstream_source",
+      "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+      "sha256": "b065f91a4b7829ebf0d7ac582ee4c36a0f5577b47ab762c2a94c7f0b19b6fea7",
+      "locator": "GGML_OP_RMS_NORM + GGML_OP_MUL fusion"
+    }
+  ],
+  "operator": "rmsnorm_mul_fp32",
+  "cases": [
+    {
+      "case_id": "seeded_random",
+      "shape": {"B": 8, "N": 512, "D": 128},
+      "seed": 20260825,
+      "mode": "random_standard_normal_signed_gamma"
+    },
+    {
+      "case_id": "reduction_rsqrt_stress",
+      "shape": {"B": 8, "N": 512, "D": 128},
+      "seed": null,
+      "mode": "constructed_reduction_rsqrt_stress"
+    }
+  ],
+  "tensors": {
+    "x": {"shape": ["B", "N", "D"], "dtype": "fp32", "layout": "contiguous_row_major", "finite_only": true},
+    "gamma": {"shape": ["D"], "dtype": "fp32", "layout": "contiguous", "finite_only": true},
+    "y": {"shape": ["B", "N", "D"], "dtype": "fp32", "layout": "contiguous_row_major"}
+  },
+  "semantics": {
+    "definition": "y = x * gamma * rsqrt(mean_D(x * x) + epsilon)",
+    "epsilon": 0.000001,
+    "reduction_axis": "last",
+    "input_dtype": "fp32",
+    "output_dtype": "fp32",
+    "nonfinite": "reject_before_oracle",
+    "llama_slice": "GGML_OP_RMS_NORM + GGML_OP_MUL"
+  },
+  "oracle": {
+    "kind": "cpu_fp64_rmsnorm_mul_then_fp32_round",
+    "source_sha256": "49da17ec8f983be6fa72dd04ef0018b4dd50b8b79a09895fbf95bd61b7c6b1dd"
+  },
+  "validation": {
+    "canonical": "torch_isclose_against_cpu_fp64_rmsnorm_mul",
+    "atol": 0.000005,
+    "rtol": 0.00005,
+    "performance_measured": false
+  }
+}
