@@ -16,6 +16,7 @@ from typing import Callable, Mapping, Protocol, cast
 from open_cake_ir.compiler import Compiler, CorpusGateReport
 from open_cake_ir.compiler.empirical_cost import EmpiricalCostModel
 from open_cake_ir.evaluation import EvaluationReceipt, LaunchableCandidate, LogicalEvaluationAttempt
+from open_cake_ir.evaluation.core import _plain_json as _evaluation_plain_json
 from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from .checkpoints import TurnObservation, project_checkpoints
@@ -382,11 +383,11 @@ def _evaluation_receipt_document(receipt: EvaluationReceipt) -> dict[str, object
         "purpose": receipt.purpose,
         "case_id": receipt.case_id,
         "correctness_passed": receipt.correctness_passed,
-        "correctness": dict(receipt.correctness),
+        "correctness": _evaluation_plain_json(receipt.correctness),
         "kernel_calls": receipt.kernel_calls,
         "fallback_calls": receipt.fallback_calls,
         "launch_receipt_sha256": receipt.launch_receipt_sha256,
-        "timing": dict(receipt.timing) if receipt.timing is not None else None,
+        "timing": _evaluation_plain_json(receipt.timing),
         "artifact_payload_sha256": {
             role: sha256(payload).hexdigest()
             for role, payload in sorted(receipt.artifact_payloads.items())
