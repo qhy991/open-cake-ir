@@ -33,7 +33,7 @@ from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.lab.pairing import bind_baseline, native_baseline, triton_optimization_analysis_plan
 from open_cake_ir.lab.providers import _project_candidate_submission, CANDIDATE_SET_ENVELOPE_V1
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
-from tests.contracts.test_lab import FakeProvider, FakeEvaluator
+from tests.contracts.test_lab import FakeProvider, FakeEvaluator, _submission_envelope
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -538,7 +538,7 @@ class PairedLabFixtureTests(unittest.TestCase):
                     # Retain one real candidate rejection as an observed failure.
                     if request.run_id == 'native_triton-3': member = {**member, 'host_launcher':'forbidden'}
                     payload = encoded(member)
-                    return dataclasses.replace(original,candidates=(payload,),candidate_sha256s=(sha256(payload).hexdigest(),))
+                    return dataclasses.replace(original,candidates=(payload,),raw_submission=_submission_envelope(request.arm, (payload,)),candidate_sha256s=(sha256(payload).hexdigest(),))
             provider = Provider(); provider.configuration = configuration
             provider.provider_revision = qualification['provider_revision']
             provider.packages = {run_id: TaskLab(root).task_package(lock, run_id) for run_id in lock.run_order}

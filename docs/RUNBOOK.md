@@ -168,6 +168,12 @@ one read-only `TASK.md` and `AGENTS.md` in each Run workspace and retains their 
 with every StateCard. The workspace may contain only those files plus
 `candidate-set.json` after a Turn.
 
+The candidate envelope accepts valid UTF-8 JSON with arbitrary whitespace and object-key
+order. Keys must be unique at every nesting level, numbers finite, and `schema_version`
+the integer `1`. Each Turn retains the exact submitted file bytes. Audit projects those
+bytes into the ordered canonical members again and checks their archived identities;
+direct CUDA source strings retain their decoded UTF-8 bytes.
+
 Clean-start references are replaced as one paired operation:
 
 ```bash
