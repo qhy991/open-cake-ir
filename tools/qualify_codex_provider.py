@@ -19,6 +19,7 @@ from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
+    resolve_codex_code_mode_host,
     CodexInvocationBuilder,
     CodexProviderAdapter,
     ProviderInvocation,
@@ -363,6 +364,7 @@ def main() -> int:
         arm_workspace.mkdir(mode=0o750)
         workspaces[arm] = arm_workspace
     executable_sha256 = sha256(executable.read_bytes()).hexdigest()
+    code_mode_host = resolve_codex_code_mode_host(executable, removed_environment=removed_environment)
     output_schema_sha256 = sha256(output_schema.read_bytes()).hexdigest()
     reference_nonce = sha256(
         _canonical_json_bytes(
@@ -404,6 +406,7 @@ def main() -> int:
         "kind": "codex_provider_two_turn_qualification",
         "provider_revision": args.provider_revision,
         "executable_sha256": executable_sha256,
+        "code_mode_host": code_mode_host,
         "model": args.model,
         "reasoning_effort": args.reasoning_effort,
         "service_tier": args.service_tier,
@@ -421,6 +424,8 @@ def main() -> int:
         "gpu_execution_authorized": False,
     }
     authority["submission_contract"] = submission_contract
+    if event_contract == "closed_file_change_v1":
+        authority["web_search"] = "disabled"
     authority["maximum_candidates_per_turn"] = maximum_candidates_per_turn
     authority["arms"] = list(qualification_arms)
     authority_sha256 = sha256(_canonical_json_bytes(authority)).hexdigest()
@@ -444,6 +449,7 @@ def main() -> int:
             package = task_packages[arm]
             builder = CodexInvocationBuilder(
                 executable=executable,
+                code_mode_host=code_mode_host,
                 provider_revision=args.provider_revision,
                 model=args.model,
                 reasoning_effort=args.reasoning_effort,
@@ -584,6 +590,9 @@ def main() -> int:
         ):
             raise ValueError("Codex provider qualification authority changed")
 
+        resolve_codex_code_mode_host(
+            executable, expected=code_mode_host, removed_environment=removed_environment,
+        )
         receipt = ProviderQualificationReceipt(
             provider_revision=args.provider_revision,
             executable_sha256=executable_sha256,

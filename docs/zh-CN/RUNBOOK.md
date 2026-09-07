@@ -61,6 +61,12 @@ Provider 是真正调用 AI 的程序。显示“已登录”不代表它能遵�
 
 所有实验都使用两文件 Ralph 接口。资格验证有两种工具策略：封闭研究环境，以及允许 provider 默认功能的产物优化环境。它们的完整命令在[英文第 4 节](../RUNBOOK.md#4-qualify-the-provider-without-gpu)。带 `<…>` 或 `/new/…` 的位置是操作人员要替换的参数，不是可以直接粘贴执行的成品命令。
 
+两种策略都启用本机 CLI 必需的 Code Mode host。helper 按安装目录的查找顺序解析，
+路径和字节身份进入原有 provider 配置身份。首次调用和恢复调用前都会核对；
+缺失、变化或出现更优先的 helper 都会拒绝调用。运行配置仍只提供 CLI 和工作目录，
+不能指定任意 helper。封闭研究仍禁用 shell、浏览器和网页搜索；启动错误、轮内错误
+或缺少真实文件变更都不能通过资格验证。
+
 失败也要封存，不能删掉后伪装成同一次成功。完成必要的环境处理后，另用新的 Run 身份。资格记录固定的推理强度没有隐含默认值，变更它需要对应的新资格和新 Study。通过这项检查，只证明 AI 工具的传输和交互边界；没有授予 GPU 运行资格，也没有科学结果。
 
 B300 的 Cake / 原生 Triton 对照使用 `contracts/providers/codex-triton-optimization-output-schema-v1.json` 作为资格验证的 `--output-schema`。工具从协议读取两端名称，并验证各自的首次提交和继续更新。

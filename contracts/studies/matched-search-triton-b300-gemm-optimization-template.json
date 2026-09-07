@@ -75,9 +75,6 @@
           "browser_use",
           "browser_use_external",
           "browser_use_full_cdp_access",
-          "code_mode",
-          "code_mode_host",
-          "code_mode_only",
           "computer_use",
           "goals",
           "guardian_approval",
@@ -118,7 +115,11 @@
           "binding": "campaign_lock"
         },
         "sandbox": "workspace-write",
-        "service_tier": "default"
+        "service_tier": "default",
+        "web_search": "disabled",
+        "code_mode_host": {
+          "binding": "campaign_lock"
+        }
       },
       "scaffold": {
         "path": "contracts/scaffolds/matched-search-v1.md",
@@ -156,9 +157,6 @@
           "browser_use",
           "browser_use_external",
           "browser_use_full_cdp_access",
-          "code_mode",
-          "code_mode_host",
-          "code_mode_only",
           "computer_use",
           "goals",
           "guardian_approval",
@@ -199,7 +197,11 @@
           "binding": "campaign_lock"
         },
         "sandbox": "workspace-write",
-        "service_tier": "default"
+        "service_tier": "default",
+        "web_search": "disabled",
+        "code_mode_host": {
+          "binding": "campaign_lock"
+        }
       },
       "scaffold": {
         "path": "contracts/scaffolds/matched-search-v1.md",

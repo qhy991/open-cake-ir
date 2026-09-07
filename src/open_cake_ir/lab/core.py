@@ -1748,9 +1748,10 @@ class Lab:
             "cwd_policy",
             "reference_visibility",
             "disabled_features",
+            "code_mode_host",
         }
         if frozenset(provider) not in {
-            frozenset(provider_fields),
+            frozenset(provider_fields | {"web_search"}),
             frozenset(provider_fields | {"event_contract"}),
         }:
             raise ValueError("Study Contract provider configuration fields differ")
@@ -1766,6 +1767,13 @@ class Lab:
             if claim_scope == "artifact_optimization_only"
             else "closed_file_change_v1"
         )
+        code_mode_host = _object(provider.get("code_mode_host"), "study.arms.provider.code_mode_host")
+        if (set(code_mode_host) != {"path", "sha256"}
+            or not isinstance(code_mode_host.get("path"), str)
+            or not Path(code_mode_host["path"]).is_absolute()
+            or ".." in Path(code_mode_host["path"]).parts):
+            raise ValueError("Study Contract Code Mode host identity differs")
+        _digest(code_mode_host.get("sha256"), "study.arms.provider.code_mode_host.sha256")
         _name(
             provider.get("reasoning_effort"),
             "study.arms.provider.reasoning_effort",
@@ -1779,6 +1787,8 @@ class Lab:
             or provider.get("reference_visibility")
             != "workspace_task_files"
             or provider.get("disabled_features") != expected_disabled_features
+            or (expected_event_contract == "closed_file_change_v1"
+                and provider.get("web_search") != "disabled")
             or provider.get("event_contract", "closed_file_change_v1")
             != expected_event_contract
             or provider.get("removed_environment")
@@ -1818,6 +1828,8 @@ class Lab:
                         "cwd_policy": provider["cwd_policy"],
                         "reference_visibility": provider["reference_visibility"],
                         "disabled_features": provider["disabled_features"],
+                        "code_mode_host": provider["code_mode_host"],
+                        **({"web_search": provider["web_search"]} if "web_search" in provider else {}),
                         **(
                             {"event_contract": provider["event_contract"]}
                             if "event_contract" in provider
@@ -2392,7 +2404,10 @@ class Lab:
             "cwd_policy": provider_document["cwd_policy"],
             "reference_visibility": provider_document["reference_visibility"],
             "disabled_features": provider_document["disabled_features"],
+            "code_mode_host": provider_document["code_mode_host"],
         }
+        if "web_search" in provider_document:
+            expected_provider_configuration["web_search"] = provider_document["web_search"]
         if "event_contract" in provider_document:
             expected_provider_configuration["event_contract"] = provider_document[
                 "event_contract"

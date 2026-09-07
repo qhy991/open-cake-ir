@@ -28,6 +28,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         startup_error: bool = False,
         wrong_resumed_turn: bool = False,
         mutate_task: bool = False,
+        mutate_helper: bool = False,
     ) -> None:
         path.write_text(
             textwrap.dedent(
@@ -91,6 +92,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     json.dumps(expected, sort_keys=True, separators=(",", ":")) + "\\n",
                     encoding="utf-8",
                 )
+                if {mutate_helper!r} and not resumed:
+                    Path(__file__).with_name("codex-code-mode-host").write_bytes(b"changed host")
                 if {mutate_task!r} and not resumed:
                     task = Path("TASK.md")
                     task.chmod(0o644)
@@ -169,6 +172,9 @@ class ProviderQualificationContractTests(unittest.TestCase):
             encoding="utf-8",
         )
         path.chmod(0o700)
+        helper = path.with_name("codex-code-mode-host")
+        helper.write_bytes(b"CPU Code Mode host fixture")
+        helper.chmod(0o700)
 
     def _run_qualification(
         self,
@@ -308,6 +314,12 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 anchor["qualification_receipt_sha256"], receipt.canonical_sha256
             )
             self.assertEqual(anchor["authority_sha256"], audit.authority_sha256)
+            authority = json.loads((evidence_root / "runs" / audit.run_id / "authority.json").read_bytes())["authority"]
+            helper = executable.with_name("codex-code-mode-host").resolve()
+            self.assertEqual(authority["code_mode_host"], {
+                "path": str(helper), "sha256": sha256(helper.read_bytes()).hexdigest(),
+            })
+            self.assertEqual(authority["web_search"], "disabled")
             observed = [
                 event
                 for event in evidence.replay_events(audit.run_id)
@@ -320,6 +332,22 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 for turn in ("initial", "resumed"):
                     self.assertIn(f"{arm}_{turn}_provider_events", roles)
                     self.assertIn(f"{arm}_{turn}_invocation", roles)
+
+    def test_helper_drift_between_turns_preserves_failure_and_issues_no_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable, mutate_helper=True)
+            completed, receipt_path, anchor_path, evidence_root = self._run_qualification(
+                root, executable, provider_revision="cpu-helper-drift", run_id="cpu-helper-drift",
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertFalse(receipt_path.exists())
+            self.assertIn("Code Mode host differs from the bound runtime", completed.stderr.decode())
+            audit = EvidenceStore.open(evidence_root).audit_run("cpu-helper-drift")
+            self.assertTrue(audit.archive_integrity)
+            self.assertEqual(audit.protocol_adherence, "provider_fault")
+            self.assertIsNone(json.loads(anchor_path.read_bytes())["qualification_receipt_sha256"])
 
     def test_candidate_set_qualification_covers_both_arm_projections(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

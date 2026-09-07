@@ -82,7 +82,7 @@ def resolve_execution_bindings(
 ) -> tuple[dict[str, object], ExecutorRevision | None]:
     """Return resolved runtime leaves and the Executor already validated for them."""
     from .runtime import broker_execution_sha256
-    from .providers import ProviderQualificationReceipt
+    from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
     from .triton_build import IsolatedTritonCompiler
 
     document = json.loads(canonical(study.document))
@@ -92,7 +92,7 @@ def resolve_execution_bindings(
             raise ValueError('external execution binding requires paired Triton Study')
         return document, None
     execution = document['execution']
-    provider_fields = ('revision', 'executable_sha256', 'qualification', 'qualification_anchor')
+    provider_fields = ('revision', 'executable_sha256', 'qualification', 'qualification_anchor', 'code_mode_host')
     leaves = [arms[name]['provider'].get(field) for name in arms for field in provider_fields]
     leaves += [arms[name].get('toolchain_sha256') for name in arms]
     leaves += [execution.get('broker_execution_sha256'), execution.get('fixed_baseline')]
@@ -125,9 +125,11 @@ def resolve_execution_bindings(
     executable = Path(config['provider']['executable']).resolve(strict=True)
     if sha256(executable.read_bytes()).hexdigest() != receipt.executable_sha256:
         raise ValueError('runtime provider executable differs from qualification')
+    code_mode_host = resolve_codex_code_mode_host(executable)
     for arm in arms.values():
         provider = arm['provider']
         provider.update(revision=receipt.provider_revision, executable_sha256=receipt.executable_sha256,
+            code_mode_host=code_mode_host,
             qualification={'path': str(receipt_path), 'canonical_sha256': receipt.canonical_sha256},
             qualification_anchor={'path': str(anchor_path), 'canonical_sha256': sha256(canonical(anchor)).hexdigest()})
     # current_release resolves once, with the existing Executor resolver's closure checks.

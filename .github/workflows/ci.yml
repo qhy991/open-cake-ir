@@ -65,6 +65,7 @@ jobs:
           tests.contracts.test_native_triton_pairing
           tests.contracts.test_paired_execution
           tests.contracts.test_provider
+          tests.contracts.test_provider_runtime
           tests.contracts.test_provider_qualification
           tests.contracts.test_metal_benchmark
           tests.contracts.test_tile_gpu_worker

@@ -380,9 +380,14 @@ class PairedExecutionTests(unittest.TestCase):
         bundle.write_bytes(encoded({**candidate_identity(baseline), 'artifact_paths': {k:k for k in payloads}}))
         executable = self.output / 'provider'
         executable.write_bytes(b'CPU-provider-fixture')
+        executable.chmod(0o700)
+        helper = executable.with_name('codex-code-mode-host')
+        helper.write_bytes(b'CPU Code Mode host fixture')
+        helper.chmod(0o700)
         provider = study.document['arms']['open_cake']['provider']
         configuration = {key: provider[key] for key in ('model', 'reasoning_effort', 'service_tier',
-            'removed_environment', 'sandbox', 'cwd_policy', 'reference_visibility', 'disabled_features')}
+            'removed_environment', 'sandbox', 'cwd_policy', 'reference_visibility', 'disabled_features', 'web_search')}
+        configuration['code_mode_host'] = {'path': str(helper.resolve()), 'sha256': sha256(helper.read_bytes()).hexdigest()}
         configuration['output_schema_sha256'] = provider['output_schema']['sha256']
         configuration['submission_contract'] = 'candidate_set_envelope_v1'
         qualification = json.loads((ROOT / 'contracts/providers/fixture-provider-candidate-set-ralph-v1.json').read_bytes())
