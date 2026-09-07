@@ -11,9 +11,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence, cast
 
-from . import emit_cutedsl, emit_metal, emit_triton
+from .backends import cutedsl, metal, triton
 from .frontend import read_schedule
-from .emit_cutedsl import EmitError
+from .backends.common import EmitError
 from .ir import (
     _SCHEDULE_OPTIONAL,
     _SCHEDULE_REQUIRED,
@@ -165,15 +165,15 @@ class _SourceAsset:
 
 
 _GENERATED_BACKENDS: Mapping[LoweringBackend, _GeneratedBackend] = {
-    LoweringBackend.METAL: _GeneratedBackend(emit_metal, "metal", "MTLDevice.makeLibrary"),
-    LoweringBackend.TRITON: _GeneratedBackend(emit_triton, "python", "triton"),
+    LoweringBackend.METAL: _GeneratedBackend(metal, "metal", "MTLDevice.makeLibrary"),
+    LoweringBackend.TRITON: _GeneratedBackend(triton, "python", "triton"),
     LoweringBackend.CUTLASS_CUTE_DSL: _GeneratedBackend(
-        emit_cutedsl, "python", "cutlass_cute_dsl"
+        cutedsl, "python", "cutlass_cute_dsl"
     ),
 }
 _SOURCE_ASSETS: Mapping[str, _SourceAsset] = {
     "cake_tinygemm2_stage4_split_k": _SourceAsset(
-        path="src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
+        path="src/open_cake_ir/compiler/backends/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
         placeholder="@@SCHEDULE_SHA256@@",
         # Re-pinned by the route migration; the checked asset body itself is unchanged.
         semantic_sha256="fea164e3667d99bdd1d26a9bd11ca7ee4dca08c2cad66d47dc4719dcd529ec2c",
@@ -369,7 +369,7 @@ class Compiler:
                         f"kind {operation.kind.value!r}",
                         FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
                     ))
-            if backend.module is emit_triton:
+            if backend.module is triton:
                 for index, loop in enumerate(typed_schedule.tile_loops):
                     if loop.range_options.warp_specialize and any(
                         (operation := typed_schedule.operation(operation_id)) is not None
@@ -393,14 +393,14 @@ class Compiler:
                     failure.code, failure.path, failure.message,
                     FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
                 ))
-        if backend is not None and backend.module is emit_metal and not any(
+        if backend is not None and backend.module is metal and not any(
             finding.blocks_lowering for finding in findings
         ):
             findings.append(Finding(
                 "METAL_SIMD_EXECUTION", "lowering",
                 "Metal stripes flattened values over 32 lanes with uniform SIMD "
                 "collectives and uniquely owned stores. Peak live lane-owned Buffer "
-                f"storage: {emit_metal.private_values_per_thread(typed_schedule)} FP32 values; "
+                f"storage: {metal.private_values_per_thread(typed_schedule)} FP32 values; "
                 "temporary registers and spills are unmodeled. No occupancy, cost or "
                 "GPU correctness is inferred. Local-slot then SIMD reduction order and "
                 "precise rsqrt use Metal rounding/denormal behavior, without PTX RN equivalence.",

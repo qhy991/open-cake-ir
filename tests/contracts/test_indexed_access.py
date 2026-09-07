@@ -9,7 +9,7 @@ from pathlib import Path
 
 import jsonschema
 
-from open_cake_ir.compiler.emit_triton import emit
+from open_cake_ir.compiler.backends.triton import emit
 from open_cake_ir.compiler.ir import AccessIndexKind, OperationKind, Schedule
 from open_cake_ir.compiler.schema import schedule_schema
 from open_cake_ir.compiler.target import Target

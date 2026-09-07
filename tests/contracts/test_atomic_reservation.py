@@ -12,8 +12,8 @@ from pathlib import Path
 import jsonschema
 import torch
 
-from open_cake_ir.compiler.emit_cutedsl import preflight as cute_preflight
-from open_cake_ir.compiler.emit_triton import emit, preflight
+from open_cake_ir.compiler.backends.cutedsl import preflight as cute_preflight
+from open_cake_ir.compiler.backends.triton import emit, preflight
 from open_cake_ir.compiler.ir import (
     AtomicMemoryOrder,
     AtomicMemoryScope,

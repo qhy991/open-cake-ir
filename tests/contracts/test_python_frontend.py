@@ -13,7 +13,8 @@ from io import StringIO
 from pathlib import Path
 
 from open_cake_ir.cli import main
-from open_cake_ir.compiler import Compiler, CompilerError, emit_triton
+from open_cake_ir.compiler import Compiler, CompilerError
+from open_cake_ir.compiler.backends import triton
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.frontend import FrontendError, ScheduleSource, parse, read_schedule
@@ -113,7 +114,7 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
                 self.assertTrue(assessment.lowering_eligible, assessment.findings)
                 lowered = self.compiler.lower(assessment)
                 self.assertIn("scale = tl.load(", lowered.source)
-                direct = emit_triton.emit(Schedule.from_dict(document), Target.load(ROOT / "compiler/targets/sm_100a.json"))
+                direct = triton.emit(Schedule.from_dict(document), Target.load(ROOT / "compiler/targets/sm_100a.json"))
                 self.assertIn("scale = tl.load(", direct.source)
 
     def test_triton_refuses_direct_global_scalar_values_with_complete_access_maps(self):
@@ -130,8 +131,8 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
                 self.assertEqual([f.path for f in refusal], [f"operations[1].reads[{position}]"])
                 with self.assertRaisesRegex(CompilerError, "TRITON_ELEMENTWISE_STORAGE"):
                     self.compiler.lower(assessment)
-                with self.assertRaisesRegex(emit_triton.EmitError, "requires register values"):
-                    emit_triton.emit(Schedule.from_dict(document), Target.load(ROOT / "compiler/targets/sm_100a.json"))
+                with self.assertRaisesRegex(triton.EmitError, "requires register values"):
+                    triton.emit(Schedule.from_dict(document), Target.load(ROOT / "compiler/targets/sm_100a.json"))
 
     def test_triton_refuses_global_arithmetic_destinations(self):
         source = self.scalar_source()
@@ -146,8 +147,8 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
         self.assertEqual([f.path for f in refusal], ["operations[2].writes[0]"])
         with self.assertRaisesRegex(CompilerError, "TRITON_ELEMENTWISE_STORAGE"):
             self.compiler.lower(assessment)
-        with self.assertRaisesRegex(emit_triton.EmitError, "requires register values"):
-            emit_triton.emit(Schedule.from_dict(document), Target.load(ROOT / "compiler/targets/sm_100a.json"))
+        with self.assertRaisesRegex(triton.EmitError, "requires register values"):
+            triton.emit(Schedule.from_dict(document), Target.load(ROOT / "compiler/targets/sm_100a.json"))
 
     def test_two_scalars_cannot_invent_a_larger_result(self):
         document = parse(self.scalar_source("scale + scale", scalar_output=True)).document

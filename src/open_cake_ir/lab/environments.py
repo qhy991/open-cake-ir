@@ -507,7 +507,7 @@ class NativeTritonEnvironment:
         self._target = workload.document['semantics']['target']
         # The frozen Compiler owns backend spelling (for example int32 -> *i32).
         # Consume its existing table instead of assuming Workload names are Triton ABI names.
-        from open_cake_ir.compiler.emit_triton import _TritonEmitter
+        from open_cake_ir.compiler.backends.triton import _TritonEmitter
         from open_cake_ir.compiler.ir import DType
         expected_signature = {arg.name: _TritonEmitter._POINTER[DType(arg.dtype)] for arg in self._abi}
         signature = self._requirements.get('signature')

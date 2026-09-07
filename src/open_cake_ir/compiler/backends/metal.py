@@ -12,13 +12,13 @@ from __future__ import annotations
 import math
 import re
 
-from .emit import BackendPrecondition, Emission, EmitError
-from .ir import (
+from .common import BackendPrecondition, Emission, EmitError
+from ..ir import (
     AccessIndexKind, BufferMode, DType, ElementwiseOp, LoadMovement,
     LoweringBackend, MemorySpace, OperationKind, ReduceOp, ReductionScope, Schedule,
 )
-from .target import Target
-from .verifier import FindingSeverity, verify
+from ..target import Target
+from ..verifier import FindingSeverity, verify
 
 SUPPORTED_DTYPES = frozenset({DType.FP32})
 SUPPORTED_OPERATION_KINDS = frozenset({
