@@ -33,7 +33,7 @@ from .target import Target, TargetParseError
 from .ranking import Cost, rank as rank_candidates
 from .compiled_resources import CompiledResources
 from .empirical_cost import EmpiricalCostModel
-from .verifier import FindingSeverity, verify as verify_contracts
+from .verifier import Finding, FindingCategory, FindingSeverity, verify as verify_contracts
 
 
 class CompilerError(ValueError):
@@ -41,19 +41,12 @@ class CompilerError(ValueError):
 
 
 @dataclass(frozen=True)
-class Finding:
-    """One localized compiler observation."""
-
-    code: str
-    path: str
-    message: str
-    blocks_acceptance: bool = True
-    blocks_lowering: bool = True
-
-
-@dataclass(frozen=True)
 class Assessment:
-    """Immutable assessment of one Schedule under one Compiler Revision."""
+    """Immutable assessment of one Schedule under one Compiler Revision.
+
+    ``findings`` retains the Corpus Gate's blocking/report observations. ``guidance``
+    carries typed non-blocking hints, independently of that existing gate contract.
+    """
 
     compiler_revision_id: str
     compiler_revision_sha256: str
@@ -68,6 +61,7 @@ class Assessment:
     lowering_parameters: Mapping[str, int]
     calibration_available: bool
     schedule_bytes: bytes
+    guidance: tuple[Finding, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -210,8 +204,8 @@ def _tinygemm2_asset_preflight(schedule: Schedule) -> list["Finding"]:
                 "REDUCE_SUM_SEMANTICS",
                 "operations.reduce_partials.parameters.axis",
                 "the checked TinyGEMM2 asset requires a four-part CTA sum",
+                FindingCategory.HARDWARE_CONFORMANCE,
                 blocks_acceptance=False,
-                blocks_lowering=True,
             )
         )
     epilogue = schedule.operation("bias_epilogue")
@@ -227,8 +221,8 @@ def _tinygemm2_asset_preflight(schedule: Schedule) -> list["Finding"]:
                 "TINYGEMM_EPILOGUE_SEMANTICS",
                 "operations.bias_epilogue.parameters.formula",
                 "the checked TinyGEMM2 asset requires bias addition then BF16 rounding",
+                FindingCategory.HARDWARE_CONFORMANCE,
                 blocks_acceptance=False,
-                blocks_lowering=True,
             )
         )
     return findings
@@ -774,6 +768,7 @@ class Compiler:
                     "TARGET_UNSUPPORTED",
                     "target",
                     f"target {target!r} is not defined by Compiler Revision {self._revision_id}",
+                    FindingCategory.HARDWARE_CONFORMANCE,
                 )
             )
 
@@ -805,6 +800,7 @@ class Compiler:
                             "TARGET_GRID_LIMIT",
                             f"grid[{axis}]",
                             f"grid extent {observed} exceeds Target limit {maximum}",
+                            FindingCategory.HARDWARE_CONFORMANCE,
                         )
                     )
 
@@ -821,6 +817,7 @@ class Compiler:
                         "TARGET_MEMORY_SPACE_UNSUPPORTED",
                         f"allocations[{index}].space",
                         f"memory space {space!r} is not supported by Target {target!r}",
+                        FindingCategory.HARDWARE_CONFORMANCE,
                     )
                 )
             allocation_spaces[space] += allocation_sizes[_name(allocation.get("name"), f"allocations[{index}].name")]
@@ -831,6 +828,7 @@ class Compiler:
                         "TARGET_SHARED_MEMORY_LIMIT",
                         "allocations",
                         "Schedule exceeds the Target shared-memory limit",
+                        FindingCategory.HARDWARE_CONFORMANCE,
                     )
                 )
             if allocation_spaces["tensor"] > target_definition.maximum_tensor_memory_bytes:
@@ -839,6 +837,7 @@ class Compiler:
                         "TARGET_TENSOR_MEMORY_LIMIT",
                         "allocations",
                         "Schedule exceeds the Target tensor-memory limit",
+                        FindingCategory.HARDWARE_CONFORMANCE,
                     )
                 )
         for index, buffer in enumerate(buffers):
@@ -850,6 +849,7 @@ class Compiler:
                         "TARGET_MEMORY_SPACE_UNSUPPORTED",
                         f"buffers[{index}].space",
                         f"memory space {space!r} is not supported by Target {target!r}",
+                        FindingCategory.HARDWARE_CONFORMANCE,
                     )
                 )
             shape = buffer.get("shape")
@@ -872,6 +872,7 @@ class Compiler:
                             "BUFFER_ALLOCATION_UNKNOWN",
                             f"buffers[{index}].allocation",
                             f"allocation {allocation_name!r} is not declared",
+                            FindingCategory.DATA_CONSISTENCY,
                         )
                     )
                 else:
@@ -885,6 +886,7 @@ class Compiler:
                                 "BUFFER_ALLOCATION_OVERFLOW",
                                 f"buffers[{index}]",
                                 f"buffer extent {extent} exceeds allocation {allocation_name!r}",
+                                FindingCategory.DATA_CONSISTENCY,
                             )
                         )
 
@@ -897,6 +899,7 @@ class Compiler:
                     "SCHEDULE_OPERATIONS_EMPTY",
                     "operations",
                     "Schedule must contain at least one operation",
+                    FindingCategory.SCHEDULE_SEMANTICS,
                 )
             )
         for index, operation in enumerate(operations):
@@ -907,7 +910,8 @@ class Compiler:
                 raise CompilerError(f"operations[{index}].id duplicates {op_id!r}")
             if kind not in _SUPPORTED_OPERATION_KINDS:
                 findings.append(
-                    Finding("OPERATION_UNSUPPORTED", f"operations[{index}].kind", f"operation {kind!r} is unsupported")
+                    Finding("OPERATION_UNSUPPORTED", f"operations[{index}].kind", f"operation {kind!r} is unsupported",
+                            FindingCategory.SCHEDULE_SEMANTICS)
                 )
             elif target_definition is not None and kind not in target_definition.operation_kinds:
                 findings.append(
@@ -915,11 +919,13 @@ class Compiler:
                         "TARGET_OPERATION_UNSUPPORTED",
                         f"operations[{index}].kind",
                         f"operation {kind!r} is not supported by Target {target!r}",
+                        FindingCategory.HARDWARE_CONFORMANCE,
                     )
                 )
             if role not in role_by_name:
                 findings.append(
-                    Finding("OPERATION_ROLE_UNKNOWN", f"operations[{index}].role", f"role {role!r} is not declared")
+                    Finding("OPERATION_ROLE_UNKNOWN", f"operations[{index}].role", f"role {role!r} is not declared",
+                            FindingCategory.SCHEDULE_SEMANTICS)
                 )
             for field in ("reads", "writes"):
                 for name in _strings(operation.get(field), f"operations[{index}].{field}"):
@@ -929,6 +935,7 @@ class Compiler:
                                 "OPERATION_BUFFER_UNKNOWN",
                                 f"operations[{index}].{field}",
                                 f"buffer {name!r} is not declared",
+                                FindingCategory.DATA_CONSISTENCY,
                             )
                         )
                     elif field == "writes":
@@ -941,6 +948,7 @@ class Compiler:
                                 "OPERATION_BARRIER_UNKNOWN",
                                 f"operations[{index}].{field}",
                                 f"barrier {name!r} is not declared",
+                                FindingCategory.PROGRAM_SAFETY,
                             )
                         )
             for dependency in _strings(
@@ -952,6 +960,7 @@ class Compiler:
                             "OPERATION_DEPENDENCY_ORDER",
                             f"operations[{index}].depends_on",
                             f"dependency {dependency!r} is missing or appears later",
+                            FindingCategory.PROGRAM_SAFETY,
                         )
                     )
             pipeline = operation.get("pipeline")
@@ -961,6 +970,7 @@ class Compiler:
                         "OPERATION_PIPELINE_UNKNOWN",
                         f"operations[{index}].pipeline",
                         f"pipeline {pipeline!r} is not declared",
+                        FindingCategory.PROGRAM_SAFETY,
                     )
                 )
             _object(operation.get("parameters"), f"operations[{index}].parameters")
@@ -972,7 +982,8 @@ class Compiler:
             buffer = buffer_by_name.get(output)
             if buffer is None or buffer.get("mode") != "output":
                 findings.append(
-                    Finding("OUTPUT_INVALID", f"outputs[{index}]", f"output buffer {output!r} is not declared as output")
+                    Finding("OUTPUT_INVALID", f"outputs[{index}]", f"output buffer {output!r} is not declared as output",
+                            FindingCategory.DATA_CONSISTENCY)
                 )
             elif output not in written_buffers:
                 findings.append(
@@ -980,6 +991,7 @@ class Compiler:
                         "OUTPUT_UNWRITTEN",
                         f"outputs[{index}]",
                         f"output buffer {output!r} has no writer",
+                        FindingCategory.DATA_CONSISTENCY,
                     )
                 )
 
@@ -997,8 +1009,8 @@ class Compiler:
                     "SOURCE_ASSET_UNSUPPORTED",
                     "lowering.entry_point",
                     f"checked source asset {route.entry_point!r} is not bound by this Revision",
+                    FindingCategory.HARDWARE_CONFORMANCE,
                     blocks_acceptance=False,
-                    blocks_lowering=True,
                 )
             )
         elif asset is not None:
@@ -1013,8 +1025,8 @@ class Compiler:
                         "SOURCE_ASSET_SEMANTICS_MISMATCH",
                         "lowering",
                         "Schedule semantics differ from the checked source asset",
+                        FindingCategory.HARDWARE_CONFORMANCE,
                         blocks_acceptance=False,
-                        blocks_lowering=True,
                     )
                 )
         elif backend is not None:
@@ -1033,8 +1045,8 @@ class Compiler:
                             "BACKEND_DTYPE_UNEMITTABLE",
                             f"buffers[{index}].dtype",
                             f"backend {route.backend.value!r} cannot name dtype {dtype!r}",
+                            FindingCategory.HARDWARE_CONFORMANCE,
                             blocks_acceptance=False,
-                            blocks_lowering=True,
                         )
                     )
             for index, operation in enumerate(operations):
@@ -1048,8 +1060,8 @@ class Compiler:
                             f"operations[{index}].kind",
                             f"backend {route.backend.value!r} has no body for operation "
                             f"kind {kind!r}",
+                            FindingCategory.HARDWARE_CONFORMANCE,
                             blocks_acceptance=False,
-                            blocks_lowering=True,
                         )
                     )
             # The pinned Triton automatic-warp-specialization pass requires every
@@ -1079,8 +1091,8 @@ class Compiler:
                                 f"tile_loops[{index}].range_options.warp_specialize",
                                 "the pinned Triton backend cannot warp-specialize a "
                                 "loop containing the value-and-index argmin reduction",
+                                FindingCategory.HARDWARE_CONFORMANCE,
                                 blocks_acceptance=False,
-                                blocks_lowering=True,
                             )
                         )
         findings.extend(self._contract_findings(typed_schedule, target))
@@ -1100,8 +1112,8 @@ class Compiler:
                         failure.code,
                         failure.path,
                         failure.message,
+                        FindingCategory.HARDWARE_CONFORMANCE,
                         blocks_acceptance=False,
-                        blocks_lowering=True,
                     )
                 )
 
@@ -1116,7 +1128,7 @@ class Compiler:
                 "temporary registers and spills are unmodeled. No occupancy, cost or "
                 "GPU correctness is inferred. Local-slot then SIMD reduction order and "
                 "precise rsqrt use Metal rounding/denormal behavior, without PTX RN equivalence.",
-                blocks_acceptance=False, blocks_lowering=False,
+                FindingCategory.HARDWARE_CONFORMANCE, FindingSeverity.REPORT,
             ))
 
         accepted = not any(finding.blocks_acceptance for finding in findings)
@@ -1142,11 +1154,16 @@ class Compiler:
             route=route,
             accepted=accepted,
             lowering_eligible=lowering_eligible,
-            findings=tuple(findings),
+            findings=tuple(
+                finding for finding in findings if finding.severity is not FindingSeverity.HINT
+            ),
             analysis=analysis,
             lowering_parameters=MappingProxyType(dict(lowering_parameters)),
             calibration_available=semantic_sha256 in self._calibration_coverage,
             schedule_bytes=_canonical_json_bytes(schedule),
+            guidance=tuple(
+                finding for finding in findings if finding.severity is FindingSeverity.HINT
+            ),
         )
 
     def _structural_rejection(
@@ -1173,7 +1190,8 @@ class Compiler:
             accepted=False,
             lowering_eligible=False,
             findings=(
-                Finding("SCHEDULE_STRUCTURE", path, detail.strip() or message),
+                Finding("SCHEDULE_STRUCTURE", path, detail.strip() or message,
+                        FindingCategory.SCHEDULE_SEMANTICS),
             ),
             analysis=MappingProxyType({}),
             lowering_parameters=MappingProxyType({}),
@@ -1226,14 +1244,7 @@ class Compiler:
     def _contract_findings(
         self, schedule: Schedule, target: str
     ) -> list[Finding]:
-        """Target-derived contract violations, as localized Findings.
-
-        Blocking violations and reports both join the Assessment; a report carries
-        bottleneck attribution and reaches the agent through the Study's feedback
-        projection without affecting acceptance. Hints -- a commitment the Schedule
-        declined to make, such as an undeclared swizzle -- describe its position rather
-        than its behaviour, and stay out.
-        """
+        """Retain every typed verifier diagnostic, including non-blocking hints."""
 
         definition = self._target_definitions.get(target)
         if definition is None:
@@ -1242,21 +1253,7 @@ class Compiler:
             typed_target = Target.from_dict(dict(definition.document))
         except TargetParseError:
             return []
-        findings: list[Finding] = []
-        for item in verify_contracts(schedule, typed_target):
-            if item.blocks_lowering:
-                findings.append(Finding(item.code, item.path, item.message))
-            elif item.severity is FindingSeverity.REPORT:
-                findings.append(
-                    Finding(
-                        item.code,
-                        item.path,
-                        item.message,
-                        blocks_acceptance=False,
-                        blocks_lowering=False,
-                    )
-                )
-        return findings
+        return list(verify_contracts(schedule, typed_target))
 
     def profile(self, assessment: Assessment, *, compiled_resources: CompiledResources | None = None,
                 cost_model: EmpiricalCostModel | None = None):

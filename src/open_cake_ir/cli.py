@@ -10,7 +10,7 @@ from dataclasses import asdict, fields, is_dataclass
 from pathlib import Path
 from typing import Sequence
 
-from open_cake_ir.compiler import Compiler, CompilerError
+from open_cake_ir.compiler import Compiler, CompilerError, Finding, FindingCategory
 from open_cake_ir.compiler.frontend import FrontendError, read_schedule
 from open_cake_ir.lab import (
     CampaignLock,
@@ -61,7 +61,7 @@ def _emit_compiler(value: Mapping[str, object], args: argparse.Namespace) -> Non
         route = value['lowering']
         if route is not None:
             print(f"生成方式：{route['backend']}")
-        findings = value['findings']
+        findings = value['findings'] + value['guidance']
         print(f"诊断：{len(findings)} 条")
         for finding in findings:
             impact = (
@@ -71,7 +71,8 @@ def _emit_compiler(value: Mapping[str, object], args: argparse.Namespace) -> Non
             source = finding.get("source")
             location = (f"{source['filename']}:{source['line']}:{source['column']} | "
                         if source is not None else "")
-            print(f"- [{impact}] {finding['code']} | {location}{finding['path']}")
+            print(f"- [{impact}] {finding['code']} | {location}{finding['path']} "
+                  f"| {finding['category']} | {finding['severity']}")
         print("这一步未运行 GPU；诊断原文和完整分析可用默认 JSON 输出查看。")
     elif args.compiler_command == "check-corpus":
         matched = sum(case['matched'] for case in value['cases'])
@@ -95,13 +96,17 @@ def _compiler(args: argparse.Namespace) -> int:
     assessment = (compiler.assess(authored.document) if authored is not None else
                   compiler.assess_file(args.schedule) if args.compiler_command != "check-corpus" else None)
     finding_rows = []
+    guidance_rows = []
     if assessment is not None:
-        for finding in assessment.findings:
-            row = asdict(finding)
-            location = authored.location_for(finding.path) if authored is not None else None
-            if location is not None:
-                row["source"] = asdict(location)
-            finding_rows.append(row)
+        for diagnostics, rows in (
+            (assessment.findings, finding_rows), (assessment.guidance, guidance_rows)
+        ):
+            for finding in diagnostics:
+                row = finding.to_dict()
+                location = authored.location_for(finding.path) if authored is not None else None
+                if location is not None:
+                    row["source"] = asdict(location)
+                rows.append(row)
     if (args.compiler_command == "assess"
             or (authored is not None and authored.locations and not assessment.lowering_eligible)):
         _emit_compiler(
@@ -122,6 +127,7 @@ def _compiler(args: argparse.Namespace) -> int:
                 "accepted": assessment.accepted,
                 "lowering_eligible": assessment.lowering_eligible,
                 "findings": finding_rows,
+                "guidance": guidance_rows,
                 "analysis": dict(assessment.analysis),
             },
             args,
@@ -294,10 +300,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.output_format == "text":
             print(f"命令未完成：{error}", file=sys.stderr)
         else:
+            finding = Finding(error.code, "source", str(error),
+                              FindingCategory.SCHEDULE_SEMANTICS).to_dict()
+            finding["source"] = asdict(error.location)
             _emit({"accepted": False, "lowering_eligible": False,
-                   "findings": [{"code": error.code, "path": "source", "message": str(error),
-                                 "blocks_acceptance": True, "blocks_lowering": True,
-                                 "source": asdict(error.location)}]})
+                   "findings": [finding], "guidance": []})
         return 2
     except (CompilerError, OSError, json.JSONDecodeError) as error:
         if args.command != "compiler" or args.output_format != "text":

@@ -23,7 +23,7 @@ For row normalization, Workload fixes inputs, mathematics, reference, and tolera
 
 ## The compiler path
 
-Format/type checks precede dependency, address, resource, and hardware checks. Assessment separates structural acceptance from backend eligibility and contains localized Findings. Eligible plans generate source through `triton` or `cutlass_cute_dsl`, or select the admitted `checked_cuda_asset`.
+Format/type checks precede dependency, address, resource, and hardware checks. Assessment separates structural acceptance from backend eligibility and contains localized Findings. Each Finding retains its contract category, severity, and separate acceptance/lowering dispositions. `Assessment.findings` retains the blocking/report observations checked by the existing Corpus Gate; `Assessment.guidance` carries nonblocking hints. CLI, Lab, and profile reports expose both without treating hints as acceptance evidence or GPU measurements. Eligible plans generate source through `triton` or `cutlass_cute_dsl`, or select the admitted `checked_cuda_asset`.
 
 The checked-asset route currently names `cake_tinygemm2_stage4_split_k`; it is a fixed linear-layer source, not arbitrary CUDA generation. `generated` reports this distinction. Analysis covers declared rules only: backend registers or implicit shared memory require compiled or device evidence.
 

@@ -153,6 +153,23 @@ class QsaFeedbackTest(unittest.TestCase):
         )
         self.assertEqual(finding["path"], "operations[1].reads")
         self.assertTrue(finding["blocks_lowering"])
+        self.assertEqual(finding["category"], "hardware_conformance")
+        self.assertEqual(finding["severity"], "blocking")
+
+    def test_guidance_reaches_the_agent_without_becoming_a_rejection_or_measurement(self) -> None:
+        assessment = self.compiler.assess_file(
+            ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json"
+        )
+        feedback = qsa_compiler_feedback(assessment)
+        hints = [item for item in feedback["findings"] if item["severity"] == "hint"]
+        self.assertTrue(hints)
+        self.assertEqual(hints, [item.to_dict() for item in assessment.guidance])
+        self.assertTrue(feedback["accepted"])
+        self.assertTrue(feedback["lowering_eligible"])
+        self.assertFalse(feedback["actionable"])
+        self.assertNotIn("routed_to", feedback)
+        self.assertNotIn("timing", feedback)
+        self.assertIsNone(feedback["static_profile"])
 
     def test_completed_feedback_is_bounded_and_keeps_actionable_metrics(self) -> None:
         feedback = qsa_evaluation_feedback(_completed(), arm="open_cake")

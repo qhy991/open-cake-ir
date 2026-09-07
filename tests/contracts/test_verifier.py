@@ -53,6 +53,62 @@ def _codes(findings: tuple[Finding, ...]) -> set[str]:
     return {finding.code for finding in findings}
 
 
+class FindingContractTest(unittest.TestCase):
+    def test_dataclass_projection_preserves_both_blocking_dispositions(self) -> None:
+        from dataclasses import asdict, replace
+
+        for severity, acceptance in (
+            (FindingSeverity.BLOCKING, None),
+            (FindingSeverity.BLOCKING, False),
+            (FindingSeverity.REPORT, None),
+            (FindingSeverity.HINT, None),
+        ):
+            with self.subTest(severity=severity, acceptance=acceptance):
+                finding = Finding("DIAGNOSTIC", "roles", "observation",
+                                  FindingCategory.HARDWARE_CONFORMANCE, severity,
+                                  blocks_acceptance=acceptance)
+                self.assertEqual(asdict(finding), finding.to_dict())
+                self.assertIs(asdict(finding)["blocks_lowering"],
+                              severity is FindingSeverity.BLOCKING)
+                self.assertIs(asdict(finding)["blocks_acceptance"],
+                              severity is FindingSeverity.BLOCKING and acceptance is not False)
+        advisory = Finding("ADVISORY", "roles", "observation",
+                           FindingCategory.HARDWARE_CONFORMANCE, FindingSeverity.HINT)
+        self.assertIs(replace(advisory, severity=FindingSeverity.BLOCKING).blocks_lowering, True)
+
+    def test_typed_constructor_has_no_independent_lowering_override(self) -> None:
+        from open_cake_ir.compiler import Finding as PublicFinding
+        from open_cake_ir.compiler.core import Finding as CoreFinding
+
+        self.assertIs(PublicFinding, Finding)
+        self.assertIs(CoreFinding, Finding)
+        with self.assertRaisesRegex(TypeError, "blocks_lowering"):
+            PublicFinding("DIAGNOSTIC", "roles", "observation",
+                          FindingCategory.HARDWARE_CONFORMANCE,
+                          blocks_lowering=False)
+
+    def test_advisory_severity_cannot_block_either_boundary(self) -> None:
+        for severity in (FindingSeverity.REPORT, FindingSeverity.HINT):
+            with self.subTest(severity=severity):
+                finding = Finding("ADVISORY", "roles", "modeled resource observation",
+                                  FindingCategory.HARDWARE_CONFORMANCE, severity)
+                self.assertIs(finding.blocks_acceptance, False)
+                self.assertIs(finding.blocks_lowering, False)
+                with self.assertRaisesRegex(ValueError, "cannot block acceptance"):
+                    Finding("ADVISORY", "roles", "modeled resource observation",
+                            FindingCategory.HARDWARE_CONFORMANCE, severity,
+                            blocks_acceptance=True)
+
+    def test_untyped_categories_and_severities_are_refused(self) -> None:
+        for category, severity in (
+            ("hardware_conformance", FindingSeverity.BLOCKING),
+            (FindingCategory.HARDWARE_CONFORMANCE, "hint"),
+        ):
+            with self.subTest(category=category, severity=severity):
+                with self.assertRaisesRegex(ValueError, "must be typed"):
+                    Finding("DIAGNOSTIC", "roles", "observation", category, severity)
+
+
 def _blocking(findings: tuple[Finding, ...]) -> tuple[Finding, ...]:
     return tuple(finding for finding in findings if finding.blocks_lowering)
 

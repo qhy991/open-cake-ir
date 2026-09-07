@@ -18,7 +18,6 @@ from .core import (
     CompilerError,
     CorpusCaseReport,
     CorpusGateReport,
-    Finding,
     Lowering,
 )
 from .emit_cutedsl import EmitError, Emission, emit
@@ -27,7 +26,7 @@ from .empirical_cost import EmpiricalCostModel
 from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
 from .profile_model import MetricEstimate, ProfileEnvelope, profile_envelope
 from .target import Target, TargetParseError
-from .verifier import FindingCategory, FindingSeverity, verify
+from .verifier import Finding, FindingCategory, FindingSeverity, verify
 
 __all__ = [
     "Assessment",

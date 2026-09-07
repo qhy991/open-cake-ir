@@ -82,7 +82,7 @@ class ProfileReportTest(unittest.TestCase):
         for row, schedule in zip(document["rows"], schedules):
             with self.subTest(schedule=schedule.name):
                 assessment = self.compiler.assess_file(schedule)
-                self.assertEqual(row["findings"], [asdict(finding) for finding in assessment.findings])
+                self.assertEqual(row["findings"], [asdict(finding) for finding in assessment.findings + assessment.guidance])
                 self.assertEqual(row["profile"], self.compiler.profile(assessment).as_dict())
                 self.assertTrue(all(not finding["blocks_lowering"] for finding in row["findings"]))
 
@@ -98,13 +98,36 @@ class ProfileReportTest(unittest.TestCase):
         self.assertIn("scoreboard (uncalibrated_risk): runtime-indexed global buffer k", output)
         self.assertIn("runtime-indexed global buffer v", output)
 
+    def test_accepted_schedule_preserves_advisory_guidance_in_json_and_text(self) -> None:
+        schedule = self._schedule("tinygemm2-stage4-split-k.json")
+        assessment = self.compiler.assess_file(schedule)
+        self.assertTrue(assessment.accepted)
+        self.assertTrue(assessment.lowering_eligible)
+        self.assertTrue(assessment.guidance)
+
+        document = json.loads(self._cli("--json", schedule))
+        self.assertEqual(document["skipped"], [])
+        self.assertEqual(len(document["rows"]), 1)
+        row = document["rows"][0]
+        hints = [finding for finding in row["findings"] if finding["severity"] == "hint"]
+        self.assertEqual(hints, [finding.to_dict() for finding in assessment.guidance])
+        self.assertTrue(all(not finding["blocks_acceptance"] and not finding["blocks_lowering"]
+                            for finding in hints))
+        self.assertEqual(row["profile"], self.compiler.profile(assessment).as_dict())
+        output = self._cli(schedule)
+        for finding in hints:
+            self.assertIn(
+                f"{finding['code']} at {finding['path']} (nonblocking) "
+                f"[{finding['category']}/hint]: {finding['message']}", output,
+            )
+
     def test_skipped_schedule_preserves_blocking_finding_location_and_message(self) -> None:
         schedule = self._schedule("metal-target-unsupported.json")
         assessment = self.compiler.assess_file(schedule)
         self.assertFalse(assessment.lowering_eligible)
         document = json.loads(self._cli("--json", schedule))
         self.assertEqual(document["rows"], [])
-        self.assertEqual(document["skipped"][0]["findings"], [asdict(finding) for finding in assessment.findings])
+        self.assertEqual(document["skipped"][0]["findings"], [asdict(finding) for finding in assessment.findings + assessment.guidance])
         output = self._cli(schedule)
         for finding in assessment.findings:
             self.assertIn(f"{finding.code} at {finding.path}", output)

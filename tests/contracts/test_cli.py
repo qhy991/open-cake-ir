@@ -19,6 +19,53 @@ from open_cake_ir.evidence import EvidenceStore  # noqa: E402
 from open_cake_ir.lab import CampaignLock, StudyReport  # noqa: E402
 
 
+class FindingCliContractTests(unittest.TestCase):
+    def test_json_and_text_preserve_gate_findings_and_typed_guidance(self) -> None:
+        arguments = [
+            "--project-root", str(ROOT), "compiler", "assess",
+            "--revision", str(ROOT / "compiler/revision.json"),
+            str(ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json"),
+        ]
+        with redirect_stdout(StringIO()) as output:
+            self.assertEqual(main(arguments), 0)
+        result = json.loads(output.getvalue())
+        self.assertTrue(result["accepted"])
+        self.assertTrue(result["lowering_eligible"])
+        self.assertTrue(result["guidance"])
+        self.assertTrue(all(item["severity"] == "report" for item in result["findings"]))
+        self.assertEqual({item["category"] for item in result["guidance"]},
+                         {"hardware_conformance", "program_safety"})
+        for finding in result["guidance"]:
+            self.assertEqual(finding["severity"], "hint")
+            self.assertFalse(finding["blocks_acceptance"])
+            self.assertFalse(finding["blocks_lowering"])
+            self.assertTrue(finding["code"])
+            self.assertTrue(finding["path"])
+        with redirect_stdout(StringIO()) as output:
+            self.assertEqual(main(arguments + ["--format", "text"]), 0)
+        self.assertIn("hardware_conformance | hint", output.getvalue())
+        self.assertIn("未运行 GPU", output.getvalue())
+
+    def test_frontend_rejection_uses_the_same_typed_finding_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "invalid.py"
+            source.write_text("import os\n", encoding="utf-8")
+            with redirect_stdout(StringIO()) as output:
+                code = main([
+                    "--project-root", str(ROOT), "compiler", "assess",
+                    "--revision", str(ROOT / "compiler/revision.json"), str(source),
+                ])
+        self.assertEqual(code, 2)
+        result = json.loads(output.getvalue())
+        finding = result["findings"][0]
+        self.assertEqual(finding["category"], "schedule_semantics")
+        self.assertEqual(finding["severity"], "blocking")
+        self.assertTrue(finding["blocks_acceptance"])
+        self.assertTrue(finding["blocks_lowering"])
+        self.assertEqual(finding["source"]["filename"], str(source.resolve()))
+        self.assertEqual(result["guidance"], [])
+
+
 class CliContractTests(unittest.TestCase):
     def test_preflight_forwards_explicit_empirical_model_to_the_existing_owner(self) -> None:
         lock = CampaignLock.load(ROOT / "runtime/g8-system-r6.campaign.lock.json")

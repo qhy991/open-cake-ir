@@ -82,14 +82,17 @@ from open_cake_ir.compiler.frontend import read_schedule
 compiler = Compiler.load(".", "compiler/revision.json")
 authored = read_schedule("examples/python/fma.py")
 assessment = compiler.assess(authored.document)
-for finding in assessment.findings:
-    print(finding.code, finding.path, authored.location_for(finding.path))
+for finding in assessment.findings + assessment.guidance:
+    print(finding.code, finding.category.value, finding.severity.value,
+          finding.path, authored.location_for(finding.path))
 lowering = compiler.lower(assessment)
 ```
 
 `Compiler.assess_file` 同样接受 `.py`，返回的 Assessment 与对应 JSON 的完全相同。
 需要源码位置的调用者使用 `read_schedule` 返回的伴随位置表。CLI 的 JSON 诊断增加 `source`
-（文件名、起止行列），原有 Finding code/path 不变；文本输出显示相同位置。
+（文件名、起止行列），并保留 Finding 的 code/path、category、severity 和两个阻止阶段字段；
+文本输出显示相同位置。`findings` 保留阻塞诊断和报告，`guidance` 携带非阻塞 `hint` 提示。
+提示不改变结构验收、生成资格或 Corpus Gate 预期，也不代表 GPU 测量。
 源码构造错误抛出 `FrontendError`，并携带 `PYTHON_SYNTAX` 或原模型的 `SCHEDULE_STRUCTURE` 代码。
 错误的 Python 候选不能生成输出文件。
 

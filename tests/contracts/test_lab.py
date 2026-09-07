@@ -417,6 +417,45 @@ class FakeEvaluator:
         return LogicalEvaluationAttempt(candidate.candidate_sha256, (attempt,), receipt)
 
 
+class FindingRoutingContractTests(unittest.TestCase):
+    def test_environment_retains_hints_in_the_existing_agent_channel(self) -> None:
+        from open_cake_ir.compiler import Compiler
+        from open_cake_ir.lab.environments import OpenCakeEnvironment
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        assessment = compiler.assess_file(ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json")
+        rows = OpenCakeEnvironment._finding_rows(assessment)
+        self.assertEqual(rows, [item.to_dict() for item in assessment.findings + assessment.guidance])
+        self.assertTrue(any(item["severity"] == "report" for item in rows))
+        self.assertTrue(any(item["severity"] == "hint" for item in rows))
+        self.assertTrue(all(not item["blocks_acceptance"] and not item["blocks_lowering"]
+                            for item in rows))
+
+    def test_routing_ignores_advisory_codes_and_keeps_blocking_order_deterministic(self) -> None:
+        from open_cake_ir.compiler import Finding, FindingCategory, FindingSeverity
+        from open_cake_ir.lab.routing import route_rejection
+
+        hint = Finding("BACKEND_OPERATION_UNEMITTABLE", "operations[2]", "advisory only",
+                       FindingCategory.HARDWARE_CONFORMANCE, FindingSeverity.HINT)
+        blocking = [
+            Finding("OP_DEPENDENCY_CYCLE", "operations[1]", "dependency cycle",
+                    FindingCategory.PROGRAM_SAFETY),
+            Finding("NAME_DUPLICATE", "buffers", "duplicate buffer name",
+                    FindingCategory.SCHEDULE_SEMANTICS),
+        ]
+        rows = [item.to_dict() for item in blocking + [hint]]
+        forward = route_rejection({"stage": "assessment", "findings": rows})
+        backward = route_rejection({"stage": "assessment", "findings": list(reversed(rows))})
+        self.assertEqual(forward, backward)
+        self.assertEqual(forward.destination, "candidate")
+        self.assertEqual(forward.reason, "a gate refused it: NAME_DUPLICATE, OP_DEPENDENCY_CYCLE")
+        backend = dataclasses.replace(hint, severity=FindingSeverity.BLOCKING)
+        self.assertEqual(
+            route_rejection({"stage": "assessment", "findings": [backend.to_dict()]}).destination,
+            "ir_vocabulary",
+        )
+
+
 class LabContractTests(unittest.TestCase):
     def test_execute_refuses_evidence_inside_the_checkout_before_side_effects(self) -> None:
         lock = CampaignLock.load(ROOT / "runtime/g8-system-r6.campaign.lock.json")
@@ -1475,6 +1514,14 @@ class LabContractTests(unittest.TestCase):
         # path is the only way one can reach the agent. The Lab used to overwrite the
         # Environment's feedback with the measurement alone, which left every report the
         # verifier produced unobservable to the author that could act on it.
+        from open_cake_ir.compiler import Compiler
+        from open_cake_ir.lab.environments import OpenCakeEnvironment
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        assessment = compiler.assess_file(ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json")
+        diagnostics = OpenCakeEnvironment._finding_rows(assessment)
+        self.assertTrue(any(item["severity"] == "hint" for item in diagnostics))
+
         class ReportingEnvironment(FakeEnvironment):
             def build(self, submission):
                 result = super().build(submission)
@@ -1484,15 +1531,7 @@ class LabContractTests(unittest.TestCase):
                     result.launchable,
                     {
                         "stage": "built",
-                        "findings": [
-                            {
-                                "code": "RESIDENCY_BOUND",
-                                "path": "roles",
-                                "message": "registers bounds residency to 1 CTA",
-                                "blocks_acceptance": False,
-                                "blocks_lowering": False,
-                            }
-                        ],
+                        "findings": diagnostics,
                     },
                 )
 
@@ -1527,10 +1566,7 @@ class LabContractTests(unittest.TestCase):
         self.assertTrue(resumed)
         for request in resumed:
             self.assertEqual(request.feedback["kind"], "evaluation")
-            self.assertEqual(
-                [item["code"] for item in request.feedback["findings"]],
-                ["RESIDENCY_BOUND"],
-            )
+            self.assertEqual(request.feedback["findings"], diagnostics)
 
     def test_semantic_replay_rejects_raw_broker_counter_that_differs_from_ledger(self) -> None:
         lab = Lab(ROOT)

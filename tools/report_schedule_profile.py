@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict, replace
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,7 +54,8 @@ def _finding_lines(findings: list[dict[str, object]]) -> list[str]:
         ]
         status = "blocks " + ", ".join(blocked) if blocked else "nonblocking"
         lines.append(
-            f"  {finding['code']} at {finding['path']} ({status}): {finding['message']}"
+            f"  {finding['code']} at {finding['path']} ({status}) "
+            f"[{finding['category']}/{finding['severity']}]: {finding['message']}"
         )
     return lines
 
@@ -172,7 +173,9 @@ def main(argv: list[str] | None = None) -> int:
     skipped: list[dict[str, object]] = []
     for path in _paths(arguments):
         assessment = compiler.assess_file(path)
-        findings = [asdict(finding) for finding in assessment.findings]
+        findings = [
+            finding.to_dict() for finding in assessment.findings + assessment.guidance
+        ]
         if not assessment.lowering_eligible:
             skipped.append(
                 {
