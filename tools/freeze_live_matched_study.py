@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.lab import ExecutorRevision, ProviderQualificationReceipt, required_live_provider_qualification_scope, scientific_matched_analysis_plan_v2
+from open_cake_ir.lab.providers import resolve_codex_code_mode_host
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.flash_kmeans.environment import NvccToolchainBuilder
 from open_cake_ir.lab.runtime import broker_execution_sha256
@@ -221,6 +222,9 @@ def main() -> int:
         provider["revision"] = qualification.provider_revision
         provider["reasoning_effort"] = arguments.reasoning_effort
         provider["executable_sha256"] = executable_sha256
+        provider["code_mode_host"] = resolve_codex_code_mode_host(
+            executable, removed_environment=tuple(provider["removed_environment"])
+        )
         provider["qualification"] = {
             "path": qualification_relative,
             "canonical_sha256": qualification.canonical_sha256,
