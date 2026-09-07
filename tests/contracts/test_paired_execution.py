@@ -11,6 +11,7 @@ import grp
 import pwd
 from pathlib import Path
 import tempfile
+import shutil
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -302,8 +303,40 @@ class PairedExecutionTests(unittest.TestCase):
             resolve_execution_bindings(ROOT, replace(study, state='frozen'), self.output / 'model.json')
 
     def test_external_preflight_binds_stable_study_and_rejects_runtime_or_baseline_drift(self):
-        study = StudyContract.load(TEMPLATE)
-        before = TEMPLATE.read_bytes()
+        # Independent CPU fixture: real descriptor bytes, source closure, inventory
+        # and resolver. No released project descriptor or host environment is edited.
+        project = self.output / 'project'
+        project.mkdir()
+        for directory in ('contracts', 'corpus', 'compiler', 'docs'):
+            shutil.copytree(ROOT / directory, project / directory)
+        template = project / TEMPLATE.relative_to(ROOT)
+        study = StudyContract.load(template)
+        before = template.read_bytes()
+        source = project / 'cpu-executor-source.txt'
+        source.write_bytes(b'Independent CPU resolver fixture; not GPU qualification.\n')
+        descriptor = {
+            'schema_version': 1, 'executor_id': 'cpu-fixture-executor', 'state': 'released',
+            'sources': [{'path': source.name, 'sha256': sha256(source.read_bytes()).hexdigest(),
+                         'size_bytes': source.stat().st_size}],
+            'host_environment': {
+                'python': {'invocation_path': '/cpu-fixture/python', 'version': 'fixture', 'resolved_sha256': 'a'*64},
+                'packages': {'triton': 'fixture'},
+                'cupti_python': {'site_packages_path': '/cpu-fixture/site-packages',
+                    'distribution': 'cupti-python', 'version': 'fixture',
+                    'files': [{'path': 'cupti/__init__.py', 'sha256': 'b'*64, 'size_bytes': 1}]},
+                'flashinfer_helper': {'path': '/cpu-fixture/testing.py', 'distribution': 'flashinfer-python',
+                    'version': 'fixture', 'sha256': 'c'*64, 'size_bytes': 1},
+            },
+        }
+        executor_path = project / 'runtime/executors/cpu-fixture.json'
+        executor_path.parent.mkdir(parents=True)
+        executor_path.write_bytes(encoded(descriptor))
+        executor_ref = {'executor_id': descriptor['executor_id'],
+            'path': executor_path.relative_to(project).as_posix(),
+            'canonical_sha256': sha256(encoded(descriptor)).hexdigest()}
+        inventory = project / 'inventory/EXECUTOR_REVISIONS.json'
+        inventory.parent.mkdir()
+        inventory.write_bytes(encoded({'current': executor_ref}))
         draft = DraftCompilerFixture()
         schedule = bind_baseline(json.loads((ROOT / study.document['arms']['open_cake']['schedule_skeleton']['path']).read_bytes()),
                                  self.workload, 'primary')
@@ -343,7 +376,7 @@ class PairedExecutionTests(unittest.TestCase):
             'provider':{'executable':str(executable),'workspace_root':str(self.output / 'new-author-workspaces')},
             'toolchain':{'python':'fixture-python','bubblewrap':'fixture-bwrap','runtime_roots':[],
                          'triton_version':'fixture','timeout_seconds':30},
-            'broker':{'command':['fixture-broker'],'cwd':str(ROOT),'timeout_seconds':30,
+            'broker':{'command':['fixture-broker'],'cwd':str(project),'timeout_seconds':30,
                       'service_user':'fixture','service_group':'fixture'}}
         rp = self.output / 'runtime.json'; rp.write_bytes(encoded(config))
         bindings = {'schema_version':1, 'qualification_path':str(qp), 'qualification_anchor_path':str(ap),
@@ -351,19 +384,31 @@ class PairedExecutionTests(unittest.TestCase):
         bp = self.output / 'bindings.json'; bp.write_bytes(encoded(bindings))
         gate = SimpleNamespace(compiler_revision_id='fixture',compiler_revision_sha256='a'*64,passed=True)
         compiler_ref = {'revision_id':'fixture','path':'compiler/revision.lock.json','canonical_sha256':'a'*64}
-        executor_ref = {'executor_id':'executor-fixture','path':'runtime/executors/fixture.json','canonical_sha256':'e'*64}
         with ExitStack() as stack:
             stack.enter_context(patch('open_cake_ir.lab.core._resolve_compiler_reference',
                 return_value=(gate, compiler_ref['path'], compiler_ref)))
-            stack.enter_context(patch('open_cake_ir.lab.core._resolve_executor_reference', return_value=executor_ref))
+            from open_cake_ir.lab.core import _resolve_executor_reference
+            from open_cake_ir.lab.executor import ExecutorRevision
+            resolver = stack.enter_context(patch('open_cake_ir.lab.core._resolve_executor_reference',
+                wraps=_resolve_executor_reference))
             stack.enter_context(patch('open_cake_ir.lab.core.Compiler.load', return_value=draft))
-            stack.enter_context(patch('open_cake_ir.lab.executor.ExecutorRevision.load'))
             toolchain = stack.enter_context(patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler'))
             toolchain.return_value.canonical_sha256 = 'b'*64
             stack.enter_context(patch('open_cake_ir.lab.compose.broker_execution_sha256', return_value='c'*64))
-            lock = Lab(ROOT).preflight(TEMPLATE, execution_bindings_path=bp)
+            lock = Lab(project).preflight(template, execution_bindings_path=bp)
+            resolver.assert_called_once_with(project, {'binding': 'current_release'}, 'study.execution', template=True)
+            self.assertEqual(lock.document['execution']['executor_revision'], executor_ref)
+            bound_executor = toolchain.return_value.check_executor.call_args.args[0]
+            self.assertIsInstance(bound_executor, ExecutorRevision)
+            self.assertEqual(dict(bound_executor.reference), executor_ref)
+            self.assertEqual(bound_executor.project_root, project)
+            self.assertEqual(bound_executor.document['sources'][0]['path'], source.name)
+            # The resolver still rejects exact references in an original template.
+            with self.assertRaisesRegex(ValueError, 'Study template Executor binding differs'):
+                _resolve_executor_reference(project, executor_ref, 'study.execution', template=True)
+
             self.assertEqual(lock.document['study']['canonical_sha256'], study.canonical_sha256)
-            self.assertEqual(TEMPLATE.read_bytes(), before)
+            self.assertEqual(template.read_bytes(), before)
             self.assertEqual(lock.document['execution']['fixed_baseline']['candidate'], candidate_identity(baseline))
             self.assertEqual(lock.document['execution']['runtime_config']['path'], str(rp))
             self.assertEqual(lock.document['resolved_inputs']['arm_environments']['native_triton']['provider']['model'], 'gpt-5.6-sol')
@@ -371,7 +416,7 @@ class PairedExecutionTests(unittest.TestCase):
             self.assertEqual(CampaignLock.from_dict(lock.document).canonical_sha256, lock.canonical_sha256)
             from open_cake_ir.lab import render_task_package
             for arm in ('open_cake', 'native_triton'):
-                package = render_task_package(ROOT, lock, arm + '-1')
+                package = render_task_package(project, lock, arm + '-1')
                 self.assertIn('"sm_103a"', package.task_markdown)
                 self.assertIn('candidate-set.json', package.agents_markdown)
                 self.assertNotIn('prompt_template', package.task_markdown)
@@ -382,16 +427,16 @@ class PairedExecutionTests(unittest.TestCase):
             del unpaired['evaluation_protocol']['paired_timing']
             unpaired_path = self.output / 'unpaired-study.json'; unpaired_path.write_bytes(encoded(unpaired))
             with self.assertRaisesRegex(ValueError, 'new live native Campaign'):
-                Lab(ROOT).preflight(unpaired_path, execution_bindings_path=bp)
+                Lab(project).preflight(unpaired_path, execution_bindings_path=bp)
             anchor['qualification_receipt_sha256'] = '0'*64
             ap.write_bytes(encoded(anchor))
             with self.assertRaisesRegex(ValueError, 'anchor evidence'):
-                Lab(ROOT).preflight(TEMPLATE, execution_bindings_path=bp)
+                Lab(project).preflight(template, execution_bindings_path=bp)
             anchor['qualification_receipt_sha256'] = sha256(encoded(qualification)).hexdigest()
             ap.write_bytes(encoded(anchor))
             (self.output / 'cubin').write_bytes(b'changed')
             with self.assertRaisesRegex(ValueError, 'artifact bytes'):
-                Lab(ROOT).preflight(TEMPLATE, execution_bindings_path=bp)
+                Lab(project).preflight(template, execution_bindings_path=bp)
 
 
 

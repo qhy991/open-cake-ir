@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 from typing import Mapping
 
 from open_cake_ir.evaluation.paired import candidate_from_identity, candidate_identity
+from .executor import ExecutorRevision
 
 CAMPAIGN_BINDING = {'binding': 'campaign_lock'}
 
@@ -76,10 +77,11 @@ def load_baseline_bundle(project_root, bundle_path):
     return candidate
 
 
-def resolve_execution_bindings(project_root, study, bindings_path):
-    """Fill the closed runtime leaves, retaining the Study's original identity."""
+def resolve_execution_bindings(
+    project_root: str | Path, study, bindings_path: str | Path | None
+) -> tuple[dict[str, object], ExecutorRevision | None]:
+    """Return resolved runtime leaves and the Executor already validated for them."""
     from .compose import broker_execution_sha256
-    from .executor import ExecutorRevision
     from .providers import ProviderQualificationReceipt
     from .triton_build import IsolatedTritonCompiler
 
@@ -88,7 +90,7 @@ def resolve_execution_bindings(project_root, study, bindings_path):
     if set(arms) != {'open_cake', 'native_triton'}:
         if bindings_path is not None:
             raise ValueError('external execution binding requires paired Triton Study')
-        return document
+        return document, None
     execution = document['execution']
     provider_fields = ('revision', 'executable_sha256', 'qualification', 'qualification_anchor')
     leaves = [arms[name]['provider'].get(field) for name in arms for field in provider_fields]
@@ -98,7 +100,7 @@ def resolve_execution_bindings(project_root, study, bindings_path):
     if not any(markers):
         if bindings_path is not None:
             raise ValueError('exact or historical Study rejects execution overrides')
-        return document
+        return document, None
     if study.state != 'template' or not all(markers) or bindings_path is None:
         raise ValueError('complete campaign binding markers require external execution bindings')
     path = external_file(project_root, str(bindings_path), 'execution bindings')
@@ -133,6 +135,8 @@ def resolve_execution_bindings(project_root, study, bindings_path):
     executor_reference = _resolve_executor_reference(Path(project_root), execution['executor_revision'],
         'study.execution', template=True)
     executor = ExecutorRevision.load(project_root, Path(project_root) / executor_reference['path'])
+    if dict(executor.reference) != executor_reference:
+        raise ValueError('Executor changed during external execution binding')
     toolchain = IsolatedTritonCompiler(**config['toolchain'])
     toolchain.check_executor(executor, author_workspace=config['provider']['workspace_root'])
     for arm in arms.values():
@@ -147,4 +151,4 @@ def resolve_execution_bindings(project_root, study, bindings_path):
     execution['fixed_baseline'] = {'bundle_path': str(external_file(project_root,
         bindings['fixed_baseline_bundle_path'], 'fixed baseline bundle')), 'candidate': candidate_identity(baseline)}
     execution['runtime_config'] = {'path': str(runtime_path), 'sha256': sha256(runtime_path.read_bytes()).hexdigest()}
-    return document
+    return document, executor

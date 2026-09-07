@@ -1692,7 +1692,10 @@ class Lab:
             if empirical_cost_model_path is not None or execution_bindings_path is not None:
                 raise ValueError("empirical selection requires artifact_optimization_only matched search")
             return self._preflight_portfolio(study)
-        study = replace(study, document=resolve_execution_bindings(self._root, study, execution_bindings_path))
+        resolved_document, bound_executor = resolve_execution_bindings(
+            self._root, study, execution_bindings_path
+        )
+        study = replace(study, document=resolved_document)
         workload_ref = _object(study.document.get("workload"), "study.workload")
         if set(workload_ref) != {"path", "canonical_sha256"}:
             raise ValueError("study workload reference fields differ")
@@ -2207,11 +2210,17 @@ class Lab:
             execution.get("broker_execution_sha256"),
             "study.execution.broker_execution_sha256",
         )
-        executor_reference = _resolve_executor_reference(
-            self._root,
-            execution.get("executor_revision"),
-            "study.execution",
-            template=study.state == "template",
+        # External binding has already applied the original template grammar and
+        # verified this Executor. Preserve that resolution and the Study identity.
+        executor_reference = (
+            dict(bound_executor.reference)
+            if bound_executor is not None
+            else _resolve_executor_reference(
+                self._root,
+                execution.get("executor_revision"),
+                "study.execution",
+                template=study.state == "template",
+            )
         )
         gpu = _object(execution.get("gpu"), "study.execution.gpu")
         target = cuda_target(execution['target'])
