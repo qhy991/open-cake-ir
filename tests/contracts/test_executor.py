@@ -77,7 +77,14 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             for path in directory.glob("*.py")
         } | {
             "docs/en/PAIRED_TRITON.md",
+            "examples/gpu/aiter_rmsnorm_amd_baseline.py",
+            "examples/gpu/amd_triton_quickstart.py",
             "examples/gpu/flash_kmeans_quickstart.py",
+            "examples/gpu/llama_q8_1_amd_quickstart.py",
+            "examples/gpu/rmsnorm_amd_quickstart.py",
+            "examples/gpu/rmsnorm_amd_rocprofv3.py",
+            "examples/gpu/rmsnorm_amd_search.py",
+            "examples/gpu/swiglu_amd_quickstart.py",
             "src/open_cake_ir/__init__.py",
             "src/open_cake_ir/cli.py",
             "src/open_cake_ir/evaluation/assets/qsa_direct_reference_v1.cu",

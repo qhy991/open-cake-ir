@@ -46,6 +46,9 @@
 例子：[普通状态更新](../../corpus/schedules/state-store-b8-smoke.json)、[按预留位置写入](../../corpus/schedules/reservation-owned-store-b8-smoke.json)。
 只更新状态的计划可以返回空元组，改变仍保留在传入的状态里。
 
+Q8_1 的 typed store 按记录登记顺序接收 `d:fp16`、`s:fp16`、`qs:int8[32]`。
+当前约束只允许一个 program 在 TileLoop 外写入，避免多组工作覆盖同一份量化记录。
+
 ## elementwise
 
 **对每个对应位置分别计算。** 例如 `[1,2] + [3,4] = [4,6]`。

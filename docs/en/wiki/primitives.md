@@ -16,6 +16,10 @@ The [indexed-load example](../../../corpus/schedules/indexed-gather-b8-smoke.jso
 
 Write a value to the AccessMap destination with the declared type and rounding. Writing caller state needs a proof of disjoint ownership, or the admitted reservation-derived indexed-store proof. A claim that indices are unique is insufficient. See [state update](../../../corpus/schedules/state-store-b8-smoke.json) and [reservation-owned store](../../../corpus/schedules/reservation-owned-store-b8-smoke.json). State-only calls may return an empty tuple.
 
+The Q8_1 typed store takes `d:fp16`, `s:fp16`, and `qs:int8[32]` in record-registry order.
+Its current ownership rule permits one program outside TileLoops, preventing competing
+writers to the same packed records.
+
 ## elementwise
 
 Compute at corresponding positions, such as `[1,2]+[3,4]=[4,6]`.
