@@ -99,7 +99,7 @@ class TargetDefinition:
     maximum_threads_per_cta: int
     maximum_warps_per_cta: int
     maximum_shared_memory_bytes: int
-    maximum_tensor_memory_bytes: int
+    maximum_tensor_memory_bytes: int | None
     maximum_grid: tuple[int, int, int]
     instruction_contracts: frozenset[str]
     synchronization_contracts: frozenset[str]
@@ -350,11 +350,12 @@ def _load_target_definition(
         "synchronization_contracts",
         "citations",
     }
-    optional_fields = {"occupancy", "compute_capability"}
-    if (
-        not expected_fields <= set(document) <= expected_fields | optional_fields
-        or document.get("schema_version") != 1
-    ):
+    if document.get("schema_version") == 2:
+        expected_fields = (expected_fields - {"device_names"}) | {"execution_group_width"}
+        optional_fields = {"device_names", "compute_capability", "register_budget_group_width"}
+    else:
+        optional_fields = {"occupancy", "compute_capability"}
+    if not expected_fields <= set(document) <= expected_fields | optional_fields or document.get("schema_version") not in (1, 2):
         raise CompilerError(f"target definition {target_id!r} fields differ")
     if document.get("target_id") != target_id:
         raise CompilerError(f"target definition {target_id!r} identity differs")
@@ -365,25 +366,13 @@ def _load_target_definition(
         typed_target = Target.from_dict(document)
     except (TargetParseError, ScheduleParseError) as error:
         raise CompilerError(f"target definition {target_id!r}: {error}") from error
-    limits = _object(document.get("resource_limits"), f"target_definition.{target_id}.resource_limits")
-    if set(limits) != {
-        "maximum_threads_per_cta",
-        "maximum_warps_per_cta",
-        "maximum_shared_memory_bytes",
-        "maximum_tensor_memory_bytes",
-        "grid",
-    }:
-        raise CompilerError(f"target definition {target_id!r} resource limits differ")
-    grid = _object(limits.get("grid"), f"target_definition.{target_id}.resource_limits.grid")
-    if set(grid) != {"x", "y", "z"}:
-        raise CompilerError(f"target definition {target_id!r} grid limits differ")
     citations = _objects(document.get("citations"), f"target_definition.{target_id}.citations")
     if not citations:
         raise CompilerError(f"target definition {target_id!r} requires citations")
     return TargetDefinition(
         target_id=target_id,
         canonical_sha256=canonical_sha256,
-        device_names=_strings(document.get("device_names"), f"target_definition.{target_id}.device_names"),
+        device_names=typed_target.device_names,
         compute_capability=typed_target.compute_capability,
         memory_spaces=frozenset(
             _strings(document.get("memory_spaces"), f"target_definition.{target_id}.memory_spaces")
@@ -391,24 +380,11 @@ def _load_target_definition(
         operation_kinds=frozenset(
             _strings(document.get("operation_kinds"), f"target_definition.{target_id}.operation_kinds")
         ),
-        maximum_threads_per_cta=_positive_int(
-            limits.get("maximum_threads_per_cta"),
-            f"target_definition.{target_id}.maximum_threads_per_cta",
-        ),
-        maximum_warps_per_cta=_positive_int(
-            limits.get("maximum_warps_per_cta"),
-            f"target_definition.{target_id}.maximum_warps_per_cta",
-        ),
-        maximum_shared_memory_bytes=_positive_int(
-            limits.get("maximum_shared_memory_bytes"),
-            f"target_definition.{target_id}.maximum_shared_memory_bytes",
-        ),
+        maximum_threads_per_cta=typed_target.resource_limits.maximum_threads_per_cta,
+        maximum_warps_per_cta=typed_target.resource_limits.maximum_warps_per_cta,
+        maximum_shared_memory_bytes=typed_target.resource_limits.maximum_shared_memory_bytes,
         maximum_tensor_memory_bytes=typed_target.resource_limits.maximum_tensor_memory_bytes,
-        maximum_grid=(
-            _positive_int(grid.get("x"), f"target_definition.{target_id}.grid.x"),
-            _positive_int(grid.get("y"), f"target_definition.{target_id}.grid.y"),
-            _positive_int(grid.get("z"), f"target_definition.{target_id}.grid.z"),
-        ),
+        maximum_grid=typed_target.resource_limits.maximum_grid,
         instruction_contracts=frozenset(
             _strings(
                 document.get("instruction_contracts"),
@@ -831,7 +807,7 @@ class Compiler:
                         FindingCategory.HARDWARE_CONFORMANCE,
                     )
                 )
-            if allocation_spaces["tensor"] > target_definition.maximum_tensor_memory_bytes:
+            if target_definition.maximum_tensor_memory_bytes is not None and allocation_spaces["tensor"] > target_definition.maximum_tensor_memory_bytes:
                 findings.append(
                     Finding(
                         "TARGET_TENSOR_MEMORY_LIMIT",

@@ -124,6 +124,17 @@
     "examples/python/metal_rmsnorm.py",
     "corpus/schedules/metal-rmsnorm-primary.json",
     "corpus/schedules/metal-rmsnorm-tail.json",
-    "corpus/schedules/triton-global-scalar-storage-refusal.json"
+    "corpus/schedules/triton-global-scalar-storage-refusal.json",
+    "compiler/targets/gfx1151.json",
+    "corpus/schedules/int8-byte-copy-gfx1151.json",
+    "corpus/schedules/llama-rmsnorm-mul-b8-gfx1151-r1-w8.json",
+    "corpus/schedules/llama-rmsnorm-mul-b8-gfx1151-r64-w4.json",
+    "corpus/schedules/packed-q4_0-record-copy-gfx1151.json",
+    "corpus/schedules/packed-q8_1-direct-dimension-gfx1151-unsupported.json",
+    "corpus/schedules/packed-q8_1-producer-gfx1151-record-count-drift.json",
+    "corpus/schedules/packed-q8_1-producer-gfx1151.json",
+    "corpus/schedules/packed-q8_1-record-copy-gfx1151.json",
+    "corpus/schedules/swiglu-b8-smoke-gfx1151-instruction-unsupported.json",
+    "corpus/schedules/swiglu-b8-smoke-gfx1151.json"
   ]
 }

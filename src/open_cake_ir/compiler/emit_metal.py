@@ -15,7 +15,7 @@ import re
 from .emit import BackendPrecondition, Emission, EmitError
 from .ir import (
     AccessIndexKind, BufferMode, DType, ElementwiseOp, LoadMovement,
-    LoweringBackend, MemorySpace, OperationKind, ReduceOp, ReductionScope, Schedule,
+    LoweringBackend, MemorySpace, OperationKind, ReduceOp, ReductionScope, ReductionAlgorithm, Schedule,
 )
 from .target import Target
 from .verifier import FindingSeverity, verify
@@ -115,7 +115,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         check(buffer.space in {MemorySpace.GLOBAL, MemorySpace.REGISTER},
               "METAL_STORAGE_UNSUPPORTED", path + ".space", "Metal first slice uses global buffers and private register values only")
         check(buffer.allocation is None and buffer.byte_offset == 0 and buffer.stages == 1
-              and buffer.swizzle is None and buffer.scale_of is None and buffer.valid_extent is None,
+              and buffer.swizzle is None and buffer.scale_of is None and buffer.valid_extent is None and buffer.packed_block is None,
               "METAL_STORAGE_DECLARATION_UNSUPPORTED", path,
               "Metal does not implement buffer allocations, offsets, staging, swizzles, scales or runtime valid extents")
         check(buffer.mode in ({BufferMode.INPUT, BufferMode.OUTPUT} if buffer.space is MemorySpace.GLOBAL else {BufferMode.SCRATCH}),
@@ -172,7 +172,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
             check(parameters.scalar is None or abs(parameters.scalar) <= 3.4028234663852886e38,
                   "METAL_SCALAR_RANGE_UNSUPPORTED", path + ".parameters.scalar", "literal must be representable as finite FP32")
         elif operation.kind is OperationKind.REDUCE:
-            check(parameters.scope is ReductionScope.CTA and not parameters.across_loop,
+            check(parameters.scope is ReductionScope.CTA and not parameters.across_loop and parameters.algorithm is ReductionAlgorithm.BACKEND,
                   "METAL_REDUCTION_UNSUPPORTED", path + ".parameters", "Metal folds one private tile in CTA scope without loop-carried state")
         if operation.kind in {OperationKind.LOAD, OperationKind.STORE} and len(operation.reads) == len(operation.writes) == 1:
             global_name, private_name = (

@@ -135,3 +135,50 @@ For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics,
 narrows the public Compiler to one exact lowering route and supplies a complete `schedule-skeleton.json`; start from
 that skeleton. A Schedule may change admitted block sizes, warps and stages, but must preserve its route, external
 tensor shapes, `metadata.workload_contract_sha256`, operator semantics, and frozen Compiler Revision during a Run.
+
+The exact `gfx1151` Target uses HIP with 32-lane execution groups through the existing
+`triton` route. Target schema v2 owns the execution-group width and workgroup limits;
+it does not synthesize a CUDA compute capability or a tensor-memory capacity.
+`Target.triton_target` projects the exact toolchain target for both lowering and
+Executor admission. The Lowering requires `target: gfx1151`,
+`triton_target: {backend: hip, arch: gfx1151, warp_size: 32}`, `binary_role: hsaco`
+and `assembly_role: amdgcn`. Other AMD architectures are not admitted by this slice.
+There is no gfx1151 occupancy or timing calibration. `RESIDENCY_TARGET_UNMODELED`
+reports that limit; structural work and logical Buffer pressure are not GPU residency,
+latency, correctness, or ranking qualification.
+
+`uint8` and `int8` are one-byte scalar storage types. A Buffer may bind raw UINT8 bytes
+to a `packed_block` relation with `format` and `record_axis`. The final, contiguous axis
+must contain one complete record. The immutable IR registry owns both layouts:
+`ggml_q4_0_v1` has 18 bytes aligned to two bytes (FP16 d followed by 16 payload bytes),
+and `ggml_q8_1_v1` has 36 bytes aligned to four bytes (FP16 d, FP16 s, 32 INT8 values).
+Multi-byte fields are little-endian. Q4 low/high nibbles represent logical j/16+j.
+The relation owns mechanical storage, not quantization, decoding or dot semantics.
+Raw copies preserve bytes. An unsupported backend must refuse the relation explicitly.
+
+`reshape` reads one register Buffer and writes one register Buffer with identical dtype
+and element count. Both Buffers own their shapes; its parameters are empty. Flattened
+order is preserved, and it carries no packed-record interpretation. The current exact
+Target admits it for gfx1151. Python authors use an explicit output Buffer via `out`.
+
+`abs` is unary; `divide_no_nan` is binary and returns zero when its denominator is zero,
+otherwise using correctly rounded division. `round` requires
+`rounding: nearest_away_from_zero`. It compares fractional magnitude before restoring the
+sign, so a value immediately below a half-integer does not round up through an
+intermediate addition. It accepts no scalar, broadcast or overflow parameter.
+`cast` remains one operation kind with required `to`, separate from elementwise math.
+Its existing BF16/FP16/FP32 conversions keep their default policy. The new explicit policy
+pair is either FP32 to FP16 with `nearest_even` and `ieee`, or FP32 to INT8 with
+`toward_zero` and `forbid`. Both fields are required when either is written. `forbid`
+requires the external input contract to keep converted values finite and in INT8 range;
+the Compiler does not infer a value-range proof or insert saturation.
+
+A `reduce` may choose `algorithm: xor_tree_32`; omission retains backend-selected order.
+The explicit tree consumes a resident FP32 last axis of extent 32, writes FP32, and
+cannot occur in a tile loop. The five 16/8/4/2/1 stages remain visible in emitted source.
+Backends that cannot preserve that order refuse it. A typed Q8 `store` reads d, s and qs
+in registry order and writes a complete `[record, 36]` output prefix. One program owns
+that complete prefix; repeating the Store across programs or tile loops is rejected.
+The destination AccessMap names only dimension zero; the registry owns field offsets
+and payload extent. Python expresses this as `lm.store(workspace[:], d, s, qs)`.
+Typed Q4 encoding and Q4/Q8 consumers remain outside this slice.
