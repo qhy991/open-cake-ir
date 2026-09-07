@@ -18,9 +18,9 @@ reproducing them would mean hardcoding the thing this module exists to compute.
 
 from __future__ import annotations
 
-from .emit import BackendPrecondition, Emission, EmitError, require as _require
+from .common import BackendPrecondition, Emission, EmitError, require as _require
 
-from .ir import (
+from ..ir import (
     AccessIndexKind,
     Barrier,
     BarrierMechanism,
@@ -36,7 +36,7 @@ from .ir import (
     Swizzle,
     TileLoop,
 )
-from .target import Target
+from ..target import Target
 
 
 _CUTLASS_DTYPE = {

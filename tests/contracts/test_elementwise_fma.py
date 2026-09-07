@@ -16,7 +16,7 @@ from jsonschema import Draft202012Validator
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.analysis import logical_register_pressure_per_thread
-from open_cake_ir.compiler.emit_triton import emit
+from open_cake_ir.compiler.backends.triton import emit
 from open_cake_ir.compiler.ir import ElementwiseOp, Schedule, ScheduleParseError
 from open_cake_ir.compiler.schema import schedule_schema
 from open_cake_ir.compiler.target import Target

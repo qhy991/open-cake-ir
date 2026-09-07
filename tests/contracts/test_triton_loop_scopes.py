@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 from open_cake_ir.compiler import Compiler
-from open_cake_ir.compiler.emit_triton import emit, preflight
+from open_cake_ir.compiler.backends.triton import emit, preflight
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.work import operation_repetitions, work_bound

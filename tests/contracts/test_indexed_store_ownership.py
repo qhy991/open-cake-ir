@@ -11,7 +11,7 @@ from pathlib import Path
 import jsonschema
 import torch
 
-from open_cake_ir.compiler.emit_triton import emit
+from open_cake_ir.compiler.backends.triton import emit
 from open_cake_ir.compiler.ir import OperationKind, Schedule
 from open_cake_ir.compiler.schema import schedule_schema
 from open_cake_ir.compiler.target import Target

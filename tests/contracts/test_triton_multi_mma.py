@@ -9,8 +9,8 @@ from pathlib import Path
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.analysis import logical_register_pressure_per_thread
-from open_cake_ir.compiler.emit import EmitError
-from open_cake_ir.compiler.emit_triton import emit, preflight
+from open_cake_ir.compiler.backends.common import EmitError
+from open_cake_ir.compiler.backends.triton import emit, preflight
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.profile_model import profile_envelope
 from open_cake_ir.compiler.target import Target
