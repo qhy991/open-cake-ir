@@ -136,3 +136,68 @@ def python_name_findings(schedule: Schedule, *, register_route: bool = False) ->
             findings.append(refusal("BACKEND_IDENTIFIER_COLLISION", path,
                 f"{name!r} and {previous[1]!r} share generated uppercase symbols"))
     return tuple(findings)
+
+
+def emitted_python_name_findings(schedule: Schedule, source: str,
+                                 authored_lines: dict[int, set[str]], *, kernel: str) -> tuple[Finding, ...]:
+    """Check the actual emitter's bindings, without executing generated Python.
+
+    Emitters mark only assignments to IR-owned values at their definition sites.
+    All other bindings are compiler-owned, so no second temporary-name catalogue
+    can drift from the emitter. Host scopes contain only their actual IR parameters;
+    a scratch named ``out`` does not collide with an unrelated wrapper's output.
+    """
+    import ast
+    import builtins
+
+    symbols = {buffer.name: f"buffers[{i}].name" for i, buffer in enumerate(schedule.buffers)}
+    if schedule.program_map is not None:
+        symbols.update({axis.name: f"program_map.axes[{i}].name"
+                        for i, axis in enumerate(schedule.program_map.axes)})
+    symbols.update({loop.iterator: f"tile_loops[{i}].iterator"
+                    for i, loop in enumerate(schedule.tile_loops)})
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return (refusal("BACKEND_IDENTIFIER_COLLISION", "lowering.entry_point",
+                        "authored and generated Python declarations do not form a valid namespace"),)
+    module_names = set()
+    module_bindings = []
+    for statement in tree.body:
+        if isinstance(statement, (ast.FunctionDef, ast.ClassDef)):
+            module_bindings.append(statement.name)
+        elif isinstance(statement, (ast.Import, ast.ImportFrom)):
+            module_bindings.extend(alias.asname or alias.name.split('.')[0] for alias in statement.names)
+        elif isinstance(statement, (ast.Assign, ast.AnnAssign)):
+            targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+            module_bindings.extend(node.id for target in targets for node in ast.walk(target)
+                                   if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store))
+    findings = []
+    if len(module_bindings) != len(set(module_bindings)):
+        findings.append(refusal("BACKEND_IDENTIFIER_COLLISION", "lowering.entry_point",
+                                "the entry point shares a generated module binding"))
+    module_names.update(module_bindings)
+    collisions = set()
+    for function in (node for node in tree.body if isinstance(node, ast.FunctionDef)):
+        parameters = [arg.arg for arg in (*function.args.posonlyargs, *function.args.args,
+                                          *function.args.kwonlyargs)]
+        if len(parameters) != len(set(parameters)):
+            collisions.update(name for name in parameters if parameters.count(name) > 1)
+        # Optional host arguments belong to the wrapper ABI (e.g. output out),
+        # not an authored input binding even when an output has the same name.
+        optional = {arg.arg for arg in function.args.args[-len(function.args.defaults):]} if function.args.defaults else set()
+        declared = set(symbols) if function.name == kernel else (set(parameters) - optional) & set(symbols)
+        for node in ast.walk(function):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id in declared:
+                if node.id not in authored_lines.get(node.lineno, set()):
+                    collisions.add(node.id)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                if node.id in declared and node.id in module_names:
+                    collisions.add(node.id)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if (node.func.id in declared or node.func.id in module_names) and hasattr(builtins, node.func.id):
+                    collisions.add(node.func.id)
+    findings.extend(refusal("BACKEND_IDENTIFIER_COLLISION", symbols.get(name, "lowering.entry_point"),
+                            f"{name!r} shadows a compiler-owned binding in the emitted Python scope")
+                    for name in sorted(collisions))
+    return tuple(findings)

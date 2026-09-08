@@ -85,6 +85,100 @@ class CompilerIssueContracts(unittest.TestCase):
         self.assertEqual(schedule.argmin_domain(schedule.operation('select')), 64)
         compile(self.compiler.lower(assessment).source, '<different-owner-same-domain>', 'exec')
 
+    def test_actual_generated_binding_namespace_cannot_overwrite_authored_values(self):
+        base = document('relu-b8-smoke')
+        schedule = Schedule.from_dict(base)
+        source = self.compiler.lower(self.compiler.assess(base)).source
+        tree = ast.parse(source)
+        kernel = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                      and node.name == '_' + schedule.lowering.entry_point + '_kernel')
+        authored = {buffer.name for buffer in schedule.buffers}
+        authored.update(axis.name for axis in schedule.program_map.axes)
+        generated = {node.id for node in ast.walk(kernel)
+                     if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)} - authored
+        self.assertIn('x_d1_offsets', generated)
+        # Exercise every actual generated kernel binding, not a duplicate list of
+        # temporary spellings. Both pointer and scratch collisions must refuse.
+        scratch = next(buffer.name for buffer in schedule.buffers if buffer.space.value == 'register')
+        for name in sorted(generated):
+            for original in ('y', scratch):
+                with self.subTest(generated=name, original=original):
+                    changed = rename(base, original, name)
+                    if original == 'y':
+                        emitted = triton._TritonEmitter(Schedule.from_dict(changed), self.target, _namespace=False).emit()
+                        current_kernel = next(node for node in ast.parse(emitted.source).body
+                                              if isinstance(node, ast.FunctionDef) and node.name.startswith('_'))
+                        if not any(isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+                                   and node.id == name for node in ast.walk(current_kernel)):
+                            # A self-derived vector changes with its renamed owner;
+                            # it is no longer a collision and must stay accepted.
+                            self.assertTrue(self.compiler.assess(changed).lowering_eligible)
+                            continue
+                    self.refuses(changed, 'BACKEND_IDENTIFIER_COLLISION', accepted=True)
+                    with self.assertRaises(ValueError):
+                        triton.emit(Schedule.from_dict(changed), self.target)
+        changed = rename(base, 'y', 'x_d1_offsets')
+        # Inspect the emitter's private unchecked text to establish the actual
+        # collision, while all public assess/lower/emit boundaries refuse it.
+        raw = triton._TritonEmitter(Schedule.from_dict(changed), self.target, _namespace=False).emit().source
+        kernel = next(node for node in ast.parse(raw).body if isinstance(node, ast.FunctionDef)
+                      and node.name.startswith('_'))
+        self.assertIn('x_d1_offsets', {arg.arg for arg in kernel.args.args})
+        self.assertTrue(any(isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+                            and node.id == 'x_d1_offsets' for node in ast.walk(kernel)))
+
+    def test_actual_wrapper_builtin_namespace_and_entry_point_are_checked(self):
+        from types import SimpleNamespace
+        base = document('relu-b8-smoke')
+        fake = SimpleNamespace(shape=(8, 128), dtype='fp32', is_cuda=True,
+                               is_contiguous=lambda: True, device='cpu-fixture')
+        for name in ('any', 'tuple', 'ValueError'):
+            changed = rename(base, 'x', name)
+            self.refuses(changed, 'BACKEND_IDENTIFIER_COLLISION', accepted=True)
+        changed = rename(base, 'x', 'any')
+        raw = triton._TritonEmitter(Schedule.from_dict(changed), self.target, _namespace=False).emit().source
+        wrapper = next(node for node in ast.parse(raw).body if isinstance(node, ast.FunctionDef)
+                       and node.name == changed['lowering']['entry_point'])
+        env = {'torch': SimpleNamespace(float32='fp32')}
+        exec(compile(ast.Module(body=[wrapper], type_ignores=[]), '<actual-wrapper>', 'exec'), env)
+        with self.assertRaises(TypeError):
+            env[wrapper.name](fake)
+        changed = deepcopy(base)
+        changed['lowering']['entry_point'] = 'any'
+        self.refuses(changed, 'BACKEND_IDENTIFIER_COLLISION', accepted=True)
+        with self.assertRaises(ValueError):
+            triton.emit(Schedule.from_dict(base), self.target, entry_point='any')
+        # A valid output named out keeps the public wrapper ABI and executes all
+        # validation plus its launch callback with CPU objects only.
+        changed = rename(base, 'y', 'out')
+        lowered = self.compiler.lower(self.compiler.assess(changed))
+        wrapper = next(node for node in ast.parse(lowered.source).body if isinstance(node, ast.FunctionDef)
+                       and node.name == changed['lowering']['entry_point'])
+        calls = []
+        class Launch:
+            def __getitem__(self, grid):
+                return lambda *args, **kwargs: calls.append((grid, args, kwargs))
+        env = {'torch': SimpleNamespace(float32='fp32'), '_' + changed['lowering']['entry_point'] + '_kernel': Launch()}
+        exec(compile(ast.Module(body=[wrapper], type_ignores=[]), '<valid-wrapper>', 'exec'), env)
+        self.assertIs(env[wrapper.name](fake, out=fake), fake)
+        self.assertEqual(len(calls), 1)
+
+    def test_cute_generated_host_names_and_register_allocator_preserve_ownership(self):
+        base = document('flash-kmeans-assignment-full')
+        for name in ('tiled_mma', 'compiled', 'from_dlpack', 'tuple'):
+            self.refuses(rename(base, 'tokens', name), 'BACKEND_IDENTIFIER_COLLISION', accepted=True)
+        # The register route already owns a disjoint generated prefix allocator;
+        # it can keep an authored pointer with the default internal prefix.
+        base = register_schedule()
+        first = next(buffer['name'] for buffer in base['buffers'] if buffer['space'] == 'global')
+        changed = rename(base, first, '_cake_tid')
+        assessment = self.compiler.assess(changed)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        kernel = next(node for node in ast.parse(self.compiler.lower(assessment).source).body
+                      if isinstance(node, ast.FunctionDef))
+        self.assertFalse(any(isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+                             and node.id == '_cake_tid' for node in ast.walk(kernel)))
+
     def test_operation_control_characters_are_not_python_source(self):
         d = document('triton-operation-id-control-drift')
         self.refuses(d, 'BACKEND_IDENTIFIER_UNSAFE', accepted=True)

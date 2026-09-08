@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .triton_selection import top_k_selection_structure
-from .common import python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
+from .common import emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 from ..ir import (
     ElementwiseOp,
     LoadReuse,
@@ -192,7 +192,7 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     return tuple(findings)
 
 
-def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
+def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) -> tuple[Finding, ...]:
     """Return the constructor's backend-owned lowering requirements.
 
     The Compiler projects these into Findings and direct emitter users fail on the same
@@ -485,23 +485,36 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
             findings.append(refusal("TRITON_LOOP_STOP_UNSUPPORTED", f"tile_loops[{index}].stop",
                 "dynamic stop is supported only for transient, side-effect-free computations whose "
                 "only live-outs are validity-masked loop-carried top_k outputs"))
+    if not findings and _namespace:
+        try:
+            emitter = _TritonEmitter(schedule, target, _namespace=False)
+            emission = emitter.emit()
+        except EmitError:
+            # Other underdetermined bodies retain their existing controlled
+            # lowering refusal; this check owns only the Python namespace.
+            pass
+        else:
+            findings.extend(emitted_python_name_findings(schedule, emission.source,
+                emitter.authored_lines, kernel=f"_{emitter.entry_point}_kernel"))
     return tuple(findings)
 
 
 class _TritonEmitter:
     def __init__(
-        self, schedule: Schedule, target: Target, entry_point: str | None = None
+        self, schedule: Schedule, target: Target, entry_point: str | None = None, *, _namespace: bool = True
     ) -> None:
         self.schedule = schedule
         self.target = target
         self.lines: list[str] = []
+        self.authored_lines: dict[int, set[str]] = {}
+        self.check_namespace = _namespace
         self.dimension_vectors: set[str] = set()
         # The route owns the external symbol; the emitter derives its signature from
         # global Buffers rather than consulting an operator-named profile.
         self.entry_point = entry_point or schedule.lowering.entry_point
         _require(safe_python_identifier(self.entry_point), "unsafe Python entry point")
 
-        failures = preflight(schedule, target)
+        failures = preflight(schedule, target, _namespace=False)
         if failures:
             raise EmitError(failures[0].message)
         self.role = schedule.roles[0]
@@ -869,7 +882,9 @@ class _TritonEmitter:
 
     # ------------------------------------------------------------------- emission
 
-    def line(self, text: str = "") -> None:
+    def line(self, text: str = "", *, declares: tuple[str, ...] = ()) -> None:
+        if declares:
+            self.authored_lines[1 + sum(line.count("\n") + 1 for line in self.lines)] = set(declares)
         self.lines.append(text)
 
     def emit(self) -> Emission:
@@ -878,8 +893,13 @@ class _TritonEmitter:
         self._emit_header()
         self._emit_kernel(kernel)
         self._emit_host(entry, kernel)
+        source = "\n".join(self.lines) + "\n"
+        if self.check_namespace:
+            failures = emitted_python_name_findings(self.schedule, source, self.authored_lines, kernel=kernel)
+            if failures:
+                raise EmitError(failures[0].message)
         return Emission(
-            "\n".join(self.lines) + "\n",
+            source,
             entry,
             dict(self.constants()),
             self._toolchain(kernel),
@@ -956,7 +976,7 @@ class _TritonEmitter:
             self._emit_persistent_header()
         else:
             for axis in program_map.axes:
-                self.line(f"    {axis.name} = tl.program_id({axis.axis})")
+                self.line(f"    {axis.name} = tl.program_id({axis.axis})", declares=(axis.name,))
         pad = self._body_pad()
         for axis in self.schedule.program_map.axes:
             if axis.is_tiled:
@@ -1026,9 +1046,9 @@ class _TritonEmitter:
         for position, axis in enumerate(order):
             extent = self._axis_tiles(axis)
             if position + 1 == len(order):
-                self.line(f"        {axis.name} = {remainder}")
+                self.line(f"        {axis.name} = {remainder}", declares=(axis.name,))
             else:
-                self.line(f"        {axis.name} = {remainder} % {extent}")
+                self.line(f"        {axis.name} = {remainder} % {extent}", declares=(axis.name,))
                 remainder = f"({remainder} // {extent})"
         self.line()
 
@@ -1038,7 +1058,7 @@ class _TritonEmitter:
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         pointer, mask = self._address(access, pad)
         self.line(f"{pad}{operation.op_id}_ptrs = {pointer}")
-        self.line(f"{pad}{operation.writes[0]} = tl.load(")
+        self.line(f"{pad}{operation.writes[0]} = tl.load(", declares=(operation.writes[0],))
         self.line(f"{pad}    {operation.op_id}_ptrs,")
         if mask:
             self.line(f"{pad}    mask={mask},")
@@ -1074,7 +1094,7 @@ class _TritonEmitter:
                      "this backend carries the reduction across the loop")
             tile = self._tile(self._token_axis().name)
             self.line(f'{pad}best_distance = tl.full(({tile},), float("inf"), tl.float32)')
-            self.line(f"{pad}{self.reduce.writes[0]} = tl.zeros(({tile},), tl.int32)")
+            self.line(f"{pad}{self.reduce.writes[0]} = tl.zeros(({tile},), tl.int32)", declares=(self.reduce.writes[0],))
             self.line()
         for operation in self.schedule.operations:
             if operation.op_id not in loop.body:
@@ -1086,7 +1106,7 @@ class _TritonEmitter:
                 _require(result is not None, "a carried reduction has no result buffer")
                 shape = self._state_shape(result)
                 identity = REDUCTIONS[operation.parameters.op].identity.format(shape=shape)
-                self.line(f"{pad}{result.name} = {identity}")
+                self.line(f"{pad}{result.name} = {identity}", declares=(result.name,))
                 self.line()
             elif (
                 operation.kind is OperationKind.TOP_K
@@ -1095,10 +1115,12 @@ class _TritonEmitter:
                 k = operation.parameters.k
                 values, indices = operation.writes
                 self.line(
-                    f'{pad}{values} = tl.full(({k},), float("-inf"), tl.float32)'
+                    f'{pad}{values} = tl.full(({k},), float("-inf"), tl.float32)',
+                    declares=(values,),
                 )
                 self.line(
-                    f"{pad}{indices} = tl.full(({k},), 2147483647, tl.int32)"
+                    f"{pad}{indices} = tl.full(({k},), 2147483647, tl.int32)",
+                    declares=(indices,),
                 )
                 if operation.parameters.source_tiles_per_merge == 2:
                     source = self.schedule.buffer(operation.reads[0])
@@ -1124,13 +1146,16 @@ class _TritonEmitter:
                 rows = maximum.shape[0]
                 columns = accumulator.shape[1]
                 self.line(
-                    f'{pad}{maximum.name} = tl.full(({rows},), float("-inf"), tl.float32)'
+                    f'{pad}{maximum.name} = tl.full(({rows},), float("-inf"), tl.float32)',
+                    declares=(maximum.name,),
                 )
                 self.line(
-                    f"{pad}{normalizer.name} = tl.zeros(({rows},), tl.float32)"
+                    f"{pad}{normalizer.name} = tl.zeros(({rows},), tl.float32)",
+                    declares=(normalizer.name,),
                 )
                 self.line(
-                    f"{pad}{accumulator.name} = tl.zeros(({rows}, {columns}), tl.float32)"
+                    f"{pad}{accumulator.name} = tl.zeros(({rows}, {columns}), tl.float32)",
+                    declares=(accumulator.name,),
                 )
                 self.line()
             elif operation.kind is OperationKind.MMA and self.schedule.mma_accumulates_over(operation, loop):
@@ -1143,7 +1168,8 @@ class _TritonEmitter:
                 )
                 rows, columns = accumulator.shape
                 self.line(
-                    f"{pad}{accumulator.name} = tl.zeros(({rows}, {columns}), tl.float32)"
+                    f"{pad}{accumulator.name} = tl.zeros(({rows}, {columns}), tl.float32)",
+                    declares=(accumulator.name,),
                 )
                 self.line()
 
@@ -1182,7 +1208,8 @@ class _TritonEmitter:
         self.line(
             f"{pad}for {loop.iterator} in tl.range(0, {extent}, {tile}, "
             + ", ".join(knobs)
-            + "):"
+            + "):",
+            declares=(loop.iterator,),
         )
         self.line(
             f"{pad}    {loop.iterator}_offsets = "
@@ -1283,7 +1310,7 @@ class _TritonEmitter:
                 c=operands[2] if len(operands) > 2 else "",
             )
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
-        self.line(f"{pad}{operation.writes[0]} = {expression}")
+        self.line(f"{pad}{operation.writes[0]} = {expression}", declares=(operation.writes[0],))
 
     def _operand(self, name: str, operation) -> str:
         """A read, indexed so it spans the declared axis of the wider operand."""
@@ -1327,7 +1354,8 @@ class _TritonEmitter:
             pad
             + template.format(
                 out=operation.writes[0], src=operation.reads[0], axis=axis
-            )
+            ),
+            declares=(operation.writes[0],),
         )
 
     def _emit_scan(self, operation, pad: str) -> None:
@@ -1346,7 +1374,8 @@ class _TritonEmitter:
                 src=operation.reads[0],
                 axis=axis,
                 reverse=reverse,
-            )
+            ),
+            declares=(operation.writes[0],),
         )
 
     def _emit_online_softmax(self, operation, pad: str) -> None:
@@ -1391,9 +1420,9 @@ class _TritonEmitter:
             f"{pad}{new_accumulator} = {accumulator} * {old_scale}[:, None] + "
             f"tl.sum({weights}[:, :, None] * {values}[None, :, :].to(tl.float32), axis=1)"
         )
-        self.line(f"{pad}{maximum} = {new_max}")
-        self.line(f"{pad}{normalizer} = {new_sum}")
-        self.line(f"{pad}{accumulator} = {new_accumulator}")
+        self.line(f"{pad}{maximum} = {new_max}", declares=(maximum,))
+        self.line(f"{pad}{normalizer} = {new_sum}", declares=(normalizer,))
+        self.line(f"{pad}{accumulator} = {new_accumulator}", declares=(accumulator,))
 
     def _emit_online_softmax_finalize(self, operation, pad: str) -> None:
         """Materialize the declared zero-if-empty normalized accumulator."""
@@ -1402,7 +1431,8 @@ class _TritonEmitter:
         self.line(f"{pad}# CAKE_FINALIZE:{operation.op_id}")
         self.line(
             f"{pad}{normalized} = tl.where({normalizer}[:, None] > 0.0, "
-            f"{accumulator} / {normalizer}[:, None], 0.0)"
+            f"{accumulator} / {normalizer}[:, None], 0.0)",
+            declares=(normalized,),
         )
 
     def _emit_mma(self, operation, pad: str) -> None:
@@ -1463,13 +1493,15 @@ class _TritonEmitter:
             )
             if not self._accumulating(operation):
                 self.line(
-                    f"{pad}{output} = tl.zeros(({a.shape[0]}, {b.shape[0]}), tl.float32)"
+                    f"{pad}{output} = tl.zeros(({a.shape[0]}, {b.shape[0]}), tl.float32)",
+                    declares=(output,),
                 )
             for block in range(groups):
                 self.line(
                     f"{pad}{output} += tl.dot({tiles[0]}_block_{block}, "
                     f"tl.trans({tiles[1]}_block_{block}), out_dtype=tl.float32) * "
-                    f"{tiles[2]}_block_{block}[:, None] * {tiles[3]}_block_{block}"
+                    f"{tiles[2]}_block_{block}[:, None] * {tiles[3]}_block_{block}",
+                    declares=(output,),
                 )
             return
         _require(
@@ -1485,7 +1517,8 @@ class _TritonEmitter:
         )
         self.line(
             f"{pad}{operation.writes[0]} {assign} tl.dot("
-            f"{tiles[0]}, tl.trans({tiles[1]}){precision})"
+            f"{tiles[0]}, tl.trans({tiles[1]}){precision})",
+            declares=(operation.writes[0],),
         )
 
     def _accumulating(self, operation) -> bool:
@@ -1516,7 +1549,7 @@ class _TritonEmitter:
         self.line(f"{pad})")
         self.line(f"{pad}update = better | tie")
         self.line(f"{pad}best_distance = tl.where(update, block_distance, best_distance)")
-        self.line(f"{pad}{best} = tl.where(update, candidate_index, {best})")
+        self.line(f"{pad}{best} = tl.where(update, candidate_index, {best})", declares=(best,))
 
     def _emit_top_k(self, operation, pad: str) -> None:
         """Select a deterministic descending prefix from one resident score tile.
@@ -1872,9 +1905,10 @@ class _TritonEmitter:
             invalid_value = "-2147483648"
         self.line(f"{pad}{low} = ({keys} & 0xffffffff).to(tl.uint32)")
         self.line(f"{pad}{decoded_indices} = (0xffffffff - {low}).to(tl.int32)")
-        self.line(f"{pad}{values} = tl.where({valid}, {decoded}, {invalid_value})")
+        self.line(f"{pad}{values} = tl.where({valid}, {decoded}, {invalid_value})", declares=(values,))
         self.line(
-            f"{pad}{indices} = tl.where({valid}, {decoded_indices}, 2147483647)"
+            f"{pad}{indices} = tl.where({valid}, {decoded_indices}, 2147483647)",
+            declares=(indices,),
         )
 
     def _emit_top_k_finalize(self, operation, pad: str) -> None:
@@ -1882,7 +1916,7 @@ class _TritonEmitter:
 
         indices = operation.writes[1]
         self.line(f"{pad}# CAKE_FINALIZE:{operation.op_id}")
-        self.line(f"{pad}{indices} = tl.where({indices} == 2147483647, -1, {indices})")
+        self.line(f"{pad}{indices} = tl.where({indices} == 2147483647, -1, {indices})", declares=(indices,))
 
     def _emit_index_expand(self, operation, pad: str) -> None:
         """Expand group indices into one flat affine run per selected group."""
@@ -1901,7 +1935,8 @@ class _TritonEmitter:
             f"{offsets}[None, :], {operation.parameters.sentinel})"
         )
         self.line(
-            f"{pad}{operation.writes[0]} = tl.reshape({expanded}, ({output.shape[0]},))"
+            f"{pad}{operation.writes[0]} = tl.reshape({expanded}, ({output.shape[0]},))",
+            declares=operation.writes,
         )
 
     def _emit_cast(self, operation, pad: str) -> None:
@@ -1910,7 +1945,8 @@ class _TritonEmitter:
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(
             f"{pad}{operation.writes[0]} = "
-            f"{operation.reads[0]}.to({_TL_DTYPE[operation.parameters.to]})"
+            f"{operation.reads[0]}.to({_TL_DTYPE[operation.parameters.to]})",
+            declares=(operation.writes[0],),
         )
 
     def _emit_atomic_rmw(self, operation, pad: str) -> None:
@@ -1932,7 +1968,7 @@ class _TritonEmitter:
         if mask:
             self.line(f"{pad}    mask={mask},")
         self.line(f"{pad})")
-        self.line(f"{pad}{result} = tl.where({mask}, {old}, 0)")
+        self.line(f"{pad}{result} = tl.where({mask}, {old}, 0)", declares=(result,))
 
     def _emit_store(self, operation, pad: str) -> None:
         access = self.schedule.access_map(operation.op_id, operation.writes[0])
