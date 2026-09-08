@@ -74,3 +74,7 @@ ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭�
 - [ADR 0053: B300 is an exact target on the existing Triton path](../../adr/0053-b300-is-an-exact-target.md)
 - [ADR 0053: Study-bound external advisory candidate order](../../adr/0053-study-bound-advisory-cost-selection.md)
 - [ADR 0057: Metal and CLI harnesses use the existing Lab](../../adr/0057-metal-and-harnesses-use-the-existing-lab.md)
+
+- [0060: Release review provenance and historical exceptions](../../adr/0060-release-review-provenance-and-historical-exceptions.md)
+
+- [0058: External writer custody anchors](../../adr/0058-external-writer-custody-anchors.md)

@@ -75,3 +75,7 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - [ADR 0046: Dynamic loop stop owns whole-grid work](0046-dynamic-loop-stop-owns-whole-grid-work.md)
 - [ADR 0053: B300 is an exact target on the existing Triton path](0053-b300-is-an-exact-target.md)
 - [ADR 0057: Metal and CLI harnesses use the existing Lab](0057-metal-and-harnesses-use-the-existing-lab.md)
+
+- [0060: Release review provenance and historical exceptions](0060-release-review-provenance-and-historical-exceptions.md)
+
+- [0058: External writer custody anchors](0058-external-writer-custody-anchors.md)

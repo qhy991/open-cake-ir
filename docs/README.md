@@ -158,3 +158,7 @@ Reading companions explain the material in simpler language. Detailed tables and
 - [ADR 0057: Metal and CLI harnesses use the existing Lab](adr/0057-metal-and-harnesses-use-the-existing-lab.md)
 
 - [Development branches](DEVELOPMENT_BRANCHES.md): historical integration boundaries and merged Metal work.
+
+- [0060: Release review provenance and historical exceptions](adr/0060-release-review-provenance-and-historical-exceptions.md)
+
+- [0058: External writer custody anchors](adr/0058-external-writer-custody-anchors.md)

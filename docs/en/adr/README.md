@@ -73,3 +73,7 @@ Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft wor
 - [ADR 0055: Task implementations live outside the common Lab](../../adr/0055-task-implementations-live-outside-the-common-lab.md)
 - [ADR 0056 — One fixed-baseline paired assay per candidate](../../adr/0056-fixed-baseline-paired-execution.md)
 - [ADR 0057: Metal and CLI harnesses use the existing Lab](../../adr/0057-metal-and-harnesses-use-the-existing-lab.md)
+
+- [0060: Release review provenance and historical exceptions](../../adr/0060-release-review-provenance-and-historical-exceptions.md)
+
+- [0058: External writer custody anchors](../../adr/0058-external-writer-custody-anchors.md)
