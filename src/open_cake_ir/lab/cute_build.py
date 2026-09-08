@@ -183,6 +183,8 @@ def _compile_failure(error: Exception) -> tuple[bool, str]:
         infrastructure |= isinstance(current, (ImportError, OSError, subprocess.SubprocessError))
         candidate |= (type(current).__module__.startswith("cutlass.") and type(current).__name__ in {
             "DSLUserCodeError", "DSLOperationBuildError", "DSLAstPreprocessorError", "MLIRError"})
+        candidate |= (type(current).__module__, type(current).__name__) == (
+            "cutlass.cute.nvgpu.common", "OpError")
         pending.extend(link for link in (current.__context__, current.__cause__, getattr(current, "cause", None))
                        if isinstance(link, BaseException))
     return candidate and not infrastructure, '\n'.join(messages)

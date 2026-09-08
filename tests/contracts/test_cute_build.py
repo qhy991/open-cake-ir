@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 from dataclasses import replace
 from hashlib import sha256
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -13,7 +14,7 @@ import unittest
 from unittest import mock
 
 from open_cake_ir.evaluation.core import TensorLaunchManifest
-from open_cake_ir.lab.cute_build import IsolatedCuTeCompiler, CuTeToolchainBuilder, _compile_failure
+from open_cake_ir.lab.cute_build import IsolatedCuTeCompiler, CuTeToolchainBuilder, _compile_failure, _worker
 from open_cake_ir.lab.environments import BuildRequest
 from open_cake_ir.lab.faults import CandidateCompileRejected, RunProtocolFault
 from open_cake_ir.lab.process import SupervisedProcessTimeout, SupervisedProcessOutputLimit
@@ -161,6 +162,42 @@ class IsolatedCuTeBuildTests(unittest.TestCase):
         rejected, diagnostic = _compile_failure(candidate)
         self.assertFalse(rejected); self.assertIn('missing ptxas', diagnostic)
         self.assertFalse(_compile_failure(RuntimeError('unknown compiler crash'))[0])
+
+    def test_sdk_op_error_returns_candidate_rejection_from_the_compile_worker(self):
+        # SDK 4.5.2 raises this class for an invalid MmaF16BF16Op shape_mnk.
+        sdk_error = type('OpError', (Exception,), {'__module__': 'cutlass.cute.nvgpu.common'})
+        error = sdk_error("expects the 'shape_mnk' Op parameter to be one of (16,8,8) or (16,8,16)")
+        with tempfile.TemporaryDirectory() as directory:
+            request = Path(directory) / 'request.json'
+            request.write_text(json.dumps({'source': SOURCE.decode(), 'requirements': requirements(),
+                'cutlass_version': '4.5.2', 'cuobjdump': '/admitted/cuda/bin/cuobjdump'}))
+            with mock.patch('open_cake_ir.lab.cute_build.importlib.metadata.version', return_value='4.5.2'), \
+                 mock.patch('open_cake_ir.lab.cute_build.compile_cute', side_effect=error) as compile_, \
+                 mock.patch('open_cake_ir.lab.cute_build.sys.stderr', new_callable=io.StringIO) as diagnostic:
+                self.assertEqual(_worker(str(request)), 2)
+            compile_.assert_called_once()
+            self.assertIn("OpError: expects the 'shape_mnk'", diagnostic.getvalue())
+
+    def test_sdk_op_error_allowance_requires_the_exact_class_and_module(self):
+        for module, name in (('cutlass.cute.nvgpu', 'OpError'),
+                             ('cutlass.cute.nvgpu.common.extra', 'OpError'),
+                             ('other.compiler', 'OpError'),
+                             ('cutlass.cute.nvgpu.common', 'OtherError')):
+            with self.subTest(module=module, name=name):
+                error = type(name, (Exception,), {'__module__': module})('invalid shape')
+                self.assertFalse(_compile_failure(error)[0])
+        self.assertFalse(_compile_failure(RuntimeError('OpError: invalid shape'))[0])
+
+    def test_sdk_op_error_with_an_infrastructure_cause_remains_a_harness_fault(self):
+        sdk_error = type('OpError', (Exception,), {'__module__': 'cutlass.cute.nvgpu.common'})
+        for link in ('__cause__', 'cause'):
+            for cause in (FileNotFoundError('missing ptxas'), ImportError('missing CUDA bindings')):
+                with self.subTest(link=link, cause=type(cause).__name__):
+                    error = sdk_error('operation construction failed')
+                    setattr(error, link, cause)
+                    rejected, diagnostic = _compile_failure(error)
+                    self.assertFalse(rejected)
+                    self.assertIn(str(cause), diagnostic)
 
 
 class CuTeSealedBuilderTests(unittest.TestCase):
