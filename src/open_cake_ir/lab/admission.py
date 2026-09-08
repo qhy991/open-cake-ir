@@ -4,88 +4,29 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
-from pathlib import Path
 from typing import cast
 
-from open_cake_ir.evaluation.paired import paired_protocol
+from open_cake_ir.evaluation.paired import paired_protocol, PAIRED_METAL_KIND, validation_case_ids
 
-from ._documents import _canonical_json_bytes, _digest, _name, _object, _project_path
+from ._documents import _canonical_json_bytes, _digest, _name, _object
 from ._policies import _ATTRIBUTION_EVALUATION, _ONE_RUN_PER_ARM_SCOPES
-from .bindings import load_baseline_bundle, qualification_path as _qualification_path
+from .bindings import load_baseline_bundle, qualification_path as _qualification_path, source_reference_path
 from .providers import (
-    CANDIDATE_SET_ENVELOPE_V1,
-    CODEX_DISABLED_FEATURES,
     ProviderQualificationReceipt,
     required_live_provider_qualification_scope,
 )
-from .pairing import native_source, native_block
+from .pairing import native_source, native_block, matched_run_arms
 from .ralph import RalphBudget
+
+from .provider_policy import provider_configuration, provider_harness
 
 
 def validate_provider(*, open_cake, policy, project_root, study):
     """Validate provider qualification and declared authoring capabilities."""
     provider = _object(open_cake.get("provider"), "study.arms.provider")
-    provider_fields = {
-        "revision",
-        "qualification",
-        "qualification_anchor",
-        "executable_sha256",
-        "model",
-        "reasoning_effort",
-        "service_tier",
-        "output_schema",
-        "removed_environment",
-        "sandbox",
-        "cwd_policy",
-        "reference_visibility",
-        "disabled_features",
-        "code_mode_host",
-    }
-    if frozenset(provider) not in {
-        frozenset(provider_fields | {"web_search"}),
-        frozenset(provider_fields | {"event_contract"}),
-    }:
-        raise ValueError("Study Contract provider configuration fields differ")
     provider_revision = _name(provider.get("revision"), "study.arms.provider.revision")
     claim_scope = cast(str, study.document["claim_scope"])
-    expected_disabled_features = (
-        []
-        if claim_scope == "artifact_optimization_only"
-        else list(CODEX_DISABLED_FEATURES)
-    )
-    expected_event_contract = (
-        "tool_rich_candidate_v1"
-        if claim_scope == "artifact_optimization_only"
-        else "closed_file_change_v1"
-    )
-    code_mode_host = _object(provider.get("code_mode_host"), "study.arms.provider.code_mode_host")
-    if (set(code_mode_host) != {"path", "sha256"}
-        or not isinstance(code_mode_host.get("path"), str)
-        or not Path(code_mode_host["path"]).is_absolute()
-        or ".." in Path(code_mode_host["path"]).parts):
-        raise ValueError("Study Contract Code Mode host identity differs")
-    _digest(code_mode_host.get("sha256"), "study.arms.provider.code_mode_host.sha256")
-    _name(
-        provider.get("reasoning_effort"),
-        "study.arms.provider.reasoning_effort",
-    )
-    if (
-        provider.get("model") != "gpt-5.6-sol"
-        or provider.get("service_tier") != "default"
-        or provider.get("sandbox") != "workspace-write"
-        or provider.get("cwd_policy")
-        != "independent_task_workspace"
-        or provider.get("reference_visibility")
-        != "workspace_task_files"
-        or provider.get("disabled_features") != expected_disabled_features
-        or (expected_event_contract == "closed_file_change_v1"
-            and provider.get("web_search") != "disabled")
-        or provider.get("event_contract", "closed_file_change_v1")
-        != expected_event_contract
-        or provider.get("removed_environment")
-        != ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
-    ):
-        raise ValueError("Study Contract provider configuration differs")
+    expected_provider_configuration = provider_configuration(provider, claim_scope, arms=study.document["arms"])
     executable_sha256 = _digest(
         provider.get("executable_sha256"), "study.arms.provider.executable_sha256"
     )
@@ -104,36 +45,8 @@ def validate_provider(*, open_cake, policy, project_root, study):
     if (
         qualification.provider_revision != provider_revision
         or qualification.executable_sha256 != executable_sha256
-        or qualification.configuration_sha256
-        != sha256(
-            _canonical_json_bytes(
-                {
-                    "model": provider["model"],
-                    "reasoning_effort": provider["reasoning_effort"],
-                    "service_tier": provider["service_tier"],
-                    "output_schema_sha256": _object(
-                        provider["output_schema"], "study.arms.provider.output_schema"
-                    )["sha256"],
-                    "removed_environment": provider["removed_environment"],
-                    "sandbox": provider["sandbox"],
-                    "cwd_policy": provider["cwd_policy"],
-                    "reference_visibility": provider["reference_visibility"],
-                    "disabled_features": provider["disabled_features"],
-                    "code_mode_host": provider["code_mode_host"],
-                    **({"web_search": provider["web_search"]} if "web_search" in provider else {}),
-                    **(
-                        {"event_contract": provider["event_contract"]}
-                        if "event_contract" in provider
-                        else {}
-                    ),
-                    **(
-                        {
-                            "submission_contract": CANDIDATE_SET_ENVELOPE_V1
-                        }
-                    ),
-                }
-            )
-        ).hexdigest()
+        or qualification.configuration_sha256 != sha256(
+            _canonical_json_bytes(expected_provider_configuration)).hexdigest()
         or not qualification.initial_and_resume_equivalent
         or not qualification.file_lifecycle_observed
         or not qualification.usage_observed
@@ -183,7 +96,7 @@ def validate_provider(*, open_cake, policy, project_root, study):
         if (
             anchor.get("schema_version") != 1
             or anchor.get("kind")
-            != "codex_provider_qualification_evidence_anchor"
+            != ("provider_qualification_evidence_anchor" if provider_harness(provider) == "claude-code" else "codex_provider_qualification_evidence_anchor")
             or not isinstance(anchor.get("run_id"), str)
             or not anchor["run_id"]
             or not isinstance(anchor.get("evidence_root"), str)
@@ -208,11 +121,11 @@ def validate_provider(*, open_cake, policy, project_root, study):
             != sha256(_canonical_json_bytes(anchor)).hexdigest()
         ):
             raise ValueError("provider qualification anchor evidence differs")
-    for field in ("output_schema",):
+    for field in (("output_schema",) if provider_harness(provider) == "codex" else ()):
         reference = _object(provider.get(field), f"study.arms.provider.{field}")
         if set(reference) != {"path", "sha256"}:
             raise ValueError(f"Study Contract provider {field} reference differs")
-        _, path = _project_path(
+        _, path = source_reference_path(
             project_root, reference.get("path"), f"study.arms.provider.{field}.path"
         )
         if _digest(reference.get("sha256"), f"study.arms.provider.{field}.sha256") != sha256(
@@ -229,11 +142,7 @@ def validate_run_plan(*, claim_scope, comparison, study):
     if allocation.get("method") != "predeclared_balanced_blocks" or not isinstance(order, list):
         raise ValueError("Study Contract allocation differs")
     run_order = tuple(_name(value, "study.allocation.order[]") for value in order)
-    expected_arms = (
-        sorted([comparison, "open_cake"])
-        if claim_scope in _ONE_RUN_PER_ARM_SCOPES
-        else sorted([comparison] * 3 + ["open_cake"] * 3)
-    )
+    expected_arms = matched_run_arms(study.document["arms"], claim_scope)
     if len(run_order) != len(set(run_order)) or sorted(
         name.rsplit("-", 1)[0] for name in run_order
     ) != expected_arms:
@@ -310,8 +219,19 @@ def validate_evaluation(
     )
     workload.case(_name(evaluation.get("case_id"), "study.evaluation_protocol.case_id"))
     assay = paired_protocol(evaluation)
-    if assay is not None and policy is None:
+    single_environment = set(study.document["arms"]) == {"open_cake"}
+    route = study.document["arms"]["open_cake"]["lowering_route"]
+    if assay is not None and policy is None and not single_environment:
         raise ValueError('fixed-baseline assay requires the same-backend native Study')
+    if single_environment and assay is None:
+        raise ValueError("single-environment optimization requires an explicit fixed-baseline paired assay")
+    if route["backend"] == "metal":
+        if (not single_environment or evaluation.get("paired_timing", {}).get("kind") != PAIRED_METAL_KIND
+                or validation_case_ids(evaluation) != tuple(workload.case_ids)
+                or attribution_evaluation != _ATTRIBUTION_EVALUATION):
+            raise ValueError("Metal optimization must bind its paired assay, all Workload cases and attribution")
+    elif evaluation.get("paired_timing", {}).get("kind") == PAIRED_METAL_KIND:
+        raise ValueError("Metal paired assay cannot evaluate a different backend")
     # How many candidates a Turn search-evaluates. Checked here because a Study that
     # asks for none, or for a word, would otherwise fault partway through a run --
     # and a run that faults has already spent the GPU time this Lab exists to gate.
@@ -365,21 +285,26 @@ def validate_evaluation(
         import ast
         requirements = baseline_lowering.toolchain_requirements
         source = sealed_baseline.artifact_payloads.get('lowered_source')
-        expected_source = native_source(baseline_lowering.source.encode(), requirements)
         if source is None:
             raise ValueError('fixed baseline requires retained Compiler lowering source')
-        observed_source = native_source(source, requirements)
         manifest = manifest_parser(json.loads(sealed_baseline.artifact_payloads['launch_manifest']))
-        if (fixed['candidate'] != candidate_identity(sealed_baseline)
-            or ast.dump(ast.parse(observed_source)) != ast.dump(ast.parse(expected_source))
-            or list(manifest.grid) != requirements['grid']
-            or manifest.block != tuple(native_block(requirements))
-            or manifest.hidden_null_pointer_parameters != policy.hidden_null_pointer_parameters):
+        if route["backend"] == "metal":
+            source_matches = source == baseline_lowering.source.encode()
+            grid, block = requirements["threadgroups_per_grid"], tuple(requirements["threads_per_threadgroup"])
+        else:
+            expected_source = native_source(baseline_lowering.source.encode(), requirements)
+            observed_source = native_source(source, requirements)
+            source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
+            grid, block = requirements['grid'], tuple(native_block(requirements))
+            if manifest.hidden_null_pointer_parameters != policy.hidden_null_pointer_parameters:
+                raise ValueError('fixed baseline hidden pointer commitments differ')
+        if (fixed['candidate'] != candidate_identity(sealed_baseline) or not source_matches
+                or list(manifest.grid) != list(grid) or manifest.block != block):
             raise ValueError('fixed baseline differs from the frozen Compiler kernel or launch commitments')
     if (
         execution.get("target") != workload.target
         or execution.get("target") != skeleton_document.get("target")
-        or execution.get("sandbox") != "workspace-write"
+        or execution.get("sandbox") != study.document["arms"]["open_cake"]["provider"].get("sandbox")
     ):
         raise ValueError("Study Contract execution authority differs")
     _digest(

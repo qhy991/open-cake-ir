@@ -12,6 +12,8 @@ from open_cake_ir.evidence import EvidenceStore
 
 from ._documents import _DIGEST, _object
 
+from open_cake_ir.evaluation.attempts import valid_job_mode
+
 
 def _replay_broker_attempt_ledger(
     evidence: EvidenceStore,
@@ -141,10 +143,8 @@ def _replay_broker_attempt_ledger(
             raise ValueError("broker attempt raw counters differ")
         if (
             not isinstance(attempt.get("job_id"), str)
-            or re.fullmatch(r"gpuq-[0-9a-f]{12}", cast(str, attempt["job_id"]))
-            is None
+            or not valid_job_mode(cast(str, attempt["job_id"]), cast(str, attempt.get("mode")))
             or not isinstance(attempt.get("admitted"), bool)
-            or attempt.get("mode") != "exclusive"
             or (
                 attempt.get("error") is not None
                 and not isinstance(attempt.get("error"), str)
@@ -216,7 +216,7 @@ def _replay_broker_attempt_ledger(
             raise ValueError("evaluator result is not JSON") from error
         if evaluator_result.get("job_id") not in {
             result.get("job_id"),
-            "gpuq-000000000000",
+            "gpuq-000000000000" if str(result.get("job_id", "")).startswith("gpuq-") else result.get("job_id"),
         }:
             raise ValueError("worker and broker job identities differ")
         normalized_evaluator_result = dict(evaluator_result)
@@ -243,7 +243,8 @@ def _replay_broker_attempt_ledger(
     if len(attempts) == 2:
         first = _object(attempts[0], "broker_attempts[0]")
         if (
-            first.get("admitted") is not False
+            first.get("mode") != "exclusive"
+            or first.get("admitted") is not False
             or first.get("error") != "gpu_admission_differs"
             or first.get("receipt_sha256") is not None
             or any(first.get(field) != 0 for field in counter_fields)

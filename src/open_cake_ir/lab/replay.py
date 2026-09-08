@@ -10,13 +10,12 @@ from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from ._documents import _canonical_json_bytes, _object
 from ._policies import _MATCHED_EVENT_KINDS_V1, _matched_evidence_policy_version
-from .checkpoints import project_checkpoints
 from .contracts import CampaignLock
 from .executor import ExecutorRevision
 from .selection import _EmpiricalSelection, _empirical_context
 from .replay_candidates import _artifact_outcomes_are_closed, _replay_candidates
 from .replay_outcomes import _replay_terminal
-from .replay_provider import _replay_provider_turns
+from .replay_provider import _replay_provider_turns, replay_fault_usage
 from .replay_selection import _replay_candidate_selection
 
 
@@ -101,6 +100,7 @@ def replay_matched_run(
             checkpoint_events=checkpoint_events,
             events=events,
             lock=lock,
+            evidence=evidence,
         )
     replay_budget = _object(resolved_inputs["budget"], "resolved_inputs.budget")
     maximum_candidates_per_turn = int(
@@ -170,7 +170,7 @@ def replay_matched_run(
             not required_fault_fields <= set(fault_payload)
             or set(fault_payload)
             - required_fault_fields
-            - {"objects", "artifact_rejections"}
+            - {"objects", "artifact_rejections", "provider_usage", "terminal_provider_tokens_scope", "provider_usage_witness_mismatch"}
             or not isinstance(fault_payload.get("exception_type"), str)
             or not fault_payload.get("exception_type")
             or not _artifact_outcomes_are_closed(fault_payload)
@@ -181,6 +181,11 @@ def replay_matched_run(
         fault_turn_value = fault_payload.get("turn")
         fault_stage = fault_payload.get("stage")
         fault_terminal_value = fault_payload.get("terminal_provider_tokens")
+        usage_delta = replay_fault_usage(payload=fault_payload, evidence=evidence,
+            provider=provider_authority,
+            expected_thread_id=provider_events[-1]["payload"]["thread_id"])
+        if (usage_delta is None or fault_terminal_value != prior_cumulative + usage_delta):
+            return False
         if (
             not isinstance(fault_turn_value, int)
             or isinstance(fault_turn_value, bool)
@@ -257,6 +262,7 @@ def _replay_provider_fault(
     checkpoint_events: Sequence[Mapping[str, object]],
     events: Sequence[Mapping[str, object]],
     lock: CampaignLock,
+    evidence: EvidenceStore,
 ) -> bool:
     faults = [event for event in events if event.get("kind") == "run_fault"]
     if len(faults) != 1:
@@ -265,7 +271,6 @@ def _replay_provider_fault(
     checkpoint_payload = _object(
         checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
     )
-    checkpoints = checkpoint_payload.get("checkpoints")
     required_fault_fields = {
         "fault",
         "exception_type",
@@ -284,7 +289,7 @@ def _replay_provider_fault(
         or not required_fault_fields <= set(fault_payload)
         or set(fault_payload)
         - required_fault_fields
-        - {"objects", "artifact_rejections"}
+        - {"objects", "artifact_rejections", "provider_usage", "terminal_provider_tokens_scope", "provider_usage_witness_mismatch"}
         or not isinstance(fault_payload.get("exception_type"), str)
         or not fault_payload.get("exception_type")
         or not _artifact_outcomes_are_closed(fault_payload)
@@ -303,30 +308,17 @@ def _replay_provider_fault(
         or terminal_tokens < 0
     ):
         return False
-    replay_budget = _object(
-        _object(lock.document["resolved_inputs"], "resolved_inputs")[
-            "budget"
-        ],
-        "resolved_inputs.budget",
-    )
-    expected_checkpoints = [
-        {
-            "provider_tokens": item.provider_tokens,
-            "state": item.state,
-            "best_candidate_sha256": item.best_candidate_sha256,
-            "best_confirmed_latency_ms": item.best_confirmed_latency_ms,
-        }
-        for item in project_checkpoints(
-            turns=(),
-            checkpoints=cast(list[int], replay_budget["checkpoints"]),
-            terminal_provider_tokens=terminal_tokens,
-        )
-    ]
-    return (
-        fault_payload.get("fault") == audit.protocol_adherence
-        and audit.endpoint_observation == "missing"
-        and audit.endpoint is None
-        and isinstance(checkpoints, list)
-        and bool(checkpoints)
-        and checkpoints == expected_checkpoints
+    arm = audit.run_id.rsplit("-", 1)[0]
+    provider = lock.document["resolved_inputs"]["arm_environments"][arm].get("provider", {})
+    delta = replay_fault_usage(payload=fault_payload, evidence=evidence, provider=provider)
+    if (delta is None or terminal_tokens != delta
+            or fault_payload.get("fault") != audit.protocol_adherence
+            or audit.endpoint_observation != "missing" or audit.endpoint is not None):
+        return False
+    protocol = lock.document.get("evaluation_protocol", {})
+    return _replay_terminal(
+        attribution_evaluation=protocol.get("attribution_evaluation"), audit=audit,
+        checkpoint_events=checkpoint_events, cumulative_by_turn={},
+        fault_terminal_tokens=terminal_tokens, faults=faults, lock=lock, observations=(), receipts={},
+        searches_per_turn=protocol.get("searches_per_turn", 1),
     )

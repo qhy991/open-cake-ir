@@ -110,9 +110,16 @@ class RevisionAdmissionTests(unittest.TestCase):
 
     def test_current_draft_retains_all_exact_targets_and_zero_tmem(self):
         revision = load_revision(ROOT, ROOT / "compiler/revision.json")
-        self.assertEqual(set(revision.targets), {"sm_100a", "apple_gpu_family8", "sm_103a"})
-        self.assertIsNone(revision.targets["apple_gpu_family8"].compute_capability)
-        self.assertEqual(revision.targets["apple_gpu_family8"].resource_limits.maximum_tensor_memory_bytes, 0)
+        self.assertEqual(set(revision.targets), {"sm_100a", "apple_gpu_family7", "apple_gpu_family8", "sm_103a"})
+        for target_id, device in (("apple_gpu_family7", "Apple M1 Pro"),
+                                  ("apple_gpu_family8", "Apple M2")):
+            with self.subTest(target=target_id):
+                target = revision.targets[target_id]
+                self.assertEqual(target.device_names, (device,))
+                self.assertIsNone(target.compute_capability)
+                self.assertIsNone(target.warps_per_warpgroup)
+                self.assertEqual(target.resource_limits.maximum_tensor_memory_bytes, 0)
+                self.assertNotIn(MemorySpace.TENSOR, target.memory_spaces)
         self.assertEqual(revision.targets["sm_103a"].compute_capability, (10, 3))
 
     def test_revision_fields_state_targets_and_calibration_remain_strict(self):

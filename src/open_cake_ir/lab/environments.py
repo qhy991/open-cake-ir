@@ -122,7 +122,8 @@ class OpenCakeEnvironment:
             or not isinstance(route["entry_point"], str)
             or not route["entry_point"].isidentifier()):
             raise ValueError("Open Cake Authoring Environment lowering route differs")
-        backend_policy(route["backend"])
+        if route["backend"] != "metal":
+            backend_policy(route["backend"])
         self._route = dict(route)
         self.authority_document = json.loads(
             json.dumps(authority_document, sort_keys=True, separators=(",", ":"))

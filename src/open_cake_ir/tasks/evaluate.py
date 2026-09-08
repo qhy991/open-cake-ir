@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Evaluate one sealed CUBIN on an already allocated exact CUDA target.
+"""Evaluate one sealed artifact on its admitted exact backend.
 
-The historical command path retains Flash-KMeans and the explicit Workload tensor ABI.
+The existing worker retains CUDA assays and observes Metal binary archives through
+the same common Evaluation receipt and broker boundary.
 """
 
 from __future__ import annotations
@@ -30,10 +31,11 @@ from open_cake_ir.evaluation.admission import observe_exclusive_cuda
 from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload
 from open_cake_ir.tasks.launch import parse_launch_manifest
+from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.tiles.workload import materialize_case, reference_outputs
 from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, run_supervised, sanitized_environment
 from open_cake_ir.evaluation.paired import (
-    PAIRED_KIND, paired_protocol, paired_summary, candidate_identity,
+    PAIRED_KIND, PAIRED_METAL_KIND, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
     candidate_from_identity, validate_pair_candidates,
 )
 
@@ -97,7 +99,7 @@ class _Authority:
     request_root: Path
     executor: ExecutorRevision
     workload: WorkloadContract
-    manifest: CudaLaunchManifest | TensorLaunchManifest
+    manifest: CudaLaunchManifest | TensorLaunchManifest | MetalTensorLaunchManifest
     candidate: LaunchableCandidate
     payloads: Mapping[str, bytes]
     case_id: str
@@ -138,7 +140,7 @@ def _load_authority(request_path: Path) -> _Authority:
         raise ValueError("worker Evaluation purpose differs")
     case_id = str(request["case_id"])
     workload.case(case_id)
-    if isinstance(manifest, TensorLaunchManifest):
+    if isinstance(manifest, (TensorLaunchManifest, MetalTensorLaunchManifest)):
         manifest.check_workload(workload, case_id)
     baseline = None
     evaluation = request.get('evaluation_protocol')
@@ -147,6 +149,8 @@ def _load_authority(request_path: Path) -> _Authority:
         if sha256(_canonical_json_bytes(evaluation)).hexdigest() != request['evaluation_protocol_sha256']:
             raise ValueError('worker evaluation policy identity differs')
         if paired_protocol(evaluation) is not None:
+            if isinstance(manifest, MetalTensorLaunchManifest) != (evaluation['paired_timing']['kind'] == PAIRED_METAL_KIND):
+                raise ValueError('paired assay backend differs from sealed manifest')
             partner = _object(request.get('baseline'), 'request.baseline')
             paths = _object(partner.get('artifact_paths'), 'request.baseline.artifact_paths')
             baseline = candidate_from_identity({k: v for k, v in partner.items() if k != 'artifact_paths'},
@@ -350,6 +354,150 @@ def _evaluate_tile_candidate(authority, result, helper, admission, collect_timin
         loaded.close()
 
 
+def _evaluate_metal_candidate(authority, result):
+    """One real Metal assay through the existing broker worker and common receipts."""
+    import re
+    from open_cake_ir.evaluation.metal_runtime import observe
+    from open_cake_ir.evaluation.metal_observations import (
+        METAL_TIMER, METAL_CACHE, METAL_PROFILE_KIND, command_buffer_ms, metal_profile_summary)
+
+    evaluation = authority.request['evaluation_protocol']
+    protocol = paired_protocol(evaluation)
+    if protocol is None or evaluation['paired_timing']['kind'] != PAIRED_METAL_KIND:
+        raise ValueError('Metal worker requires its explicit fixed-baseline paired assay')
+    cases = validation_case_ids(evaluation)
+    if (cases != authority.workload.case_ids or authority.workload.document['validation'].get('all_cases_required') is not True
+            or authority.case_id != authority.workload.document['validation'].get('primary_case')):
+        raise ValueError('Metal evaluation case projection differs from Workload validation')
+    job_id = os.environ.get('METAL_JOB_ID', '')
+    if re.fullmatch(r'metal-[0-9a-f]{12}', job_id) is None or job_id == 'metal-000000000000':
+        raise ValueError('Metal worker requires a real broker job allocation')
+    from open_cake_ir.evaluation.local_broker import observe_local_metal_job
+    if observe_local_metal_job() != job_id:
+        raise ValueError('Metal broker lock identity differs')
+    admission = authority.executor.admit_host()
+    if not isinstance(admission, Mapping) or admission.get('kind') != 'metal':
+        raise ValueError('Metal worker requires an admitted Metal Executor')
+    result['job_id'] = job_id
+    result['mode'] = 'local_serialized'
+    result['admitted'] = True
+    profile = authority.request['purpose'] == 'attribution'
+    candidates = {'candidate': authority.candidate}
+    manifests = {'candidate': authority.manifest}
+    if not profile:
+        if authority.baseline is None:
+            raise ValueError('Metal paired assay requires its sealed baseline')
+        candidates['baseline'] = authority.baseline
+        manifests = validate_pair_candidates(authority.candidate, authority.baseline, authority.workload, authority.case_id)
+    from open_cake_ir.tasks.workloads import materialize_case as task_materialize, reference_outputs as task_reference
+    input_cases = {}
+    for case_id in cases:
+        inputs = task_materialize(authority.workload, case_id)
+        input_cases[case_id] = {'inputs': inputs, 'expected': task_reference(authority.workload, case_id, inputs)}
+    plan = []
+    def append(role, phase, case_id, *, timed=False, instrumented=False, pair_index=None, position=None):
+        plan.append({'index': len(plan), 'role': role, 'phase': phase, 'input_case_id': case_id,
+                     'timed': timed, 'profile': instrumented, 'pair_index': pair_index, 'position': position})
+    for role in candidates:
+        for case_id in cases:
+            append(role, 'preflight', case_id)
+    if profile:
+        append('candidate', 'profile', authority.case_id, instrumented=True)
+    else:
+        for pair_index, order in enumerate(protocol.pair_order):
+            for position, role in enumerate(order):
+                for call in range(protocol.route_calls_per_cohort):
+                    append(role, 'cohort', authority.case_id,
+                           timed=call >= protocol.route_calls_per_cohort - protocol.samples_per_cohort,
+                           pair_index=pair_index, position=position)
+        for role in candidates:
+            for case_id in cases:
+                append(role, 'postflight', case_id)
+    observation = observe(workload=authority.workload, candidates=candidates, manifests=manifests,
+        input_cases=input_cases, launch_plan=plan, observer_executable=Path(admission['observer_executable']),
+        expected_host=dict(admission['host']), directory=authority.request_root / 'metal-observation')
+    launches = observation['launches']
+    counters = result['counters']
+    counters.update(module_loads=len(candidates), preflight_calls=sum(row['phase'] == 'preflight' for row in launches),
+                    kernel_calls=len(launches), timing_samples=sum(row['timed'] for row in launches))
+    def aggregate(rows, *, timed=False):
+        metrics = {'output_mismatches': 0, 'max_abs_error': 0.0, 'inputs_unchanged': True}
+        passed = True
+        for row in rows:
+            passed &= row['passed']
+            metrics['output_mismatches'] += row['metrics']['output_mismatches']
+            metrics['max_abs_error'] = max(metrics['max_abs_error'], row['metrics']['max_abs_error'])
+            metrics['inputs_unchanged'] &= row['metrics']['inputs_unchanged']
+        result = {'passed': passed, 'launches': [
+            {key: row[key] for key in ('input_case_id', 'passed', 'metrics', 'command_buffer')} for row in rows]}
+        result.update(metrics if timed else {'metrics': metrics})
+        if timed:
+            result['checked_launches'] = len(rows)
+        return result
+    overall = aggregate(launches)
+    host = observation['host']
+    if profile:
+        profiled = [row for row in launches if row['phase'] == 'profile']
+        if len(profiled) != 1 or not overall['passed']:
+            raise ValueError('instrumented Metal launch and all validation inputs must pass the external oracle')
+        row = profiled[0]
+        raw_profile = row['profile_raw']
+        profile_document = {'kind': METAL_PROFILE_KIND, 'candidate_sha256': authority.candidate.candidate_sha256,
+            'case_id': authority.case_id, 'kernel_name': authority.candidate.entry_point, 'job_id': job_id, 'host': host,
+            'separate_instrumented_launch': True, 'archive_miss_policy': 'failOnBinaryArchiveMiss',
+            'evaluation_protocol': evaluation, 'allocation_mode': 'local_serialized', 'external_gpu_activity': 'not_excluded',
+            'raw': raw_profile, 'summary': metal_profile_summary(raw_profile)}
+        _write_new(authority.request_root / 'profile.json', profile_document)
+        _write_new(authority.request_root / 'correctness-output.json', overall)
+        _write_new(authority.request_root / 'launch-receipt.json', {'candidate_sha256': authority.candidate.candidate_sha256,
+            'job_id': job_id, 'host': host, 'allocation_mode': 'local_serialized',
+            'external_gpu_activity': 'not_excluded', 'instrumented_command': row['command_buffer'],
+            'correctness_launches': len(launches), 'fallback_calls': 0})
+        result['receipt'] = {'correctness_passed': True, 'correctness': overall['metrics'], 'kernel_calls': 1,
+            'fallback_calls': 0, 'timing': None, 'artifacts': {'correctness_output': 'correctness-output.json',
+            'launch_receipt': 'launch-receipt.json', 'profile': 'profile.json'}}
+        return
+    checks = {}
+    for role in candidates:
+        checks[role] = {'preflight': aggregate([row for row in launches if row['role'] == role and row['phase'] == 'preflight']),
+            'postflight': None, 'timed_output_checks': []}
+        post = [row for row in launches if row['role'] == role and row['phase'] == 'postflight']
+        if post:
+            checks[role]['postflight'] = aggregate(post)
+    measurements = []
+    if any(row['phase'] == 'cohort' for row in launches):
+        for pair_index, order in enumerate(protocol.pair_order):
+            measurement = {'pair_index': pair_index, 'order': list(order), 'arms': {}}
+            for position, role in enumerate(order):
+                rows = [row for row in launches if row['phase'] == 'cohort' and row['pair_index'] == pair_index and row['role'] == role]
+                check = aggregate(rows, timed=True)
+                checks[role]['timed_output_checks'].append(check)
+                samples = [command_buffer_ms(row['command_buffer']) for row in rows if row['timed']]
+                measurement['arms'][role] = {'position': position,
+                    'candidate_record_sha256': candidates[role].canonical_sha256,
+                    'samples_ms': samples, 'summary': summarize_cohort(samples), 'route_calls': len(rows),
+                    'output_check': check, 'command_buffers': [row['command_buffer'] for row in rows]}
+            measurements.append(measurement)
+    identities = {role: candidate_identity(candidate) for role, candidate in candidates.items()}
+    raw = {'kind': PAIRED_METAL_KIND, 'evaluation_protocol': evaluation, 'participants': identities,
+        'workload_sha256': authority.workload.canonical_sha256, 'case_id': authority.case_id,
+        'purpose': authority.request['purpose'], 'job_id': job_id, 'device_registry_id': host['device_registry_id'],
+        'host': host, 'allocation_mode': 'local_serialized', 'external_gpu_activity': 'not_excluded',
+        'timer': METAL_TIMER, 'cache_policy': METAL_CACHE, 'measurements': measurements}
+    if not measurements:
+        raw['not_measured'] = 'correctness_rejected'
+    timing = paired_summary(raw) if measurements else None
+    _write_new(authority.request_root / 'timing-samples.json', raw)
+    _write_new(authority.request_root / 'correctness-output.json', {'passed': overall['passed'], 'metrics': overall['metrics'], 'participants': checks})
+    _write_new(authority.request_root / 'launch-receipt.json', {'candidate_sha256': authority.candidate.candidate_sha256,
+        'participants': identities, 'job_id': job_id, 'host': host,
+        'allocation_mode': 'local_serialized', 'external_gpu_activity': 'not_excluded',
+        'correctness_launches': sum(row['phase'] in {'preflight', 'postflight'} for row in launches), 'fallback_calls': 0})
+    result['receipt'] = {'correctness_passed': overall['passed'], 'correctness': overall['metrics'], 'kernel_calls': 1,
+        'fallback_calls': 0, 'timing': timing, 'artifacts': {'correctness_output': 'correctness-output.json',
+        'launch_receipt': 'launch-receipt.json', 'timing_samples': 'timing-samples.json'}}
+
+
 def _evaluate_candidate(
     authority: _Authority,
     result: dict[str, object],
@@ -357,6 +505,9 @@ def _evaluate_candidate(
     collect_timing: bool,
     admission: CudaDeviceAdmission | None = None,
 ) -> None:
+    if isinstance(authority.manifest, MetalTensorLaunchManifest):
+        _evaluate_metal_candidate(authority, result)
+        return
     helper = authority.executor.admit_host()
     if admission is None:
         try:
@@ -642,7 +793,9 @@ def main() -> int:
     parser.add_argument("--profile-admission", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     request_path = args.request.resolve(strict=True)
-    result = _base_result(os.environ.get("GPUQ_JOB_ID", "gpuq-000000000000"))
+    result = _base_result(os.environ.get("METAL_JOB_ID", os.environ.get("GPUQ_JOB_ID", "gpuq-000000000000")))
+    if str(result["job_id"]).startswith("metal-"):
+        result["mode"] = "local_serialized"
     try:
         authority = _load_authority(request_path)
         purpose = str(authority.request["purpose"])
@@ -682,6 +835,10 @@ def main() -> int:
                 collect_timing=False,
                 admission=admission,
             )
+        elif isinstance(authority.manifest, MetalTensorLaunchManifest):
+            if args.profile_admission is not None:
+                raise ValueError("Metal profile admission is provided by its Executor")
+            _evaluate_metal_candidate(authority, result)
         elif purpose == "attribution":
             if args.profile_admission is not None:
                 raise ValueError("profile admission is internal-only")

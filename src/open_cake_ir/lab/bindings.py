@@ -40,6 +40,19 @@ def external_file(project_root, value, context):
     return path
 
 
+def source_reference_path(project_root, value, context):
+    """Read a frozen task input from source or an explicit external publication.
+
+    Absolute aliases back into any checkout are refused. Compiler revisions still
+    use their own source-only admission; this path is for task inputs and schema.
+    """
+    if isinstance(value, str) and Path(value).is_absolute():
+        path = external_file(project_root, value, context)
+        return str(path), path
+    from .executor import _relative_file
+    return _relative_file(Path(project_root), value, context)
+
+
 def qualification_path(project_root, value, context):
     """Only qualification references admit external files; source paths stay strict."""
     if isinstance(value, str) and Path(value).is_absolute():
@@ -108,17 +121,20 @@ def resolve_execution_bindings(
     """Return resolved runtime leaves and the Executor already validated for them."""
     from .runtime import broker_execution_sha256, load_runtime_config
     from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
-    from .pairing import comparison_arm, native_backend
+    from .pairing import comparison_arm, native_backend, backend_policy
 
     document = json.loads(canonical(study.document))
     arms = document['arms']
+    single = set(arms) == {"open_cake"} and document["claim_scope"] == "artifact_optimization_only"
     policy = native_backend(comparison_arm(arms))
-    if policy is None:
+    if policy is None and not single:
         if bindings_path is not None:
             raise ValueError('external execution binding requires a same-backend native Study')
         return document, None
     execution = document['execution']
-    provider_fields = ('revision', 'executable_sha256', 'qualification', 'qualification_anchor', 'code_mode_host')
+    from .provider_policy import provider_harness
+    harness = provider_harness(arms['open_cake']['provider'])
+    provider_fields = ('revision', 'executable_sha256', 'qualification', 'qualification_anchor') + (() if harness == 'claude-code' else ('code_mode_host',))
     leaves = [arms[name]['provider'].get(field) for name in arms for field in provider_fields]
     leaves += [arms[name].get('toolchain_sha256') for name in arms]
     leaves += [execution.get('broker_execution_sha256'), execution.get('fixed_baseline')]
@@ -141,23 +157,35 @@ def resolve_execution_bindings(
     runtime_path = external_file(project_root, bindings['runtime_config_path'], 'runtime configuration')
     receipt = ProviderQualificationReceipt.load(receipt_path)
     anchor = json.loads(anchor_path.read_bytes())
-    config = load_runtime_config(runtime_path, toolchain_kind=policy.backend)
+    if single:
+        route = arms["open_cake"].get("lowering_route")
+        if not isinstance(route, Mapping) or route.get("backend") not in {"metal", "triton"}:
+            raise ValueError("single-environment lowering route differs")
+        backend = route["backend"]
+    else:
+        backend = policy.backend
+    config = load_runtime_config(runtime_path, toolchain_kind=backend)
     executable = Path(config['provider']['executable']).resolve(strict=True)
     if sha256(executable.read_bytes()).hexdigest() != receipt.executable_sha256:
         raise ValueError('runtime provider executable differs from qualification')
-    code_mode_host = resolve_codex_code_mode_host(executable)
+    code_mode_host = resolve_codex_code_mode_host(executable) if harness == "codex" else None
     for arm in arms.values():
         provider = arm['provider']
         provider.update(revision=receipt.provider_revision, executable_sha256=receipt.executable_sha256,
-            code_mode_host=code_mode_host,
             qualification={'path': str(receipt_path), 'canonical_sha256': receipt.canonical_sha256},
             qualification_anchor={'path': str(anchor_path), 'canonical_sha256': sha256(canonical(anchor)).hexdigest()})
+        if code_mode_host is not None:
+            provider['code_mode_host'] = code_mode_host
     # current_release resolves once, with the existing Executor resolver's closure checks.
     executor = resolve_executor(Path(project_root), execution['executor_revision'],
         'study.execution', template=True)
     executor_reference = dict(executor.reference)
-    toolchain = policy.isolated_compiler(config['toolchain'])
-    toolchain.check_executor(executor, author_workspace=config['provider']['workspace_root'])
+    if backend == "metal":
+        from .metal_build import MetalArchiveHost
+        toolchain = MetalArchiveHost.from_executor(executor)
+    else:
+        toolchain = backend_policy(backend).isolated_compiler(config['toolchain'])
+        toolchain.check_executor(executor, author_workspace=config['provider']['workspace_root'])
     for arm in arms.values():
         arm['toolchain_sha256'] = toolchain.canonical_sha256
     broker = config['broker']

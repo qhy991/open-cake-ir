@@ -11,7 +11,7 @@ from open_cake_ir.evaluation.paired import validate_receipt_policy
 from open_cake_ir.evidence import EvidenceStore
 
 from ._documents import _canonical_json_bytes, _object
-from .archive import _ARM_ARTIFACT_ROLES
+from .archive import _arm_artifact_roles
 
 
 def _replay_launchable_candidate(
@@ -63,13 +63,12 @@ def _replay_launchable_candidate(
         artifact_roles[role] = digest
         if sha256(artifact_payloads[role]).hexdigest() != digest:
             raise ValueError("launchable candidate artifact bytes differ")
-    if (
-        arm not in _ARM_ARTIFACT_ROLES
-        or not _ARM_ARTIFACT_ROLES[arm] <= set(artifact_roles)
-        or set(artifact_payloads) != set(artifact_roles)
-    ):
-        raise ValueError("launchable candidate arm artifact roles differ")
+    if "launch_manifest" not in artifact_payloads:
+        raise ValueError("launchable candidate lacks its launch manifest")
     manifest = manifest_parser(json.loads(artifact_payloads["launch_manifest"]))
+    if (not _arm_artifact_roles(arm, manifest.target) <= set(artifact_roles)
+            or set(artifact_payloads) != set(artifact_roles)):
+        raise ValueError("launchable candidate arm artifact roles differ")
     if artifact_roles["launch_manifest"] != manifest.canonical_sha256:
         raise ValueError("launchable candidate launch manifest seal differs")
     candidate = LaunchableCandidate(

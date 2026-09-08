@@ -18,11 +18,13 @@ from ._policies import (
     _LEGACY_ATTRIBUTION_EVALUATION,
     _matched_evidence_policy_version,
 )
-from .archive import _ARM_ARTIFACT_ROLES, _archive_provider_turn, _candidate_artifact_media_type
+from .archive import _arm_artifact_roles, _archive_provider_turn, _candidate_artifact_media_type
 from .evaluation_writer import EvaluationWriter
 from .execution_admission import validate_execution_bindings
 from .candidate_filter import _build_filter_candidates, record_candidate_rejections
 from .run_completion import _seal_run, record_run_fault
+from .faults import RunProtocolFault, ReportedProviderUsage
+from .provider_events import reported_provider_usage
 from .checkpoints import TurnObservation
 from .contracts import CampaignLock, CampaignRef, RunEvaluator, RunProvider, TurnRequest
 from .custody import admit_new_campaign_path
@@ -49,6 +51,9 @@ class _SearchedCandidate:
     receipt: EvaluationReceipt
     attribution: EvaluationReceipt | None
 
+from .pairing import matched_run_arms
+from open_cake_ir.evaluation.paired import paired_protocol
+
 
 def execute_campaign(
     lock: CampaignLock,
@@ -69,7 +74,7 @@ def execute_campaign(
         evidence_root,
         role="Campaign Evidence root",
     )
-    comparison_arm(environments)
+    matched_run_arms(environments, lock.claim_scope)
     if set(environments) != set(lock.document["resolved_inputs"]["arm_environments"]):
         raise ValueError("Campaign Authoring Environment set differs")
     if lock.study_kind != "matched_search":
@@ -126,7 +131,7 @@ def execute_campaign(
         "campaign_lock.workload.canonical_sha256",
     )
     evidence = EvidenceStore.create(root)
-    record_confirmation_time = native_backend(comparison_arm(environments)) is not None
+    record_confirmation_time = native_backend(comparison_arm(environments)) is not None or paired_protocol(evaluation_protocol) is not None
     for sequence, run_id in enumerate(lock.run_order, start=1):
         run_started_at = clock() if record_confirmation_time else None
         arm = run_id.rsplit("-", 1)[0]
@@ -152,6 +157,8 @@ def execute_campaign(
         feedback: Mapping[str, object] = MappingProxyType({"kind": "initial"})
         observations: list[TurnObservation] = []
         live_stage = "provider"
+        provider_usage_accounted = False
+        provider_turn = None
         ralph = RalphController(
             ralph_budget,
             searches_per_turn=int(evaluation_protocol.get("searches_per_turn", 1)),
@@ -180,6 +187,8 @@ def execute_campaign(
                     feedback=feedback,
                 )
                 live_stage = "provider"
+                provider_usage_accounted = False
+                provider_turn = None
                 authoring_started = ralph.begin_authoring()
                 try:
                     provider_turn = provider.turn(
@@ -196,22 +205,27 @@ def execute_campaign(
                     )
                 finally:
                     ralph.end_authoring(authoring_started)
-                if thread_id is not None and provider_turn.thread_id != thread_id:
+                next_thread_id = provider_turn.thread_id
+                if thread_id is not None and next_thread_id != thread_id:
                     raise ValueError("provider resume thread identity differs")
-                thread_id = provider_turn.thread_id
-                cumulative_tokens += provider_turn.provider_tokens
+                next_cumulative_tokens = cumulative_tokens + provider_turn.provider_tokens
                 _archive_provider_turn(
                     arm=arm,
                     candidate_media_type=environment.media_type,
-                    cumulative_tokens=cumulative_tokens,
+                    cumulative_tokens=next_cumulative_tokens,
                     evidence=evidence,
                     ledger=ledger,
                     maximum_candidates_per_turn=maximum_candidates_per_turn,
                     provider_document=provider_document,
                     provider_turn=provider_turn,
-                    thread_id=thread_id,
+                    thread_id=next_thread_id,
                     turn_number=turn_number,
                 )
+                # Completion owns the cumulative/session commit. A returned Turn
+                # can still be refused by archive validation before any build.
+                thread_id = next_thread_id
+                cumulative_tokens = next_cumulative_tokens
+                provider_usage_accounted = True
                 # The pre-GPU filter runs on the whole set: every candidate is built,
                 # which is the verifier and the toolchain but no device. Only then is
                 # an order taken, and only the survivor reaches an Evaluation. This is
@@ -258,7 +272,7 @@ def execute_campaign(
                 else:
                     launchable = environment_result.launchable
                     assert launchable is not None
-                    required_roles = _ARM_ARTIFACT_ROLES[arm]
+                    required_roles = _arm_artifact_roles(arm, launchable.target)
                     if (
                         not required_roles <= set(launchable.artifact_roles)
                         or set(launchable.artifact_payloads)
@@ -439,6 +453,29 @@ def execute_campaign(
                 if cumulative_tokens >= cast(int, budget["limit"]):
                     break
         except Exception as error:
+            pending_usage = live_stage == "provider" and not provider_usage_accounted
+            observed_usage = None
+            declared_usage = None
+            payloads = dict(error.artifact_payloads) if isinstance(error, RunProtocolFault) else {}
+            if pending_usage:
+                declared_usage = error.reported_usage if isinstance(error, RunProtocolFault) else None
+                if provider_turn is not None:
+                    # Preserve the native statement even when the returned Turn's
+                    # bundle, identity or candidate envelope failed validation.
+                    raw_events = getattr(provider_turn, "raw_events", None)
+                    if isinstance(raw_events, bytes):
+                        payloads.setdefault("provider_stdout", raw_events)
+                    if declared_usage is None:
+                        try:
+                            declared_usage = ReportedProviderUsage(
+                                provider_document.get("event_contract", "closed_file_change_v1"),
+                                provider_turn.thread_id, provider_turn.provider_tokens)
+                        except (AttributeError, TypeError, ValueError):
+                            declared_usage = None
+                observed_usage = reported_provider_usage(payloads.get("provider_stdout", b""),
+                    provider=provider_document, expected_thread_id=thread_id)
+                if observed_usage is not None:
+                    cumulative_tokens += observed_usage.provider_tokens
             fault = record_run_fault(
                 error=error,
                 live_stage=live_stage,
@@ -446,6 +483,10 @@ def execute_campaign(
                 cumulative_tokens=cumulative_tokens,
                 evidence=evidence,
                 ledger=ledger,
+                pending_provider_usage=pending_usage,
+                observed_usage=observed_usage,
+                declared_usage=declared_usage,
+                artifact_payloads=payloads,
             )
             protocol_adherence = fault
             ralph_stop_reason = fault

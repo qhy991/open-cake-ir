@@ -2078,7 +2078,7 @@ class LabContractTests(unittest.TestCase):
 
 
 class EmpiricalFeedbackRepairTests(unittest.TestCase):
-    """Run the actual empirical environment and feedback consumer without a release cycle."""
+    """Run the real empirical consumer with an isolated synthetic CUDA Executor."""
 
     def test_environment_constructor_type_hints_keep_the_executor_owner(self):
         from typing import get_type_hints
@@ -2088,22 +2088,19 @@ class EmpiricalFeedbackRepairTests(unittest.TestCase):
         self.assertEqual(hints["executor"], ExecutorRevision | None)
 
     def test_empirical_filter_summary_reaches_the_next_provider_turn(self):
-        from open_cake_ir.compiler import Compiler
         from open_cake_ir.lab.selection import _EMPIRICAL_SELECTION, _empirical_context
         from open_cake_ir.tasks.flash_kmeans.authoring import prepare_flash_schedule
 
-        temporary = tempfile.TemporaryDirectory(prefix="empirical-feedback-repair-")
-        self.addCleanup(temporary.cleanup)
-        # Reuse the existing real consumer fixture, but not its cycle-owning setup.
-        fixture = EmpiricalSelectionContractTests("test_actual_search_feedback_and_fresh_process_replay")
-        fixture.parent = Path(temporary.name).resolve()
-        fixture.root = ROOT
-        fixture.lab = TaskLab(ROOT, clock=lambda: 0.0)
-        current = json.loads((ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text())["current"]
-        reference = {key: current[key] for key in ("path", "canonical_sha256", "executor_id")}
-        fixture.executor = ExecutorRevision.load_reference(ROOT, reference, "CPU feedback fixture")
-        fixture.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-        fixture.workload = load_workload(ROOT / "contracts/workloads/flash-kmeans-assign-v2.json")
+        # Reuse the existing synthetic CUDA host and disposable-project setup.
+        # A local subclass keeps its class-owned fixture state independent of the
+        # consumer suite; no current released Executor or host fact is changed.
+        class FeedbackFixture(EmpiricalSelectionContractTests):
+            pass
+
+        FeedbackFixture.setUpClass()
+        self.addCleanup(FeedbackFixture.tearDownClass)
+        fixture = FeedbackFixture("test_actual_search_feedback_and_fresh_process_replay")
+        fixture.lab = TaskLab(fixture.root, clock=lambda: 0.0)
         schedule = prepare_flash_schedule(
             json.loads((ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()),
             fixture.workload, "headline_b32",
@@ -3845,23 +3842,23 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         from open_cake_ir.evaluation import WorkloadContract
         from open_cake_ir.lab.selection import _empirical_context
         from tests.contracts.test_authoring_environment import _headline_schedule, _synthetic_flash_model
+        from tests.contracts.test_executor import _synthetic_cuda_host
 
         cls.temporary = tempfile.TemporaryDirectory(prefix="empirical-selection-contract-")
         cls.parent = Path(cls.temporary.name).resolve()
         cls.root = cls.parent / "prospective-project"
         shutil.copytree(ROOT, cls.root, ignore=shutil.ignore_patterns(".git", "__pycache__"))
         # Exercise the current event branch with a cycle-derived prospective Revision
-        # in this disposable project. The copied host document is a synthetic contract
-        # fixture: no host admission or provider/GPU qualification is performed.
+        # in this disposable project. CUDA advisory context comes from an explicit
+        # synthetic host, not from the hardware of the current released Executor.
+        # No host admission or provider/GPU qualification is performed.
         inventory_path = cls.root / "inventory/EXECUTOR_REVISIONS.json"
-        inventory = json.loads(inventory_path.read_text())
-        descriptor = json.loads((cls.root / inventory["current"]["path"]).read_text())
         host_fixture = cls.parent / "synthetic-host-environment.json"
-        host_fixture.write_text(json.dumps(descriptor["host_environment"]))
+        host_fixture.write_text(json.dumps(_synthetic_cuda_host()))
         prepared = subprocess.run(
             ["bash", str(cls.root / "tools/release_executor_cycle.sh"), "--host-environment", str(host_fixture)],
             cwd=cls.root, env={**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"], "PYTHONDONTWRITEBYTECODE": "1"},
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60,
         )
         if prepared.returncode:
             raise RuntimeError(prepared.stdout.decode() + prepared.stderr.decode())

@@ -10,6 +10,7 @@ from open_cake_ir.evaluation import (
     LaunchableCandidate,
     LogicalEvaluationAttempt,
 )
+from open_cake_ir.evaluation.artifacts import executable_role, required_build_roles
 from open_cake_ir.evaluation.core import _plain_json as _evaluation_plain_json
 from open_cake_ir.evaluation.paired import validate_receipt_policy
 from open_cake_ir.evidence import EvidenceStore
@@ -20,18 +21,18 @@ from .faults import RunProtocolFault
 from .providers import CANDIDATE_SET_ENVELOPE_V1, ProviderTurn, _project_candidate_submission
 
 
-_ARM_ARTIFACT_ROLES = {
-    "open_cake": {
-        "lowered_source",
-        "compiler_expanded_source",
-        "ptx",
-        "cubin",
-        "launch_manifest",
-    },
-    "direct_cuda": {"authored_source", "ptx", "cubin", "sass", "launch_manifest"},
-    "native_triton": {"authored_source", "compiler_expanded_source", "ptx", "cubin", "launch_manifest"},
-    "native_cute_dsl": {"authored_source", "compiler_expanded_source", "ptx", "cubin", "launch_manifest"},
-}
+def _arm_artifact_roles(arm: str, target: str) -> frozenset[str]:
+    """Arm owns source provenance; backend owns its actual compiled products."""
+    if executable_role(target) == "metal_binary_archive":
+        if arm != "open_cake":
+            raise ValueError("Authoring Environment and compiled target differ")
+        return required_build_roles("metal") | {"lowered_source"}
+    if arm == "open_cake":
+        return required_build_roles("triton") | {"lowered_source"}
+    if arm in {"direct_cuda", "native_triton", "native_cute_dsl"}:
+        return required_build_roles("cuda" if arm == "direct_cuda" else "triton") | {"authored_source"}
+    raise ValueError("Authoring Environment and compiled target differ")
+
 
 def _evaluation_receipt_document(receipt: EvaluationReceipt) -> dict[str, object]:
     return {
@@ -55,7 +56,9 @@ def _evaluation_receipt_document(receipt: EvaluationReceipt) -> dict[str, object
 def _candidate_artifact_media_type(role: str) -> str:
     if role == "cubin":
         return "application/x-elf"
-    if role == "launch_manifest":
+    if role == "metal_binary_archive":
+        return "application/octet-stream"
+    if role in {"launch_manifest", "metal_build_report"}:
         return "application/json"
     return "text/plain"
 

@@ -1,121 +1,100 @@
-# Authoring and measuring Apple Metal programs
+# Apple Metal tasks through TaskLab
 
-Write a Python Schedule, read localized compiler findings, and inspect the emitted Metal
-before testing it. The exact supported target is `apple_gpu_family8` on `Apple M2`.
-Python and JSON use the same canonical Schedule; another GPU is never an implicit fallback.
+The Compiler supports exact `Apple M1 Pro` / `apple_gpu_family7` and `Apple M2` /
+`apple_gpu_family8` targets. The task launcher currently admits **M1 Pro only**, using
+`--backend metal-m1-pro`. It checks the exact device, OS, toolchain and released Executor;
+there is no device fallback or borrowed Apple performance calibration.
 
-The [elementwise example](../examples/python/metal_elementwise.py),
-[row reduction](../examples/python/metal_row_sum.py), and
-[weighted RMSNorm](../examples/python/metal_rmsnorm.py) use the existing tensor frontend.
-RMSNorm composes square, sum, scalar arithmetic, rsqrt and multiplication:
+The built-in tasks are `rmsnorm`, `layernorm` (affine, centered population variance),
+and `residual_rmsnorm` (FP32-rounded residual addition before normalization). Their
+[task-owned Workloads and oracles](../src/open_cake_ir/tasks/normalization/workload.py)
+fix the rank-2 FP32 ABI, epsilon, input bounds, seeds and tolerances. Each Workload
+covers one selected shape and five required input cases: primary, zeros, near-zero,
+alternating signs and mixed magnitudes. Every case must pass before timing primary.
+Different shapes are separate Workloads; a per-shape result establishes no portfolio
+or framework claim.
 
-```python
-from open_cake_ir.compiler import Compiler, frontend
+## Launch one task
 
-compiler = Compiler.load(".", "compiler/revision.lock.json")
-source = frontend.read_schedule("examples/python/metal_rmsnorm.py")
-assessment = compiler.assess(source.document)
-for finding in assessment.findings:
-    print(finding.code, finding.path, finding.message)
-    print(source.location_for(finding.path))
-if assessment.lowering_eligible:
-    lowered = compiler.lower(assessment)
-    print(lowered.source)
-    print(dict(lowered.toolchain_requirements))
-```
+Use an existing Apple Silicon/macOS 15+ environment and a reviewed Compiler with a
+passing full Corpus Gate. The current released Executor must be a Metal Executor whose
+Python, Swift, SDK, device/OS and native helpers match the host. The launcher reports a
+missing or mismatched prerequisite; it does not install, repair or release a runtime.
 
-An agent changes a formula or concrete scheduling decision, reads the returned findings,
-fixes the relevant declaration, and inspects the next lowering. Source maps connect emitted
-operations to the Schedule. Static acceptance, compilation, output correctness and a
-qualified measurement remain distinct results.
-
-## Execution and numerical scope
-
-Current lowering assigns each flattened value to lane `index % 32` and private slot
-`index // 32`. All 32 lanes participate in supported SIMD collectives, including tails;
-program coordinates retain ownership of separate output regions. Scalar `(1,)` results can
-feed tensor arithmetic. Odd widths need no caller padding. The compiler checks supported
-access, shape, storage, broadcast and reduction declarations; unsupported commitments
-produce localized refusals. Per-lane storage analysis is a modeled view, not a measurement
-of physical registers, spills, residency or bandwidth.
-
-The [generic Swift runner](../tools/metal/runner.swift) accepts the current SIMD launch
-metadata and the explicit serial reference/replay seam. It derives no behavior from an
-operator name. The [Python boundary](../tools/metal/adapter.py) projects buffer shape, dtype,
-size and launch information from the assessed Schedule. The runner verifies exact device
-and pipeline limits, reuses device/queue/pipelines/buffers, poisons outputs outside timing,
-uses serial dispatch ordering, and checks command completion and input immutability.
-
-Runtime source compilation uses `MTLDevice.makeLibrary`, MSL 2.3, safe math, precise math
-functions and contraction disabled in source. An existing `xcrun swiftc`, Apple Silicon
-and macOS 15+ are required; standalone `xcrun metal` is unnecessary. This does not establish
-IEEE/PTX bit equivalence: Metal permits denormal flushing and different FP32 rounding
-behavior. See Apple's [compile options](https://developer.apple.com/documentation/metal/mtlcompileoptions)
-and [MSL specification](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf).
-The host executable is built once with `swiftc -O` and shared by all arms;
-`swift-build-command.json` records the invoked build argv. Metal math options remain separate.
-
-## Correctness and measurement
-
-After independent release review and the applicable local GPU authorization, run from the
-checkout with absolute output roots outside every project worktree:
+From the checkout, using the Executor's Python executable:
 
 ```sh
-env PYTHONPATH=src python3 tools/metal/check_correctness.py \
-  --output-root /absolute/external/metal-correctness
-env PYTHONPATH=src python3 tools/metal/benchmark.py \
-  --output-root /absolute/external/metal-measurements
+python3 tools/launch_task.py \
+  --task rmsnorm --backend metal-m1-pro \
+  --harness codex --model "<exact-model-id>" --effort high \
+  --workspace "$HOME/.local/share/open-cake-ir/runs/metal-rmsnorm-example" \
+  --rows 128 --columns 1024 --turns 4 --token-budget 150000
 ```
 
-Each command verifies a reviewed released Compiler and committed, clean runtime sources,
-then creates a fresh external receipt. Correctness retains the 60 elementwise/sum/max cases
-and adds 35 RMSNorm cases. The [RMSNorm contract](../tools/metal/rmsnorm.py) owns the equation,
-input ranges, seeds, epsilon, tolerances and shapes. It includes zeros, normal bounded inputs,
-epsilon-dominated inputs, negative/zero weights, and widths 1, 7, 32, 65, 257, 1024 and 4096.
-The independent high-precision CPU oracle uses fixed `atol=rtol=2e-5` for RMSNorm.
+Replace the model placeholder with the exact configured model. For Claude Code, use
+`--harness claude-code` and its exact model identifier and supported effort. The required
+harness, model and effort are retained as treatment choices. No alias or fallback is
+silently selected; Claude's native events must report the requested model.
 
-The [benchmark protocol](../tools/metal/benchmark.py) compares three equivalent RMSNorm
-formula DAGs on the fixed primary `(128, 1024)` shape. Handwritten serial and SIMD references
-have explicit source provenance and the same input bytes and oracle. They are not forged
-Compiler-generated artifacts or a previous-Compiler RMSNorm result: the older serial
-Compiler could not lower rsqrt. This is known-kernel reproduction/optimization.
+`--workspace` must be a new absolute path outside **every** Git checkout, including a
+parent repository. Its actor workspace is created once and retained through all Ralph
+turns; the provider resumes the same session. Reusing an existing task root refuses
+instead of resetting its state. `--provider-executable` selects an explicit CLI binary.
+The launcher discovers `codex` or `claude` on PATH when that option is omitted. A known
+Codex npm wrapper resolves to its own native executable; another installation is never substituted.
 
-One process constructs every treatment before comparison. A reference-only pilot chooses
-a fixed batch count from bounded powers; randomized matched sweeps then perform one search
-round and two independent confirmation rounds for the selected candidate. An independent
-identical-reference slot supplies the A/A noise control through the same binding/dispatch
-path. Buffers stay warm; there is no cache flush or inherited NVIDIA CUPTI protocol.
+The broker and its worker use the Executor's Python with `-I` and an absolute
+source bootstrap from the same checkout. Their imports do not require ambient
+`PYTHONPATH`; inherited `PYTHONPATH` and `PYTHONHOME` cannot select another checkout.
+The broker still execs its worker, retaining the admitted job and lock descriptor.
 
-Receipts keep these intervals separate:
+The [thin launcher](../tools/launch_task.py) writes the Workload, readable `starter.py`,
+Study template and runtime bindings under that root. It then prepares a sealed baseline
+through the common Open Cake environment, obtains or verifies live provider qualification,
+runs `TaskLab.preflight`, saves `campaign-lock.json`, and calls the existing
+[TaskLab composer](../src/open_cake_ir/tasks/compose.py). Ralph owns candidate filtering,
+feedback, confirmation, token/time accounting and stopping.
 
-| Field | Actual interval |
-| --- | --- |
-| Cold construction | Swift host build; device/queue creation; host preparation and library/pipeline construction, with possible system caches |
-| Warmed host call | Encode, submit and wait for completion; excludes poison, oracle checks and file I/O |
-| GPU command buffer | `GPUEndTime - GPUStartTime` after command completion |
-| Amortized dispatch | Command-buffer interval divided by the recorded dispatch count; not pure kernel latency |
+To reuse existing authorities, supply `--fixed-baseline-bundle`, `--qualification` and
+`--qualification-anchor` with their external paths. Preflight verifies their bindings.
+`--preflight-only` stops after saving the Campaign Lock; it can still compile the baseline
+and invoke provider qualification, so it is not an offline test option.
 
-The predeclared engineering rule requires A/A paired median ratio in `[0.95, 1.05]`,
-relative IQR at most 10% in each relevant arm, and a gain exceeding 5% in search and both
-confirmations. Otherwise the result is inconclusive or has no material gain. Raw samples,
-orders, warmups and batch counts are retained without trimming; invalid timers, execution
-or correctness fail with a nonzero exit. See Apple's [GPU command-buffer timestamps](https://developer.apple.com/documentation/metal/mtlcommandbuffer/gpustarttime).
-Each pilot and ordinary batch carries its own output/input validation, completed outside
-timing before another dispatch can overwrite its buffers; profile validation is separate.
+## Qualification and evaluation boundaries
 
-After ordinary timing, a separate instrumented observation requests compute-stage
-`GPUTimestamp` samples when supported. It records actual capability enumeration, resolved
-raw values and absence/failure reasons. Counter values are not converted to host time or
-called kernel cycles. Occupancy, bandwidth and instruction counters are not inferred.
-See Apple's [counter sampling](https://developer.apple.com/documentation/metal/sampling-gpu-data-into-counter-sample-buffers).
+The shared [provider qualifier](../tools/qualify_codex_provider.py) observes two actual
+turns through the same immutable TASK.md/AGENTS.md package: add a Python-source candidate
+envelope, then update it in the same workspace and session. It retains native events,
+actual token usage and protected-file checks. Executable test doubles use
+`--fixture-only`; those receipts cannot authorize a live task.
 
-`feedback.json` gives candidate disposition, localized findings, search/confirmation
-results and rejection ownership through the existing Lab routing vocabulary. There is no
-calibrated Apple ranker or inferred ranking inversion. This local evaluation is not a
-qualified Study/provider campaign, framework integration, serving or end-to-end result.
-Portable tests dispatch no GPU work:
+Common Evaluation receives a sealed Metal binary archive and explicit Workload launch
+ABI. It reloads with a strict archive hit and never compiles candidate source. The
+[local broker](../src/open_cake_ir/evaluation/local_broker.py) serializes this project's
+jobs; it does not claim that other applications are absent from the GPU.
+
+The [task Study policy](../src/open_cake_ir/tasks/normalization/study.py) declares ten
+alternating candidate/baseline pairs, 25 samples per cohort after three warmups, maximum
+CV 0.05, materiality ratio 1.05 and six required pair wins. These are engineering assay
+choices, not target calibration or assumed speedups. The timer is the completed Metal
+command-buffer interval; it is not pure kernel latency and does not inherit CUPTI/L2-flush
+semantics. Profiling is a separate compute-stage timestamp observation. Missing native
+profiling capability remains a refusal, and physical registers, spills, occupancy,
+bandwidth and instruction counts are not inferred.
+
+Static lowering uses 32-lane striped ownership, safe MSL 2.3 math and explicit launch
+metadata. CPU semantics, native compilation, device correctness, stable timing and
+framework acceptance are distinct evidence domains. No calibrated Apple cost ranker
+exists; the pre-GPU filter retains that abstention.
+
+Portable checks invoke neither a live provider nor a GPU:
 
 ```sh
-env PYTHONPATH=src python3 -m unittest \
-  tests.contracts.test_metal_runtime tests.contracts.test_metal_benchmark
+PYTHONPATH=src python3 -m unittest \
+  tests.contracts.test_normalization_tasks tests.contracts.test_task_launch \
+  tests.contracts.test_metal_task_composition tests.contracts.test_harness_qualification
 ```
+
+Generated-body checks use a C++ CPU adapter when available; qualification tests use
+explicit executable fixtures. Actual Campaign qualification and performance still
+require reviewed releases and device execution.

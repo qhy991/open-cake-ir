@@ -11,25 +11,12 @@ from hashlib import sha256
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
-from open_cake_ir.compiler.target import cuda_architecture
+from .artifacts import allowed_artifact_roles, executable_role
 
 from .profiler import load_ncu_attribution_profile, ncu_attribution_feedback
 from .workload import WorkloadContract
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_ARTIFACT_ROLES = {
-    "authored_source",
-    "lowered_source",
-    "compiler_expanded_source",
-    "ttir",
-    "ttgir",
-    "llir",
-    "ptx",
-    "cubin",
-    "sass",
-    "toolchain_resource_report",
-    "launch_manifest",
-}
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -78,15 +65,16 @@ class LaunchableCandidate:
     artifact_payloads: Mapping[str, bytes] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        cuda_architecture(self.target)
+        executable = executable_role(self.target)
+        allowed_roles = allowed_artifact_roles(self.target)
         if (
             _DIGEST.fullmatch(self.candidate_sha256) is None
             or _DIGEST.fullmatch(self.launch_spec_sha256) is None
             or not self.entry_point
             or not self.artifact_roles
-            or "cubin" not in self.artifact_roles
+            or executable not in self.artifact_roles
             or any(
-                role not in _ARTIFACT_ROLES or _DIGEST.fullmatch(digest) is None
+                role not in allowed_roles or _DIGEST.fullmatch(digest) is None
                 for role, digest in self.artifact_roles.items()
             )
         ):
@@ -150,7 +138,7 @@ class EvaluationProtocol:
             or self.purpose not in {"search", "confirmatory", "attribution"}
             or _DIGEST.fullmatch(self.workload_sha256) is None
             or not self.case_id
-            or self.timing not in {"none", "paired_cupti"}
+            or self.timing not in {"none", "paired_cupti", "paired_metal"}
             # A profiler serialises kernels and inflates every span it observes, so an
             # attribution assay cannot also be a timing source. Making that structural
             # rather than a note means a profiled run has no latency to be mistaken for
@@ -250,11 +238,27 @@ class EvaluationReceipt:
             except (UnicodeError, json.JSONDecodeError) as error:
                 raise ValueError("EvaluationReceipt raw artifacts are not JSON") from error
             if self.purpose == "attribution":
-                load_ncu_attribution_profile(
-                    self.artifact_payloads["profile"],
-                    expected_candidate_sha256=self.candidate_sha256,
-                    expected_case_id=self.case_id,
-                )
+                profile_document = json.loads(self.artifact_payloads["profile"])
+                if profile_document.get("kind") == "metal_compute_stage_timestamps_v1":
+                    from .metal_observations import load_metal_profile
+                    profile = load_metal_profile(self.artifact_payloads["profile"],
+                        expected_candidate_sha256=self.candidate_sha256, expected_case_id=self.case_id,
+                        expected_protocol_sha256=self.evaluation_protocol_sha256)
+                    from .paired import validate_metal_correctness_checks, validation_case_ids
+                    from .metal_observations import validate_launch_sequence
+                    validate_metal_correctness_checks(correctness_raw, (*validation_case_ids(profile["evaluation_protocol"]), self.case_id))
+                    validate_launch_sequence([row["command_buffer"] for row in correctness_raw["launches"]])
+                    if (correctness_raw["launches"][-1]["command_buffer"] != profile["raw"]["command_buffer"]
+                            or launch_raw.get("allocation_mode") != "local_serialized" or launch_raw.get("external_gpu_activity") != "not_excluded"
+                            or launch_raw.get("host") != profile["host"] or launch_raw.get("job_id") != profile["job_id"]
+                            or launch_raw.get("instrumented_command") != profile["raw"]["command_buffer"]):
+                        raise ValueError("Metal attribution launch differs from instrumented profile")
+                else:
+                    load_ncu_attribution_profile(
+                        self.artifact_payloads["profile"],
+                        expected_candidate_sha256=self.candidate_sha256,
+                        expected_case_id=self.case_id,
+                    )
             if not isinstance(correctness_raw, Mapping) or not isinstance(
                 launch_raw, Mapping
             ):
@@ -281,7 +285,7 @@ class EvaluationReceipt:
                 self.candidate_sha256,
             }:
                 raise ValueError("EvaluationReceipt launch candidate differs")
-            paired_raw = isinstance(timing_raw, Mapping) and timing_raw.get('kind') == 'fixed_baseline_paired_cupti_v1'
+            paired_raw = isinstance(timing_raw, Mapping) and timing_raw.get('kind') in {'fixed_baseline_paired_cupti_v1', 'fixed_baseline_paired_metal_v1'}
             if paired_raw:
                 from .paired import validate_paired_receipt
                 validate_paired_receipt(self, timing_raw, correctness_raw, launch_raw)
@@ -363,6 +367,12 @@ class EvaluationReceipt:
 
         if self.purpose != "attribution" or not self.artifact_payloads:
             return None
+        if json.loads(self.artifact_payloads["profile"]).get("kind") == "metal_compute_stage_timestamps_v1":
+            from .metal_observations import load_metal_profile
+            profile = load_metal_profile(self.artifact_payloads["profile"],
+                expected_candidate_sha256=self.candidate_sha256, expected_case_id=self.case_id,
+                expected_protocol_sha256=self.evaluation_protocol_sha256)
+            return {"kind": profile["kind"], **profile["summary"]}
         profile = load_ncu_attribution_profile(
             self.artifact_payloads["profile"],
             expected_candidate_sha256=self.candidate_sha256,

@@ -10,7 +10,6 @@ from typing import Callable, Mapping, cast
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.performance.empirical_cost import EmpiricalCostModel
-from open_cake_ir.compiler.target import cuda_target
 
 from ._documents import _canonical_json_bytes, _digest, _name, _object, _project_path
 from ._policies import (
@@ -23,11 +22,13 @@ from ._policies import (
     _scientific_analysis_plan_version,
 )
 from .admission import validate_provider, validate_run_plan, validate_evaluation
-from .bindings import _resolve_compiler_reference, resolve_execution_bindings, resolve_executor
+from .bindings import _resolve_compiler_reference, resolve_execution_bindings, resolve_executor, source_reference_path
 from .contracts import CampaignLock, StudyContract
-from .pairing import native_backend, bind_baseline, comparison_arm, native_baseline
+from .pairing import native_backend, comparison_arm, native_baseline, matched_run_arms
 from .selection import _EMPIRICAL_SELECTION
 from .task_package import TaskPackage, render_task_package
+
+from .python_reference import read_skeleton
 
 
 def task_package(
@@ -54,6 +55,7 @@ def preflight(
     project_root: Path,
     workload_loader: Callable,
     validate_authoring: Callable,
+    prepare_schedule: Callable,
     manifest_parser: Callable,
     empirical_cost_model_path: str | Path | None = None,
     execution_bindings_path: str | Path | None = None,
@@ -72,7 +74,7 @@ def preflight(
     workload_ref = _object(study.document.get("workload"), "study.workload")
     if set(workload_ref) != {"path", "canonical_sha256"}:
         raise ValueError("study workload reference fields differ")
-    workload_relative, workload_path = _project_path(
+    workload_relative, workload_path = source_reference_path(
         project_root, workload_ref.get("path"), "study.workload.path"
     )
     workload = workload_loader(workload_path)
@@ -84,8 +86,10 @@ def preflight(
     arms = _object(study.document.get("arms"), "study.arms")
     comparison = comparison_arm(arms)
     policy = native_backend(comparison)
+    single_environment = comparison is None
+    matched_run_arms(arms, study.document["claim_scope"])
     open_cake = _object(arms.get("open_cake"), "study.arms.open_cake")
-    direct_cuda = _object(arms.get(comparison), f"study.arms.{comparison}")
+    direct_cuda = _object(arms[comparison], f"study.arms.{comparison}") if comparison is not None else {}
     validate_authoring(workload, arms, empirical_cost_model_path=empirical_cost_model_path)
     empirical_policy = open_cake.get("candidate_selection")
     has_empirical_policy = "candidate_selection" in open_cake
@@ -119,6 +123,12 @@ def preflight(
         "tool_surface",
         "feedback",
     }
+    if single_environment:
+        direct_cuda_fields = set()
+        open_cake_fields.update({"input_format", "toolchain_sha256"})
+        if open_cake.get("input_format") != "schedule_or_python_v1":
+            raise ValueError("single-environment optimization requires the Python-enabled authoring contract")
+        _digest(open_cake.get("toolchain_sha256"), "study.arms.open_cake.toolchain_sha256")
     if policy is not None:
         open_cake_fields.update({"input_format", "toolchain_sha256"})
         direct_cuda_fields -= {"launch_contract", "candidate_skeleton"}
@@ -135,7 +145,7 @@ def preflight(
         raise ValueError("Study Contract Authoring Environment kinds differ")
     route = open_cake.get("lowering_route")
     if (not isinstance(route, Mapping) or set(route) != {"backend", "entry_point"}
-        or route.get("backend") != (policy.backend if policy is not None else "triton") or not isinstance(route.get("entry_point"), str)
+        or route.get("backend") not in ({"metal", "triton"} if single_environment else {policy.backend if policy is not None else "triton"}) or not isinstance(route.get("entry_point"), str)
         or not route["entry_point"].isidentifier()):
         raise ValueError("Study Contract Open Cake lowering route differs")
     schedule_skeleton = _object(
@@ -143,13 +153,13 @@ def preflight(
     )
     if set(schedule_skeleton) != {"path", "canonical_sha256"}:
         raise ValueError("Study Contract Schedule skeleton reference differs")
-    _, schedule_skeleton_path = _project_path(
+    _, schedule_skeleton_path = source_reference_path(
         project_root,
         schedule_skeleton.get("path"),
         "study.arms.open_cake.schedule_skeleton.path",
     )
     skeleton_document = _object(
-        json.loads(schedule_skeleton_path.read_text(encoding="utf-8")),
+        read_skeleton(schedule_skeleton_path),
         "study.arms.open_cake.schedule_skeleton",
     )
     if (
@@ -161,11 +171,11 @@ def preflight(
         != sha256(_canonical_json_bytes(skeleton_document)).hexdigest()
     ):
         raise ValueError("Study Contract Schedule skeleton bytes or lowering route differ")
-    if open_cake.get("provider") != direct_cuda.get(
-        "provider"
-    ) or open_cake.get("scaffold") != direct_cuda.get("scaffold"):
-        raise ValueError("matched Authoring Environments differ in provider or scaffold")
-    _digest(direct_cuda.get("toolchain_sha256"), "study.arms.direct_cuda.toolchain_sha256")
+    if comparison is not None:
+        if (open_cake.get("provider") != direct_cuda.get("provider")
+                or open_cake.get("scaffold") != direct_cuda.get("scaffold")):
+            raise ValueError("matched Authoring Environments differ in provider or scaffold")
+        _digest(direct_cuda.get("toolchain_sha256"), "study.arms.direct_cuda.toolchain_sha256")
     claim_scope = validate_provider(
         open_cake=open_cake,
         policy=policy,
@@ -175,14 +185,14 @@ def preflight(
     scaffold = _object(open_cake.get("scaffold"), "study.arms.scaffold")
     if set(scaffold) != {"path", "sha256"}:
         raise ValueError("Study Contract scaffold reference differs")
-    _, scaffold_path = _project_path(
+    _, scaffold_path = source_reference_path(
         project_root, scaffold.get("path"), "study.arms.scaffold.path"
     )
     if _digest(scaffold.get("sha256"), "study.arms.scaffold.sha256") != sha256(
         scaffold_path.read_bytes()
     ).hexdigest():
         raise ValueError("Study Contract scaffold bytes differ")
-    if policy is None:
+    if comparison == "direct_cuda":
         launch_contract = _object(
             direct_cuda.get("launch_contract"), "study.arms.direct_cuda.launch_contract"
         )
@@ -214,9 +224,8 @@ def preflight(
             "study.arms.direct_cuda.candidate_skeleton.sha256",
         ) != sha256(candidate_skeleton_path.read_bytes()).hexdigest():
             raise ValueError("Study Contract direct candidate skeleton bytes differ")
-    if open_cake.get("tool_surface") != (["submit_schedule_or_python"] if policy is not None else ["submit_schedule"]) or direct_cuda.get(
-        "tool_surface"
-    ) != ([policy.submit_tool] if policy is not None else ["submit_cuda"]):
+    if (open_cake.get("tool_surface") != (["submit_schedule_or_python"] if policy is not None or single_environment else ["submit_schedule"])
+            or (comparison is not None and direct_cuda.get("tool_surface") != ([policy.submit_tool] if policy is not None else ["submit_cuda"]))):
         raise ValueError("Study Contract Authoring Environment tool surfaces differ")
     attribution_evaluation = _object(
         study.document.get("evaluation_protocol"),
@@ -234,12 +243,9 @@ def preflight(
         "correctness",
         "qualified_timing",
         *profile_feedback,
-    ] or direct_cuda.get("feedback") != [
-        "compile",
-        "correctness",
-        "qualified_timing",
-        *profile_feedback,
-    ]:
+    ] or (comparison is not None and direct_cuda.get("feedback") != [
+        "compile", "correctness", "qualified_timing", *profile_feedback,
+    ]):
         raise ValueError("Study Contract Authoring Environment feedback differs")
     gate, compiler_relative, compiler_reference = (
         _resolve_compiler_reference(
@@ -250,15 +256,16 @@ def preflight(
         )
     )
 
-    if policy is not None:
+    if policy is not None or single_environment:
         case_id = str(_object(study.document["evaluation_protocol"], "evaluation_protocol")["case_id"])
-        baseline = bind_baseline(skeleton_document, workload, case_id)
+        baseline = prepare_schedule(skeleton_document, workload, case_id, open_cake)
         baseline_compiler = Compiler.load(project_root, project_root / compiler_relative)
         assessment = baseline_compiler.assess(baseline)
         if not assessment.lowering_eligible:
             raise ValueError("paired optimization baseline is not lowerable")
         baseline_lowering = baseline_compiler.lower(assessment)
-        native_baseline(baseline_lowering)
+        if policy is not None:
+            native_baseline(baseline_lowering)
 
     budget, maximum_candidates_per_turn, run_order, run_protocol = validate_run_plan(
         claim_scope=claim_scope,
@@ -267,7 +274,7 @@ def preflight(
     )
     evaluation, execution = validate_evaluation(
         attribution_evaluation=attribution_evaluation,
-        baseline_lowering=baseline_lowering if policy is not None else None,
+        baseline_lowering=baseline_lowering if policy is not None or single_environment else None,
         budget=budget,
         manifest_parser=manifest_parser,
         maximum_candidates_per_turn=maximum_candidates_per_turn,
@@ -291,9 +298,15 @@ def preflight(
     )
     executor_reference = dict(executor.reference)
     gpu = _object(execution.get("gpu"), "study.execution.gpu")
-    target = cuda_target(execution['target'])
+    from open_cake_ir.compiler.target import Target
+    revision_document = json.loads((project_root / compiler_relative).read_bytes())
+    target_reference = revision_document["target_definitions"].get(execution["target"])
+    if target_reference is None:
+        raise ValueError("Study target is not bound by the Compiler Revision")
+    _, target_path = _project_path(project_root, target_reference["path"], "compiler.target")
+    target = Target.load(target_path)
     if (set(gpu) != {'name', 'count', 'mode'} or gpu.get('name') not in target.device_names
-        or type(gpu.get('count')) is not int or gpu['count'] != 1 or gpu.get('mode') != 'exclusive'):
+        or type(gpu.get('count')) is not int or gpu['count'] != 1 or gpu.get('mode') != ('local_serialized' if route['backend'] == 'metal' else 'exclusive')):
         raise ValueError("Study Contract GPU admission differs")
     analysis = _object(study.document.get("analysis_plan"), "study.analysis_plan")
     if claim_scope == "system_qualification_only":

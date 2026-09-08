@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["arm", "candidate_written", "kind", "turn"],
+  "properties": {
+    "arm": {"type": "string", "enum": ["open_cake"]},
+    "candidate_written": {"type": "boolean", "const": true},
+    "kind": {"type": "string", "const": "open_cake_ir_turn"},
+    "turn": {"type": "integer", "minimum": 1}
+  }
+}

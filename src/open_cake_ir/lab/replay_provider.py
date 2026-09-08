@@ -10,12 +10,16 @@ from typing import Mapping, Sequence, cast
 from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from ._documents import _object
+from .faults import ReportedProviderUsage
+from .provider_events import reported_provider_usage
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1,
     _project_candidate_submission,
     parse_codex_turn_events,
 )
 from .task_package import TASK_AGENTS_RALPH_V1, TaskPackage
+
+from .claude import CLAUDE_EVENT_CONTRACT, parse_claude_turn_events
 
 
 def _replay_provider_turns(
@@ -220,11 +224,14 @@ def _replay_provider_turns(
         expected_name = (
             "candidate-set.json"
         )
-        parsed = parse_codex_turn_events(
-            raw_events,
-            expected_terminal_message=expected_terminal,
-            event_contract=event_contract,
-        )
+        if event_contract == CLAUDE_EVENT_CONTRACT:
+            parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal)
+            if (parsed.reported_models != (provider_authority["model"],)
+                    or expected_change == "add" and parsed.write_tools[0] != "Write"):
+                return None
+        else:
+            parsed = parse_codex_turn_events(raw_events, expected_terminal_message=expected_terminal,
+                                            event_contract=event_contract)
         turn_tokens = payload.get("turn_provider_tokens")
         if (
             parsed.thread_id != thread_id
@@ -233,7 +240,7 @@ def _replay_provider_turns(
         ):
             return None
         if parsed.candidate_path is not None and (
-            parsed.change_kind != expected_change
+            (event_contract != CLAUDE_EVENT_CONTRACT and parsed.change_kind != expected_change)
             or Path(parsed.candidate_path).name != expected_name
         ):
             return None
@@ -257,3 +264,51 @@ def _replay_provider_turns(
     ):
         return None
     return cumulative_by_turn, provider_candidates_by_turn, provider_candidate_bytes, candidate_set_turns, prior_cumulative
+
+
+def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None) -> int | None:
+    """Rederive failed-invocation usage from retained stdout, never its declaration."""
+    usage_fields = {"provider_usage", "terminal_provider_tokens_scope", "provider_usage_witness_mismatch"}
+    if payload.get("stage") != "provider":
+        return None if usage_fields & set(payload) else 0
+    references = payload.get("objects", [])
+    stdout = [reference for reference in references if reference.get("role") == "provider_stdout"]
+    if len(stdout) > 1:
+        return None
+    try:
+        observed = reported_provider_usage(evidence.read_object(stdout[0]), provider=provider,
+            expected_thread_id=expected_thread_id) if stdout else None
+    except (OSError, ValueError, KeyError):
+        return None
+    retained_usage = payload.get("provider_usage")
+    if observed is not None:
+        if (not isinstance(retained_usage, Mapping)
+                or set(retained_usage) != {"status", "event_contract", "thread_id", "provider_tokens"}
+                or retained_usage.get("status") != "observed"):
+            return None
+        try:
+            retained = ReportedProviderUsage(retained_usage["event_contract"],
+                retained_usage["thread_id"], retained_usage["provider_tokens"])
+        except (TypeError, ValueError):
+            return None
+        if retained != observed:
+            return None
+    elif retained_usage != {"status": "unavailable", "provider_tokens": None}:
+        return None
+    if observed is None:
+        if payload.get("terminal_provider_tokens_scope") != "known_subtotal":
+            return None
+    elif "terminal_provider_tokens_scope" in payload:
+        return None
+    if "provider_usage_witness_mismatch" in payload:
+        declared = payload["provider_usage_witness_mismatch"]
+        if declared is not None:
+            if not isinstance(declared, Mapping) or set(declared) != {"event_contract", "thread_id", "provider_tokens"}:
+                return None
+            try:
+                declared = ReportedProviderUsage(**declared)
+            except (TypeError, ValueError):
+                return None
+        if declared == observed:
+            return None
+    return observed.provider_tokens if observed is not None else 0

@@ -68,14 +68,25 @@ class LabCoreArchitectureTests(unittest.TestCase):
             },
             "execution": {"executor_revision": "must not load"},
         })
+        from open_cake_ir.lab.ralph import RalphBudget, RalphController
+        budget = {"limit": 80000, "maximum_turns": 2, "maximum_candidates_per_turn": 1,
+                  "wall_time_seconds": 30, "active_authoring_time_seconds": 15,
+                  "evaluation_limits": {"search": 2, "confirmatory": 2, "attribution": 2}, "checkpoints": [80000]}
+        lock.document["resolved_inputs"]["budget"] = budget
+        ralph = RalphController(RalphBudget.from_mapping(budget), searches_per_turn=1,
+                                profile_each_search_survivor=False, clock=lambda: 0.0)
         events = [
             {"kind": "run_started", "payload": {"sequence": 1, "assigned_arm": "open_cake",
                 "automatic_retries": 0, "replacement_run": False}},
             {"kind": "run_fault", "payload": {"fault": "harness_fault", "exception_type": "RuntimeError",
-                "turn": 1, "stage": "provider", "terminal_provider_tokens": 0}},
+                "turn": 1, "stage": "provider", "terminal_provider_tokens": 0,
+                "provider_usage": {"status": "unavailable", "provider_tokens": None},
+                "terminal_provider_tokens_scope": "known_subtotal"}},
             {"kind": "checkpoints_projected", "payload": {
                 "checkpoints": [asdict(item) for item in project_checkpoints(
-                    turns=(), checkpoints=[80000], terminal_provider_tokens=0)], "ralph": {},
+                    turns=(), checkpoints=[80000], terminal_provider_tokens=0)],
+                "ralph": dict(ralph.state_card(turn=1, cumulative_provider_tokens=0,
+                                              feedback={"kind": "initial"}, terminal_reason="harness_fault")),
             }},
             {"kind": "run_terminal", "payload": {"protocol_adherence": "harness_fault",
                 "endpoint_observation": "missing", "endpoint": None}},

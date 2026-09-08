@@ -24,3 +24,12 @@ task replay examples explain the separate source and output locations.
 Regression coverage exercises a released lock with no local consumer witness,
 repeated unapproved preparation, an approved successor, and unchanged-release
 verification. It requires the previous four release authority files to survive.
+
+On 2026-09-08, the main and Metal branches had independently released Compiler v62.
+Main's existing `compiler/releases/v62` remains unchanged. The Metal v62 authority at
+`20120f425cb7df45586f15b9174c029298a20884` is preserved unchanged in
+`compiler/releases/v62-metal`, including its lock, source set, Gate and approval.
+The original Compiler id stays v62; this directory reserves history, not a current release.
+Replay uses that complete original Git tree and its original paths. Integration retains
+main's CuTe sources and Corpus expectations and prepares a separately derived successor.
+Neither historical approval authorizes the combined source.

@@ -13,7 +13,7 @@ from .seed import KernelSeed
 from .portfolio import PortfolioArtifact,PortfolioEvaluationReceipt,replay_portfolio_receipt
 from open_cake_ir.lab.bindings import resolve_executor
 from open_cake_ir.lab.executor import ExecutorRevision
-from open_cake_ir.lab.archive import _ARM_ARTIFACT_ROLES, _candidate_artifact_media_type
+from open_cake_ir.lab.archive import _arm_artifact_roles, _candidate_artifact_media_type
 from open_cake_ir.lab.contracts import CampaignLock, CampaignRef, StudyContract
 from open_cake_ir.lab._documents import _canonical_json_bytes, _digest, _object, _project_path
 from open_cake_ir.lab.bindings import _resolve_compiler_reference
@@ -330,7 +330,7 @@ class PortfolioStudyMixin:
             for entry in artifact.entries:
                 candidate = entry.candidate
                 if (
-                    not _ARM_ARTIFACT_ROLES["open_cake"]
+                    not _arm_artifact_roles("open_cake", candidate.target)
                     <= set(candidate.artifact_payloads)
                     or set(candidate.artifact_payloads) != set(candidate.artifact_roles)
                 ):

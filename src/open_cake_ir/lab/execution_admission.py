@@ -10,10 +10,11 @@ from ._documents import _canonical_json_bytes, _digest, _name, _object
 from .bindings import qualification_path as _qualification_path
 from .pairing import comparison_arm, native_backend
 from .providers import (
-    CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
     ProviderQualificationReceipt,
 )
+
+from .provider_policy import provider_configuration
 
 
 def validate_execution_bindings(
@@ -87,31 +88,8 @@ def validate_execution_bindings(
         raise ValueError('new live native execution requires paired policy and current closed provider surface')
     if getattr(provider, "executable_sha256", None) != qualification.executable_sha256:
         raise ValueError("Run Provider executable does not match its qualification")
-    output_schema = _object(
-        provider_document["output_schema"],
-        "arm_environments.open_cake.provider.output_schema",
-    )
-    expected_provider_configuration = {
-        "model": provider_document["model"],
-        "reasoning_effort": provider_document["reasoning_effort"],
-        "service_tier": provider_document["service_tier"],
-        "output_schema_sha256": output_schema["sha256"],
-        "removed_environment": provider_document["removed_environment"],
-        "sandbox": provider_document["sandbox"],
-        "cwd_policy": provider_document["cwd_policy"],
-        "reference_visibility": provider_document["reference_visibility"],
-        "disabled_features": provider_document["disabled_features"],
-        "code_mode_host": provider_document["code_mode_host"],
-    }
-    if "web_search" in provider_document:
-        expected_provider_configuration["web_search"] = provider_document["web_search"]
-    if "event_contract" in provider_document:
-        expected_provider_configuration["event_contract"] = provider_document[
-            "event_contract"
-        ]
-    expected_provider_configuration[
-        "submission_contract"
-    ] = CANDIDATE_SET_ENVELOPE_V1
+    expected_provider_configuration = provider_configuration(
+        provider_document, lock.claim_scope, arms=arms)
     if (
         getattr(provider, "configuration", None) != expected_provider_configuration
         or qualification.canonical_sha256

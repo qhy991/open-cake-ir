@@ -9,7 +9,13 @@ from typing import Callable, Mapping
 from .core import EvaluationReceipt, LaunchableCandidate
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_JOB_ID = re.compile(r"^gpuq-[0-9a-f]{12}$")
+_JOB_ID = re.compile(r"^(gpuq|metal)-[0-9a-f]{12}$")
+
+
+def valid_job_mode(job_id: str, mode: str) -> bool:
+    match = _JOB_ID.fullmatch(job_id) if isinstance(job_id, str) else None
+    return bool(match and mode == {"gpuq": "exclusive", "metal": "local_serialized"}[match[1]]
+                and (match[1] != "metal" or job_id != "metal-000000000000"))
 
 
 @dataclass(frozen=True)
@@ -49,8 +55,7 @@ class BrokerAttempt:
             self.fallback_calls,
         )
         if (
-            _JOB_ID.fullmatch(self.job_id) is None
-            or self.mode != "exclusive"
+            not valid_job_mode(self.job_id, self.mode)
             or any(_DIGEST.fullmatch(value) is None for value in digests)
             or any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in counters)
         ):
@@ -81,7 +86,8 @@ def is_resubmittable_admission_failure(attempt: BrokerAttempt) -> bool:
     """Recognize only the exact zero-work exclusive-card race seen in r41."""
 
     return (
-        not attempt.admitted
+        attempt.mode == "exclusive"
+        and not attempt.admitted
         and attempt.error == "gpu_admission_differs"
         and attempt.receipt is None
         and (

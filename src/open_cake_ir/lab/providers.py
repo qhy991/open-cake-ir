@@ -27,7 +27,7 @@ from .provider_documents import (
     required_live_provider_qualification_scope,
     _project_candidate_submission,
 )
-from .provider_events import normalize_codex_turn, parse_codex_turn_events
+from .provider_events import normalize_codex_turn, parse_codex_turn_events, reported_codex_usage, reported_provider_usage
 from .provider_invocation import CodexInvocationBuilder, resolve_codex_code_mode_host
 
 
@@ -69,6 +69,8 @@ class CodexProviderAdapter:
                     "provider_stdout": error.stdout,
                     "provider_stderr": error.stderr,
                 },
+                reported_usage=reported_codex_usage(error.stdout, event_contract=event_contract,
+                                                     expected_thread_id=invocation.thread_id),
             ) from error
         if completed.returncode != 0:
             raise RunProtocolFault(
@@ -78,6 +80,8 @@ class CodexProviderAdapter:
                     "provider_stdout": completed.stdout,
                     "provider_stderr": completed.stderr,
                 },
+                reported_usage=reported_codex_usage(completed.stdout, event_contract=event_contract,
+                                                     expected_thread_id=invocation.thread_id),
             )
         try:
             return normalize_codex_turn(
@@ -98,6 +102,8 @@ class CodexProviderAdapter:
                     "provider_stdout": completed.stdout,
                     "provider_stderr": completed.stderr,
                 },
+                reported_usage=reported_codex_usage(completed.stdout, event_contract=event_contract,
+                                                     expected_thread_id=invocation.thread_id),
             ) from error
 
 class TurnRequestLike(Protocol):
@@ -112,17 +118,37 @@ class TurnRequestLike(Protocol):
     maximum_candidates_per_turn: int
     state_card: Mapping[str, object] | None
 
-class CodexRunProvider:
-    """Canonical Campaign-Lock-compatible provider from Turn to normalized evidence."""
+
+class InvocationBuilder(Protocol):
+    workspace: Path
+    executable: Path
+    provider_revision: str
+
+    @property
+    def configuration(self) -> Mapping[str, object]: ...
+
+    def build(self, prompt: str, *, thread_id: str | None) -> ProviderInvocation: ...
+
+
+class ProviderAdapter(Protocol):
+    def execute(
+        self, invocation: ProviderInvocation, *, candidate_path: Path,
+        expected_change: str, expected_terminal_message: str, event_contract: str,
+        submission_contract: str, arm: str | None, maximum_candidates_per_turn: int,
+    ) -> ProviderTurn: ...
+
+
+class QualifiedRunProvider:
+    """Shared qualified Run lifecycle; each harness supplies its own adapter."""
 
 
     def __init__(
         self,
         *,
         qualification: ProviderQualificationReceipt,
-        builders: Mapping[str, CodexInvocationBuilder],
+        builders: Mapping[str, InvocationBuilder],
         task_packages: Mapping[str, TaskPackage],
-        adapter: CodexProviderAdapter | None = None,
+        adapter: ProviderAdapter,
     ) -> None:
         if (
             not qualification.qualified
@@ -132,14 +158,14 @@ class CodexRunProvider:
             or not builders
             or set(task_packages) != set(builders)
         ):
-            raise ValueError("live Codex Run Provider authority differs")
+            raise ValueError("live provider Run Provider authority differs")
         revisions = {builder.provider_revision for builder in builders.values()}
         executables = {builder.executable.resolve(strict=True) for builder in builders.values()}
         if revisions != {qualification.provider_revision} or len(executables) != 1:
-            raise ValueError("Codex Run builders differ from provider qualification")
+            raise ValueError("provider Run builders differ from provider qualification")
         executable = next(iter(executables))
         if sha256(executable.read_bytes()).hexdigest() != qualification.executable_sha256:
-            raise ValueError("Codex executable bytes differ from provider qualification")
+            raise ValueError("provider executable bytes differ from provider qualification")
         workspaces = [builder.workspace.absolute() for builder in builders.values()]
         if len(set(workspaces)) != len(workspaces):
             raise ValueError("each Run requires an independent workspace")
@@ -148,7 +174,7 @@ class CodexRunProvider:
             for builder in builders.values()
         }
         if len(configurations) != 1:
-            raise ValueError("Codex Run builder configurations differ")
+            raise ValueError("provider Run builder configurations differ")
         self.provider_revision = qualification.provider_revision
         self.qualification_sha256 = qualification.canonical_sha256
         self.executable_sha256 = qualification.executable_sha256
@@ -159,7 +185,7 @@ class CodexRunProvider:
             ).encode()
         ).hexdigest()
         if configuration_sha256 != qualification.configuration_sha256:
-            raise ValueError("Codex configuration differs from provider qualification")
+            raise ValueError("provider configuration differs from provider qualification")
         self._event_contract = str(
             self.configuration.get("event_contract", "closed_file_change_v1")
         )
@@ -167,14 +193,14 @@ class CodexRunProvider:
             self.configuration.get("submission_contract")
         )
         if self._submission_contract != CANDIDATE_SET_ENVELOPE_V1:
-            raise ValueError("Codex submission contract differs")
+            raise ValueError("provider submission contract differs")
         for run_id, package in task_packages.items():
             if package.run_id != run_id:
                 raise ValueError("Ralph task package Run identity differs")
             verify_task_package(builders[run_id].workspace, package)
         self._builders = dict(builders)
         self._task_packages = task_packages
-        self._adapter = adapter or CodexProviderAdapter()
+        self._adapter = adapter
 
     def turn(self, request: TurnRequestLike) -> ProviderTurn:
         """Execute initial/add or same-thread resume/update under one environment."""
@@ -188,7 +214,7 @@ class CodexRunProvider:
             or isinstance(request.maximum_candidates_per_turn, bool)
             or request.maximum_candidates_per_turn <= 0
         ):
-            raise ValueError("Codex Run or arm is outside the Campaign Lock")
+            raise ValueError("provider Run or arm is outside the Campaign Lock")
         workspace = builder.workspace.absolute()
         package = self._task_packages[request.run_id]
         verify_task_package(workspace, package)
@@ -203,15 +229,15 @@ class CodexRunProvider:
                 or not workspace.is_dir()
                 or set(workspace.iterdir()) != expected_initial_entries
             ):
-                raise ValueError("initial Codex Turn requires one empty workspace")
+                raise ValueError("initial provider Turn requires one empty workspace")
         elif request.thread_id is None:
-            raise ValueError("resumed Codex Turn requires the existing thread")
+            raise ValueError("resumed provider Turn requires the existing thread")
         candidate_path = workspace / "candidate-set.json"
         expected_change = "add" if request.turn == 1 else "update"
         if (expected_change == "add" and candidate_path.exists()) or (
             expected_change == "update" and not candidate_path.is_file()
         ):
-            raise ValueError("Codex candidate lifecycle differs before invocation")
+            raise ValueError("provider candidate lifecycle differs before invocation")
         prompt, reference_bundle = render_task_request(package, request.state_card)
         terminal_document: dict[str, object] = {
             "arm": request.arm,
@@ -247,13 +273,31 @@ class CodexRunProvider:
         ):
             raise RunProtocolFault(
                 "provider_fault",
-                "Codex candidate-set workspace custody differs",
+                "provider candidate-set workspace custody differs",
+                artifact_payloads={"provider_stdout": result.raw_events},
+                reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
+                                                       expected_thread_id=request.thread_id),
             )
         try:
             verify_task_package(workspace, package)
         except ValueError as error:
-            raise RunProtocolFault("contamination", str(error)) from error
+            raise RunProtocolFault("contamination", str(error),
+                artifact_payloads={"provider_stdout": result.raw_events},
+                reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
+                                                       expected_thread_id=request.thread_id)) from error
         return replace(
             result,
             reference_bundle=reference_bundle,
         )
+
+
+class CodexRunProvider(QualifiedRunProvider):
+    """Existing Codex entrypoint with its native event adapter."""
+
+    def __init__(
+        self, *, qualification: ProviderQualificationReceipt,
+        builders: Mapping[str, CodexInvocationBuilder], task_packages: Mapping[str, TaskPackage],
+        adapter: CodexProviderAdapter | None = None,
+    ) -> None:
+        super().__init__(qualification=qualification, builders=builders, task_packages=task_packages,
+                         adapter=adapter or CodexProviderAdapter())

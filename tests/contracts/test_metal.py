@@ -224,6 +224,48 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
                 self.assertEqual(kernel(*arrays, _Program(*position)), 0, "SIMD collective participants or call sites diverged")
             return {buffer.name: list(array) for buffer, array in zip(globals_, arrays)}
 
+    def test_m1_pro_exact_target_and_uncalibrated_analysis(self):
+        target = Target.load(ROOT / "compiler/targets/apple_gpu_family7.json")
+        self.assertEqual(target.device_names, ("Apple M1 Pro",))
+        self.assertIsNone(target.compute_capability)
+        for field, value in (("compute_capability", [10, 0]), ("occupancy", {}), ("peak", {})):
+            document = json.loads((ROOT / "compiler/targets/apple_gpu_family7.json").read_text())
+            with self.subTest(field=field), self.assertRaises(TargetParseError):
+                Target.from_dict(dict(document, **{field: value}))
+        for operation in ("elementwise", "sum", "max"):
+            document = make_document(operation=operation)
+            document["target"] = "apple_gpu_family7"
+            assessment, lowering = self.lower(document)
+            self.assertEqual(lowering.toolchain_requirements["target"], "apple_gpu_family7")
+            self.assertEqual(lowering.toolchain_requirements["threads_per_threadgroup"], [32, 1, 1])
+            self.assertFalse(assessment.calibration_available)
+            self.assertEqual(self.compiler.rank([assessment]), ((), (assessment.schedule_id,)))
+            self.assertIsNone(residency_upper_bound(Schedule.from_dict(document), target))
+            self.assertIsNone(cost(Schedule.from_dict(document), target))
+            profile = self.compiler.profile(assessment).as_dict()
+            self.assertEqual(profile["ncu_metrics"], [])
+            self.assertIsNone(profile["residency"])
+            self.assertTrue(any("no calibrated performance model" in reason
+                                for reason in profile["abstentions"]))
+        wrong = make_document()
+        self.assertIn("METAL_TARGET_UNSUPPORTED", [f.code for f in metal.preflight(Schedule.from_dict(wrong), target)])
+        wrong["target"] = "apple_gpu_family7"
+        from dataclasses import replace
+        for changed in (replace(target, device_names=("Apple M1",)), replace(target, architecture="apple8")):
+            self.assertIn("METAL_TARGET_UNSUPPORTED", [f.code for f in metal.preflight(Schedule.from_dict(wrong), changed)])
+
+    def test_m1_pro_rmsnorm_formulas_execute_odd_width_on_cpu(self):
+        from tools.metal import rmsnorm
+        import struct
+        for formula in rmsnorm.FORMULAS:
+            with self.subTest(formula=formula):
+                inputs, oracle = rmsnorm.inputs_and_oracle(2, 65, "mixed_magnitude")
+                document = rmsnorm.document(2, 65, formula, target="apple_gpu_family7")
+                unpacked = {key: list(struct.unpack(f"<{len(value)//4}f", value)) for key, value in inputs.items()}
+                observed = self.execute_body(document, unpacked)["out"]
+                for got, expected, tolerance in zip(observed, oracle["out"]["expected"], oracle["out"]["absolute_tolerance"]):
+                    self.assertLessEqual(abs(got - expected), tolerance)
+
     def test_python_json_and_public_launch_abi_are_identical(self):
         document = make_document()
         with tempfile.TemporaryDirectory() as temporary:
