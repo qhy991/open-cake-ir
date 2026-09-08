@@ -17,7 +17,7 @@ from open_cake_ir.tasks.flash_kmeans.cuda_manifest import parse_cuda_launch_mani
 from open_cake_ir.lab import BuildRequest, CandidateSubmission
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
-from open_cake_ir.lab.environments import _EMPIRICAL_SELECTION, _empirical_context  # noqa: E402
+from open_cake_ir.lab.selection import _EMPIRICAL_SELECTION, _empirical_context  # noqa: E402
 from open_cake_ir.lab.executor import ExecutorRevision  # noqa: E402
 
 
