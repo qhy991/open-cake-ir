@@ -80,3 +80,5 @@ ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭�
 - [0058: External writer custody anchors](../../adr/0058-external-writer-custody-anchors.md)
 
 - [0059: Final release identities bind complete authority](../../adr/0059-final-release-identities-bind-complete-authority.md)
+
+- [0061: Compiler dependencies at Executor handoffs](../../adr/0061-compiler-dependencies-at-executor-handoffs.md)

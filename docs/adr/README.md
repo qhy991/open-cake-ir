@@ -81,3 +81,5 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - [0058: External writer custody anchors](0058-external-writer-custody-anchors.md)
 
 - [0059: Final release identities bind complete authority](0059-final-release-identities-bind-complete-authority.md)
+
+- [0061: Compiler dependencies at Executor handoffs](0061-compiler-dependencies-at-executor-handoffs.md)

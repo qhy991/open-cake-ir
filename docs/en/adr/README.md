@@ -79,3 +79,5 @@ Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft wor
 - [0058: External writer custody anchors](../../adr/0058-external-writer-custody-anchors.md)
 
 - [0059: Final release identities bind complete authority](../../adr/0059-final-release-identities-bind-complete-authority.md)
+
+- [0061: Compiler dependencies at Executor handoffs](../../adr/0061-compiler-dependencies-at-executor-handoffs.md)
