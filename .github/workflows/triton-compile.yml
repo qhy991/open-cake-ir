@@ -70,16 +70,9 @@ jobs:
           assert report['device_validation'] is False
           assert report['triton'] == '3.7.1' and report['torch'] == '2.9.1+cpu'
           assert report['cases'], 'no accepted cases were compiled'
-          if variant == 'baseline':
-              assert status == 1 and report['passed'] is False
-              failures = [row for row in report['cases'] if row['returncode'] != 0]
-              assert any('can_reorder' in (root / row['directory'] / 'stderr.txt').read_text()
-                         for row in failures), 'baseline failed for a different reason'
-              print('Observed the retained baseline cat refusal; its compile report remains failed.')
-          else:
-              assert status == 0 and report['passed'] is True, 'successor compilation failed'
-              assert all(row['returncode'] == 0 and not row['timed_out'] for row in report['cases'])
-              print('Every accepted selection case compiled; device correctness was not evaluated.')
+          assert status == 0 and report['passed'] is True, f'{variant} compilation failed'
+          assert all(row['returncode'] == 0 and not row['timed_out'] for row in report['cases'])
+          print(f'{variant}: every accepted selection case compiled; device correctness was not evaluated.')
           PY
       - name: Retain compile reports and per-case artifacts
         if: always()
