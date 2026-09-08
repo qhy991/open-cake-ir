@@ -21,7 +21,7 @@ from open_cake_ir.compiler import Compiler
 
 
 def _expected(compiler: Compiler, root: Path, schedule: str) -> dict[str, object]:
-    assessment = compiler.assess(json.loads((root / schedule).read_text(encoding="utf-8")))
+    assessment = compiler.assess_file(root / schedule)
     return {
         "accepted": assessment.accepted,
         "lowering_eligible": assessment.lowering_eligible,

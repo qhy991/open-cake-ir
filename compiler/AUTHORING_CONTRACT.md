@@ -136,3 +136,36 @@ For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics,
 narrows the public Compiler to one exact lowering route and supplies a complete `schedule-skeleton.json`; start from
 that skeleton. A Schedule may change admitted block sizes, warps and stages, but must preserve its route, external
 tensor shapes, `metadata.workload_contract_sha256`, operator semantics, and frozen Compiler Revision during a Run.
+
+## Source, value-domain and hardware boundaries
+
+Python-emitting backends require safe identifiers for emitted symbols and operation ids:
+ASCII Python identifiers outside keywords, fixed imports and generated namespaces.
+Input `out` and wrapper-validation locals cannot shadow wrapper state; an output buffer
+named `out` remains valid. Backend source restrictions preserve IR acceptance and produce
+localized capability Findings before lowering.
+
+A register value stored to a direct global AccessMap has exactly the vector-domain shape
+of that address (or canonical `[1]` for an all-scalar address). A store cannot implicitly
+splat or reshape the value, just as a load cannot invent a different result shape.
+
+The current Triton loop-carried argmin requires a proven static candidate domain with
+complete tiles. Runtime candidate prefixes, candidate-dependent extent lookups, indirect
+or unknown value domains and partial candidate tiles are refused. A runtime prefix on an
+orthogonal row/feature dimension does not itself restrict candidate validity. Dynamic
+`LoopStop` is currently supported only for transient computations feeding validity-masked
+loop-carried top-k: no state/atomic/global-write effects, other carried state or escaping
+private intermediates. Other stopped bodies receive a capability refusal; zero-fill
+loads do not establish neutral values for arbitrary downstream operations.
+
+Tensor-memory allocation columns are powers of two in `[32,512]` and must also fit the
+Target capacity and declared bytes. MMA tile N contains whole declared instruction N
+atoms; a wider instruction cannot write into a narrower accumulator tile. These checks
+follow the [PTX tensor-memory allocation and MMA contracts](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html).
+`Residency.registers_per_thread` is a compile-time cap bounded by the selected Target's
+`maximum_registers_per_thread`. Its positive integer syntax is distinct from Role's
+`setmaxnreg` immediate encoding: small or non-multiple-of-eight compile-time caps remain
+valid. Missing Target cap coverage is reported, not treated as an unlimited resource.
+The current CUDA Target capacity follows the [Blackwell hardware specification](https://docs.nvidia.com/cuda/blackwell-tuning-guide/index.html#occupancy),
+while [.maxnreg](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#performance-tuning-directives-maxnreg)
+and `setmaxnreg` retain their separate meanings.

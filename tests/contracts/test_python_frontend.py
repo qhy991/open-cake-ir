@@ -264,7 +264,9 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
         with self.assertRaises(FrontendError) as caught:
             parse(FMA.replace('warps=[0, 1, 2, 3]', 'warps=[0, 1, 2, 3], imaginary=True'), filename="fma.py")
         self.assertEqual(caught.exception.code, "SCHEDULE_STRUCTURE")
-        self.assertIn("schedule.roles[0]", str(caught.exception))
+        self.assertEqual(caught.exception.canonical_path, "schedule.roles[0]")
+        self.assertIn("compute", str(caught.exception))
+        self.assertNotIn("schedule.roles[0]", str(caught.exception))
         self.assertEqual(caught.exception.location.line, 9)
 
     def test_utf8_source_columns_are_character_columns(self):

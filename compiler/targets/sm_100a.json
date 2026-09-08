@@ -39,7 +39,8 @@
       "x": 2147483647,
       "y": 65535,
       "z": 65535
-    }
+    },
+    "maximum_registers_per_thread": 255
   },
   "instruction_contracts": [
     "tcgen05.mma.cta_group::1.kind::f16",
@@ -93,6 +94,11 @@
       "kind": "device_observation",
       "source": "cuDeviceGetAttribute and torch.cuda.get_device_properties on NVIDIA B200",
       "locator": "occupancy block; observed 2026-08-23 on verda-b200x4 under gpu-run"
+    },
+    {
+      "kind": "device_specification",
+      "source": "https://docs.nvidia.com/cuda/blackwell-tuning-guide/index.html#occupancy",
+      "locator": "Blackwell maximum number of registers per thread:255; compile-time cap capacity, separate from setmaxnreg immediate encoding"
     }
   ],
   "occupancy": {

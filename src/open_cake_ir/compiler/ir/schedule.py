@@ -30,6 +30,7 @@ from .resources import (
 from .vocabulary import (
     AccessIndexKind,
     LoweringBackend,
+    MemorySpace,
     OperationKind,
     _CONTRACTION_AXIS,
 )
@@ -145,6 +146,82 @@ class Schedule:
 
     def operation(self, op_id: str) -> Operation | None:
         return next((item for item in self.operations if item.op_id == op_id), None)
+
+    def argmin_domain(self, operation: Operation) -> int | None:
+        """Known candidate extent for the supported loop-carried value-flow domain.
+
+        The loop supplies candidate coordinates; the producing LOAD/MMA/arithmetic
+        chain must preserve that coordinate and have no runtime candidate validity.
+        A physical buffer capacity is not proof of a runtime valid prefix. Unknown
+        producers, indirect domains or candidate-dependent extent lookups abstain.
+        """
+        chain = self.enclosing_loops(operation)
+        if (operation.kind is not OperationKind.REDUCE_ARGMIN or len(operation.reads) != 1
+                or len(chain) != 1 or not operation.parameters.across_loop):
+            return None
+        loop = chain[0]
+        source = self.buffer(operation.reads[0])
+        owner = self.buffer(loop.buffer)
+        if (source is None or owner is None or len(source.shape) != 2
+                or source.shape[1] != loop.tile or loop.stop is not None):
+            return None
+
+        def static_axis(name: str, axis: int, before: int) -> bool:
+            value = self.buffer(name)
+            if value is None or not 0 <= axis < len(value.shape):
+                return False
+            producers = [(i, op) for i, op in enumerate(self.operations[:before]) if name in op.writes]
+            if not producers:
+                return False
+            position, producer = producers[-1]
+            if producer.kind is OperationKind.LOAD and producer.reads:
+                loaded = self.buffer(producer.reads[0])
+                if loaded is None:
+                    return False
+                if loaded.space is not MemorySpace.GLOBAL:
+                    return loaded.shape == value.shape and static_axis(loaded.name, axis, position)
+                access = self.access_map(producer.op_id, loaded.name)
+                if access is None or any(c.source is AccessIndexKind.BUFFER for c in access.indices):
+                    return False
+                vectors = [(i, c) for i, c in enumerate(access.indices) if c.is_vector]
+                if len(vectors) != len(value.shape):
+                    return False
+                dimension, component = vectors[axis]
+                relation = loaded.valid_extent
+                if relation is not None and (relation.dimension == dimension or dimension in relation.indexed_by):
+                    return False
+                return component.source is AccessIndexKind.LOOP_TILE and component.name == loop.iterator
+            if producer.kind is OperationKind.MMA and len(producer.reads) >= 2:
+                # A(M,K) x B(N,K) preserves A's row and B's column domains.
+                return static_axis(producer.reads[axis], 0, position)
+            if producer.kind is OperationKind.CAST and len(producer.reads) == 1:
+                return static_axis(producer.reads[0], axis, position)
+            if producer.kind is OperationKind.ELEMENTWISE:
+                varying = []
+                for read in producer.reads:
+                    operand = self.buffer(read)
+                    if operand is None:
+                        return False
+                    if operand.is_scalar:
+                        continue
+                    if len(operand.shape) == len(value.shape):
+                        read_axis = axis
+                    elif len(operand.shape) == 1 and len(value.shape) == 2:
+                        broadcast_axis = producer.parameters.broadcast_axis
+                        if broadcast_axis is None:
+                            broadcast_axis = 1 if operand.shape[0] == value.shape[1] else 0
+                        read_axis = 0 if broadcast_axis == axis else None
+                    else:
+                        read_axis = axis - (len(value.shape) - len(operand.shape))
+                    if read_axis is None or read_axis < 0 or operand.shape[read_axis] == 1:
+                        continue
+                    varying.append(static_axis(read, read_axis, position))
+                return bool(varying) and all(varying)
+            return False
+
+        if static_axis(source.name, 1, self.operations.index(operation)):
+            return owner.shape[loop.dimension]
+        return None
 
     def _staged_axis_filled_by(self, operand: str, loop: "TileLoop") -> int | None:
         """Which axis of a staged operand this loop's tile index fills, if any.

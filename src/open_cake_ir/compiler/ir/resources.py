@@ -89,7 +89,9 @@ class Role:
 
 @dataclass(frozen=True)
 class Allocation:
-    """A region of one memory space, and -- where the space has one -- who takes it out.
+    """Tensor-memory columns must satisfy tcgen05: power-of-two in [32, 512].
+
+    A region of one memory space, and -- where the space has one -- who takes it out.
 
     `allocating_role` names the role that issues the allocation and its release. Tensor
     memory is the only space here that has that protocol: `tcgen05.alloc` is issued by one
@@ -359,7 +361,9 @@ class Residency:
 
     `registers_per_thread` is a cap the backend receives, which is a real compilation
     choice. Actual allocation and spill counts remain toolchain evidence rather than facts
-    inferred by the Schedule verifier.
+    inferred by the Schedule verifier. The selected Target owns its per-thread
+    capacity. This compile-time maxnreg cap is distinct from Role's dynamic
+    setmaxnreg instruction immediate; it need not be a multiple of eight.
     """
 
     ctas_per_multiprocessor: int | None

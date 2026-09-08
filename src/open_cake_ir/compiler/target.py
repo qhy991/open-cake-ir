@@ -182,6 +182,7 @@ class ResourceLimits:
     maximum_shared_memory_bytes: int
     maximum_tensor_memory_bytes: int
     maximum_grid: tuple[int, int, int]
+    maximum_registers_per_thread: int | None = None
 
     def capacity(self, space: MemorySpace) -> int | None:
         """Byte budget for one CTA in `space`, or None when the space is unbudgeted.
@@ -221,6 +222,8 @@ class ResourceLimits:
                 _int_field(grid["y"], f"{context}.grid.y"),
                 _int_field(grid["z"], f"{context}.grid.z"),
             ),
+            None if value.get("maximum_registers_per_thread") is None else _int_field(
+                value["maximum_registers_per_thread"], f"{context}.maximum_registers_per_thread"),
         )
 
 

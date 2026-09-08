@@ -69,3 +69,18 @@ Ordinary Python import can still execute module-level code and argument expressi
 ## Acceptance and further examples
 
 FMA, [softmax](../../examples/python/softmax.py), and the [CuTe pipeline](../../examples/python/kmeans_pipeline.py) must construct canonically equivalent existing plans and use the same lowering. Checks preserve shape, dtype, synchronization, and backend refusals, source localization, symbolic loops, distinct FMA/mul-add, no host effects, and JSON compatibility. Compiler release still requires its full Corpus and independent approval. Example names and optional operation ids do not inherit historical result identities.
+
+## Casts, promotion and source diagnostics
+
+Use `lm.cast(x, to="fp32")` or `lm.cast(x, to="bf16")`. The canonical `to` parameter
+also determines the inferred result dtype; explicit `out=` remains available. The
+[cast example](../../examples/python/cast.py) matches the existing JSON cast Schedule.
+Arithmetic shares the IR promotion rule: matching floating dtypes stay unchanged;
+FP32 with one 16-bit floating format produces FP32. BF16 plus FP16 requires an explicit
+cast. Both operand orders in the [mixed-dtype example](../../examples/python/mixed_dtype.py)
+produce FP32. A reduction's sole supported scope defaults to `cta`.
+
+Output, target/backend/entry-point and program-axis diagnostics point to their parameter,
+decorator keyword or latest relevant axis declaration. Construction errors use Python
+variable/call names; `FrontendError.canonical_path` retains the underlying IR path for
+tool correlation. Source locations do not enter Schedule semantics.

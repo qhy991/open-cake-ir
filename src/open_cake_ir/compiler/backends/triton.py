@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .triton_selection import top_k_selection_structure
-from .common import TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
+from .common import python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 from ..ir import (
     ElementwiseOp,
     LoadReuse,
@@ -156,6 +156,7 @@ _TRITON_DOT_INPUT_PRECISION = {
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     """Target-independent requirements shared by Compiler and direct emission."""
     findings = list(vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS))
+    findings.extend(python_name_findings(schedule))
     for index, loop in enumerate(schedule.tile_loops):
         if loop.range_options.warp_specialize and any(
             (operation := schedule.operation(operation_id)) is not None
@@ -447,6 +448,43 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                 "coordinates covering every active loop and program axis exactly once",
             )
 
+    for index, operation in enumerate(schedule.operations):
+        if operation.kind is OperationKind.REDUCE_ARGMIN:
+            domain = schedule.argmin_domain(operation)
+            chain = schedule.enclosing_loops(operation)
+            if domain is None or not chain or domain % chain[-1].tile:
+                findings.append(refusal("TRITON_ARGMIN_DOMAIN", f"operations[{index}].reads",
+                    "this argmin route requires a proven static loop candidate domain with complete tiles; "
+                    "runtime, indirect and partial candidate domains need explicit validity-aware lowering"))
+    for index, loop in enumerate(schedule.tile_loops):
+        if loop.stop is None:
+            continue
+        body = schedule.loop_operations(loop)
+        body_ids = {op.op_id for op in body}
+        topk = [op for op in body if op.kind is OperationKind.TOP_K and op.parameters.across_loop]
+        outputs = {name for op in topk for name in op.writes}
+        supported = bool(topk)
+        for op in body:
+            supported &= op.kind in {OperationKind.LOAD, OperationKind.MMA, OperationKind.ELEMENTWISE,
+                                     OperationKind.CAST, OperationKind.REDUCE, OperationKind.TOP_K}
+            if op.kind is not OperationKind.TOP_K and getattr(op.parameters, "across_loop", False):
+                supported = False
+            if op.kind is OperationKind.MMA and schedule.mma_accumulates_over(op, loop):
+                supported = False
+            if any((value := schedule.buffer(name)) is not None and value.mode is BufferMode.STATE
+                   for name in op.reads):
+                supported = False
+            for name in op.writes:
+                value = schedule.buffer(name)
+                if value is None or value.space is not MemorySpace.REGISTER or value.mode is not BufferMode.SCRATCH:
+                    supported = False
+                if name not in outputs and (name in schedule.outputs or any(
+                        name in consumer.reads and consumer.op_id not in body_ids for consumer in schedule.operations)):
+                    supported = False
+        if not supported:
+            findings.append(refusal("TRITON_LOOP_STOP_UNSUPPORTED", f"tile_loops[{index}].stop",
+                "dynamic stop is supported only for transient, side-effect-free computations whose "
+                "only live-outs are validity-masked loop-carried top_k outputs"))
     return tuple(findings)
 
 
@@ -457,9 +495,11 @@ class _TritonEmitter:
         self.schedule = schedule
         self.target = target
         self.lines: list[str] = []
+        self.dimension_vectors: set[str] = set()
         # The route owns the external symbol; the emitter derives its signature from
         # global Buffers rather than consulting an operator-named profile.
         self.entry_point = entry_point or schedule.lowering.entry_point
+        _require(safe_python_identifier(self.entry_point), "unsafe Python entry point")
 
         failures = preflight(schedule, target)
         if failures:
@@ -929,7 +969,7 @@ class _TritonEmitter:
             for component in access.indices:
                 if component.source is AccessIndexKind.DIMENSION:
                     name = self._dimension_vector(buffer, component)
-                    if f"{name} = " not in "\n".join(self.lines):
+                    if name not in self.dimension_vectors:
                         extent = self._extent(buffer.name, component.dimension)
                         if component.extent is None:
                             # Whole axis, or a tail of it. The offset==0 spelling is the
@@ -940,6 +980,7 @@ class _TritonEmitter:
                             if component.offset:
                                 walk = f"{walk} + {component.offset}"
                         self.line(f"{pad}{name} = {walk}")
+                        self.dimension_vectors.add(name)
         self.line()
 
         # A root loop replaces its contiguous expanded operation interval. Within
@@ -1597,7 +1638,7 @@ class _TritonEmitter:
         )
         tile = self._tile(loop.name)
         self.line(f"{pad}if (({loop.iterator} // {tile}) & 1) != 0:")
-        self.line(f"{pad}    {pair} = tl.cat({pending}, {source_keys})")
+        self.line(f"{pad}    {pair} = tl.cat({pending}, {source_keys}, can_reorder=True)")
         self._emit_two_tile_top_k_merge(
             operation,
             source,
@@ -1689,7 +1730,7 @@ class _TritonEmitter:
         combined = f"{prefix}_combined_keys"
         ranked = f"{prefix}_ranked_keys"
         if selection.algorithm == "triton_topk":
-            self.line(f"{pad}{combined} = tl.cat({state_keys}, {source_keys})")
+            self.line(f"{pad}{combined} = tl.cat({state_keys}, {source_keys}, can_reorder=True)")
             self.line(f"{pad}{ranked} = tl.topk({combined}, {k})")
             return ranked
 
@@ -1699,7 +1740,8 @@ class _TritonEmitter:
         pairs = f"{prefix}_merged_pairs"
         discarded = f"{prefix}_discarded_keys"
         self.line(f"{pad}{sorted_source} = tl.sort({source_keys}, descending=False)")
-        self.line(f"{pad}{combined} = tl.cat({state_keys}, {sorted_source})")
+        self.line(f"{pad}# Preserve descending state then ascending source for bitonic_merge.")
+        self.line(f"{pad}{combined} = tl.reshape(tl.trans(tl.join({state_keys}, {sorted_source})), ({2*k},), can_reorder=False)")
         self.line(
             f"{pad}{merged} = tl.bitonic_merge({combined}, descending=True)"
         )
@@ -1734,7 +1776,7 @@ class _TritonEmitter:
         self.line(
             f"{pad}    {zeros} = tl.zeros(({source.shape[0]},), tl.uint64)"
         )
-        self.line(f"{pad}    {pair} = tl.cat({pending}, {zeros})")
+        self.line(f"{pad}    {pair} = tl.cat({pending}, {zeros}, can_reorder=True)")
         self._emit_two_tile_top_k_merge(
             operation,
             source,
@@ -1792,7 +1834,7 @@ class _TritonEmitter:
             zeros = f"{prefix}_padding_{extent}"
             padded = f"{prefix}_padded_{extent * 2}"
             self.line(f"{pad}{zeros} = tl.zeros(({extent},), tl.uint64)")
-            self.line(f"{pad}{padded} = tl.cat({current}, {zeros})")
+            self.line(f"{pad}{padded} = tl.cat({current}, {zeros}, can_reorder=True)")
             current = padded
             extent *= 2
         return current

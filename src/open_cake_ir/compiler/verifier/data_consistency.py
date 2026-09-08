@@ -15,6 +15,7 @@ from ..ir import (
     OperationKind,
     Schedule,
 )
+from ..ir.operations import elementwise_result_dtype, ELEMENTWISE_FLOAT_DTYPES as _ELEMENTWISE_FLOAT_DTYPES
 from ..diagnostics import FindingCategory
 from ._collector import _Collector
 from .hardware_conformance import _BLOCK_SCALE_MMA_CONTRACT
@@ -809,30 +810,6 @@ def _verify_block_scaled_mma(operation, path: str, buffers, out: _Collector) -> 
         )
 
 
-_ELEMENTWISE_FLOAT_DTYPES = frozenset({DType.BF16, DType.FP16, DType.FP32})
-
-
-def _elementwise_result_dtype(operation, buffers) -> DType | None:
-    """The one admitted arithmetic promotion relation.
-
-    Same-typed floating operands preserve their dtype. FP32 mixed with one 16-bit
-    floating format produces FP32; mixing BF16 with FP16 has no implicit answer. This
-    is deliberately smaller than a framework promotion table because the Schedule needs
-    one target-independent spelling, not every conversion a frontend happens to accept.
-    """
-
-    reads = [buffers.get(name) for name in operation.reads]
-    if any(buffer is None for buffer in reads):
-        return None
-    dtypes = {buffer.dtype for buffer in reads if buffer is not None}
-    if not dtypes or not dtypes <= _ELEMENTWISE_FLOAT_DTYPES:
-        return None
-    if len(dtypes) == 1:
-        return next(iter(dtypes))
-    if DType.FP32 in dtypes and len(dtypes) == 2:
-        return DType.FP32
-    return None
-
 
 def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> None:
     category = FindingCategory.DATA_CONSISTENCY
@@ -1514,7 +1491,7 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
             result = buffers.get(operation.writes[0])
             reads = [buffers[name] for name in operation.reads if name in buffers]
             if result is not None and len(reads) == len(operation.reads):
-                inferred_dtype = _elementwise_result_dtype(operation, buffers)
+                inferred_dtype = elementwise_result_dtype(read.dtype for read in reads)
                 if inferred_dtype is None:
                     out.add(
                         "ELEMENTWISE_DTYPE_UNSUPPORTED",
@@ -2244,6 +2221,14 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                 f"{staged.name!r} declares {list(staged.shape)}; a load does not splat or reshape",
                 category,
             )
+        if (operation.kind is OperationKind.STORE and staged.space is MemorySpace.REGISTER
+                and shape_known and (not vectors or len(staged.shape) != len(vectors))
+                and staged.shape != expected_shape):
+            out.add("STORE_ACCESS_SHAPE_MISMATCH",
+                f"operations[{schedule.operations.index(operation)}].reads[0]",
+                f"store address requires register shape {list(expected_shape)}, but "
+                f"{staged.name!r} declares {list(staged.shape)}; a store does not splat or reshape",
+                category)
         if len(staged.shape) != len(vectors):
             continue
         for staged_dimension, (component_index, component, expected) in enumerate(vectors):

@@ -40,7 +40,8 @@
       "x": 2147483647,
       "y": 65535,
       "z": 65535
-    }
+    },
+    "maximum_registers_per_thread": 255
   },
   "instruction_contracts": [
     "tcgen05.mma.cta_group::1.kind::f16",
@@ -73,6 +74,11 @@
       "kind": "instruction_set",
       "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html",
       "locator": "PTX target sm_103a; common sm_100f tensor-memory and tcgen05 f16 instructions; no new instruction form is admitted here"
+    },
+    {
+      "kind": "device_specification",
+      "source": "https://docs.nvidia.com/cuda/blackwell-tuning-guide/index.html#occupancy",
+      "locator": "Blackwell maximum number of registers per thread:255; compile-time cap capacity, separate from setmaxnreg immediate encoding"
     }
   ]
 }

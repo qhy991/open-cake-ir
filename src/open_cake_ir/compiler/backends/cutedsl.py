@@ -18,7 +18,7 @@ reproducing them would mean hardcoding the thing this module exists to compute.
 
 from __future__ import annotations
 
-from .common import TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
+from .common import python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 
 from ..ir import (
     AccessIndexKind,
@@ -116,14 +116,16 @@ def _barrier_signaller_scopes(schedule: Schedule, barrier: Barrier) -> set[str |
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     """Target-independent backend requirements, including unsupported vocabulary."""
-    common = vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
-    if common:
-        return common
     if cutedsl_register.applies(schedule):
         return cutedsl_register.requirements(schedule)
-    # The legacy emitter still has its original vocabulary and refusals. The
-    # module-level inventory is the union of the two concrete lowering domains.
-    return vocabulary_findings(schedule, SUPPORTED_DTYPES, frozenset(BODY_EMITTERS))
+    state = tuple(refusal("CUTE_STATE_UNSUPPORTED", f"buffers[{i}].mode",
+        "CuTe lowering does not implement mutable state buffers")
+        for i, buffer in enumerate(schedule.buffers) if buffer.mode is BufferMode.STATE)
+    common = vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+    if common:
+        return state + common + python_name_findings(schedule)
+    return state + python_name_findings(schedule) + vocabulary_findings(
+        schedule, SUPPORTED_DTYPES, frozenset(BODY_EMITTERS))
 
 
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
@@ -196,13 +198,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                 "the CuTe-DSL backend addresses whole dimensions; it cannot honour a "
                 "sub-range",
             )
-    for index, buffer in enumerate(schedule.buffers):
-        add(
-            buffer.mode is not BufferMode.STATE,
-            "CUTE_STATE_UNSUPPORTED",
-            f"buffers[{index}].mode",
-            "the CuTe-DSL backend does not implement caller-owned mutable state",
-        )
+
 
     for index, loop in enumerate(schedule.tile_loops):
         options = loop.range_options
@@ -307,6 +303,7 @@ class _Emitter:
         # The route owns the external symbol; the emitter derives its signature from
         # global Buffers rather than consulting an operator-named profile.
         self.entry_point = entry_point or schedule.lowering.entry_point
+        _require(safe_python_identifier(self.entry_point), "unsafe Python entry point")
 
         failures = preflight(schedule, target)
         if failures:

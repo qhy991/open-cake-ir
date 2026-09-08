@@ -72,3 +72,12 @@ PYTHONPATH=src .venv/bin/python -m open_cake_ir.cli compiler lower \
 CLI 的诊断保留原 Finding code/path，并指出 Python 文件的行列。程序调用者使用 `read_schedule` 得到计划及伴随位置表，再交给 Compiler；完整 API 在[接口约定](../PYTHON_FRONTEND.md)。位置表只帮人找错误，不改变固定计划或生成源码的身份。
 
 正常 Python import 仍可能执行模块顶层代码和参数表达式。因此接收候选的工具使用只解析的 `read_schedule`，不能把普通导入当成同样的边界。
+
+## 类型转换与源码诊断
+
+`lm.cast(x, to="fp32")` 使用规范 `to` 参数并自动推导结果 dtype；显式 `out=` 仍可用。
+同 dtype 算术保持类型，FP32 与一种 16 位浮点混合得到 FP32，BF16/FP16 混合需显式 cast。
+两种操作数顺序使用同一提升规则。仅支持 CTA 的归约 `scope` 默认 `cta`。
+参见 [cast](../../examples/python/cast.py) 与[混合 dtype](../../examples/python/mixed_dtype.py) 示例。
+诊断指向输出参数、装饰器关键字或最近的程序轴声明；构造错误使用 Python 名称，
+`FrontendError.canonical_path` 保留规范路径供工具关联。

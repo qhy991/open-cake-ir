@@ -363,7 +363,7 @@ def schedule_schema() -> dict[str, Any]:
                 {},
                 {
                     "ctas_per_multiprocessor": _POSITIVE,
-                    "registers_per_thread": _POSITIVE,
+                    "registers_per_thread": dict(_POSITIVE, description="Compile-time cap; bounded by the selected Target's maximum_registers_per_thread, not setmaxnreg immediates."),
                 },
             ),
             "program_map": _object(
@@ -421,7 +421,7 @@ def schedule_schema() -> dict[str, Any]:
                     {
                         "tensor_columns": dict(
                             _POSITIVE,
-                            description="Tensor-memory column range; must agree with size_bytes.",
+                            description="Tensor-memory column range: power-of-two in [32,512], consistent with size_bytes and Target capacity.",
                         ),
                         "allocating_role": _NAME,
                     },

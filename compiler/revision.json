@@ -5,7 +5,7 @@
   "target_definitions": {
     "sm_100a": {
       "path": "compiler/targets/sm_100a.json",
-      "canonical_sha256": "a15ec744877d4763206a29c9f1eaf4b4a9cd6f1f9f1e8470cc65bba89fa9cbff"
+      "canonical_sha256": "1fe1ea6b6d5ca5932a02b4e43c935ddc2fe39e64be7611951b4243180d1d5b20"
     },
     "apple_gpu_family8": {
       "path": "compiler/targets/apple_gpu_family8.json",
@@ -13,7 +13,7 @@
     },
     "sm_103a": {
       "path": "compiler/targets/sm_103a.json",
-      "canonical_sha256": "924973447e3176d332a2460f673a80740c58ed20c4c5af1372911c7904bf69e5"
+      "canonical_sha256": "335f4a21edf3a3c1ffdb1d398c5ce9de1c8599808042a276f04e4b703daf8ced"
     },
     "apple_gpu_family7": {
       "path": "compiler/targets/apple_gpu_family7.json",
