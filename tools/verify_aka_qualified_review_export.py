@@ -9,7 +9,12 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import sys
 from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from open_cake_ir.evidence.secret_detection import contains_forbidden_secret  # noqa: E402
 
 
 def load(path: Path) -> dict[str, Any]:
@@ -32,6 +37,25 @@ def digest(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             value.update(chunk)
     return value.hexdigest()
+
+
+def _sensitive_findings(root: Path, scanned_files: list[Path] | None = None) -> list[tuple[str, int, str]]:
+    auth_filename = re.compile(r"auth[.]json", re.IGNORECASE)
+    if scanned_files is None:
+        scanned_files = [path for path in root.rglob("*") if path.is_file()]
+    sensitive_findings: list[tuple[str, int, str]] = []
+    for path in sorted(scanned_files):
+        payload = path.read_bytes()
+        text = payload.decode("utf-8", errors="replace")
+        before = len(sensitive_findings)
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if auth_filename.search(line):
+                sensitive_findings.append((path.relative_to(root).as_posix(), line_number, "auth_filename"))
+            if contains_forbidden_secret(line.encode("utf-8")):
+                sensitive_findings.append((path.relative_to(root).as_posix(), line_number, "credential_shape"))
+        if contains_forbidden_secret(payload) and len(sensitive_findings) == before:
+            sensitive_findings.append((path.relative_to(root).as_posix(), 0, "credential_shape"))
+    return sensitive_findings
 
 
 def main() -> int:
@@ -139,27 +163,8 @@ def main() -> int:
         if "auth.json" in text or "/home/qhy-sol/.codex" in text:
             raise ValueError(f"credential path leaked into export: {name}")
 
-    sensitive_patterns = {
-        "auth_filename": re.compile(r"auth[.]json", re.IGNORECASE),
-        "private_key": re.compile(r"BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY"),
-        "openai_secret": re.compile(
-            r"(?<![A-Za-z0-9])sk-(?:proj-)?[A-Za-z0-9_-]{32,}"
-        ),
-        "jwt_three_segment": re.compile(
-            r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}[.]"
-            r"[A-Za-z0-9_-]{10,}[.][A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])"
-        ),
-    }
     scanned_files = [path for path in root.rglob("*") if path.is_file()]
-    sensitive_findings: list[tuple[str, int, str]] = []
-    for path in sorted(scanned_files):
-        text = path.read_text(encoding="utf-8", errors="replace")
-        for line_number, line in enumerate(text.splitlines(), start=1):
-            for kind, pattern in sensitive_patterns.items():
-                if pattern.search(line):
-                    sensitive_findings.append(
-                        (path.relative_to(root).as_posix(), line_number, kind)
-                    )
+    sensitive_findings = _sensitive_findings(root, scanned_files)
     if sensitive_findings:
         raise ValueError(
             "sensitive pattern detected without exposing the matching content: "

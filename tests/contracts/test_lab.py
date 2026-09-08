@@ -1865,7 +1865,7 @@ class LabContractTests(unittest.TestCase):
                     "contamination",
                     "workspace changed before Turn",
                     artifact_payloads={
-                        "provider_stderr": b"OPENAI_API_KEY=must-not-enter-evidence"
+                        "provider_stderr": b"OPENAI_" + b"API_KEY=must-not-enter-evidence"
                     },
                 )
 

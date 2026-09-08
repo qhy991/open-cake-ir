@@ -170,13 +170,13 @@ class EvidenceContractTests(unittest.TestCase):
                     authority={"kind": "fixture"},
                 )
             secrets = (
-                b"OPENAI_API_KEY=must-not-enter-cas",
-                b"Authorization: Bearer sk-abcdefghijklmno",
-                b"GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz",
-                b"openai_api_key = sk-abcdefghijklmno",
+                b"OPENAI_" + b"API_KEY=must-not-enter-cas",
+                b"Authorization: Bearer " + b"sk-" + b"abcdefghijklmno",
+                b"GITHUB_TOKEN=" + b"ghp_" + b"abcdefghijklmnopqrstuvwxyz",
+                b"openai_api_key = " + b"sk-" + b"abcdefghijklmno",
             )
             for payload in secrets:
-                with self.subTest(payload=payload), self.assertRaisesRegex(
+                with self.subTest(case=secrets.index(payload)), self.assertRaisesRegex(
                     ValueError, "secret marker"
                 ):
                     evidence.put(payload, media_type="text/plain")

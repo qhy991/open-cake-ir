@@ -26,5 +26,7 @@ jobs:
         run: python -m open_cake_ir.cli compiler check-corpus --revision compiler/revision.lock.json
       - name: Check undefined names
         run: python -m ruff check --select F821 src tools tests
+      - name: Scan tracked files for credential shapes
+        run: python tools/check_tracked_secrets.py
       - name: Discover and run all contract tests
         run: python -m pytest tests/contracts -ra
