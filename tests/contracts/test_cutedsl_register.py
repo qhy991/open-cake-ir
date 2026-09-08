@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import replace
 import json
 from pathlib import Path
 import unittest
@@ -236,6 +237,36 @@ class RegisterCuTeTests(unittest.TestCase):
         names = {arg.arg for arg in module.body[-1].args.args}
         writes = {node.id for node in ast.walk(module) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)}
         self.assertFalse(names & writes)
+
+    def test_non_ascii_buffer_symbols_are_refused_before_python_normalizes_the_abi(self):
+        for name in ("Ｋ", "ｃｕｔｅ", "K", "é"):
+            with self.subTest(name=name):
+                self.refuses(rename(register_schedule(), "a", name),
+                             "CUTE_REGISTER_IDENTIFIER", "buffers[0].name")
+        lowering = self.lower(rename(register_schedule(), "a", "K"))
+        kernel = ast.parse(lowering.source).body[-1]
+        self.assertEqual([arg.arg for arg in kernel.args.args],
+                         [row["name"] for row in lowering.toolchain_requirements["signature"]])
+
+    def test_non_ascii_entry_symbols_are_refused_at_public_and_direct_boundaries(self):
+        schedule = Schedule.from_dict(register_schedule())
+        for name in ("Ｋ", "ｃｕｔｅ", "K", "é"):
+            with self.subTest(name=name):
+                document = register_schedule()
+                document["lowering"]["entry_point"] = name
+                assessment = self.compiler.assess(document)
+                self.assertFalse(assessment.accepted)
+                self.assertFalse(assessment.lowering_eligible)
+                self.assertEqual(assessment.findings[0].code, "SCHEDULE_STRUCTURE")
+                self.assertEqual(assessment.findings[0].path, "schedule.lowering.entry_point")
+                typed = replace(schedule, lowering=replace(schedule.lowering, entry_point=name))
+                findings = cutedsl.preflight(typed, self.target)
+                self.assertIn(("CUTE_REGISTER_IDENTIFIER", "lowering.entry_point"),
+                              {(finding.code, finding.path) for finding in findings})
+                with self.assertRaises(EmitError):
+                    cutedsl.emit(typed, self.target)
+                with self.assertRaises(EmitError):
+                    cutedsl.emit(schedule, self.target, entry_point=name)
 
     def test_provenance_comments_cannot_inject_python_statements(self):
         document = register_schedule()

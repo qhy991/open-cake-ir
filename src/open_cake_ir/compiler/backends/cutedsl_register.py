@@ -30,8 +30,9 @@ SUPPORTED_OPERATION_KINDS = frozenset({
 
 def _kernel_symbol(name: str) -> bool:
     # The trusted CuTe compile wrapper owns this host entry; authored globals may
-    # not capture it or the fixed imports. Dunder names are outside that interface.
-    return (name.isidentifier() and not keyword.iskeyword(name) and "__" not in name
+    # not capture it or the fixed imports. ASCII also keeps Python's NFKC identifier
+    # normalization from changing the spelling retained by the ordered pointer ABI.
+    return (name.isascii() and name.isidentifier() and not keyword.iskeyword(name) and "__" not in name
             and name not in {"cutlass", "cute", "warp", "open_cake_cute_launch"})
 
 
