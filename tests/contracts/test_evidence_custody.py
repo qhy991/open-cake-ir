@@ -182,6 +182,31 @@ class EvidenceCustodyTests(unittest.TestCase):
             run.seal(protocol_adherence="adhered", endpoint_observation="missing")
         self.assertEqual({p.name: p.read_bytes() for p in directory.iterdir()}, prior)
 
+    def test_partial_terminal_publication_is_retained_and_cannot_be_recovered(self):
+        evidence, run = self.new(sealed=False)
+        write = store._write_all
+        def partial(fd, payload):
+            if b'"seal_sha256"' in payload:
+                os.write(fd, payload[:1])
+                raise OSError("injected partial terminal publication")
+            return write(fd, payload)
+        with patch.object(store, "_write_all", partial), self.assertRaises(OSError):
+            run.seal(protocol_adherence="adhered", endpoint_observation="missing")
+        directory = evidence.root / "runs/run"
+        prior = {p.name: p.read_bytes() for p in directory.iterdir() if p.is_file()}
+        self.assertEqual(sum(name.startswith(".tmp-") for name in prior), 1)
+        with self.assertRaisesRegex(ValueError, "incomplete publication"):
+            run.seal(protocol_adherence="adhered", endpoint_observation="missing")
+        with self.assertRaisesRegex(ValueError, "incomplete publication"):
+            run.append("observation", {"value": 1})
+        self.assertEqual({p.name: p.read_bytes() for p in directory.iterdir() if p.is_file()}, prior)
+        self.assertFalse(evidence.audit_run("run").filesystem_custody_verified)
+
+    def test_completed_archive_with_partial_publication_cannot_claim_custody(self):
+        evidence, _ = self.new()
+        (evidence.root / "runs/run/.tmp-interrupted-fixture").write_bytes(b"{")
+        self.assert_untrusted(evidence)
+
     def test_custody_gate_blocks_an_otherwise_promotable_projection(self):
         # Exercise only the publication projection with explicit CPU fixture evidence;
         # no runtime receipt qualification or actual artifact promotion is claimed.

@@ -178,6 +178,10 @@ def _publish_new_at(directory_fd: int, name: str, payload: bytes, mode: int = 0o
             pass
 
 
+def _has_partial_publication(directory_fd: int) -> bool:
+    return any(name.startswith(".tmp-") for name in os.listdir(directory_fd))
+
+
 def _parse_canonical_json(payload: bytes, context: str) -> Mapping[str, object]:
     try:
         value = json.loads(payload)
@@ -526,6 +530,7 @@ class EvidenceStore:
                 and self._writer_custody.store_verified(root_fd))
             runs_fd = self._audit_dir(root_fd, "runs", custody)
             run_fd = self._audit_dir(runs_fd, run_id, custody)
+            custody[0] = custody[0] and not _has_partial_publication(run_fd)
             authority = _parse_canonical_json(
                 _read_regular_at(run_fd, "authority.json", custody=custody),
                 "authority.json",
@@ -881,6 +886,8 @@ class RunLedger:
         root_fd, run_fd, lock_fd = self._run_fds()
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            if _has_partial_publication(run_fd):
+                raise ValueError("Run contains an incomplete publication; append/seal is refused")
             custody = self._store._writer_custody
             args = (root_fd, run_fd, self.run_id, self._authority_record_hash)
             frontier = custody.frontier(*args)
