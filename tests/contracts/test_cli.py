@@ -226,8 +226,8 @@ class CliContractTests(unittest.TestCase):
             scratch = Path(directory)
             evidence_root = scratch / "evidence"
 
-            with self.assertRaisesRegex(ValueError, "outside the project checkout"):
-                main(
+            with redirect_stderr(StringIO()) as errors, redirect_stdout(StringIO()) as output:
+                code = main(
                     [
                         "--project-root",
                         str(ROOT),
@@ -241,16 +241,19 @@ class CliContractTests(unittest.TestCase):
                         str(evidence_root),
                     ]
                 )
-
+            self.assertEqual(code, 2)
+            self.assertIn("outside the project checkout", errors.getvalue())
+            self.assertNotIn("missing.lock.json", errors.getvalue())
+            self.assertEqual(output.getvalue(), "")
             self.assertFalse(evidence_root.exists())
 
     def test_lab_preflight_refuses_a_campaign_lock_inside_the_checkout(self) -> None:
         with tempfile.TemporaryDirectory(prefix=".campaign-custody-", dir=ROOT) as directory:
             lock_path = Path(directory) / "campaign.lock.json"
 
-            with self.assertRaisesRegex(ValueError, "outside the project checkout"):
-                with redirect_stdout(StringIO()):
-                    main(
+            with redirect_stderr(StringIO()) as errors:
+                with redirect_stdout(StringIO()) as output:
+                    code = main(
                         [
                             "--project-root",
                             str(ROOT),
@@ -264,6 +267,9 @@ class CliContractTests(unittest.TestCase):
                             str(lock_path),
                         ]
                     )
+            self.assertEqual(code, 2)
+            self.assertIn("outside the project checkout", errors.getvalue())
+            self.assertEqual(output.getvalue(), "")
 
             self.assertFalse(lock_path.exists())
 

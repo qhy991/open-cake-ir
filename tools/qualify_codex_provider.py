@@ -560,7 +560,7 @@ def main() -> int:
                     output_schema=output_schema, disabled_features=disabled_features,
                     event_contract=event_contract, submission_contract=submission_contract,
                     cwd_policy="independent_task_workspace", reference_visibility="workspace_task_files")
-            configuration_sha256s.add(builder.configuration_sha256)
+            configuration_sha256s.add(sha256(_canonical_json_bytes(builder.configuration)).hexdigest())
             initial_plan = _planned_turn(package, 1)
             verify_task_package(arm_workspace, package)
             initial_prompt, initial_projection = render_task_request(package, {"turn": 1})
