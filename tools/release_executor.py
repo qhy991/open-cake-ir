@@ -15,17 +15,13 @@ _SOURCE_ROOTS = (
     "src/open_cake_ir/tasks",
 )
 _SOURCE_FILES = (
-    "compiler/targets/sm_100a.json",
-    "compiler/targets/sm_103a.json",
-    "compiler/targets/apple_gpu_family7.json",
-    "compiler/targets/apple_gpu_family8.json",
-    "src/open_cake_ir/compiler/target.py",
     "docs/en/PAIRED_TRITON.md",
     "docs/en/PAIRED_CUTE.md",
     "contracts/providers/native-cute-candidate-v1.schema.json",
     "examples/gpu/flash_kmeans_quickstart.py",
     "src/open_cake_ir/__init__.py",
     "src/open_cake_ir/cli.py",
+    "src/open_cake_ir/serialization.py",
     "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu",
     "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json",
     "tools/capture_executor_host.py",

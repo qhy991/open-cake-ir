@@ -278,7 +278,8 @@ def execute_matched_from_config(
         protocol = _object(lock.document["evaluation_protocol"], "evaluation_protocol")
         toolchain = MetalToolchainBuilder(workload=workload_contract, case_id=str(protocol["case_id"]),
             output_root=Path(toolchain_config["output_root"]),
-            host=MetalArchiveHost.from_executor(executor), project_root=root)
+            host=MetalArchiveHost.from_executor(executor), project_root=root,
+            compiler_reference=lock.document["compiler_revision"])
     else:
         toolchain = (policy.isolated_compiler(toolchain_config) if policy is not None else
                      NvccToolchainBuilder(nvcc=toolchain_config["nvcc"], cuobjdump=toolchain_config["cuobjdump"]))
@@ -387,6 +388,7 @@ def execute_matched_from_config(
         cwd=broker_cwd,
         timeout_seconds=broker_timeout,
         executor=executor,
+        compiler_reference=compiler_ref,
         service_user=broker_user,
         service_group=broker_group,
         evaluation_protocol=protocol,

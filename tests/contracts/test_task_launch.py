@@ -185,7 +185,7 @@ class TaskLaunchTests(unittest.TestCase):
             run_audits=(SimpleNamespace(protocol_adherence="adhered", endpoint_observation="no_qualified_candidate"),))
         args = self.args() + (["--preflight-only"] if preflight_only else [])
         with patch.object(launch_task.shutil, "which", return_value="/usr/bin/true"), \
-             patch.object(launch_task, "_admit_stack", return_value=(Mock(),executor,Mock())) as admit, \
+             patch.object(launch_task, "_admit_stack", return_value=(Mock(),executor,Mock(),{"fixture":"compiler"})) as admit, \
              patch.object(launch_task, "_prepare_baseline", return_value=self.directory/"baseline.json") as baseline, \
              patch.object(launch_task, "_qualify", return_value=(self.directory/"receipt.json",self.directory/"anchor.json")) as qualify, \
              patch.object(launch_task.ProviderQualificationReceipt, "load", return_value=receipt), \

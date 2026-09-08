@@ -247,3 +247,22 @@ def _resolve_compiler_reference(
         "canonical_sha256": gate.compiler_revision_sha256,
     }
     return gate, relative, exact
+
+
+def load_compiler_reference(root: Path, value: object, context: str):
+    """Verify a Campaign's exact Compiler dependency at a process handoff.
+
+    Compiler owns its transitive sources and targets. This does not run the Corpus
+    Gate again; release/preflight owns that gate, while this boundary verifies the
+    released manifest and its source closure before runtime interpretation.
+    """
+    from open_cake_ir.compiler.revision import load_revision
+    reference = _object(value, context)
+    if set(reference) != {"path", "canonical_sha256", "revision_id"}:
+        raise ValueError(f"{context} Compiler reference fields differ")
+    _, path = _project_path(root, reference["path"], f"{context}.path")
+    revision = load_revision(root, path)
+    if (revision.state != "released" or revision.revision_id != reference["revision_id"]
+            or revision.canonical_sha256 != _digest(reference["canonical_sha256"], context)):
+        raise ValueError(f"{context} Compiler Revision differs")
+    return revision

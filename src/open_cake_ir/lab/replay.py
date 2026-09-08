@@ -28,6 +28,8 @@ def replay_matched_run(
     manifest_parser: Callable,
     task_package: Callable,
 ) -> bool:
+    from .bindings import load_compiler_reference
+    load_compiler_reference(project_root, lock.document["compiler_revision"], "replay.compiler_revision")
     events = evidence.replay_events(audit.run_id)
     resolved_inputs = _object(
         lock.document["resolved_inputs"], "resolved_inputs"

@@ -126,12 +126,12 @@ def _archive_logical_attempt(
 ) -> list[dict[str, object]]:
     references: list[dict[str, object]] = []
     for index, broker_attempt in enumerate(attempt.attempts, start=1):
-        if not {"broker_record", "evaluator_result", "stdout", "stderr"} <= set(
+        if not {"broker_record", "evaluator_result", "evaluator_request", "stdout", "stderr"} <= set(
             broker_attempt.artifact_payloads
         ):
             raise ValueError("BrokerAttempt raw artifact custody is incomplete")
         for role, payload in sorted(broker_attempt.artifact_payloads.items()):
-            media_type = "application/json" if role in {"broker_record", "evaluator_result"} else "text/plain"
+            media_type = "application/json" if role in {"broker_record", "evaluator_result", "evaluator_request"} else "text/plain"
             item = evidence.put(payload, media_type=media_type)
             references.append(item.reference(f"attempt_{index}_{role}"))
     document = evidence.put(

@@ -18,6 +18,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.tasks.workloads import load_workload
+from tests.contracts._executor_fixture import compiler_reference
 
 from open_cake_ir.evaluation import (  # noqa: E402
     BrokerAttempt,
@@ -384,6 +385,11 @@ class FakeEvaluator:
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
+        from tests.contracts._executor_fixture import compiler_reference
+        evaluator_request = {"compiler_revision": compiler_reference(ROOT),
+            "candidate_sha256": candidate.candidate_sha256,
+            "launch_spec_sha256": candidate.launch_spec_sha256,
+            "evaluation_protocol_sha256": self.protocol_sha256, "case_id": case_id, "purpose": purpose}
         attempt = BrokerAttempt(
             job_id=f"gpuq-{self.calls:012x}",
             mode="exclusive",
@@ -391,7 +397,7 @@ class FakeEvaluator:
             manifest_sha256=candidate.launch_spec_sha256,
             policy_sha256=self.protocol_sha256,
             evaluator_arguments_sha256=sha256(
-                f"{case_id}:{purpose}".encode()
+                json.dumps(evaluator_request, sort_keys=True, separators=(",", ":")).encode()
             ).hexdigest(),
             admitted=True,
             error=None,
@@ -403,6 +409,7 @@ class FakeEvaluator:
             fallback_calls=0,
             receipt=receipt,
             artifact_payloads={
+                "evaluator_request": json.dumps({**evaluator_request, "attempt": 1}, sort_keys=True, separators=(",", ":")).encode(),
                 "broker_record": raw_result,
                 "stdout": b"completed\n",
                 "stderr": b"",
@@ -420,7 +427,13 @@ def _generated_advisory_assessment(compiler):
     return compiler.assess(document)
 
 
-class FindingRoutingContractTests(unittest.TestCase):
+class SemanticLabTestCase(unittest.TestCase):
+    def setUp(self):
+        from tests.contracts._executor_fixture import SemanticExecutorFixture
+        self.enterContext(SemanticExecutorFixture())
+
+
+class FindingRoutingContractTests(SemanticLabTestCase):
     def test_environment_retains_hints_in_the_existing_agent_channel(self) -> None:
         from open_cake_ir.compiler import Compiler
         from open_cake_ir.lab.environments import OpenCakeEnvironment
@@ -459,7 +472,8 @@ class FindingRoutingContractTests(unittest.TestCase):
         )
 
 
-class LabContractTests(unittest.TestCase):
+class LabContractTests(SemanticLabTestCase):
+
     def test_provider_fault_does_not_resolve_evaluation_only_fields(self) -> None:
         class FaultProvider(FakeProvider):
             def turn(self, request):
@@ -507,7 +521,7 @@ class LabContractTests(unittest.TestCase):
 
             self.assertFalse(evidence_root.exists())
 
-    def test_current_study_templates_resolve_exact_current_revisions(self) -> None:
+    def test_current_study_templates_resolve_explicit_executor_dependency(self) -> None:
         for name in (
             "matched-search-infrastructure-template.json",
             "matched-search-system-qualification-ralph-template.json",
@@ -534,9 +548,8 @@ class LabContractTests(unittest.TestCase):
 
             lock = TaskLab(ROOT).preflight(path)
             executor = lock.document["execution"]["executor_revision"]
-            current = json.loads(
-                (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
-            )["current"]
+            from tests.contracts._executor_fixture import SemanticExecutorFixture
+            current = dict(SemanticExecutorFixture().revision(ROOT).reference)
             self.assertEqual(executor["executor_id"], current["executor_id"], name)
             self.assertEqual(
                 executor["canonical_sha256"],
@@ -1154,6 +1167,7 @@ class LabContractTests(unittest.TestCase):
                         )
                     )["current"]["path"],
                 ),
+                compiler_reference=compiler_reference(ROOT),
                 service_user=pwd.getpwuid(os.geteuid()).pw_name,
                 service_group=grp.getgrgid(os.getegid()).gr_name,
             )
@@ -1168,7 +1182,7 @@ class LabContractTests(unittest.TestCase):
         self.assertEqual(logical.attempts[0].job_id, "gpuq-000000000001")
         self.assertEqual(
             set(logical.attempts[0].artifact_payloads),
-            {"broker_record", "stdout", "stderr", "evaluator_result"},
+            {"broker_record", "stdout", "stderr", "evaluator_result", "evaluator_request"},
         )
         self.assertEqual(
             set(logical.final_receipt.artifact_payloads),
@@ -1223,6 +1237,7 @@ class LabContractTests(unittest.TestCase):
                         )
                     )["current"]["path"],
                 ),
+                compiler_reference=compiler_reference(ROOT),
                 service_user=pwd.getpwuid(os.geteuid()).pw_name,
                 service_group=grp.getgrgid(os.getegid()).gr_name,
             )
@@ -1235,8 +1250,9 @@ class LabContractTests(unittest.TestCase):
                 )
 
         self.assertEqual(raised.exception.protocol_adherence, "broker_fault")
+        self.assertEqual(json.loads(raised.exception.artifact_payloads["evaluator_request"])["compiler_revision"], compiler_reference(ROOT))
         self.assertEqual(
-            raised.exception.artifact_payloads,
+            {key: value for key, value in raised.exception.artifact_payloads.items() if key != "evaluator_request"},
             {"broker_stdout": b"worker-out\n", "broker_stderr": b"worker-err\n"},
         )
 
@@ -2077,7 +2093,8 @@ class LabContractTests(unittest.TestCase):
 
 
 
-class EmpiricalFeedbackRepairTests(unittest.TestCase):
+class EmpiricalFeedbackRepairTests(SemanticLabTestCase):
+
     """Run the real empirical consumer with an isolated synthetic CUDA Executor."""
 
     def test_environment_constructor_type_hints_keep_the_executor_owner(self):
@@ -2147,7 +2164,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class CandidateSetFilterTest(unittest.TestCase):
+class CandidateSetFilterTest(SemanticLabTestCase):
     """Every candidate is built and sealed; only the bounded subset is evaluated.
 
     This is the paper's pre-GPU filter. Compile time is spent on the whole set precisely
@@ -2622,7 +2639,7 @@ class CandidateSetFilterTest(unittest.TestCase):
         )
 
 
-class AttributionAssayIntegrationTest(unittest.TestCase):
+class AttributionAssayIntegrationTest(SemanticLabTestCase):
     """A Study that declares attribution gets it; one that does not is unchanged.
 
     Profiling costs device time, so it is declared rather than assumed. What must not
@@ -2702,6 +2719,10 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
                     sort_keys=True,
                     separators=(",", ":"),
                 ).encode()
+                evaluator_request = {"compiler_revision": compiler_reference(ROOT),
+                    "candidate_sha256": candidate.candidate_sha256,
+                    "launch_spec_sha256": candidate.launch_spec_sha256,
+                    "evaluation_protocol_sha256": self.protocol_sha256, "case_id": case_id, "purpose": purpose}
                 attempt = BrokerAttempt(
                     job_id=job_id,
                     mode="exclusive",
@@ -2709,7 +2730,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
                     manifest_sha256=candidate.launch_spec_sha256,
                     policy_sha256=self.protocol_sha256,
                     evaluator_arguments_sha256=sha256(
-                        f"{case_id}:{purpose}".encode()
+                        json.dumps(evaluator_request, sort_keys=True, separators=(",", ":")).encode()
                     ).hexdigest(),
                     admitted=True,
                     error=None,
@@ -2721,6 +2742,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
                     fallback_calls=0,
                     receipt=receipt,
                     artifact_payloads={
+                        "evaluator_request": json.dumps({**evaluator_request, "attempt": 1}, sort_keys=True, separators=(",", ":")).encode(),
                         "broker_record": raw_result,
                         "evaluator_result": raw_result,
                         "stdout": b"completed\n",
@@ -2807,7 +2829,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
         )
 
 
-class SearchBudgetTest(unittest.TestCase):
+class SearchBudgetTest(SemanticLabTestCase):
     """A malformed search budget is refused at the boundary, not partway through a run.
 
     `searches_per_turn` reaches a slice of the ranked candidates, so zero would index an
@@ -2863,7 +2885,7 @@ class SearchBudgetTest(unittest.TestCase):
             self._preflight(3, materiality=1.05, maximum_candidates=2)
 
 
-class StructurallyDistinctCandidatesTest(unittest.TestCase):
+class StructurallyDistinctCandidatesTest(SemanticLabTestCase):
     """Two spellings of one program consume one search slot, and the author is told.
 
     The paper's first stage asks for structurally distinct candidates. A provider that
@@ -3025,7 +3047,7 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
         self.assertEqual(same_searched, distinct_searched)
 
 
-class QualifiedCandidateSelectionTest(unittest.TestCase):
+class QualifiedCandidateSelectionTest(SemanticLabTestCase):
     """Qualification chooses the winner, and its findings stay paired with it."""
 
     def test_an_unstable_fastest_candidate_cannot_win_or_lend_findings(self) -> None:
@@ -3215,7 +3237,7 @@ class QualifiedCandidateSelectionTest(unittest.TestCase):
         )
 
 
-class CostModelRouteTest(unittest.TestCase):
+class CostModelRouteTest(SemanticLabTestCase):
     """The fourth destination, unlocked by evaluating more than one candidate.
 
     Deciding the order was wrong needs two measurements to compare, so this route stayed
@@ -3365,7 +3387,7 @@ class CostModelRouteTest(unittest.TestCase):
         )
 
 
-class BrokerExecutionDigestTest(unittest.TestCase):
+class BrokerExecutionDigestTest(SemanticLabTestCase):
     """The digest a live Study pins its broker to.
 
     `execution.broker_execution_sha256` is frozen into a Study Contract when a live
@@ -3439,7 +3461,8 @@ class BrokerExecutionDigestTest(unittest.TestCase):
                 self._digest([str(root / "absent")], root)
 
 
-class RalphTaskInterfaceTests(unittest.TestCase):
+class RalphTaskInterfaceTests(SemanticLabTestCase):
+
     def test_retired_study_and_lock_interfaces_are_refused(self) -> None:
         from open_cake_ir.lab import StudyContract
         template = ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
@@ -3761,7 +3784,7 @@ class RalphTaskInterfaceTests(unittest.TestCase):
             self.assertNotIn("prompt_template", environment)
 
 
-class RuntimeReferenceCustodyTest(unittest.TestCase):
+class RuntimeReferenceCustodyTest(SemanticLabTestCase):
     """The gate between a runtime config and the files a live Campaign will read.
 
     `execute_matched_from_config` resolves every raw reference through this, and it is the
@@ -3833,7 +3856,7 @@ class RuntimeReferenceCustodyTest(unittest.TestCase):
                     _raw_reference_path(root, {"path": "inner/runtime.json"}, "reference")
 
 
-class EmpiricalSelectionContractTests(unittest.TestCase):
+class EmpiricalSelectionContractTests(SemanticLabTestCase):
     """Actual CPU Lab path with a prospective fixture closure, never a host admission."""
 
     @classmethod
@@ -3848,22 +3871,9 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         cls.parent = Path(cls.temporary.name).resolve()
         cls.root = cls.parent / "prospective-project"
         shutil.copytree(ROOT, cls.root, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-        # Exercise the current event branch with a cycle-derived prospective Revision
-        # in this disposable project. CUDA advisory context comes from an explicit
-        # synthetic host, not from the hardware of the current released Executor.
-        # No host admission or provider/GPU qualification is performed.
-        inventory_path = cls.root / "inventory/EXECUTOR_REVISIONS.json"
-        host_fixture = cls.parent / "synthetic-host-environment.json"
-        host_fixture.write_text(json.dumps(_synthetic_cuda_host()))
-        prepared = subprocess.run(
-            ["bash", str(cls.root / "tools/release_executor_cycle.sh"), "--host-environment", str(host_fixture)],
-            cwd=cls.root, env={**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"], "PYTHONDONTWRITEBYTECODE": "1"},
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60,
-        )
-        if prepared.returncode:
-            raise RuntimeError(prepared.stdout.decode() + prepared.stderr.decode())
-        inventory = json.loads(inventory_path.read_text())
-        cls.executor = ExecutorRevision.load(cls.root, cls.root / inventory["current"]["path"])
+        from tests.contracts._executor_fixture import SemanticExecutorFixture
+        cls.executor_fixture = SemanticExecutorFixture()
+        cls.executor = cls.executor_fixture.revision(cls.root)
         cls.lab = TaskLab(cls.root)
         cls.workload = load_workload(cls.root / "contracts/workloads/flash-kmeans-assign-v2.json")
         cls.compiler = Compiler.load(cls.root, cls.root / "compiler/revision.lock.json")
@@ -4027,7 +4037,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         if via_cli:
             cli_lock = directory / "cli-campaign.lock.json"
             completed = subprocess.run(
-                [sys.executable, "-m", "open_cake_ir.cli", "--project-root", str(self.root),
+                [sys.executable, "-m", "tests.contracts._executor_fixture", "--project-root", str(self.root),
                  "lab", "preflight", str(directory / "study.json"),
                  "--empirical-cost-model", str(model_path), "--output", str(cli_lock)],
                 cwd=self.root, env={**os.environ, "PYTHONPATH": str(self.root / "src"), "PYTHONDONTWRITEBYTECODE": "1"},
@@ -4107,7 +4117,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         self.assertEqual(request.thread_id, provider.threads["open_cake-1"])
         lock_path = campaign.evidence_root.parent / "lock.json"
         lock_path.write_text(json.dumps(campaign.lock.document))
-        completed = subprocess.run([sys.executable, "-m", "open_cake_ir.cli", "--project-root", str(self.root), "lab", "audit", "--lock", str(lock_path), "--evidence-root", str(campaign.evidence_root)], cwd=self.root, env={**os.environ, "PYTHONPATH": str(self.root / "src"), "PYTHONDONTWRITEBYTECODE": "1"}, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        completed = subprocess.run([sys.executable, "-m", "tests.contracts._executor_fixture", "--project-root", str(self.root), "lab", "audit", "--lock", str(lock_path), "--evidence-root", str(campaign.evidence_root)], cwd=self.root, env={**os.environ, "PYTHONPATH": str(self.root / "src"), "PYTHONDONTWRITEBYTECODE": "1"}, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.assertEqual(completed.returncode, 0, completed.stderr.decode())
         self.assertTrue(json.loads(completed.stdout)["semantic_replay_passed"])
         audit = store.audit_run("open_cake-1")

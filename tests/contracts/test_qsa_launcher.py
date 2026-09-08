@@ -161,6 +161,7 @@ class QsaLauncherContractTest(unittest.TestCase):
             remote_root="/remote/open-cake",
             runtime=self._runtime(),
             executor=SimpleNamespace(executor_id="executor-v1", canonical_sha256="a" * 64),
+            compiler_reference={"path": "fixture.json", "revision_id": "compiler-fixture", "canonical_sha256": "b" * 64},
             protocol="seed",
             component_timing=True,
             profile_kernel="score_topk",
@@ -180,6 +181,7 @@ class QsaLauncherContractTest(unittest.TestCase):
                 executor=SimpleNamespace(
                     executor_id="executor-v1", canonical_sha256="a" * 64
                 ),
+                compiler_reference={"path": "fixture.json", "revision_id": "compiler-fixture", "canonical_sha256": "b" * 64},
                 protocol="profile",
                 component_timing=True,
                 profile_kernel="score_topk",
@@ -190,6 +192,7 @@ class QsaLauncherContractTest(unittest.TestCase):
             remote_root="/remote/open-cake",
             runtime=self._runtime(),
             executor=SimpleNamespace(executor_id="executor-v1", canonical_sha256="a" * 64),
+            compiler_reference={"path": "fixture.json", "revision_id": "compiler-fixture", "canonical_sha256": "b" * 64},
             protocol="profile",
             component_timing=False,
             profile_kernel="attention",
@@ -213,6 +216,7 @@ class QsaLauncherContractTest(unittest.TestCase):
                 executor=SimpleNamespace(
                     executor_id="executor-v1", canonical_sha256="a" * 64
                 ),
+                compiler_reference={"path": "fixture.json", "revision_id": "compiler-fixture", "canonical_sha256": "b" * 64},
                 protocol="seed",
                 component_timing=False,
                 profile_kernel="attention",

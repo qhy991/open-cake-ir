@@ -10,6 +10,7 @@ import os
 import grp
 import pwd
 from pathlib import Path
+from tests.contracts._executor_fixture import compiler_reference
 import tempfile
 import shutil
 from types import MappingProxyType, SimpleNamespace
@@ -159,7 +160,7 @@ class PairedExecutionTests(unittest.TestCase):
         retained = self.execute()
         executor_reference = {'path':'runtime/executors/CPU-fixture.json',
                               'canonical_sha256':'a'*64, 'executor_id':'CPU-fixture'}
-        executor = SimpleNamespace(reference=executor_reference, canonical_sha256='a'*64, executor_id='CPU-fixture')
+        executor = SimpleNamespace(reference=executor_reference, canonical_sha256='a'*64, executor_id='CPU-fixture', project_root=ROOT)
         requests = []
         def command(argv, **kwargs):
             request_path = Path(argv[argv.index('--request') + 1])
@@ -177,7 +178,8 @@ class PairedExecutionTests(unittest.TestCase):
             result_path.write_bytes(encoded(result))
             return SimpleNamespace(returncode=0, stdout=b'',
                 stderr=b'[gpu-run] accepted job gpuq-123456789abc\n')
-        submitter = CommandBrokerSubmitter(command=('CPU-fixture',),
+        from tests.contracts._executor_fixture import compiler_reference
+        submitter = CommandBrokerSubmitter(compiler_reference=compiler_reference(ROOT), command=('CPU-fixture',),
             workload_path=ROOT / 'contracts/workloads/rmsnorm-fp32-v2.json',
             workload_sha256=self.workload.canonical_sha256,
             protocol_sha256=sha256(encoded(self.protocol)).hexdigest(), cwd=ROOT,
@@ -221,7 +223,8 @@ class PairedExecutionTests(unittest.TestCase):
         arguments = dict(command=('CPU-fixture',), workload_path=path,
             workload_sha256=sha256(encoded(document)).hexdigest(),
             protocol_sha256=sha256(encoded(self.protocol)).hexdigest(), cwd=ROOT,
-            executor=SimpleNamespace(reference={}),
+            executor=SimpleNamespace(reference={}, project_root=ROOT),
+            compiler_reference=compiler_reference(ROOT),
             service_user=pwd.getpwuid(os.geteuid()).pw_name,
             service_group=grp.getgrgid(os.getegid()).gr_name,
             evaluation_protocol=self.protocol, baseline=self.baseline)
@@ -501,7 +504,13 @@ class PairedExecutionTests(unittest.TestCase):
                 self.assertIn('"sm_103a"', package.task_markdown)
                 self.assertIn('candidate-set.json', package.agents_markdown)
                 self.assertNotIn('prompt_template', package.task_markdown)
-                self.assertNotIn('"sm_100a"', package.task_markdown)
+                def frozen_json(name):
+                    section = package.task_markdown.split(f"## Frozen reference: `{name}`\n", 1)[1]
+                    return json.loads(section.split("```json\n", 1)[1].split("\n```", 1)[0])
+                self.assertEqual(frozen_json("target.json")["target_id"], "sm_103a")
+                self.assertEqual(frozen_json("run-authority.json")["execution"]["target"], "sm_103a")
+                if arm == "open_cake":
+                    self.assertEqual(frozen_json("schedule-skeleton.json")["target"], "sm_103a")
                 if arm == comparison:
                     self.assertIn(policy.baseline_file, package.task_markdown)
                 else:

@@ -22,6 +22,7 @@ def _replay_broker_attempt_ledger(
     *,
     candidate: LaunchableCandidate,
     protocol_sha256: str,
+    compiler_reference: Mapping[str, object],
     final_receipt: EvaluationReceipt | None,
 ) -> None:
     """Rebuild every broker attempt from retained raw results and compare its ledger."""
@@ -104,6 +105,7 @@ def _replay_broker_attempt_ledger(
         expected_artifact_roles = {
             "broker_record",
             "evaluator_result",
+            "evaluator_request",
             "stdout",
             "stderr",
         }
@@ -125,6 +127,20 @@ def _replay_broker_attempt_ledger(
             raw_payloads[artifact_role] = evidence.read_object(reference)
             if sha256(raw_payloads[artifact_role]).hexdigest() != expected_digest:
                 raise ValueError("broker attempt raw artifact bytes differ")
+
+        request = _object(json.loads(raw_payloads["evaluator_request"]), "evaluator_request")
+        if request.get("compiler_revision") != dict(compiler_reference):
+            raise ValueError("worker Compiler dependency differs from Campaign Lock")
+        if (request.get("candidate_sha256") != candidate.candidate_sha256
+                or request.get("launch_spec_sha256") != candidate.launch_spec_sha256
+                or request.get("evaluation_protocol_sha256") != protocol_sha256
+                or type(request.get("attempt")) is not int or request["attempt"] != index):
+            raise ValueError("worker request authority differs")
+        authority_document = dict(request)
+        authority_document.pop("attempt")
+        from ._documents import _canonical_json_bytes
+        if sha256(_canonical_json_bytes(authority_document)).hexdigest() != attempt["evaluator_arguments_sha256"]:
+            raise ValueError("worker request differs from broker argument identity")
 
         try:
             broker_result = json.loads(raw_payloads["broker_record"])
@@ -262,6 +278,7 @@ def _replay_evaluation_attempt_event(
     *,
     candidate: LaunchableCandidate,
     protocol_sha256: str,
+    compiler_reference: Mapping[str, object],
     final_receipt: EvaluationReceipt | None,
 ) -> None:
     """Resolve one attempt event to its sole ledger and retained raw artifacts."""
@@ -290,5 +307,6 @@ def _replay_evaluation_attempt_event(
         document,
         candidate=candidate,
         protocol_sha256=protocol_sha256,
+        compiler_reference=compiler_reference,
         final_receipt=final_receipt,
     )

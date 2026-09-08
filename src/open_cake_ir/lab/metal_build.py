@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 from typing import Mapping
 
-from open_cake_ir.compiler.target import Target
+from .bindings import load_compiler_reference
 from open_cake_ir.evaluation.core import LaunchableCandidate
 from open_cake_ir.evaluation.artifacts import METAL_TARGETS
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest, compile_options
@@ -152,13 +152,17 @@ class MetalArchiveHost:
 
 class MetalToolchainBuilder:
     def __init__(self, *, workload, case_id: str, output_root: Path,
+                 compiler_reference: Mapping[str, object],
                  host: MetalArchiveHost | None = None, project_root: Path = ROOT):
         if workload.target not in METAL_TARGETS:
             raise ValueError("Metal builder requires a supported exact Metal target")
         self.workload, self.case_id = workload, case_id
         self.output_root = _external_root(output_root)
         self.host = host
-        self.target = Target.load(Path(project_root) / "compiler" / "targets" / f"{workload.target}.json")
+        revision = load_compiler_reference(Path(project_root), compiler_reference, "metal.compiler_revision")
+        if workload.target not in revision.targets:
+            raise ValueError("Metal target is not bound by the admitted Compiler")
+        self.target = revision.targets[workload.target]
         self.workload.tensor_abi(case_id)
 
     @property

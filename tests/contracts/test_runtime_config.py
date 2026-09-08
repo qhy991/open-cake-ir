@@ -311,7 +311,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
                 with patch("open_cake_ir.lab.runtime.pwd.getpwnam", side_effect=AssertionError("unexpected account lookup")) as account:
                     with self.assertRaises(ValueError):
                         CommandBrokerSubmitter(**arguments, workload_path=self.external / "missing-workload.json",
-                            workload_sha256="unused", protocol_sha256="unused", executor=object())
+                            workload_sha256="unused", protocol_sha256="unused", executor=object(), compiler_reference={})
                     account.assert_not_called()
 
 
