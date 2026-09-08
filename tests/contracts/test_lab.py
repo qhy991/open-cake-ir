@@ -293,11 +293,13 @@ class FakeEvaluator:
         workload_sha256: str,
         *,
         raw_kernel_calls: int = 1,
+        compiler_revision_reference=None,
     ) -> None:
         self.protocol = protocol
         self.protocol_sha256 = protocol_sha256
         self.workload_sha256 = workload_sha256
         self.raw_kernel_calls = raw_kernel_calls
+        self.compiler_reference = dict(compiler_reference(ROOT) if compiler_revision_reference is None else compiler_revision_reference)
         self.calls = 0
 
     def evaluate(self, candidate, *, case_id, purpose):
@@ -385,8 +387,7 @@ class FakeEvaluator:
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
-        from tests.contracts._executor_fixture import compiler_reference
-        evaluator_request = {"compiler_revision": compiler_reference(ROOT),
+        evaluator_request = {"compiler_revision": self.compiler_reference,
             "candidate_sha256": candidate.candidate_sha256,
             "launch_spec_sha256": candidate.launch_spec_sha256,
             "evaluation_protocol_sha256": self.protocol_sha256, "case_id": case_id, "purpose": purpose}
@@ -2719,7 +2720,7 @@ class AttributionAssayIntegrationTest(SemanticLabTestCase):
                     sort_keys=True,
                     separators=(",", ":"),
                 ).encode()
-                evaluator_request = {"compiler_revision": compiler_reference(ROOT),
+                evaluator_request = {"compiler_revision": self.compiler_reference,
                     "candidate_sha256": candidate.candidate_sha256,
                     "launch_spec_sha256": candidate.launch_spec_sha256,
                     "evaluation_protocol_sha256": self.protocol_sha256, "case_id": case_id, "purpose": purpose}
