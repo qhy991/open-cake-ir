@@ -75,10 +75,12 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                 ROOT / "src/open_cake_ir/evidence",
                 ROOT / "src/open_cake_ir/tasks",
             )
-            for path in directory.rglob("*.py")
+            for path in directory.rglob("*") if path.suffix in {".py", ".swift"}
         } | {
             "compiler/targets/sm_100a.json",
             "compiler/targets/sm_103a.json",
+            "compiler/targets/apple_gpu_family7.json",
+            "compiler/targets/apple_gpu_family8.json",
             "src/open_cake_ir/compiler/target.py",
             "docs/en/PAIRED_TRITON.md",
             "examples/gpu/flash_kmeans_quickstart.py",
@@ -95,7 +97,11 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             executor.document["host_environment"]["packages"]["torch"] = "changed"
 
     def test_current_executor_pins_the_attribution_profiler(self) -> None:
-        profiler = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR).admit_profiler()
+        executor = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR)
+        profiler = executor.admit_profiler()
+        if executor.document["host_environment"].get("kind") == "metal":
+            self.assertEqual(dict(profiler), dict(executor.document["host_environment"]["observer_executable"]))
+            return  # This observer has no --version command; do not dispatch it.
         completed = subprocess.run(
             [str(profiler["path"]), "--version"], check=True, capture_output=True,
             text=True, timeout=30,

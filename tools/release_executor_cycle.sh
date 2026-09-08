@@ -24,7 +24,7 @@ import argparse, hashlib, json, os, pathlib, re, subprocess
 from open_cake_ir.lab.executor import ExecutorRevision
 from tools.release_executor import _released_executor_paths
 
-parser = argparse.ArgumentParser(description="Release a new B200 Executor successor")
+parser = argparse.ArgumentParser(description="Release a new Executor successor (legacy id namespace)")
 parser.add_argument(
     "--host-environment", type=pathlib.Path,
     help="host-environment JSON already verified against the executor host",
@@ -34,6 +34,8 @@ arguments = parser.parse_args()
 temporary = pathlib.Path(os.environ["EXECUTOR_RELEASE_TMP"])
 
 
+# Keep the existing reserved id sequence. The descriptor's explicit host kind,
+# not its historical id spelling, selects native runtime admission.
 def ordinal(value: str) -> int:
     match = re.fullmatch(r"open-cake-ir-b200-v([1-9][0-9]*)", value)
     return int(match.group(1)) if match else 0
@@ -54,12 +56,18 @@ elif released:
     host = released[-1]["host_environment"]
 else:
     raise SystemExit("no released Executor provides a host environment; pass --host-environment")
+if not isinstance(host, dict):
+    raise ValueError("Executor host environment must be an object")
 # Resolve the profiler only during an explicit release. The released descriptor, not
 # this discovery rule, is the authority used by every attribution assay.
 candidates = [] if arguments.host_environment is not None else list(pathlib.Path("/opt/nvidia/nsight-compute").glob(
     "*/target/linux-desktop-glibc_2_11_3-x64/ncu"
 ))
-if arguments.host_environment is not None:
+if host.get("kind") == "metal":
+    if arguments.host_environment is None:
+        raise SystemExit("Metal Executor release requires an explicitly captured host environment")
+    print("    using explicit native Metal host; no CUDA host inheritance")
+elif arguments.host_environment is not None:
     print("    using supplied verified host environment")
 elif not candidates:
     if os.environ.get("OPEN_CAKE_REUSE_VERIFIED_HOST") != "1":
@@ -87,9 +95,10 @@ else:
         "sha256": hashlib.sha256(ncu_payload).hexdigest(),
         "size_bytes": len(ncu_payload),
     }
-if not isinstance(host, dict):
-    raise ValueError("Executor host environment must be an object")
 ExecutorRevision._validate_host_document(host)
+if host.get("kind") == "metal":
+    from open_cake_ir.lab.executor import admit_host_environment
+    admit_host_environment(host)
 temporary.joinpath("proposal.json").write_text(json.dumps({
     "schema_version": 1,
     "executor_id": keep,
