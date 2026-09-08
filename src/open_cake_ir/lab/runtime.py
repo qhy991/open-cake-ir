@@ -85,6 +85,8 @@ def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, o
         raise ValueError("runtime configuration fields differ")
     if toolchain_kind == "triton":
         toolchain_fields = {"python", "bubblewrap", "runtime_roots", "triton_version", "timeout_seconds"}
+    elif toolchain_kind == "cutlass_cute_dsl":
+        toolchain_fields = {"python", "bubblewrap", "runtime_roots", "cuobjdump", "cutlass_version", "timeout_seconds"}
     elif toolchain_kind == "nvcc":
         toolchain_fields = {"nvcc", "cuobjdump"}
     else:
