@@ -111,7 +111,11 @@ class LabCoreArchitectureTests(unittest.TestCase):
 
     def test_explicit_runtime_owner_imports_form_an_acyclic_graph(self):
         owners = {"core", "contracts", "_documents", "_policies", "bindings", "preflight", "execution",
-                  "replay", "reporting", "selection", "archive", "environments"}
+                  "replay", "reporting", "selection", "archive", "environments",
+                  "admission", "build", "candidate_filter", "evaluation_writer", "execution_admission",
+                  "provider_documents", "provider_events", "provider_invocation", "providers",
+                  "replay_artifacts", "replay_attempts", "replay_candidates", "replay_outcomes",
+                  "replay_provider", "replay_selection", "run_completion", "runtime", "runtime_config"}
         edges = {name: set() for name in owners}
         def runtime_imports(node):
             if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING":
@@ -134,6 +138,9 @@ class LabCoreArchitectureTests(unittest.TestCase):
         self.assertFalse(edges["selection"] & {"core", "contracts", "environments"})
         self.assertFalse(edges["replay"] & {"core", "execution", "preflight", "reporting"})
         self.assertFalse(edges["_documents"])
+        for reader in ("replay", "replay_artifacts", "replay_attempts", "replay_candidates",
+                       "replay_outcomes", "replay_provider", "replay_selection"):
+            self.assertFalse(edges[reader] & {"execution", "evaluation_writer", "run_completion"})
         def visit(name, path):
             self.assertNotIn(name, path, " -> ".join((*path, name)))
             for dependency in edges[name]:
