@@ -153,7 +153,7 @@
           16
         ],
         "instruction": {
-          "contract": "triton.dot.bf16_fp32",
+          "contract": "tcgen05.mma.cta_group::1.kind::f16",
           "shape": [
             16,
             8,

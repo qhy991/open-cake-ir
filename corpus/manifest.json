@@ -1281,10 +1281,9 @@
         "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "MMA_PLACEMENT_UNSUPPORTED",
           "MMA_REGISTER_CONTRACT_UNSUPPORTED"
         ],
-        "schedule_sha256": "d14feaae795e3a06e44e1f750b984f0a4a8431c7cea61fa198aa4988193d4d83",
+        "schedule_sha256": "42e57aad1a570758e5810721bc69da282d805180d0d95a3802344de2d8d2f776",
         "lowering_source_sha256": null
       }
     },
