@@ -229,6 +229,9 @@ class TaskPackage:
     def evidence_bundle(self, state_card: Mapping[str, object]) -> bytes:
         """Retain exactly what the Agent received for one Ralph iteration."""
 
+        # Derive from the same detached JSON-shaped snapshot that is retained.
+        # Nested immutable mappings/tuples must not change rubric state on replay.
+        state = cast(dict[str, object], _plain(state_card))
         return _canonical_json(
             {
                 "schema_version": 1,
@@ -237,10 +240,10 @@ class TaskPackage:
                 "arm": self.arm,
                 "task_markdown": self.task_markdown,
                 "agents_markdown": self.agents_markdown,
-                "state_card": _plain(state_card),
+                "state_card": state,
                 "rubric": (
-                    derive_rubric(state_card["previous_feedback"])
-                    if "previous_feedback" in state_card else derive_rubric()
+                    derive_rubric(state["previous_feedback"])
+                    if "previous_feedback" in state else derive_rubric()
                 ),
             }
         ).encode()

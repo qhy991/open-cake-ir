@@ -8,7 +8,7 @@ from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 import tempfile
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -156,13 +156,23 @@ class RubricContractTests(unittest.TestCase):
                 evaluation(), evaluation(confirmed=False), evaluation(measurement_quality="unstable", confirmed=False),
                 evaluation(profile=None), {"kind": "future_feedback"}, {"kind": "evaluation", "confirmed": "true"},
             ]
+            finding = {"code": "REFUSAL", "path": "operations[0]",
+                       "category": "hardware_conformance", "message": "unsupported body",
+                       "blocks_acceptance": False, "blocks_lowering": True}
+            immutable_findings = (MappingProxyType(finding),)
+            immutable_feedback = MappingProxyType({"stage": "assessment", "findings": immutable_findings})
+            cases = [(feedback, copy.deepcopy(feedback)) for feedback in feedbacks]
+            cases.extend([
+                ({"stage": "assessment", "findings": [finding]},
+                 {"stage": "assessment", "findings": [copy.deepcopy(finding)]}),
+                (immutable_feedback, {"stage": "assessment", "findings": [copy.deepcopy(finding)]}),
+            ])
             evidence = EvidenceStore.create(root / "evidence")
             events = []
             ledger = SimpleNamespace(append=lambda kind, payload: events.append({"kind": kind, "payload": payload}))
             cumulative = 0
             thread = None
-            for turn, feedback in enumerate(feedbacks, 1):
-                before = copy.deepcopy(feedback)
+            for turn, (feedback, before) in enumerate(cases, 1):
                 state = controller.state_card(turn=turn, cumulative_provider_tokens=cumulative, feedback=feedback)
                 current_request = SimpleNamespace(run_id=package.run_id, arm=package.arm, turn=turn,
                     cumulative_provider_tokens=cumulative, thread_id=thread, feedback=feedback,
@@ -180,7 +190,14 @@ class RubricContractTests(unittest.TestCase):
                 bundle = json.loads(retained)
                 self.assertEqual(bundle["rubric"], derive_rubric(before))
                 self.assertEqual(bundle["state_card"]["previous_feedback"], before)
-                self.assertEqual(feedback, before)
+                if feedback is immutable_feedback:
+                    self.assertIs(feedback["findings"], immutable_findings)
+                    self.assertIsInstance(feedback["findings"][0], MappingProxyType)
+                    self.assertEqual(dict(feedback["findings"][0]), finding)
+                    self.assertEqual(states(bundle["rubric"])["findings"], "reported")
+                    self.assertEqual(retained, package.evidence_bundle(bundle["state_card"]))
+                else:
+                    self.assertEqual(feedback, before)
                 self.assertEqual(controller.stop_reason(turn=turn, cumulative_provider_tokens=cumulative), None)
                 self.assertEqual(dict(state["evaluation_counts"]), {"search": 0, "confirmatory": 0, "attribution": 0})
             self.assertEqual({p.name for p in workspace.iterdir()}, {"TASK.md", "AGENTS.md", "candidate-set.json"})
