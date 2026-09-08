@@ -280,9 +280,20 @@ def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None) 
             expected_thread_id=expected_thread_id) if stdout else None
     except (OSError, ValueError, KeyError):
         return None
-    expected = ({"status": "observed", **observed.document} if observed is not None
-                else {"status": "unavailable", "provider_tokens": None})
-    if payload.get("provider_usage") != expected:
+    retained_usage = payload.get("provider_usage")
+    if observed is not None:
+        if (not isinstance(retained_usage, Mapping)
+                or set(retained_usage) != {"status", "event_contract", "thread_id", "provider_tokens"}
+                or retained_usage.get("status") != "observed"):
+            return None
+        try:
+            retained = ReportedProviderUsage(retained_usage["event_contract"],
+                retained_usage["thread_id"], retained_usage["provider_tokens"])
+        except (TypeError, ValueError):
+            return None
+        if retained != observed:
+            return None
+    elif retained_usage != {"status": "unavailable", "provider_tokens": None}:
         return None
     if observed is None:
         if payload.get("terminal_provider_tokens_scope") != "known_subtotal":

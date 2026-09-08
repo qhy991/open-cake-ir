@@ -68,6 +68,18 @@ class ReportedProviderUsageTests(unittest.TestCase):
         self.assertIsNone(replay_fault_usage(payload=payload, evidence=evidence, provider=provider,
                           expected_thread_id="00000000-0000-0000-0000-000000000001"))
 
+    def test_replayed_usage_refuses_boolean_and_float_token_witnesses(self):
+        from open_cake_ir.lab.replay_provider import replay_fault_usage
+        for native_tokens, claimed_tokens in ((0, False), (1, True), (191499, 191499.0)):
+            raw = codex_report(native_tokens)
+            payload = {"stage": "provider", "provider_usage": {"status": "observed",
+                "event_contract": CONTRACT, "thread_id": THREAD, "provider_tokens": claimed_tokens},
+                "objects": [{"role": "provider_stdout"}]}
+            with self.subTest(native=native_tokens, claimed=claimed_tokens):
+                self.assertIsNone(replay_fault_usage(payload=payload,
+                    evidence=SimpleNamespace(read_object=lambda _: raw),
+                    provider={"event_contract": CONTRACT}))
+
     def test_codex_adapter_retains_known_usage_on_format_and_process_failures(self):
         from open_cake_ir.lab.providers import CodexProviderAdapter, ProviderInvocation
         for exit_code in (0, 7):
