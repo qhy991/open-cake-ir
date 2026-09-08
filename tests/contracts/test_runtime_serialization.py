@@ -9,9 +9,28 @@ from open_cake_ir.lab.bindings import canonical
 from open_cake_ir.lab.environments import OpenCakeEnvironment
 from open_cake_ir.lab.provider_documents import ProviderQualificationReceipt
 from open_cake_ir.tasks.flash_kmeans.environment import DirectCudaEnvironment
+from open_cake_ir.tasks.compose import _LivePortfolioAssay
+from open_cake_ir.tasks.flash_kmeans.portfolio_runtime import CuptiPortfolioAssay
 
 
 class RuntimeSerializationTests(unittest.TestCase):
+    def test_live_and_loaded_portfolio_assays_share_utf8_protocol_identity(self):
+        for note in ("baseline", "基线"):
+            with self.subTest(note=note):
+                protocol = {"note": note}
+                live = _LivePortfolioAssay(compiler=None, seed=None, workload=None,
+                    case_ids=[], evaluation_protocol=protocol, device="CPU fixture; unused",
+                    synchronize=None, torch_module=None, cupti_helper=None)
+                loaded = CuptiPortfolioAssay(
+                    artifact=SimpleNamespace(workload_sha256="fixture", entries=[]),
+                    workload=SimpleNamespace(canonical_sha256="fixture"),
+                    evaluation_protocol=protocol, loaded_candidates={}, cupti_benchmark=None,
+                    synchronize=None, flush_l2=None, stream=None, device="CPU fixture; unused")
+                expected = sha256(json.dumps(protocol, sort_keys=True, separators=(",", ":"),
+                                              ensure_ascii=False).encode("utf-8")).hexdigest()
+                self.assertEqual(live.protocol_sha256, expected)
+                self.assertEqual(loaded.protocol_sha256, expected)
+
     def test_non_ascii_authority_identity_matches_preflight_for_each_authoring_kind(self):
         authority = {"notes": "基线", "lowering_route": {"backend": "metal", "entry_point": "kernel"}}
         workload = SimpleNamespace(canonical_sha256="a" * 64, target="apple_gpu_family7",

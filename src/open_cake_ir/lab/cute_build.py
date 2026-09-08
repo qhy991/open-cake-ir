@@ -1,6 +1,8 @@
 """One filesystem-isolated CuTe toolchain feeding the common CUBIN launch boundary."""
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 import base64
 from hashlib import sha256
 import importlib.metadata
@@ -71,7 +73,7 @@ class IsolatedCuTeCompiler:
 
     @property
     def canonical_sha256(self) -> str:
-        return sha256(json.dumps(self.identity, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        return sha256(canonical_json_bytes(self.identity)).hexdigest()
 
     def compile(self, source: bytes, requirements: Mapping[str, object]) -> CuTeCompilation:
         validate_cute_kernel(source, requirements)
@@ -156,7 +158,7 @@ class CuTeToolchainBuilder:
         manifest = TensorLaunchManifest.for_workload(self._workload, self._case_id,
             target=compiled.target, kernel_name=compiled.entry_point, grid=requirements["grid"],
             block=requirements["block"], dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=0)
-        manifest_bytes = json.dumps(manifest.as_dict(), sort_keys=True, separators=(',', ':')).encode()
+        manifest_bytes = canonical_json_bytes(manifest.as_dict())
         payloads = {request.source_role: request.source,
                     "compiler_expanded_source": compiled.artifacts["source"],
                     "ptx": compiled.artifacts["ptx"], "cubin": compiled.artifacts["cubin"],

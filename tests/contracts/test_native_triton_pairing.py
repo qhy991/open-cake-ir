@@ -517,7 +517,7 @@ class PairedLabFixtureTests(unittest.TestCase):
         lowering = draft.lower(draft.assess(schedule))
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
             root = Path(directory) / 'project'; root.mkdir()
-            for name in ('contracts', 'corpus', 'compiler', 'src', 'docs'):
+            for name in ('contracts', 'corpus', 'compiler', 'src', 'docs', 'examples/python'):
                 shutil.copytree(ROOT / name, root / name)
             document = json.loads((root / 'contracts/studies/matched-search-triton-optimization-template.json').read_text())
             document['budget'].update({'unit':'provider_tokens', 'limit':80000, 'checkpoints':[80000], 'maximum_turns':1, 'maximum_candidates_per_turn':1})

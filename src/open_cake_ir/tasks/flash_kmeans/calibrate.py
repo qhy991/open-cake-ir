@@ -10,6 +10,8 @@ Neither operation allocates a GPU, retries a measurement or promotes a Candidate
 """
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 import argparse
 import json
 import math
@@ -43,7 +45,7 @@ def _read(path):
 
 
 def _bytes(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return canonical_json_bytes(value)
 
 
 def _write(path, value):

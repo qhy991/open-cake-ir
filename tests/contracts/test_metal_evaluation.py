@@ -31,7 +31,7 @@ JOB = 'metal-123456789abc'
 
 
 def canonical(value):
-    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode()
 
 
 def workload_fixture():
@@ -173,6 +173,23 @@ class MetalEvaluationContracts(unittest.TestCase):
         payloads['profile'] = canonical(profile)
         with self.assertRaises(ValueError):
             self.receipt(result, payloads=payloads)
+
+    def test_profile_policy_identity_crosses_worker_and_loader_with_utf8_notes(self):
+        base = self.root
+        for index, note in enumerate(("baseline", "基线")):
+            with self.subTest(note=note):
+                self.root = base / str(index)
+                self.root.mkdir()
+                self.policy['note'] = note
+                result = self.run_worker('attribution')
+                receipt = self.receipt(result)
+                self.assertEqual(receipt.attribution_feedback['kind'], METAL_PROFILE_KIND)
+                payloads = dict(receipt.artifact_payloads)
+                profile = json.loads(payloads['profile'])
+                profile['evaluation_protocol']['note'] = 'different policy'
+                payloads['profile'] = canonical(profile)
+                with self.assertRaisesRegex(ValueError, 'Evaluation identity differs'):
+                    self.receipt(result, payloads=payloads)
 
     def test_missing_broker_or_case_projection_refuses_before_observer(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(metal_runtime, 'observe') as observe:

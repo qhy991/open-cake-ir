@@ -380,6 +380,9 @@ class PairedExecutionTests(unittest.TestCase):
             (project / skeleton['path']).write_bytes(encoded(schedule))
             skeleton['canonical_sha256'] = sha256(encoded(schedule)).hexdigest()
             template.write_bytes(encoded(fixture_study))
+        fixture_study = json.loads(template.read_bytes())
+        fixture_study['evaluation_protocol']['note'] = '共同的候选与基线协议'
+        template.write_bytes(encoded(fixture_study))
         study = StudyContract.load(template)
         before = template.read_bytes()
         source = project / 'cpu-executor-source.txt'
@@ -443,7 +446,7 @@ class PairedExecutionTests(unittest.TestCase):
             configuration_sha256=sha256(encoded(configuration)).hexdigest())
         qp = self.output / 'qualification.json'; qp.write_bytes(encoded(qualification))
         anchor = {'schema_version':1, 'kind':'codex_provider_qualification_evidence_anchor',
-            'run_id':'CPU-fixture', 'evidence_root':str(self.output / 'provider-evidence'),
+            'run_id':'CPU-fixture', 'evidence_root':str(self.output / '提供器证据'),
             'authority_sha256':'a'*64, 'qualification_receipt_sha256':sha256(encoded(qualification)).hexdigest(),
             'immediate_audit_integrity':True, 'terminal_seal_sha256':'b'*64}
         ap = self.output / 'anchor.json'; ap.write_bytes(encoded(anchor))

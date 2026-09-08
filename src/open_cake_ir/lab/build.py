@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 import json
 from dataclasses import dataclass
 from hashlib import sha256
@@ -91,9 +93,7 @@ class TritonToolchainBuilder:
             "hidden_null_pointer_parameters": 2,
         }
         manifest = (TensorLaunchManifest.for_workload(self._workload, self._case_id, **launch))
-        manifest_bytes = json.dumps(
-            manifest.as_dict(), sort_keys=True, separators=(",", ":")
-        ).encode()
+        manifest_bytes = canonical_json_bytes(manifest.as_dict())
         payloads = {
             request.source_role: request.source,
             "compiler_expanded_source": stages["source"],

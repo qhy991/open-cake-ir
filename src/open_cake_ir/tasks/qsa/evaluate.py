@@ -181,7 +181,7 @@ def _compile_node(request: BuildRequest) -> dict[str, bytes]:
         "lowered_source": request.source,
         "ptx": compilation.artifacts["ptx"],
         "cubin": compilation.artifacts["cubin"],
-        "launch_manifest": json.dumps(asdict(launch), sort_keys=True, separators=(",", ":")).encode(),
+        "launch_manifest": _canonical_json_bytes(asdict(launch)),
     }
 
 

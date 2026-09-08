@@ -46,9 +46,7 @@ class FlashTritonToolchainBuilder:
         }
         manifest = (CudaLaunchManifest.from_dict({
                         "schema_version": 1, "abi": "flash_kmeans_assign_v1", **launch}))
-        manifest_bytes = json.dumps(
-            manifest.as_dict(), sort_keys=True, separators=(",", ":")
-        ).encode()
+        manifest_bytes = canonical_json_bytes(manifest.as_dict())
         payloads = {
             request.source_role: request.source,
             "compiler_expanded_source": stages["source"],
@@ -165,9 +163,7 @@ class NvccToolchainBuilder:
             sass, _ = self._run([str(self._cuobjdump), "--dump-sass", str(cubin_path)])
         if not cubin.startswith(b"\x7fELF"):
             raise ValueError("NVCC did not produce an ELF CUBIN")
-        manifest_bytes = json.dumps(
-            manifest.as_dict(), sort_keys=True, separators=(",", ":")
-        ).encode()
+        manifest_bytes = canonical_json_bytes(manifest.as_dict())
         payloads = {
             "authored_source": request.source,
             "ptx": ptx,
