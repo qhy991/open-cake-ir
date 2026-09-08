@@ -168,6 +168,7 @@ def _request(candidate, plan, source_root):
             "target": candidate.target, "entry_point": candidate.entry_point, "artifact_roles": dict(candidate.artifact_roles),
             "artifact_paths": {role: f"candidate-{role}" for role in candidate.artifact_payloads},
             "launch_spec_sha256": candidate.launch_spec_sha256, "executor_revision": plan["executor_revision"],
+            "compiler_revision": dict(plan["compiler_revision"]),
             "workload_path": str(source_root / plan["workload"]["path"]), "workload_sha256": plan["workload"]["canonical_sha256"],
             "case_id": plan["case_id"], "purpose": "confirmatory", "attempt": 1}
 

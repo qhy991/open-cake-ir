@@ -111,6 +111,12 @@ class FlashCalibrationTest(unittest.TestCase):
         self.assertNotIn("start_new_session", kwargs)
         directory = Path(command[3]).parent
         request = json.loads(Path(command[3]).read_text())
+        # Exercise the real worker's independent request admission before the
+        # CPU-only evaluator supplies any synthetic measurements.
+        with patch.object(common, "ROOT", self.project):
+            authority = common._load_authority(Path(command[3]))
+        self.assertEqual(authority.request["compiler_revision"], self.active_plan["compiler_revision"])
+        self.assertEqual(authority.workload.canonical_sha256, self.workload.canonical_sha256)
         _candidate, manifest = instrument._candidate(directory, self.active_plan, self.project)
         self.assertEqual(manifest.hidden_null_pointer_parameters, 2)
         spec = next(r for r in self.active_plan["observations"] if r["id"] == directory.name)
@@ -199,6 +205,25 @@ class FlashCalibrationTest(unittest.TestCase):
         self.assertFalse(prediction["covered"])
         judge = instrument._read(run / "stages/collection/result.json")
         self.assertFalse(any("candidate_ms" in row or "baseline_ms" in row for row in judge["workloads"]))
+
+    def test_common_worker_refuses_missing_or_foreign_compiler_reference(self):
+        run = self.fixture()
+        directory = run / "stages/collection/aa-01"
+        original = instrument._read(directory / "request.json")
+        self.assertEqual(original["compiler_revision"], self.active_plan["compiler_revision"])
+        for kind in ("missing", "foreign"):
+            request = copy.deepcopy(original)
+            if kind == "missing":
+                del request["compiler_revision"]
+            else:
+                request["compiler_revision"]["revision_id"] = "foreign-compiler-fixture"
+            path = directory / (kind + "-request.json")
+            write(path, request)
+            with self.subTest(kind=kind), patch.object(common, "ROOT", self.project), \
+                 patch.object(common, "load_workload") as workload:
+                with self.assertRaisesRegex(ValueError, "compiler_revision|Compiler Revision"):
+                    common._load_authority(path)
+                workload.assert_not_called()
 
     def test_oracle_failure_stops_collection_and_retains_failed_observation(self):
         run = self.fixture(reject="aa-02")
