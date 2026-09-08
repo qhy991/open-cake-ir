@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "7ea9066cd8b168fa9a4384a049a76f1615809243d21e9a3e8db8d2402238dd1f"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a07c12-70e9-71d2-a67b-1b5214eb8f5c",
+    "author_session_id": "01a07c12-dcc3-7822-bac1-f8e9bb43cfde"
+  },
+  "approval_basis": "Independent ADR 0052 review of the complete integrated fa5884db096da54156c76f88dfd0be2f9c917c90..7e1f6b27963bea2a15d71b0cda8b60d12d6c2490 change, including the preserved native and qualification repair ancestry. Actual reviewer gpt-6-astra/max and distinct session identity were verified from rollout metadata; the reviewer authored no implementation. The previously reproduced runtime valid_extent bug is closed at the shared Schedule.argmin_domain LOAD origin: runtime prefixes limiting or indexed by candidate coordinates yield no static proof; program_tile, dimension and loop_tile counterexamples are refused by public lowering and direct backend emission. Native MMA/TMEM and numeric-broadcast propagation have their own domain findings, while orthogonal row-prefix and the static K4/K257 and renamed/broadcast cases retain support. Sixteen independent probes and 57 focused/public capability tests passed with one existing optional jsonschema skip. Canonical build_gate_report was invoked once for this new boundary and matched the retained open-cake-ir-sm100a-v62-draft Gate exactly: 107/107 cases and 164 sources. The final integration tree was clean at the same reviewed commit and held the same reviewed Gate/source-set before this approval write. I independently accept the new runtime-domain negative expectation: the Schedule remains IR-valid but has no supported static candidate domain, so TRITON_ARGMIN_DOMAIN must block lowering. All prior 106 case records are unchanged. Earlier separate adoption was independently reviewed: the five static argmin initial cases have justified complete-domain or domain-refusal outcomes, and the five original native source-identity updates reflect the reviewed final MMA publication, per-slot drains, immediate-parent invalidation and dynamic reduction-state initialization, not changed Schedule or acceptance expectations. The accepted upstream 92 case records remain preserved. The final canonical backend/verifier/performance ownership and mechanical qualification imports were reviewed without restoring retired aliases or asset routes; the earlier qualification CPU suite passed 36 tests and its input/oracle/resource/cleanup fixes are unchanged by this repair. This approval authorizes only the exact Compiler release construction through the existing cycle. The two retained released-RevisionAdmission tests and four EmittedObservation tests still require execution after the legitimate successor lock is created. CPU source checks and retained CPU compilation evidence do not establish GPU correctness, matched timing, profiler, performance or framework qualification; those remain pending separate gates."
+}
