@@ -108,14 +108,11 @@ def _replay_terminal(
         return False
     resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
     budget = _object(resolved["budget"], "resolved_inputs.budget")
+    terminal_tokens = fault_terminal_tokens if fault_terminal_tokens is not None else max(cumulative_by_turn.values(), default=0)
     projected = project_checkpoints(
         turns=observations,
         checkpoints=cast(list[int], budget["checkpoints"]),
-        terminal_provider_tokens=(
-            fault_terminal_tokens
-            if fault_terminal_tokens is not None
-            else max(cumulative_by_turn.values())
-        ),
+        terminal_provider_tokens=terminal_tokens,
     )
     expected_projection = [
         {
@@ -156,10 +153,10 @@ def _replay_terminal(
         or isinstance(active_authoring, bool)
     ):
         return False
-    expected_stop_reason = derive_ralph_stop_reason(
+    expected_stop_reason = audit.protocol_adherence if faults else derive_ralph_stop_reason(
         RalphBudget.from_mapping(budget),
         turn=state_turn,
-        cumulative_provider_tokens=max(cumulative_by_turn.values()),
+        cumulative_provider_tokens=terminal_tokens,
         elapsed_wall_seconds=float(elapsed_wall),
         active_authoring_seconds=float(active_authoring),
         evaluation_counts=expected_counts,
@@ -171,7 +168,8 @@ def _replay_terminal(
     if (
         ralph_state.get("kind") != "ralph_state_v1"
         or ralph_state.get("cumulative_provider_tokens")
-        != max(cumulative_by_turn.values())
+        != terminal_tokens
+        or ralph_state.get("remaining", {}).get("provider_tokens") != max(0, budget["limit"] - terminal_tokens)
         or ralph_state.get("evaluation_counts") != expected_counts
         or ralph_state.get("terminal_reason") != expected_stop_reason
     ):

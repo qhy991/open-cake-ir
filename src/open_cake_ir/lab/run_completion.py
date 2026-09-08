@@ -7,12 +7,14 @@ from typing import Mapping, Sequence
 from open_cake_ir.evidence.store import RunLedger
 
 from .checkpoints import TurnObservation, project_checkpoints
-from .faults import RunProtocolFault
+from .faults import RunProtocolFault, ReportedProviderUsage
 from .ralph import RalphController
 from .selection import _matched_endpoint_from_checkpoint
 
 
-def record_run_fault(*, error, live_stage, turn_number, cumulative_tokens, evidence, ledger):
+def record_run_fault(*, error, live_stage, turn_number, cumulative_tokens, evidence, ledger,
+                     pending_provider_usage=False, observed_usage: ReportedProviderUsage | None = None,
+                     declared_usage: ReportedProviderUsage | None = None):
     """Retain the exact fault stage and any available artifacts before sealing."""
     fault = (
         error.protocol_adherence
@@ -30,6 +32,17 @@ def record_run_fault(*, error, live_stage, turn_number, cumulative_tokens, evide
         "stage": live_stage,
         "terminal_provider_tokens": cumulative_tokens,
     }
+    if pending_provider_usage:
+        fault_payload["provider_usage"] = (
+            {"status": "observed", **observed_usage.document} if observed_usage is not None
+            else {"status": "unavailable", "provider_tokens": None})
+        if observed_usage is None:
+            fault_payload["terminal_provider_tokens_scope"] = "known_subtotal"
+        if declared_usage != observed_usage:
+            # Preserve a faulty adapter's declaration without dropping independently
+            # observed native usage or admitting its rejected candidate.
+            fault_payload["provider_usage_witness_mismatch"] = (
+                dict(declared_usage.document) if declared_usage is not None else None)
     if isinstance(error, RunProtocolFault) and error.artifact_payloads:
         references = []
         rejected_roles = []

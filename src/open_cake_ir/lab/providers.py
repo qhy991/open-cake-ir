@@ -27,7 +27,7 @@ from .provider_documents import (
     required_live_provider_qualification_scope,
     _project_candidate_submission,
 )
-from .provider_events import normalize_codex_turn, parse_codex_turn_events
+from .provider_events import normalize_codex_turn, parse_codex_turn_events, reported_codex_usage, reported_provider_usage
 from .provider_invocation import CodexInvocationBuilder, resolve_codex_code_mode_host
 
 
@@ -69,6 +69,8 @@ class CodexProviderAdapter:
                     "provider_stdout": error.stdout,
                     "provider_stderr": error.stderr,
                 },
+                reported_usage=reported_codex_usage(error.stdout, event_contract=event_contract,
+                                                     expected_thread_id=invocation.thread_id),
             ) from error
         if completed.returncode != 0:
             raise RunProtocolFault(
@@ -78,6 +80,8 @@ class CodexProviderAdapter:
                     "provider_stdout": completed.stdout,
                     "provider_stderr": completed.stderr,
                 },
+                reported_usage=reported_codex_usage(completed.stdout, event_contract=event_contract,
+                                                     expected_thread_id=invocation.thread_id),
             )
         try:
             return normalize_codex_turn(
@@ -98,6 +102,8 @@ class CodexProviderAdapter:
                     "provider_stdout": completed.stdout,
                     "provider_stderr": completed.stderr,
                 },
+                reported_usage=reported_codex_usage(completed.stdout, event_contract=event_contract,
+                                                     expected_thread_id=invocation.thread_id),
             ) from error
 
 class TurnRequestLike(Protocol):
@@ -268,11 +274,17 @@ class QualifiedRunProvider:
             raise RunProtocolFault(
                 "provider_fault",
                 "provider candidate-set workspace custody differs",
+                artifact_payloads={"provider_stdout": result.raw_events},
+                reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
+                                                       expected_thread_id=request.thread_id),
             )
         try:
             verify_task_package(workspace, package)
         except ValueError as error:
-            raise RunProtocolFault("contamination", str(error)) from error
+            raise RunProtocolFault("contamination", str(error),
+                artifact_payloads={"provider_stdout": result.raw_events},
+                reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
+                                                       expected_thread_id=request.thread_id)) from error
         return replace(
             result,
             reference_bundle=reference_bundle,

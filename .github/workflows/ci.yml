@@ -79,6 +79,7 @@ jobs:
           tests.contracts.test_native_cute_pairing
           tests.contracts.test_paired_execution
           tests.contracts.test_provider
+          tests.contracts.test_provider_fault_usage
           tests.contracts.test_provider_runtime
           tests.contracts.test_provider_qualification
           tests.contracts.test_metal_benchmark

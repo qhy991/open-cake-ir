@@ -7,6 +7,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Mapping, cast
 
+from .faults import ReportedProviderUsage
 from .provider_documents import (
     CANDIDATE_SET_ENVELOPE_V1,
     ParsedCodexTurnEvents,
@@ -168,7 +169,19 @@ def parse_codex_turn_events(
         messages, expected_terminal_message, start_index, stop_index,
     )
 
-    usage = typed_events[-1].get("usage")
+    tokens = _codex_usage_tokens(typed_events[-1].get("usage"))
+    return ParsedCodexTurnEvents(
+        thread_id=thread_id,
+        provider_tokens=tokens,
+        candidate_path=candidate_path,
+        change_kind=cast(str, change_kind),
+        terminal_message_count=len(messages),
+        normalization=normalization,
+        tool_activity=tuple(tool_activity),
+    )
+
+
+def _codex_usage_tokens(usage, *, allow_zero=False) -> int:
     if not isinstance(usage, Mapping):
         raise ValueError("provider usage is missing")
     required_usage = {"input_tokens", "output_tokens"}
@@ -191,21 +204,53 @@ def parse_codex_turn_events(
         int, usage.get("cache_write_input_tokens", 0)
     )
     if (
-        input_tokens + output_tokens <= 0
+        (not allow_zero and input_tokens + output_tokens <= 0)
         or cached_input_tokens > input_tokens
         or cache_write_input_tokens > input_tokens
         or cast(int, usage.get("reasoning_output_tokens", 0)) > output_tokens
     ):
         raise ValueError("provider usage differs")
-    return ParsedCodexTurnEvents(
-        thread_id=thread_id,
-        provider_tokens=input_tokens + output_tokens,
-        candidate_path=candidate_path,
-        change_kind=cast(str, change_kind),
-        terminal_message_count=len(messages),
-        normalization=normalization,
-        tool_activity=tuple(tool_activity),
-    )
+    return input_tokens + output_tokens
+
+
+def reported_codex_usage(raw_events: bytes, *, event_contract: str,
+                         expected_thread_id: str | None = None) -> ReportedProviderUsage | None:
+    """Read a complete native usage report without admitting a candidate or Turn."""
+    if event_contract not in {"closed_file_change_v1", "tool_rich_candidate_v1"}:
+        return None
+    try:
+        events = [json.loads(line) for line in raw_events.splitlines()]
+        if len(events) < 3 or any(not isinstance(event, Mapping) for event in events):
+            return None
+        types = [event.get("type") for event in events]
+        if (types[:2] != ["thread.started", "turn.started"] or types[-1] != "turn.completed"
+                or any(types.count(kind) != 1 for kind in ("thread.started", "turn.started", "turn.completed"))):
+            return None
+        thread_id = events[0].get("thread_id")
+        if expected_thread_id is not None and thread_id != expected_thread_id:
+            return None
+        if any("thread_id" in event and event["thread_id"] != thread_id for event in events):
+            return None
+        return ReportedProviderUsage(event_contract, thread_id,
+            _codex_usage_tokens(events[-1].get("usage"), allow_zero=True))
+    except (UnicodeError, ValueError, TypeError):
+        return None
+
+
+def reported_provider_usage(raw_events: bytes, *, provider: Mapping[str, object],
+                            expected_thread_id: str | None = None) -> ReportedProviderUsage | None:
+    """Dispatch reported invocation usage using its frozen native provider contract."""
+    if not isinstance(raw_events, bytes) or not raw_events:
+        return None
+    contract = provider.get("event_contract", "closed_file_change_v1")
+    if contract in {"closed_file_change_v1", "tool_rich_candidate_v1"}:
+        return reported_codex_usage(raw_events, event_contract=contract,
+                                    expected_thread_id=expected_thread_id)
+    from .claude import CLAUDE_EVENT_CONTRACT, reported_claude_usage
+    if contract == CLAUDE_EVENT_CONTRACT:
+        return reported_claude_usage(raw_events, expected_model=provider.get("model"),
+                                     expected_thread_id=expected_thread_id)
+    return None
 
 
 def normalize_codex_turn(

@@ -23,6 +23,8 @@ from .evaluation_writer import EvaluationWriter
 from .execution_admission import validate_execution_bindings
 from .candidate_filter import _build_filter_candidates, record_candidate_rejections
 from .run_completion import _seal_run, record_run_fault
+from .faults import RunProtocolFault
+from .provider_events import reported_provider_usage
 from .checkpoints import TurnObservation
 from .contracts import CampaignLock, CampaignRef, RunEvaluator, RunProvider, TurnRequest
 from .custody import admit_new_campaign_path
@@ -155,6 +157,7 @@ def execute_campaign(
         feedback: Mapping[str, object] = MappingProxyType({"kind": "initial"})
         observations: list[TurnObservation] = []
         live_stage = "provider"
+        provider_usage_accounted = False
         ralph = RalphController(
             ralph_budget,
             searches_per_turn=int(evaluation_protocol.get("searches_per_turn", 1)),
@@ -183,6 +186,7 @@ def execute_campaign(
                     feedback=feedback,
                 )
                 live_stage = "provider"
+                provider_usage_accounted = False
                 authoring_started = ralph.begin_authoring()
                 try:
                     provider_turn = provider.turn(
@@ -203,6 +207,7 @@ def execute_campaign(
                     raise ValueError("provider resume thread identity differs")
                 thread_id = provider_turn.thread_id
                 cumulative_tokens += provider_turn.provider_tokens
+                provider_usage_accounted = True
                 _archive_provider_turn(
                     arm=arm,
                     candidate_media_type=environment.media_type,
@@ -442,6 +447,16 @@ def execute_campaign(
                 if cumulative_tokens >= cast(int, budget["limit"]):
                     break
         except Exception as error:
+            pending_usage = live_stage == "provider" and not provider_usage_accounted
+            observed_usage = None
+            declared_usage = None
+            if pending_usage:
+                payloads = error.artifact_payloads if isinstance(error, RunProtocolFault) else {}
+                declared_usage = error.reported_usage if isinstance(error, RunProtocolFault) else None
+                observed_usage = reported_provider_usage(payloads.get("provider_stdout", b""),
+                    provider=provider_document, expected_thread_id=thread_id)
+                if observed_usage is not None:
+                    cumulative_tokens += observed_usage.provider_tokens
             fault = record_run_fault(
                 error=error,
                 live_stage=live_stage,
@@ -449,6 +464,9 @@ def execute_campaign(
                 cumulative_tokens=cumulative_tokens,
                 evidence=evidence,
                 ledger=ledger,
+                pending_provider_usage=pending_usage,
+                observed_usage=observed_usage,
+                declared_usage=declared_usage,
             )
             protocol_adherence = fault
             ralph_stop_reason = fault

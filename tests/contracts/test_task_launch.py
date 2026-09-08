@@ -172,7 +172,7 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertEqual(anchor,self.workspace/'provider-anchor.json')
         self.assertFalse(receipt.exists())  # The process was mocked, so no capability was manufactured.
 
-    def _wiring(self, preflight_error=None, *, fixture_receipt=False, preflight_only=False):
+    def _wiring(self, preflight_error=None, *, fixture_receipt=False, preflight_only=False, report=None, expected_exit=0):
         # Authority doubles are never persisted as qualification receipts or Evidence.
         executor = SimpleNamespace(document={"host_environment":{"python":{"invocation_path":"/unit-test/python"}}})
         receipt = SimpleNamespace(qualified=True, scope="zero_gpu_contract_fixture_only" if fixture_receipt else "live_two_turn_tool_rich_provider")
@@ -180,6 +180,9 @@ class TaskLaunchTests(unittest.TestCase):
         lab = Mock()
         lab.preflight.side_effect = preflight_error
         lab.preflight.return_value = lock
+        lab.audit.return_value = report or SimpleNamespace(campaign_complete=True, archive_integrity_passed=True,
+            filesystem_custody_verified=True, semantic_replay_passed=True,
+            run_audits=(SimpleNamespace(protocol_adherence="adhered", endpoint_observation="no_qualified_candidate"),))
         args = self.args() + (["--preflight-only"] if preflight_only else [])
         with patch.object(launch_task.shutil, "which", return_value="/usr/bin/true"), \
              patch.object(launch_task, "_admit_stack", return_value=(Mock(),executor,Mock())) as admit, \
@@ -188,14 +191,19 @@ class TaskLaunchTests(unittest.TestCase):
              patch.object(launch_task.ProviderQualificationReceipt, "load", return_value=receipt), \
              patch.object(launch_task, "TaskLab", return_value=lab), \
              patch.object(launch_task, "execute_matched_from_config", return_value=SimpleNamespace(evidence_root="unit-test-campaign")) as execute, \
-             contextlib.redirect_stdout(io.StringIO()):
+             contextlib.redirect_stdout(io.StringIO()) as stdout:
             if preflight_error or fixture_receipt:
                 with self.assertRaises(ValueError): launch_task.main(args)
                 execute.assert_not_called()
             else:
-                self.assertEqual(launch_task.main(args), 0)
-                if preflight_only: execute.assert_not_called()
-                else: execute.assert_called_once_with(ROOT, lock, self.workspace/"runtime.json", self.workspace/"campaign-evidence")
+                self.assertEqual(launch_task.main(args), expected_exit)
+                if preflight_only:
+                    execute.assert_not_called()
+                    lab.audit.assert_not_called()
+                else:
+                    execute.assert_called_once_with(ROOT, lock, self.workspace/"runtime.json", self.workspace/"campaign-evidence")
+                    lab.audit.assert_called_once_with(execute.return_value)
+                    self.assertIn("unit-test-campaign", stdout.getvalue())
             admit.assert_called_once()
             baseline.assert_called_once()
             qualify.assert_called_once()
@@ -213,6 +221,25 @@ class TaskLaunchTests(unittest.TestCase):
                          {"schema_version","qualification_path","qualification_anchor_path","runtime_config_path","fixed_baseline_bundle_path"})
         self.assertFalse((self.workspace/"actors").exists())  # The existing composer creates it once.
         with self.assertRaises(FileExistsError): launch_task._new_workspace(self.workspace)
+
+    def test_launcher_returns_nonzero_for_a_recorded_provider_fault(self):
+        self._wiring(report=SimpleNamespace(campaign_complete=True, archive_integrity_passed=True,
+            filesystem_custody_verified=True, semantic_replay_passed=True,
+            run_audits=(SimpleNamespace(protocol_adherence="provider_fault", endpoint_observation="missing"),)),
+            expected_exit=1)
+
+    def test_launcher_rejects_missing_or_unverified_outcomes_but_accepts_adhered_rejections(self):
+        good = dict(campaign_complete=True, archive_integrity_passed=True,
+            filesystem_custody_verified=True, semantic_replay_passed=True,
+            run_audits=(SimpleNamespace(protocol_adherence="adhered", endpoint_observation="no_qualified_candidate"),))
+        self.assertEqual(launch_task._campaign_exit_code(SimpleNamespace(**good)), 0)
+        for field in ("campaign_complete", "archive_integrity_passed", "filesystem_custody_verified", "semantic_replay_passed", "run_audits"):
+            with self.subTest(field=field):
+                self.assertEqual(launch_task._campaign_exit_code(SimpleNamespace(**{**good, field: () if field == "run_audits" else False})), 1)
+        for adherence in ("harness_fault", "custody_violation", "contamination", "broker_fault"):
+            with self.subTest(adherence=adherence):
+                self.assertEqual(launch_task._campaign_exit_code(SimpleNamespace(**{**good,
+                    "run_audits": (SimpleNamespace(protocol_adherence=adherence),)})), 1)
 
     def test_preflight_refusal_never_reaches_execution(self):
         self._wiring(ValueError("unit-test preflight refusal"))

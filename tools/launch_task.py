@@ -150,6 +150,16 @@ def _qualify(root, workspace, args, executable, source_path):
     return receipt, anchor
 
 
+
+def _campaign_exit_code(report) -> int:
+    """CLI success describes an intact protocol outcome, including negative results."""
+    valid = (report.campaign_complete and report.archive_integrity_passed
+             and report.filesystem_custody_verified and report.semantic_replay_passed
+             and bool(report.run_audits)
+             and all(audit.protocol_adherence == "adhered" for audit in report.run_audits))
+    return 0 if valid else 1
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", choices=("rmsnorm", "layernorm", "residual_rmsnorm"), required=True)
@@ -217,7 +227,7 @@ def main(argv=None) -> int:
         return 0
     campaign = execute_matched_from_config(ROOT, lock, runtime_path, workspace / "campaign-evidence")
     print(campaign.evidence_root)
-    return 0
+    return _campaign_exit_code(TaskLab(ROOT).audit(campaign))
 
 
 if __name__ == "__main__":
