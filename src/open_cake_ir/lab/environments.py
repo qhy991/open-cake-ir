@@ -326,7 +326,7 @@ class OpenCakeEnvironment:
                           for arg in workload.tensor_abi(case_id)}
         route = authority_document.get("lowering_route")
         if (not isinstance(route, Mapping) or set(route) != {"backend", "entry_point"}
-            or route["backend"] != "triton" or not isinstance(route["entry_point"], str)
+            or route["backend"] not in {"triton", "metal"} or not isinstance(route["entry_point"], str)
             or not route["entry_point"].isidentifier()):
             raise ValueError("Open Cake Authoring Environment lowering route differs")
         self._route = dict(route)

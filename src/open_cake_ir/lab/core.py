@@ -16,6 +16,7 @@ from typing import Callable, Mapping, Protocol, cast
 from open_cake_ir.compiler import Compiler, CorpusGateReport
 from open_cake_ir.compiler.performance.empirical_cost import EmpiricalCostModel
 from open_cake_ir.evaluation import EvaluationReceipt, LaunchableCandidate, LogicalEvaluationAttempt
+from open_cake_ir.evaluation.artifacts import executable_role, required_build_roles
 from open_cake_ir.evaluation.core import _plain_json as _evaluation_plain_json
 from open_cake_ir.evidence import EvidenceStore, RunAudit
 
@@ -50,17 +51,17 @@ from .python_reference import read_skeleton
 from .task_package import TASK_AGENTS_RALPH_V1, render_task_package
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_ARM_ARTIFACT_ROLES = {
-    "open_cake": {
-        "lowered_source",
-        "compiler_expanded_source",
-        "ptx",
-        "cubin",
-        "launch_manifest",
-    },
-    "direct_cuda": {"authored_source", "ptx", "cubin", "sass", "launch_manifest"},
-    "native_triton": {"authored_source", "compiler_expanded_source", "ptx", "cubin", "launch_manifest"},
-}
+def _arm_artifact_roles(arm: str, target: str) -> frozenset[str]:
+    """Arm owns source provenance; the backend owns its actual compiled products."""
+    executable = executable_role(target)
+    if arm == "open_cake":
+        backend = "metal" if executable == "metal_binary_archive" else "triton"
+        return required_build_roles(backend) | {"lowered_source"}
+    if executable == "cubin" and arm in {"direct_cuda", "native_triton"}:
+        return required_build_roles("cuda" if arm == "direct_cuda" else "triton") | {"authored_source"}
+    raise ValueError("Authoring Environment and compiled target differ")
+
+
 _RALPH_STUDY_FIELDS = {
     "schema_version",
     "study_id",
@@ -346,7 +347,9 @@ def _evaluation_receipt_document(receipt: EvaluationReceipt) -> dict[str, object
 def _candidate_artifact_media_type(role: str) -> str:
     if role == "cubin":
         return "application/x-elf"
-    if role == "launch_manifest":
+    if role == "metal_binary_archive":
+        return "application/octet-stream"
+    if role in {"launch_manifest", "metal_build_report"}:
         return "application/json"
     return "text/plain"
 
@@ -724,13 +727,12 @@ def _replay_launchable_candidate(
         artifact_roles[role] = digest
         if sha256(artifact_payloads[role]).hexdigest() != digest:
             raise ValueError("launchable candidate artifact bytes differ")
-    if (
-        arm not in _ARM_ARTIFACT_ROLES
-        or not _ARM_ARTIFACT_ROLES[arm] <= set(artifact_roles)
-        or set(artifact_payloads) != set(artifact_roles)
-    ):
-        raise ValueError("launchable candidate arm artifact roles differ")
+    if "launch_manifest" not in artifact_payloads:
+        raise ValueError("launchable candidate lacks its launch manifest")
     manifest = manifest_parser(json.loads(artifact_payloads["launch_manifest"]))
+    if (not _arm_artifact_roles(arm, manifest.target) <= set(artifact_roles)
+            or set(artifact_payloads) != set(artifact_roles)):
+        raise ValueError("launchable candidate arm artifact roles differ")
     if artifact_roles["launch_manifest"] != manifest.canonical_sha256:
         raise ValueError("launchable candidate launch manifest seal differs")
     candidate = LaunchableCandidate(
@@ -2696,7 +2698,7 @@ class Lab:
                     else:
                         launchable = environment_result.launchable
                         assert launchable is not None
-                        required_roles = _ARM_ARTIFACT_ROLES[arm]
+                        required_roles = _arm_artifact_roles(arm, launchable.target)
                         if (
                             not required_roles <= set(launchable.artifact_roles)
                             or set(launchable.artifact_payloads)

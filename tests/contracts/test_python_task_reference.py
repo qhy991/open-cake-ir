@@ -41,6 +41,63 @@ class PythonTaskReferenceTests(unittest.TestCase):
             path.write_text(self.source)
             self.assertEqual(read_skeleton(path), self.document)
 
+    def test_explicit_metal_binding_uses_common_task_preparation_without_cuda_fallback(self):
+        from open_cake_ir.lab.pairing import bind_baseline
+        from open_cake_ir.tasks.authoring import prepare_schedule
+        tensors = [SimpleNamespace(name=b["name"], shape=tuple(b["shape"]), dtype=b["dtype"], mode=b["mode"])
+                   for b in self.document["buffers"] if b["space"] == "global"]
+        workload = SimpleNamespace(document={"semantics": {"target": "apple_gpu_family8"}},
+            canonical_sha256="a" * 64, tensor_abi=lambda _: tensors)
+        with self.assertRaisesRegex(ValueError, "lowering backend"):
+            bind_baseline(self.document, workload, "primary")
+        prepared = prepare_schedule(self.document, workload, "primary", {
+            "input_format": "schedule_or_python_v1", "lowering_route": self.document["lowering"]})
+        self.assertEqual(prepared["target"], "apple_gpu_family8")
+        self.assertEqual(prepared["lowering"]["backend"], "metal")
+        self.assertEqual(prepared["metadata"]["workload_contract_sha256"], "a" * 64)
+
+    def test_common_retention_uses_actual_backend_products(self):
+        from open_cake_ir.lab.core import _arm_artifact_roles, _candidate_artifact_media_type
+        self.assertEqual(_arm_artifact_roles("open_cake", "apple_gpu_family7"), {
+            "lowered_source", "metal_binary_archive", "metal_build_report", "launch_manifest"})
+        self.assertEqual(_arm_artifact_roles("open_cake", "sm_103a"), {
+            "lowered_source", "compiler_expanded_source", "ptx", "cubin", "launch_manifest"})
+        with self.assertRaisesRegex(ValueError, "compiled target"):
+            _arm_artifact_roles("direct_cuda", "apple_gpu_family7")
+        self.assertEqual(_candidate_artifact_media_type("metal_binary_archive"), "application/octet-stream")
+        self.assertEqual(_candidate_artifact_media_type("metal_build_report"), "application/json")
+
+    def test_existing_open_cake_environment_accepts_bound_python_metal_before_builder(self):
+        from hashlib import sha256
+        from open_cake_ir.compiler import Compiler
+        from open_cake_ir.evaluation.core import LaunchableCandidate
+        from open_cake_ir.lab.environments import CandidateSubmission, OpenCakeEnvironment
+        from tests.contracts.test_metal_artifacts import abi_fixture
+        from tools.metal import rmsnorm
+        workload = abi_fixture()
+        source = rmsnorm.source(3, 7, target="apple_gpu_family7")
+        document = frontend.parse(source).document
+        prepared = {**document, "metadata": {"workload_contract_sha256": workload.canonical_sha256}}
+        bound = bind_python_reference(source, prepared, filename="candidate.py")
+        observed = []
+        class Builder:
+            def build(self, request):
+                observed.append(request)
+                archive = b"explicit nonexecuted builder test double"
+                payloads = {"lowered_source": request.source, "metal_binary_archive": archive}
+                return LaunchableCandidate(request.candidate_sha256, request.target, request.entry_point,
+                    {role: sha256(data).hexdigest() for role, data in payloads.items()}, "b" * 64, payloads)
+        environment = OpenCakeEnvironment(Compiler.load(ROOT, "compiler/revision.lock.json"), Builder(),
+            authority_document={"input_format": "schedule_or_python_v1", "lowering_route": prepared["lowering"]},
+            workload=workload, case_id="odd")
+        result = environment.build(CandidateSubmission.seal(environment.media_type,
+            json.dumps({"python_source": bound.decode()}).encode()))
+        self.assertEqual(result.disposition, "launchable")
+        self.assertEqual(len(observed), 1)
+        self.assertEqual(observed[0].target, "apple_gpu_family7")
+        self.assertEqual(observed[0].source_role, "lowered_source")
+        self.assertIsNone(result.cost)
+
     def test_common_reference_builder_publishes_python_with_bound_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
