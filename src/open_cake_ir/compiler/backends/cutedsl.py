@@ -38,6 +38,7 @@ from ..ir import (
 )
 from ..target import Target
 from ..diagnostics import Finding
+from . import cutedsl_register
 
 
 _CUTLASS_DTYPE = {
@@ -83,7 +84,7 @@ BODY_EMITTERS: dict[OperationKind, str] = {
     OperationKind.STORE: "_emit_store",
 }
 
-SUPPORTED_OPERATION_KINDS = frozenset(BODY_EMITTERS)
+SUPPORTED_OPERATION_KINDS = frozenset(BODY_EMITTERS) | cutedsl_register.SUPPORTED_OPERATION_KINDS
 SUPPORTED_EPILOGUE_FORMULAS = frozenset(
     {EpilogueFormula.CENTROID_SQ_MINUS_TWO_DOT}
 )
@@ -115,7 +116,14 @@ def _barrier_signaller_scopes(schedule: Schedule, barrier: Barrier) -> set[str |
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     """Target-independent backend requirements, including unsupported vocabulary."""
-    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+    common = vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+    if common:
+        return common
+    if cutedsl_register.applies(schedule):
+        return cutedsl_register.requirements(schedule)
+    # The legacy emitter still has its original vocabulary and refusals. The
+    # module-level inventory is the union of the two concrete lowering domains.
+    return vocabulary_findings(schedule, SUPPORTED_DTYPES, frozenset(BODY_EMITTERS))
 
 
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
@@ -124,6 +132,8 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     findings = list(requirements(schedule))
     if findings:
         return tuple(findings)
+    if cutedsl_register.applies(schedule):
+        return cutedsl_register.preflight(schedule, target)
 
     def add(condition: object, code: str, path: str, message: str) -> None:
         if not condition:
@@ -1124,4 +1134,9 @@ def emit(
 ) -> Emission:
     """Emit CuTe-DSL source for one Schedule, or raise if it under-specifies."""
 
+    failures = requirements(schedule)
+    if failures:
+        raise EmitError(failures[0].message)
+    if cutedsl_register.applies(schedule):
+        return cutedsl_register.emit(schedule, target, entry_point=entry_point)
     return _Emitter(schedule, target, entry_point).emit()
