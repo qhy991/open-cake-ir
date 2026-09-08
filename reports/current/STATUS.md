@@ -7,7 +7,7 @@
 
 ## Compiler
 
-- 版本： `open-cake-ir-sm100a-v63`
+- 版本： `open-cake-ir-sm100a-v64`
 - 状态： `released`
 - 目标： `apple_gpu_family8, sm_100a, sm_103a`
 - 语料检查： `100/100` 项符合预期
