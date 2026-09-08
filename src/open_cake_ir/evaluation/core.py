@@ -11,25 +11,12 @@ from hashlib import sha256
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
-from open_cake_ir.compiler.target import cuda_architecture
+from .artifacts import allowed_artifact_roles, executable_role
 
 from .profiler import load_ncu_attribution_profile, ncu_attribution_feedback
 from .workload import WorkloadContract
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_ARTIFACT_ROLES = {
-    "authored_source",
-    "lowered_source",
-    "compiler_expanded_source",
-    "ttir",
-    "ttgir",
-    "llir",
-    "ptx",
-    "cubin",
-    "sass",
-    "toolchain_resource_report",
-    "launch_manifest",
-}
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -78,15 +65,16 @@ class LaunchableCandidate:
     artifact_payloads: Mapping[str, bytes] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        cuda_architecture(self.target)
+        executable = executable_role(self.target)
+        allowed_roles = allowed_artifact_roles(self.target)
         if (
             _DIGEST.fullmatch(self.candidate_sha256) is None
             or _DIGEST.fullmatch(self.launch_spec_sha256) is None
             or not self.entry_point
             or not self.artifact_roles
-            or "cubin" not in self.artifact_roles
+            or executable not in self.artifact_roles
             or any(
-                role not in _ARTIFACT_ROLES or _DIGEST.fullmatch(digest) is None
+                role not in allowed_roles or _DIGEST.fullmatch(digest) is None
                 for role, digest in self.artifact_roles.items()
             )
         ):
