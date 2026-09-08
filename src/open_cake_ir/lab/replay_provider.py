@@ -183,6 +183,7 @@ def _replay_provider_turns(
                         "task_markdown",
                         "agents_markdown",
                         "state_card",
+                        "rubric",
                     }
                     or bundle.get("schema_version") != 1
                     or bundle.get("kind") != TASK_AGENTS_RALPH_V1
@@ -197,6 +198,7 @@ def _replay_provider_turns(
                     or state.get("cumulative_provider_tokens")
                     != prior_cumulative
                     or state.get("terminal_reason") is not None
+                    or reference_bundle != expected_task_package.evidence_bundle(state)
                 ):
                     return None
             except (UnicodeError, json.JSONDecodeError, ValueError):

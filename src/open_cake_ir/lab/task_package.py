@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable, Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Compiler
+from .rubrics import derive_rubric
 from .pairing import bind_baseline, native_baseline, backend_policy, native_backend
 from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import WorkloadContract
@@ -237,6 +238,10 @@ class TaskPackage:
                 "task_markdown": self.task_markdown,
                 "agents_markdown": self.agents_markdown,
                 "state_card": _plain(state_card),
+                "rubric": (
+                    derive_rubric(state_card["previous_feedback"])
+                    if "previous_feedback" in state_card else derive_rubric()
+                ),
             }
         ).encode()
 
@@ -256,7 +261,9 @@ def render_task_request(
     prompt = (
         "Read the complete TASK.md and AGENTS.md content in the following canonical "
         "task projection. Continue the same Ralph Run under those immutable rules. "
-        "The StateCard is the external controller's derived state for this iteration.\n\n"
+        "The StateCard is the external controller's derived state for this iteration. "
+        "The rubric explains only its previous_feedback; it is guidance, not a score "
+        "or permission to change acceptance rules or the frozen Compiler.\n\n"
         + bundle.decode('utf-8')
     )
     return prompt, bundle
