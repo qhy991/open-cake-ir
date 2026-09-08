@@ -40,6 +40,9 @@ jobs:
           tests.contracts.test_analysis
           tests.contracts.test_emit_triton
           tests.contracts.test_emit_cutedsl
+          tests.contracts.test_cutedsl_register
+          tests.contracts.test_cute_toolchain
+          tests.contracts.test_cute_build
           tests.contracts.test_python_frontend
           tests.contracts.test_cli
           tests.contracts.test_documentation
