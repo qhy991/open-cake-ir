@@ -2305,7 +2305,7 @@ class Lab:
             "campaign_lock.workload.canonical_sha256",
         )
         evidence = EvidenceStore.create(root)
-        record_confirmation_time = paired_protocol(evaluation_protocol) is not None
+        record_confirmation_time = comparison_arm(environments) == "native_triton" or paired_protocol(evaluation_protocol) is not None
         for sequence, run_id in enumerate(lock.run_order, start=1):
             run_started_at = self._clock() if record_confirmation_time else None
             arm = run_id.rsplit("-", 1)[0]
@@ -3559,7 +3559,8 @@ class Lab:
                     (set(payload) != ({
                         "turn", "purpose", "candidate_sha256", "objects",
                     } | ({"elapsed_wall_seconds"} if purpose == "confirmatory" and
-                         paired_protocol(lock.document["evaluation_protocol"]) is not None else set())))
+                         (comparison_arm(lock.document["resolved_inputs"]["arm_environments"]) == "native_triton"
+                          or paired_protocol(lock.document["evaluation_protocol"]) is not None) else set())))
                     or
                     not isinstance(turn, int)
                     or isinstance(turn, bool)

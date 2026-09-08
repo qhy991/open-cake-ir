@@ -154,7 +154,13 @@ def resolve_execution_bindings(
     runtime_path = external_file(project_root, bindings['runtime_config_path'], 'runtime configuration')
     receipt = ProviderQualificationReceipt.load(receipt_path)
     anchor = json.loads(anchor_path.read_bytes())
-    backend = arms["open_cake"]["lowering_route"]["backend"]
+    if single:
+        route = arms["open_cake"].get("lowering_route")
+        if not isinstance(route, Mapping) or route.get("backend") not in {"metal", "triton"}:
+            raise ValueError("single-environment lowering route differs")
+        backend = route["backend"]
+    else:
+        backend = "triton"  # the existing paired form already fixes this runtime parser
     config = load_runtime_config(runtime_path, toolchain_kind=backend)
     executable = Path(config['provider']['executable']).resolve(strict=True)
     if sha256(executable.read_bytes()).hexdigest() != receipt.executable_sha256:
