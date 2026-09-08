@@ -190,9 +190,12 @@ checks reference access only; it does not create a paper-aligned Study.
 
 ## 4. Qualify the provider without GPU
 
-Provider qualification uses a fresh workspace, output paths, Evidence root, and Run id.
+Provider qualification uses a fresh workspace, absolute external output paths, Evidence root, and Run id.
+All outputs stay outside every enclosing Git checkout. Harness, exact model and reasoning effort are required.
+For single-arm Metal tasks and Claude Code, use the [TaskLab task launcher](metal.md); executable test doubles
+use `--fixture-only` and cannot issue live authority.
 Cached login status alone is insufficient; the qualification must execute the exact
-provider binary and frozen policy. The native CLI's local Code Mode host is required
+provider binary and frozen policy. For Codex, the native CLI's local Code Mode host is required
 and explicitly enabled. Its selected path and bytes belong to the existing provider
 configuration identity. Package resources take precedence over the native executable's
 sibling helper; a changed selection or changed bytes rejects both initial and resumed
@@ -204,12 +207,13 @@ Closed matched authoring example:
 
 ```bash
 python tools/qualify_codex_provider.py \
+  --harness codex --model "<exact-model-id>" \
   --executable /absolute/path/to/codex \
   --provider-revision codex-cli-<version>-sha<digest-prefix> \
   --output-schema contracts/providers/codex-turn-output-schema-v1.json \
   --workspace /new/external/path/closed-provider-workspace \
-  --receipt-output contracts/providers/<new-closed-receipt>.json \
-  --anchor-output evidence/qualifications/<new-closed-anchor>.json \
+  --receipt-output /new/external/path/closed-receipt.json \
+  --anchor-output /new/external/path/closed-anchor.json \
   --evidence-root /new/external/path/closed-provider-evidence \
   --run-id <new-closed-provider-run> \
   --reasoning-effort xhigh \
@@ -221,12 +225,13 @@ Provider-default artifact-optimization example:
 
 ```bash
 python tools/qualify_codex_provider.py \
+  --harness codex --model "<exact-model-id>" \
   --executable /absolute/path/to/codex \
   --provider-revision codex-cli-<version>-sha<digest-prefix> \
   --output-schema contracts/providers/codex-turn-output-schema-v2.json \
   --workspace /new/external/path/provider-default-workspace \
-  --receipt-output contracts/providers/<new-provider-default-receipt>.json \
-  --anchor-output evidence/qualifications/<new-provider-default-anchor>.json \
+  --receipt-output /new/external/path/provider-default-receipt.json \
+  --anchor-output /new/external/path/provider-default-anchor.json \
   --evidence-root /new/external/path/provider-default-evidence \
   --run-id <new-provider-default-run> \
   --reasoning-effort max \
