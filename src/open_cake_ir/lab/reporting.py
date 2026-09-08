@@ -398,7 +398,7 @@ def audit_campaign(
             "ratio_of_arm_medians": cast(float, medians[comparison])
             / cast(float, medians["open_cake"]),
         }
-        if analysis_version in {"two_part_v2", "triton_optimization_v1"}:
+        if analysis_version in {"two_part_v2", "triton_optimization_v1", "cute_optimization_v1"}:
             estimate = {
                 **estimate,
                 "qualification_rate_difference": (

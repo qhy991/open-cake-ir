@@ -38,6 +38,22 @@ def _provider_fixture(project: Path, payload: bytes) -> Path:
 
 
 class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
+    def test_stable_cute_template_uses_execution_bindings_without_rewriting_study(self):
+        template = ROOT / 'contracts/studies/matched-search-cute-b300-gemm-optimization-template.json'
+        before = template.read_bytes()
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'must-not-be-created.json'
+            command = [sys.executable, str(ROOT / 'tools/freeze_live_matched_study.py'),
+                       '--project-root', str(ROOT), '--template', str(template),
+                       '--qualification', 'unused', '--qualification-anchor', 'unused',
+                       '--executor', 'unused', '--runtime-config', 'unused',
+                       '--reasoning-effort', 'max', '--study-id', 'fixture', '--output', str(output)]
+            completed = subprocess.run(command, cwd=ROOT, capture_output=True)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(b'lab preflight --execution-bindings', completed.stderr)
+            self.assertFalse(output.exists())
+        self.assertEqual(template.read_bytes(), before)
+
     def test_artifact_feedback_budget_has_one_explicit_horizon(self) -> None:
         study: dict[str, object] = {
             "claim_scope": "artifact_optimization_only",

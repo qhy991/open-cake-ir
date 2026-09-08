@@ -35,7 +35,7 @@ from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
 from .executor import ExecutorRevision
 from .faults import RunProtocolFault
-from .pairing import comparison_arm
+from .pairing import comparison_arm, native_backend
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
@@ -173,7 +173,7 @@ def execute_campaign(
         "arm_environments.open_cake.provider_qualification.path",
     )
     qualification = ProviderQualificationReceipt.load(qualification_path)
-    if (comparison_arm(arms) == 'native_triton' and qualification.scope != 'zero_gpu_contract_fixture_only'
+    if (native_backend(comparison_arm(arms)) is not None and qualification.scope != 'zero_gpu_contract_fixture_only'
         and (paired_protocol(evaluation_protocol) is None
              or provider_document['disabled_features'] != list(CODEX_DISABLED_FEATURES))):
         raise ValueError('new live native execution requires paired policy and current closed provider surface')
@@ -228,7 +228,7 @@ def execute_campaign(
         "campaign_lock.workload.canonical_sha256",
     )
     evidence = EvidenceStore.create(root)
-    record_confirmation_time = comparison_arm(environments) == "native_triton"
+    record_confirmation_time = native_backend(comparison_arm(environments)) is not None
     for sequence, run_id in enumerate(lock.run_order, start=1):
         run_started_at = clock() if record_confirmation_time else None
         arm = run_id.rsplit("-", 1)[0]

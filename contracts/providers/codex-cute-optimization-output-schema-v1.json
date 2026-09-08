@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "arm",
+    "candidate_written",
+    "kind",
+    "tool_calls",
+    "turn"
+  ],
+  "properties": {
+    "arm": {
+      "type": "string",
+      "enum": [
+        "open_cake",
+        "native_cute_dsl"
+      ]
+    },
+    "candidate_written": {
+      "type": "boolean",
+      "const": true
+    },
+    "kind": {
+      "type": "string",
+      "const": "open_cake_ir_turn"
+    },
+    "tool_calls": {
+      "type": "integer",
+      "const": 1
+    },
+    "turn": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

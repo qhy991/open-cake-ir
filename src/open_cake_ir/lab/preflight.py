@@ -32,7 +32,7 @@ from .bindings import (
     resolve_executor,
 )
 from .contracts import CampaignLock, StudyContract
-from .pairing import bind_baseline, comparison_arm, native_baseline
+from .pairing import native_backend, native_source, native_block, bind_baseline, comparison_arm, native_baseline
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
@@ -97,7 +97,7 @@ def preflight(
 
     arms = _object(study.document.get("arms"), "study.arms")
     comparison = comparison_arm(arms)
-    paired_triton = comparison == "native_triton"
+    policy = native_backend(comparison)
     open_cake = _object(arms.get("open_cake"), "study.arms.open_cake")
     direct_cuda = _object(arms.get(comparison), f"study.arms.{comparison}")
     validate_authoring(workload, arms, empirical_cost_model_path=empirical_cost_model_path)
@@ -133,14 +133,14 @@ def preflight(
         "tool_surface",
         "feedback",
     }
-    if paired_triton:
+    if policy is not None:
         open_cake_fields.update({"input_format", "toolchain_sha256"})
         direct_cuda_fields -= {"launch_contract", "candidate_skeleton"}
         direct_cuda_fields.add("baseline")
         if (open_cake.get("input_format") != "schedule_or_python_v1"
             or direct_cuda.get("baseline") != {"binding": "open_cake_lowering"}
             or open_cake.get("toolchain_sha256") != direct_cuda.get("toolchain_sha256")):
-            raise ValueError("paired Triton input, baseline or common toolchain binding differs")
+            raise ValueError("same-backend native input, baseline or common toolchain binding differs")
     if set(open_cake) != open_cake_fields or set(direct_cuda) != direct_cuda_fields:
         raise ValueError("Study Contract Authoring Environment fields differ")
     if open_cake.get("environment_kind") != "open_cake" or direct_cuda.get(
@@ -149,7 +149,7 @@ def preflight(
         raise ValueError("Study Contract Authoring Environment kinds differ")
     route = open_cake.get("lowering_route")
     if (not isinstance(route, Mapping) or set(route) != {"backend", "entry_point"}
-        or route.get("backend") != "triton" or not isinstance(route.get("entry_point"), str)
+        or route.get("backend") != (policy.backend if policy is not None else "triton") or not isinstance(route.get("entry_point"), str)
         or not route["entry_point"].isidentifier()):
         raise ValueError("Study Contract Open Cake lowering route differs")
     schedule_skeleton = _object(
@@ -302,7 +302,7 @@ def preflight(
         or qualification_ref.get("canonical_sha256") != qualification.canonical_sha256
     ):
         raise ValueError("provider qualification bytes or capability differs")
-    if (paired_triton and qualification.scope != 'zero_gpu_contract_fixture_only'
+    if (policy is not None and qualification.scope != 'zero_gpu_contract_fixture_only'
         and paired_protocol(study.document['evaluation_protocol']) is None):
         raise ValueError('new live native Campaign requires explicit fixed-baseline paired policy')
     qualification_anchor = provider.get("qualification_anchor")
@@ -385,7 +385,7 @@ def preflight(
         scaffold_path.read_bytes()
     ).hexdigest():
         raise ValueError("Study Contract scaffold bytes differ")
-    if not paired_triton:
+    if policy is None:
         launch_contract = _object(
             direct_cuda.get("launch_contract"), "study.arms.direct_cuda.launch_contract"
         )
@@ -417,9 +417,9 @@ def preflight(
             "study.arms.direct_cuda.candidate_skeleton.sha256",
         ) != sha256(candidate_skeleton_path.read_bytes()).hexdigest():
             raise ValueError("Study Contract direct candidate skeleton bytes differ")
-    if open_cake.get("tool_surface") != (["submit_schedule_or_python"] if paired_triton else ["submit_schedule"]) or direct_cuda.get(
+    if open_cake.get("tool_surface") != (["submit_schedule_or_python"] if policy is not None else ["submit_schedule"]) or direct_cuda.get(
         "tool_surface"
-    ) != (["submit_triton_kernel"] if paired_triton else ["submit_cuda"]):
+    ) != ([policy.submit_tool] if policy is not None else ["submit_cuda"]):
         raise ValueError("Study Contract Authoring Environment tool surfaces differ")
     attribution_evaluation = _object(
         study.document.get("evaluation_protocol"),
@@ -453,7 +453,7 @@ def preflight(
         )
     )
 
-    if paired_triton:
+    if policy is not None:
         case_id = str(_object(study.document["evaluation_protocol"], "evaluation_protocol")["case_id"])
         baseline = bind_baseline(skeleton_document, workload, case_id)
         baseline_compiler = Compiler.load(project_root, project_root / compiler_relative)
@@ -532,8 +532,8 @@ def preflight(
     )
     workload.case(_name(evaluation.get("case_id"), "study.evaluation_protocol.case_id"))
     assay = paired_protocol(evaluation)
-    if assay is not None and not paired_triton:
-        raise ValueError('fixed-baseline assay requires the paired Triton Study')
+    if assay is not None and policy is None:
+        raise ValueError('fixed-baseline assay requires the same-backend native Study')
     # How many candidates a Turn search-evaluates. Checked here because a Study that
     # asks for none, or for a word, would otherwise fault partway through a run --
     # and a run that faults has already spent the GPU time this Lab exists to gate.
@@ -585,18 +585,18 @@ def preflight(
         sealed_baseline = load_baseline_bundle(project_root, fixed['bundle_path'])
         validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
         import ast
-        from open_cake_ir.compiler.toolchain import project_triton_kernel
         requirements = baseline_lowering.toolchain_requirements
         source = sealed_baseline.artifact_payloads.get('lowered_source')
-        expected_source = project_triton_kernel(baseline_lowering.source.encode(), requirements)
+        expected_source = native_source(baseline_lowering.source.encode(), requirements)
         if source is None:
             raise ValueError('fixed baseline requires retained Compiler lowering source')
-        observed_source = project_triton_kernel(source, requirements)
+        observed_source = native_source(source, requirements)
         manifest = manifest_parser(json.loads(sealed_baseline.artifact_payloads['launch_manifest']))
         if (fixed['candidate'] != candidate_identity(sealed_baseline)
             or ast.dump(ast.parse(observed_source)) != ast.dump(ast.parse(expected_source))
             or list(manifest.grid) != requirements['grid']
-            or manifest.block != (requirements['compile_options']['num_warps'] * 32, 1, 1)):
+            or manifest.block != tuple(native_block(requirements))
+            or manifest.hidden_null_pointer_parameters != policy.hidden_null_pointer_parameters):
             raise ValueError('fixed baseline differs from the frozen Compiler kernel or launch commitments')
     if (
         execution.get("target") != workload.target
@@ -637,7 +637,7 @@ def preflight(
         estimand = None
     else:
         version = _scientific_analysis_plan_version(analysis, "study.analysis_plan")
-        if paired_triton != (version == "triton_optimization_v1"):
+        if version != (policy.analysis_version if policy is not None else "two_part_v2"):
             raise ValueError("scientific treatment and analysis arm assignment differ")
         estimand = _name(analysis.get("estimand"), "study.analysis_plan.estimand")
     evidence_policy = _object(study.document.get("evidence"), "study.evidence")

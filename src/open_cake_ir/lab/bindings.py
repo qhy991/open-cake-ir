@@ -108,13 +108,14 @@ def resolve_execution_bindings(
     """Return resolved runtime leaves and the Executor already validated for them."""
     from .runtime import broker_execution_sha256, load_runtime_config
     from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
-    from .triton_build import IsolatedTritonCompiler
+    from .pairing import comparison_arm, native_backend
 
     document = json.loads(canonical(study.document))
     arms = document['arms']
-    if set(arms) != {'open_cake', 'native_triton'}:
+    policy = native_backend(comparison_arm(arms))
+    if policy is None:
         if bindings_path is not None:
-            raise ValueError('external execution binding requires paired Triton Study')
+            raise ValueError('external execution binding requires a same-backend native Study')
         return document, None
     execution = document['execution']
     provider_fields = ('revision', 'executable_sha256', 'qualification', 'qualification_anchor', 'code_mode_host')
@@ -140,7 +141,7 @@ def resolve_execution_bindings(
     runtime_path = external_file(project_root, bindings['runtime_config_path'], 'runtime configuration')
     receipt = ProviderQualificationReceipt.load(receipt_path)
     anchor = json.loads(anchor_path.read_bytes())
-    config = load_runtime_config(runtime_path, toolchain_kind="triton")
+    config = load_runtime_config(runtime_path, toolchain_kind=policy.backend)
     executable = Path(config['provider']['executable']).resolve(strict=True)
     if sha256(executable.read_bytes()).hexdigest() != receipt.executable_sha256:
         raise ValueError('runtime provider executable differs from qualification')
@@ -155,7 +156,7 @@ def resolve_execution_bindings(
     executor = resolve_executor(Path(project_root), execution['executor_revision'],
         'study.execution', template=True)
     executor_reference = dict(executor.reference)
-    toolchain = IsolatedTritonCompiler(**config['toolchain'])
+    toolchain = policy.isolated_compiler(config['toolchain'])
     toolchain.check_executor(executor, author_workspace=config['provider']['workspace_root'])
     for arm in arms.values():
         arm['toolchain_sha256'] = toolchain.canonical_sha256

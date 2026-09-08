@@ -22,8 +22,7 @@ from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.flash_kmeans.environment import NvccToolchainBuilder
 from open_cake_ir.lab.runtime import broker_execution_sha256, load_runtime_config
 
-from open_cake_ir.lab.pairing import comparison_arm, triton_optimization_analysis_plan
-from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
+from open_cake_ir.lab.pairing import comparison_arm, native_backend, native_optimization_analysis_plan
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -147,11 +146,11 @@ def main() -> int:
     if study.get('execution', {}).get('fixed_baseline') == {'binding': 'campaign_lock'}:
         raise ValueError('stable paired Study uses lab preflight --execution-bindings; it must not be rewritten as a frozen Study')
     comparison = comparison_arm(_object(study["arms"], "study.arms"))
-    paired_triton = comparison == "native_triton"
+    policy = native_backend(comparison)
     if study.get("claim_scope") == "scientific_matched_search":
-        expected_analysis = triton_optimization_analysis_plan() if paired_triton else dict(scientific_matched_analysis_plan_v2())
-        if paired_triton and study.get("analysis_plan") != expected_analysis:
-            raise ValueError("paired Triton scientific analysis differs")
+        expected_analysis = native_optimization_analysis_plan(comparison) if policy is not None else dict(scientific_matched_analysis_plan_v2())
+        if policy is not None and study.get("analysis_plan") != expected_analysis:
+            raise ValueError("same-backend native scientific analysis differs")
         study["analysis_plan"] = expected_analysis
     _replace_artifact_feedback_budget(
         study,
@@ -177,7 +176,7 @@ def main() -> int:
 
     config = load_runtime_config(
         arguments.runtime_config.resolve(strict=True),
-        toolchain_kind="triton" if paired_triton else "nvcc",
+        toolchain_kind=policy.backend if policy is not None else "nvcc",
     )
     provider_config = config["provider"]
     toolchain_config = config["toolchain"]
@@ -223,8 +222,8 @@ def main() -> int:
         _canonical_json_bytes(skeleton_document)
     ).hexdigest()
     direct_arm = _object(arms[comparison], f"study.arms.{comparison}")
-    if paired_triton:
-        isolated_toolchain = IsolatedTritonCompiler(**toolchain_config)
+    if policy is not None:
+        isolated_toolchain = policy.isolated_compiler(toolchain_config)
         identity = isolated_toolchain.canonical_sha256
         direct_arm["toolchain_sha256"] = identity
         open_arm["toolchain_sha256"] = identity
@@ -239,7 +238,7 @@ def main() -> int:
     execution = _object(study["execution"], "study.execution")
     # This CLI accepts a descriptor path, not a current-release or exact-reference object.
     executor = ExecutorRevision.load(root, arguments.executor)
-    if paired_triton:
+    if policy is not None:
         isolated_toolchain.check_executor(executor, author_workspace=str(provider_config["workspace_root"]))
     execution["executor_revision"] = dict(executor.reference)
     execution["broker_execution_sha256"] = broker_execution_sha256(

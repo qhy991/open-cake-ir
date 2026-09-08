@@ -23,6 +23,7 @@ from open_cake_ir.evaluation.core import TensorLaunchManifest
 from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
+from .pairing import backend_policy
 from . import selection
 from .executor import ExecutorRevision
 from .faults import CandidateCompileRejected, RunProtocolFault
@@ -40,7 +41,7 @@ class CandidateSubmission:
 
     @classmethod
     def seal(cls, media_type: str, payload: bytes) -> "CandidateSubmission":
-        if media_type not in {"application/vnd.open-cake.schedule+json", "text/x-cuda", "application/vnd.open-cake.triton+json"} or not payload:
+        if media_type not in {"application/vnd.open-cake.schedule+json", "text/x-cuda", "application/vnd.open-cake.triton+json", "application/vnd.open-cake.cute+json"} or not payload:
             raise ValueError("candidate submission media type or bytes differ")
         return cls(media_type, payload, sha256(payload).hexdigest())
 
@@ -261,9 +262,10 @@ class OpenCakeEnvironment:
                           for arg in workload.tensor_abi(case_id)}
         route = authority_document.get("lowering_route")
         if (not isinstance(route, Mapping) or set(route) != {"backend", "entry_point"}
-            or route["backend"] != "triton" or not isinstance(route["entry_point"], str)
+            or not isinstance(route["entry_point"], str)
             or not route["entry_point"].isidentifier()):
             raise ValueError("Open Cake Authoring Environment lowering route differs")
+        backend_policy(route["backend"])
         self._route = dict(route)
         self.authority_document = json.loads(
             json.dumps(authority_document, sort_keys=True, separators=(",", ":"))
@@ -504,3 +506,53 @@ class NativeTritonEnvironment:
             raise ValueError('native Triton builder lost source custody')
         return EnvironmentResult('launchable', submission.sha256, launchable,
             {'stage': 'built', 'source_contract': 'triton_kernel_only_v1'})
+
+
+class NativeCuTeEnvironment:
+    """Kernel-only CuTe with ordered Workload pointers and the common sealed builder."""
+
+    media_type = backend_policy("cutlass_cute_dsl").media_type
+
+    def __init__(self, toolchain: ToolchainBuilder, *, toolchain_requirements: Mapping[str, object],
+                 authority_document: Mapping[str, object], workload: WorkloadContract, case_id: str):
+        from open_cake_ir.compiler.cute_toolchain import validate_cute_requirements
+        self._toolchain = toolchain
+        self._requirements = json.loads(json.dumps(dict(toolchain_requirements)))
+        self._target = workload.target
+        expected = [{'name': arg.name, 'dtype': arg.dtype} for arg in workload.tensor_abi(case_id)]
+        validate_cute_requirements(self._requirements)
+        if self._requirements['target'] != self._target or self._requirements['signature'] != expected:
+            raise ValueError('native CuTe signature differs from the Workload ABI')
+        self.authority_document = json.loads(json.dumps(authority_document, sort_keys=True))
+        self.canonical_sha256 = sha256(json.dumps(self.authority_document, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+    def build(self, submission: CandidateSubmission) -> EnvironmentResult:
+        from open_cake_ir.compiler.cute_toolchain import validate_cute_kernel
+        if submission.media_type != self.media_type:
+            raise ValueError('native CuTe candidate media type differs')
+        try:
+            document = json.loads(submission.payload)
+            fields = {'kernel_source', 'grid', 'block', 'dynamic_shared_memory_bytes'}
+            if not isinstance(document, Mapping) or set(document) != fields:
+                raise ValueError('native CuTe candidate requires kernel_source and explicit launch metadata')
+            if not isinstance(document['kernel_source'], str) or not document['kernel_source']:
+                raise ValueError('native CuTe kernel_source must be nonempty text')
+            requirements = {**self._requirements, **{name: document[name] for name in fields - {'kernel_source'}}}
+            source = document['kernel_source'].encode()
+            validate_cute_kernel(source, requirements)
+            CudaKernelSpec.from_dict({'target': self._target,
+                'kernel_name': requirements['kernel_entry_point'],
+                **{name: requirements[name] for name in ('grid', 'block', 'dynamic_shared_memory_bytes')}})
+        except (UnicodeError, json.JSONDecodeError, ValueError) as error:
+            return EnvironmentResult('rejected', submission.sha256, None, {'stage': 'source_admission', 'error': str(error)})
+        digest = sha256(source).hexdigest()
+        try:
+            launchable = self._toolchain.build(BuildRequest(submission.sha256, source, 'authored_source',
+                digest, self._target, str(requirements['kernel_entry_point']), requirements))
+        except CandidateCompileRejected as error:
+            return EnvironmentResult('rejected', submission.sha256, None,
+                {'stage': 'compile', 'diagnostic': error.diagnostic}, error.artifact_payloads)
+        if launchable.artifact_roles.get('authored_source') != digest:
+            raise ValueError('native CuTe builder lost source custody')
+        return EnvironmentResult('launchable', submission.sha256, launchable,
+            {'stage': 'built', 'source_contract': 'cute_kernel_only_v1'})

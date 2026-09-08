@@ -350,13 +350,32 @@ class PairedExecutionTests(unittest.TestCase):
             resolve_execution_bindings(ROOT, replace(study, state='frozen'), self.output / 'model.json')
 
     def test_external_preflight_binds_stable_study_and_rejects_runtime_or_baseline_drift(self):
+        self._external_preflight_contract(TEMPLATE, self.workload, 'native_triton')
+
+    def test_cute_external_preflight_binds_stable_study_and_rejects_runtime_or_baseline_drift(self):
+        from tests.contracts.test_native_cute_pairing import baseline
+        workload = load_workload(ROOT / 'contracts/workloads/gemm-bias-bf16-fp32-v2.json')
+        template = ROOT / 'contracts/studies/matched-search-cute-b300-gemm-optimization-template.json'
+        self._external_preflight_contract(template, workload, 'native_cute_dsl', schedule=baseline(workload))
+
+    def _external_preflight_contract(self, template_path, workload, comparison, schedule=None):
+        from open_cake_ir.lab.pairing import native_backend, native_block
+        policy = native_backend(comparison)
         # Independent CPU fixture: real descriptor bytes, source closure, inventory
         # and resolver. No released project descriptor or host environment is edited.
         project = self.output / 'project'
         project.mkdir()
         for directory in ('contracts', 'corpus', 'compiler', 'docs'):
             shutil.copytree(ROOT / directory, project / directory)
-        template = project / TEMPLATE.relative_to(ROOT)
+        template = project / template_path.relative_to(ROOT)
+        if schedule is not None:
+            # Own the synthetic CPU fixture's Schedule/source reference without editing a release.
+            fixture_study = json.loads(template.read_bytes())
+            fixture_study['arms']['open_cake']['lowering_route'] = schedule['lowering']
+            skeleton = fixture_study['arms']['open_cake']['schedule_skeleton']
+            (project / skeleton['path']).write_bytes(encoded(schedule))
+            skeleton['canonical_sha256'] = sha256(encoded(schedule)).hexdigest()
+            template.write_bytes(encoded(fixture_study))
         study = StudyContract.load(template)
         before = template.read_bytes()
         source = project / 'cpu-executor-source.txt'
@@ -385,14 +404,14 @@ class PairedExecutionTests(unittest.TestCase):
         inventory.parent.mkdir()
         inventory.write_bytes(encoded({'current': executor_ref}))
         draft = DraftCompilerFixture()
-        schedule = bind_baseline(json.loads((ROOT / study.document['arms']['open_cake']['schedule_skeleton']['path']).read_bytes()),
-                                 self.workload, 'primary')
+        schedule = bind_baseline(json.loads((project / study.document['arms']['open_cake']['schedule_skeleton']['path']).read_bytes()),
+                                 workload, 'primary')
         lowering = draft.lower(draft.assess(schedule))
         requirements = lowering.toolchain_requirements
-        manifest = TensorLaunchManifest.for_workload(self.workload, 'primary', target='sm_103a',
+        manifest = TensorLaunchManifest.for_workload(workload, 'primary', target='sm_103a',
             kernel_name=requirements['kernel_entry_point'], grid=requirements['grid'],
-            block=[requirements['compile_options']['num_warps'] * 32, 1, 1],
-            dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=2)
+            block=native_block(requirements),
+            dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=policy.hidden_null_pointer_parameters)
         payloads = {'cubin': b'CPU-baseline-fixture', 'lowered_source': lowering.source.encode(),
                     'launch_manifest': encoded(manifest.as_dict())}
         # A Python-authored identity may differ from the JSON skeleton identity.
@@ -430,6 +449,9 @@ class PairedExecutionTests(unittest.TestCase):
                          'triton_version':'fixture','timeout_seconds':30},
             'broker':{'command':['fixture-broker'],'cwd':str(project),'timeout_seconds':30,
                       'service_user':'fixture','service_group':'fixture'}}
+        if comparison == 'native_cute_dsl':
+            config['toolchain'].pop('triton_version')
+            config['toolchain'].update(cutlass_version='4.5.2', cuobjdump='fixture-cuobjdump')
         rp = self.output / 'runtime.json'; rp.write_bytes(encoded(config))
         bindings = {'schema_version':1, 'qualification_path':str(qp), 'qualification_anchor_path':str(ap),
                     'runtime_config_path':str(rp), 'fixed_baseline_bundle_path':str(bundle)}
@@ -450,7 +472,7 @@ class PairedExecutionTests(unittest.TestCase):
             stack.enter_context(patch('open_cake_ir.lab.preflight.resolve_executor',
                 side_effect=AssertionError('preflight must retain the already-bound Executor')))
             stack.enter_context(patch('open_cake_ir.compiler.Compiler.load', return_value=draft))
-            toolchain = stack.enter_context(patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler'))
+            toolchain = stack.enter_context(patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler' if comparison == 'native_triton' else 'open_cake_ir.lab.cute_build.IsolatedCuTeCompiler'))
             toolchain.return_value.canonical_sha256 = 'b'*64
             stack.enter_context(patch('open_cake_ir.lab.runtime.broker_execution_sha256', return_value='c'*64))
             lock = Lab(project).preflight(template, execution_bindings_path=bp)
@@ -470,31 +492,52 @@ class PairedExecutionTests(unittest.TestCase):
             self.assertEqual(template.read_bytes(), before)
             self.assertEqual(lock.document['execution']['fixed_baseline']['candidate'], candidate_identity(baseline))
             self.assertEqual(lock.document['execution']['runtime_config']['path'], str(rp))
-            self.assertEqual(lock.document['resolved_inputs']['arm_environments']['native_triton']['provider']['model'], 'gpt-5.6-sol')
+            self.assertEqual(lock.document['resolved_inputs']['arm_environments'][comparison]['provider']['model'], 'gpt-5.6-sol')
             self.assertFalse((self.output / 'new-author-workspaces').exists())
             self.assertEqual(CampaignLock.from_dict(lock.document).canonical_sha256, lock.canonical_sha256)
-            for arm in ('open_cake', 'native_triton'):
+            for arm in ('open_cake', comparison):
                 package = Lab(project).task_package(lock, arm + '-1')
                 self.assertIn('"sm_103a"', package.task_markdown)
                 self.assertIn('candidate-set.json', package.agents_markdown)
                 self.assertNotIn('prompt_template', package.task_markdown)
                 self.assertNotIn('"sm_100a"', package.task_markdown)
-                if arm == 'native_triton':
-                    self.assertIn('candidate-baseline.triton.json', package.task_markdown)
+                if arm == comparison:
+                    self.assertIn(policy.baseline_file, package.task_markdown)
                 else:
                     self.assertIn('restricted Python', package.agents_markdown)
 
-            invalid_workload = self.workload.document
-            invalid_workload['semantics']['epsilon'] = 0
-            invalid_workload_path = project / 'contracts/workloads/invalid-rmsnorm.json'
-            invalid_workload_path.write_bytes(encoded(invalid_workload))
-            invalid_study = copy.deepcopy(study.document)
-            invalid_study['workload'] = {'path': invalid_workload_path.relative_to(project).as_posix(),
-                'canonical_sha256': sha256(encoded(invalid_workload)).hexdigest()}
-            invalid_study_path = self.output / 'invalid-rmsnorm-study.json'
-            invalid_study_path.write_bytes(encoded(invalid_study))
-            with self.assertRaisesRegex(ValueError, 'RMSNorm epsilon'):
-                Lab(project).preflight(invalid_study_path, execution_bindings_path=bp)
+            # Exercise live composition through its existing Lab.execute handoff.
+            # The CPU fixture constructs the provider and injects the broker boundary;
+            # it requires no service account and invokes neither adapter.
+            from open_cake_ir.tasks import compose
+            with patch.object(compose, '_admit_executor', return_value=(bound_executor, None)), \
+                 patch.object(compose, 'broker_execution_sha256', return_value='c'*64), \
+                 patch.object(draft, 'check_corpus', return_value=gate), \
+                 patch.object(compose, 'CommandBrokerSubmitter') as broker, \
+                 patch.object(compose.TaskLab, 'execute', return_value='CPU-composition-handoff') as execute:
+                result = compose.execute_matched_from_config(project, lock, rp, self.output / 'unused-run-evidence')
+            self.assertEqual(result, 'CPU-composition-handoff')
+            self.assertEqual(broker.call_args.kwargs['baseline'], baseline)
+            broker.return_value.submit.assert_not_called()
+            environments = execute.call_args.kwargs['environments']
+            self.assertEqual(set(environments), {'open_cake', comparison})
+            self.assertIs(environments['open_cake']._toolchain, environments[comparison]._toolchain)
+            self.assertIs(environments['open_cake']._toolchain._isolated, toolchain.return_value)
+            self.assertEqual(environments[comparison].media_type, policy.media_type)
+            self.assertEqual(set(execute.call_args.kwargs['provider']._builders), set(lock.run_order))
+
+            if comparison == 'native_triton':
+                invalid_workload = workload.document
+                invalid_workload['semantics']['epsilon'] = 0
+                invalid_workload_path = project / 'contracts/workloads/invalid-rmsnorm.json'
+                invalid_workload_path.write_bytes(encoded(invalid_workload))
+                invalid_study = copy.deepcopy(study.document)
+                invalid_study['workload'] = {'path': invalid_workload_path.relative_to(project).as_posix(),
+                    'canonical_sha256': sha256(encoded(invalid_workload)).hexdigest()}
+                invalid_study_path = self.output / 'invalid-rmsnorm-study.json'
+                invalid_study_path.write_bytes(encoded(invalid_study))
+                with self.assertRaisesRegex(ValueError, 'RMSNorm epsilon'):
+                    Lab(project).preflight(invalid_study_path, execution_bindings_path=bp)
 
             # Missing policy cannot mint a new live native Campaign under an old-looking template.
             unpaired = copy.deepcopy(study.document)

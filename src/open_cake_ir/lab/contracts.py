@@ -25,7 +25,7 @@ from ._policies import (
     _matched_evidence_policy_version,
     _scientific_analysis_plan_version,
 )
-from .pairing import comparison_arm
+from .pairing import comparison_arm, native_backend
 from .providers import ProviderTurn
 from .ralph import RalphBudget
 from .selection import _EMPIRICAL_SELECTION
@@ -285,8 +285,8 @@ class CampaignLock:
             if set(execution) != {'target', 'executor_revision', 'broker_execution_sha256',
                                   'gpu', 'sandbox', 'fixed_baseline', 'runtime_config'}:
                 raise ValueError('paired Campaign execution fields differ')
-            if study_kind != 'matched_search' or comparison != 'native_triton':
-                raise ValueError('paired Campaign requires the native Triton comparison')
+            if study_kind != 'matched_search' or native_backend(comparison) is None:
+                raise ValueError('paired Campaign requires a same-backend native comparison')
             _digest(execution['broker_execution_sha256'], 'execution.broker_execution_sha256')
             executor = _object(execution['executor_revision'], 'execution.executor_revision')
             if set(executor) != {'executor_id', 'path', 'canonical_sha256'}:
@@ -334,7 +334,8 @@ class CampaignLock:
             estimand = None
         elif study_kind == "matched_search":
             version = _scientific_analysis_plan_version(analysis, "campaign_lock.analysis_plan")
-            if (comparison == "native_triton") != (version == "triton_optimization_v1"):
+            policy = native_backend(comparison)
+            if version != (policy.analysis_version if policy is not None else "two_part_v2"):
                 raise ValueError("Campaign Lock treatment and analysis arms differ")
             estimand = _name(raw_estimand, "campaign_lock.analysis_plan.estimand")
         else:
