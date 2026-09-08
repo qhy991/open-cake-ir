@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Mapping, cast
 
 from .custody import WriterCustody, external_path
+from .secret_detection import contains_forbidden_secret
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -30,30 +31,6 @@ _PROTOCOL = {
 }
 _ENDPOINT = {"qualified", "no_qualified_candidate", "missing", "observed"}
 _MAX_OBJECT_BYTES = 1 << 30
-_SECRET_MARKERS = (
-    b"BEGIN PRIVATE KEY",
-    b"OPENAI_API_KEY=",
-    b"CODEX_ACCESS_TOKEN=",
-    b"INFINI_API_KEY=",
-)
-_SECRET_PATTERNS = (
-    re.compile(rb"(?i)authorization\s*:\s*bearer\s+[a-z0-9._~+/=-]{8,}"),
-    re.compile(rb"(?i)bearer\s+sk-[a-z0-9_-]{8,}"),
-    re.compile(
-        rb"(?i)(?:openai|anthropic|github|gitlab|azure|aws|codex|infini)"
-        rb"[a-z0-9_-]{0,24}(?:key|token|secret)\s*[:=]\s*['\"]?[a-z0-9._~+/=-]{8,}"
-    ),
-    re.compile(rb"\b(?:ghp|github_pat|sk)-[a-zA-Z0-9_-]{8,}\b"),
-    re.compile(rb"\bAKIA[0-9A-Z]{16}\b"),
-)
-
-
-def _contains_forbidden_secret(payload: bytes) -> bool:
-    return any(marker in payload for marker in _SECRET_MARKERS) or any(
-        pattern.search(payload) is not None for pattern in _SECRET_PATTERNS
-    )
-
-
 def _canonical_json_bytes(value: object) -> bytes:
     return json.dumps(
         value,
@@ -429,7 +406,7 @@ class EvidenceStore:
             or _MEDIA_TYPE.fullmatch(media_type) is None
         ):
             raise ValueError("evidence payload size or media_type differs")
-        if _contains_forbidden_secret(payload):
+        if contains_forbidden_secret(payload):
             raise ValueError("evidence payload contains a forbidden secret marker")
         digest = sha256(payload).hexdigest()
         relative = f"objects/sha256/{digest[:2]}/{digest}"

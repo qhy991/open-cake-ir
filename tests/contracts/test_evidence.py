@@ -481,3 +481,36 @@ class ArchiveShapeTamperTest(unittest.TestCase):
 
             audit = EvidenceStore.open(evidence.root).audit_run("sealed")
             self.assertTrue(audit.archive_integrity)
+
+
+class SecretDetectionTests(unittest.TestCase):
+    def test_shared_detector_refuses_credential_shapes_before_cas_publication(self):
+        from open_cake_ir.evidence.secret_detection import contains_forbidden_secret
+        from open_cake_ir.evidence import custody
+        # Synthetic bytes assembled at runtime; no actual credentials or matching
+        # values are printed in failures or stored in the source checkout.
+        pem = [b"-----BEGIN " + family + b"PRIVATE KEY-----" for family in
+               (b"", b"RSA ", b"OPENSSH ", b"EC ", b"DSA ", b"ENCRYPTED ")]
+        jwt = b"eyJ" + b"a" * 20 + b"." + b"b" * 20 + b"." + b"c" * 20
+        old_export_jwt = b"eyJ" + b"a" * 10 + b"." + b"b" * 10 + b"." + b"c" * 10
+        candidates = pem + [b'{"tokens":{"access_token":"' + jwt + b'"}}',
+            old_export_jwt, b"HF_TOKEN=" + b"hf_" + b"a" * 20,
+            b"ghp_" + b"a" * 30, b"github_pat_" + b"a" * 30,
+            b"Authorization: Bearer " + b"a" * 30]
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            with patch.dict(os.environ, {custody.ENVIRONMENT: str(base / "registry")}):
+                evidence = EvidenceStore.create(base / "evidence")
+                for index, payload in enumerate(candidates):
+                    with self.subTest(case=index):
+                        self.assertTrue(contains_forbidden_secret(payload))
+                        with self.assertRaisesRegex(ValueError, "forbidden secret marker"):
+                            evidence.put(payload, media_type="application/octet-stream")
+                self.assertEqual(list((evidence.root / "objects/sha256").iterdir()), [])
+
+    def test_detection_preserves_nonsecret_runtime_and_placeholder_bytes(self):
+        from open_cake_ir.evidence.secret_detection import contains_forbidden_secret
+        for payload in (b'{"usage":{"input_tokens":123,"output_tokens":456}}',
+                b'{"access_token":"REDACTED"}', b"BEGIN PUBLIC KEY", b"hf_short",
+                b"eyJshort.short.short", b"operator weight_token_count=32"):
+            self.assertFalse(contains_forbidden_secret(payload))
