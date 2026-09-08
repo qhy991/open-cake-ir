@@ -87,7 +87,8 @@
       "tool_surface": [
         "submit_cuda"
       ],
-      "toolchain_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "toolchain_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "reference_access": "known_kernel_reproduction"
     },
     "open_cake": {
       "compiler_revision": {
@@ -164,7 +165,8 @@
       },
       "tool_surface": [
         "submit_schedule"
-      ]
+      ],
+      "reference_access": "known_kernel_reproduction"
     }
   },
   "budget": {

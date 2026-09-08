@@ -133,7 +133,8 @@
         "submit_schedule_or_python"
       ],
       "input_format": "schedule_or_python_v1",
-      "toolchain_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "toolchain_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "reference_access": "known_kernel_reproduction"
     },
     "native_triton": {
       "environment_kind": "native_triton",
@@ -203,7 +204,8 @@
       "toolchain_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "baseline": {
         "binding": "open_cake_lowering"
-      }
+      },
+      "reference_access": "known_kernel_reproduction"
     }
   },
   "budget": {

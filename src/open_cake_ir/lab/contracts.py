@@ -27,6 +27,7 @@ from ._policies import (
 )
 from .pairing import comparison_arm, native_backend, matched_run_arms
 from .providers import ProviderTurn
+from .reference_access import validate_declarations
 from .ralph import RalphBudget
 from .selection import _EMPIRICAL_SELECTION
 from .task_package import TASK_AGENTS_RALPH_V1
@@ -102,6 +103,8 @@ class StudyContract:
         )
         for field in object_fields:
             _object(document.get(field), f"study.{field}")
+        if kind == "matched_search":
+            validate_declarations(document["arms"])
         detached = cast(Mapping[str, object], json.loads(_canonical_json_bytes(document)))
         return cls(
             document=detached,
@@ -197,6 +200,7 @@ class CampaignLock:
                 resolved.get("arm_environment_sha256"),
                 "campaign_lock.resolved_inputs.arm_environment_sha256",
             )
+            validate_declarations(arms)
             comparison = comparison_arm(arms)
             if set(arm_hashes) != set(arms):
                 raise ValueError("Campaign Lock Authoring Environment set differs")

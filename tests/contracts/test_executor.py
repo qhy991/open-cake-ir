@@ -96,6 +96,9 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             )
             for path in directory.rglob("*") if path.suffix in {".py", ".swift"}
         } | {
+            "contracts/scaffolds/open-cake-clean-start-v1.json",
+            "contracts/scaffolds/direct-cuda-clean-start-v1.cu",
+            "contracts/scaffolds/matched-search-v1.md",
             "docs/en/PAIRED_TRITON.md",
             "docs/en/PAIRED_CUTE.md",
             "contracts/providers/native-cute-candidate-v1.schema.json",

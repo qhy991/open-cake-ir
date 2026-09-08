@@ -15,6 +15,9 @@ _SOURCE_ROOTS = (
     "src/open_cake_ir/tasks",
 )
 _SOURCE_FILES = (
+    "contracts/scaffolds/open-cake-clean-start-v1.json",
+    "contracts/scaffolds/direct-cuda-clean-start-v1.cu",
+    "contracts/scaffolds/matched-search-v1.md",
     "docs/en/PAIRED_TRITON.md",
     "docs/en/PAIRED_CUTE.md",
     "contracts/providers/native-cute-candidate-v1.schema.json",

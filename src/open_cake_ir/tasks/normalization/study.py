@@ -79,7 +79,7 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
         "agent_interface": {"schema_version": 1, "kind": "task_agents_ralph_v1"},
         "workload": {"path": str(workload_path), "canonical_sha256": workload.canonical_sha256},
         "arms": {"open_cake": {
-            "environment_kind": "open_cake", "provider": provider,
+            "environment_kind": "open_cake", "reference_access": "known_kernel_reproduction", "provider": provider,
             "scaffold": {"path": SCAFFOLD, "sha256": sha256((root / SCAFFOLD).read_bytes()).hexdigest()},
             "compiler_revision": dict(CURRENT_RELEASE_BINDING),
             "lowering_route": source.document["lowering"],

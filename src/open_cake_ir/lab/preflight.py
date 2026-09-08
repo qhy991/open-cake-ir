@@ -29,6 +29,7 @@ from .selection import _EMPIRICAL_SELECTION
 from .task_package import TaskPackage, render_task_package
 
 from .python_reference import read_skeleton
+from .reference_access import validate_reference_handoff
 
 
 def task_package(
@@ -90,6 +91,7 @@ def preflight(
     matched_run_arms(arms, study.document["claim_scope"])
     open_cake = _object(arms.get("open_cake"), "study.arms.open_cake")
     direct_cuda = _object(arms[comparison], f"study.arms.{comparison}") if comparison is not None else {}
+    validate_reference_handoff(project_root, arms)
     validate_authoring(workload, arms, empirical_cost_model_path=empirical_cost_model_path)
     empirical_policy = open_cake.get("candidate_selection")
     has_empirical_policy = "candidate_selection" in open_cake
@@ -103,6 +105,7 @@ def preflight(
             raise ValueError("empirical selection requires artifact_optimization_only candidate-set policy and an explicit model")
     open_cake_fields = {
         "environment_kind",
+        "reference_access",
         "provider",
         "scaffold",
         "compiler_revision",
@@ -115,6 +118,7 @@ def preflight(
         open_cake_fields.add("candidate_selection")
     direct_cuda_fields = {
         "environment_kind",
+        "reference_access",
         "provider",
         "scaffold",
         "launch_contract",
@@ -214,7 +218,7 @@ def preflight(
         )
         if set(candidate_skeleton) != {"path", "sha256"}:
             raise ValueError("Study Contract direct candidate skeleton reference differs")
-        _, candidate_skeleton_path = _project_path(
+        _, candidate_skeleton_path = source_reference_path(
             project_root,
             candidate_skeleton.get("path"),
             "study.arms.direct_cuda.candidate_skeleton.path",
