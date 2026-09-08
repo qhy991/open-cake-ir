@@ -61,11 +61,13 @@ class BackendBoundaryTests(unittest.TestCase):
 
     def test_generic_resource_fixture_preserves_derived_analysis(self):
         fixture = document("tinygemm2-stage4-split-k")
-        # This is a typed resource fixture, not compatibility for the retired
-        # spelling or a claim that CuTe can emit the old asset's operation mix.
+        # This historical resource fixture names register-only warp MMA while
+        # placing its operands and accumulator in shared memory. Keep its
+        # derived analysis inspectable without accepting that hardware mismatch.
         fixture["lowering"]["backend"] = "cutlass_cute_dsl"
         assessment = self.compiler.assess(fixture)
-        self.assertTrue(assessment.accepted)
+        self.assertFalse(assessment.accepted)
+        self.assertIn("MMA_OPERAND_SOURCE_MISMATCH", [f.code for f in assessment.findings])
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(assessment.analysis["grid"], (64, 1, 1))
         self.assertEqual(assessment.analysis["total_warps"], 12)
