@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import json
 from pathlib import Path
 import subprocess
@@ -12,15 +13,15 @@ from unittest.mock import patch
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule
 from open_cake_ir.lab.claude import (
     CLAUDE_EVENT_CONTRACT, ClaudeInvocationBuilder, ClaudeProviderAdapter,
-    ClaudeRunProvider, normalize_claude_turn, parse_claude_turn_events,
+    ClaudeRunProvider, normalize_claude_turn, parse_claude_turn_events, claude_model_usage, terminal_schema,
 )
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.lab.process import SupervisedProcessTimeout
-from open_cake_ir.lab.providers import CodexRunProvider, QualifiedRunProvider
+from open_cake_ir.lab.providers import CodexRunProvider, QualifiedRunProvider, ProviderAuxiliaryActivity
 
 SESSION = "01234567-89ab-cdef-0123-456789abcdef"
 OTHER_SESSION = "11111111-2222-3333-4444-555555555555"
-TERMINAL = '{"candidate_written":true}'
+TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_turn","turn":1}'
 
 
 class ClaudeProviderContracts(unittest.TestCase):
@@ -48,16 +49,17 @@ class ClaudeProviderContracts(unittest.TestCase):
 
     def events(self):
         return [
-            {"type": "system", "subtype": "init", "session_id": SESSION, "model": "opus"},
+            {"type": "system", "subtype": "init", "session_id": SESSION, "model": "exact-requested-model"},
             {"type": "assistant", "session_id": SESSION, "parent_tool_use_id": None, "message": {
-                "model": "reported-response-model", "content": [
+                "model": "exact-requested-model", "content": [
                     {"type": "tool_use", "id": "toolu_write", "name": "Write", "input": {
                         "file_path": str(self.candidate), "content": self.submission.decode()}}]}},
             {"type": "user", "session_id": SESSION, "parent_tool_use_id": None, "message": {"content": [
                 {"type": "tool_result", "tool_use_id": "toolu_write", "content": "File created successfully"}]}},
-            {"type": "assistant", "session_id": SESSION, "message": {"model": "reported-response-model", "content": [
+            {"type": "assistant", "session_id": SESSION, "message": {"model": "exact-requested-model", "content": [
                 {"type": "text", "text": TERMINAL}]}},
-            {"type": "result", "subtype": "success", "is_error": False, "session_id": SESSION, "result": TERMINAL,
+            {"type": "result", "subtype": "success", "is_error": False, "session_id": SESSION, "result": "", "structured_output": json.loads(TERMINAL),
+             "modelUsage": {"exact-requested-model": {"inputTokens": 10, "outputTokens": 5, "cacheCreationInputTokens": 90, "cacheReadInputTokens": 100}},
              "usage": {"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 90,
                        "cache_read_input_tokens": 100, "cache_creation": {
                            "ephemeral_5m_input_tokens": 70, "ephemeral_1h_input_tokens": 20}}},
@@ -77,7 +79,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         raw = self.raw()
         parsed = parse_claude_turn_events(raw, expected_terminal_message=TERMINAL)
         turn = self.normalize(raw)
-        self.assertEqual(parsed.reported_models, ("opus", "reported-response-model"))
+        self.assertEqual(parsed.reported_models, ("exact-requested-model",))
         self.assertEqual(turn.thread_id, SESSION)
         self.assertEqual(turn.provider_tokens, 205)
         self.assertEqual(turn.raw_events, raw)
@@ -152,9 +154,9 @@ class ClaudeProviderContracts(unittest.TestCase):
                 self.normalize(self.raw(events))
 
     def test_terminal_semantics_are_typed_and_candidate_custody_stays_canonical(self):
-        events = self.events(); events[-1]["result"] = '{ "candidate_written" : true }'
-        self.assertEqual(self.normalize(self.raw(events)).normalization, "claude_result_semantic")
-        events[-1]["result"] = '{"candidate_written":1}'
+        events = self.events(); events[-1]["structured_output"] = json.loads(TERMINAL)
+        self.assertEqual(self.normalize(self.raw(events)).normalization, "claude_native_structured_output_exact")
+        events[-1]["structured_output"]["candidate_written"] = 1
         with self.assertRaisesRegex(ValueError, "terminal message"):
             self.normalize(self.raw(events))
         with self.assertRaisesRegex(ValueError, "maximum candidates"):
@@ -200,12 +202,128 @@ class ClaudeProviderContracts(unittest.TestCase):
 
     def test_live_adapter_refuses_model_substitution_before_returning_a_candidate(self):
         invocation = self.builder().build("task", thread_id=SESSION)
-        completed = subprocess.CompletedProcess(invocation.argv, 0, self.raw(), b"")
+        events = self.events()
+        events[0]["model"] = "different-requested-model"
+        for event in events:
+            if event.get("type") == "assistant":
+                event["message"]["model"] = "different-requested-model"
+        events[-1]["modelUsage"]["different-requested-model"] = events[-1]["modelUsage"].pop("exact-requested-model")
+        completed = subprocess.CompletedProcess(invocation.argv, 0, self.raw(events), b"")
         with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed):
             with self.assertRaisesRegex(RunProtocolFault, "reported model differs") as captured:
                 ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
                     expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
         self.assertEqual(captured.exception.artifact_payloads["provider_stdout"], completed.stdout)
+
+
+    def metadata(self):
+        return [
+            {"type": "rate_limit_event", "uuid": OTHER_SESSION, "session_id": SESSION,
+             "rate_limit_info": {"status": "allowed", "resetsAt": 1788892200, "rateLimitType": "five_hour",
+                "overageStatus": "rejected", "overageDisabledReason": "org_level_disabled", "isUsingOverage": False}},
+            {"type": "system", "subtype": "thinking_tokens", "uuid": OTHER_SESSION, "session_id": SESSION,
+             "estimated_tokens": 600, "estimated_tokens_delta": 100},
+        ]
+
+    def test_observed_metadata_is_typed_and_does_not_charge_estimated_thinking(self):
+        events = self.events(); events[1:1] = self.metadata()
+        self.assertEqual(self.normalize(self.raw(events)).provider_tokens, 205)
+        mutations = (
+            lambda rows: rows[1]["rate_limit_info"].update(status="rejected"),
+            lambda rows: rows[1]["rate_limit_info"].update(isUsingOverage=True),
+            lambda rows: rows[1]["rate_limit_info"].update(status=["allowed"]),
+            lambda rows: rows[2].update(estimated_tokens=True),
+            lambda rows: rows[2].update(session_id=OTHER_SESSION),
+            lambda rows: rows[2].update(subtype="api_retry"),
+            lambda rows: rows[2].update(command="unexpected control"),
+        )
+        for mutation in mutations:
+            changed = copy.deepcopy(events); mutation(changed)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                self.normalize(self.raw(changed))
+
+    def test_all_reported_model_usage_is_charged_once_and_auxiliary_models_stay_separate(self):
+        events = self.events(); events[1:1] = self.metadata()
+        usage = {"input_tokens": 4, "output_tokens": 3297, "cache_creation_input_tokens": 12266,
+            "cache_read_input_tokens": 15736, "output_tokens_details": {"thinking_tokens": 624},
+            "cache_creation": {"ephemeral_1h_input_tokens": 12266, "ephemeral_5m_input_tokens": 0},
+            "iterations": [{"input_tokens": 2, "output_tokens": 112, "cache_creation_input_tokens": 3306,
+                            "cache_read_input_tokens": 12348}]}
+        events[-1]["usage"] = usage
+        events[-1]["modelUsage"] = {
+            "exact-requested-model": {"inputTokens": 4, "outputTokens": 3297,
+                "cacheCreationInputTokens": 12266, "cacheReadInputTokens": 15736},
+            "claude-haiku-4-5-20251001": {"inputTokens": 5528, "outputTokens": 13,
+                "cacheCreationInputTokens": 0, "cacheReadInputTokens": 0, "costUSD": 0.005593,
+                "webSearchRequests": 0, "contextWindow": 200000, "maxOutputTokens": 32000,
+                "canonicalModel": "claude-haiku-4-5", "provider": "firstParty"}}
+        parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        turn = self.normalize(self.raw(events))
+        self.assertEqual(parsed.reported_models, ("exact-requested-model",))
+        self.assertEqual(turn.provider_tokens, 36844)
+        counts = {activity.model: activity.provider_tokens for activity in turn.tool_activity if activity.model is not None}
+        self.assertEqual(counts, {"exact-requested-model": 31303, "claude-haiku-4-5-20251001": 5541})
+        self.assertEqual(sum(counts.values()), turn.provider_tokens)
+        self.assertEqual(set(turn.tool_activity[0].document), {"item_id", "item_type", "status", "server", "tool"})
+        self.assertEqual([dict(activity.document) for activity in parsed.tool_activity], [dict(activity.document) for activity in turn.tool_activity])
+        for mutate in (
+            lambda rows: rows[-1]["modelUsage"]["exact-requested-model"].update(inputTokens=5),
+            lambda rows: rows[-1]["modelUsage"].pop("exact-requested-model"),
+            lambda rows: rows[-1]["modelUsage"]["claude-haiku-4-5-20251001"].update(outputTokens=True),
+            lambda rows: rows[3]["message"].update(model="claude-haiku-4-5-20251001"),
+        ):
+            changed = copy.deepcopy(events); mutate(changed)
+            with self.assertRaises(ValueError):
+                self.normalize(self.raw(changed))
+
+    def test_native_structured_terminal_is_full_typed_object_not_prose_or_fence_extraction(self):
+        events = self.events()
+        events[-1]["result"] = "Display prose is not the terminal authority."
+        self.assertEqual(self.normalize(self.raw(events)).normalization, "claude_native_structured_output_exact")
+        for result in (TERMINAL, "```json\n" + TERMINAL + "\n```", "Wrote candidate. " + TERMINAL):
+            changed = copy.deepcopy(events); changed[-1].pop("structured_output"); changed[-1]["result"] = result
+            with self.assertRaisesRegex(ValueError, "structured terminal"):
+                self.normalize(self.raw(changed))
+        for value in ({"candidate_written": True}, {**json.loads(TERMINAL), "turn": 2},
+                      {**json.loads(TERMINAL), "arm": "another"}, {**json.loads(TERMINAL), "candidate_written": 1}):
+            changed = copy.deepcopy(events); changed[-1]["structured_output"] = value
+            with self.assertRaises(ValueError): self.normalize(self.raw(changed))
+        with self.assertRaises(ValueError): self.normalize(event_contract="claude_stream_candidate_v1")
+
+    def test_native_schema_tool_has_only_exact_terminal_arguments_and_closed_success(self):
+        events = self.events()
+        events[-1:-1] = [
+            {"type": "assistant", "session_id": SESSION, "message": {"model": "exact-requested-model", "content": [
+                {"type": "tool_use", "id": "terminal-tool", "name": "StructuredOutput", "input": json.loads(TERMINAL)}]}},
+            {"type": "user", "session_id": SESSION, "message": {"content": [
+                {"type": "tool_result", "tool_use_id": "terminal-tool", "is_error": False, "content": "Structured output provided successfully"}]}},
+        ]
+        self.normalize(self.raw(events))
+        wrong = copy.deepcopy(events); wrong[-3]["message"]["content"][0]["input"]["turn"] = 9
+        with self.assertRaisesRegex(ValueError, "schema terminal tool"): self.normalize(self.raw(wrong))
+        wrong = copy.deepcopy(events); wrong[-2]["message"]["content"][0]["is_error"] = True
+        with self.assertRaisesRegex(ValueError, "tool completion"): self.normalize(self.raw(wrong))
+        wrong = copy.deepcopy(events); wrong.pop(-2)
+        with self.assertRaisesRegex(ValueError, "lifecycle"): self.normalize(self.raw(wrong))
+
+    def test_schema_is_bound_and_identical_on_initial_and_resume(self):
+        builder = self.builder()
+        first = builder.build("first", thread_id=None); resumed = builder.build("next", thread_id=SESSION)
+        self.assertEqual(builder.configuration["terminal_schema"], terminal_schema())
+        for invocation in (first, resumed):
+            self.assertEqual(json.loads(invocation.argv[invocation.argv.index("--json-schema") + 1]), terminal_schema())
+        self.assertEqual(first.argv[:-2], resumed.argv[:-4])
+        for argv in ((str(self.executable), "--json-schema"), (str(self.executable), "--json-schema", "not-json")):
+            with patch("open_cake_ir.lab.claude.run_supervised") as process:
+                with self.assertRaisesRegex(ValueError, "native terminal schema"):
+                    ClaudeProviderAdapter().execute(replace(first, argv=argv), candidate_path=self.candidate,
+                        expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake")
+                process.assert_not_called()
+
+    def test_optional_usage_activity_fields_preserve_old_tool_projection(self):
+        old = ProviderAuxiliaryActivity("tool", "tool_use", "completed", tool="Read")
+        self.assertNotIn("model", old.document); self.assertNotIn("provider_tokens", old.document)
+        with self.assertRaises(ValueError): ProviderAuxiliaryActivity("usage", "model_usage", "reported", model="helper")
 
 
 if __name__ == "__main__":

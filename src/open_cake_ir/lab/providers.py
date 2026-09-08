@@ -322,18 +322,30 @@ class ProviderAuxiliaryActivity:
     status: str
     server: str | None = None
     tool: str | None = None
+    model: str | None = None
+    provider_tokens: int | None = None
+
+    def __post_init__(self) -> None:
+        if (self.model is None) != (self.provider_tokens is None) or self.model is not None and (
+                not isinstance(self.model, str) or not self.model
+                or type(self.provider_tokens) is not int or self.provider_tokens < 0):
+            raise ValueError("provider auxiliary model usage differs")
 
     @property
     def document(self) -> Mapping[str, object]:
         """Return the deterministic replay projection of this auxiliary item."""
 
-        return {
+        result = {
             "item_id": self.item_id,
             "item_type": self.item_type,
             "status": self.status,
             "server": self.server,
             "tool": self.tool,
         }
+
+        if self.model is not None:
+            result.update(model=self.model, provider_tokens=self.provider_tokens)
+        return result
 
 
 @dataclass(frozen=True)
