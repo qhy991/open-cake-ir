@@ -145,6 +145,16 @@
     "src/open_cake_ir/compiler/corpus.py",
     "src/open_cake_ir/compiler/errors.py",
     "src/open_cake_ir/compiler/performance/__init__.py",
-    "src/open_cake_ir/compiler/backends/triton_selection.py"
+    "src/open_cake_ir/compiler/backends/triton_selection.py",
+    "corpus/schedules/b300-cute-register-atom-drift.json",
+    "corpus/schedules/b300-cute-register-family-drift.json",
+    "corpus/schedules/b300-cute-register-placement-drift.json",
+    "corpus/schedules/b300-cute-register-primary.json",
+    "corpus/schedules/b300-cute-register-stages-drift.json",
+    "corpus/schedules/b300-cute-register-store-coalescing-drift.json",
+    "corpus/schedules/b300-cute-register-tail-reused.json",
+    "corpus/schedules/b300-cute-register-target-drift.json",
+    "src/open_cake_ir/compiler/backends/cutedsl_register.py",
+    "src/open_cake_ir/compiler/cute_toolchain.py"
   ]
 }

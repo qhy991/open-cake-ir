@@ -1260,6 +1260,110 @@
         "schedule_sha256": "6d9e7d3286f858d3cb5dd5e6cc9caa9819cdd41c20de1f431406373838c542ed",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "b300-cute-register-atom-drift",
+      "schedule": "corpus/schedules/b300-cute-register-atom-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_REGISTER_ATOM_MISMATCH"
+        ],
+        "schedule_sha256": "bb274e4154cecbd2eee97e1f7c46582a26200b8137e4878a4ff45ea8dc10ce01",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "b300-cute-register-family-drift",
+      "schedule": "corpus/schedules/b300-cute-register-family-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_PLACEMENT_UNSUPPORTED",
+          "MMA_REGISTER_CONTRACT_UNSUPPORTED"
+        ],
+        "schedule_sha256": "d14feaae795e3a06e44e1f750b984f0a4a8431c7cea61fa198aa4988193d4d83",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "b300-cute-register-placement-drift",
+      "schedule": "corpus/schedules/b300-cute-register-placement-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_OPERAND_SOURCE_MISMATCH",
+          "MMA_OPERAND_SOURCE_MISMATCH",
+          "MMA_OPERAND_SOURCE_MISMATCH"
+        ],
+        "schedule_sha256": "37885aaa67fa8b68540a06fcc611020c018174588b3d6d17ccec2f06a480f9a3",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "b300-cute-register-primary",
+      "schedule": "corpus/schedules/b300-cute-register-primary.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "2fea4d9c1f96badcbc3027788d88cc2d539bb77f09e12abec5e28c46e7817396",
+        "lowering_source_sha256": "8464a5e7b6d0e7ad14b5ea2b16bc9d5e51e9e4890e3559fccb97854b59273c12"
+      }
+    },
+    {
+      "case_id": "b300-cute-register-stages-drift",
+      "schedule": "corpus/schedules/b300-cute-register-stages-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "CUTE_RANGE_OPTION_UNSUPPORTED"
+        ],
+        "schedule_sha256": "4223bcc647b6f62cc26c905049ec9ddc4afe699d2fced6288b3122a15926154d",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "b300-cute-register-store-coalescing-drift",
+      "schedule": "corpus/schedules/b300-cute-register-store-coalescing-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "CUTE_REGISTER_STORE_COALESCING"
+        ],
+        "schedule_sha256": "596ed472bc8d6aed88c1ef93f3405d26a963f14e3156a35a58149380e7955398",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "b300-cute-register-tail-reused",
+      "schedule": "corpus/schedules/b300-cute-register-tail-reused.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "489c89b7bf8fad164a7d988ff9fab9206d2c9a597960ca80bff0c2ef03f7d21b",
+        "lowering_source_sha256": "b53ce994a6cd745d19eae6de535a453ba2732d874c35248c2a12980595d0ec37"
+      }
+    },
+    {
+      "case_id": "b300-cute-register-target-drift",
+      "schedule": "corpus/schedules/b300-cute-register-target-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "CUTE_REGISTER_TARGET"
+        ],
+        "schedule_sha256": "ebb45b79412f66a64cf70ab5bff118cc8f911cafb6928767e08ad8ede24a9ee1",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }
