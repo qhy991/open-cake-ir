@@ -162,3 +162,5 @@ Reading companions explain the material in simpler language. Detailed tables and
 - [0060: Release review provenance and historical exceptions](adr/0060-release-review-provenance-and-historical-exceptions.md)
 
 - [0058: External writer custody anchors](adr/0058-external-writer-custody-anchors.md)
+
+- [0059: Final release identities bind complete authority](adr/0059-final-release-identities-bind-complete-authority.md)

@@ -290,30 +290,69 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                 "bash", str(root / "tools/release_executor_cycle.sh"),
                 "--host-environment", str(host_path),
             ]
+            # Two actual worktrees begin with the same released ordinal history.
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(root), "-c", "user.name=Release Fixture",
+                            "-c", "user.email=release@test.invalid", "commit", "-qm", "fixture"], check=True)
+            other_root = root.parent / "other-worktree"
+            subprocess.run(["git", "-C", str(root), "worktree", "add", "--detach", "-q", str(other_root)], check=True)
+            other_source = other_root / "src/open_cake_ir/cli.py"
+            other_source.write_text(other_source.read_text() + "\n# Other worktree CPU fixture.\n")
             for version in (47, 48):
+                if version == 48:
+                    changed = root / "src/open_cake_ir/cli.py"
+                    changed.write_text(changed.read_text() + "\n# Second prospective CPU fixture.\n")
                 completed = subprocess.run(
                     command, cwd=root.parent, env=environment, capture_output=True, text=True,
                     check=False, timeout=30,
                 )
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-                released = runtime / f"open-cake-ir-b200-v{version}.json"
+                identity = json.loads(inventory_path.read_text())["current"]["executor_id"]
+                self.assertRegex(identity, rf"^open-cake-ir-b200-v{version}\+[0-9a-f]{{64}}$")
+                released = runtime / f"{identity}.json"
                 executor = ExecutorRevision.load(root, released)
-                self.assertEqual(executor.executor_id, f"open-cake-ir-b200-v{version}")
+                self.assertEqual(executor.executor_id, identity)
                 self.assertEqual(json.loads(released.read_text())["host_environment"], host)
                 for path, raw in preserved.items():
                     self.assertEqual(path.read_bytes(), raw)
                 preserved[released] = released.read_bytes()
+                if version == 47:
+                    other_command = ["bash", str(other_root / "tools/release_executor_cycle.sh"),
+                                     "--host-environment", str(host_path)]
+                    other = subprocess.run(other_command, cwd=root.parent, env=environment,
+                                           capture_output=True, text=True, timeout=30)
+                    self.assertEqual(other.returncode, 0, other.stdout + other.stderr)
+                    other_id = json.loads((other_root / "inventory/EXECUTOR_REVISIONS.json").read_text())["current"]["executor_id"]
+                    self.assertRegex(other_id, r"^open-cake-ir-b200-v47\+[0-9a-f]{64}$")
+                    self.assertNotEqual(other_id, identity)
+                    proposal = root.parent / "duplicate-proposal.json"
+                    proposal.write_text(json.dumps({"schema_version": 1,
+                        "executor_id": "open-cake-ir-b200-v47", "state": "draft",
+                        "sources": [], "host_environment": host}))
+                    alias = runtime / "duplicate-alias.json"
+                    duplicate = subprocess.run([sys.executable, str(root / "tools/release_executor.py"),
+                        "--project-root", str(root), "--proposal", str(proposal), "--output", str(alias)],
+                        capture_output=True, text=True)
+                    self.assertNotEqual(duplicate.returncode, 0)
+                    self.assertIn("identity already released", duplicate.stderr)
+                    self.assertFalse(alias.exists())
             self.assertGreater(len(runtime_log.read_text().splitlines()), 2)
             self.assertEqual(
                 {Path(value).resolve() for value in runtime_log.read_text().splitlines()},
                 {selected_python.resolve()},
             )
             inventory = json.loads(inventory_path.read_text())
-            self.assertEqual(inventory["current"]["executor_id"], "open-cake-ir-b200-v48")
+            self.assertEqual(inventory["current"]["executor_id"], identity)
             self.assertEqual(
-                {entry["executor_id"] for entry in inventory["superseded"]},
+                {entry["executor_id"].partition("+")[0] for entry in inventory["superseded"]},
                 {"open-cake-ir-b200-v42", "open-cake-ir-b200-v47"},
             )
+            unchanged = subprocess.run(command, cwd=root.parent, env=environment,
+                                       capture_output=True, text=True, timeout=30)
+            self.assertEqual(unchanged.returncode, 0, unchanged.stdout + unchanged.stderr)
+            self.assertIn("no successor is needed", unchanged.stdout)
+            self.assertEqual(json.loads(inventory_path.read_text()), inventory)
 
 
 class ExecutorReferenceTests(unittest.TestCase):

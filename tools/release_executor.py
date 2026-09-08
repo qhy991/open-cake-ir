@@ -113,6 +113,14 @@ def main() -> int:
         )
     document["sources"] = records
     document["state"] = "released"
+    authority = {"sources": records, "host_environment": document["host_environment"]}
+    document["executor_id"] += "+" + sha256(_canonical_json_bytes(authority)).hexdigest()
+    for released_path in _released_executor_paths(root):
+        released = json.loads(released_path.read_text(encoding="utf-8"))
+        if released.get("state") == "released" and released.get("executor_id") == document["executor_id"]:
+            raise FileExistsError(
+                f"Executor identity already released at {released_path.relative_to(root)}"
+            )
     with output.open("xb") as stream:
         stream.write(_canonical_json_bytes(document))
         stream.write(b"\n")

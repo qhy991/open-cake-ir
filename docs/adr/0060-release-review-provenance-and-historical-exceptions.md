@@ -1,7 +1,8 @@
 # ADR 0060: Release review provenance and historical exceptions
 
-Status: proposed, 2026-09-09. The historical clarification below records existing
-artifacts; the prospective validation change awaits independent review.
+Status: accepted design after independent review, 2026-09-09. The historical
+clarification below records existing artifacts; implementation and release remain
+test-gated.
 Related: [ADR 0030](0030-compiler-release-approval-is-external.md),
 [ADR 0052](0052-independent-agent-release-review.md), and
 [issue #73](https://github.com/qhy991/open-cake-ir/issues/73).
@@ -41,6 +42,15 @@ the examined evidence and limitations. Missing, unavailable, mismatched or stale
 records refuse new release construction while preserving the prior authorities.
 The reviewer creates the record and approval after examining the exact change;
 neither is authored by the implementation or release cycle.
+
+Schema-version-3 approvals use `review_record` for that absolute external path.
+The record carries schema version 1, `decision`, `gate_report`, `reviewer`,
+`reviewed_commit`, `launcher_record`, and `review_basis`. Its Gate, reviewer,
+decision and basis must match the approval; the basis includes the locator.
+The record is required for new construction. Portable verification of an existing
+release checks its retained authorities without requiring the reviewer's private
+filesystem. Historical schema-version-2 approvals remain verifiable and cannot be
+used to construct a new release under this implementation.
 
 The validator checks consistency of retained declarations. It does not authenticate
 a model provider or prove session identity from JSON. Launcher/session metadata

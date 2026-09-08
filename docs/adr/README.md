@@ -79,3 +79,5 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - [0060: Release review provenance and historical exceptions](0060-release-review-provenance-and-historical-exceptions.md)
 
 - [0058: External writer custody anchors](0058-external-writer-custody-anchors.md)
+
+- [0059: Final release identities bind complete authority](0059-final-release-identities-bind-complete-authority.md)

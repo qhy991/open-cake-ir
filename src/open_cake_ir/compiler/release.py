@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
@@ -200,12 +201,73 @@ def build_gate_report(
     return CompilerGate(document, sha256(_canonical_json_bytes(document)).hexdigest())
 
 
+def _validate_review_record(root: Path, approval: Mapping[str, object], *, read_record: bool) -> None:
+    if _object(approval["reviewer"], "reviewer")["kind"] != "agent_session":
+        return
+    locator = approval.get("review_record")
+    if (not _identity(locator) or not Path(str(locator)).is_absolute()
+            or ".." in Path(str(locator)).parts or "\\" in str(locator)):
+        raise CompilerError("Compiler agent approval requires an absolute external review_record")
+    if str(locator) not in str(approval["approval_basis"]):
+        raise CompilerError("Compiler approval basis must reference its review_record")
+    if not read_record:
+        return
+    path = Path(str(locator))
+    try:
+        if (path.resolve(strict=True) != path or not path.is_file()
+                or root in path.parents
+                or any((parent / ".git").exists() for parent in path.parents)):
+            raise CompilerError("Compiler review_record must be an existing external regular file")
+        record = _object(json.loads(path.read_text(encoding="utf-8")), "review_record")
+    except (OSError, ValueError) as error:
+        raise CompilerError("Compiler review_record is unavailable or malformed") from error
+    if (set(record) != {"schema_version", "decision", "gate_report", "reviewer",
+                       "reviewed_commit", "launcher_record", "review_basis"}
+            or type(record.get("schema_version")) is not int or record["schema_version"] != 1
+            or record.get("decision") != "approved"
+            or record.get("gate_report") != approval["gate_report"]
+            or record.get("reviewer") != approval["reviewer"]
+            or record.get("review_basis") != approval["approval_basis"]
+            or not isinstance(record.get("reviewed_commit"), str)
+            or re.fullmatch(r"[0-9a-f]{40}", record["reviewed_commit"]) is None
+            or not _identity(record.get("launcher_record"))):
+        raise CompilerError("Compiler review_record declarations differ from the approval")
+
+
 def build_release(
     project_root: str | Path,
     revision_path: str | Path,
     source_set_path: str | Path,
     gate_report_path: str | Path,
     approval_path: str | Path,
+) -> CompilerRelease:
+    """Construct a new release only with its available independent review record."""
+    return _build_release(project_root, revision_path, source_set_path,
+                          gate_report_path, approval_path, constructing=True)
+
+
+def verify_release(
+    project_root: str | Path,
+    revision_path: str | Path,
+    source_set_path: str | Path,
+    gate_report_path: str | Path,
+    approval_path: str | Path,
+    release_path: str | Path,
+) -> bool:
+    """Verify retained authorities without requiring the reviewer's private filesystem."""
+    release = _build_release(project_root, revision_path, source_set_path,
+                             gate_report_path, approval_path, constructing=False)
+    return (Path(release_path).read_bytes() == _canonical_json_bytes(release.document) + b"\n"
+            and release.verify(project_root))
+
+
+def _build_release(
+    project_root: str | Path,
+    revision_path: str | Path,
+    source_set_path: str | Path,
+    gate_report_path: str | Path,
+    approval_path: str | Path,
+    *, constructing: bool,
 ) -> CompilerRelease:
     """Build a released revision only after the complete declared Corpus passes."""
 
@@ -221,13 +283,18 @@ def build_release(
         json.loads(Path(approval_path).read_text(encoding="utf-8")),
         "compiler_release_approval",
     )
-    if set(approval) != {
+    fields = {
         "schema_version",
         "decision",
         "gate_report",
         "reviewer",
         "approval_basis",
-    } or type(approval.get("schema_version")) is not int or approval.get("schema_version") != 2 or approval.get("decision") != "approved":
+    }
+    schema = approval.get("schema_version")
+    if (type(schema) is not int or schema not in ({3} if constructing else {2, 3})
+            or set(approval) not in (fields, fields | {"review_record"})
+            or (schema == 2 and set(approval) != fields)
+            or approval.get("decision") != "approved"):
         raise CompilerError("Compiler release approval differs")
     approval_gate = _object(approval.get("gate_report"), "compiler_release_approval.gate_report")
     gate_relative, resolved_gate_path = _safe_path(
@@ -241,6 +308,8 @@ def build_release(
     approval_basis = approval.get("approval_basis")
     if not isinstance(approval_basis, str) or not approval_basis.strip():
         raise CompilerError("Compiler release approval basis differs")
+    if schema == 3:
+        _validate_review_record(root, approval, read_record=constructing)
     compiler = Compiler.load(root, revision_path)
     gate = compiler.check_corpus()
 
@@ -276,7 +345,17 @@ def build_release(
     proposal_id = proposal.get("revision_id")
     if not isinstance(proposal_id, str) or not proposal_id:
         raise CompilerError("compiler revision_id is invalid")
-    released_id = proposal_id.removesuffix("-draft")
+    # The draft remains stable while it is reviewed. Final identity includes the
+    # independent approval as well as the Gate, so concurrent releases of the
+    # same source with different review authorities cannot reuse one identity.
+    approval_identity = sha256(_canonical_json_bytes(approval)).hexdigest()
+    release_identity = sha256(_canonical_json_bytes({
+        "gate_report": observed_gate.canonical_sha256,
+        "release_approval": approval_identity,
+    })).hexdigest()
+    released_id = proposal_id.removesuffix('-draft')
+    if schema == 3:
+        released_id += "+" + release_identity
     document: dict[str, object] = {
         "schema_version": 1,
         "revision_id": released_id,
@@ -295,7 +374,7 @@ def build_release(
         },
         "release_approval": {
             "path": Path(approval_path).resolve(strict=True).relative_to(root).as_posix(),
-            "canonical_sha256": sha256(_canonical_json_bytes(approval)).hexdigest(),
+            "canonical_sha256": approval_identity,
         },
         "sources": sources,
     }

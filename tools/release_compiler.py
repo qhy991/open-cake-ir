@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler.release import build_gate_report, build_release  # noqa: E402
+from open_cake_ir.compiler.release import build_gate_report, build_release, verify_release  # noqa: E402
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -46,6 +46,11 @@ def main() -> int:
     else:
         if args.gate_report is None or args.approval is None:
             parser.error("release requires --gate-report and --approval")
+        if args.verify:
+            if not verify_release(args.project_root, args.proposal, args.source_set,
+                                  args.gate_report, args.approval, args.output):
+                raise SystemExit("Compiler release artifact differs from its authority")
+            return 0
         release = build_release(
             args.project_root,
             args.proposal,

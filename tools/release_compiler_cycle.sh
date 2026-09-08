@@ -52,7 +52,7 @@ witnessed = {
     for item in compiler_revision_witnesses(pathlib.Path("."))
 }
 
-ordinal = lambda value: int(m.group(1)) if (m := re.fullmatch(r"v(\d+)", value)) else 0
+ordinal = lambda value: int(m.group(1)) if (m := re.fullmatch(r"v(\d+)(?:\+[0-9a-f]{64})?", value)) else 0
 history = max((ordinal(value) for value in witnessed), default=0)
 
 if locked.exists():
