@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 from open_cake_ir.compiler import (
@@ -22,6 +23,8 @@ from open_cake_ir.evaluation.core import TensorLaunchManifest
 from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
+from . import selection
+from .executor import ExecutorRevision
 from .faults import CandidateCompileRejected, RunProtocolFault
 
 
@@ -271,17 +274,22 @@ class OpenCakeEnvironment:
             ).encode()
         ).hexdigest()
         self._empirical_selection = None
-        selection = self.authority_document.get("candidate_selection")
-        if selection is not None:
+        selection_binding = self.authority_document.get("candidate_selection")
+        if selection_binding is not None:
             if self._python_enabled or self._explicit_abi:
                 raise ValueError("empirical selection requires the complete-Schedule/direct-CUDA assay")
             if executor is None:
                 raise ValueError("empirical selection requires the bound Executor")
             compiler_ref = self.authority_document["compiler_revision"]
-            self._empirical_selection = selection._EmpiricalSelection(selection,
-                context=selection._empirical_context(executor,workload_sha256=workload.canonical_sha256,case_id=case_id),
+            self._empirical_selection = selection._EmpiricalSelection(
+                selection_binding,
+                context=selection._empirical_context(
+                    executor, workload_sha256=workload.canonical_sha256, case_id=case_id,
+                ),
                 compiler_revision_id=compiler_ref["revision_id"],
-                compiler_revision_sha256=compiler_ref["canonical_sha256"],target=self._target)
+                compiler_revision_sha256=compiler_ref["canonical_sha256"],
+                target=self._target,
+            )
 
     @staticmethod
     def _finding_rows(assessment: Assessment, source=None) -> list[dict[str, object]]:

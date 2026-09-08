@@ -142,6 +142,26 @@ class NativePairingContractTests(unittest.TestCase):
                 self.assertEqual(result.disposition, 'launchable')
                 self.assertEqual(fixture.requests[0][1]['signature'], lowering.toolchain_requirements['signature'])
 
+    def test_native_float_constants_keep_finite_admission_and_nonfinite_refusal(self):
+        constant = next(iter(self.native['compile_constants']))
+        for value in (1.25, float('nan'), float('inf'), float('-inf')):
+            with self.subTest(value=value):
+                _, environment, fixture = self.environments()
+                member = copy.deepcopy(self.native)
+                member['compile_constants'][constant] = value
+                # Feed the invalid nonfinite token to the real admission boundary;
+                # the strict test serializer would reject it before reaching build.
+                payload = json.dumps(member, sort_keys=True).encode()
+                result = environment.build(CandidateSubmission.seal(environment.media_type, payload))
+                if value == 1.25:
+                    self.assertEqual(result.disposition, 'launchable')
+                    self.assertEqual(fixture.requests[0][1]['compile_constants'][constant], value)
+                else:
+                    self.assertEqual(result.disposition, 'rejected')
+                    self.assertEqual(result.feedback['stage'], 'source_admission')
+                    self.assertIn('compile constants/options/grid', result.feedback['error'])
+                    self.assertEqual(fixture.requests, [])
+
     def test_both_submission_paths_share_manifest_and_compilation_contract(self):
         open_env, native_env, fixture = self.environments()
         ir = open_env.build(CandidateSubmission.seal(open_env.media_type, encoded(self.schedule)))

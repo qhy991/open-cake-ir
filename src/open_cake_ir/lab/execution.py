@@ -320,7 +320,13 @@ def execute_campaign(
                 # the stage the paper spends compile time on to avoid spending GPU
                 # time, so building all of them is the point rather than a cost.
                 live_stage = "environment"
-                (built, launchable_first, cost_order_applied, filter_rows) = _build_filter_candidates(
+                (
+                    built,
+                    launchable_first,
+                    cost_order_applied,
+                    filter_rows,
+                    selection_summary,
+                ) = _build_filter_candidates(
                     empirical_enabled=empirical_enabled,
                     environment=environment,
                     ledger=ledger,
@@ -754,6 +760,7 @@ def _build_filter_candidates(
     list[int],
     bool,
     list[dict[str, object]],
+    dict[str, object] | None,
 ]:
     built = []
     for payload in provider_turn.candidates:
@@ -831,7 +838,7 @@ def _build_filter_candidates(
     # A rejected member remains evidence even when another member is
     # launchable. Otherwise the archive would retain only a disposition
     # bit and lose the concrete feedback needed to improve the next set.
-    return built, launchable_first, cost_order_applied, filter_rows
+    return built, launchable_first, cost_order_applied, filter_rows, selection_summary
 
 
 def _seal_run(
