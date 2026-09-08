@@ -98,6 +98,7 @@ class MetalEvaluationContracts(unittest.TestCase):
         def inputs(workload, case_id):
             return {'x': [float(CASES.index(case_id)), 2.0]}
         with patch.dict(os.environ, {'METAL_JOB_ID': JOB}), \
+             patch('open_cake_ir.evaluation.local_broker.observe_local_metal_job', return_value=JOB), \
              patch.object(workloads, 'materialize_case', side_effect=inputs, create=True) as materialize, \
              patch.object(workloads, 'reference_outputs', side_effect=lambda w,c,i: {'out': list(i['x'])}, create=True), \
              patch.object(metal_runtime, 'observe', side_effect=observer) as observe:

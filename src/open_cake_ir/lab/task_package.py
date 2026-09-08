@@ -65,6 +65,10 @@ def _plain(value: object) -> object:
 def _read_relative(root: Path, value: object, context: str) -> bytes:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{context} path differs")
+    if Path(value).is_absolute() and context in {"workload", "schedule_skeleton", "scaffold"}:
+        from .bindings import source_reference_path
+        _, path = source_reference_path(root, value, context)
+        return path.read_bytes()
     relative = PurePosixPath(value)
     if relative.is_absolute() or ".." in relative.parts or "\\" in value:
         raise ValueError(f"{context} path is unsafe")

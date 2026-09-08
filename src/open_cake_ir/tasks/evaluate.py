@@ -372,6 +372,9 @@ def _evaluate_metal_candidate(authority, result):
     job_id = os.environ.get('METAL_JOB_ID', '')
     if re.fullmatch(r'metal-[0-9a-f]{12}', job_id) is None or job_id == 'metal-000000000000':
         raise ValueError('Metal worker requires a real broker job allocation')
+    from open_cake_ir.evaluation.local_broker import observe_local_metal_job
+    if observe_local_metal_job() != job_id:
+        raise ValueError('Metal broker lock identity differs')
     admission = authority.executor.admit_host()
     if not isinstance(admission, Mapping) or admission.get('kind') != 'metal':
         raise ValueError('Metal worker requires an admitted Metal Executor')
@@ -790,7 +793,9 @@ def main() -> int:
     parser.add_argument("--profile-admission", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     request_path = args.request.resolve(strict=True)
-    result = _base_result(os.environ.get("GPUQ_JOB_ID", "gpuq-000000000000"))
+    result = _base_result(os.environ.get("METAL_JOB_ID", os.environ.get("GPUQ_JOB_ID", "gpuq-000000000000")))
+    if str(result["job_id"]).startswith("metal-"):
+        result["mode"] = "local_serialized"
     try:
         authority = _load_authority(request_path)
         purpose = str(authority.request["purpose"])

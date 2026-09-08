@@ -52,6 +52,8 @@ from .python_reference import read_skeleton
 from .provider_policy import provider_configuration, provider_harness
 from .claude import CLAUDE_EVENT_CONTRACT, parse_claude_turn_events
 from .pairing import matched_run_arms
+from .bindings import source_reference_path
+from open_cake_ir.evaluation.paired import PAIRED_METAL_KIND, validation_case_ids
 from .task_package import TASK_AGENTS_RALPH_V1, render_task_package
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -1591,7 +1593,7 @@ class Lab:
         workload_ref = _object(study.document.get("workload"), "study.workload")
         if set(workload_ref) != {"path", "canonical_sha256"}:
             raise ValueError("study workload reference fields differ")
-        workload_relative, workload_path = _project_path(
+        workload_relative, workload_path = source_reference_path(
             self._root, workload_ref.get("path"), "study.workload.path"
         )
         workload = self._load_workload(workload_path)
@@ -1670,7 +1672,7 @@ class Lab:
         )
         if set(schedule_skeleton) != {"path", "canonical_sha256"}:
             raise ValueError("Study Contract Schedule skeleton reference differs")
-        _, schedule_skeleton_path = _project_path(
+        _, schedule_skeleton_path = source_reference_path(
             self._root,
             schedule_skeleton.get("path"),
             "study.arms.open_cake.schedule_skeleton.path",
@@ -1795,7 +1797,7 @@ class Lab:
             reference = _object(provider.get(field), f"study.arms.provider.{field}")
             if set(reference) != {"path", "sha256"}:
                 raise ValueError(f"Study Contract provider {field} reference differs")
-            _, path = _project_path(
+            _, path = source_reference_path(
                 self._root, reference.get("path"), f"study.arms.provider.{field}.path"
             )
             if _digest(reference.get("sha256"), f"study.arms.provider.{field}.sha256") != sha256(
@@ -1805,7 +1807,7 @@ class Lab:
         scaffold = _object(open_cake.get("scaffold"), "study.arms.scaffold")
         if set(scaffold) != {"path", "sha256"}:
             raise ValueError("Study Contract scaffold reference differs")
-        _, scaffold_path = _project_path(
+        _, scaffold_path = source_reference_path(
             self._root, scaffold.get("path"), "study.arms.scaffold.path"
         )
         if _digest(scaffold.get("sha256"), "study.arms.scaffold.sha256") != sha256(
@@ -1955,6 +1957,13 @@ class Lab:
             raise ValueError('fixed-baseline assay requires the paired Triton Study')
         if single_environment and assay is None:
             raise ValueError("single-environment optimization requires an explicit fixed-baseline paired assay")
+        if route["backend"] == "metal":
+            if (not single_environment or evaluation.get("paired_timing", {}).get("kind") != PAIRED_METAL_KIND
+                    or validation_case_ids(evaluation) != tuple(workload.case_ids)
+                    or attribution_evaluation != _ATTRIBUTION_EVALUATION):
+                raise ValueError("Metal optimization must bind its paired assay, all Workload cases and attribution")
+        elif evaluation.get("paired_timing", {}).get("kind") == PAIRED_METAL_KIND:
+            raise ValueError("Metal paired assay cannot evaluate a different backend")
         # How many candidates a Turn search-evaluates. Checked here because a Study that
         # asks for none, or for a word, would otherwise fault partway through a run --
         # and a run that faults has already spent the GPU time this Lab exists to gate.
@@ -2009,15 +2018,19 @@ class Lab:
             from open_cake_ir.compiler.toolchain import project_triton_kernel
             requirements = baseline_lowering.toolchain_requirements
             source = sealed_baseline.artifact_payloads.get('lowered_source')
-            expected_source = project_triton_kernel(baseline_lowering.source.encode(), requirements)
             if source is None:
                 raise ValueError('fixed baseline requires retained Compiler lowering source')
-            observed_source = project_triton_kernel(source, requirements)
             manifest = self._parse_manifest(json.loads(sealed_baseline.artifact_payloads['launch_manifest']))
-            if (fixed['candidate'] != candidate_identity(sealed_baseline)
-                or ast.dump(ast.parse(observed_source)) != ast.dump(ast.parse(expected_source))
-                or list(manifest.grid) != requirements['grid']
-                or manifest.block != (requirements['compile_options']['num_warps'] * 32, 1, 1)):
+            if route["backend"] == "metal":
+                source_matches = source == baseline_lowering.source.encode()
+                grid, block = requirements["threadgroups_per_grid"], tuple(requirements["threads_per_threadgroup"])
+            else:
+                expected_source = project_triton_kernel(baseline_lowering.source.encode(), requirements)
+                observed_source = project_triton_kernel(source, requirements)
+                source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
+                grid, block = requirements['grid'], (requirements['compile_options']['num_warps'] * 32, 1, 1)
+            if (fixed['candidate'] != candidate_identity(sealed_baseline) or not source_matches
+                    or list(manifest.grid) != list(grid) or manifest.block != block):
                 raise ValueError('fixed baseline differs from the frozen Compiler kernel or launch commitments')
         if (
             execution.get("target") != workload.target
@@ -2291,7 +2304,7 @@ class Lab:
             "campaign_lock.workload.canonical_sha256",
         )
         evidence = EvidenceStore.create(root)
-        record_confirmation_time = comparison_arm(environments) == "native_triton"
+        record_confirmation_time = paired_protocol(evaluation_protocol) is not None
         for sequence, run_id in enumerate(lock.run_order, start=1):
             run_started_at = self._clock() if record_confirmation_time else None
             arm = run_id.rsplit("-", 1)[0]
@@ -3545,7 +3558,7 @@ class Lab:
                     (set(payload) != ({
                         "turn", "purpose", "candidate_sha256", "objects",
                     } | ({"elapsed_wall_seconds"} if purpose == "confirmatory" and
-                         comparison_arm(lock.document["resolved_inputs"]["arm_environments"]) == "native_triton" else set())))
+                         paired_protocol(lock.document["evaluation_protocol"]) is not None else set())))
                     or
                     not isinstance(turn, int)
                     or isinstance(turn, bool)
