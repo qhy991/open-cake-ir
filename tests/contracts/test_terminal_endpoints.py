@@ -19,6 +19,7 @@ from open_cake_ir.lab.checkpoints import TurnObservation, project_checkpoints
 from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL, endpoint_policy, matched_endpoint
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.tasks.runtime import TaskLab
+from tests.contracts._contexts import enter_context
 from tests.contracts import test_diagnosis_feedback as diagnosis_consumers
 from tests.contracts.test_lab import FakeProvider, FakeEnvironment, FakeEvaluator, _execute
 
@@ -63,8 +64,8 @@ class TerminalProjectionTests(unittest.TestCase):
 class TerminalRunTests(unittest.TestCase):
     def setUp(self):
         diagnosis_consumers.DiagnosisRunTests.setUp(self)  # Explicit Compiler/Executor consumer dependencies.
-        self.directory = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
-        self.enterContext(patch.dict(os.environ, {"OPEN_CAKE_CUSTODY_DIRECTORY": str(self.directory / "registry")}))
+        self.directory = Path(enter_context(self, tempfile.TemporaryDirectory())).resolve()
+        enter_context(self, patch.dict(os.environ, {"OPEN_CAKE_CUSTODY_DIRECTORY": str(self.directory / "registry")}))
 
     def run_campaign(self, *, policy=True, scope="scientific_matched_search", provider=None,
                      rejected=False, reject_first=False, clock=None, limits=None, evaluator_class=FakeEvaluator):

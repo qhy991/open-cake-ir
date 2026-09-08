@@ -18,6 +18,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.tasks.workloads import load_workload
+from tests.contracts._contexts import enter_context
 from tests.contracts._executor_fixture import compiler_reference
 
 from open_cake_ir.evaluation import (  # noqa: E402
@@ -431,7 +432,7 @@ def _generated_advisory_assessment(compiler):
 class SemanticLabTestCase(unittest.TestCase):
     def setUp(self):
         from tests.contracts._executor_fixture import SemanticExecutorFixture
-        self.enterContext(SemanticExecutorFixture())
+        enter_context(self, SemanticExecutorFixture())
 
 
 class FindingRoutingContractTests(SemanticLabTestCase):
@@ -1809,7 +1810,7 @@ class LabContractTests(SemanticLabTestCase):
         # endpoint. Current active templates separately opt into vector terminals.
         study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-template.json").read_text())
         study["analysis_plan"].pop("endpoint_policy")
-        directory = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        directory = Path(enter_context(self, tempfile.TemporaryDirectory())).resolve()
         path = directory / "legacy-checkpoint-semantics.json"
         path.write_text(json.dumps(study))
         lock = lab.preflight(path)

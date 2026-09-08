@@ -15,6 +15,7 @@ from open_cake_ir.lab import CandidateSubmission
 from open_cake_ir.lab.routing import route_rejection
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
 from open_cake_ir.tasks.workloads import load_workload
+from tests.contracts._contexts import enter_context
 from tests.contracts.test_authoring_environment import RecordingToolchain, _headline_schedule
 
 
@@ -115,7 +116,7 @@ class DiagnosisRunTests(unittest.TestCase):
     def setUp(self):
         from types import SimpleNamespace
         from tests.contracts._executor_fixture import SemanticExecutorFixture, compiler_reference
-        self.enterContext(SemanticExecutorFixture())
+        enter_context(self, SemanticExecutorFixture())
         # Diagnosis consumer test only: Compiler admission has its own release tests.
         # Exact interface fixture binds the same declared input at preflight/replay;
         # it neither writes a release nor represents a successful Corpus Gate.
@@ -129,8 +130,8 @@ class DiagnosisRunTests(unittest.TestCase):
         def load(root, value, context):
             if value != reference:
                 raise ValueError("diagnosis fixture Compiler reference differs")
-        self.enterContext(patch("open_cake_ir.lab.preflight._resolve_compiler_reference", resolve))
-        self.enterContext(patch("open_cake_ir.lab.bindings.load_compiler_reference", load))
+        enter_context(self, patch("open_cake_ir.lab.preflight._resolve_compiler_reference", resolve))
+        enter_context(self, patch("open_cake_ir.lab.bindings.load_compiler_reference", load))
 
     def test_real_next_turn_and_replay_retain_all_rejected_peers(self):
         import dataclasses

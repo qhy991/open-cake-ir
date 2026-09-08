@@ -15,6 +15,7 @@ from open_cake_ir.lab.task_package import build_run_reference_documents
 from open_cake_ir.tasks.authoring import prepare_schedule
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.workloads import load_workload
+from tests.contracts._contexts import enter_context
 from tests.contracts._executor_fixture import SemanticExecutorFixture
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,7 +28,7 @@ class ReferenceAccessTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.external = Path(self.temporary.name).resolve()
-        self.enterContext(SemanticExecutorFixture())
+        enter_context(self, SemanticExecutorFixture())
         self.lab = TaskLab(ROOT)
 
     def document(self, name=CLEAN):

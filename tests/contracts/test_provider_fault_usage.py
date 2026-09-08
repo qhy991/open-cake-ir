@@ -15,6 +15,7 @@ from open_cake_ir.evidence import EvidenceStore
 from open_cake_ir.lab.faults import ReportedProviderUsage, RunProtocolFault
 from open_cake_ir.lab.provider_events import reported_codex_usage
 from open_cake_ir.tasks.runtime import TaskLab
+from tests.contracts._contexts import enter_class_context
 from tests.contracts import test_lab as consumers
 from tests.contracts._executor_fixture import SemanticExecutorFixture
 
@@ -145,7 +146,7 @@ class FailedProviderConsumerTests(unittest.TestCase):
         # Calling the consumer setup directly does not invoke its per-test setUp.
         # Keep one explicit CPU Executor at preflight, execution and replay rather
         # than falling through to whichever released host/closure is current.
-        cls.executor_fixture = cls.enterClassContext(SemanticExecutorFixture())
+        cls.executor_fixture = enter_class_context(cls, SemanticExecutorFixture())
         class RuntimeFixture(consumers.EmpiricalSelectionContractTests):
             pass
         cls.fixture_type = RuntimeFixture
