@@ -26,8 +26,6 @@ jobs:
       fail-fast: false
       matrix:
         variant: [baseline, successor]
-    env:
-      TRITON_CACHE_DIR: ${{ runner.temp }}/triton-cache-${{ matrix.variant }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -48,6 +46,7 @@ jobs:
       - name: Compile with the selected checkout's own Compiler
         env:
           COMPILE_VARIANT: ${{ matrix.variant }}
+          TRITON_CACHE_DIR: ${{ runner.temp }}/triton-cache-${{ matrix.variant }}
         run: |
           if [ "$COMPILE_VARIANT" = baseline ]; then
             compile_revision=compiler/revision.lock.json
