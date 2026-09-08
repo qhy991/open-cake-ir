@@ -47,6 +47,7 @@ jobs:
           tests.contracts.test_cli
           tests.contracts.test_documentation
           tests.contracts.test_lab
+          tests.contracts.test_lab_rubrics
           tests.contracts.test_lab_core_architecture
           tests.contracts.test_task_boundaries
           tests.contracts.test_workload
