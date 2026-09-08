@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
 from pathlib import Path
@@ -141,7 +142,7 @@ class EvidenceContractTests(unittest.TestCase):
                     os.chmod(Path(current) / name, 0o644)
             git_like = EvidenceStore.open(root).audit_run("clone-modes")
             self.assertTrue(git_like.archive_integrity, git_like.findings)
-            self.assertTrue(git_like.filesystem_custody_verified)
+            self.assertFalse(git_like.filesystem_custody_verified)
 
             for current, directories, files in os.walk(root):
                 os.chmod(current, 0o770)
@@ -296,13 +297,15 @@ class EvidenceContractTests(unittest.TestCase):
                 authority_sha256=authority_sha,
                 authority=authority,
             )
-            run.seal(
-                protocol_adherence="adhered",
-                endpoint_observation="observed",
-                endpoint={"value": 1},
-            )
-            terminal = evidence.root / "runs/seal-recovery/terminal.json"
-            terminal.unlink()
+            from open_cake_ir.evidence import store as store_module
+            publish = store_module._publish_new_at
+            def interrupted(fd, name, payload, **kwargs):
+                if name == "terminal.json":
+                    raise OSError("injected before terminal publication")
+                return publish(fd, name, payload, **kwargs)
+            with patch.object(store_module, "_publish_new_at", interrupted):
+                with self.assertRaises(OSError):
+                    run.seal(protocol_adherence="adhered", endpoint_observation="observed", endpoint={"value": 1})
 
             run.seal(
                 protocol_adherence="adhered",
