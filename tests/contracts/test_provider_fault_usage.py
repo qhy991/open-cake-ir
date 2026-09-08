@@ -155,10 +155,11 @@ class FailedProviderConsumerTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.fixture_type.tearDownClass()
 
-    def campaign(self, *, fault_turn=2, tokens=191499, unknown=False, mismatch=False, stage="provider"):
+    def campaign(self, *, fault_turn=2, tokens=191499, unknown=False, mismatch=False, stage="provider",
+                 returned_identity_refusal=False, missing_stdout=False):
         class Provider(consumers.FakeProvider):
             def turn(inner, request):
-                if request.turn == fault_turn and stage == "provider":
+                if request.turn == fault_turn and stage == "provider" and not returned_identity_refusal:
                     thread = request.thread_id or THREAD
                     raw = b"truncated stdout" if unknown else codex_report(tokens, thread)
                     witness = reported_codex_usage(raw, event_contract=CONTRACT,
@@ -166,13 +167,16 @@ class FailedProviderConsumerTests(unittest.TestCase):
                     if mismatch:
                         witness = ReportedProviderUsage(CONTRACT, thread, tokens + 1)
                     raise RunProtocolFault("provider_fault", "synthetic provider format fault",
-                        artifact_payloads={"provider_stdout": raw}, reported_usage=witness)
+                        artifact_payloads={} if missing_stdout else {"provider_stdout": raw},
+                        reported_usage=None if missing_stdout else witness)
                 result = super().turn(request)
                 events = [json.loads(line) for line in result.raw_events.splitlines()]
-                events[-1]["usage"] = {"input_tokens": 94700, "output_tokens": 58}
+                rejected_return = returned_identity_refusal and request.turn == fault_turn
+                events[-1]["usage"] = ({"input_tokens": tokens, "output_tokens": 0} if rejected_return
+                                        else {"input_tokens": 94700, "output_tokens": 58})
                 raw = b"\n".join(json.dumps(event).encode() for event in events)
-                return replace(result, provider_tokens=94758, raw_events=raw,
-                               raw_events_sha256=sha256(raw).hexdigest())
+                return replace(result, provider_tokens=tokens if rejected_return else 94758, raw_events=raw,
+                               raw_events_sha256="f" * 64 if rejected_return else sha256(raw).hexdigest())
 
         class Environment(consumers.FakeEnvironment):
             def build(inner, submission):
@@ -208,6 +212,28 @@ class FailedProviderConsumerTests(unittest.TestCase):
         self.assertEqual(state["cumulative_provider_tokens"], 286257)
         self.assertEqual(state["remaining"]["provider_tokens"], 0)
         self.assertEqual(state["terminal_reason"], "provider_fault")
+        self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
+
+    def test_returned_turn_archive_refusal_counts_usage_without_committing_completion(self):
+        campaign, store, events = self.campaign(returned_identity_refusal=True)
+        fault = next(event["payload"] for event in events if event["kind"] == "run_fault")
+        self.assertEqual((fault["fault"], fault["exception_type"], fault["stage"]),
+                         ("provider_fault", "ValueError", "provider"))
+        self.assertEqual(fault["terminal_provider_tokens"], 286257)
+        self.assertEqual(fault["provider_usage"]["provider_tokens"], 191499)
+        self.assertNotIn("provider_usage_witness_mismatch", fault)
+        self.assertEqual([event["payload"]["turn"] for event in events if event["kind"] == "provider_turn_completed"], [1])
+        self.assertFalse(any(event["payload"].get("turn") == 2 and event["kind"] != "run_fault" for event in events))
+        self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
+
+    def test_resumed_fault_without_stdout_does_not_reuse_the_prior_turn_raw_usage(self):
+        campaign, store, events = self.campaign(missing_stdout=True)
+        fault = next(event["payload"] for event in events if event["kind"] == "run_fault")
+        self.assertEqual(fault["terminal_provider_tokens"], 94758)
+        self.assertEqual(fault["provider_usage"], {"status": "unavailable", "provider_tokens": None})
+        self.assertEqual(fault["terminal_provider_tokens_scope"], "known_subtotal")
+        self.assertNotIn("objects", fault)
+        self.assertEqual(events[-2]["payload"]["ralph"]["cumulative_provider_tokens"], 94758)
         self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
 
     def test_zero_completed_turn_fault_uses_native_usage_and_independent_replay(self):

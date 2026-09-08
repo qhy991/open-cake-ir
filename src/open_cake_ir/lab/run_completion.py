@@ -14,7 +14,8 @@ from .selection import _matched_endpoint_from_checkpoint
 
 def record_run_fault(*, error, live_stage, turn_number, cumulative_tokens, evidence, ledger,
                      pending_provider_usage=False, observed_usage: ReportedProviderUsage | None = None,
-                     declared_usage: ReportedProviderUsage | None = None):
+                     declared_usage: ReportedProviderUsage | None = None,
+                     artifact_payloads: Mapping[str, bytes] | None = None):
     """Retain the exact fault stage and any available artifacts before sealing."""
     fault = (
         error.protocol_adherence
@@ -43,10 +44,12 @@ def record_run_fault(*, error, live_stage, turn_number, cumulative_tokens, evide
             # observed native usage or admitting its rejected candidate.
             fault_payload["provider_usage_witness_mismatch"] = (
                 dict(declared_usage.document) if declared_usage is not None else None)
-    if isinstance(error, RunProtocolFault) and error.artifact_payloads:
+    payloads = (artifact_payloads if artifact_payloads is not None else
+                error.artifact_payloads if isinstance(error, RunProtocolFault) else {})
+    if payloads:
         references = []
         rejected_roles = []
-        for role, payload in sorted(error.artifact_payloads.items()):
+        for role, payload in sorted(payloads.items()):
             try:
                 references.append(
                     evidence.put(payload, media_type="text/plain").reference(role)
