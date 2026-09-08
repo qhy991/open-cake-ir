@@ -13,7 +13,10 @@ from .seed import KernelSeed
 from .portfolio import PortfolioArtifact,PortfolioEvaluationReceipt,replay_portfolio_receipt
 from open_cake_ir.lab.bindings import resolve_executor
 from open_cake_ir.lab.executor import ExecutorRevision
-from open_cake_ir.lab.core import _ARM_ARTIFACT_ROLES, CampaignLock, CampaignRef, StudyContract, _candidate_artifact_media_type, _canonical_json_bytes, _digest, _object, _project_path, _resolve_compiler_reference
+from open_cake_ir.lab.archive import _ARM_ARTIFACT_ROLES, _candidate_artifact_media_type
+from open_cake_ir.lab.contracts import CampaignLock, CampaignRef, StudyContract
+from open_cake_ir.lab._documents import _canonical_json_bytes, _digest, _object, _project_path
+from open_cake_ir.lab.bindings import _resolve_compiler_reference
 
 def _portfolio_endpoint(receipt: PortfolioEvaluationReceipt) -> dict[str, object]:
     return {

@@ -68,3 +68,28 @@ Artifact Promotion chooses one confirmatory-qualified Candidate inside one Run. 
 an arm winner, a causal effect, or a production deployment decision.
 
 Concrete task code and the TaskLab composition root live outside the common engine; see [task ownership](../../en/TASKS.md).
+
+## Implementation owners
+
+`lab/core.py` is the public facade. It owns only the existing project root, clock,
+workload loader, schedule preparation, authoring validation and manifest parser.
+Phase functions receive those dependencies explicitly; there is no second context object.
+
+| Owner | Responsibility |
+| --- | --- |
+| `contracts.py`, `_policies.py` | Public records and existing persisted grammar/policy |
+| `bindings.py`, `preflight.py` | Exact revision selection and side-effect-free Study preparation |
+| `execution.py` | Live authoring, filtering, evaluation, budget and terminal orchestration |
+| `replay.py` | Independently rebuild provider, candidate, selection and terminal facts |
+| `archive.py` | Separate writers and raw-evidence readers for objects and receipts |
+| `selection.py` | Pure ordering, empirical context and qualification decisions |
+| `reporting.py` | Audited claim, missingness and descriptive threshold projections |
+| `_documents.py` | Narrow Lab JSON, name, digest and project-path primitives |
+
+Replay never substitutes the writer's decision for raw evidence. A first-provider fault
+returns before task-package or empirical-model resolution. Execution creates Evidence
+only after its authority checks; reporting receives lazy replay/audit callbacks.
+Concrete portfolio dispatch remains in `TaskLab` and its task-owned implementation.
+Import internal helpers from their owner; the stable public imports remain
+`open_cake_ir.lab`. Runtime source changes require an Executor successor, not a Compiler
+release or changes to historical records.

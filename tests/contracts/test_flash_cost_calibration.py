@@ -36,6 +36,7 @@ from open_cake_ir.compiler.toolchain import TritonCompilation
 from open_cake_ir.evaluation import WorkloadContract
 from open_cake_ir.tasks.flash_kmeans import environment as environments
 from open_cake_ir.lab.executor import ExecutorRevision
+from open_cake_ir.lab.selection import _empirical_context
 from open_cake_ir.tasks.flash_kmeans.seed import ExactShape, KernelSeed
 
 
@@ -189,7 +190,7 @@ class FlashCalibrationTest(unittest.TestCase):
         self.assertEqual(audit["validation"]["audit"]["selected_ids"], [p["id"] for p in self.active_plan["pool"][:2]])
         self.assertEqual(audit["validation"]["audit"]["metrics"]["top_k_regret_ratio"], 1)
         self.assertEqual(audit["validation"]["audit"]["metrics"]["descriptive_range_coverage_fraction"], 1)
-        self.assertEqual(document["context"], instrument._empirical_context(self.executor, workload_sha256=self.workload.canonical_sha256, case_id="b32_smoke"))
+        self.assertEqual(document["context"], _empirical_context(self.executor, workload_sha256=self.workload.canonical_sha256, case_id="b32_smoke"))
         model = EmpiricalCostModel(document)
         schedule = copy.deepcopy(document["curves"][0]["template"])
         for buffer in schedule["buffers"]:

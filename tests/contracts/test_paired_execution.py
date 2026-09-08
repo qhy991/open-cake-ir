@@ -26,7 +26,8 @@ from open_cake_ir.tasks.runtime import TaskLab as Lab
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.evidence import EvidenceStore
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, resolve_execution_bindings
-from open_cake_ir.lab.core import CampaignLock, StudyContract, _validate_receipt_authority, _archive_evaluation_receipt
+from open_cake_ir.lab.contracts import CampaignLock, StudyContract
+from open_cake_ir.lab.archive import _validate_receipt_authority, _archive_evaluation_receipt
 from open_cake_ir.lab.pairing import bind_baseline
 from open_cake_ir.lab.runtime import CommandBrokerSubmitter
 from tests.contracts.test_native_triton_pairing import DraftCompilerFixture
@@ -436,7 +437,7 @@ class PairedExecutionTests(unittest.TestCase):
         gate = SimpleNamespace(compiler_revision_id='fixture',compiler_revision_sha256='a'*64,passed=True)
         compiler_ref = {'revision_id':'fixture','path':'compiler/revision.lock.json','canonical_sha256':'a'*64}
         with ExitStack() as stack:
-            stack.enter_context(patch('open_cake_ir.lab.core._resolve_compiler_reference',
+            stack.enter_context(patch('open_cake_ir.lab.preflight._resolve_compiler_reference',
                 return_value=(gate, compiler_ref['path'], compiler_ref)))
             from open_cake_ir.lab.bindings import resolve_executor
             from open_cake_ir.lab.executor import ExecutorRevision
@@ -446,9 +447,9 @@ class PairedExecutionTests(unittest.TestCase):
                 resolved_executors.append(value)
                 return value
             resolver = stack.enter_context(patch('open_cake_ir.lab.bindings.resolve_executor', side_effect=resolve_once))
-            stack.enter_context(patch('open_cake_ir.lab.core.resolve_executor',
+            stack.enter_context(patch('open_cake_ir.lab.preflight.resolve_executor',
                 side_effect=AssertionError('preflight must retain the already-bound Executor')))
-            stack.enter_context(patch('open_cake_ir.lab.core.Compiler.load', return_value=draft))
+            stack.enter_context(patch('open_cake_ir.compiler.Compiler.load', return_value=draft))
             toolchain = stack.enter_context(patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler'))
             toolchain.return_value.canonical_sha256 = 'b'*64
             stack.enter_context(patch('open_cake_ir.lab.runtime.broker_execution_sha256', return_value='c'*64))
