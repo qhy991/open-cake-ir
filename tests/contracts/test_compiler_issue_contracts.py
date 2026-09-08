@@ -196,7 +196,7 @@ class CompilerIssueContracts(unittest.TestCase):
             self.assertFalse(loads - set(stores))
             self.assertEqual(len(stores), len(set(stores)))
 
-    def test_each_loop_carried_cat_declares_reordering_and_bitonic_input_preserves_order(self):
+    def test_each_loop_carried_cat_preserves_order_through_the_public_api(self):
         seen = 0
         for path in (ROOT/'corpus/schedules').glob('*.json'):
             d=json.loads(path.read_text())
@@ -205,26 +205,24 @@ class CompilerIssueContracts(unittest.TestCase):
             except ValueError:continue
             tree=ast.parse(emitted.source)
             for call in (n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and isinstance(n.func.value,ast.Name) and n.func.value.id=='tl' and n.func.attr=='cat'):
-                self.assertTrue(next(k.value.value for k in call.keywords if k.arg=='can_reorder'))
+                self.assertIs(next(k.value.value for k in call.keywords if k.arg=='can_reorder'), False)
                 seen += 1
             assignments={n.targets[0].id:n.value for n in ast.walk(tree) if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name)}
             for call in (n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr=='bitonic_merge'):
                 expression=assignments[call.args[0].id]
-                calls=[n for n in ast.walk(expression) if isinstance(n,ast.Call)]
-                self.assertEqual({n.func.attr for n in calls}, {'reshape','trans','join'})
-                self.assertFalse(next(k.value.value for k in expression.keywords if k.arg=='can_reorder'))
-                join=next(n for n in calls if n.func.attr=='join')
-                k=ast.literal_eval(expression.args[1])[0]//2
+                self.assertIsInstance(expression, ast.Call)
+                self.assertEqual(ast.unparse(expression.func), 'tl.cat')
+                self.assertIs(next(k.value.value for k in expression.keywords if k.arg=='can_reorder'), False)
+                k=next(operation['parameters']['k'] for operation in d['operations']
+                       if operation['kind']=='top_k' and operation['parameters'].get('across_loop'))
                 state=list(range(k,0,-1)); source=list(range(k))
                 class TL:
-                    join=staticmethod(lambda a,b:list(zip(a,b)))
-                    trans=staticmethod(lambda a:list(zip(*a)))
                     @staticmethod
-                    def reshape(a,shape,*,can_reorder):
+                    def cat(a,b,*,can_reorder):
                         assert can_reorder is False
-                        return [v for row in a for v in row]
+                        return a+b
                 ordered=eval(compile(ast.Expression(expression),'<generated-bitonic-input>','eval'),
-                    {'tl':TL,join.args[0].id:state,join.args[1].id:source})
+                    {'tl':TL,expression.args[0].id:state,expression.args[1].id:source})
                 self.assertEqual(ordered,state+source)
                 self.assertEqual(_bitonic_merge_descending(ordered),sorted(state+source,reverse=True))
         self.assertGreater(seen,0)

@@ -1671,7 +1671,7 @@ class _TritonEmitter:
         )
         tile = self._tile(loop.name)
         self.line(f"{pad}if (({loop.iterator} // {tile}) & 1) != 0:")
-        self.line(f"{pad}    {pair} = tl.cat({pending}, {source_keys}, can_reorder=True)")
+        self.line(f"{pad}    {pair} = tl.cat({pending}, {source_keys}, can_reorder=False)")
         self._emit_two_tile_top_k_merge(
             operation,
             source,
@@ -1763,7 +1763,7 @@ class _TritonEmitter:
         combined = f"{prefix}_combined_keys"
         ranked = f"{prefix}_ranked_keys"
         if selection.algorithm == "triton_topk":
-            self.line(f"{pad}{combined} = tl.cat({state_keys}, {source_keys}, can_reorder=True)")
+            self.line(f"{pad}{combined} = tl.cat({state_keys}, {source_keys}, can_reorder=False)")
             self.line(f"{pad}{ranked} = tl.topk({combined}, {k})")
             return ranked
 
@@ -1774,7 +1774,7 @@ class _TritonEmitter:
         discarded = f"{prefix}_discarded_keys"
         self.line(f"{pad}{sorted_source} = tl.sort({source_keys}, descending=False)")
         self.line(f"{pad}# Preserve descending state then ascending source for bitonic_merge.")
-        self.line(f"{pad}{combined} = tl.reshape(tl.trans(tl.join({state_keys}, {sorted_source})), ({2*k},), can_reorder=False)")
+        self.line(f"{pad}{combined} = tl.cat({state_keys}, {sorted_source}, can_reorder=False)")
         self.line(
             f"{pad}{merged} = tl.bitonic_merge({combined}, descending=True)"
         )
@@ -1809,7 +1809,7 @@ class _TritonEmitter:
         self.line(
             f"{pad}    {zeros} = tl.zeros(({source.shape[0]},), tl.uint64)"
         )
-        self.line(f"{pad}    {pair} = tl.cat({pending}, {zeros}, can_reorder=True)")
+        self.line(f"{pad}    {pair} = tl.cat({pending}, {zeros}, can_reorder=False)")
         self._emit_two_tile_top_k_merge(
             operation,
             source,
@@ -1867,7 +1867,7 @@ class _TritonEmitter:
             zeros = f"{prefix}_padding_{extent}"
             padded = f"{prefix}_padded_{extent * 2}"
             self.line(f"{pad}{zeros} = tl.zeros(({extent},), tl.uint64)")
-            self.line(f"{pad}{padded} = tl.cat({current}, {zeros}, can_reorder=True)")
+            self.line(f"{pad}{padded} = tl.cat({current}, {zeros}, can_reorder=False)")
             current = padded
             extent *= 2
         return current
