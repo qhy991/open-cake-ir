@@ -200,6 +200,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         command = [
                 sys.executable,
                 str(ROOT / "tools/qualify_codex_provider.py"),
+                "--harness", "codex", "--model", "gpt-5.6-sol", "--fixture-only",
                 "--executable",
                 str(executable),
                 "--provider-revision",
@@ -261,7 +262,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
 
             self.assertEqual(completed.returncode, 0, completed.stderr.decode())
             receipt = ProviderQualificationReceipt.load(receipt_path)
-            self.assertEqual(receipt.scope, "live_two_turn_tool_rich_provider")
+            self.assertEqual(receipt.scope, "zero_gpu_contract_fixture_only")
             observed = next(
                 event
                 for event in EvidenceStore.open(evidence_root).replay_events(
@@ -274,7 +275,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 "command_execution",
             )
 
-    def test_two_real_process_turns_issue_and_archive_the_live_receipt(self) -> None:
+    def test_two_executable_fixture_turns_archive_fixture_only_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             executable = root / "codex"
@@ -299,7 +300,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
             self.assertTrue(receipt.file_lifecycle_observed)
             self.assertTrue(receipt.usage_observed)
             self.assertTrue(receipt.qualified)
-            self.assertEqual(receipt.scope, "live_two_turn_current_provider")
+            self.assertEqual(receipt.scope, "zero_gpu_contract_fixture_only")
             candidate = json.loads((workspace / "open_cake" / "candidate-set.json").read_text())["candidates"][0]
             self.assertEqual(candidate["qualification_turn"], 2)
             self.assertEqual(len(candidate["reference_nonce"]), 64)
@@ -409,7 +410,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 )
                 self.assertEqual(envelope["arm"], arm)
                 self.assertEqual(len(envelope["candidates"]), 3)
-            self.assertEqual(receipt.scope, "live_two_turn_current_provider")
+            self.assertEqual(receipt.scope, "zero_gpu_contract_fixture_only")
 
     def test_qualification_archives_the_captured_submission_after_path_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -427,7 +428,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 return turn
 
             arguments = [
-                "qualify_codex_provider.py", "--executable", str(executable),
+                "qualify_codex_provider.py", "--harness", "codex", "--model", "gpt-5.6-sol",
+                "--fixture-only", "--executable", str(executable),
                 "--provider-revision", "captured-submission-fixture",
                 "--output-schema", str(ROOT / "contracts/providers/codex-turn-output-schema-v1.json"),
                 "--workspace", str(root / "workspace"),
