@@ -1,7 +1,7 @@
 # M1 Pro successor design
 
 The [Metal guide](metal.md) owns exact-target selection, supported operations, runtime
-requirements and measurement semantics. This proposal extends that path to Apple M1 Pro.
+requirements and measurement semantics. The implementation extends that path to Apple M1 Pro.
 The [Apple7 target definition](../compiler/targets/apple_gpu_family7.json) declares
 1024 threads and 32 KiB threadgroup memory; the
 current lowering uses one 32-lane threadgroup and no threadgroup memory. These limits

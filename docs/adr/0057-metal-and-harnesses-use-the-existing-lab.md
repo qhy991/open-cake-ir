@@ -1,7 +1,7 @@
 # ADR 0057: Metal and CLI harnesses use the existing Lab
 
-Status: implementation proposal from the owner's 2026-09-08 instructions; incomplete
-Executor successor, not authorization for provider or GPU experiments.
+Status: implemented; validation baseline `555b403`, Metal Executor v64.
+Provider-driven optimization remains unproven.
 
 The owner requires Python frontend operator tasks launched with explicit task,
 backend, model, harness and effort, using a persistent workspace across iterations.
@@ -30,25 +30,33 @@ Metal's compiled executable is a real `metal_binary_archive`, not a CUBIN or unb
 MSL source. A compile-only M1 Pro probe established source-free library loading from
 such an archive and strict `failOnBinaryArchiveMiss` pipeline reconstruction. Changed
 programs and empty archives were refused. Common Evaluation must load that exact
-artifact without source compilation fallback. The host/OS/toolchain binding and new
-Swift asset belong to the Executor successor.
+artifact without source compilation fallback. The released Metal Executor binds the
+actual host/OS/toolchain and native Swift assets.
 
-Remaining integration is explicit:
+The [Metal task guide](../metal.md) documents the implemented path: one Open Cake
+environment and sealed fixed baseline under `matched_search` /
+`artifact_optimization_only`, common Metal timing and separate profiling, native
+harness adapters with qualification gates, and a thin launcher requiring task,
+backend, model, harness, effort and workspace. Scientific two-arm rules retain their existing scope. One
+workspace/session is retained across Ralph turns; cross-process resume is unsupported.
 
-- Express one Open Cake environment with a sealed fixed baseline inside existing
-  `matched_search` / `artifact_optimization_only`; preserve scientific two-arm rules.
-- Admit Metal timing/cache/profiler policies through common Evaluation and the broker;
-  never label Metal observations CUPTI, NCU, CUDA occupancy or cold-L2 measurements.
-- Bind a real Metal Executor host and include native assets in its release closure.
-- Generalize provider qualification/configuration and replay for the admitted harness.
-- Make workspace selection and continuation reach the existing Ralph path. Retain
-  one workspace/session per Run; do not introduce a second checkpoint store or erase
-  failed/ambiguous in-flight attempts. Cross-process recovery needs an explicit
-  existing-engine continuation interface before it is claimed.
-- Provide the thin launcher with required `--task`, `--backend`, `--model`, `--harness`,
-  `--effort`, and persistent `--workspace`, then validate actual multi-turn execution.
+## Verified scope and remaining limits
+
+[Managed CI](https://github.com/qhy991/open-cake-ir/actions/runs/34180293661) passed on
+exact commit `555b403` for Python 3.10 and 3.12. Native A/A checks then exercised
+RMSNorm, LayerNorm and residual RMSNorm at `(128, 1024)` through the common
+broker/Evaluation, using the same sealed program as candidate and baseline.
+Correctness, input preservation and separate compute-stage timestamp profiling passed
+for the examined cases. All timing-stability gates failed; no optimization result or
+framework acceptance is established.
+
+Real provider qualification attempts failed before a multi-turn task: the tested
+Codex installation was incompatible with the requested model, and Claude Code hit
+its quota. Successful two-turn qualification and actual persistent model-driven
+optimization remain to be demonstrated. No model substitution or fixture qualification
+can fill that gap. Stable measurement and fresh confirmation remain necessary for an
+improvement claim.
 
 Existing Compiler/Executor releases and historical evidence stay in pinned Git and
-prior checkouts. Current CPU/compile-only seam tests establish only their tested
-boundaries. They do not establish a working Metal Lab campaign, live Claude/Codex
-qualification, framework acceptance, or a performance improvement.
+prior checkouts. Implementation, CI, native runtime checks and accepted optimization
+results remain distinct evidence domains.
