@@ -15,6 +15,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.evidence import EvidenceObject, EvidenceStore  # noqa: E402
+from open_cake_ir.lab.pairing import comparison_arm
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
@@ -87,6 +88,20 @@ def _expected_submission(
                 "compile_constants": {},
                 "compile_options": {"num_warps": 4},
                 "grid": [1, 1, 1],
+            }
+            for index in range(maximum_candidates_per_turn)
+        ]
+    elif arm == "native_cute_dsl":
+        members = [
+            {
+                "kernel_source": (
+                    "import cutlass\nimport cutlass.cute as cute\nfrom cutlass.cute.nvgpu import warp\n\n"
+                    "@cute.kernel\n"
+                    f"def qualification_{turn}_{index}(a: cute.Pointer, b: cute.Pointer, bias: cute.Pointer, c: cute.Pointer):\n"
+                    "    lane, _, _ = cute.arch.thread_idx()\n"
+                    f"# frozen reference: {reference_nonce}\n"
+                ),
+                "grid": [1, 1, 1], "block": [32, 1, 1], "dynamic_shared_memory_bytes": 0,
             }
             for index in range(maximum_candidates_per_turn)
         ]
@@ -325,8 +340,12 @@ def main() -> int:
     schema = json.loads(output_schema.read_text(encoding="utf-8"))
     arm_schema = schema.get("properties", {}).get("arm", {})
     arms = arm_schema.get("enum")
-    if arms not in (["open_cake", "direct_cuda"], ["open_cake", "native_triton"]):
+    if not isinstance(arms, list) or len(arms) != 2 or arms[0] != "open_cake":
         raise ValueError("qualification output schema must declare one supported arm pair")
+    try:
+        comparison_arm(dict.fromkeys(arms))
+    except ValueError as error:
+        raise ValueError("qualification output schema must declare one supported arm pair") from error
     qualification_arms = tuple(arms)
     if args.feature_policy == "closed_research":
         disabled_features = CODEX_DISABLED_FEATURES

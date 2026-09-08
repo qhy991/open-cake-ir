@@ -233,6 +233,7 @@ def _project_candidate_submission(
         "open_cake",
         "direct_cuda",
         "native_triton",
+        "native_cute_dsl",
     }:
         raise ValueError("provider submission contract differs")
     try:
@@ -259,7 +260,7 @@ def _project_candidate_submission(
         or len(candidates) > maximum_candidates_per_turn
     ):
         raise ValueError("provider candidate-set envelope count differs")
-    if arm in {"open_cake", "native_triton"}:
+    if arm in {"open_cake", "native_triton", "native_cute_dsl"}:
         if any(not isinstance(candidate, Mapping) for candidate in candidates):
             raise ValueError("Open Cake candidate-set member is not a Schedule object")
         projected = tuple(_canonical_json_bytes(candidate) for candidate in candidates)
@@ -956,7 +957,7 @@ class CodexRunProvider:
         builder = self._builders.get(request.run_id)
         if (
             builder is None
-            or request.arm not in {"open_cake", "direct_cuda", "native_triton"}
+            or request.arm not in {"open_cake", "direct_cuda", "native_triton", "native_cute_dsl"}
             or request.turn <= 0
             or not isinstance(request.maximum_candidates_per_turn, int)
             or isinstance(request.maximum_candidates_per_turn, bool)

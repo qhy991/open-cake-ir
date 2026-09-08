@@ -582,6 +582,43 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     self.assertEqual(set(member), {"kernel_source", "compile_constants", "compile_options", "grid"})
                     self.assertIn(f"def qualification_{turn}_{index}", member["kernel_source"])
 
+    def test_native_cute_schema_qualifies_its_actual_pair_through_ralph(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "codex"
+            self._write_provider(executable)
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root, executable, provider_revision="native-ralph-fixture",
+                run_id="native-ralph", maximum_candidates_per_turn=2,
+                output_schema=ROOT / "contracts/providers/codex-cute-optimization-output-schema-v1.json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertTrue(ProviderQualificationReceipt.load(receipt_path).qualified)
+            evidence = EvidenceStore.open(evidence_root)
+            observed = next(event["payload"] for event in evidence.replay_events("native-ralph")
+                            if event["kind"] == "provider_qualification_observed")
+            self.assertEqual(set(observed["arms"]), {"open_cake", "native_cute_dsl"})
+            self.assertNotEqual(observed["arms"]["open_cake"]["thread_id"],
+                                observed["arms"]["native_cute_dsl"]["thread_id"])
+            envelope = json.loads((root / "workspace/native_cute_dsl/candidate-set.json").read_text())
+            self.assertEqual(envelope["arm"], "native_cute_dsl")
+            self.assertEqual(len(envelope["candidates"]), 2)
+            for member in envelope["candidates"]:
+                self.assertEqual(set(member), {"kernel_source", "grid", "block", "dynamic_shared_memory_bytes"})
+                self.assertIn("def qualification_2_", member["kernel_source"])
+            audit = evidence.audit_run("native-ralph")
+            self.assertTrue(audit.archive_integrity)
+            self.assertEqual(audit.endpoint["arms_qualified"], ["open_cake", "native_cute_dsl"])
+            for phase, turn in (("initial", 1), ("resumed", 2)):
+                refs = [item for item in observed["objects"]
+                        if item["role"].startswith(f"native_cute_dsl_{phase}_candidate_")]
+                self.assertEqual(len(refs), 2)
+                for index, reference in enumerate(refs):
+                    self.assertEqual(reference["media_type"], "application/json")
+                    member = json.loads(evidence.read_object(reference))
+                    self.assertEqual(set(member), {"kernel_source", "grid", "block", "dynamic_shared_memory_bytes"})
+                    self.assertIn(f"def qualification_{turn}_{index}", member["kernel_source"])
+
     def test_unsupported_schema_pair_is_rejected_before_creating_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

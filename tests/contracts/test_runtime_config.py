@@ -26,6 +26,10 @@ def runtime_document(toolchain_kind="triton"):
         if toolchain_kind == "triton"
         else {"nvcc": "cuda/bin/nvcc", "cuobjdump": "cuda/bin/cuobjdump"}
     )
+    if toolchain_kind == "cutlass_cute_dsl":
+        toolchain = {"python": "runtime/python", "bubblewrap": "bin/bwrap",
+                     "runtime_roots": ["runtime", "/lib64"], "cuobjdump": "cuda/bin/cuobjdump",
+                     "cutlass_version": "4.5.2", "timeout_seconds": 30}
     return {
         "schema_version": 1,
         "provider": {"executable": "bin/provider", "workspace_root": "new-workspaces"},
@@ -88,6 +92,29 @@ class RuntimeConfigTests(unittest.TestCase):
         for selected, value in (("triton", document), ("nvcc", runtime_document())):
             with self.subTest(selected=selected), self.assertRaisesRegex(ValueError, "toolchain"):
                 self.parse(value, selected)
+
+    def test_cute_exact_schema_preserves_runtime_paths_and_refuses_wrong_fields(self):
+        kind = "cutlass_cute_dsl"
+        document = runtime_document(kind)
+        self.assertEqual(self.parse(document, kind)["toolchain"], document["toolchain"])
+        for field in document["toolchain"]:
+            changed = copy.deepcopy(document)
+            del changed["toolchain"][field]
+            with self.subTest(missing=field), self.assertRaisesRegex(ValueError, "toolchain"):
+                self.parse(changed, kind)
+        for field, value in (("triton_version", "3.6"), ("nvcc", "cuda/nvcc"),
+                             ("compile_options", {})):
+            changed = copy.deepcopy(document); changed["toolchain"][field] = value
+            with self.subTest(extra=field), self.assertRaisesRegex(ValueError, "toolchain"):
+                self.parse(changed, kind)
+        for field, value in (("cutlass_version", None), ("cuobjdump", False),
+                             ("timeout_seconds", True), ("timeout_seconds", 0),
+                             ("runtime_roots", [1]), ("runtime_roots", "/lib")):
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                self.parse(replace_field(document, ("toolchain", field), value), kind)
+        for selected in ("triton", "nvcc"):
+            with self.subTest(selected=selected), self.assertRaises(ValueError):
+                self.parse(document, selected)
 
     def test_shell_and_list_commands_preserve_the_same_literal_argv(self):
         argv = ("fixture-broker", "--label", "two words", "$(touch marker)", "semi;colon")
@@ -198,8 +225,15 @@ class RuntimeEntryPointTests(unittest.TestCase):
         })
 
     def test_binding_and_execution_reject_the_same_malformed_documents_at_shared_parser(self):
+        for arm, kind in (("native_triton", "triton"), ("native_cute_dsl", "cutlass_cute_dsl")):
+            with self.subTest(arm=arm):
+                self._reject_malformed_native_runtime(arm, kind)
+
+    def _reject_malformed_native_runtime(self, arm, kind):
         from open_cake_ir.tasks import compose
 
+        study = copy.deepcopy(self.study)
+        study.document["arms"][arm] = study.document["arms"].pop("native_triton")
         malformed = [
             (("schema_version",), True),
             (("broker", "timeout_seconds"), True),
@@ -209,11 +243,11 @@ class RuntimeEntryPointTests(unittest.TestCase):
             (("toolchain",), []),
         ]
         lock = SimpleNamespace(study_kind="matched_search", document={
-            "resolved_inputs": {"arm_environments": {"open_cake": {}, "native_triton": {}}},
+            "resolved_inputs": {"arm_environments": {"open_cake": {}, arm: {}}},
         })
         for location, value in malformed:
             with self.subTest(field=location, value=value):
-                self.runtime_path.write_text(json.dumps(replace_field(runtime_document(), location, value)), encoding="utf-8")
+                self.runtime_path.write_text(json.dumps(replace_field(runtime_document(kind), location, value)), encoding="utf-8")
                 with ExitStack() as stack:
                     parser = stack.enter_context(patch("open_cake_ir.lab.runtime.load_runtime_config", wraps=load_runtime_config))
                     stack.enter_context(patch("open_cake_ir.lab.providers.ProviderQualificationReceipt.load", return_value=object()))
@@ -225,20 +259,20 @@ class RuntimeEntryPointTests(unittest.TestCase):
                         "open_cake_ir.lab.bindings.load_baseline_bundle",
                     )]
                     with self.assertRaises(ValueError) as binding_error:
-                        resolve_execution_bindings(self.project, self.study, self.bindings_path)
-                    parser.assert_called_once_with(self.runtime_path, toolchain_kind="triton")
+                        resolve_execution_bindings(self.project, study, self.bindings_path)
+                    parser.assert_called_once_with(self.runtime_path, toolchain_kind=kind)
                     for operation in blocked:
                         operation.assert_not_called()
                 with ExitStack() as stack:
                     stack.enter_context(patch.object(compose, "_admit_executor", return_value=(object(), None)))
                     parser = stack.enter_context(patch.object(compose, "load_runtime_config", wraps=load_runtime_config))
                     blocked = [stack.enter_context(patch.object(compose, name, side_effect=AssertionError("runtime admission must precede execution"))) for name in (
-                        "IsolatedTritonCompiler", "NvccToolchainBuilder", "CommandBrokerSubmitter", "TaskLab",
+                        "NvccToolchainBuilder", "CommandBrokerSubmitter", "TaskLab",
                     )]
                     stack.enter_context(patch.object(compose.ProviderQualificationReceipt, "load", side_effect=AssertionError("provider qualification must follow runtime parsing")))
                     with self.assertRaises(ValueError) as execution_error:
                         compose.execute_matched_from_config(self.project, lock, self.runtime_path, self.external / "unused-evidence")
-                    parser.assert_called_once_with(self.runtime_path, toolchain_kind="triton")
+                    parser.assert_called_once_with(self.runtime_path, toolchain_kind=kind)
                     self.assertEqual(str(execution_error.exception), str(binding_error.exception))
                     for operation in blocked:
                         operation.assert_not_called()

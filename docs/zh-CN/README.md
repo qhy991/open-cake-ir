@@ -27,6 +27,7 @@ GPU 是擅长让很多小组同时算题的处理器。算子是一道明确的�
 
 | 我想知道 | 中文页面 |
 | --- | --- |
+| 在 B300 上用 Cake 和原生 CuTeDSL 优化同一个 GEMM | [CuTeDSL 同后端路径](PAIRED_CUTE.md) |
 | load、FMA、矩阵乘和前缀和分别做什么 | [基本操作](../wiki/primitives.md) |
 | 项目有哪些完整任务 | [任务目录](../wiki/workloads.md) |
 | 三个独立 Tile Workload 的 ABI、CPU 参考和匹配基线 | [Tile Workload 指南](../TILE_WORKLOADS.md) |

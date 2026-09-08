@@ -28,6 +28,7 @@ _ARM_ARTIFACT_ROLES = {
     },
     "direct_cuda": {"authored_source", "ptx", "cubin", "sass", "launch_manifest"},
     "native_triton": {"authored_source", "compiler_expanded_source", "ptx", "cubin", "launch_manifest"},
+    "native_cute_dsl": {"authored_source", "compiler_expanded_source", "ptx", "cubin", "launch_manifest"},
 }
 
 

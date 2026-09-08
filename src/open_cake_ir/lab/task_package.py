@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable, Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Compiler
-from .pairing import bind_baseline, native_baseline
+from .pairing import bind_baseline, native_baseline, backend_policy, native_backend
 from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import WorkloadContract
 
@@ -139,7 +139,8 @@ def build_run_reference_documents(
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
         skeleton = prepare_schedule(skeleton, workload_contract, case_id, arm)
         if arm.get("input_format") == "schedule_or_python_v1":
-            documents["paired-triton-authoring.md"] = (root / "docs/en/PAIRED_TRITON.md").read_bytes()
+            policy = backend_policy(arm["lowering_route"]["backend"])
+            documents[policy.authoring_file] = (root / "docs/en" / policy.document).read_bytes()
         documents.update(
             {
                 "schedule.schema.json": schedule_schema_bytes(),
@@ -147,15 +148,17 @@ def build_run_reference_documents(
                 "schedule-skeleton.json": _canonical_json(skeleton).encode(),
             }
         )
-    elif environment_kind == "native_triton":
+    elif environment_kind != "direct_cuda" and (policy := native_backend(environment_kind)) is not None:
         open_arm = _object(_object(resolved["arm_environments"], "arm_environments")["open_cake"], "open_cake")
         skeleton_ref = _object(open_arm["schedule_skeleton"], "schedule_skeleton")
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
         baseline = bind_baseline(json.loads(_read_relative(root, skeleton_ref["path"], "schedule_skeleton")), workload_contract, case_id)
         compiler_instance = Compiler.load(root, root / str(compiler["path"]))
         lowering = compiler_instance.lower(compiler_instance.assess(baseline))
-        documents["candidate-baseline.triton.json"] = _canonical_json(native_baseline(lowering)).encode()
-        documents["paired-triton-authoring.md"] = (root / "docs/en/PAIRED_TRITON.md").read_bytes()
+        documents[policy.baseline_file] = _canonical_json(native_baseline(lowering)).encode()
+        documents[policy.authoring_file] = (root / "docs/en" / policy.document).read_bytes()
+        if policy.candidate_schema is not None:
+            documents["candidate.schema.json"] = _read_relative(root, policy.candidate_schema, "native candidate schema")
     elif environment_kind == "direct_cuda":
         launch = _object(arm["launch_contract"], "arm.launch_contract")
         candidate = _object(arm["candidate_skeleton"], "arm.candidate_skeleton")
@@ -331,8 +334,8 @@ the machine Contracts bound by the CampaignLock; do not edit them or infer newer
         if arm == "open_cake" and authority.get("input_format") == "schedule_or_python_v1"
         else "Author only Cake IR Schedules; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
         if arm == "open_cake"
-        else "Author only the supplied kernel-only Triton baseline and declared compile/launch metadata. Host Python is forbidden."
-        if arm == "native_triton"
+        else f"Author only the supplied kernel-only {native_backend(arm).label} baseline and declared compile/launch metadata. Host Python is forbidden."
+        if native_backend(arm) is not None
         else "Author only direct CUDA/PTX source. Do not access the Open Cake Compiler or a target implementation."
     )
     agents = f"""# AGENTS.md — Ralph optimization rules

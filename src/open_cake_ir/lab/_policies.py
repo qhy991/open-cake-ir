@@ -6,7 +6,7 @@ import json
 from typing import Mapping, cast
 
 from ._documents import _canonical_json_bytes
-from .pairing import triton_optimization_analysis_plan
+from .pairing import native_optimization_analysis_plan, native_backend
 
 
 _RALPH_STUDY_FIELDS = {
@@ -173,10 +173,11 @@ def _matched_evidence_policy_version(
 def _scientific_analysis_plan_version(
     analysis: Mapping[str, object], context: str
 ) -> str:
-    """Admit the current scientific plans for the two supported comparisons."""
+    """Admit the current scientific plans for the supported comparisons."""
 
-    if analysis == triton_optimization_analysis_plan():
-        return "triton_optimization_v1"
+    for arm in ("native_triton", "native_cute_dsl"):
+        if analysis == native_optimization_analysis_plan(arm):
+            return native_backend(arm).analysis_version
     if analysis == _SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2:
         return "two_part_v2"
     raise ValueError(f"{context} is unsupported")

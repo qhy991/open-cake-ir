@@ -27,7 +27,7 @@ from .archive import (
 from .checkpoints import TurnObservation, project_checkpoints
 from .contracts import CampaignLock
 from .executor import ExecutorRevision
-from .pairing import comparison_arm
+from .pairing import comparison_arm, native_backend
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1,
     _project_candidate_submission,
@@ -819,7 +819,7 @@ def _replay_candidates(
                 (set(payload) != ({
                     "turn", "purpose", "candidate_sha256", "objects",
                 } | ({"elapsed_wall_seconds"} if purpose == "confirmatory" and
-                     comparison_arm(lock.document["resolved_inputs"]["arm_environments"]) == "native_triton" else set())))
+                     native_backend(comparison_arm(lock.document["resolved_inputs"]["arm_environments"])) is not None else set())))
                 or
                 not isinstance(turn, int)
                 or isinstance(turn, bool)
