@@ -190,7 +190,9 @@ class Schedule:
                 relation = loaded.valid_extent
                 if relation is not None and (relation.dimension == dimension or dimension in relation.indexed_by):
                     return False
-                return component.source is AccessIndexKind.LOOP_TILE and component.name == loop.iterator
+                return (component.source is AccessIndexKind.LOOP_TILE
+                        and component.name == loop.iterator
+                        and loaded.shape[dimension] == owner.shape[loop.dimension])
             if producer.kind is OperationKind.MMA and len(producer.reads) >= 2:
                 # A(M,K) x B(N,K) preserves A's row and B's column domains.
                 return static_axis(producer.reads[axis], 0, position)

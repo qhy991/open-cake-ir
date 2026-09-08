@@ -68,6 +68,23 @@ class CompilerIssueContracts(unittest.TestCase):
         d = document('relu-b8-smoke')
         self.refuses(rename(d, 'batch', 'x'), 'BACKEND_IDENTIFIER_COLLISION', accepted=True)
 
+    def test_argmin_loop_owner_must_cover_the_actual_loaded_candidate_extent(self):
+        d = document('triton-argmin-runtime-domain-drift')
+        d['buffers'][0].pop('valid_extent')
+        d['buffers'][0]['shape'][2] = 32
+        d['buffers'].append({'name':'domain_owner', 'space':'global', 'dtype':'fp32',
+                             'shape':[64], 'mode':'input'})
+        d['tile_loops'][0].update(buffer='domain_owner', dimension=0)
+        assessment = self.refuses(d, 'TRITON_ARGMIN_DOMAIN', accepted=True)
+        self.assertEqual([f.path for f in assessment.findings if f.code == 'TRITON_ARGMIN_DOMAIN'],
+                         ['operations[1].reads'])
+        d['buffers'][0]['shape'][2] = 64
+        assessment = self.compiler.assess(d)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        schedule = Schedule.from_dict(d)
+        self.assertEqual(schedule.argmin_domain(schedule.operation('select')), 64)
+        compile(self.compiler.lower(assessment).source, '<different-owner-same-domain>', 'exec')
+
     def test_operation_control_characters_are_not_python_source(self):
         d = document('triton-operation-id-control-drift')
         self.refuses(d, 'BACKEND_IDENTIFIER_UNSAFE', accepted=True)
