@@ -166,3 +166,7 @@ Reading companions explain the material in simpler language. Detailed tables and
 - [0059: Final release identities bind complete authority](adr/0059-final-release-identities-bind-complete-authority.md)
 
 - [0061: Compiler dependencies at Executor handoffs](adr/0061-compiler-dependencies-at-executor-handoffs.md)
+
+- [0062: Explicit reference access by authoring arm](adr/0062-explicit-reference-access-treatment.md)
+
+- [0063: Normal budget terminal observations](adr/0063-normal-budget-terminal-observations.md)

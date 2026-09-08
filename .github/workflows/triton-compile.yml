@@ -1,0 +1,92 @@
+name: Offline Triton compilation
+
+on:
+  pull_request:
+    paths:
+      - 'src/open_cake_ir/compiler/**'
+      - 'corpus/**'
+      - 'tools/check_triton_topk_compile.py'
+      - '.github/workflows/triton-compile.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/open_cake_ir/compiler/**'
+      - 'corpus/**'
+      - 'tools/check_triton_topk_compile.py'
+      - '.github/workflows/triton-compile.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, successor]
+    env:
+      TRITON_CACHE_DIR: ${{ runner.temp }}/triton-cache-${{ matrix.variant }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: successor
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: a302ee396ce4f130692f2fcca0243d357f9659f2
+          path: baseline
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install the declared fresh CPU compile environment
+        run: |
+          python -m pip install torch==2.9.1+cpu --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install triton==3.7.1
+          python -m pip check
+      - name: Compile with the selected checkout's own Compiler
+        env:
+          COMPILE_VARIANT: ${{ matrix.variant }}
+        run: |
+          if [ "$COMPILE_VARIANT" = baseline ]; then
+            compile_revision=compiler/revision.lock.json
+          else
+            compile_revision=compiler/revision.json
+          fi
+          compile_output="$RUNNER_TEMP/triton-$COMPILE_VARIANT"
+          if python successor/tools/check_triton_topk_compile.py \
+              --project-root "$GITHUB_WORKSPACE/$COMPILE_VARIANT" \
+              --revision "$compile_revision" --output-root "$compile_output"; then
+            compile_status=0
+          else
+            compile_status=$?
+          fi
+          python - "$compile_output" "$compile_status" "$COMPILE_VARIANT" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          root, status, variant = Path(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+          report = json.loads((root / 'report.json').read_text())
+          assert report['device_validation'] is False
+          assert report['triton'] == '3.7.1' and report['torch'] == '2.9.1+cpu'
+          assert report['cases'], 'no accepted cases were compiled'
+          if variant == 'baseline':
+              assert status == 1 and report['passed'] is False
+              failures = [row for row in report['cases'] if row['returncode'] != 0]
+              assert any('can_reorder' in (root / row['directory'] / 'stderr.txt').read_text()
+                         for row in failures), 'baseline failed for a different reason'
+              print('Observed the retained baseline cat refusal; its compile report remains failed.')
+          else:
+              assert status == 0 and report['passed'] is True, 'successor compilation failed'
+              assert all(row['returncode'] == 0 and not row['timed_out'] for row in report['cases'])
+              print('Every accepted selection case compiled; device correctness was not evaluated.')
+          PY
+      - name: Retain compile reports and per-case artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: triton-${{ matrix.variant }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/triton-${{ matrix.variant }}
+          if-no-files-found: warn
+          retention-days: 30

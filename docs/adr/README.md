@@ -83,3 +83,7 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - [0059: Final release identities bind complete authority](0059-final-release-identities-bind-complete-authority.md)
 
 - [0061: Compiler dependencies at Executor handoffs](0061-compiler-dependencies-at-executor-handoffs.md)
+
+- [0062: Explicit reference access by authoring arm](0062-explicit-reference-access-treatment.md)
+
+- [0063: Normal budget terminal observations](0063-normal-budget-terminal-observations.md)
