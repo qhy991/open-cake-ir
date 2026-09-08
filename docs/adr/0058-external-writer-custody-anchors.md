@@ -34,7 +34,9 @@ Reusing immutable CAS object bytes does not by itself adopt a Run history.
 
 ## Durability and failure
 
-A failed event publication before persistence leaves the prior frontier usable. An event
+A refusal before creating any publication file leaves the prior frontier usable. A failed
+write that leaves a temporary publication file instead blocks subsequent append/seal;
+retained partial state is not cleaned up to regain custody. An event
 persisted without its external witness cannot be adopted by a subsequent writer or audit.
 A matching, witnessed terminal event whose terminal file was never published may complete
 native pending-seal recovery. Once the seal witness exists, deleting or replacing the

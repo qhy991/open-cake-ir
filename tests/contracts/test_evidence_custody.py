@@ -1,5 +1,6 @@
 """Prospective custody tests use newly created external private registries."""
 from hashlib import sha256
+import json
 import os
 from pathlib import Path
 import shutil
@@ -64,8 +65,9 @@ class EvidenceCustodyTests(unittest.TestCase):
         evidence, _ = self.new()
         (evidence.root / ".git").mkdir()
         self.assert_untrusted(evidence)
+        clean, _ = self.new("clean")
         with patch.dict(os.environ, {custody.ENVIRONMENT: str(checkout / "registry")}):
-            self.assert_untrusted(evidence)
+            self.assert_untrusted(clean)
 
     def test_missing_registry_is_not_recreated_by_open_or_audit(self):
         evidence, _ = self.new()
@@ -165,3 +167,34 @@ class EvidenceCustodyTests(unittest.TestCase):
         with patch.dict(os.environ, {custody.ENVIRONMENT: str(alternate)}):
             self.assert_untrusted(evidence)
         self.assertFalse(alternate.exists())
+
+    def test_partial_event_publication_is_retained_and_blocks_further_writes(self):
+        evidence, run = self.new(sealed=False)
+        def partial(fd, payload):
+            os.write(fd, payload[:1])
+            raise OSError("injected partial publication write")
+        with patch.object(store, "_write_all", partial), self.assertRaises(OSError):
+            run.append("observation", {"value": 1})
+        directory = evidence.root / "runs/run/events"
+        prior = {p.name: p.read_bytes() for p in directory.iterdir()}
+        self.assertEqual(len(prior), 1)
+        with self.assertRaisesRegex(ValueError, "contiguous"):
+            run.seal(protocol_adherence="adhered", endpoint_observation="missing")
+        self.assertEqual({p.name: p.read_bytes() for p in directory.iterdir()}, prior)
+
+    def test_custody_gate_blocks_an_otherwise_promotable_projection(self):
+        # Exercise only the publication projection with explicit CPU fixture evidence;
+        # no runtime receipt qualification or actual artifact promotion is claimed.
+        evidence, run = self.new(sealed=False)
+        candidate = "a" * 64
+        receipt = evidence.put(json.dumps({"candidate_sha256": candidate,
+            "correctness_passed": True, "kernel_calls": 1, "fallback_calls": 0,
+            "timing": {"measurement_quality_passed": True, "pooled_median_ms": 1.0}}).encode(),
+            media_type="application/json")
+        run.append("candidate_evaluated", {"purpose": "confirmatory", "turn": 1,
+            "candidate_sha256": candidate, "objects": [receipt.reference("evaluation_receipt")]})
+        run.seal(protocol_adherence="adhered", endpoint_observation="observed", endpoint={"fixture": True})
+        audit = evidence.audit_run("run")
+        self.assertEqual(_promoted_artifact(evidence, audit)["candidate_sha256"], candidate)
+        shutil.rmtree(self.registry)
+        self.assert_untrusted(evidence)
