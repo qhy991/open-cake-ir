@@ -120,11 +120,16 @@ def parse_codex_turn_events(
             auxiliary_events.setdefault(item_id, []).append(
                 (cast(str, event_type), cast(Mapping[str, object], item))
             )
-            activity_indices.append(index)
+            # Passive CLI notices remain retained auxiliary evidence, but do not
+            # move the terminal brackets around actual tool/file activity.
+            if item_type not in {"error", "reasoning"}:
+                activity_indices.append(index)
         else:
             raise ValueError("provider emitted an unadmitted item type")
 
     tool_activity = _auxiliary_activity(auxiliary_events)
+    if event_contract == "tool_rich_candidate_v1" and not activity_indices:
+        raise ValueError("provider Turn lacks functional tool or file activity")
 
     candidate_path: str | None = None
     change_kind: str | None = None

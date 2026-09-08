@@ -579,6 +579,81 @@ class ProviderContractTests(unittest.TestCase):
                     arm="open_cake",
                 )
 
+    def _notice_bracketed_events(self, candidate):
+        terminal = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_turn","turn":1}'
+        acknowledgement = lambda identity: {"type": "item.completed", "item": {
+            "id": identity, "type": "agent_message", "text": terminal}}
+        command = {"id": "write-command", "type": "command_execution", "command": "write candidate"}
+        change = {"id": "candidate-file", "type": "file_change", "changes": [
+            {"path": str(candidate), "kind": "add"}]}
+        failed = {"id": "optional-status", "type": "command_execution", "command": "git status"}
+        return terminal, [
+            {"type": "thread.started", "thread_id": "01234567-89ab-cdef-0123-456789abcdef"},
+            {"type": "turn.started"},
+            {"type": "item.completed", "item": {"id": "notice", "type": "error",
+                "message": "Skill descriptions were shortened to fit the context budget"}},
+            acknowledgement("ack-before"),
+            {"type": "item.started", "item": {**command, "status": "in_progress"}},
+            {"type": "item.completed", "item": {**command, "status": "completed", "exit_code": 0}},
+            {"type": "item.started", "item": {**change, "status": "in_progress"}},
+            {"type": "item.completed", "item": {**change, "status": "completed"}},
+            {"type": "item.started", "item": {**failed, "status": "in_progress"}},
+            {"type": "item.completed", "item": {**failed, "status": "failed", "exit_code": 128}},
+            acknowledgement("ack-after"),
+            {"type": "item.completed", "item": {"id": "thought", "type": "reasoning", "text": "finished"}},
+            {"type": "turn.completed", "usage": {"input_tokens": 100, "output_tokens": 20,
+                "cached_input_tokens": 80, "reasoning_output_tokens": 10}},
+        ]
+
+    def test_passive_notices_do_not_change_tool_rich_functional_brackets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate-set.json"
+            self._write_schedule_set(candidate, 1)
+            terminal, events = self._notice_bracketed_events(candidate)
+            raw = b"\n".join(json.dumps(event).encode() for event in events)
+            turn = normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
+                expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake")
+            self.assertEqual(turn.normalization, "duplicate_exact_bracketed")
+            self.assertEqual(turn.candidates, (b'{"schedule":1}',))
+            self.assertEqual(turn.provider_tokens, 120)
+            self.assertEqual(turn.raw_events, raw)
+            self.assertEqual([(a.item_type, a.status) for a in turn.tool_activity], [
+                ("error", "completed"), ("command_execution", "completed"),
+                ("file_change", "completed"), ("command_execution", "failed"), ("reasoning", "completed")])
+            with self.assertRaises(ValueError):
+                parse_codex_turn_events(raw, expected_terminal_message=terminal,
+                    event_contract="closed_file_change_v1")
+
+    def test_passive_notices_cannot_replace_or_hide_functional_lifecycles(self):
+        from copy import deepcopy
+        terminal, original = self._notice_bracketed_events(Path("/cpu-fixture/candidate-set.json"))
+        mutations = {}
+        mutations["no functional activity"] = original[:4] + original[10:]
+        mutations["truncated command"] = original[:9] + original[10:]
+        mutations["truncated file"] = original[:7] + original[8:]
+        before = deepcopy(original); before[3], before[4] = before[4], before[3]
+        mutations["initial ack after command starts"] = before
+        after = deepcopy(original); after[9], after[10] = after[10], after[9]
+        mutations["final ack before failed command completes"] = after
+        unknown = deepcopy(original); unknown[2]["type"] = "item.updated"
+        mutations["malformed passive lifecycle"] = unknown
+        wrong = deepcopy(original); wrong[10]["item"]["text"] = '{"candidate_written":false}'
+        mutations["wrong acknowledgement"] = wrong
+        for name, events in mutations.items():
+            with self.subTest(case=name), self.assertRaises(ValueError):
+                parse_codex_turn_events(b"\n".join(json.dumps(event).encode() for event in events),
+                    expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1")
+
+    def test_passive_notice_admission_preserves_usage_counter_checks(self):
+        from copy import deepcopy
+        terminal, original = self._notice_bracketed_events(Path("/cpu-fixture/candidate-set.json"))
+        for key, value in (("input_tokens", True), ("output_tokens", -1),
+                           ("cached_input_tokens", 101), ("reasoning_output_tokens", 21)):
+            events = deepcopy(original); events[-1]["usage"][key] = value
+            with self.subTest(counter=key), self.assertRaisesRegex(ValueError, "usage"):
+                parse_codex_turn_events(b"\n".join(json.dumps(event).encode() for event in events),
+                    expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1")
+
     def test_tool_rich_turn_accepts_and_projects_an_mcp_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "candidate.json"
