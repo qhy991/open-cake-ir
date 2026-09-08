@@ -13,7 +13,7 @@ from unittest.mock import patch
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule
 from open_cake_ir.lab.claude import (
     CLAUDE_EVENT_CONTRACT, ClaudeInvocationBuilder, ClaudeProviderAdapter,
-    ClaudeRunProvider, normalize_claude_turn, parse_claude_turn_events, claude_model_usage, terminal_schema,
+    ClaudeRunProvider, normalize_claude_turn, parse_claude_turn_events, claude_model_usage, terminal_schema, reported_claude_usage,
 )
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.lab.process import SupervisedProcessTimeout
@@ -324,6 +324,93 @@ class ClaudeProviderContracts(unittest.TestCase):
         old = ProviderAuxiliaryActivity("tool", "tool_use", "completed", tool="Read")
         self.assertNotIn("model", old.document); self.assertNotIn("provider_tokens", old.document)
         with self.assertRaises(ValueError): ProviderAuxiliaryActivity("usage", "model_usage", "reported", model="helper")
+
+
+    def retry_event(self):
+        return {"type": "system", "subtype": "api_retry", "attempt": 1, "max_retries": 10,
+            "retry_delay_ms": 509, "error_status": None, "error": "unknown", "uuid": OTHER_SESSION, "session_id": SESSION}
+
+    def test_native_transport_retry_is_observed_inside_one_invocation_without_extra_tokens(self):
+        events = self.events(); events.insert(3, self.retry_event())
+        raw = self.raw(events)
+        invocation = self.builder().build("one resumed turn", thread_id=SESSION)
+        completed = subprocess.CompletedProcess(invocation.argv, 0, raw, b"")
+        with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed) as process:
+            turn = ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
+        process.assert_called_once()
+        self.assertEqual(turn.provider_tokens, 205)
+        self.assertEqual(turn.thread_id, SESSION)
+        self.assertEqual(turn.terminal_message_count, 1)
+        self.assertEqual(turn.raw_events, raw)
+        retry, = [entry for entry in turn.tool_activity if entry.item_type == "api_retry"]
+        self.assertEqual(retry.item_id, OTHER_SESSION)
+        self.assertEqual(retry.status, "observed")
+        self.assertIsNone(retry.provider_tokens)
+        self.assertEqual(CLAUDE_EVENT_CONTRACT, "claude_stream_candidate_v3")
+        with self.assertRaises(ValueError): self.normalize(raw, event_contract="claude_stream_candidate_v2")
+
+    def test_native_retry_counter_and_control_schema_fail_closed(self):
+        changes = ({"attempt": 0}, {"attempt": True}, {"attempt": 11}, {"max_retries": 0},
+            {"max_retries": "10"}, {"retry_delay_ms": -1}, {"retry_delay_ms": 509.0},
+            {"error_status": False}, {"error_status": 600}, {"error": "new-unmodeled-error"},
+            {"no_response": {}}, {"subtype": "other_retry"}, {"session_id": OTHER_SESSION}, {"uuid": ""})
+        for change in changes:
+            events = self.events(); events.insert(3, {**self.retry_event(), **change})
+            with self.subTest(change=change), self.assertRaises(ValueError): self.normalize(self.raw(events))
+        events = self.events(); retry = self.retry_event(); retry.pop("attempt"); events.insert(3, retry)
+        with self.assertRaises(ValueError): self.normalize(self.raw(events))
+
+    def test_fault_usage_is_reported_independently_of_candidate_acceptance(self):
+        events = self.events(); events[-1].pop("structured_output")
+        events.insert(2, {"type": "system", "subtype": "unknown_control", "session_id": SESSION})
+        raw = self.raw(events)
+        with self.assertRaises(ValueError): self.normalize(raw)
+        usage = reported_claude_usage(raw, expected_model="exact-requested-model", expected_thread_id=SESSION)
+        self.assertIsNotNone(usage)
+        self.assertEqual(usage.provider_tokens, 205)
+        self.assertEqual(usage.event_contract, CLAUDE_EVENT_CONTRACT)
+        self.assertEqual(usage.thread_id, SESSION)
+        self.assertIsNone(reported_claude_usage(raw, expected_model="another-model"))
+        self.assertIsNone(reported_claude_usage(raw, expected_model="exact-requested-model", expected_thread_id=OTHER_SESSION))
+        self.assertIsNone(reported_claude_usage(raw[:-8], expected_model="exact-requested-model"))
+        self.assertIsNone(reported_claude_usage(None, expected_model="exact-requested-model"))
+        self.assertIsNone(reported_claude_usage(b"[" * 2000 + b"]" * 2000, expected_model="exact-requested-model"))
+        duplicate = self.events(); duplicate.insert(-1, copy.deepcopy(duplicate[-1]))
+        self.assertIsNone(reported_claude_usage(self.raw(duplicate), expected_model="exact-requested-model"))
+
+    def test_observed_zero_fault_usage_is_not_missing_or_successful_turn_usage(self):
+        events = self.events()
+        for key in ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"):
+            events[-1]["usage"][key] = 0
+        for key in events[-1]["modelUsage"]["exact-requested-model"]:
+            events[-1]["modelUsage"]["exact-requested-model"][key] = 0
+        events[-1]["usage"]["cache_creation"] = {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0}
+        raw = self.raw(events)
+        zero = reported_claude_usage(raw, expected_model="exact-requested-model")
+        self.assertIsNotNone(zero); self.assertEqual(zero.provider_tokens, 0)
+        with self.assertRaises(ValueError): self.normalize(raw)
+        events[-1].pop("modelUsage")
+        self.assertIsNone(reported_claude_usage(self.raw(events), expected_model="exact-requested-model"))
+
+    def test_adapter_attaches_validated_usage_to_stdout_bearing_faults_without_retry(self):
+        invocation = self.builder().build("task", thread_id=SESSION)
+        events = self.events(); events.insert(3, {"type":"system", "subtype":"unknown_control", "session_id":SESSION})
+        raw = self.raw(events)
+        completed = subprocess.CompletedProcess(invocation.argv, 0, raw, b"retained stderr")
+        with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed) as process:
+            with self.assertRaises(RunProtocolFault) as captured:
+                ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                    expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
+        process.assert_called_once()
+        self.assertEqual(captured.exception.reported_usage.provider_tokens, 205)
+        self.assertEqual(captured.exception.artifact_payloads["provider_stdout"], raw)
+        timeout = SupervisedProcessTimeout(raw, b"timeout")
+        with patch("open_cake_ir.lab.claude.run_supervised", side_effect=timeout):
+            with self.assertRaises(RunProtocolFault) as captured:
+                ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                    expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
+        self.assertEqual(captured.exception.reported_usage.provider_tokens, 205)
 
 
 if __name__ == "__main__":
