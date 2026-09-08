@@ -9,7 +9,10 @@ from .tinygemm.contract import _validate_tinygemm_contract
 from .qsa.workload import _validate_qsa_contract
 from .dsa.contract import _validate_dsa_contract
 from .kda.contract import _validate_kda_fused_decode_contract, _validate_kda_decode_megaop_b200_contract
+from .tiles import workload as tile_math
 from .tiles.workload import validate_tile_contract
+from .normalization import workload as normalization_math
+from .normalization.authoring import starter_source
 
 _TASKS = {
     "flash_kmeans_assign": (_validate_flash_contract, FlashWorkloadContract),
@@ -21,6 +24,8 @@ _TASKS = {
     "rmsnorm_fp32": (validate_tile_contract, WorkloadContract),
     "gemm_bias_bf16_fp32": (validate_tile_contract, WorkloadContract),
     "indexed_gather_bf16": (validate_tile_contract, WorkloadContract),
+    "layernorm_fp32": (normalization_math.validate_normalization_contract, WorkloadContract),
+    "residual_rmsnorm_fp32": (normalization_math.validate_normalization_contract, WorkloadContract),
 }
 
 def load_workload(path) -> WorkloadContract:
@@ -31,4 +36,39 @@ def load_workload(path) -> WorkloadContract:
     if task is None:
         raise ValueError("workload operator is unsupported")
     validator, contract_type = task
+    if operator == "rmsnorm_fp32" and document.get("revision") == "3":
+        validator = normalization_math.validate_normalization_contract
     return contract_type.from_document(document, source, validate=validator)
+
+
+def _tensor_math(workload: WorkloadContract):
+    """Task-owned routing for the common tensor Evaluation input/oracle interface."""
+    operator = workload.document["operator"]
+    if (operator in {"layernorm_fp32", "residual_rmsnorm_fp32"}
+            or operator == "rmsnorm_fp32" and workload.document["revision"] == "3"):
+        return normalization_math
+    if operator in {"rmsnorm_fp32", "gemm_bias_bf16_fp32", "indexed_gather_bf16"}:
+        validate_tile_contract(workload.document)
+        return tile_math
+    raise ValueError("workload has no registered flat tensor oracle")
+
+
+def materialize_case(workload: WorkloadContract, case_id: str):
+    return _tensor_math(workload).materialize_case(workload, case_id)
+
+
+def reference_outputs(workload: WorkloadContract, case_id: str, inputs):
+    return _tensor_math(workload).reference_outputs(workload, case_id, inputs)
+
+
+def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 128,
+                columns: int = 1024, case_id: str = "primary") -> tuple[dict, str]:
+    """Return a real fixed-shape Workload and readable starter for the common Lab.
+
+    The launcher persists these outside the checkout, freezes execution bindings and
+    delegates all iteration to Ralph. Every declared input case is required, regardless
+    of which case is selected for authoring; all five have the same tensor ABI.
+    """
+    document = normalization_math.workload_document(task_name, backend=backend, rows=rows, columns=columns)
+    workload = WorkloadContract(document)
+    return document, starter_source(workload, case_id)
