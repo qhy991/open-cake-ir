@@ -21,6 +21,19 @@ from open_cake_ir.tasks.runtime import TaskLab
 
 
 class FindingCliContractTests(unittest.TestCase):
+    def test_lab_preflight_reports_template_refusals_without_tracebacks(self) -> None:
+        for template in sorted((ROOT / "contracts/studies").glob("*template*.json")):
+            with self.subTest(template=template.name), redirect_stdout(StringIO()) as output, \
+                    redirect_stderr(StringIO()) as errors:
+                code = main(["--project-root", str(ROOT), "lab", "preflight", str(template)])
+                self.assertIn(code, (0, 2))
+                self.assertNotIn("Traceback", errors.getvalue())
+                if code == 2:
+                    self.assertIn("lab preflight:", errors.getvalue())
+                    self.assertIn("--execution-bindings", errors.getvalue())
+                else:
+                    self.assertIn("study_id", json.loads(output.getvalue()))
+
     def test_compiler_cli_does_not_import_application_runtime(self) -> None:
         import os
         import subprocess

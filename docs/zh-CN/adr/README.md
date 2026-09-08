@@ -1,10 +1,10 @@
-# 设计决策：按问题读懂 54 份记录
+# 设计决策：按问题阅读记录
 
 [中文首页](../README.md) · [English index](../../en/adr/README.md) · [原目录](../../adr/README.md)
 
 ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭编号认定已实现、已发布或 GPU 通过。中文页保留原文状态并提示有关后继；实际版本查[发布状态](../../../reports/current/STATUS.md)。
 
-目录中有两个 0038 和两个 0039，主题不同，使用完整文件名区分，保留历史编号。
+目录中有两个 0038、两个 0039 和两个 0053，主题不同，使用完整文件名区分，保留历史编号。
 
 初学者先读 0001（职责分开）、0029（路线与题目）、0047（文档职责）、0048（AI 流程）和 0051（读取形状）。其余遇到具体问题再查。
 
@@ -68,3 +68,9 @@ ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭�
 - [0054：Lab 只使用 Ralph](0054-lab-uses-only-ralph.md)
 - [0055：任务实现从通用 Lab 中分离](0055-task-implementations-live-outside-the-common-lab.md)
 - [0056：每个候选都与固定基线成对测量](0056-fixed-baseline-paired-execution.md)
+
+## 原始决策补充索引 / Additional original decisions
+
+- [ADR 0053: B300 is an exact target on the existing Triton path](../../adr/0053-b300-is-an-exact-target.md)
+- [ADR 0053: Study-bound external advisory candidate order](../../adr/0053-study-bound-advisory-cost-selection.md)
+- [ADR 0057: Metal and CLI harnesses use the existing Lab](../../adr/0057-metal-and-harnesses-use-the-existing-lab.md)

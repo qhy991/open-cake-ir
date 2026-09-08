@@ -152,11 +152,13 @@ def build_run_reference_documents(
                 raise ValueError("Python starter requires the existing Python-enabled Authoring Environment")
             documents["schedule-starter.py"] = bind_python_reference(
                 skeleton_bytes.decode("utf-8"), skeleton, filename=str(skeleton_ref["path"]))
-            documents["python-frontend.md"] = (root / "docs/PYTHON_FRONTEND.md").read_bytes()
         else:
             documents.update({"schedule.schema.json": schedule_schema_bytes(),
                 "schedule-authoring.md": (root / "compiler/AUTHORING_CONTRACT.md").read_bytes(),
                 "schedule-skeleton.json": _canonical_json(skeleton).encode()})
+        if arm.get("input_format") == "schedule_or_python_v1":
+            documents["python-frontend.md"] = (root / "docs/PYTHON_FRONTEND.md").read_bytes()
+            documents["python-example.py"] = (root / "examples/python/fma.py").read_bytes()
         if arm.get("lowering_route", {}).get("backend") != "metal" and arm.get("input_format") == "schedule_or_python_v1":
             policy = backend_policy(arm["lowering_route"]["backend"])
             documents[policy.authoring_file] = (root / "docs/en" / policy.document).read_bytes()

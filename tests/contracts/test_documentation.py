@@ -28,6 +28,14 @@ STABLE_ENTRY_DOCUMENTS = (
 
 
 class DocumentationContractTests(unittest.TestCase):
+    def test_each_adr_is_linked_by_its_full_filename_in_every_index(self) -> None:
+        for index in ("docs/adr/README.md", "docs/en/adr/README.md",
+                      "docs/zh-CN/adr/README.md", "docs/README.md"):
+            text = (ROOT / index).read_text(encoding="utf-8")
+            for record in (ROOT / "docs/adr").glob("[0-9][0-9][0-9][0-9]-*.md"):
+                with self.subTest(index=index, record=record.name):
+                    self.assertIn(record.name, text)
+
     def test_wiki_documents_each_ir_operation_and_workload_contract(self) -> None:
         sys.path.insert(0, str(ROOT / "src"))
         from open_cake_ir.compiler.ir import ElementwiseOp, OperationKind

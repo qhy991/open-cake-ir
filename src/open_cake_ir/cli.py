@@ -306,7 +306,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit({"accepted": False, "lowering_eligible": False,
                    "findings": [finding], "guidance": []})
         return 2
-    except (CompilerError, OSError, json.JSONDecodeError) as error:
+    except (CompilerError, OSError, ValueError) as error:
+        if args.command == "lab":
+            print(f"lab {args.lab_command}: {error}", file=sys.stderr)
+            if args.lab_command == "preflight" and args.execution_bindings is None:
+                print("Campaign-bound templates require --execution-bindings; see docs/RUNBOOK.md.",
+                      file=sys.stderr)
+            return 2
         if args.command != "compiler" or args.output_format != "text":
             raise
         print(f"命令未完成：{error}", file=sys.stderr)
