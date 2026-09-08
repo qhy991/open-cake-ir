@@ -19,7 +19,7 @@ Compiler 支持精确目标 `Apple M1 Pro` / `apple_gpu_family7` 和 `Apple M2` 
 在 checkout 中，使用 Executor 声明的 Python 执行：
 
 ```sh
-PYTHONPATH=src python3 tools/launch_task.py \
+python3 tools/launch_task.py \
   --task rmsnorm --backend metal-m1-pro \
   --harness codex --model "<exact-model-id>" --effort high \
   --workspace "$HOME/.local/share/open-cake-ir/runs/metal-rmsnorm-example" \
@@ -35,6 +35,10 @@ actor 工作区只创建一次，Ralph 各轮保留它并继续同一个 provide
 重复使用已有任务根目录会拒绝，不会重置历史状态。可通过 `--provider-executable` 指定 CLI；
 省略时按 harness 在 PATH 中查找 `codex` 或 `claude`。已知的 Codex npm wrapper 会解析到
 它自己安装包中的原生可执行文件，不替换为另一份安装。
+
+broker 和 worker 使用 Executor 声明的 Python、`-I` 和同一 checkout 中的绝对路径
+bootstrap 启动，无需外部 `PYTHONPATH`。继承的 `PYTHONPATH`、`PYTHONHOME` 不能
+将它们切换到另一份源码；broker 仍通过 exec 保留作业身份和继承的锁描述符。
 
 [薄入口](../tools/launch_task.py) 在该目录写入 Workload、可读的 `starter.py`、Study 模板和
 运行时绑定，然后通过公共 Open Cake 环境准备封存基线，取得或验证真实 provider 资格，

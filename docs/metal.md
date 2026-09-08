@@ -24,7 +24,7 @@ missing or mismatched prerequisite; it does not install, repair or release a run
 From the checkout, using the Executor's Python executable:
 
 ```sh
-PYTHONPATH=src python3 tools/launch_task.py \
+python3 tools/launch_task.py \
   --task rmsnorm --backend metal-m1-pro \
   --harness codex --model "<exact-model-id>" --effort high \
   --workspace "$HOME/.local/share/open-cake-ir/runs/metal-rmsnorm-example" \
@@ -42,6 +42,11 @@ turns; the provider resumes the same session. Reusing an existing task root refu
 instead of resetting its state. `--provider-executable` selects an explicit CLI binary.
 The launcher discovers `codex` or `claude` on PATH when that option is omitted. A known
 Codex npm wrapper resolves to its own native executable; another installation is never substituted.
+
+The broker and its worker use the Executor's Python with `-I` and an absolute
+source bootstrap from the same checkout. Their imports do not require ambient
+`PYTHONPATH`; inherited `PYTHONPATH` and `PYTHONHOME` cannot select another checkout.
+The broker still execs its worker, retaining the admitted job and lock descriptor.
 
 The [thin launcher](../tools/launch_task.py) writes the Workload, readable `starter.py`,
 Study template and runtime bindings under that root. It then prepares a sealed baseline

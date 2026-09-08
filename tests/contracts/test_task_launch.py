@@ -207,7 +207,8 @@ class TaskLaunchTests(unittest.TestCase):
         runtime = json.loads((self.workspace/"runtime.json").read_text())
         self.assertEqual(runtime["provider"]["workspace_root"], str(self.workspace/"actors"))
         self.assertEqual(runtime["toolchain"], {"output_root":str(self.workspace/"builds")})
-        self.assertEqual(runtime["broker"]["command"], ["/unit-test/python","-m","open_cake_ir.evaluation.local_broker","--worker-module","open_cake_ir.tasks.evaluate"])
+        self.assertEqual(runtime["broker"]["command"], ["/unit-test/python", "-I", str(ROOT / "src/open_cake_ir/evaluation/source_bootstrap.py"),
+                         "open_cake_ir.evaluation.local_broker", "--worker-module", "open_cake_ir.tasks.evaluate"])
         self.assertEqual(set(json.loads((self.workspace/"execution-bindings.json").read_text())),
                          {"schema_version","qualification_path","qualification_anchor_path","runtime_config_path","fixed_baseline_bundle_path"})
         self.assertFalse((self.workspace/"actors").exists())  # The existing composer creates it once.

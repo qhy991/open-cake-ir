@@ -195,11 +195,12 @@ def main(argv=None) -> int:
     receipt = ProviderQualificationReceipt.load(receipt_path)
     if not receipt.qualified or receipt.scope != "live_two_turn_tool_rich_provider":
         raise ValueError("task execution requires an actual live artifact-optimization provider qualification")
+    from open_cake_ir.evaluation.source_bootstrap import module_command
     runtime = {"schema_version": 1,
         "provider": {"executable": str(executable), "workspace_root": str(workspace / "actors")},
         "toolchain": {"output_root": str(workspace / "builds")},
-        "broker": {"command": [executor.document["host_environment"]["python"]["invocation_path"],
-                    "-m", "open_cake_ir.evaluation.local_broker", "--worker-module", "open_cake_ir.tasks.evaluate"],
+        "broker": {"command": module_command(executor.document["host_environment"]["python"]["invocation_path"],
+                    "open_cake_ir.evaluation.local_broker", "--worker-module", "open_cake_ir.tasks.evaluate"),
                    "cwd": str(ROOT), "timeout_seconds": 1800,
                    "service_user": pwd.getpwuid(os.getuid()).pw_name,
                    "service_group": grp.getgrgid(os.getgid()).gr_name}}

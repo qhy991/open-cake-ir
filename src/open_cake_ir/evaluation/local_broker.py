@@ -76,8 +76,9 @@ def main(argv=None) -> int:
     # in the existing supervisor kills the worker and its native children together.
     os.set_inheritable(fd, True)
     environment = dict(os.environ, METAL_JOB_ID=job, METAL_BROKER_LOCK_FD=str(fd))
-    os.execvpe(sys.executable, [sys.executable, "-m", args.worker_module,
-        "--request", str(args.request), "--output", str(args.output)], environment)
+    from .source_bootstrap import module_command
+    os.execvpe(sys.executable, module_command(sys.executable, args.worker_module,
+        "--request", str(args.request), "--output", str(args.output)), environment)
     return 1  # exec never returns normally
 
 
