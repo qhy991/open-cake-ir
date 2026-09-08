@@ -7,7 +7,9 @@ from typing import Mapping
 from open_cake_ir.compiler.toolchain import project_triton_kernel
 
 
-def comparison_arm(arms: Mapping[str, object]) -> str:
+def comparison_arm(arms: Mapping[str, object]) -> str | None:
+    if set(arms) == {'open_cake'}:
+        return None
     if set(arms) == {'open_cake', 'direct_cuda'}:
         return 'direct_cuda'
     if set(arms) == {'open_cake', 'native_triton'}:
@@ -64,3 +66,14 @@ def triton_optimization_analysis_plan() -> dict:
         'confirmation': 'fresh_fixed_candidate_correctness_then_paired_cupti',
         'threshold_view': 'descriptive_first_fresh_confirmation_from_retained_events_no_search_latency_substitution',
     }
+
+
+def matched_run_arms(arms: Mapping[str, object], claim_scope: str) -> list[str]:
+    """The single authoring environment is confined to non-comparative optimization."""
+    comparison = comparison_arm(arms)
+    if comparison is None:
+        if claim_scope != "artifact_optimization_only":
+            raise ValueError("one Authoring Environment requires artifact_optimization_only")
+        return ["open_cake"]
+    names = [comparison, "open_cake"]
+    return sorted(names if claim_scope in {"artifact_optimization_only", "system_qualification_only"} else names * 3)

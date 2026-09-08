@@ -48,6 +48,8 @@ from .providers import (
 )
 from .ralph import RalphBudget, RalphController, derive_ralph_stop_reason
 from .python_reference import read_skeleton
+from .provider_policy import provider_configuration, provider_harness
+from .pairing import matched_run_arms
 from .task_package import TASK_AGENTS_RALPH_V1, render_task_package
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -1304,7 +1306,7 @@ class CampaignLock:
                 resolved.get("budget"), "campaign_lock.resolved_inputs.budget"
             )
             selection = arms["open_cake"].get("candidate_selection")
-            if "candidate_selection" in arms[comparison]:
+            if comparison is not None and "candidate_selection" in arms[comparison]:
                 raise ValueError(f"{comparison} empirical selection is unsupported")
             if "candidate_selection" in arms["open_cake"]:
                 if (
@@ -1330,11 +1332,7 @@ class CampaignLock:
                 evidence_policy,
                 "campaign_lock.resolved_inputs.evidence_policy",
             )
-            expected_arms = (
-                sorted([comparison, "open_cake"])
-                if claim_scope in _ONE_RUN_PER_ARM_SCOPES
-                else sorted([comparison] * 3 + ["open_cake"] * 3)
-            )
+            expected_arms = matched_run_arms(arms, claim_scope)
             if sorted(name.rsplit("-", 1)[0] for name in run_order) != expected_arms:
                 raise ValueError("matched Campaign Lock Run allocation differs")
         elif study_kind == "portfolio":
@@ -1367,12 +1365,14 @@ class CampaignLock:
             raise ValueError("Campaign Lock Study kind is unsupported")
         for field in ("evaluation_protocol", "execution"):
             _object(document.get(field), f"campaign_lock.{field}")
+        if study_kind == "matched_search" and comparison is None and paired_protocol(document['evaluation_protocol']) is None:
+            raise ValueError("single-environment Campaign requires a fixed-baseline paired assay")
         if paired_protocol(document['evaluation_protocol']) is not None:
             execution = document['execution']
             if set(execution) != {'target', 'executor_revision', 'broker_execution_sha256',
                                   'gpu', 'sandbox', 'fixed_baseline', 'runtime_config'}:
                 raise ValueError('paired Campaign execution fields differ')
-            if study_kind != 'matched_search' or comparison != 'native_triton':
+            if study_kind != 'matched_search' or comparison not in {None, 'native_triton'}:
                 raise ValueError('paired Campaign requires the native Triton comparison')
             _digest(execution['broker_execution_sha256'], 'execution.broker_execution_sha256')
             executor = _object(execution['executor_revision'], 'execution.executor_revision')
@@ -1602,8 +1602,10 @@ class Lab:
         arms = _object(study.document.get("arms"), "study.arms")
         comparison = comparison_arm(arms)
         paired_triton = comparison == "native_triton"
+        single_environment = comparison is None
+        matched_run_arms(arms, study.document["claim_scope"])
         open_cake = _object(arms.get("open_cake"), "study.arms.open_cake")
-        direct_cuda = _object(arms.get(comparison), f"study.arms.{comparison}")
+        direct_cuda = _object(arms[comparison], f"study.arms.{comparison}") if comparison is not None else {}
         self._validate_authoring(workload, arms, empirical_cost_model_path=empirical_cost_model_path)
         empirical_policy = open_cake.get("candidate_selection")
         has_empirical_policy = "candidate_selection" in open_cake
@@ -1637,6 +1639,12 @@ class Lab:
             "tool_surface",
             "feedback",
         }
+        if single_environment:
+            direct_cuda_fields = set()
+            open_cake_fields.update({"input_format", "toolchain_sha256"})
+            if open_cake.get("input_format") != "schedule_or_python_v1":
+                raise ValueError("single-environment optimization requires the Python-enabled authoring contract")
+            _digest(open_cake.get("toolchain_sha256"), "study.arms.open_cake.toolchain_sha256")
         if paired_triton:
             open_cake_fields.update({"input_format", "toolchain_sha256"})
             direct_cuda_fields -= {"launch_contract", "candidate_skeleton"}
@@ -1653,7 +1661,7 @@ class Lab:
             raise ValueError("Study Contract Authoring Environment kinds differ")
         route = open_cake.get("lowering_route")
         if (not isinstance(route, Mapping) or set(route) != {"backend", "entry_point"}
-            or route.get("backend") != "triton" or not isinstance(route.get("entry_point"), str)
+            or route.get("backend") not in ({"metal", "triton"} if single_environment else {"triton"}) or not isinstance(route.get("entry_point"), str)
             or not route["entry_point"].isidentifier()):
             raise ValueError("Study Contract Open Cake lowering route differs")
         schedule_skeleton = _object(
@@ -1679,73 +1687,15 @@ class Lab:
             != sha256(_canonical_json_bytes(skeleton_document)).hexdigest()
         ):
             raise ValueError("Study Contract Schedule skeleton bytes or lowering route differ")
-        if open_cake.get("provider") != direct_cuda.get(
-            "provider"
-        ) or open_cake.get("scaffold") != direct_cuda.get("scaffold"):
-            raise ValueError("matched Authoring Environments differ in provider or scaffold")
-        _digest(direct_cuda.get("toolchain_sha256"), "study.arms.direct_cuda.toolchain_sha256")
+        if comparison is not None:
+            if (open_cake.get("provider") != direct_cuda.get("provider")
+                    or open_cake.get("scaffold") != direct_cuda.get("scaffold")):
+                raise ValueError("matched Authoring Environments differ in provider or scaffold")
+            _digest(direct_cuda.get("toolchain_sha256"), "study.arms.direct_cuda.toolchain_sha256")
         provider = _object(open_cake.get("provider"), "study.arms.provider")
-        provider_fields = {
-            "revision",
-            "qualification",
-            "qualification_anchor",
-            "executable_sha256",
-            "model",
-            "reasoning_effort",
-            "service_tier",
-            "output_schema",
-            "removed_environment",
-            "sandbox",
-            "cwd_policy",
-            "reference_visibility",
-            "disabled_features",
-            "code_mode_host",
-        }
-        if frozenset(provider) not in {
-            frozenset(provider_fields | {"web_search"}),
-            frozenset(provider_fields | {"event_contract"}),
-        }:
-            raise ValueError("Study Contract provider configuration fields differ")
-        provider_revision = _name(provider.get("revision"), "study.arms.provider.revision")
         claim_scope = cast(str, study.document["claim_scope"])
-        expected_disabled_features = (
-            []
-            if claim_scope == "artifact_optimization_only"
-            else list(CODEX_DISABLED_FEATURES)
-        )
-        expected_event_contract = (
-            "tool_rich_candidate_v1"
-            if claim_scope == "artifact_optimization_only"
-            else "closed_file_change_v1"
-        )
-        code_mode_host = _object(provider.get("code_mode_host"), "study.arms.provider.code_mode_host")
-        if (set(code_mode_host) != {"path", "sha256"}
-            or not isinstance(code_mode_host.get("path"), str)
-            or not Path(code_mode_host["path"]).is_absolute()
-            or ".." in Path(code_mode_host["path"]).parts):
-            raise ValueError("Study Contract Code Mode host identity differs")
-        _digest(code_mode_host.get("sha256"), "study.arms.provider.code_mode_host.sha256")
-        _name(
-            provider.get("reasoning_effort"),
-            "study.arms.provider.reasoning_effort",
-        )
-        if (
-            provider.get("model") != "gpt-5.6-sol"
-            or provider.get("service_tier") != "default"
-            or provider.get("sandbox") != "workspace-write"
-            or provider.get("cwd_policy")
-            != "independent_task_workspace"
-            or provider.get("reference_visibility")
-            != "workspace_task_files"
-            or provider.get("disabled_features") != expected_disabled_features
-            or (expected_event_contract == "closed_file_change_v1"
-                and provider.get("web_search") != "disabled")
-            or provider.get("event_contract", "closed_file_change_v1")
-            != expected_event_contract
-            or provider.get("removed_environment")
-            != ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
-        ):
-            raise ValueError("Study Contract provider configuration differs")
+        provider_revision = _name(provider.get("revision"), "study.arms.provider.revision")
+        expected_provider_configuration = provider_configuration(provider, claim_scope, arms=arms)
         executable_sha256 = _digest(
             provider.get("executable_sha256"), "study.arms.provider.executable_sha256"
         )
@@ -1764,36 +1714,8 @@ class Lab:
         if (
             qualification.provider_revision != provider_revision
             or qualification.executable_sha256 != executable_sha256
-            or qualification.configuration_sha256
-            != sha256(
-                _canonical_json_bytes(
-                    {
-                        "model": provider["model"],
-                        "reasoning_effort": provider["reasoning_effort"],
-                        "service_tier": provider["service_tier"],
-                        "output_schema_sha256": _object(
-                            provider["output_schema"], "study.arms.provider.output_schema"
-                        )["sha256"],
-                        "removed_environment": provider["removed_environment"],
-                        "sandbox": provider["sandbox"],
-                        "cwd_policy": provider["cwd_policy"],
-                        "reference_visibility": provider["reference_visibility"],
-                        "disabled_features": provider["disabled_features"],
-                        "code_mode_host": provider["code_mode_host"],
-                        **({"web_search": provider["web_search"]} if "web_search" in provider else {}),
-                        **(
-                            {"event_contract": provider["event_contract"]}
-                            if "event_contract" in provider
-                            else {}
-                        ),
-                        **(
-                            {
-                                "submission_contract": CANDIDATE_SET_ENVELOPE_V1
-                            }
-                        ),
-                    }
-                )
-            ).hexdigest()
+            or qualification.configuration_sha256 != sha256(
+                _canonical_json_bytes(expected_provider_configuration)).hexdigest()
             or not qualification.initial_and_resume_equivalent
             or not qualification.file_lifecycle_observed
             or not qualification.usage_observed
@@ -1868,7 +1790,7 @@ class Lab:
                 != sha256(_canonical_json_bytes(anchor)).hexdigest()
             ):
                 raise ValueError("provider qualification anchor evidence differs")
-        for field in ("output_schema",):
+        for field in (("output_schema",) if provider_harness(provider) == "codex" else ()):
             reference = _object(provider.get(field), f"study.arms.provider.{field}")
             if set(reference) != {"path", "sha256"}:
                 raise ValueError(f"Study Contract provider {field} reference differs")
@@ -1889,7 +1811,7 @@ class Lab:
             scaffold_path.read_bytes()
         ).hexdigest():
             raise ValueError("Study Contract scaffold bytes differ")
-        if not paired_triton:
+        if comparison == "direct_cuda":
             launch_contract = _object(
                 direct_cuda.get("launch_contract"), "study.arms.direct_cuda.launch_contract"
             )
@@ -1921,9 +1843,8 @@ class Lab:
                 "study.arms.direct_cuda.candidate_skeleton.sha256",
             ) != sha256(candidate_skeleton_path.read_bytes()).hexdigest():
                 raise ValueError("Study Contract direct candidate skeleton bytes differ")
-        if open_cake.get("tool_surface") != (["submit_schedule_or_python"] if paired_triton else ["submit_schedule"]) or direct_cuda.get(
-            "tool_surface"
-        ) != (["submit_triton_kernel"] if paired_triton else ["submit_cuda"]):
+        if (open_cake.get("tool_surface") != (["submit_schedule_or_python"] if paired_triton or single_environment else ["submit_schedule"])
+                or (comparison is not None and direct_cuda.get("tool_surface") != (["submit_triton_kernel"] if paired_triton else ["submit_cuda"]))):
             raise ValueError("Study Contract Authoring Environment tool surfaces differ")
         attribution_evaluation = _object(
             study.document.get("evaluation_protocol"),
@@ -1941,12 +1862,9 @@ class Lab:
             "correctness",
             "qualified_timing",
             *profile_feedback,
-        ] or direct_cuda.get("feedback") != [
-            "compile",
-            "correctness",
-            "qualified_timing",
-            *profile_feedback,
-        ]:
+        ] or (comparison is not None and direct_cuda.get("feedback") != [
+            "compile", "correctness", "qualified_timing", *profile_feedback,
+        ]):
             raise ValueError("Study Contract Authoring Environment feedback differs")
         gate, compiler_relative, compiler_reference = (
             _resolve_compiler_reference(
@@ -1972,11 +1890,7 @@ class Lab:
         if allocation.get("method") != "predeclared_balanced_blocks" or not isinstance(order, list):
             raise ValueError("Study Contract allocation differs")
         run_order = tuple(_name(value, "study.allocation.order[]") for value in order)
-        expected_arms = (
-            sorted([comparison, "open_cake"])
-            if claim_scope in _ONE_RUN_PER_ARM_SCOPES
-            else sorted([comparison] * 3 + ["open_cake"] * 3)
-        )
+        expected_arms = matched_run_arms(arms, claim_scope)
         if len(run_order) != len(set(run_order)) or sorted(
             name.rsplit("-", 1)[0] for name in run_order
         ) != expected_arms:
@@ -2036,8 +1950,10 @@ class Lab:
         )
         workload.case(_name(evaluation.get("case_id"), "study.evaluation_protocol.case_id"))
         assay = paired_protocol(evaluation)
-        if assay is not None and not paired_triton:
+        if assay is not None and not (paired_triton or single_environment):
             raise ValueError('fixed-baseline assay requires the paired Triton Study')
+        if single_environment and assay is None:
+            raise ValueError("single-environment optimization requires an explicit fixed-baseline paired assay")
         # How many candidates a Turn search-evaluates. Checked here because a Study that
         # asks for none, or for a word, would otherwise fault partway through a run --
         # and a run that faults has already spent the GPU time this Lab exists to gate.
@@ -2105,7 +2021,7 @@ class Lab:
         if (
             execution.get("target") != workload.target
             or execution.get("target") != skeleton_document.get("target")
-            or execution.get("sandbox") != "workspace-write"
+            or execution.get("sandbox") != provider.get("sandbox")
         ):
             raise ValueError("Study Contract execution authority differs")
         _digest(
@@ -2126,9 +2042,15 @@ class Lab:
         )
         executor_reference = dict(executor.reference)
         gpu = _object(execution.get("gpu"), "study.execution.gpu")
-        target = cuda_target(execution['target'])
+        from open_cake_ir.compiler.target import Target
+        revision_document = json.loads((self._root / compiler_relative).read_bytes())
+        target_reference = revision_document["target_definitions"].get(execution["target"])
+        if target_reference is None:
+            raise ValueError("Study target is not bound by the Compiler Revision")
+        _, target_path = _project_path(self._root, target_reference["path"], "compiler.target")
+        target = Target.load(target_path)
         if (set(gpu) != {'name', 'count', 'mode'} or gpu.get('name') not in target.device_names
-            or type(gpu.get('count')) is not int or gpu['count'] != 1 or gpu.get('mode') != 'exclusive'):
+            or type(gpu.get('count')) is not int or gpu['count'] != 1 or gpu.get('mode') != ('local_serialized' if route['backend'] == 'metal' else 'exclusive')):
             raise ValueError("Study Contract GPU admission differs")
         analysis = _object(study.document.get("analysis_plan"), "study.analysis_plan")
         if claim_scope == "system_qualification_only":
@@ -2248,7 +2170,7 @@ class Lab:
             evidence_root,
             role="Campaign Evidence root",
         )
-        comparison_arm(environments)
+        matched_run_arms(environments, lock.claim_scope)
         if set(environments) != set(lock.document["resolved_inputs"]["arm_environments"]):
             raise ValueError("Campaign Authoring Environment set differs")
         if lock.study_kind != "matched_search":
@@ -2342,31 +2264,8 @@ class Lab:
             raise ValueError('new live native execution requires paired policy and current closed provider surface')
         if getattr(provider, "executable_sha256", None) != qualification.executable_sha256:
             raise ValueError("Run Provider executable does not match its qualification")
-        output_schema = _object(
-            provider_document["output_schema"],
-            "arm_environments.open_cake.provider.output_schema",
-        )
-        expected_provider_configuration = {
-            "model": provider_document["model"],
-            "reasoning_effort": provider_document["reasoning_effort"],
-            "service_tier": provider_document["service_tier"],
-            "output_schema_sha256": output_schema["sha256"],
-            "removed_environment": provider_document["removed_environment"],
-            "sandbox": provider_document["sandbox"],
-            "cwd_policy": provider_document["cwd_policy"],
-            "reference_visibility": provider_document["reference_visibility"],
-            "disabled_features": provider_document["disabled_features"],
-            "code_mode_host": provider_document["code_mode_host"],
-        }
-        if "web_search" in provider_document:
-            expected_provider_configuration["web_search"] = provider_document["web_search"]
-        if "event_contract" in provider_document:
-            expected_provider_configuration["event_contract"] = provider_document[
-                "event_contract"
-            ]
-        expected_provider_configuration[
-            "submission_contract"
-        ] = CANDIDATE_SET_ENVELOPE_V1
+        expected_provider_configuration = provider_configuration(
+            provider_document, lock.claim_scope, arms=arms)
         if (
             getattr(provider, "configuration", None) != expected_provider_configuration
             or qualification.canonical_sha256
