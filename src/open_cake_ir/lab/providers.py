@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 import json
 from dataclasses import replace
 from hashlib import sha256
@@ -180,9 +182,7 @@ class QualifiedRunProvider:
         self.executable_sha256 = qualification.executable_sha256
         self.configuration = next(iter(builders.values())).configuration
         configuration_sha256 = sha256(
-            json.dumps(
-                self.configuration, sort_keys=True, separators=(",", ":")
-            ).encode()
+            canonical_json_bytes(self.configuration)
         ).hexdigest()
         if configuration_sha256 != qualification.configuration_sha256:
             raise ValueError("provider configuration differs from provider qualification")

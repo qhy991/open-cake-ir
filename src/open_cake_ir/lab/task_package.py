@@ -207,7 +207,12 @@ def _document_sections(documents: Mapping[str, bytes]) -> str:
             if name.endswith((".cu", ".cuh"))
             else "markdown"
         )
-        sections.append(f"## Frozen reference: `{name}`\n\n```{language}\n{text}\n```")
+        scope = (
+            "This is a Python syntax example for its own declared target and workload. "
+            "Use this Run's target.json and schedule starter for the task's target and shapes.\n\n"
+            if name == "python-example.py" else ""
+        )
+        sections.append(f"## Frozen reference: `{name}`\n\n{scope}```{language}\n{text}\n```")
     return "\n\n".join(sections)
 
 

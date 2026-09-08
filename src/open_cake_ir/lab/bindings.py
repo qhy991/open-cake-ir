@@ -5,6 +5,8 @@ filled; source references and provider treatment are never refreshed here.
 """
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 import json
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
@@ -20,7 +22,7 @@ CURRENT_RELEASE_BINDING = {'binding': 'current_release'}
 
 
 def canonical(value):
-    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+    return canonical_json_bytes(value)
 
 
 def external_file(project_root, value, context):

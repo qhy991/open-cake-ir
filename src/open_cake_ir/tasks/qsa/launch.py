@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
+
 import argparse
 import json
 import shlex
@@ -29,14 +31,6 @@ _DIRECT_SOURCE = ROOT / "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_
 _DIRECT_MANIFEST = ROOT / "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json"
 
 
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _write_new(path: Path, value: object) -> None:

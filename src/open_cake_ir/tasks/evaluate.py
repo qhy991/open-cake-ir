@@ -7,6 +7,8 @@ the same common Evaluation receipt and broker boundary.
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
+
 import argparse
 import json
 import os
@@ -40,14 +42,6 @@ from open_cake_ir.evaluation.paired import (
 )
 
 
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode()
 
 
 def _object(value: object, context: str) -> Mapping[str, object]:

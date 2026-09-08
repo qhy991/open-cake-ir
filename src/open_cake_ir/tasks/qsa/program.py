@@ -1,6 +1,8 @@
 """Immutable multi-kernel program contract over independently compiled Schedules."""
 
 from __future__ import annotations
+
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
 from open_cake_ir.tasks.workloads import load_workload
 
 import json
@@ -14,14 +16,6 @@ from open_cake_ir.compiler import Compiler, Schedule
 from open_cake_ir.evaluation.workload import WorkloadContract
 
 
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _object(value: object, context: str) -> Mapping[str, object]:

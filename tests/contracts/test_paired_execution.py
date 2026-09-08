@@ -38,12 +38,13 @@ TEMPLATE = ROOT / 'contracts/studies/matched-search-triton-b300-optimization-tem
 
 
 def encoded(value):
-    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode()
 
 
 def protocol():
     value = json.loads(TEMPLATE.read_bytes())['evaluation_protocol']
     value['case_id'] = 'tiny'
+    value['note'] = '基线与候选的共同测量协议'
     return value
 
 
@@ -365,7 +366,7 @@ class PairedExecutionTests(unittest.TestCase):
         # and resolver. No released project descriptor or host environment is edited.
         project = self.output / 'project'
         project.mkdir()
-        for directory in ('contracts', 'corpus', 'compiler', 'docs'):
+        for directory in ('contracts', 'corpus', 'compiler', 'docs', 'examples/python'):
             shutil.copytree(ROOT / directory, project / directory)
         template = project / template_path.relative_to(ROOT)
         if schedule is not None:

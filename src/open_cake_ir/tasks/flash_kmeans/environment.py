@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from open_cake_ir.serialization import canonical_json_bytes
 import json, tempfile
 from dataclasses import asdict
 from hashlib import sha256
@@ -97,7 +99,7 @@ class NvccToolchainBuilder:
             "timeout_seconds": self._timeout_seconds,
         }
         return sha256(
-            json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+            canonical_json_bytes(document)
         ).hexdigest()
 
     def _run(self, arguments: list[str]) -> tuple[bytes, bytes]:
@@ -207,9 +209,7 @@ class DirectCudaEnvironment:
             json.dumps(authority_document, sort_keys=True, separators=(",", ":"))
         )
         self.canonical_sha256 = sha256(
-            json.dumps(
-                self.authority_document, sort_keys=True, separators=(",", ":")
-            ).encode()
+            canonical_json_bytes(self.authority_document)
         ).hexdigest()
 
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:

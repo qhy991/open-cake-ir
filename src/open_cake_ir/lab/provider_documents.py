@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 import json, math, os, re, stat
 from dataclasses import dataclass
 from hashlib import sha256
@@ -307,11 +309,7 @@ class ProviderQualificationReceipt:
     @property
     def canonical_sha256(self) -> str:
         return sha256(
-            json.dumps(
-                self.document,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode()
+            canonical_json_bytes(self.document)
         ).hexdigest()
 
 

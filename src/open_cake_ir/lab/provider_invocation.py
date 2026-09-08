@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-import json, os, stat
+from open_cake_ir.serialization import canonical_json_bytes
+
+import os, stat
 from hashlib import sha256
 from pathlib import Path
 from typing import Mapping
@@ -199,9 +201,7 @@ class CodexInvocationBuilder:
         """Hash the complete non-secret invocation policy qualified for every Turn."""
 
         return sha256(
-            json.dumps(
-                self.configuration, sort_keys=True, separators=(",", ":")
-            ).encode()
+            canonical_json_bytes(self.configuration)
         ).hexdigest()
 
     def build(self, prompt: str, *, thread_id: str | None) -> ProviderInvocation:

@@ -5,6 +5,8 @@ classification decides whether a correct, stable Candidate is a valid outcome.
 """
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 import json
 import math
 import re
@@ -28,7 +30,7 @@ def _plain(value):
 
 
 def _canonical(value):
-    return json.dumps(_plain(value), sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+    return canonical_json_bytes(_plain(value))
 
 
 def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | None:
