@@ -19,6 +19,8 @@ _SOURCE_FILES = (
     "compiler/targets/sm_103a.json",
     "src/open_cake_ir/compiler/target.py",
     "docs/en/PAIRED_TRITON.md",
+    "docs/en/PAIRED_CUTE.md",
+    "contracts/providers/native-cute-candidate-v1.schema.json",
     "examples/gpu/flash_kmeans_quickstart.py",
     "src/open_cake_ir/__init__.py",
     "src/open_cake_ir/cli.py",
