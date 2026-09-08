@@ -10,7 +10,6 @@ from typing import Callable, Mapping, cast
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.performance.empirical_cost import EmpiricalCostModel
-from open_cake_ir.compiler.target import cuda_target
 
 from ._documents import _canonical_json_bytes, _digest, _name, _object, _project_path
 from ._policies import (
@@ -23,15 +22,13 @@ from ._policies import (
     _scientific_analysis_plan_version,
 )
 from .admission import validate_provider, validate_run_plan, validate_evaluation
-from .bindings import _resolve_compiler_reference, resolve_execution_bindings, resolve_executor
+from .bindings import _resolve_compiler_reference, resolve_execution_bindings, resolve_executor, source_reference_path
 from .contracts import CampaignLock, StudyContract
-from .pairing import native_backend, bind_baseline, comparison_arm, native_baseline
+from .pairing import native_backend, comparison_arm, native_baseline, matched_run_arms
 from .selection import _EMPIRICAL_SELECTION
 from .task_package import TaskPackage, render_task_package
 
-from .bindings import source_reference_path
 from .python_reference import read_skeleton
-from .pairing import matched_run_arms
 
 
 def task_package(

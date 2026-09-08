@@ -10,7 +10,6 @@ from ._documents import _canonical_json_bytes, _digest, _name, _object
 from .bindings import qualification_path as _qualification_path
 from .pairing import comparison_arm, native_backend
 from .providers import (
-    CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
     ProviderQualificationReceipt,
 )

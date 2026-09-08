@@ -4,27 +4,21 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
-from pathlib import Path
 from typing import cast
 
-from open_cake_ir.evaluation.paired import paired_protocol
+from open_cake_ir.evaluation.paired import paired_protocol, PAIRED_METAL_KIND, validation_case_ids
 
-from ._documents import _canonical_json_bytes, _digest, _name, _object, _project_path
+from ._documents import _canonical_json_bytes, _digest, _name, _object
 from ._policies import _ATTRIBUTION_EVALUATION, _ONE_RUN_PER_ARM_SCOPES
-from .bindings import load_baseline_bundle, qualification_path as _qualification_path
+from .bindings import load_baseline_bundle, qualification_path as _qualification_path, source_reference_path
 from .providers import (
-    CANDIDATE_SET_ENVELOPE_V1,
-    CODEX_DISABLED_FEATURES,
     ProviderQualificationReceipt,
     required_live_provider_qualification_scope,
 )
-from .pairing import native_source, native_block
+from .pairing import native_source, native_block, matched_run_arms
 from .ralph import RalphBudget
 
 from .provider_policy import provider_configuration, provider_harness
-from .bindings import source_reference_path
-from .pairing import matched_run_arms
-from open_cake_ir.evaluation.paired import PAIRED_METAL_KIND, validation_case_ids
 
 
 def validate_provider(*, open_cake, policy, project_root, study):
