@@ -22,6 +22,7 @@ from .archive import _arm_artifact_roles, _archive_provider_turn, _candidate_art
 from .evaluation_writer import EvaluationWriter
 from .execution_admission import validate_execution_bindings
 from .candidate_filter import _build_filter_candidates, record_candidate_rejections
+from .diagnoses import rejected_peer_feedback
 from .run_completion import _seal_run, record_run_fault
 from .faults import RunProtocolFault, ReportedProviderUsage
 from .provider_events import reported_provider_usage
@@ -246,7 +247,7 @@ def execute_campaign(
                     turn_number=turn_number,
                 )
                 record_candidate_rejections(
-                    built=built, evidence=evidence, ledger=ledger, turn_number=turn_number,
+                    built=built, evidence=evidence, ledger=ledger, turn_number=turn_number, arm=arm,
                 )
                 submission, environment_result = built[launchable_first[0]]
                 if environment_result.disposition == "rejected":
@@ -445,6 +446,9 @@ def execute_campaign(
                             else None
                         )
                     feedback = MappingProxyType(feedback_document)
+                rejected_peers = rejected_peer_feedback(built, arm=arm)
+                if rejected_peers:
+                    feedback = MappingProxyType({**feedback, "rejected_candidates": rejected_peers})
                 if empirical_enabled:
                     feedback = MappingProxyType({
                         **feedback,
@@ -501,6 +505,7 @@ def execute_campaign(
             observations=observations,
             protocol_adherence=protocol_adherence,
             ralph=ralph,
+            analysis=lock.analysis_plan,
         )
 
     return CampaignRef(lock=lock, evidence_root=evidence.root)

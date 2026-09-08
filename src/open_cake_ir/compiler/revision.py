@@ -131,13 +131,14 @@ def _load_target(
     except (TargetParseError, ScheduleParseError) as error:
         raise CompilerError(f"target definition {target_id!r}: {error}") from error
     limits = _object(document.get("resource_limits"), f"target_definition.{target_id}.resource_limits")
-    if set(limits) != {
+    required_limits = {
         "maximum_threads_per_cta",
         "maximum_warps_per_cta",
         "maximum_shared_memory_bytes",
         "maximum_tensor_memory_bytes",
         "grid",
-    }:
+    }
+    if not required_limits <= set(limits) <= required_limits | {"maximum_registers_per_thread"}:
         raise CompilerError(f"target definition {target_id!r} resource limits differ")
     citations = _objects(document.get("citations"), f"target_definition.{target_id}.citations")
     if not citations:

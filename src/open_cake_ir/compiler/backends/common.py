@@ -6,9 +6,10 @@ Backend-native syntax and capability predicates stay with their implementations.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import keyword
 
 from ..diagnostics import Finding, FindingCategory
-from ..ir import DType, OperationKind, Schedule
+from ..ir import BufferMode, DType, MemorySpace, OperationKind, Schedule
 
 
 class EmitError(ValueError):
@@ -69,4 +70,134 @@ def vocabulary_findings(
                 "BACKEND_OPERATION_UNEMITTABLE", f"operations[{index}].kind",
                 f"backend {backend!r} has no body for operation kind {operation.kind.value!r}",
             ))
+    return tuple(findings)
+
+
+_PYTHON_IMPORT_NAMES = frozenset({"tl", "torch", "triton", "cutlass", "cute", "__debug__"})
+_GENERATED_PREFIXES = ("N_", "D_", "BLOCK_", "NUM_WARPS", "_work")
+
+
+def safe_python_identifier(name: str, *, register_route: bool = False) -> bool:
+    """One lexical/namespace rule for Python-emitting backend symbols."""
+    return (isinstance(name, str) and name.isascii() and name.isidentifier()
+            and not keyword.iskeyword(name) and name not in _PYTHON_IMPORT_NAMES
+            and not name.startswith(_GENERATED_PREFIXES)
+            and (not register_route or ("__" not in name and name not in {"warp", "open_cake_cute_launch"})))
+
+
+def python_name_findings(schedule: Schedule, *, register_route: bool = False) -> tuple[Finding, ...]:
+    """Keep IR labels expressive while refusing unsafe Python source commitments."""
+    findings = []
+    code = "CUTE_REGISTER_IDENTIFIER" if register_route else "BACKEND_IDENTIFIER_UNSAFE"
+    symbols = [("lowering.entry_point", schedule.lowering.entry_point)]
+    symbols.extend((f"buffers[{i}].name", value.name) for i, value in enumerate(schedule.buffers))
+    for field in ("roles", "allocations", "pipelines", "barriers", "tile_loops"):
+        symbols.extend((f"{field}[{i}].name", value.name) for i, value in enumerate(getattr(schedule, field)))
+    symbols.extend((f"tile_loops[{i}].iterator", value.iterator) for i, value in enumerate(schedule.tile_loops))
+    if schedule.program_map is not None:
+        symbols.extend((f"program_map.axes[{i}].name", value.name) for i, value in enumerate(schedule.program_map.axes))
+    symbols.extend((f"operations[{i}].id", value.op_id) for i, value in enumerate(schedule.operations))
+    for path, name in symbols:
+        if not safe_python_identifier(name, register_route=register_route):
+            findings.append(refusal(code, path,
+                "Python lowering requires ASCII identifiers outside keywords, imports and generated namespaces"))
+    if not register_route and (any(ord(char) < 32 or ord(char) == 127 for char in schedule.schedule_id)
+            or schedule.schedule_id.splitlines() != [schedule.schedule_id]):
+        findings.append(refusal("BACKEND_SOURCE_ID_UNSAFE", "schedule_id",
+            "generated source comments require a Schedule id without control characters"))
+    globals_ = [(i, value) for i, value in enumerate(schedule.buffers) if value.space is MemorySpace.GLOBAL]
+    for i, value in globals_:
+        if value.name in {"out", "tensor", "shape", "dtype"} and value.mode is BufferMode.INPUT:
+            findings.append(refusal(code, f"buffers[{i}].name",
+                f"input name {value.name!r} conflicts with Python wrapper arguments or validation locals"))
+        if value.name == schedule.lowering.entry_point:
+            findings.append(refusal(code, f"buffers[{i}].name",
+                "a global pointer cannot shadow the generated entry point"))
+    local_names = {}
+    for path, name in symbols:
+        if not (path.startswith("buffers[") or path.startswith("program_map.axes[")
+                or path.startswith("tile_loops[") and path.endswith(".iterator")):
+            continue
+        previous = local_names.setdefault(name, path)
+        if previous != path:
+            findings.append(refusal("BACKEND_IDENTIFIER_COLLISION", path,
+                f"{name!r} shares a generated local namespace with {previous}"))
+    # Constexpr names normalize buffer and coordinate spellings to uppercase.
+    # Distinct declarations must not collapse onto the same generated symbol.
+    normalized = {}
+    for path, name in symbols:
+        if not (path.startswith("buffers[") or path.startswith("program_map.axes[") or
+                path.startswith("tile_loops[") and path.endswith(".name")):
+            continue
+        group = "buffer" if path.startswith("buffers[") else "coordinate"
+        key = (group, name.upper())
+        previous = normalized.setdefault(key, (path, name))
+        if previous[0] != path:
+            findings.append(refusal("BACKEND_IDENTIFIER_COLLISION", path,
+                f"{name!r} and {previous[1]!r} share generated uppercase symbols"))
+    return tuple(findings)
+
+
+def emitted_python_name_findings(schedule: Schedule, source: str,
+                                 authored_lines: dict[int, set[str]], *, kernel: str) -> tuple[Finding, ...]:
+    """Check the actual emitter's bindings, without executing generated Python.
+
+    Emitters mark only assignments to IR-owned values at their definition sites.
+    All other bindings are compiler-owned, so no second temporary-name catalogue
+    can drift from the emitter. Host scopes contain only their actual IR parameters;
+    a scratch named ``out`` does not collide with an unrelated wrapper's output.
+    """
+    import ast
+    import builtins
+
+    symbols = {buffer.name: f"buffers[{i}].name" for i, buffer in enumerate(schedule.buffers)}
+    if schedule.program_map is not None:
+        symbols.update({axis.name: f"program_map.axes[{i}].name"
+                        for i, axis in enumerate(schedule.program_map.axes)})
+    symbols.update({loop.iterator: f"tile_loops[{i}].iterator"
+                    for i, loop in enumerate(schedule.tile_loops)})
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return (refusal("BACKEND_IDENTIFIER_COLLISION", "lowering.entry_point",
+                        "authored and generated Python declarations do not form a valid namespace"),)
+    module_names = set()
+    module_bindings = []
+    for statement in tree.body:
+        if isinstance(statement, (ast.FunctionDef, ast.ClassDef)):
+            module_bindings.append(statement.name)
+        elif isinstance(statement, (ast.Import, ast.ImportFrom)):
+            module_bindings.extend(alias.asname or alias.name.split('.')[0] for alias in statement.names)
+        elif isinstance(statement, (ast.Assign, ast.AnnAssign)):
+            targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+            module_bindings.extend(node.id for target in targets for node in ast.walk(target)
+                                   if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store))
+    findings = []
+    if len(module_bindings) != len(set(module_bindings)):
+        findings.append(refusal("BACKEND_IDENTIFIER_COLLISION", "lowering.entry_point",
+                                "the entry point shares a generated module binding"))
+    module_names.update(module_bindings)
+    collisions = set()
+    for function in (node for node in tree.body if isinstance(node, ast.FunctionDef)):
+        parameters = [arg.arg for arg in (*function.args.posonlyargs, *function.args.args,
+                                          *function.args.kwonlyargs)]
+        if len(parameters) != len(set(parameters)):
+            collisions.update(name for name in parameters if parameters.count(name) > 1)
+        # Optional host arguments belong to the wrapper ABI (e.g. output out),
+        # not an authored input binding even when an output has the same name.
+        optional = {arg.arg for arg in function.args.args[-len(function.args.defaults):]} if function.args.defaults else set()
+        declared = set(symbols) if function.name == kernel else (set(parameters) - optional) & set(symbols)
+        for node in ast.walk(function):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id in declared:
+                if node.id not in authored_lines.get(node.lineno, set()):
+                    collisions.add(node.id)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                if node.id in declared and node.id in module_names:
+                    collisions.add(node.id)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if (node.func.id in declared or node.func.id in module_names) and hasattr(builtins, node.func.id):
+                    collisions.add(node.func.id)
+    findings.extend(refusal("BACKEND_IDENTIFIER_COLLISION", symbols.get(name, "lowering.entry_point"),
+                            f"{name!r} shadows a compiler-owned binding in the emitted Python scope")
+                    for name in sorted(collisions))
     return tuple(findings)

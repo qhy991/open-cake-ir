@@ -23,7 +23,7 @@ from .ir import (
     ScheduleParseError,
 )
 from .corpus import CorpusCaseReport, CorpusGateReport, check_corpus
-from .errors import CompilerError
+from .errors import CompilerError, LoweringRefusedError
 from .revision import CompilerRevision, load_revision
 from .target import Target
 from .performance.ranking import Cost, rank as rank_candidates
@@ -328,7 +328,7 @@ class Compiler:
                 entry_point=route.entry_point,
             )
         except EmitError as error:
-            raise CompilerError(f"Schedule does not determine its source: {error}") from error
+            raise LoweringRefusedError(f"Schedule does not determine its source: {error}") from error
         source = emission.source.replace("__SCHEDULE_SHA256__", assessment.schedule_sha256)
         return Lowering(
             compiler_revision_id=self._revision.revision_id,

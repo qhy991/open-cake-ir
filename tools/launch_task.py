@@ -97,12 +97,14 @@ def _admit_stack(root: Path, workspace: Path):
     if executor.document["host_environment"].get("kind") != "metal":
         raise ValueError("task launch requires an actually released Metal Executor")
     host = MetalArchiveHost.from_executor(executor)
-    return compiler, executor, host
+    return compiler, executor, host, {"path": "compiler/revision.lock.json",
+        "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
 
 
-def _prepare_baseline(root, workspace, compiler, executor, host, workload, study, source):
+def _prepare_baseline(root, workspace, compiler, executor, host, workload, study, source, compiler_reference):
     builder = MetalToolchainBuilder(workload=workload, case_id="primary", output_root=workspace / "builds",
-                                    host=host, project_root=root)
+                                    host=host, project_root=root,
+                                    compiler_reference=compiler_reference)
     environment = TaskOpenCakeEnvironment(compiler, builder, authority_document=study["arms"]["open_cake"],
                                          workload=workload, case_id="primary", executor=executor)
     submission = CandidateSubmission.seal(environment.media_type, canonical({"python_source": source}))
@@ -198,9 +200,9 @@ def main(argv=None) -> int:
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds)
     study_path = workspace / "study.json"
     _write(study_path, canonical(study))
-    compiler, executor, host = _admit_stack(ROOT, workspace)
+    compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace)
     baseline_path = (external_file(ROOT, str(args.fixed_baseline_bundle), "fixed baseline bundle")
-                     if args.fixed_baseline_bundle else _prepare_baseline(ROOT, workspace, compiler, executor, host, workload, study, source))
+                     if args.fixed_baseline_bundle else _prepare_baseline(ROOT, workspace, compiler, executor, host, workload, study, source, compiler_reference))
     receipt_path, anchor_path = _qualify(ROOT, workspace, args, executable, source_path)
     receipt = ProviderQualificationReceipt.load(receipt_path)
     if not receipt.qualified or receipt.scope != "live_two_turn_tool_rich_provider":

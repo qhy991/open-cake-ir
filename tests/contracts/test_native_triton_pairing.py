@@ -31,6 +31,7 @@ from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.lab.pairing import bind_baseline, native_baseline, triton_optimization_analysis_plan
+from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL
 from open_cake_ir.lab.providers import _project_candidate_submission, CANDIDATE_SET_ENVELOPE_V1
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
 from tests.contracts.test_lab import FakeProvider, FakeEvaluator, _submission_envelope
@@ -517,7 +518,7 @@ class PairedLabFixtureTests(unittest.TestCase):
         lowering = draft.lower(draft.assess(schedule))
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
             root = Path(directory) / 'project'; root.mkdir()
-            for name in ('contracts', 'corpus', 'compiler', 'src', 'docs'):
+            for name in ('contracts', 'corpus', 'compiler', 'src', 'docs', 'examples/python'):
                 shutil.copytree(ROOT / name, root / name)
             document = json.loads((root / 'contracts/studies/matched-search-triton-optimization-template.json').read_text())
             document['budget'].update({'unit':'provider_tokens', 'limit':80000, 'checkpoints':[80000], 'maximum_turns':1, 'maximum_candidates_per_turn':1})
@@ -542,9 +543,18 @@ class PairedLabFixtureTests(unittest.TestCase):
             stack.enter_context(mock.patch('open_cake_ir.lab.preflight.resolve_executor', return_value=bound_executor))
             stack.enter_context(mock.patch('open_cake_ir.lab.executor.ExecutorRevision.load_reference', return_value=bound_executor))
             stack.enter_context(mock.patch('open_cake_ir.compiler.Compiler.load', return_value=draft))
+            # The semantic fixture owns one explicit Compiler identity at both
+            # preflight and the independent replay handoff; it does not admit the
+            # still-unreleased checkout as the current released Compiler.
+            def admit_fixture_compiler(project_root, value, context):
+                self.assertEqual(Path(project_root).resolve(), root.resolve())
+                self.assertEqual(value, reference, context)
+                return SimpleNamespace(revision_id=reference['revision_id'], canonical_sha256=reference['canonical_sha256'])
+            stack.enter_context(mock.patch('open_cake_ir.lab.bindings.load_compiler_reference', side_effect=admit_fixture_compiler))
             lab = TaskLab(root)
             lock = lab.preflight(study)
-            self.assertEqual(lock.analysis_plan, triton_optimization_analysis_plan())
+            self.assertEqual(lock.analysis_plan, {**triton_optimization_analysis_plan(),
+                "endpoint_policy": NORMAL_BUDGET_TERMINAL})
             fixture = CompilationFixture()
             builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=fixture)
             arms = lock.document['resolved_inputs']['arm_environments']
@@ -570,7 +580,8 @@ class PairedLabFixtureTests(unittest.TestCase):
                     arm = 'open_cake' if 'lowered_source' in candidate.artifact_roles else 'direct_cuda'
                     virtual_name = 'open_cake_turn_10' if purpose == 'search' else arm + '_turn_1'
                     return super().evaluate(dataclasses.replace(candidate,entry_point=virtual_name),case_id=case_id,purpose=purpose)
-            evaluator = Evaluator(lock.document['evaluation_protocol'],sha256(encoded(lock.document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256)
+            evaluator = Evaluator(lock.document['evaluation_protocol'],sha256(encoded(lock.document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256,
+                compiler_revision_reference=lock.document['compiler_revision'])
             campaign = lab.execute(lock, Path(directory) / 'evidence',provider=provider,environments=environments,evaluator=evaluator)
             report = lab.audit(campaign)
             self.assertTrue(report.archive_integrity_passed)

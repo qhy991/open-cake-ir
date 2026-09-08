@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
+from open_cake_ir.lab.endpoints import endpoint_policy
 from open_cake_ir.lab.pairing import comparison_arm, native_backend, native_optimization_analysis_plan  # noqa: E402
 from open_cake_ir.lab import scientific_matched_analysis_plan_v2
 from open_cake_ir.lab.bindings import CURRENT_RELEASE_BINDING, resolve_executor
@@ -148,10 +149,13 @@ def main() -> int:
                 "sha256": sha256(candidate_path.read_bytes()).hexdigest(),
             }
         if document.get("claim_scope") == "scientific_matched_search":
+            terminal_policy = endpoint_policy(document["analysis_plan"])
             document["analysis_plan"] = dict(
                 native_optimization_analysis_plan(comparison)
                 if native_backend(comparison) is not None else scientific_matched_analysis_plan_v2()
             )
+            if terminal_policy:
+                document["analysis_plan"]["endpoint_policy"] = terminal_policy
         if arguments.maximum_candidates_per_turn is not None:
             if arguments.maximum_candidates_per_turn <= 0:
                 raise ValueError("maximum Candidates per Turn must be positive")

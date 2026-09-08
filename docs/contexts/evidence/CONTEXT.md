@@ -45,3 +45,8 @@ An archive can have complete, untampered bytes while current filesystem custody 
 verified. That archive remains inspectable but cannot support promotion or a claim-bearing
 projection. A provider failure can likewise leave an intact archive while Protocol
 Adherence or endpoint availability records the failure.
+
+Prospective writer custody uses external origin and ordered publication witnesses under
+[ADR 0058](../../adr/0058-external-writer-custody-anchors.md). A caller selects the private
+registry; archives cannot select or regenerate it. Unanchored historical archives remain
+readable, with custody false under the successor.

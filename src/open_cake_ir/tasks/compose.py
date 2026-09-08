@@ -1,6 +1,8 @@
 """Closed CLI composition for a live matched-search Campaign."""
 
 from __future__ import annotations
+
+from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.tasks.flash_kmeans.environment import FlashTritonToolchainBuilder
 from open_cake_ir.tasks.workloads import load_workload
 
@@ -94,7 +96,7 @@ class _LivePortfolioAssay:
         self._case_ids = case_ids
         self._protocol = dict(evaluation_protocol)
         self.protocol_sha256 = sha256(
-            json.dumps(self._protocol, sort_keys=True, separators=(",", ":")).encode()
+            canonical_json_bytes(self._protocol)
         ).hexdigest()
         self._device = device
         self._synchronize = synchronize
@@ -278,7 +280,8 @@ def execute_matched_from_config(
         protocol = _object(lock.document["evaluation_protocol"], "evaluation_protocol")
         toolchain = MetalToolchainBuilder(workload=workload_contract, case_id=str(protocol["case_id"]),
             output_root=Path(toolchain_config["output_root"]),
-            host=MetalArchiveHost.from_executor(executor), project_root=root)
+            host=MetalArchiveHost.from_executor(executor), project_root=root,
+            compiler_reference=lock.document["compiler_revision"])
     else:
         toolchain = (policy.isolated_compiler(toolchain_config) if policy is not None else
                      NvccToolchainBuilder(nvcc=toolchain_config["nvcc"], cuobjdump=toolchain_config["cuobjdump"]))
@@ -364,7 +367,7 @@ def execute_matched_from_config(
         anchor_ref = provider_authority['qualification_anchor']
         _, anchor_path = qualification_path(root, anchor_ref['path'], 'provider qualification anchor')
         anchor = json.loads(anchor_path.read_bytes())
-        if (sha256(json.dumps(anchor, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+        if (sha256(canonical_json_bytes(anchor)).hexdigest()
             != anchor_ref['canonical_sha256'] or anchor.get('qualification_receipt_sha256') != qualification.canonical_sha256):
             raise ValueError('runtime provider qualification anchor differs from Campaign Lock')
         fixed = execution['fixed_baseline']
@@ -377,7 +380,7 @@ def execute_matched_from_config(
             or sha256(runtime_path.read_bytes()).hexdigest() != runtime_ref['sha256']):
             raise ValueError('runtime configuration differs from Campaign Lock')
     protocol_sha256 = sha256(
-        json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()
+        canonical_json_bytes(protocol)
     ).hexdigest()
     submitter = CommandBrokerSubmitter(
         command=command,
@@ -387,6 +390,7 @@ def execute_matched_from_config(
         cwd=broker_cwd,
         timeout_seconds=broker_timeout,
         executor=executor,
+        compiler_reference=compiler_ref,
         service_user=broker_user,
         service_group=broker_group,
         evaluation_protocol=protocol,

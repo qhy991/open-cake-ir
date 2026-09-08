@@ -18,6 +18,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.tasks.workloads import load_workload
+from tests.contracts._contexts import enter_context
+from tests.contracts._executor_fixture import compiler_reference
 
 from open_cake_ir.evaluation import (  # noqa: E402
     BrokerAttempt,
@@ -292,11 +294,13 @@ class FakeEvaluator:
         workload_sha256: str,
         *,
         raw_kernel_calls: int = 1,
+        compiler_revision_reference=None,
     ) -> None:
         self.protocol = protocol
         self.protocol_sha256 = protocol_sha256
         self.workload_sha256 = workload_sha256
         self.raw_kernel_calls = raw_kernel_calls
+        self.compiler_reference = dict(compiler_reference(ROOT) if compiler_revision_reference is None else compiler_revision_reference)
         self.calls = 0
 
     def evaluate(self, candidate, *, case_id, purpose):
@@ -384,6 +388,10 @@ class FakeEvaluator:
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
+        evaluator_request = {"compiler_revision": self.compiler_reference,
+            "candidate_sha256": candidate.candidate_sha256,
+            "launch_spec_sha256": candidate.launch_spec_sha256,
+            "evaluation_protocol_sha256": self.protocol_sha256, "case_id": case_id, "purpose": purpose}
         attempt = BrokerAttempt(
             job_id=f"gpuq-{self.calls:012x}",
             mode="exclusive",
@@ -391,7 +399,7 @@ class FakeEvaluator:
             manifest_sha256=candidate.launch_spec_sha256,
             policy_sha256=self.protocol_sha256,
             evaluator_arguments_sha256=sha256(
-                f"{case_id}:{purpose}".encode()
+                json.dumps(evaluator_request, sort_keys=True, separators=(",", ":")).encode()
             ).hexdigest(),
             admitted=True,
             error=None,
@@ -403,6 +411,7 @@ class FakeEvaluator:
             fallback_calls=0,
             receipt=receipt,
             artifact_payloads={
+                "evaluator_request": json.dumps({**evaluator_request, "attempt": 1}, sort_keys=True, separators=(",", ":")).encode(),
                 "broker_record": raw_result,
                 "stdout": b"completed\n",
                 "stderr": b"",
@@ -420,7 +429,13 @@ def _generated_advisory_assessment(compiler):
     return compiler.assess(document)
 
 
-class FindingRoutingContractTests(unittest.TestCase):
+class SemanticLabTestCase(unittest.TestCase):
+    def setUp(self):
+        from tests.contracts._executor_fixture import SemanticExecutorFixture
+        enter_context(self, SemanticExecutorFixture())
+
+
+class FindingRoutingContractTests(SemanticLabTestCase):
     def test_environment_retains_hints_in_the_existing_agent_channel(self) -> None:
         from open_cake_ir.compiler import Compiler
         from open_cake_ir.lab.environments import OpenCakeEnvironment
@@ -459,7 +474,8 @@ class FindingRoutingContractTests(unittest.TestCase):
         )
 
 
-class LabContractTests(unittest.TestCase):
+class LabContractTests(SemanticLabTestCase):
+
     def test_provider_fault_does_not_resolve_evaluation_only_fields(self) -> None:
         class FaultProvider(FakeProvider):
             def turn(self, request):
@@ -507,7 +523,7 @@ class LabContractTests(unittest.TestCase):
 
             self.assertFalse(evidence_root.exists())
 
-    def test_current_study_templates_resolve_exact_current_revisions(self) -> None:
+    def test_current_study_templates_resolve_explicit_executor_dependency(self) -> None:
         for name in (
             "matched-search-infrastructure-template.json",
             "matched-search-system-qualification-ralph-template.json",
@@ -534,9 +550,8 @@ class LabContractTests(unittest.TestCase):
 
             lock = TaskLab(ROOT).preflight(path)
             executor = lock.document["execution"]["executor_revision"]
-            current = json.loads(
-                (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
-            )["current"]
+            from tests.contracts._executor_fixture import SemanticExecutorFixture
+            current = dict(SemanticExecutorFixture().revision(ROOT).reference)
             self.assertEqual(executor["executor_id"], current["executor_id"], name)
             self.assertEqual(
                 executor["canonical_sha256"],
@@ -877,10 +892,12 @@ class LabContractTests(unittest.TestCase):
 
         self.assertEqual(len(provider.requests), 4)
         self.assertTrue(report.system_qualification_passed)
-        self.assertEqual(report.missing_run_count, 2)
+        self.assertEqual(report.missing_run_count, 0)
+        self.assertTrue(all(row["token_limit_checkpoint_state"] == "unreached"
+                            for row in report.descriptive["terminal_observations"].values()))
         self.assertTrue(
             all(
-                run["endpoint_observation"] == "missing"
+                run["endpoint_observation"] == "qualified"
                 and run["evaluation_receipt_count"] >= 1
                 for run in report.descriptive["runs"]
             )
@@ -1154,6 +1171,7 @@ class LabContractTests(unittest.TestCase):
                         )
                     )["current"]["path"],
                 ),
+                compiler_reference=compiler_reference(ROOT),
                 service_user=pwd.getpwuid(os.geteuid()).pw_name,
                 service_group=grp.getgrgid(os.getegid()).gr_name,
             )
@@ -1168,7 +1186,7 @@ class LabContractTests(unittest.TestCase):
         self.assertEqual(logical.attempts[0].job_id, "gpuq-000000000001")
         self.assertEqual(
             set(logical.attempts[0].artifact_payloads),
-            {"broker_record", "stdout", "stderr", "evaluator_result"},
+            {"broker_record", "stdout", "stderr", "evaluator_result", "evaluator_request"},
         )
         self.assertEqual(
             set(logical.final_receipt.artifact_payloads),
@@ -1223,6 +1241,7 @@ class LabContractTests(unittest.TestCase):
                         )
                     )["current"]["path"],
                 ),
+                compiler_reference=compiler_reference(ROOT),
                 service_user=pwd.getpwuid(os.geteuid()).pw_name,
                 service_group=grp.getgrgid(os.getegid()).gr_name,
             )
@@ -1235,8 +1254,9 @@ class LabContractTests(unittest.TestCase):
                 )
 
         self.assertEqual(raised.exception.protocol_adherence, "broker_fault")
+        self.assertEqual(json.loads(raised.exception.artifact_payloads["evaluator_request"])["compiler_revision"], compiler_reference(ROOT))
         self.assertEqual(
-            raised.exception.artifact_payloads,
+            {key: value for key, value in raised.exception.artifact_payloads.items() if key != "evaluator_request"},
             {"broker_stdout": b"worker-out\n", "broker_stderr": b"worker-err\n"},
         )
 
@@ -1339,9 +1359,11 @@ class LabContractTests(unittest.TestCase):
         self.assertTrue(report.semantic_replay_passed)
         self.assertEqual(
             report.estimate["median_confirmed_latency_ms"],
-            {"open_cake": 1.0, "direct_cuda": 2.0},
+            {"open_cake": 0.9, "direct_cuda": 1.9},
         )
-        self.assertAlmostEqual(report.estimate["ratio_of_arm_medians"], 2.0)
+        self.assertAlmostEqual(report.estimate["ratio_of_arm_medians"], 1.9 / 0.9)
+        self.assertTrue(all(audit.endpoint["observation_basis"] == "normal_budget_terminal_v1"
+                            and audit.endpoint["budget"] == 160000 for audit in report.run_audits))
         self.assertEqual(report.estimate["qualification_rate_difference"], 0.0)
         self.assertEqual({item.reason for item in report.run_inclusion}, {"included"})
 
@@ -1717,7 +1739,7 @@ class LabContractTests(unittest.TestCase):
                     {"provider_fault"},
                 )
 
-    def test_r42_turn_discrete_missing_cell_keeps_estimand_unavailable(self) -> None:
+    def test_r42_summary_does_not_replace_semantic_run_evidence(self) -> None:
         lab = TaskLab(ROOT)
         lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-template.json")
         legacy = json.loads(
@@ -1766,24 +1788,32 @@ class LabContractTests(unittest.TestCase):
             report = lab.audit(lab.reference_campaign(lock, evidence.root))
 
         self.assertFalse(report.estimand_available)
-        self.assertEqual(report.missing_run_count, 0)
+        # Terminal-only descriptive summaries cannot substitute for provider,
+        # invocation, confirmation and checkpoint evidence in a current Run.
+        self.assertFalse(report.semantic_replay_passed)
+        self.assertEqual(report.missing_run_count, len(lock.run_order))
         self.assertIsNone(report.estimate)
         self.assertEqual(report.descriptive["paired_runs"][2]["direct_cuda_latency_ms"], None)
         inclusion = {item.run_id: item.reason for item in report.run_inclusion}
         self.assertEqual(
-            inclusion["direct_cuda-3"], "observed_no_qualified_candidate_at_checkpoint"
+            inclusion["direct_cuda-3"], "semantic_replay"
         )
         direct_three = next(
             item for item in report.run_inclusion if item.run_id == "direct_cuda-3"
         )
-        self.assertTrue(direct_three.qualification_endpoint_included)
+        self.assertFalse(direct_three.qualification_endpoint_included)
         self.assertFalse(direct_three.conditional_performance_included)
 
     def test_candidate_rejection_is_observed_and_later_turn_cannot_backfill(self) -> None:
         lab = TaskLab(ROOT)
-        lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-template.json"
-        )
+        # This test deliberately exercises the absent-policy token-checkpoint
+        # endpoint. Current active templates separately opt into vector terminals.
+        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-template.json").read_text())
+        study["analysis_plan"].pop("endpoint_policy")
+        directory = Path(enter_context(self, tempfile.TemporaryDirectory())).resolve()
+        path = directory / "legacy-checkpoint-semantics.json"
+        path.write_text(json.dumps(study))
+        lock = lab.preflight(path)
         resolved = lock.document["resolved_inputs"]
 
         class RejectFirst(FakeEnvironment):
@@ -1833,23 +1863,28 @@ class LabContractTests(unittest.TestCase):
         )
 
     def test_protocol_failures_are_intact_but_not_included(self) -> None:
+        class FaultProvider(FakeProvider):
+            def turn(self, request):
+                raise RunProtocolFault("provider_fault", "explicit CPU provider failure")
+
         lab = TaskLab(ROOT)
         lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-template.json")
+        protocol = lock.document["evaluation_protocol"]
+        protocol_sha = sha256(json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        evaluator = FakeEvaluator(protocol, protocol_sha, lock.document["workload"]["canonical_sha256"])
         with tempfile.TemporaryDirectory() as directory:
-            evidence = EvidenceStore.create(Path(directory).resolve() / "evidence")
-            for run_id in lock.run_order:
-                run = evidence.start_run(
-                    run_id,
-                    authority_sha256=lock.canonical_sha256,
-                    authority=lock.document,
-                )
-                run.seal(protocol_adherence="provider_fault", endpoint_observation="missing")
-            report = lab.audit(lab.reference_campaign(lock, evidence.root))
+            campaign = _execute(lab, lock, Path(directory).resolve() / "evidence",
+                provider=FaultProvider(), evaluator=evaluator,
+                environments={name: FakeEnvironment(name, arm) for name, arm in
+                              lock.document["resolved_inputs"]["arm_environments"].items()})
+            report = lab.audit(campaign)
 
         self.assertTrue(report.campaign_complete)
         self.assertTrue(report.archive_integrity_passed)
+        self.assertTrue(report.semantic_replay_passed)
         self.assertFalse(report.estimand_available)
         self.assertEqual(report.missing_run_count, 6)
+        self.assertEqual(evaluator.calls, 0)
         self.assertEqual({item.reason for item in report.run_inclusion}, {"protocol_deviation"})
 
     def test_contamination_uses_the_same_terminal_schema_without_replacement(self) -> None:
@@ -1865,7 +1900,7 @@ class LabContractTests(unittest.TestCase):
                     "contamination",
                     "workspace changed before Turn",
                     artifact_payloads={
-                        "provider_stderr": b"OPENAI_API_KEY=must-not-enter-evidence"
+                        "provider_stderr": b"OPENAI_" + b"API_KEY=must-not-enter-evidence"
                     },
                 )
 
@@ -2077,7 +2112,8 @@ class LabContractTests(unittest.TestCase):
 
 
 
-class EmpiricalFeedbackRepairTests(unittest.TestCase):
+class EmpiricalFeedbackRepairTests(SemanticLabTestCase):
+
     """Run the real empirical consumer with an isolated synthetic CUDA Executor."""
 
     def test_environment_constructor_type_hints_keep_the_executor_owner(self):
@@ -2147,7 +2183,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class CandidateSetFilterTest(unittest.TestCase):
+class CandidateSetFilterTest(SemanticLabTestCase):
     """Every candidate is built and sealed; only the bounded subset is evaluated.
 
     This is the paper's pre-GPU filter. Compile time is spent on the whole set precisely
@@ -2622,7 +2658,7 @@ class CandidateSetFilterTest(unittest.TestCase):
         )
 
 
-class AttributionAssayIntegrationTest(unittest.TestCase):
+class AttributionAssayIntegrationTest(SemanticLabTestCase):
     """A Study that declares attribution gets it; one that does not is unchanged.
 
     Profiling costs device time, so it is declared rather than assumed. What must not
@@ -2702,6 +2738,10 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
                     sort_keys=True,
                     separators=(",", ":"),
                 ).encode()
+                evaluator_request = {"compiler_revision": self.compiler_reference,
+                    "candidate_sha256": candidate.candidate_sha256,
+                    "launch_spec_sha256": candidate.launch_spec_sha256,
+                    "evaluation_protocol_sha256": self.protocol_sha256, "case_id": case_id, "purpose": purpose}
                 attempt = BrokerAttempt(
                     job_id=job_id,
                     mode="exclusive",
@@ -2709,7 +2749,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
                     manifest_sha256=candidate.launch_spec_sha256,
                     policy_sha256=self.protocol_sha256,
                     evaluator_arguments_sha256=sha256(
-                        f"{case_id}:{purpose}".encode()
+                        json.dumps(evaluator_request, sort_keys=True, separators=(",", ":")).encode()
                     ).hexdigest(),
                     admitted=True,
                     error=None,
@@ -2721,6 +2761,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
                     fallback_calls=0,
                     receipt=receipt,
                     artifact_payloads={
+                        "evaluator_request": json.dumps({**evaluator_request, "attempt": 1}, sort_keys=True, separators=(",", ":")).encode(),
                         "broker_record": raw_result,
                         "evaluator_result": raw_result,
                         "stdout": b"completed\n",
@@ -2807,7 +2848,7 @@ class AttributionAssayIntegrationTest(unittest.TestCase):
         )
 
 
-class SearchBudgetTest(unittest.TestCase):
+class SearchBudgetTest(SemanticLabTestCase):
     """A malformed search budget is refused at the boundary, not partway through a run.
 
     `searches_per_turn` reaches a slice of the ranked candidates, so zero would index an
@@ -2863,7 +2904,7 @@ class SearchBudgetTest(unittest.TestCase):
             self._preflight(3, materiality=1.05, maximum_candidates=2)
 
 
-class StructurallyDistinctCandidatesTest(unittest.TestCase):
+class StructurallyDistinctCandidatesTest(SemanticLabTestCase):
     """Two spellings of one program consume one search slot, and the author is told.
 
     The paper's first stage asks for structurally distinct candidates. A provider that
@@ -3025,7 +3066,7 @@ class StructurallyDistinctCandidatesTest(unittest.TestCase):
         self.assertEqual(same_searched, distinct_searched)
 
 
-class QualifiedCandidateSelectionTest(unittest.TestCase):
+class QualifiedCandidateSelectionTest(SemanticLabTestCase):
     """Qualification chooses the winner, and its findings stay paired with it."""
 
     def test_an_unstable_fastest_candidate_cannot_win_or_lend_findings(self) -> None:
@@ -3215,7 +3256,7 @@ class QualifiedCandidateSelectionTest(unittest.TestCase):
         )
 
 
-class CostModelRouteTest(unittest.TestCase):
+class CostModelRouteTest(SemanticLabTestCase):
     """The fourth destination, unlocked by evaluating more than one candidate.
 
     Deciding the order was wrong needs two measurements to compare, so this route stayed
@@ -3365,7 +3406,7 @@ class CostModelRouteTest(unittest.TestCase):
         )
 
 
-class BrokerExecutionDigestTest(unittest.TestCase):
+class BrokerExecutionDigestTest(SemanticLabTestCase):
     """The digest a live Study pins its broker to.
 
     `execution.broker_execution_sha256` is frozen into a Study Contract when a live
@@ -3439,7 +3480,8 @@ class BrokerExecutionDigestTest(unittest.TestCase):
                 self._digest([str(root / "absent")], root)
 
 
-class RalphTaskInterfaceTests(unittest.TestCase):
+class RalphTaskInterfaceTests(SemanticLabTestCase):
+
     def test_retired_study_and_lock_interfaces_are_refused(self) -> None:
         from open_cake_ir.lab import StudyContract
         template = ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
@@ -3761,7 +3803,7 @@ class RalphTaskInterfaceTests(unittest.TestCase):
             self.assertNotIn("prompt_template", environment)
 
 
-class RuntimeReferenceCustodyTest(unittest.TestCase):
+class RuntimeReferenceCustodyTest(SemanticLabTestCase):
     """The gate between a runtime config and the files a live Campaign will read.
 
     `execute_matched_from_config` resolves every raw reference through this, and it is the
@@ -3833,7 +3875,7 @@ class RuntimeReferenceCustodyTest(unittest.TestCase):
                     _raw_reference_path(root, {"path": "inner/runtime.json"}, "reference")
 
 
-class EmpiricalSelectionContractTests(unittest.TestCase):
+class EmpiricalSelectionContractTests(SemanticLabTestCase):
     """Actual CPU Lab path with a prospective fixture closure, never a host admission."""
 
     @classmethod
@@ -3848,22 +3890,9 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         cls.parent = Path(cls.temporary.name).resolve()
         cls.root = cls.parent / "prospective-project"
         shutil.copytree(ROOT, cls.root, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-        # Exercise the current event branch with a cycle-derived prospective Revision
-        # in this disposable project. CUDA advisory context comes from an explicit
-        # synthetic host, not from the hardware of the current released Executor.
-        # No host admission or provider/GPU qualification is performed.
-        inventory_path = cls.root / "inventory/EXECUTOR_REVISIONS.json"
-        host_fixture = cls.parent / "synthetic-host-environment.json"
-        host_fixture.write_text(json.dumps(_synthetic_cuda_host()))
-        prepared = subprocess.run(
-            ["bash", str(cls.root / "tools/release_executor_cycle.sh"), "--host-environment", str(host_fixture)],
-            cwd=cls.root, env={**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"], "PYTHONDONTWRITEBYTECODE": "1"},
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60,
-        )
-        if prepared.returncode:
-            raise RuntimeError(prepared.stdout.decode() + prepared.stderr.decode())
-        inventory = json.loads(inventory_path.read_text())
-        cls.executor = ExecutorRevision.load(cls.root, cls.root / inventory["current"]["path"])
+        from tests.contracts._executor_fixture import SemanticExecutorFixture
+        cls.executor_fixture = SemanticExecutorFixture()
+        cls.executor = cls.executor_fixture.revision(cls.root)
         cls.lab = TaskLab(cls.root)
         cls.workload = load_workload(cls.root / "contracts/workloads/flash-kmeans-assign-v2.json")
         cls.compiler = Compiler.load(cls.root, cls.root / "compiler/revision.lock.json")
@@ -4027,7 +4056,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         if via_cli:
             cli_lock = directory / "cli-campaign.lock.json"
             completed = subprocess.run(
-                [sys.executable, "-m", "open_cake_ir.cli", "--project-root", str(self.root),
+                [sys.executable, "-m", "tests.contracts._executor_fixture", "--project-root", str(self.root),
                  "lab", "preflight", str(directory / "study.json"),
                  "--empirical-cost-model", str(model_path), "--output", str(cli_lock)],
                 cwd=self.root, env={**os.environ, "PYTHONPATH": str(self.root / "src"), "PYTHONDONTWRITEBYTECODE": "1"},
@@ -4107,7 +4136,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         self.assertEqual(request.thread_id, provider.threads["open_cake-1"])
         lock_path = campaign.evidence_root.parent / "lock.json"
         lock_path.write_text(json.dumps(campaign.lock.document))
-        completed = subprocess.run([sys.executable, "-m", "open_cake_ir.cli", "--project-root", str(self.root), "lab", "audit", "--lock", str(lock_path), "--evidence-root", str(campaign.evidence_root)], cwd=self.root, env={**os.environ, "PYTHONPATH": str(self.root / "src"), "PYTHONDONTWRITEBYTECODE": "1"}, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        completed = subprocess.run([sys.executable, "-m", "tests.contracts._executor_fixture", "--project-root", str(self.root), "lab", "audit", "--lock", str(lock_path), "--evidence-root", str(campaign.evidence_root)], cwd=self.root, env={**os.environ, "PYTHONPATH": str(self.root / "src"), "PYTHONDONTWRITEBYTECODE": "1"}, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.assertEqual(completed.returncode, 0, completed.stderr.decode())
         self.assertTrue(json.loads(completed.stdout)["semantic_replay_passed"])
         audit = store.audit_run("open_cake-1")

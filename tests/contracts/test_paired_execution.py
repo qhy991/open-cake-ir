@@ -10,6 +10,7 @@ import os
 import grp
 import pwd
 from pathlib import Path
+from tests.contracts._executor_fixture import compiler_reference
 import tempfile
 import shutil
 from types import MappingProxyType, SimpleNamespace
@@ -38,12 +39,13 @@ TEMPLATE = ROOT / 'contracts/studies/matched-search-triton-b300-optimization-tem
 
 
 def encoded(value):
-    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode()
 
 
 def protocol():
     value = json.loads(TEMPLATE.read_bytes())['evaluation_protocol']
     value['case_id'] = 'tiny'
+    value['note'] = '基线与候选的共同测量协议'
     return value
 
 
@@ -158,7 +160,7 @@ class PairedExecutionTests(unittest.TestCase):
         retained = self.execute()
         executor_reference = {'path':'runtime/executors/CPU-fixture.json',
                               'canonical_sha256':'a'*64, 'executor_id':'CPU-fixture'}
-        executor = SimpleNamespace(reference=executor_reference, canonical_sha256='a'*64, executor_id='CPU-fixture')
+        executor = SimpleNamespace(reference=executor_reference, canonical_sha256='a'*64, executor_id='CPU-fixture', project_root=ROOT)
         requests = []
         def command(argv, **kwargs):
             request_path = Path(argv[argv.index('--request') + 1])
@@ -176,7 +178,8 @@ class PairedExecutionTests(unittest.TestCase):
             result_path.write_bytes(encoded(result))
             return SimpleNamespace(returncode=0, stdout=b'',
                 stderr=b'[gpu-run] accepted job gpuq-123456789abc\n')
-        submitter = CommandBrokerSubmitter(command=('CPU-fixture',),
+        from tests.contracts._executor_fixture import compiler_reference
+        submitter = CommandBrokerSubmitter(compiler_reference=compiler_reference(ROOT), command=('CPU-fixture',),
             workload_path=ROOT / 'contracts/workloads/rmsnorm-fp32-v2.json',
             workload_sha256=self.workload.canonical_sha256,
             protocol_sha256=sha256(encoded(self.protocol)).hexdigest(), cwd=ROOT,
@@ -220,7 +223,8 @@ class PairedExecutionTests(unittest.TestCase):
         arguments = dict(command=('CPU-fixture',), workload_path=path,
             workload_sha256=sha256(encoded(document)).hexdigest(),
             protocol_sha256=sha256(encoded(self.protocol)).hexdigest(), cwd=ROOT,
-            executor=SimpleNamespace(reference={}),
+            executor=SimpleNamespace(reference={}, project_root=ROOT),
+            compiler_reference=compiler_reference(ROOT),
             service_user=pwd.getpwuid(os.geteuid()).pw_name,
             service_group=grp.getgrgid(os.getegid()).gr_name,
             evaluation_protocol=self.protocol, baseline=self.baseline)
@@ -365,7 +369,7 @@ class PairedExecutionTests(unittest.TestCase):
         # and resolver. No released project descriptor or host environment is edited.
         project = self.output / 'project'
         project.mkdir()
-        for directory in ('contracts', 'corpus', 'compiler', 'docs'):
+        for directory in ('contracts', 'corpus', 'compiler', 'docs', 'examples/python'):
             shutil.copytree(ROOT / directory, project / directory)
         template = project / template_path.relative_to(ROOT)
         if schedule is not None:
@@ -376,6 +380,9 @@ class PairedExecutionTests(unittest.TestCase):
             (project / skeleton['path']).write_bytes(encoded(schedule))
             skeleton['canonical_sha256'] = sha256(encoded(schedule)).hexdigest()
             template.write_bytes(encoded(fixture_study))
+        fixture_study = json.loads(template.read_bytes())
+        fixture_study['evaluation_protocol']['note'] = '共同的候选与基线协议'
+        template.write_bytes(encoded(fixture_study))
         study = StudyContract.load(template)
         before = template.read_bytes()
         source = project / 'cpu-executor-source.txt'
@@ -439,7 +446,7 @@ class PairedExecutionTests(unittest.TestCase):
             configuration_sha256=sha256(encoded(configuration)).hexdigest())
         qp = self.output / 'qualification.json'; qp.write_bytes(encoded(qualification))
         anchor = {'schema_version':1, 'kind':'codex_provider_qualification_evidence_anchor',
-            'run_id':'CPU-fixture', 'evidence_root':str(self.output / 'provider-evidence'),
+            'run_id':'CPU-fixture', 'evidence_root':str(self.output / '提供器证据'),
             'authority_sha256':'a'*64, 'qualification_receipt_sha256':sha256(encoded(qualification)).hexdigest(),
             'immediate_audit_integrity':True, 'terminal_seal_sha256':'b'*64}
         ap = self.output / 'anchor.json'; ap.write_bytes(encoded(anchor))
@@ -474,7 +481,7 @@ class PairedExecutionTests(unittest.TestCase):
             stack.enter_context(patch('open_cake_ir.compiler.Compiler.load', return_value=draft))
             toolchain = stack.enter_context(patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler' if comparison == 'native_triton' else 'open_cake_ir.lab.cute_build.IsolatedCuTeCompiler'))
             toolchain.return_value.canonical_sha256 = 'b'*64
-            stack.enter_context(patch('open_cake_ir.lab.runtime.broker_execution_sha256', return_value='c'*64))
+            stack.enter_context(patch('open_cake_ir.lab.runtime_config.broker_execution_sha256', return_value='c'*64))
             lock = Lab(project).preflight(template, execution_bindings_path=bp)
             resolver.assert_called_once_with(project, {'binding': 'current_release'}, 'study.execution', template=True)
             self.assertEqual(lock.document['execution']['executor_revision'], executor_ref)
@@ -500,7 +507,13 @@ class PairedExecutionTests(unittest.TestCase):
                 self.assertIn('"sm_103a"', package.task_markdown)
                 self.assertIn('candidate-set.json', package.agents_markdown)
                 self.assertNotIn('prompt_template', package.task_markdown)
-                self.assertNotIn('"sm_100a"', package.task_markdown)
+                def frozen_json(name):
+                    section = package.task_markdown.split(f"## Frozen reference: `{name}`\n", 1)[1]
+                    return json.loads(section.split("```json\n", 1)[1].split("\n```", 1)[0])
+                self.assertEqual(frozen_json("target.json")["target_id"], "sm_103a")
+                self.assertEqual(frozen_json("run-authority.json")["execution"]["target"], "sm_103a")
+                if arm == "open_cake":
+                    self.assertEqual(frozen_json("schedule-skeleton.json")["target"], "sm_103a")
                 if arm == comparison:
                     self.assertIn(policy.baseline_file, package.task_markdown)
                 else:

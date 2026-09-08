@@ -12,6 +12,8 @@ from ._documents import _canonical_json_bytes, _object
 from ._policies import _MATCHED_EVENT_KINDS_V1, _matched_evidence_policy_version
 from .contracts import CampaignLock
 from .executor import ExecutorRevision
+from .endpoints import endpoint_policy
+from .evaluation_lifecycle import replay_evaluation_invocations
 from .selection import _EmpiricalSelection, _empirical_context
 from .replay_candidates import _artifact_outcomes_are_closed, _replay_candidates
 from .replay_outcomes import _replay_terminal
@@ -28,6 +30,8 @@ def replay_matched_run(
     manifest_parser: Callable,
     task_package: Callable,
 ) -> bool:
+    from .bindings import load_compiler_reference
+    load_compiler_reference(project_root, lock.document["compiler_revision"], "replay.compiler_revision")
     events = evidence.replay_events(audit.run_id)
     resolved_inputs = _object(
         lock.document["resolved_inputs"], "resolved_inputs"
@@ -95,6 +99,15 @@ def replay_matched_run(
     if len(checkpoint_events) != 1:
         return False
     if not provider_events:
+        if (endpoint_policy(lock.analysis_plan) is not None and audit.protocol_adherence == "adhered" and
+                kinds == ["run_started", "checkpoints_projected", "run_terminal"]):
+            protocol = lock.document["evaluation_protocol"]
+            return _replay_terminal(
+                attribution_evaluation=protocol.get("attribution_evaluation"), audit=audit,
+                checkpoint_events=checkpoint_events, cumulative_by_turn={},
+                fault_terminal_tokens=None, faults=(), lock=lock, observations=(), receipts={},
+                searches_per_turn=protocol.get("searches_per_turn", 1),
+            )
         return _replay_provider_fault(
             audit=audit,
             checkpoint_events=checkpoint_events,
@@ -226,6 +239,13 @@ def replay_matched_run(
     if candidates is None:
         return False
     launchables, receipts, receipt_order, rejected = candidates
+    try:
+        invocation_counts = replay_evaluation_invocations(events, receipts=receipts,
+            budget=replay_budget, protocol=lock.document["evaluation_protocol"])
+    except ValueError:
+        # The lifecycle owner retains precise exceptions for focused diagnostics;
+        # this independent replay seam has a boolean refusal contract.
+        return False
     selected = _replay_candidate_selection(
         candidate_set_turns=candidate_set_turns,
         cumulative_by_turn=cumulative_by_turn,
@@ -254,6 +274,7 @@ def replay_matched_run(
         observations=observations,
         receipts=receipts,
         searches_per_turn=searches_per_turn,
+        invocation_counts=invocation_counts,
     )
 
 def _replay_provider_fault(

@@ -18,7 +18,7 @@ reproducing them would mean hardcoding the thing this module exists to compute.
 
 from __future__ import annotations
 
-from .common import TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
+from .common import emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 
 from ..ir import (
     AccessIndexKind,
@@ -116,17 +116,19 @@ def _barrier_signaller_scopes(schedule: Schedule, barrier: Barrier) -> set[str |
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     """Target-independent backend requirements, including unsupported vocabulary."""
-    common = vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
-    if common:
-        return common
     if cutedsl_register.applies(schedule):
         return cutedsl_register.requirements(schedule)
-    # The legacy emitter still has its original vocabulary and refusals. The
-    # module-level inventory is the union of the two concrete lowering domains.
-    return vocabulary_findings(schedule, SUPPORTED_DTYPES, frozenset(BODY_EMITTERS))
+    state = tuple(refusal("CUTE_STATE_UNSUPPORTED", f"buffers[{i}].mode",
+        "CuTe lowering does not implement mutable state buffers")
+        for i, buffer in enumerate(schedule.buffers) if buffer.mode is BufferMode.STATE)
+    common = vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+    if common:
+        return state + common + python_name_findings(schedule)
+    return state + python_name_findings(schedule) + vocabulary_findings(
+        schedule, SUPPORTED_DTYPES, frozenset(BODY_EMITTERS))
 
 
-def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
+def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) -> tuple[Finding, ...]:
     """Return the CuTe emitter's backend-owned constructor requirements."""
 
     findings = list(requirements(schedule))
@@ -196,13 +198,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                 "the CuTe-DSL backend addresses whole dimensions; it cannot honour a "
                 "sub-range",
             )
-    for index, buffer in enumerate(schedule.buffers):
-        add(
-            buffer.mode is not BufferMode.STATE,
-            "CUTE_STATE_UNSUPPORTED",
-            f"buffers[{index}].mode",
-            "the CuTe-DSL backend does not implement caller-owned mutable state",
-        )
+
 
     for index, loop in enumerate(schedule.tile_loops):
         options = loop.range_options
@@ -294,21 +290,35 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
             f"operations[{index}].parameters.descriptor_box",
             "the CuTe-DSL backend requires every load to name a descriptor box",
         )
+    if not findings and _namespace:
+        try:
+            emitter = _Emitter(schedule, target, _namespace=False)
+            emission = emitter.emit()
+        except EmitError:
+            # Other underdetermined bodies retain their existing controlled
+            # lowering refusal; this check owns only the Python namespace.
+            pass
+        else:
+            findings.extend(emitted_python_name_findings(schedule, emission.source,
+                emitter.authored_lines, kernel=f"_{emitter.entry_point}_kernel"))
     return tuple(findings)
 
 
 class _Emitter:
     def __init__(
-        self, schedule: Schedule, target: Target, entry_point: str | None = None
+        self, schedule: Schedule, target: Target, entry_point: str | None = None, *, _namespace: bool = True
     ) -> None:
         self.schedule = schedule
         self.target = target
         self.lines: list[str] = []
+        self.authored_lines: dict[int, set[str]] = {}
+        self.check_namespace = _namespace
         # The route owns the external symbol; the emitter derives its signature from
         # global Buffers rather than consulting an operator-named profile.
         self.entry_point = entry_point or schedule.lowering.entry_point
+        _require(safe_python_identifier(self.entry_point), "unsafe Python entry point")
 
-        failures = preflight(schedule, target)
+        failures = preflight(schedule, target, _namespace=False)
         if failures:
             raise EmitError(failures[0].message)
         self.mma = self._single(OperationKind.MMA, "mma")
@@ -402,7 +412,9 @@ class _Emitter:
 
     # ------------------------------------------------------------------- emission
 
-    def line(self, text: str = "") -> None:
+    def line(self, text: str = "", *, declares: tuple[str, ...] = ()) -> None:
+        if declares:
+            self.authored_lines[1 + sum(line.count("\n") + 1 for line in self.lines)] = set(declares)
         self.lines.append(text)
 
     def emit(self) -> Emission:
@@ -412,7 +424,13 @@ class _Emitter:
         self._emit_kernel()
         self._emit_host()
         entry = self.entry_point
-        return Emission("\n".join(self.lines) + "\n", entry, self.constants())
+        source = "\n".join(self.lines) + "\n"
+        if self.check_namespace:
+            failures = emitted_python_name_findings(self.schedule, source, self.authored_lines,
+                                                     kernel=self._kernel_name())
+            if failures:
+                raise EmitError(failures[0].message)
+        return Emission(source, entry, self.constants())
 
     def _emit_header(self) -> None:
         self.line(f"# Generated by open-cake-ir from {self.schedule.schedule_id}; DO NOT EDIT.")
@@ -500,7 +518,7 @@ class _Emitter:
             swizzle = "" if buffer is None or buffer.swizzle is None else (
                 f"\n        swizzle={load.op_id}_smem_layout.inner,"
             )
-            self.line(f"    {staged} = smem.allocate_tensor(")
+            self.line(f"    {staged} = smem.allocate_tensor(", declares=(staged,))
             self.line("        element_type=IO_DTYPE,")
             self.line(f"        layout={load.op_id}_smem_layout.outer,")
             self.line("        byte_alignment=128,")
@@ -769,7 +787,7 @@ class _Emitter:
             for name in list(op.reads) + list(op.writes)
         ):
             self.line(f"{pad}tmem.wait_for_alloc()")
-            self.line(f"{pad}accumulator = cute.make_tensor(")
+            self.line(f"{pad}accumulator = cute.make_tensor(", declares=self.mma.writes)
             self.line(f"{pad}    tmem.retrieve_ptr(ACC_DTYPE), accumulator_template.layout")
             self.line(f"{pad})")
 
@@ -796,7 +814,7 @@ class _Emitter:
         # Always bind the iterator. An operation in an inner scope may still address an
         # outer axis -- the B operand is tiled in N by the outer loop and read by a load
         # that lives in the inner one.
-        self.line(f"{pad}for {loop.iterator} in cutlass.range({trips}):")
+        self.line(f"{pad}for {loop.iterator} in cutlass.range({trips}):", declares=(loop.iterator,))
 
         acquired = [
             b
@@ -967,14 +985,14 @@ class _Emitter:
         self.line(f"{pad}for group in cutlass.range({groups}, unroll_full=True):")
         self.line(f"{pad}    row = lane + group * 32")
         self.line(f"{pad}    best_value = {source.name}[row, 0]")
-        self.line(f"{pad}    best_index = cutlass.Int32(0)")
+        self.line(f"{pad}    best_index = cutlass.Int32(0)", declares=operation.writes)
         self.line(
             f"{pad}    for column in cutlass.range(1, {columns}, 1, unroll=1):"
         )
         self.line(f"{pad}        candidate = {source.name}[row, column]")
         self.line(f"{pad}        if candidate < best_value:")
         self.line(f"{pad}            best_value = candidate")
-        self.line(f"{pad}            best_index = column")
+        self.line(f"{pad}            best_index = column", declares=operation.writes)
 
         # The reduction produces one index per row inside a loop this emitter opened, so
         # a store that consumes it belongs in that loop rather than beside it.

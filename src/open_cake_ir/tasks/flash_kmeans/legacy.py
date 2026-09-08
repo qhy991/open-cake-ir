@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
+
 import json
 from hashlib import sha256
 from typing import Mapping, cast
@@ -11,14 +13,6 @@ from open_cake_ir.tasks.flash_kmeans.portfolio import PortfolioArtifact, Portfol
 from open_cake_ir.evaluation.workload import WorkloadContract
 
 
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode()
 
 
 def replay_legacy_r45_result(

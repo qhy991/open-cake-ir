@@ -9,7 +9,7 @@ Each destination is inferred from a signal the loop already produces, not from a
 
 * **candidate** -- a gate refused it, or the set repeated itself. The Schedule is wrong,
   or two of them are one program under two names, and its author can see why either way.
-* **verifier** -- every gate passed and the toolchain still refused. Something was true of
+* **verifier** -- every gate passed and the toolchain refused Compiler-produced source. Something was true of
   this Schedule that the pre-compile gates do not model, which is a missing rule rather
   than a bad candidate.
 * **ir_vocabulary** -- the Schedule is well-formed and this backend cannot lower it. Some
@@ -64,10 +64,20 @@ class Route:
             raise ValueError("routing destination or reason differs")
 
 
-def route_rejection(feedback: Mapping[str, object]) -> Route:
-    """Classify one rejected candidate from the feedback the Environment returned."""
+def route_rejection(feedback: Mapping[str, object], *, arm: str = "open_cake") -> Route:
+    """Classify Environment feedback using its assigned arm, never authored metadata.
 
+    Compile feedback is a CandidateCompileRejected, not an infrastructure failure.
+    The default describes Compiler-only assessment callers; Lab execution and replay
+    always supply the frozen arm.
+    """
+
+    if arm not in {"open_cake", "direct_cuda", "native_triton", "native_cute_dsl"}:
+        raise ValueError("diagnosis Authoring Environment arm differs")
     stage = feedback.get("stage")
+
+    if stage == "compile" and arm != "open_cake":
+        return Route(CANDIDATE, "the toolchain refused source authored by this arm")
 
     if stage == "compile":
         # The gates admitted it and the toolchain did not. Whatever was wrong is outside
@@ -79,7 +89,7 @@ def route_rejection(feedback: Mapping[str, object]) -> Route:
         )
 
     error = feedback.get("error")
-    if isinstance(error, str) and _UNDER_DETERMINED in error:
+    if feedback.get("code") == "LOWERING_UNDETERMINED" or (isinstance(error, str) and _UNDER_DETERMINED in error):
         return Route(
             IR_VOCABULARY,
             "lowering refused because the Schedule leaves a decision the vocabulary "

@@ -74,7 +74,7 @@ class StreamingTopKTest(unittest.TestCase):
         self.assertIn(
             "        if ((score_start // BLOCK_SCORE_LOOP) & 1) != 0:\n"
             "            select_blocks_pair_keys = tl.cat("
-            "select_blocks_pending_keys, select_blocks_source_keys)",
+            "select_blocks_pending_keys, select_blocks_source_keys, can_reorder=False)",
             source,
         )
         self.assertIn(

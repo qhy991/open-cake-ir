@@ -22,6 +22,8 @@ class AkaPortableParentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         base = Path(self.temporary.name)
+        from tests.contracts._parent_validator_fixture import write_parent_validator_fixture
+        self.parent_validator = write_parent_validator_fixture(base / "parent-validator-fixture.py")
         self.repository = base / "AKA"
         self.source = self.repository / "datasets/curated/cuda_kernel_dataset_v1"
         self.portable = (
@@ -223,6 +225,7 @@ class AkaPortableParentTests(unittest.TestCase):
                 "datasets/curated/cuda_kernel_dataset_v1"
             ),
             entry=entries[0],
+            parent_validator=self.parent_validator,
         )
         document = json.loads(completion.read_text(encoding="utf-8"))
         marker = json.loads(

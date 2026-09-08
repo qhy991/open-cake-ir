@@ -9,9 +9,8 @@ are promised. This domain is selected by register MMA, never by an operator name
 from __future__ import annotations
 
 from dataclasses import dataclass
-import keyword
 
-from .common import Emission, EmitError, refusal, vocabulary_findings
+from .common import python_name_findings, safe_python_identifier, Emission, EmitError, refusal, vocabulary_findings
 from ..diagnostics import Finding
 from ..ir import (
     AccessIndexKind, BoundaryPolicy, Buffer, BufferMode, DType, ElementwiseOp,
@@ -26,14 +25,6 @@ SUPPORTED_DTYPES = frozenset({DType.BF16, DType.FP32})
 SUPPORTED_OPERATION_KINDS = frozenset({
     OperationKind.LOAD, OperationKind.MMA, OperationKind.ELEMENTWISE, OperationKind.STORE,
 })
-
-
-def _kernel_symbol(name: str) -> bool:
-    # The trusted CuTe compile wrapper owns this host entry; authored globals may
-    # not capture it or the fixed imports. ASCII also keeps Python's NFKC identifier
-    # normalization from changing the spelling retained by the ordered pointer ABI.
-    return (name.isascii() and name.isidentifier() and not keyword.iskeyword(name) and "__" not in name
-            and name not in {"cutlass", "cute", "warp", "open_cake_cute_launch"})
 
 
 def applies(schedule: Schedule) -> bool:
@@ -51,7 +42,7 @@ def applies(schedule: Schedule) -> bool:
 
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
-    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS) + python_name_findings(schedule, register_route=True)
 
 
 @dataclass(frozen=True)
@@ -101,8 +92,6 @@ def _plan(schedule: Schedule, target: Target) -> tuple[_Plan | None, tuple[Findi
     }, "CUTE_REGISTER_OPERATIONS", "operations",
         "register CuTe lowering requires three global loads, one register MMA, one broadcast ADD and one store")
     for index, op in enumerate(schedule.operations):
-        check(not any(char.isspace() for char in op.op_id), "CUTE_REGISTER_IDENTIFIER",
-              f"operations[{index}].id", "CuTe operation markers require ids without whitespace")
         check(not op.waits and not op.signals and op.pipeline is None,
               "CUTE_REGISTER_SYNC", f"operations[{index}]",
               "register CuTe operations execute in program order without asynchronous synchronization")
@@ -185,12 +174,6 @@ def _plan(schedule: Schedule, target: Target) -> tuple[_Plan | None, tuple[Findi
           "register CuTe global addressing and padded tile coordinates must fit signed 32-bit indices")
     check(schedule.outputs == (output.name,), "CUTE_REGISTER_OUTPUT", "outputs",
           "register CuTe lowering requires the sole stored output")
-    for path, name in (("lowering.entry_point", schedule.lowering.entry_point),
-                       *((f"buffers[{index}].name", buf.name) for index, buf in enumerate(schedule.buffers)
-                         if buf.space is MemorySpace.GLOBAL)):
-        check(_kernel_symbol(name) and (path == "lowering.entry_point" or name != schedule.lowering.entry_point),
-              "CUTE_REGISTER_IDENTIFIER", path,
-              "CuTe kernel symbols must be Python identifiers distinct from the fixed DSL imports")
     loop = schedule.tile_loops[0]
     check(loop.buffer == a.name and loop.dimension == 1 and loop.tile == tile[2]
           and len(a.shape) == 2 and a.shape[1] > loop.tile
@@ -255,7 +238,7 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
     globals_ = tuple(buf for mode in (BufferMode.INPUT, BufferMode.OUTPUT)
                      for buf in schedule.buffers if buf.space is MemorySpace.GLOBAL and buf.mode is mode)
     for name in (entry, *(buf.name for buf in globals_)):
-        if not _kernel_symbol(name):
+        if not safe_python_identifier(name, register_route=True):
             raise EmitError(f"CuTe kernel symbol {name!r} conflicts with Python syntax or the fixed DSL imports")
     if any(buf.name == entry for buf in globals_):
         raise EmitError("CuTe pointer arguments cannot shadow the kernel entry point")

@@ -14,12 +14,22 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[test]'
 .venv/bin/python -m open_cake_ir.cli compiler check-corpus \
   --revision compiler/revision.lock.json
+.venv/bin/python -m pytest tests/contracts
 ```
 
-The exact portable CPU test selection is in [CI](.github/workflows/ci.yml). Tests requiring
-Torch, a GPU toolchain, a specific device, or historical filesystem custody have additional
-environment requirements; see the [runbook](docs/RUNBOOK.md). A normal checkout does not
-reconstruct historical custody by restoring permissions.
+The [CI](.github/workflows/ci.yml) discovers every contract test on Python 3.10, 3.11,
+and 3.12. Individual tests report missing optional dependencies or exact historical
+environment requirements as skips; whole modules are not excluded from discovery.
+The released Executor's profiler admission test requires its bound runtime and host:
+set `OPEN_CAKE_RUN_BOUND_EXECUTOR_TESTS=1` only in that environment. Tests requiring
+Torch, a GPU toolchain, a specific device, or historical filesystem custody have
+additional requirements; see the [runbook](docs/RUNBOOK.md). A normal checkout does
+not reconstruct historical custody by restoring permissions.
+
+The AKA expressibility tools accept `--parent-validator /absolute/path/to/validate_completion.py`.
+The selected validator is bound when a work root is created and cannot be replaced
+when continuing it. Contract tests use an explicit protocol fixture; passing them
+does not qualify a real parent kernel or establish custody.
 
 ## Propose a change
 

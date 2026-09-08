@@ -7,6 +7,7 @@ import argparse
 from collections import Counter
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any, Sequence
 

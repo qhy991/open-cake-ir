@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
+
 import json
 from dataclasses import dataclass
 from hashlib import sha256
@@ -11,14 +13,6 @@ from typing import Mapping, cast
 from open_cake_ir.compiler import Assessment, Compiler, CompilerError, Lowering
 
 
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _digest(value: object, context: str) -> str:

@@ -156,6 +156,17 @@
     "corpus/schedules/b300-cute-register-target-drift.json",
     "src/open_cake_ir/compiler/backends/cutedsl_register.py",
     "src/open_cake_ir/compiler/cute_toolchain.py",
-    "compiler/targets/apple_gpu_family7.json"
+    "compiler/targets/apple_gpu_family7.json",
+    "corpus/schedules/triton-argmin-runtime-domain-drift.json",
+    "corpus/schedules/store-access-rank-drift.json",
+    "corpus/schedules/triton-loop-stop-mma-drift.json",
+    "corpus/schedules/tensor-columns-illegal-drift.json",
+    "corpus/schedules/mma-tile-n-drift.json",
+    "corpus/schedules/residency-register-cap-drift.json",
+    "corpus/schedules/triton-identifier-keyword-drift.json",
+    "corpus/schedules/triton-operation-id-control-drift.json",
+    "corpus/schedules/triton-argmin-static-tail-drift.json",
+    "examples/python/cast.py",
+    "examples/python/mixed_dtype.py"
   ]
 }

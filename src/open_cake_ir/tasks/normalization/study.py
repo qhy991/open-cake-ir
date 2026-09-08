@@ -10,6 +10,7 @@ from open_cake_ir.evaluation.paired import PAIRED_METAL_KIND, paired_protocol
 from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, terminal_schema
 from open_cake_ir.lab._policies import _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN
+from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL
 from open_cake_ir.lab.ralph import RalphBudget
 from .workload import validate_normalization_contract
 
@@ -79,7 +80,7 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
         "agent_interface": {"schema_version": 1, "kind": "task_agents_ralph_v1"},
         "workload": {"path": str(workload_path), "canonical_sha256": workload.canonical_sha256},
         "arms": {"open_cake": {
-            "environment_kind": "open_cake", "provider": provider,
+            "environment_kind": "open_cake", "reference_access": "known_kernel_reproduction", "provider": provider,
             "scaffold": {"path": SCAFFOLD, "sha256": sha256((root / SCAFFOLD).read_bytes()).hexdigest()},
             "compiler_revision": dict(CURRENT_RELEASE_BINDING),
             "lowering_route": source.document["lowering"],
@@ -98,7 +99,8 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
                       "broker_execution_sha256": dict(CAMPAIGN_BINDING), "fixed_baseline": dict(CAMPAIGN_BINDING),
                       "gpu": {"name": "Apple M1 Pro", "count": 1, "mode": "local_serialized"},
                       "sandbox": provider["sandbox"]},
-        "analysis_plan": json.loads(canonical(_ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN)),
+        "analysis_plan": {**json.loads(canonical(_ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN)),
+                          "endpoint_policy": NORMAL_BUDGET_TERMINAL},
         "evidence": {"schema_version": 3, "terminal_archive_required_for_every_run": True,
                      "event_vocabulary": "matched_ralph_v1"},
     }

@@ -20,6 +20,7 @@ from open_cake_ir.evaluation.core import EvaluationProtocol, TensorLaunchManifes
 from open_cake_ir.lab.environments import CandidateSubmission, NativeCuTeEnvironment
 from open_cake_ir.lab.cute_build import CuTeToolchainBuilder
 from open_cake_ir.lab.faults import CandidateCompileRejected, RunProtocolFault
+from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL
 from open_cake_ir.lab.pairing import (backend_policy, bind_baseline, comparison_arm, native_backend,
                                      native_baseline, native_optimization_analysis_plan)
 from open_cake_ir.lab.providers import _project_candidate_submission, CANDIDATE_SET_ENVELOPE_V1
@@ -194,7 +195,7 @@ class CuTePairedLabFixtureTests(unittest.TestCase):
         lowering = draft.lower(draft.assess(schedule))
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
             root = Path(directory) / 'project'; root.mkdir()
-            for name in ('contracts', 'corpus', 'compiler', 'src', 'docs'):
+            for name in ('contracts', 'corpus', 'compiler', 'src', 'docs', 'examples/python'):
                 shutil.copytree(ROOT / name, root / name)
             document = json.loads((root / 'contracts/studies/matched-search-cute-b300-gemm-optimization-template.json').read_text())
             # This fixture binds real source and opaque CPU-only runtime references;
@@ -233,9 +234,16 @@ class CuTePairedLabFixtureTests(unittest.TestCase):
             stack.enter_context(mock.patch('open_cake_ir.lab.preflight.resolve_executor', return_value=bound_executor))
             stack.enter_context(mock.patch('open_cake_ir.lab.executor.ExecutorRevision.load_reference', return_value=bound_executor))
             stack.enter_context(mock.patch('open_cake_ir.compiler.Compiler.load', return_value=draft))
+            # Match the existing draft Compiler fixture at the new replay boundary.
+            def admit_fixture_compiler(project_root, value, context):
+                self.assertEqual(Path(project_root).resolve(), root.resolve())
+                self.assertEqual(value, reference, context)
+                return SimpleNamespace(revision_id=reference['revision_id'], canonical_sha256=reference['canonical_sha256'])
+            stack.enter_context(mock.patch('open_cake_ir.lab.bindings.load_compiler_reference', side_effect=admit_fixture_compiler))
             lab = TaskLab(root)
             lock = lab.preflight(study)
-            self.assertEqual(lock.analysis_plan, native_optimization_analysis_plan("native_cute_dsl"))
+            self.assertEqual(lock.analysis_plan, {**native_optimization_analysis_plan("native_cute_dsl"),
+                "endpoint_policy": NORMAL_BUDGET_TERMINAL})
             fixture = CompilationFixture()
             builder = CuTeToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=fixture)
             arms = lock.document['resolved_inputs']['arm_environments']
@@ -261,7 +269,8 @@ class CuTePairedLabFixtureTests(unittest.TestCase):
                     arm = 'open_cake' if 'lowered_source' in candidate.artifact_roles else 'direct_cuda'
                     virtual_name = 'open_cake_turn_10' if purpose == 'search' else arm + '_turn_1'
                     return super().evaluate(dataclasses.replace(candidate,entry_point=virtual_name),case_id=case_id,purpose=purpose)
-            evaluator = Evaluator(lock.document['evaluation_protocol'],sha256(encoded(lock.document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256)
+            evaluator = Evaluator(lock.document['evaluation_protocol'],sha256(encoded(lock.document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256,
+                compiler_revision_reference=lock.document['compiler_revision'])
             task = provider.packages['native_cute_dsl-1']
             self.assertIn('candidate-baseline.cute.json', task.task_markdown)
             self.assertIn('candidate.schema.json', task.task_markdown)

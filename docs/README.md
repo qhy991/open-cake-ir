@@ -106,7 +106,7 @@ Reading companions explain the material in simpler language. Detailed tables and
 | ADR 0050：发布过的编译器 lock 也永久保留身份 | [阅读](zh-CN/adr/0050-released-compiler-locks-reserve-their-identities.md) | [Read](adr/0050-released-compiler-locks-reserve-their-identities.md) |
 | ADR 0051：load 的结果形状必须符合地址实际读出的范围 | [阅读](zh-CN/adr/0051-load-values-follow-the-access-domain.md) | [Read](adr/0051-load-values-follow-the-access-domain.md) |
 | ADR 0052：独立代理会话也可以审查编译器发布 | [阅读](zh-CN/adr/0052-independent-agent-release-review.md) | [Read](adr/0052-independent-agent-release-review.md) |
-| 设计决策：按问题读懂 54 份记录 | [阅读](zh-CN/adr/README.md) | [Read](en/adr/README.md) |
+| 设计决策：按问题阅读记录 | [阅读](zh-CN/adr/README.md) | [Read](en/adr/README.md) |
 
 ## 历史调查与报告 / Historical surveys and reports
 
@@ -147,3 +147,26 @@ Reading companions explain the material in simpler language. Detailed tables and
 - [Workload contracts](../contracts/workloads/README.md)：精确题目；阅读版见[中文](wiki/workloads.md) / [English](en/wiki/workloads.md)。
 - [Context map](../CONTEXT-MAP.md)：导航职责依据；[中文阅读](zh-CN/CONTEXT-MAP.md)。
 - [Generated current status](../reports/current/STATUS.md)：发布依据的派生视图；不在翻译中手写另一份版本清单。
+
+## 原始决策补充索引 / Additional original decisions
+
+- [ADR 0053: B300 is an exact target on the existing Triton path](adr/0053-b300-is-an-exact-target.md)
+- [ADR 0053: Study-bound external advisory candidate order](adr/0053-study-bound-advisory-cost-selection.md)
+- [ADR 0054: Lab uses only Ralph](adr/0054-lab-uses-only-ralph.md)
+- [ADR 0055: Task implementations live outside the common Lab](adr/0055-task-implementations-live-outside-the-common-lab.md)
+- [ADR 0056 — One fixed-baseline paired assay per candidate](adr/0056-fixed-baseline-paired-execution.md)
+- [ADR 0057: Metal and CLI harnesses use the existing Lab](adr/0057-metal-and-harnesses-use-the-existing-lab.md)
+
+- [Development branches](DEVELOPMENT_BRANCHES.md): historical integration boundaries and merged Metal work.
+
+- [0060: Release review provenance and historical exceptions](adr/0060-release-review-provenance-and-historical-exceptions.md)
+
+- [0058: External writer custody anchors](adr/0058-external-writer-custody-anchors.md)
+
+- [0059: Final release identities bind complete authority](adr/0059-final-release-identities-bind-complete-authority.md)
+
+- [0061: Compiler dependencies at Executor handoffs](adr/0061-compiler-dependencies-at-executor-handoffs.md)
+
+- [0062: Explicit reference access by authoring arm](adr/0062-explicit-reference-access-treatment.md)
+
+- [0063: Normal budget terminal observations](adr/0063-normal-budget-terminal-observations.md)

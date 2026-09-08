@@ -251,6 +251,10 @@ def _verify_tensor_columns(allocation, index: int, limits, out: _Collector) -> N
             category,
         )
 
+    if allocation.tensor_columns < 32 or allocation.tensor_columns > 512 or allocation.tensor_columns & (allocation.tensor_columns - 1):
+        out.add("ALLOCATION_TENSOR_COLUMNS_ILLEGAL", f"{path}.tensor_columns",
+            "tcgen05 allocation requires a power-of-two column count in [32, 512]", category)
+
     capacity = limits.maximum_tensor_memory_bytes // TMEM_COLUMN_BYTES
     if allocation.tensor_columns > capacity:
         out.add(
@@ -397,6 +401,11 @@ def _verify_instruction_commitments(
                     f"({instruction.shape[2]})",
                     category,
                 )
+            if (instruction.shape is not None and tile is not None
+                    and tile[1] % instruction.shape[1]):
+                out.add("MMA_TILE_INSTRUCTION_MISMATCH", f"{path}.tile_shape",
+                    f"tile N {tile[1]} is not a whole number of atom N steps ({instruction.shape[1]})",
+                    category)
             if instruction.operand_source is OperandSource.SHARED:
                 for name in operation.reads[:2]:
                     operand = buffers.get(name)
@@ -647,6 +656,16 @@ def _verify_role_register_split(schedule: Schedule, target: Target, out: _Collec
     """
 
     category = FindingCategory.HARDWARE_CONFORMANCE
+    cap = schedule.residency.registers_per_thread if schedule.residency is not None else None
+    limit = target.resource_limits.maximum_registers_per_thread
+    if cap is not None:
+        if limit is None:
+            out.add("TARGET_REGISTER_CAP_UNMODELED", "residency.registers_per_thread",
+                "Target does not declare a per-thread register-cap limit; this limit was not checked",
+                category, FindingSeverity.REPORT)
+        elif cap > limit:
+            out.add("TARGET_REGISTER_CAP_LIMIT", "residency.registers_per_thread",
+                f"register cap {cap} exceeds Target per-thread capacity {limit}", category)
     budgeted = [role for role in schedule.roles if role.registers_per_thread is not None]
     if not budgeted:
         return

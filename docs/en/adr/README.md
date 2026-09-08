@@ -4,7 +4,7 @@
 
 ADRs retain the rationale and status of a decision. A proposal, accepted decision, released revision, and GPU-qualified artifact are different facts. Consult the original status and any successor, then the [generated release view](../../../reports/current/STATUS.md).
 
-There are two historical records numbered 0038 and two numbered 0039. Their full filenames distinguish their subjects; this index does not renumber history.
+There are two historical records numbered 0038 and two numbered 0039, and two numbered 0053. Their full filenames distinguish their subjects; this index does not renumber history.
 
 Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft work is permitted within its scope, accepted records an accepted decision, superseded points to a successor, and rejected retains the reason a proposal was refused. None replaces current task authorization.
 
@@ -65,3 +65,23 @@ Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft wor
 | 0051 | [load values follow the access domain](../../adr/0051-load-values-follow-the-access-domain.md) | [load 的结果形状必须符合地址实际读出的范围](../../zh-CN/adr/0051-load-values-follow-the-access-domain.md) |
 | 0052 | [Independent agent sessions may review Compiler releases](../../adr/0052-independent-agent-release-review.md) | [独立代理会话也可以审查编译器发布](../../zh-CN/adr/0052-independent-agent-release-review.md) |
 | 0053 | [Study-bound external advisory candidate order](../../adr/0053-study-bound-advisory-cost-selection.md) | — |
+
+## 原始决策补充索引 / Additional original decisions
+
+- [ADR 0053: B300 is an exact target on the existing Triton path](../../adr/0053-b300-is-an-exact-target.md)
+- [ADR 0054: Lab uses only Ralph](../../adr/0054-lab-uses-only-ralph.md)
+- [ADR 0055: Task implementations live outside the common Lab](../../adr/0055-task-implementations-live-outside-the-common-lab.md)
+- [ADR 0056 — One fixed-baseline paired assay per candidate](../../adr/0056-fixed-baseline-paired-execution.md)
+- [ADR 0057: Metal and CLI harnesses use the existing Lab](../../adr/0057-metal-and-harnesses-use-the-existing-lab.md)
+
+- [0060: Release review provenance and historical exceptions](../../adr/0060-release-review-provenance-and-historical-exceptions.md)
+
+- [0058: External writer custody anchors](../../adr/0058-external-writer-custody-anchors.md)
+
+- [0059: Final release identities bind complete authority](../../adr/0059-final-release-identities-bind-complete-authority.md)
+
+- [0061: Compiler dependencies at Executor handoffs](../../adr/0061-compiler-dependencies-at-executor-handoffs.md)
+
+- [0062: Explicit reference access by authoring arm](../../adr/0062-explicit-reference-access-treatment.md)
+
+- [0063: Normal budget terminal observations](../../adr/0063-normal-budget-terminal-observations.md)

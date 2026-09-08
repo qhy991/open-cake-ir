@@ -7,7 +7,6 @@ import copy
 import unittest
 from pathlib import Path
 
-from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.performance.residency import logical_register_pressure_per_thread
 from open_cake_ir.compiler.backends.common import EmitError
 from open_cake_ir.compiler.backends.triton import emit, preflight
@@ -16,7 +15,7 @@ from open_cake_ir.compiler.performance.profile import profile_envelope
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.verifier import verify
 from open_cake_ir.compiler.performance.work import work_bound
-from open_cake_ir.tasks.qsa.program import ProgramContract
+from tests.contracts._historical_qsa_program import replay_program_v2
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler/targets/sm_100a.json")
@@ -342,13 +341,13 @@ class TritonMultiMmaTest(unittest.TestCase):
         self.assertEqual(multiple.path, "buffers[7]")
 
     def test_single_mma_qsa_and_frozen_program_v2_remain_byte_identical(self) -> None:
-        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
-        assessment = compiler.assess_file(QSA)
-
-        self.assertEqual(compiler.lower(assessment).source_sha256, FROZEN_QSA_LOWERING)
-        program = ProgramContract.load(ROOT, PROGRAM, compiler)
-        self.assertEqual(program.program_id, "qsa-prefill-t32768-cake-port-v2")
-        self.assertEqual(len(program.nodes), 5)
+        # This assertion owns historical Program v2, whose source remains pinned
+        # to its original Compiler. Current Compiler compatibility is tested by
+        # the explicit fail-closed Program consumer test, not by rewriting this id.
+        observed = replay_program_v2()
+        self.assertEqual(observed["qsa_lowering_source_sha256"], FROZEN_QSA_LOWERING)
+        self.assertEqual(observed["program_id"], "qsa-prefill-t32768-cake-port-v2")
+        self.assertEqual(len(observed["nodes"]), 5)
 
 
 if __name__ == "__main__":

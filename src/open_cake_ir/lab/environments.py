@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 import ast, json, math
 from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
-from open_cake_ir.compiler import Assessment, Compiler, CompilerError
+from open_cake_ir.compiler import Assessment, Compiler, CompilerError, LoweringRefusedError
 from open_cake_ir.compiler.frontend import FrontendError, parse as parse_python_schedule
 from open_cake_ir.compiler.performance.ranking import Cost
 from open_cake_ir.compiler.toolchain import validate_triton_kernel
@@ -129,9 +131,7 @@ class OpenCakeEnvironment:
             json.dumps(authority_document, sort_keys=True, separators=(",", ":"))
         )
         self.canonical_sha256 = sha256(
-            json.dumps(
-                self.authority_document, sort_keys=True, separators=(",", ":")
-            ).encode()
+            canonical_json_bytes(self.authority_document)
         ).hexdigest()
         self._empirical_selection = None
         selection_binding = self.authority_document.get("candidate_selection")
@@ -251,7 +251,13 @@ class OpenCakeEnvironment:
                     }
                 ),
             )
-        lowering = self._compiler.lower(assessment)
+        try:
+            lowering = self._compiler.lower(assessment)
+        except LoweringRefusedError as error:
+            return EnvironmentResult(
+                "rejected", submission.sha256, None,
+                {"stage": "lowering", "code": error.code, "error": str(error)},
+            )
         try:
             launchable = self._toolchain.build(
                 BuildRequest(
@@ -315,7 +321,7 @@ class NativeTritonEnvironment:
             raise ValueError('native Triton signature differs from the Workload ABI')
         self._requirements['signature'] = expected_signature
         self.authority_document = json.loads(json.dumps(authority_document, sort_keys=True))
-        self.canonical_sha256 = sha256(json.dumps(self.authority_document, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        self.canonical_sha256 = sha256(canonical_json_bytes(self.authority_document)).hexdigest()
 
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:
         if submission.media_type != self.media_type:
@@ -381,7 +387,7 @@ class NativeCuTeEnvironment:
         if self._requirements['target'] != self._target or self._requirements['signature'] != expected:
             raise ValueError('native CuTe signature differs from the Workload ABI')
         self.authority_document = json.loads(json.dumps(authority_document, sort_keys=True))
-        self.canonical_sha256 = sha256(json.dumps(self.authority_document, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        self.canonical_sha256 = sha256(canonical_json_bytes(self.authority_document)).hexdigest()
 
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:
         from open_cake_ir.compiler.cute_toolchain import validate_cute_kernel

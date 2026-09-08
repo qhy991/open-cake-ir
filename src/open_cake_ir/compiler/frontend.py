@@ -11,6 +11,7 @@ import ast
 import inspect
 import json
 import math
+import re
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,8 @@ from .ir import (
     Allocation, Barrier, Buffer, ElementwiseOp, OperationKind, Pipeline,
     ProgramAxis, Role, Schedule, ScheduleParseError,
 )
+
+from .ir.operations import elementwise_result_dtype
 
 
 @dataclass(frozen=True)
@@ -35,9 +38,10 @@ class SourceLocation:
 class FrontendError(ValueError):
     """An unsupported source construct or a localized Schedule construction error."""
 
-    def __init__(self, message: str, location: SourceLocation, code: str = "PYTHON_SYNTAX"):
+    def __init__(self, message: str, location: SourceLocation, code: str = "PYTHON_SYNTAX", *, canonical_path: str | None = None):
         self.location = location
         self.code = code
+        self.canonical_path = canonical_path
         super().__init__(f"{location.filename}:{location.line}:{location.column}: {message}")
 
 
@@ -62,6 +66,11 @@ class ScheduleSource:
 
     def location_for(self, path: str) -> SourceLocation | None:
         path = path.removeprefix("schedule.")
+        if path in self.locations:
+            return self.locations[path]
+        elements = [key for key in self.locations if re.fullmatch(re.escape(path) + r"\[\d+\]", key)]
+        if elements:
+            return self.locations[max(elements, key=lambda key: int(key.rsplit("[", 1)[1][:-1]))]
         matches = [
             key for key in self.locations
             if not key or path == key or path.startswith(key + ".") or path.startswith(key + "[")
@@ -157,8 +166,8 @@ class _Builder:
                               end_line + self.line_offset,
                               column(end_line, getattr(node, "end_col_offset", 0)))
 
-    def fail(self, node, message, code="PYTHON_SYNTAX"):
-        raise FrontendError(message, self.location(node), code)
+    def fail(self, node, message, code="PYTHON_SYNTAX", *, canonical_path=None):
+        raise FrontendError(message, self.location(node), code, canonical_path=canonical_path)
 
     def mark(self, path, node):
         self.locations[path] = self.location(node)
@@ -239,6 +248,7 @@ class _Builder:
         _DECLARATIONS[collection].from_dict(self.document[collection][-1], f"schedule.{collection}[{index}]")
         ref = self.symbols[name] = _Ref(collection, name)
         if collection == "buffers" and fields.get("mode") == "output":
+            self.mark(f"outputs[{len(self.document['outputs'])}]", node)
             self.document["outputs"].append(name)
         return ref
 
@@ -407,6 +417,8 @@ class _Builder:
             fields.setdefault("movement", "global")
         if kind == "mma":
             fields.setdefault("accumulator", "fp32")
+        if kind in {"reduce", "online_softmax"}:
+            fields.setdefault("scope", "cta")
         return self.operation(kind, values, fields, controls, target, node)
 
     def operation(self, kind, values, parameters, controls, target, node):
@@ -440,8 +452,14 @@ class _Builder:
                 self.fail(node, "a computed result requires an input value")
             first = self.buffer(reads[0], node)
             shape, dtype = list(first.shape), first.dtype.value
-            if kind == "elementwise" and parameters.get("op") != "fma":
+            if kind == "elementwise":
                 operands = [self.buffer(ref, node) for ref in reads]
+                promoted = elementwise_result_dtype(operand.dtype for operand in operands)
+                if promoted is None:
+                    self.fail(node, f"{parameters['op']} has no implicit dtype promotion for "
+                        f"{[operand.dtype.value for operand in operands]}; use lm.cast(..., to=...) explicitly",
+                        "ELEMENTWISE_DTYPE_UNSUPPORTED", canonical_path=f"operations[{len(self.document['operations'])}].reads")
+                dtype = promoted.value
                 non_scalar = [operand for operand in operands if not operand.is_scalar]
                 shape = list(max((operand.shape for operand in (non_scalar or operands)), key=len))
             if kind == "load":
@@ -452,7 +470,10 @@ class _Builder:
                     self.fail(node, "reduce requires a valid static axis")
                 shape = shape[:axis] + shape[axis + 1:] or [1]
             elif kind == "cast":
-                dtype = parameters.get("dtype")
+                if "to" not in parameters:
+                    self.fail(node, "lm.cast requires to=...", "SCHEDULE_STRUCTURE",
+                              canonical_path=f"operations[{len(self.document['operations'])}].parameters")
+                dtype = parameters["to"]
             elif kind == "mma":
                 if len(reads) != 2 or len(first.shape) != 2:
                     self.fail(node, "automatic MMA results require two rank-two operands")
@@ -600,6 +621,11 @@ class _Builder:
         if decorator.args:
             self.fail(decorator, "schedule options must be named")
         options = self.keywords(decorator)
+        spellings = {"name": "schedule_id", "target": "target", "backend": "lowering.backend",
+                     "entry_point": "lowering.entry_point"}
+        for keyword in decorator.keywords:
+            if keyword.arg in spellings:
+                self.mark(spellings[keyword.arg], keyword)
         if "target" not in options or "backend" not in options:
             self.fail(decorator, "schedule requires an exact target and backend")
         self.document.update(schedule_id=options.pop("name", function.name), target=options.pop("target"),
@@ -657,4 +683,21 @@ def parse(source: str, *, filename: str = "<python>", line_offset: int = 0) -> S
         # Structural parser messages start with their canonical schedule path.
         path = str(error).split(" ", 1)[0]
         location = source.location_for(path) or builder.location(tree)
-        raise FrontendError(str(error), location, "SCHEDULE_STRUCTURE") from error
+        normalized = path.removeprefix("schedule.")
+        spelling = {"target": "@cake.schedule(target=...)", "lowering.backend": "@cake.schedule(backend=...)",
+                    "lowering.entry_point": "@cake.schedule(entry_point=...)", "schedule_id": "@cake.schedule(name=...)"}.get(normalized)
+        match = re.match(r"(buffers|roles|allocations|pipelines|barriers|operations|outputs|tile_loops)\[(\d+)\](.*)", normalized)
+        if spelling is None and match:
+            collection, index, suffix = match.groups()
+            items = builder.document[collection]
+            if int(index) < len(items):
+                item = items[int(index)]
+                if collection == "operations":
+                    method = item["parameters"].get("op", "elementwise") if item["kind"] == "elementwise" else item["kind"]
+                    spelling = f"lm.{method}(...)" + suffix.removeprefix(".parameters")
+                elif collection == "outputs":
+                    spelling = item + suffix
+                else:
+                    spelling = item.get("iterator", item.get("name", collection)) + suffix
+        message = (spelling or normalized) + str(error)[len(path):]
+        raise FrontendError(message, location, "SCHEDULE_STRUCTURE", canonical_path=path) from error

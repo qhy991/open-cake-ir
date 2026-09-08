@@ -336,8 +336,8 @@ def _compiler_identity(
     )
 
 
-def _validator_identity() -> dict[str, str]:
-    path = DEFAULT_PARENT_VALIDATOR.resolve(strict=True)
+def _validator_identity(validator: Path | None = None) -> dict[str, str]:
+    path = (DEFAULT_PARENT_VALIDATOR if validator is None else validator).resolve(strict=True)
     _require_regular(path, "fixed parent completion validator")
     return {"path": str(path), "sha256": sha256(path.read_bytes()).hexdigest()}
 
@@ -550,6 +550,7 @@ def initialize(
     record_format: str,
     compiler_revision: Path | None = None,
     dataset_label: str | None = None,
+    parent_validator: Path | None = None,
 ) -> dict[str, object]:
     """Create a work manifest and one frozen reference bundle outside both repositories."""
 
@@ -578,7 +579,7 @@ def initialize(
         ROOT, revision_path, ROOT / "compiler/source_set.json"
     )
     checker_ref = _checker_identity()
-    validator_ref = _validator_identity()
+    validator_ref = _validator_identity(parent_validator)
     snapshot = verify_git_snapshot(dataset_root, source_revision)
     records = load_records(snapshot, record_format=record_format)
     label = dataset_label or dataset_root.name
@@ -673,7 +674,7 @@ def _load_context(work_root: Path) -> Context:
     checker_current = _checker_identity()
     if checker_current != checker_stored:
         raise ReviewError("checker Git/raw-byte identity drifted")
-    validator_current = _validator_identity()
+    validator_current = _validator_identity(Path(manifest["parent_completion_validator"]["path"]))
     if validator_current != manifest["parent_completion_validator"]:
         raise ReviewError("fixed parent completion validator identity drifted")
     if _DIGEST.fullmatch(validator_current["sha256"]) is None:
@@ -1508,6 +1509,8 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument("--source-revision", required=True)
     init.add_argument("--record-format", required=True, choices=RECORD_FORMATS)
     init.add_argument("--dataset-label")
+    init.add_argument("--parent-validator", type=Path,
+                      help="existing parent completion validator to bind into this work manifest")
     init.add_argument(
         "--compiler-revision", type=Path, default=Path("compiler/revision.json")
     )
@@ -1540,6 +1543,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 record_format=arguments.record_format,
                 compiler_revision=arguments.compiler_revision,
                 dataset_label=arguments.dataset_label,
+                parent_validator=arguments.parent_validator,
             )
         elif arguments.command in {"next", "materialize"}:
             result = materialize(

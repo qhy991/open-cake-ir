@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 import json, shlex, shutil
 from hashlib import sha256
 from pathlib import Path
@@ -110,16 +112,12 @@ def broker_execution_sha256(
         if path.is_absolute() and path.is_file() and not path.is_symlink():
             files[str(path.resolve(strict=True))] = sha256(path.read_bytes()).hexdigest()
     return sha256(
-        json.dumps(
-            {
+        canonical_json_bytes({
                 "argv": list(command),
                 "files": files,
                 "cwd_policy": "project_root",
                 "timeout_seconds": timeout_seconds,
                 "service_user": service_user,
                 "service_group": service_group,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
+            })
     ).hexdigest()

@@ -24,6 +24,7 @@ from open_cake_ir.lab.environments import BuildRequest
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
 from tools.metal import rmsnorm
+from tests.contracts._executor_fixture import compiler_reference
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -113,7 +114,7 @@ class MetalArtifactContracts(unittest.TestCase):
     def test_builder_refuses_bad_requirements_before_host_or_filesystem_work(self):
         host = Mock()
         root = self.directory / "new-build-root"
-        builder = MetalToolchainBuilder(workload=self.workload, case_id="odd", output_root=root, host=host)
+        builder = MetalToolchainBuilder(compiler_reference=compiler_reference(ROOT), workload=self.workload, case_id="odd", output_root=root, host=host)
         changes = ({"compiler": "metal"}, {"buffer_order": ["weight", "x", "out"]},
                    {"threads_per_threadgroup": [1, 1, 1]}, {"fast_math_enabled": 0},
                    {"language_standard": "metal3.0"}, {"unknown_policy": True})
@@ -125,13 +126,13 @@ class MetalArtifactContracts(unittest.TestCase):
         host.invoke.assert_not_called()
         self.assertFalse(root.exists())
         with self.assertRaises(ValueError):
-            MetalToolchainBuilder(workload=self.workload, case_id="odd", output_root=ROOT / "runs")
+            MetalToolchainBuilder(compiler_reference=compiler_reference(ROOT), workload=self.workload, case_id="odd", output_root=ROOT / "runs")
 
     @unittest.skipUnless(platform.system() == "Darwin" and platform.machine() == "arm64" and shutil.which("swiftc"),
                          "native compile-only Metal archive test requires Apple Silicon and Swift")
     def test_real_archive_build_and_source_free_strict_reload(self):
         host = MetalArchiveHost.build(self.directory)
-        builder = MetalToolchainBuilder(workload=self.workload, case_id="odd", output_root=self.directory, host=host)
+        builder = MetalToolchainBuilder(compiler_reference=compiler_reference(ROOT), workload=self.workload, case_id="odd", output_root=self.directory, host=host)
         candidate = builder.build(self.request)
         self.assertEqual(set(candidate.artifact_roles), required_build_roles("metal") | {"lowered_source"})
         manifest = MetalTensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads["launch_manifest"]))

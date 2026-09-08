@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from contextlib import redirect_stderr
+from io import StringIO
 import sys
+import tempfile
 import unittest
 
 
@@ -16,6 +19,7 @@ from tools.run_aka_portable_parent_pool import (  # noqa: E402
     select_requested_entries,
 )
 from tools.run_aka_portable_parents_codex import PortableEntry  # noqa: E402
+from tools.summarize_aka_portable_parent_pool import main as summarize_main  # noqa: E402
 
 
 def entry(index: int, *, ready: bool = True) -> PortableEntry:
@@ -56,6 +60,22 @@ def entry(index: int, *, ready: bool = True) -> PortableEntry:
 
 
 class AkaPortableParentPoolTests(unittest.TestCase):
+    def test_summary_cli_reports_missing_input_without_a_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                result = summarize_main([
+                    str(root / "absent"), "--expected-count", "1",
+                    "--output-json", str(root / "summary.json"),
+                    "--output-markdown", str(root / "summary.md"),
+                ])
+            self.assertEqual(result, 2)
+            self.assertIn("ERROR:", stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+            self.assertFalse((root / "summary.json").exists())
+            self.assertFalse((root / "summary.md").exists())
+
     def test_selects_exact_new_hundred_in_current_order(self) -> None:
         prior = [entry(index) for index in range(1, 51)]
         current = [entry(index) for index in range(1, 151)]

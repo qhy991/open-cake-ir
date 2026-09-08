@@ -1,6 +1,8 @@
 """Concrete B200 assay for one frozen exact-shape portfolio."""
 
 from __future__ import annotations
+
+from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.evaluation.benchmark import CuptiBenchmark,StrictCuptiBenchmark
 
 import json
@@ -88,7 +90,7 @@ class CuptiPortfolioAssay:
             json.dumps(evaluation_protocol, sort_keys=True, separators=(",", ":"))
         )
         self.protocol_sha256 = sha256(
-            json.dumps(self.protocol, sort_keys=True, separators=(",", ":")).encode()
+            canonical_json_bytes(self.protocol)
         ).hexdigest()
         self._workload = workload
         self._loaded = dict(loaded_candidates)

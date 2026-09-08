@@ -13,6 +13,9 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Mapping, cast
 
+from .custody import WriterCustody, external_path
+from .secret_detection import contains_forbidden_secret
+
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _EVENT_FILE = re.compile(r"^([0-9]{12})\.json$")
@@ -28,30 +31,6 @@ _PROTOCOL = {
 }
 _ENDPOINT = {"qualified", "no_qualified_candidate", "missing", "observed"}
 _MAX_OBJECT_BYTES = 1 << 30
-_SECRET_MARKERS = (
-    b"BEGIN PRIVATE KEY",
-    b"OPENAI_API_KEY=",
-    b"CODEX_ACCESS_TOKEN=",
-    b"INFINI_API_KEY=",
-)
-_SECRET_PATTERNS = (
-    re.compile(rb"(?i)authorization\s*:\s*bearer\s+[a-z0-9._~+/=-]{8,}"),
-    re.compile(rb"(?i)bearer\s+sk-[a-z0-9_-]{8,}"),
-    re.compile(
-        rb"(?i)(?:openai|anthropic|github|gitlab|azure|aws|codex|infini)"
-        rb"[a-z0-9_-]{0,24}(?:key|token|secret)\s*[:=]\s*['\"]?[a-z0-9._~+/=-]{8,}"
-    ),
-    re.compile(rb"\b(?:ghp|github_pat|sk)-[a-zA-Z0-9_-]{8,}\b"),
-    re.compile(rb"\bAKIA[0-9A-Z]{16}\b"),
-)
-
-
-def _contains_forbidden_secret(payload: bytes) -> bool:
-    return any(marker in payload for marker in _SECRET_MARKERS) or any(
-        pattern.search(payload) is not None for pattern in _SECRET_PATTERNS
-    )
-
-
 def _canonical_json_bytes(value: object) -> bytes:
     return json.dumps(
         value,
@@ -199,6 +178,10 @@ def _publish_new_at(directory_fd: int, name: str, payload: bytes, mode: int = 0o
             pass
 
 
+def _has_partial_publication(directory_fd: int) -> bool:
+    return any(name.startswith(".tmp-") for name in os.listdir(directory_fd))
+
+
 def _parse_canonical_json(payload: bytes, context: str) -> Mapping[str, object]:
     try:
         value = json.loads(payload)
@@ -280,17 +263,16 @@ class EvidenceStore:
         root: Path,
         *,
         writable: bool,
-        filesystem_custody_verified: bool,
     ) -> None:
         self.root = root
         self._writable = writable
-        self._filesystem_custody_verified = filesystem_custody_verified
+        self._writer_custody = WriterCustody(root)
 
     @classmethod
     def create(cls, root: str | Path) -> "EvidenceStore":
         """Create a new trusted Evidence v2 root."""
 
-        path = Path(root).absolute()
+        path = external_path(Path(root).absolute())
         if path.exists() or path.is_symlink():
             raise ValueError("Evidence root must be new")
         parent = path.parent
@@ -318,12 +300,12 @@ class EvidenceStore:
                 os.close(objects_fd)
             runs_fd = _open_dir(root_fd, "runs", create=True)
             os.close(runs_fd)
+            WriterCustody(path).create(root_fd)
         finally:
             os.close(root_fd)
         return cls(
             path.resolve(strict=True),
             writable=True,
-            filesystem_custody_verified=True,
         )
 
     @classmethod
@@ -350,7 +332,7 @@ class EvidenceStore:
             os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0),
         )
         root_metadata = os.fstat(root_fd)
-        custody = [_directory_has_custody(root_metadata)]
+        custody = [_directory_has_custody(root_metadata) and WriterCustody(resolved).store_verified(root_fd)]
         if writable and not custody[0]:
             os.close(root_fd)
             raise ValueError("Evidence root custody differs")
@@ -377,7 +359,6 @@ class EvidenceStore:
         return cls(
             resolved,
             writable=writable,
-            filesystem_custody_verified=custody[0],
         )
 
     @classmethod
@@ -386,17 +367,18 @@ class EvidenceStore:
 
         return cls._open_existing(root, writable=True)
 
-    def _root_fd(self) -> int:
+    def _root_fd(self, *, read_only: bool = False) -> int:
         descriptor = os.open(
             self.root,
             os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0),
         )
         metadata = os.fstat(descriptor)
         if not stat.S_ISDIR(metadata.st_mode) or (
-            self._writable and not _directory_has_custody(metadata)
+            self._writable and not read_only and (not _directory_has_custody(metadata)
+                or not self._writer_custody.store_verified(descriptor))
         ):
             os.close(descriptor)
-            raise ValueError("Evidence root owner, type, or mode differs")
+            raise ValueError("Evidence root owner, type, mode, or custody differs")
         return descriptor
 
     def _dir(self, parent_fd: int, name: str, *, create: bool = False) -> int:
@@ -428,7 +410,7 @@ class EvidenceStore:
             or _MEDIA_TYPE.fullmatch(media_type) is None
         ):
             raise ValueError("evidence payload size or media_type differs")
-        if _contains_forbidden_secret(payload):
+        if contains_forbidden_secret(payload):
             raise ValueError("evidence payload contains a forbidden secret marker")
         digest = sha256(payload).hexdigest()
         relative = f"objects/sha256/{digest[:2]}/{digest}"
@@ -505,6 +487,7 @@ class EvidenceStore:
                     )
                     os.close(lock_fd)
                     os.fsync(run_fd)
+                    self._writer_custody.register_run(root_fd, run_fd, run_id, authority_record_hash)
                 finally:
                     os.close(run_fd)
             finally:
@@ -536,15 +519,18 @@ class EvidenceStore:
         endpoint_state: str | None = None
         endpoint: Mapping[str, object] | None = None
         events: list[Mapping[str, object]] = []
-        custody = [self._filesystem_custody_verified]
+        custody = [False]
         root_fd: int | None = None
         runs_fd: int | None = None
         run_fd: int | None = None
         events_fd: int | None = None
         try:
-            root_fd = self._root_fd()
+            root_fd = self._root_fd(read_only=True)
+            custody[0] = (_directory_has_custody(os.fstat(root_fd))
+                and self._writer_custody.store_verified(root_fd))
             runs_fd = self._audit_dir(root_fd, "runs", custody)
             run_fd = self._audit_dir(runs_fd, run_id, custody)
+            custody[0] = custody[0] and not _has_partial_publication(run_fd)
             authority = _parse_canonical_json(
                 _read_regular_at(run_fd, "authority.json", custody=custody),
                 "authority.json",
@@ -661,6 +647,9 @@ class EvidenceStore:
                 endpoint = _object(endpoint_data, "run_terminal.payload.endpoint")
             protocol = cast(str, protocol_value)
             endpoint_state = cast(str, endpoint_value)
+            custody[0] = custody[0] and self._writer_custody.run_verified(
+                root_fd, run_fd, run_id, authority_record_hash, len(events), previous_hash, terminal_seal,
+                [authority_record_hash] + [event["record_hash"] for event in events])
         except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
             findings.append(EvidenceFinding("RUN_ARCHIVE_INVALID", run_id, str(error)))
         finally:
@@ -826,7 +815,7 @@ class EvidenceStore:
                 expected_relative = f"objects/sha256/{digest[:2]}/{digest}"
                 if reference.get("relative_path") != expected_relative:
                     raise ValueError("object path is not derived from digest")
-                root_fd = self._root_fd()
+                root_fd = self._root_fd(read_only=True)
                 try:
                     objects_fd = self._audit_dir(root_fd, "objects", custody)
                     try:
@@ -897,6 +886,13 @@ class RunLedger:
         root_fd, run_fd, lock_fd = self._run_fds()
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            if _has_partial_publication(run_fd):
+                raise ValueError("Run contains an incomplete publication; append/seal is refused")
+            custody = self._store._writer_custody
+            args = (root_fd, run_fd, self.run_id, self._authority_record_hash)
+            frontier = custody.frontier(*args)
+            if custody.sealed(*args) is not None:
+                raise ValueError("Run is already sealed in custody registry")
             try:
                 _read_regular_at(run_fd, "terminal.json")
             except FileNotFoundError:
@@ -911,6 +907,10 @@ class RunLedger:
                 if names != expected_names:
                     raise ValueError("event files are not contiguous before append")
                 previous_hash = self._authority_record_hash
+                if frontier["event_count"] != sequence:
+                    raise ValueError("event count differs from external writer frontier")
+                if not names and frontier["head_record_hash"] != previous_hash:
+                    raise ValueError("authority differs from external writer frontier")
                 if names:
                     previous = _parse_canonical_json(
                         _read_regular_at(events_fd, names[-1]), f"events/{names[-1]}"
@@ -919,6 +919,8 @@ class RunLedger:
                     if not isinstance(previous_hash_value, str):
                         raise ValueError("event head hash is missing")
                     previous_hash = previous_hash_value
+                    if frontier["head_record_hash"] != previous_hash:
+                        raise ValueError("event head differs from external writer frontier")
                     if previous.get("kind") == "run_terminal":
                         if (
                             not terminal
@@ -942,6 +944,7 @@ class RunLedger:
                             "terminal.json",
                             _canonical_line(terminal_document),
                         )
+                        custody.seal(*args, sequence, previous_hash, terminal_document["seal_sha256"])
                         return previous_hash
                 preimage = {
                     "schema_version": 2,
@@ -958,6 +961,7 @@ class RunLedger:
                 _publish_new_at(
                     events_fd, f"{sequence:012d}.json", _canonical_line(event)
                 )
+                custody.advance(*args, sequence + 1, record_hash)
                 if terminal:
                     terminal_preimage = {
                         "schema_version": 2,
@@ -974,6 +978,7 @@ class RunLedger:
                     _publish_new_at(
                         run_fd, "terminal.json", _canonical_line(terminal_document)
                     )
+                    custody.seal(*args, sequence + 1, record_hash, seal_sha)
                 return record_hash
             finally:
                 os.close(events_fd)

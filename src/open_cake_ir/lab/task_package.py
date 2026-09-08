@@ -13,6 +13,7 @@ from open_cake_ir.compiler import Compiler
 from .rubrics import derive_rubric
 from .pairing import bind_baseline, native_baseline, backend_policy, native_backend
 from .python_reference import bind_python_reference
+from .reference_access import document_role, reference_access, validate_reference_handoff
 from open_cake_ir.compiler import frontend
 from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import WorkloadContract
@@ -66,7 +67,7 @@ def _plain(value: object) -> object:
 def _read_relative(root: Path, value: object, context: str) -> bytes:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{context} path differs")
-    if Path(value).is_absolute() and context in {"workload", "schedule_skeleton", "scaffold"}:
+    if Path(value).is_absolute() and context in {"workload", "schedule_skeleton", "candidate_skeleton", "scaffold"}:
         from .bindings import source_reference_path
         _, path = source_reference_path(root, value, context)
         return path.read_bytes()
@@ -105,6 +106,11 @@ def build_run_reference_documents(
     target_id = str(execution['target'])
     target = _object(targets[target_id], f"target_definitions.{target_id}")
     resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
+    assigned_arms = _object(resolved["arm_environments"], "arm_environments")
+    if not any(arm == value for value in assigned_arms.values()):
+        raise ValueError("task package Authoring Environment differs from the frozen arm")
+    validate_reference_handoff(root, assigned_arms)
+    access = reference_access(arm, "arm")
     authoring_environment = arm
     if "candidate_selection" in arm:
         selection = _object(arm["candidate_selection"], "arm.candidate_selection")
@@ -152,12 +158,15 @@ def build_run_reference_documents(
                 raise ValueError("Python starter requires the existing Python-enabled Authoring Environment")
             documents["schedule-starter.py"] = bind_python_reference(
                 skeleton_bytes.decode("utf-8"), skeleton, filename=str(skeleton_ref["path"]))
-            documents["python-frontend.md"] = (root / "docs/PYTHON_FRONTEND.md").read_bytes()
         else:
             documents.update({"schedule.schema.json": schedule_schema_bytes(),
                 "schedule-authoring.md": (root / "compiler/AUTHORING_CONTRACT.md").read_bytes(),
                 "schedule-skeleton.json": _canonical_json(skeleton).encode()})
-        if arm.get("lowering_route", {}).get("backend") != "metal" and arm.get("input_format") == "schedule_or_python_v1":
+        if arm.get("input_format") == "schedule_or_python_v1":
+            documents["python-frontend.md"] = (root / "docs/PYTHON_FRONTEND.md").read_bytes()
+            if access == "known_kernel_reproduction":
+                documents["python-example.py"] = (root / "examples/python/fma.py").read_bytes()
+        if access == "known_kernel_reproduction" and arm.get("lowering_route", {}).get("backend") != "metal" and arm.get("input_format") == "schedule_or_python_v1":
             policy = backend_policy(arm["lowering_route"]["backend"])
             documents[policy.authoring_file] = (root / "docs/en" / policy.document).read_bytes()
     elif environment_kind != "direct_cuda" and (policy := native_backend(environment_kind)) is not None:
@@ -189,7 +198,7 @@ def build_run_reference_documents(
     return documents
 
 
-def _document_sections(documents: Mapping[str, bytes]) -> str:
+def _document_sections(documents: Mapping[str, bytes], *, access: str) -> str:
     sections: list[str] = []
     for name, payload in documents.items():
         try:
@@ -205,7 +214,12 @@ def _document_sections(documents: Mapping[str, bytes]) -> str:
             if name.endswith((".cu", ".cuh"))
             else "markdown"
         )
-        sections.append(f"## Frozen reference: `{name}`\n\n```{language}\n{text}\n```")
+        scope = (
+            "This is a Python syntax example for its own declared target and workload. "
+            "Use this Run's target.json and schedule starter for the task's target and shapes.\n\n"
+            if name == "python-example.py" else ""
+        )
+        sections.append(f"## Frozen reference: `{name}`\n\nReference role: {document_role(name, access)}.\n\n{scope}```{language}\n{text}\n```")
     return "\n\n".join(sections)
 
 
@@ -350,7 +364,7 @@ model-forward or serving result. Infrastructure `unknown` is not a Candidate fai
 The following sections are the complete read-only task authority. They are projections of
 the machine Contracts bound by the CampaignLock; do not edit them or infer newer state.
 
-{_document_sections(documents)}
+Declared reference access: `{reference_access(authority, "arm")}`.\n\n{_document_sections(documents, access=reference_access(authority, "arm"))}
 """
     if "schedule-starter.py" in documents:
         task = task.replace("Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:",

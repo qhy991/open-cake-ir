@@ -1,6 +1,8 @@
 """Pure validation of observed Metal timestamps; no runtime or task dependency."""
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 from hashlib import sha256
 import json
 import math
@@ -108,7 +110,7 @@ def load_metal_profile(payload: bytes, *, expected_candidate_sha256: str, expect
             or evaluation.get("attribution_evaluation") not in {"correctness_then_profile", "correctness_then_profile_each_search_survivor"}):
         raise ValueError("Metal attribution Evaluation policy differs")
     validation_case_ids(evaluation)
-    if expected_protocol_sha256 is not None and sha256(json.dumps(evaluation, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest() != expected_protocol_sha256:
+    if expected_protocol_sha256 is not None and sha256(canonical_json_bytes(evaluation)).hexdigest() != expected_protocol_sha256:
         raise ValueError("Metal attribution Evaluation identity differs")
     validate_host(document.get("host"))
     if document.get("summary") != metal_profile_summary(document.get("raw")):

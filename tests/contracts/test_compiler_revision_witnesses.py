@@ -84,8 +84,8 @@ class CompilerRevisionWitnessTests(unittest.TestCase):
 
         self.assertEqual(successor["revision_id"], archived["revision_id"])
         self.assertEqual(successor["canonical_sha256"], _canonical_sha256(archived))
-        current_ordinal = int(current["revision_id"].rsplit("-v", 1)[1])
-        successor_ordinal = int(successor["revision_id"].rsplit("-v", 1)[1])
+        current_ordinal = int(current["revision_id"].rsplit("-v", 1)[1].partition("+")[0])
+        successor_ordinal = int(successor["revision_id"].rsplit("-v", 1)[1].partition("+")[0])
         self.assertGreater(current_ordinal, successor_ordinal)
 
 

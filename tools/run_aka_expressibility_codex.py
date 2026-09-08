@@ -411,6 +411,7 @@ def run_queue(
     codex_bin: Path | None = None,
     case_ids: Sequence[str] | None = None,
     parent_completions: Mapping[str, Path] | None = None,
+    parent_validator: Path | None = None,
 ) -> dict[str, object]:
     if limit <= 0:
         raise RunnerError("limit must be a positive sequential case count")
@@ -425,9 +426,13 @@ def run_queue(
             source_revision=source_revision,
             record_format=record_format,
             dataset_label=dataset_label,
+            parent_validator=parent_validator,
         )
     current = status(work_root)
     manifest = _load_object(work_root / "manifest.json", "review manifest")
+    if (parent_validator is not None
+            and str(parent_validator.resolve(strict=True)) != manifest["parent_completion_validator"]["path"]):
+        raise RunnerError("existing work root is bound to a different parent validator")
     source = manifest.get("source")
     if not isinstance(source, Mapping) or any(
         source.get(key) != expected
@@ -527,6 +532,8 @@ def _parser() -> argparse.ArgumentParser:
         choices=("aka_v1_operator_sft", "aka_v2_review_projection"),
     )
     parser.add_argument("--dataset-label")
+    parser.add_argument("--parent-validator", type=Path,
+                        help="existing validator to bind when creating a new work queue")
     parser.add_argument("--limit", type=int, default=1)
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     return parser
@@ -543,6 +550,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             dataset_label=arguments.dataset_label,
             limit=arguments.limit,
             timeout_seconds=arguments.timeout_seconds,
+            parent_validator=arguments.parent_validator,
         )
     except (ReviewError, RunnerError, OSError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

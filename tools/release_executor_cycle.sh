@@ -22,7 +22,7 @@ trap 'rm -r -- "$EXECUTOR_RELEASE_TMP"' EXIT
 import argparse, hashlib, json, os, pathlib, re, subprocess
 
 from open_cake_ir.lab.executor import ExecutorRevision
-from tools.release_executor import _released_executor_paths
+from tools.release_executor import _released_executor_paths, _source_paths
 
 parser = argparse.ArgumentParser(description="Release a new Executor successor (legacy id namespace)")
 parser.add_argument(
@@ -37,7 +37,7 @@ temporary = pathlib.Path(os.environ["EXECUTOR_RELEASE_TMP"])
 # Keep the existing reserved id sequence. The descriptor's explicit host kind,
 # not its historical id spelling, selects native runtime admission.
 def ordinal(value: str) -> int:
-    match = re.fullmatch(r"open-cake-ir-b200-v([1-9][0-9]*)", value)
+    match = re.fullmatch(r"open-cake-ir-b200-v([1-9][0-9]*)(?:\+[0-9a-f]{64})?", value)
     return int(match.group(1)) if match else 0
 
 
@@ -99,6 +99,26 @@ ExecutorRevision._validate_host_document(host)
 if host.get("kind") == "metal":
     from open_cake_ir.lab.executor import admit_host_environment
     admit_host_environment(host)
+inventory_path = pathlib.Path("inventory/EXECUTOR_REVISIONS.json")
+if inventory_path.exists():
+    inventory = json.loads(inventory_path.read_text())
+    current = inventory.get("current")
+    if isinstance(current, dict) and isinstance(current.get("path"), str):
+        try:
+            admitted = ExecutorRevision.load_reference(pathlib.Path.cwd(), {
+                name: current[name] for name in ("executor_id", "path", "canonical_sha256")
+            }, "current Executor")
+            current_document = json.loads(pathlib.Path(current["path"]).read_text())
+            source_paths = {p.relative_to(pathlib.Path.cwd()).as_posix()
+                            for p in _source_paths(pathlib.Path.cwd())}
+            if (current_document["host_environment"] == host
+                    and {item["path"] for item in current_document["sources"]} == source_paths):
+                temporary.joinpath("unchanged").write_text(admitted.executor_id)
+                print("--- released Executor already matches; no successor is needed ---")
+                raise SystemExit(0)
+        except (OSError, ValueError, KeyError):
+            # Changed source requires a successor; it never rewrites the old descriptor.
+            pass
 temporary.joinpath("proposal.json").write_text(json.dumps({
     "schema_version": 1,
     "executor_id": keep,
@@ -109,10 +129,24 @@ temporary.joinpath("proposal.json").write_text(json.dumps({
 temporary.joinpath("keep").write_text(keep)
 PY
 
-KEEP=$(cat "$EXECUTOR_RELEASE_TMP/keep")
+if [ -f "$EXECUTOR_RELEASE_TMP/unchanged" ]; then
+  exit 0
+fi
 "$OPEN_CAKE_PYTHON" tools/release_executor.py --project-root . \
   --proposal "$EXECUTOR_RELEASE_TMP/proposal.json" \
-  --output "runtime/executors/${KEEP}.json" >/dev/null
+  --output "$EXECUTOR_RELEASE_TMP/released.json" >/dev/null
+KEEP=$("$OPEN_CAKE_PYTHON" - <<'PY'
+import json, os, pathlib
+source = pathlib.Path(os.environ["EXECUTOR_RELEASE_TMP"]) / "released.json"
+payload = source.read_bytes()
+identity = json.loads(payload)["executor_id"]
+destination = pathlib.Path("runtime/executors") / f"{identity}.json"
+with destination.open("xb") as stream:
+    stream.write(payload)
+destination.chmod(0o644)
+print(identity)
+PY
+)
 
 echo "--- update Executor inventory ---"
 "$OPEN_CAKE_PYTHON" - "$KEEP" <<'PY'

@@ -1,15 +1,13 @@
 """Synthetic CPU protocol fixtures only: no GPU, real broker or measured timings.
 
-The prospective Compiler/Executor exist only in temporary directories. Existing
-release helpers build their source bindings; dummy host metadata is never admitted.
-Only target compilation, broker observation and evaluator process execution are
-replaced. The complete collector/fitter and common model/ordering owners execute.
+Compiler inputs are copied unchanged from the admitted release; the Executor is an
+explicit CPU semantic fixture and its dummy host is never admitted. No release cycle
+or approval is manufactured. Target compilation, broker observation and evaluator
+process execution are replaced; collector/fitter and model/ordering owners execute.
 """
 from __future__ import annotations
 
-import contextlib
 import copy
-import io
 import json
 import os
 import signal
@@ -29,14 +27,13 @@ from open_cake_ir.tasks.workloads import load_workload
 sys.path.insert(0, str(ROOT / "tools"))
 import open_cake_ir.tasks.flash_kmeans.calibrate as instrument
 import open_cake_ir.tasks.evaluate as common
-import release_executor
 from open_cake_ir.compiler import Compiler, EmpiricalCostModel
-from open_cake_ir.compiler.release import build_gate_report, build_release
 from open_cake_ir.compiler.toolchain import TritonCompilation
 from open_cake_ir.evaluation import WorkloadContract
 from open_cake_ir.tasks.flash_kmeans import environment as environments
 from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.lab.selection import _empirical_context
+from tests.contracts._executor_fixture import SemanticExecutorFixture, compiler_reference
 from open_cake_ir.tasks.flash_kmeans.seed import ExactShape, KernelSeed
 
 
@@ -53,33 +50,30 @@ class FlashCalibrationTest(unittest.TestCase):
         cls.root = Path(cls.temporary.name).resolve()
         cls.project = cls.root / "synthetic-source"
         cls.project.mkdir()
-        paths = set(json.loads((ROOT / "compiler/source_set.json").read_text())["paths"])
-        paths.update(p.relative_to(ROOT).as_posix() for p in release_executor._source_paths(ROOT))
-        paths.update({"compiler/revision.json", "compiler/source_set.json", "corpus/manifest.json", "src/open_cake_ir/tasks/flash_kmeans/calibrate.py", "contracts/workloads/flash-kmeans-assign-v2.json", "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"})
+        # Preserve the actual frozen Compiler bytes and identity. This fixture
+        # exercises lowering/model semantics, not the independent release workflow.
+        manifest = json.loads((ROOT / "compiler/revision.lock.json").read_bytes())
+        paths = {record["path"] for record in manifest["sources"]}
+        paths.update(reference["path"] for reference in manifest["target_definitions"].values())
+        paths.update(manifest[key]["path"] for key in ("corpus_manifest", "corpus_gate", "release_approval"))
+        paths.update({"compiler/revision.lock.json", "compiler/revision.json", "compiler/source_set.json",
+                      "contracts/workloads/flash-kmeans-assign-v2.json", "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"})
+        # The child-process supervision probes need the actual Python runtime code.
+        shutil.copytree(ROOT / "src", cls.project / "src", ignore=shutil.ignore_patterns("__pycache__"))
         for relative in paths:
             destination = cls.project / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(ROOT / relative, destination)
-        proposal = json.loads((cls.project / "compiler/revision.json").read_text())
-        proposal["revision_id"] = "SYNTHETIC-flash-collector-draft"
-        write(cls.project / "compiler/revision.json", proposal)
-        gate = build_gate_report(cls.project, cls.project / "compiler/revision.json", cls.project / "compiler/source_set.json")
-        write(cls.project / "compiler/corpus-gate-report.json", gate.document)
-        write(cls.project / "compiler/release-approval.json", {"schema_version": 2, "decision": "approved", "gate_report": {"path": "compiler/corpus-gate-report.json", "canonical_sha256": gate.canonical_sha256}, "reviewer": {"kind": "agent_session", "model": "gpt-6-astra", "session_id": "SYNTHETIC-review-fixture", "author_session_id": "SYNTHETIC-author-fixture"}, "approval_basis": "Synthetic contract fixture only; not an independent production review or release."})
-        release = build_release(cls.project, cls.project / "compiler/revision.json", cls.project / "compiler/source_set.json", cls.project / "compiler/corpus-gate-report.json", cls.project / "compiler/release-approval.json")
-        write(cls.project / "compiler/revision.lock.json", release.document)
-        cls.compiler_ref = {"path": "compiler/revision.lock.json", "revision_id": release.document["revision_id"], "canonical_sha256": release.canonical_sha256}
-        host = {"python": {"invocation_path": "/SYNTHETIC/not-an-executable/python", "version": "SYNTHETIC", "resolved_sha256": "0" * 64}, "packages": {"triton": "SYNTHETIC"}, "cupti_python": {"site_packages_path": "/SYNTHETIC/no-runtime", "distribution": "SYNTHETIC", "version": "SYNTHETIC", "files": [{"path": "not-a-runtime", "sha256": "0" * 64, "size_bytes": 1}]}, "flashinfer_helper": {"path": "/SYNTHETIC/not-a-helper", "distribution": "SYNTHETIC", "version": "SYNTHETIC", "sha256": "0" * 64, "size_bytes": 1}}
-        executor_proposal = cls.project / "runtime/executor-proposal.json"
-        write(executor_proposal, {"schema_version": 1, "executor_id": "SYNTHETIC-flash-executor", "state": "draft", "sources": [], "host_environment": host})
-        executor_path = cls.project / "runtime/executors/SYNTHETIC.json"
-        executor_path.parent.mkdir(parents=True)
-        # Prospective closure extension belongs to integration in production.
-        # This temporary fixture uses the actual source-binding release helper.
-        with patch.object(release_executor, "_SOURCE_FILES", (*release_executor._SOURCE_FILES, "src/open_cake_ir/tasks/flash_kmeans/calibrate.py")), patch.object(sys, "argv", ["release_executor", "--project-root", str(cls.project), "--proposal", str(executor_proposal), "--output", str(executor_path)]), contextlib.redirect_stdout(io.StringIO()):
-            if release_executor.main() != 0:
-                raise AssertionError("prospective synthetic Executor construction failed")
-        cls.executor = ExecutorRevision.load(cls.project, executor_path)
+            if not destination.exists():
+                shutil.copyfile(ROOT / relative, destination)
+        cls.compiler_ref = compiler_reference(cls.project)
+        cls.compiler = Compiler.load(cls.project, cls.project / cls.compiler_ref["path"])
+        executor = SemanticExecutorFixture().revision(cls.project)
+        # Declared collector/worker capabilities in a CPU-only dependency double;
+        # these are not source-digest records or a released Executor descriptor.
+        cls.executor = replace(executor, document={**executor.document, "sources": [
+            {"path": "src/open_cake_ir/tasks/flash_kmeans/calibrate.py"},
+            {"path": "src/open_cake_ir/tasks/evaluate.py"},
+        ]})
         cls.workload = load_workload(cls.project / "contracts/workloads/flash-kmeans-assign-v2.json")
         cls.seed = KernelSeed.load(cls.project, cls.project / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json")
 
@@ -89,6 +83,11 @@ class FlashCalibrationTest(unittest.TestCase):
         self.directory = Path(self.local.name)
         self.addCleanup(patch.stopall)
         patch.object(instrument, "ROOT", self.project).start()
+        def admit_cpu_executor(project_root, reference, context):
+            self.assertEqual(Path(project_root).resolve(), self.project)
+            self.assertEqual(reference, dict(self.executor.reference), context)
+            return self.executor
+        patch.object(ExecutorRevision, "load_reference", side_effect=admit_cpu_executor).start()
         self.calls = []
 
     def plan(self):
@@ -112,6 +111,12 @@ class FlashCalibrationTest(unittest.TestCase):
         self.assertNotIn("start_new_session", kwargs)
         directory = Path(command[3]).parent
         request = json.loads(Path(command[3]).read_text())
+        # Exercise the real worker's independent request admission before the
+        # CPU-only evaluator supplies any synthetic measurements.
+        with patch.object(common, "ROOT", self.project):
+            authority = common._load_authority(Path(command[3]))
+        self.assertEqual(authority.request["compiler_revision"], self.active_plan["compiler_revision"])
+        self.assertEqual(authority.workload.canonical_sha256, self.workload.canonical_sha256)
         _candidate, manifest = instrument._candidate(directory, self.active_plan, self.project)
         self.assertEqual(manifest.hidden_null_pointer_parameters, 2)
         spec = next(r for r in self.active_plan["observations"] if r["id"] == directory.name)
@@ -200,6 +205,25 @@ class FlashCalibrationTest(unittest.TestCase):
         self.assertFalse(prediction["covered"])
         judge = instrument._read(run / "stages/collection/result.json")
         self.assertFalse(any("candidate_ms" in row or "baseline_ms" in row for row in judge["workloads"]))
+
+    def test_common_worker_refuses_missing_or_foreign_compiler_reference(self):
+        run = self.fixture()
+        directory = run / "stages/collection/aa-01"
+        original = instrument._read(directory / "request.json")
+        self.assertEqual(original["compiler_revision"], self.active_plan["compiler_revision"])
+        for kind in ("missing", "foreign"):
+            request = copy.deepcopy(original)
+            if kind == "missing":
+                del request["compiler_revision"]
+            else:
+                request["compiler_revision"]["revision_id"] = "foreign-compiler-fixture"
+            path = directory / (kind + "-request.json")
+            write(path, request)
+            with self.subTest(kind=kind), patch.object(common, "ROOT", self.project), \
+                 patch.object(common, "load_workload") as workload:
+                with self.assertRaisesRegex(ValueError, "compiler_revision|Compiler Revision"):
+                    common._load_authority(path)
+                workload.assert_not_called()
 
     def test_oracle_failure_stops_collection_and_retains_failed_observation(self):
         run = self.fixture(reject="aa-02")

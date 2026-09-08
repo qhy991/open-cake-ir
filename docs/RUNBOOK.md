@@ -163,6 +163,20 @@ through Lab preflight. It does not refresh a live worker command. Use
 `tools/freeze_live_matched_study.py` when provider qualification, Executor, runtime
 configuration, broker command, model, reasoning effort, or custody changes.
 
+Templates whose execution fields use `{"binding":"campaign_lock"}` also require an
+external execution binding. This includes the B300 Triton templates. Follow
+[the B300 binding example](B300.md) and [ADR 0056](adr/0056-fixed-baseline-paired-execution.md):
+
+```bash
+open-cake-ir lab preflight contracts/studies/matched-search-triton-b300-optimization-template.json \
+  --execution-bindings /new/external/path/execution-bindings.json \
+  --output /new/external/path/campaign.lock.json
+```
+
+When the Study declares external advisory cost selection, also pass
+`--empirical-cost-model /external/path/model.json`. The model must cover the exact
+declared target; it does not replace measured acceptance.
+
 All matched-search Studies use `task_agents_ralph_v1`; Preflight renders no Prompt template. Live composition creates
 one read-only `TASK.md` and `AGENTS.md` in each Run workspace and retains their exact bytes
 with every StateCard. The workspace may contain only those files plus
@@ -283,6 +297,9 @@ Turn's declared worst-case assay set. Queue or evaluator time is not charged as 
 authoring time, but it remains inside the wall-time safety bound.
 
 ## 5. Preflight and execute
+
+Use the `--execution-bindings` and, when required by the Study,
+`--empirical-cost-model` arguments from section 3 for campaign-bound templates.
 
 Every new CampaignLock, runtime configuration, provider workspace, and Evidence root must
 be outside the checkout and create-only. Historical in-checkout Campaign material is

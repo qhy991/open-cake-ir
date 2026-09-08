@@ -109,3 +109,16 @@ lowering = compiler.lower(assessment)
 正常 Python 导入仍会执行模块顶层和参数表达式，因此接收候选源码的工具应使用 `read_schedule`，
 让 AST 入口拒绝任意导入、宿主调用、条件分支和其他不支持的语法。
 位置表是展示用投影，不进入冻结 Schedule、Assessment 或生成源码的身份。
+
+## 类型转换、提升与诊断
+
+使用 `lm.cast(x, to="fp32")` 或 `lm.cast(x, to="bf16")`；`to` 与规范 IR 参数相同，
+结果 Buffer 的 dtype 自动推导，也可保留显式 `out=`。[cast 示例](../examples/python/cast.py)
+与既有 cast JSON Schedule 等价。算术沿用同一 IR 提升规则：同 dtype 保持，FP32 与一种
+16 位浮点混合得到 FP32；BF16 与 FP16 不隐式混合，需要显式转换。
+[混合 dtype 示例](../examples/python/mixed_dtype.py) 的两种加法操作数顺序都推导 FP32。
+仅支持 CTA 的归约 `scope` 可以省略，等价于显式 `scope="cta"`。
+
+输出、目标/后端/入口点与程序轴的 Finding 定位到对应参数、装饰器关键字或最近的轴声明。
+构造错误用 Python 变量/调用名描述；`FrontendError.canonical_path` 保留规范 IR 路径，
+便于工具关联原始诊断，源码位置仍不参与 Schedule 语义。

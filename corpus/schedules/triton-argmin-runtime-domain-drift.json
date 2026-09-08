@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "schedule_id": "triton-argmin-runtime-domain-drift",
+  "target": "sm_103a",
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "review_dynamic_candidates"
+  },
+  "metadata": {},
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "allocations": [],
+  "barriers": [],
+  "pipelines": [],
+  "outputs": [
+    "winner"
+  ],
+  "buffers": [
+    {
+      "name": "scores",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        1,
+        3,
+        64
+      ],
+      "mode": "input",
+      "valid_extent": {
+        "dimension": 2,
+        "buffer": "lengths",
+        "indexed_by": [
+          0
+        ]
+      }
+    },
+    {
+      "name": "lengths",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        1
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "winner",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        1,
+        3
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        2,
+        32
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "index",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        2
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "read",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "scores"
+      ],
+      "writes": [
+        "tile"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "select",
+      "kind": "reduce_argmin",
+      "role": "compute",
+      "reads": [
+        "tile"
+      ],
+      "writes": [
+        "index"
+      ],
+      "depends_on": [
+        "read"
+      ],
+      "parameters": {
+        "tie_break": "lowest_index",
+        "nan_policy": "reject_input",
+        "across_loop": true
+      }
+    },
+    {
+      "id": "write",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "index"
+      ],
+      "writes": [
+        "winner"
+      ],
+      "depends_on": [
+        "select"
+      ],
+      "parameters": {
+        "coalesced": true
+      }
+    }
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "batch",
+        "axis": 1,
+        "buffer": "scores",
+        "dimension": 0,
+        "tile": 1
+      },
+      {
+        "name": "rows",
+        "axis": 0,
+        "buffer": "scores",
+        "dimension": 1,
+        "tile": 2
+      }
+    ]
+  },
+  "tile_loops": [
+    {
+      "name": "candidate_loop",
+      "iterator": "candidate_start",
+      "buffer": "scores",
+      "dimension": 2,
+      "tile": 32,
+      "body": [
+        "read",
+        "select"
+      ],
+      "range_options": {
+        "num_stages": 1,
+        "loop_unroll_factor": 1,
+        "flatten": false,
+        "warp_specialize": false,
+        "disallow_acc_multi_buffer": false,
+        "disable_licm": false
+      }
+    }
+  ],
+  "access_maps": [
+    {
+      "operation": "read",
+      "buffer": "scores",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "program_tile",
+          "name": "rows"
+        },
+        {
+          "source": "loop_tile",
+          "name": "candidate_start"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "write",
+      "buffer": "winner",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "program_tile",
+          "name": "rows"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ]
+}

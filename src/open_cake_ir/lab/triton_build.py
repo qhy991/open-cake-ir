@@ -5,6 +5,8 @@ The read-only mounts are runtime dependencies, not the author's workspace or HOM
 """
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 import base64
 import json
 from hashlib import sha256
@@ -76,7 +78,7 @@ class IsolatedTritonCompiler:
 
     @property
     def canonical_sha256(self) -> str:
-        return sha256(json.dumps(self.identity, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        return sha256(canonical_json_bytes(self.identity)).hexdigest()
 
     def compile(self, source: bytes, requirements: Mapping[str, object]) -> TritonCompilation:
         validate_triton_kernel(source, requirements)

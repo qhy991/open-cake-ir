@@ -21,6 +21,19 @@ from open_cake_ir.tasks.runtime import TaskLab
 
 
 class FindingCliContractTests(unittest.TestCase):
+    def test_lab_preflight_reports_template_refusals_without_tracebacks(self) -> None:
+        for template in sorted((ROOT / "contracts/studies").glob("*template*.json")):
+            with self.subTest(template=template.name), redirect_stdout(StringIO()) as output, \
+                    redirect_stderr(StringIO()) as errors:
+                code = main(["--project-root", str(ROOT), "lab", "preflight", str(template)])
+                self.assertIn(code, (0, 2))
+                self.assertNotIn("Traceback", errors.getvalue())
+                if code == 2:
+                    self.assertIn("lab preflight:", errors.getvalue())
+                    self.assertIn("--execution-bindings", errors.getvalue())
+                else:
+                    self.assertIn("study_id", json.loads(output.getvalue()))
+
     def test_compiler_cli_does_not_import_application_runtime(self) -> None:
         import os
         import subprocess
@@ -213,8 +226,8 @@ class CliContractTests(unittest.TestCase):
             scratch = Path(directory)
             evidence_root = scratch / "evidence"
 
-            with self.assertRaisesRegex(ValueError, "outside the project checkout"):
-                main(
+            with redirect_stderr(StringIO()) as errors, redirect_stdout(StringIO()) as output:
+                code = main(
                     [
                         "--project-root",
                         str(ROOT),
@@ -228,16 +241,19 @@ class CliContractTests(unittest.TestCase):
                         str(evidence_root),
                     ]
                 )
-
+            self.assertEqual(code, 2)
+            self.assertIn("outside the project checkout", errors.getvalue())
+            self.assertNotIn("missing.lock.json", errors.getvalue())
+            self.assertEqual(output.getvalue(), "")
             self.assertFalse(evidence_root.exists())
 
     def test_lab_preflight_refuses_a_campaign_lock_inside_the_checkout(self) -> None:
         with tempfile.TemporaryDirectory(prefix=".campaign-custody-", dir=ROOT) as directory:
             lock_path = Path(directory) / "campaign.lock.json"
 
-            with self.assertRaisesRegex(ValueError, "outside the project checkout"):
-                with redirect_stdout(StringIO()):
-                    main(
+            with redirect_stderr(StringIO()) as errors:
+                with redirect_stdout(StringIO()) as output:
+                    code = main(
                         [
                             "--project-root",
                             str(ROOT),
@@ -251,6 +267,9 @@ class CliContractTests(unittest.TestCase):
                             str(lock_path),
                         ]
                     )
+            self.assertEqual(code, 2)
+            self.assertIn("outside the project checkout", errors.getvalue())
+            self.assertEqual(output.getvalue(), "")
 
             self.assertFalse(lock_path.exists())
 

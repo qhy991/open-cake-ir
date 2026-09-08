@@ -7,6 +7,8 @@ the same common Evaluation receipt and broker boundary.
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
+
 import argparse
 import json
 import os
@@ -40,14 +42,6 @@ from open_cake_ir.evaluation.paired import (
 )
 
 
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode()
 
 
 def _object(value: object, context: str) -> Mapping[str, object]:
@@ -110,6 +104,10 @@ def _load_authority(request_path: Path) -> _Authority:
     request_root = request_path.parent
     request = _object(json.loads(request_path.read_text(encoding="utf-8")), "request")
     executor = ExecutorRevision.load_reference(ROOT, request.get("executor_revision"), "request.executor_revision")
+    from open_cake_ir.lab.bindings import load_compiler_reference
+    dependency = load_compiler_reference(ROOT, request.get("compiler_revision"), "request.compiler_revision")
+    if request.get("target") not in dependency.targets:
+        raise ValueError("worker target is not bound by the admitted Compiler")
     artifact_paths = _object(request.get("artifact_paths"), "request.artifact_paths")
     artifact_roles = _object(request.get("artifact_roles"), "request.artifact_roles")
     payloads = {

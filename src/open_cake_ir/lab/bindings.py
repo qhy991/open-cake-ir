@@ -5,6 +5,8 @@ filled; source references and provider treatment are never refreshed here.
 """
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 import json
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
@@ -20,7 +22,7 @@ CURRENT_RELEASE_BINDING = {'binding': 'current_release'}
 
 
 def canonical(value):
-    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+    return canonical_json_bytes(value)
 
 
 def external_file(project_root, value, context):
@@ -119,7 +121,7 @@ def resolve_execution_bindings(
     project_root: str | Path, study, bindings_path: str | Path | None
 ) -> tuple[dict[str, object], ExecutorRevision | None]:
     """Return resolved runtime leaves and the Executor already validated for them."""
-    from .runtime import broker_execution_sha256, load_runtime_config
+    from .runtime_config import broker_execution_sha256, load_runtime_config
     from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
     from .pairing import comparison_arm, native_backend, backend_policy
 
@@ -245,3 +247,22 @@ def _resolve_compiler_reference(
         "canonical_sha256": gate.compiler_revision_sha256,
     }
     return gate, relative, exact
+
+
+def load_compiler_reference(root: Path, value: object, context: str):
+    """Verify a Campaign's exact Compiler dependency at a process handoff.
+
+    Compiler owns its transitive sources and targets. This does not run the Corpus
+    Gate again; release/preflight owns that gate, while this boundary verifies the
+    released manifest and its source closure before runtime interpretation.
+    """
+    from open_cake_ir.compiler.revision import load_revision
+    reference = _object(value, context)
+    if set(reference) != {"path", "canonical_sha256", "revision_id"}:
+        raise ValueError(f"{context} Compiler reference fields differ")
+    _, path = _project_path(root, reference["path"], f"{context}.path")
+    revision = load_revision(root, path)
+    if (revision.state != "released" or revision.revision_id != reference["revision_id"]
+            or revision.canonical_sha256 != _digest(reference["canonical_sha256"], context)):
+        raise ValueError(f"{context} Compiler Revision differs")
+    return revision

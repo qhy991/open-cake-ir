@@ -7,7 +7,7 @@ backend capability remain the verifier's responsibility.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Union
+from typing import Any, Iterable, Union
 
 from ._parse import (
     ScheduleParseError,
@@ -40,6 +40,21 @@ from .vocabulary import (
     ScanDirection,
     ScanOp,
 )
+
+
+ELEMENTWISE_FLOAT_DTYPES = frozenset({DType.BF16, DType.FP16, DType.FP32})
+
+
+def elementwise_result_dtype(operands: Iterable[DType]) -> DType | None:
+    """The canonical arithmetic promotion shared by construction and verification."""
+    dtypes = set(operands)
+    if not dtypes or not dtypes <= ELEMENTWISE_FLOAT_DTYPES:
+        return None
+    if len(dtypes) == 1:
+        return next(iter(dtypes))
+    if DType.FP32 in dtypes and len(dtypes) == 2:
+        return DType.FP32
+    return None
 
 
 @dataclass(frozen=True)

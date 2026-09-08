@@ -143,7 +143,7 @@ def _replay_candidates(
                 or not _artifact_outcomes_are_closed(payload)
             ):
                 return None
-            decision = route_rejection(feedback)
+            decision = route_rejection(feedback, arm=arm)
             if (
                 payload.get("routed_to") != decision.destination
                 or payload.get("routing_reason") != decision.reason
@@ -205,6 +205,7 @@ def _replay_candidates(
                 attempt_payload,
                 candidate=launchable,
                 protocol_sha256=protocol_sha256,
+                compiler_reference=lock.document["compiler_revision"],
                 final_receipt=validated_receipt,
             )
     unreplayed_attempts = set(attempt_payloads) - replayed_attempts
@@ -223,6 +224,7 @@ def _replay_candidates(
             attempt_payload,
             candidate=launchable,
             protocol_sha256=protocol_sha256,
+            compiler_reference=lock.document["compiler_revision"],
             final_receipt=None,
         )
 

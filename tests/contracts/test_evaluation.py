@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib.util
+
 import json
 import sys
 import tempfile
@@ -7,7 +9,6 @@ import unittest
 from hashlib import sha256
 from pathlib import Path
 
-import torch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
@@ -180,6 +181,7 @@ class EvaluationContractTests(unittest.TestCase):
                 **common,
             )
 
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires optional Torch for Flash-KMeans CPU tensors/oracle")
     def test_two_launchable_candidates_cross_one_common_evaluation_interface(self) -> None:
         workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign.json"
@@ -554,6 +556,7 @@ class EvaluationContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "semantics|oracle|validation"):
                     load_workload(path)
 
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires optional Torch for Flash-KMeans CPU tensors/oracle")
     def test_flash_kmeans_workload_generates_and_oracles_the_declared_tie_case(self) -> None:
         workload = load_workload(ROOT / "contracts/workloads/flash-kmeans-assign.json")
 
@@ -700,7 +703,10 @@ class EvaluationContractTests(unittest.TestCase):
                 device="cpu",
             )
 
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires optional Torch for CPU tensor/oracle checks")
     def test_tinygemm_separates_parent_exactness_from_oracle_tolerance(self) -> None:
+        import torch
+
         document = json.loads(
             (ROOT / "contracts/workloads/tinygemm2-stage4-v2.json").read_text()
         )
@@ -736,7 +742,10 @@ class EvaluationContractTests(unittest.TestCase):
         self.assertFalse(old_self_consistent["bitwise_parent_equal"])
         self.assertTrue(old_self_consistent["tolerance_equal"])
 
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires optional Torch for CPU tensor/oracle checks")
     def test_tinygemm_oracle_replays_cpu_fp32_linear_bytes(self) -> None:
+        import torch
+
         document = json.loads(
             (ROOT / "contracts/workloads/tinygemm2-stage4-v2.json").read_text()
         )

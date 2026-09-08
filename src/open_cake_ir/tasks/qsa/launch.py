@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
+
 import argparse
 import json
 import shlex
@@ -11,6 +13,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Mapping
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "src"))
@@ -23,20 +26,12 @@ from open_cake_ir.lab import ExecutorRevision
 from open_cake_ir.lab.bindings import CURRENT_RELEASE_BINDING, resolve_executor
 
 _RUNTIME_PATH = ROOT / "runtime/qsa-seed-gpu-infra-verda-v1.json"
-_PROGRAM_PATH = ROOT / "contracts/programs/qsa-prefill-t32768-v2.json"
+_PROGRAM_PATH = ROOT / "contracts/programs/qsa-prefill-t32768-v3.json"
 _WORKLOAD_PATH = ROOT / "contracts/workloads/qsa-prefill-t32768-v1.json"
 _DIRECT_SOURCE = ROOT / "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu"
 _DIRECT_MANIFEST = ROOT / "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json"
 
 
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _write_new(path: Path, value: object) -> None:
@@ -65,7 +60,7 @@ def _current_executor() -> ExecutorRevision:
     return resolve_executor(ROOT, CURRENT_RELEASE_BINDING, "QSA launch", template=True)
 
 
-def _preflight_authorities() -> tuple[ExecutorRevision, ProgramContract]:
+def _preflight_authorities() -> tuple[ExecutorRevision, ProgramContract, dict[str, object]]:
     compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
     gate = compiler.check_corpus()
     if compiler.state != "released" or not gate.passed:
@@ -74,7 +69,8 @@ def _preflight_authorities() -> tuple[ExecutorRevision, ProgramContract]:
     workload = load_workload(_WORKLOAD_PATH)
     if program.workload.canonical_sha256 != workload.canonical_sha256:
         raise ValueError("QSA Program and Workload differ")
-    return _current_executor(), program
+    return _current_executor(), program, {"path": "compiler/revision.lock.json",
+        "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
 
 
 def _materialize_candidates(root: Path, program: ProgramContract) -> tuple[Path, Path]:
@@ -171,6 +167,7 @@ def _task(
     remote_root: str,
     runtime: dict[str, object],
     executor: ExecutorRevision,
+    compiler_reference: Mapping[str, object],
     protocol: str,
     component_timing: bool,
     profile_kernel: str,
@@ -182,6 +179,8 @@ def _task(
         f"{remote_root}/src/open_cake_ir/tasks/qsa/evaluate.py",
         "--project-root",
         remote_root,
+        "--compiler-reference",
+        json.dumps(compiler_reference, sort_keys=True, separators=(",", ":")),
         "--nvcc",
         str(judge["nvcc"]),
         "--cuobjdump",
@@ -419,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     run_root = arguments.run_root.absolute()
     if run_root.exists() or run_root.is_symlink():
         raise FileExistsError(f"refusing to overwrite run root {run_root}")
-    executor, program = _preflight_authorities()
+    executor, program, compiler_reference = _preflight_authorities()
     commit = _git_commit()
     runtime = json.loads(arguments.runtime.resolve(strict=True).read_text())
     node = runtime["node"]
@@ -448,6 +447,7 @@ def main(argv: list[str] | None = None) -> int:
             remote_root=arguments.remote_project_root,
             runtime=runtime,
             executor=executor,
+            compiler_reference=compiler_reference,
             protocol=arguments.protocol,
             component_timing=arguments.component_timing,
             profile_kernel=arguments.profile_kernel,

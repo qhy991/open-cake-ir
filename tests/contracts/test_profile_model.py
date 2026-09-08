@@ -51,7 +51,9 @@ class ProfileModelTest(unittest.TestCase):
     def test_qsa_top_k_reports_bounds_risks_and_explicit_abstentions(self) -> None:
         profile = self._profile("qsa-score-topk-t32768.json")
 
-        self.assertEqual(profile["lowering"]["generated_source_bytes"], 7310)
+        assessment = self.compiler.assess_file(ROOT / "corpus/schedules/qsa-score-topk-t32768.json")
+        self.assertEqual(profile["lowering"]["generated_source_bytes"],
+                         len(self.compiler.lower(assessment).source.encode("utf-8")))
         top_k = profile["lowering"]["top_k"][0]
         self.assertEqual(top_k["source_tiles_per_merge"], 1)
         self.assertEqual(top_k["merge_width"], 1024)

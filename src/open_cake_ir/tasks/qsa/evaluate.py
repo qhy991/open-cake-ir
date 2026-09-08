@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
+
 import argparse
 import json
 import os
@@ -31,7 +33,7 @@ from open_cake_ir.tasks.qsa.feedback import qsa_compiler_feedback
 
 _STAGE_SCHEMA = "kernelinfra.stage-result.v1"
 _WORKLOAD_ID = "qsa-prefill-t32768"
-_PROGRAM_PATH = "contracts/programs/qsa-prefill-t32768-v2.json"
+_PROGRAM_PATH = "contracts/programs/qsa-prefill-t32768-v3.json"
 _WORKLOAD_PATH = "contracts/workloads/qsa-prefill-t32768-v1.json"
 _DIRECT_SOURCE = "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu"
 _DIRECT_MANIFEST = "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json"
@@ -51,14 +53,6 @@ class _CandidateRejected(ValueError):
         self.feedback = dict(feedback)
 
 
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _object(value: object, context: str) -> Mapping[str, object]:
@@ -129,7 +123,7 @@ def _stage_result(
     return 0 if status == "passed" else 1
 
 
-def _executor(root: Path) -> ExecutorRevision:
+def _executor(root: Path, compiler_reference: Mapping[str, object]) -> ExecutorRevision:
     executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "QSA evaluation", template=True)
     task = json.loads(_required_environment_path("KERNELINFRA_TASK").read_text())
     stage_id = os.environ.get("KERNELINFRA_STAGE_ID")
@@ -137,6 +131,12 @@ def _executor(root: Path) -> ExecutorRevision:
     expected_identity = f"{executor.executor_id}@{executor.canonical_sha256}"
     if len(stages) != 1 or stages[0]["judge"]["identity"] != expected_identity:
         raise ValueError("GPU Infra task does not bind the current Executor Revision")
+    command = stages[0]["judge"].get("command")
+    if not isinstance(command, list) or command.count("--compiler-reference") != 1:
+        raise ValueError("GPU Infra task has no exact Compiler command binding")
+    position = command.index("--compiler-reference")
+    if position + 1 >= len(command) or json.loads(command[position + 1]) != dict(compiler_reference):
+        raise ValueError("GPU Infra task Compiler command binding differs")
     return executor
 
 
@@ -181,7 +181,7 @@ def _compile_node(request: BuildRequest) -> dict[str, bytes]:
         "lowered_source": request.source,
         "ptx": compilation.artifacts["ptx"],
         "cubin": compilation.artifacts["cubin"],
-        "launch_manifest": json.dumps(asdict(launch), sort_keys=True, separators=(",", ":")).encode(),
+        "launch_manifest": _canonical_json_bytes(asdict(launch)),
     }
 
 
@@ -190,8 +190,8 @@ def _compile_open_cake(
     candidate_root: Path,
     candidate: Mapping[str, object],
     output: Path,
+    *, compiler: Compiler, target: Target,
 ) -> Mapping[str, object]:
-    compiler = Compiler.load(root, root / "compiler/revision.lock.json")
     if not compiler.check_corpus().passed:
         raise RuntimeError("released Compiler Corpus Gate no longer passes")
     program = ProgramContract.load(root, root / _PROGRAM_PATH, compiler)
@@ -213,7 +213,6 @@ def _compile_open_cake(
     output.mkdir(parents=True, exist_ok=False)
     manifest_kernels: list[dict[str, object]] = []
     node_profiles: dict[str, object] = {}
-    target = Target.load(root / "compiler/targets/sm_100a.json")
     canonical_nodes = {node.node_id: node for node in program.nodes}
     for node_id in _OPEN_CAKE_ORDER:
         schedule_path = by_id[node_id]
@@ -430,6 +429,7 @@ def _compile_stage(
     *,
     nvcc: Path,
     cuobjdump: Path,
+    compiler: Compiler, target: Target,
 ) -> tuple[str, Mapping[str, object], Mapping[str, object]]:
     candidate = _candidate_document(candidate_root)
     baseline = build_root / "baseline"
@@ -453,7 +453,7 @@ def _compile_stage(
     candidate_output = build_root / "candidate"
     if arm == "open_cake":
         compile_metrics = _compile_open_cake(
-            root, candidate_root, candidate, candidate_output
+            root, candidate_root, candidate, candidate_output, compiler=compiler, target=target
         )
     elif arm == "direct_cuda":
         try:
@@ -908,6 +908,7 @@ def _profile_stage(
     nvcc: Path,
     cuobjdump: Path,
     profile_kernel: str,
+    compiler_reference: Mapping[str, object],
 ) -> Mapping[str, object]:
     artifact_root = build_root / "candidate"
     artifact = QsaProgramArtifact.load(build_root, artifact_root / "program.json")
@@ -932,6 +933,8 @@ def _profile_stage(
         str(nvcc),
         "--cuobjdump",
         str(cuobjdump),
+        "--compiler-reference",
+        json.dumps(compiler_reference, sort_keys=True, separators=(",", ":")),
         "--profile-child",
         "--build-root",
         str(build_root),
@@ -966,6 +969,7 @@ def _profile_stage(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, required=True)
+    parser.add_argument("--compiler-reference", type=json.loads, required=True)
     parser.add_argument("--nvcc", type=Path, required=True)
     parser.add_argument("--cuobjdump", type=Path, required=True)
     parser.add_argument("--profile-child", action="store_true", help=argparse.SUPPRESS)
@@ -988,6 +992,10 @@ def main(argv: list[str] | None = None) -> int:
     root = arguments.project_root.resolve(strict=True)
     if root != ROOT:
         raise ValueError("QSA evaluator project root differs from its source root")
+    from open_cake_ir.lab.bindings import load_compiler_reference
+    dependency = load_compiler_reference(root, arguments.compiler_reference, "QSA compiler_revision")
+    if "sm_100a" not in dependency.targets:
+        raise ValueError("QSA target is not bound by the admitted Compiler")
     if arguments.profile_child:
         if arguments.build_root is None:
             raise ValueError("QSA profile child build root is missing")
@@ -997,7 +1005,7 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = _required_environment_path("KERNELINFRA_RUN_DIR")
     candidate_root = _required_environment_path("KERNELINFRA_CANDIDATE_DIR")
     stage_kind = os.environ.get("KERNELINFRA_STAGE_KIND")
-    executor = _executor(root)
+    executor = _executor(root, arguments.compiler_reference)
     build_root = run_dir / "qsa-build"
     try:
         if stage_kind == "compile":
@@ -1009,6 +1017,11 @@ def main(argv: list[str] | None = None) -> int:
                     build_root,
                     nvcc=arguments.nvcc.resolve(strict=True),
                     cuobjdump=arguments.cuobjdump.resolve(strict=True),
+                    compiler=Compiler(project_root=root, revision_id=dependency.revision_id,
+                        revision_sha256=dependency.canonical_sha256, state=dependency.state,
+                        target_definitions=dependency.targets, corpus_path=dependency.corpus_path,
+                        calibration_coverage=dependency.calibration_coverage),
+                    target=dependency.targets["sm_100a"],
                 )
             except _BaselineCompileError as error:
                 return _stage_result(
@@ -1122,6 +1135,7 @@ def main(argv: list[str] | None = None) -> int:
                 nvcc=arguments.nvcc.resolve(strict=True),
                 cuobjdump=arguments.cuobjdump.resolve(strict=True),
                 profile_kernel=arguments.profile_kernel,
+                compiler_reference=arguments.compiler_reference,
             )
             return _stage_result(
                 result_path,

@@ -12,6 +12,8 @@ from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 
+from tests.contracts._corpus_documents import corpus_document
+
 ROOT = Path(__file__).resolve().parents[2]
 REVISION_PATH = ROOT / "compiler/revision.lock.json"
 sys.path.insert(0, str(ROOT / "src"))
@@ -19,7 +21,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.compiler import (  # noqa: E402
     Compiler, CompilerError, Finding, FindingCategory, FindingSeverity, Schedule, Target, verify,
 )
-from open_cake_ir.compiler.release import build_release  # noqa: E402
+from open_cake_ir.compiler.release import verify_release  # noqa: E402
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
 from open_cake_ir.tasks.flash_kmeans.seed import KernelSeed, lower_specialists
 
@@ -390,42 +392,20 @@ class CompilerContractTests(unittest.TestCase):
                 self.assertEqual(finding.path, path)
                 self.assertIn(detail, finding.message)
 
-    def test_passing_corpus_builds_a_content_bound_compiler_release(self) -> None:
-        case_count = len(
-            json.loads((ROOT / "corpus/manifest.json").read_text())["cases"]
-        )
-        release = build_release(
-            ROOT,
-            ROOT / "compiler/revision.json",
-            ROOT / "compiler/source_set.json",
-            ROOT / "compiler/corpus-gate-report.json",
-            ROOT / "compiler/release-approval.json",
-        )
-
-        self.assertEqual(release.document["state"], "released")
-        self.assertEqual(release.document["corpus_gate"]["case_count"], case_count)
-        self.assertEqual(
-            release.document["corpus_gate"]["matched_case_count"], case_count
-        )
-        self.assertEqual(
-            len(release.document["sources"]),
-            len(json.loads((ROOT / "compiler" / "source_set.json").read_text())["paths"]),
-        )
-        self.assertTrue(release.verify(ROOT))
-
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "revision.lock.json"
-            path.write_text(json.dumps(release.document), encoding="utf-8")
-            released_compiler = Compiler.load(ROOT, path)
-
-        released_gate = released_compiler.check_corpus()
-        # The released id advances with every Compiler change; assert against the lock
-        # rather than a literal, so a Revision bump is not a test edit.
-        released = json.loads(
-            (ROOT / "compiler" / "revision.lock.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(released_gate.compiler_revision_id, released["revision_id"])
-        self.assertTrue(released_gate.passed)
+    def test_passing_corpus_verifies_the_retained_compiler_release(self) -> None:
+        # Portable verification reads retained authorities; it does not construct
+        # a new release or require the independent reviewer's external filesystem.
+        self.assertTrue(verify_release(
+            ROOT, ROOT / "compiler/revision.json", ROOT / "compiler/source_set.json",
+            ROOT / "compiler/corpus-gate-report.json", ROOT / "compiler/release-approval.json",
+            REVISION_PATH,
+        ))
+        document = json.loads(REVISION_PATH.read_text())
+        released = Compiler.load(ROOT, REVISION_PATH)
+        gate = released.check_corpus()
+        self.assertEqual(gate.compiler_revision_id, document["revision_id"])
+        self.assertTrue(gate.passed)
+        self.assertEqual(document["corpus_gate"]["case_count"], gate.case_count)
 
     def test_release_cycle_prepares_but_cannot_write_its_own_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -494,8 +474,9 @@ class CompilerContractTests(unittest.TestCase):
                     ensure_ascii=False,
                 ).encode()
             ).hexdigest()
+            review_record = Path(directory).resolve() / "review-record.json"
             approval = {
-                "schema_version": 2,
+                "schema_version": 3,
                 "decision": "approved",
                 "gate_report": {
                     "path": "compiler/corpus-gate-report.json",
@@ -507,8 +488,16 @@ class CompilerContractTests(unittest.TestCase):
                     "session_id": "fixture-review-session",
                     "author_session_id": "fixture-author-session",
                 },
-                "approval_basis": "Reviewed the exact temporary Gate diff.",
+                "review_record": str(review_record),
+                "approval_basis": f"Synthetic exact Gate review: {review_record}",
             }
+            review_record.write_text(json.dumps({
+                "schema_version": 1, "decision": "approved",
+                "gate_report": approval["gate_report"], "reviewer": approval["reviewer"],
+                "reviewed_commit": "c" * 40,
+                "launcher_record": "synthetic CPU fixture; no model execution",
+                "review_basis": approval["approval_basis"],
+            }))
             approval_path.write_text(
                 json.dumps(approval, indent=2) + "\n", encoding="utf-8"
             )
@@ -524,7 +513,10 @@ class CompilerContractTests(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
             released = json.loads(lock_path.read_text(encoding="utf-8"))
             self.assertEqual(released["state"], "released")
-            self.assertEqual(released["revision_id"], draft_id.removesuffix("-draft"))
+            base_id, separator, authority_id = released["revision_id"].partition("+")
+            self.assertEqual(base_id, draft_id.removesuffix("-draft"))
+            self.assertEqual(separator, "+")
+            self.assertRegex(authority_id, r"^[0-9a-f]{64}$")
             self.assertEqual(
                 released["release_approval"]["canonical_sha256"],
                 sha256(
@@ -631,9 +623,7 @@ class CompilerContractTests(unittest.TestCase):
         backends: set[str] = set()
         entry_points: set[str] = set()
         for case in manifest["cases"]:
-            document = json.loads(
-                (ROOT / case["schedule"]).read_text(encoding="utf-8")
-            )
+            document = corpus_document(ROOT / case["schedule"])
             if case["expected"]["lowering_eligible"]:
                 backends.add(document["lowering"]["backend"])
                 entry_points.add(document["lowering"]["entry_point"])

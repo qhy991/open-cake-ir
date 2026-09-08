@@ -91,8 +91,11 @@ for every outcome, secret exclusion, deterministic fresh-process replay, and reg
 of Run Audits after deleting derived reports. Replay rejects unknown semantic events and
 derives selection and diagnoses from retained authorities.
 
-Archive Integrity and Filesystem Custody remain orthogonal. An intact weak-mode checkout
-may be inspected, but writer admission and claim-bearing projections still fail closed.
+Archive Integrity and Filesystem Custody remain orthogonal. An intact checkout or an
+unanchored external archive may be inspected, but writer admission and claim-bearing
+projections fail closed. Prospective custody requires the external writer-origin and
+publication witnesses in [ADR 0058](adr/0058-external-writer-custody-anchors.md); open and
+audit never backfill them.
 
 ## The zero-GPU Lab control plane implements the frozen Study
 

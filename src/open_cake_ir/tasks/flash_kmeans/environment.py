@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from open_cake_ir.serialization import canonical_json_bytes
 import json, tempfile
 from dataclasses import asdict
 from hashlib import sha256
@@ -8,7 +10,7 @@ from typing import Mapping,cast
 from open_cake_ir.compiler.toolchain import compile_triton
 from open_cake_ir.evaluation import LaunchableCandidate
 from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
-from open_cake_ir.lab.environments import BuildRequest,ToolchainBuilder,EnvironmentResult,_ptxas_finding_rows
+from open_cake_ir.lab.environments import BuildRequest,CandidateSubmission,ToolchainBuilder,EnvironmentResult,_ptxas_finding_rows
 from open_cake_ir.lab.faults import CandidateCompileRejected,RunProtocolFault
 from open_cake_ir.lab.process import run_supervised,sanitized_environment,SupervisedProcessTimeout,SupervisedProcessOutputLimit
 from .cuda_manifest import CudaLaunchManifest,parse_cuda_launch_manifest
@@ -44,9 +46,7 @@ class FlashTritonToolchainBuilder:
         }
         manifest = (CudaLaunchManifest.from_dict({
                         "schema_version": 1, "abi": "flash_kmeans_assign_v1", **launch}))
-        manifest_bytes = json.dumps(
-            manifest.as_dict(), sort_keys=True, separators=(",", ":")
-        ).encode()
+        manifest_bytes = canonical_json_bytes(manifest.as_dict())
         payloads = {
             request.source_role: request.source,
             "compiler_expanded_source": stages["source"],
@@ -97,7 +97,7 @@ class NvccToolchainBuilder:
             "timeout_seconds": self._timeout_seconds,
         }
         return sha256(
-            json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+            canonical_json_bytes(document)
         ).hexdigest()
 
     def _run(self, arguments: list[str]) -> tuple[bytes, bytes]:
@@ -163,9 +163,7 @@ class NvccToolchainBuilder:
             sass, _ = self._run([str(self._cuobjdump), "--dump-sass", str(cubin_path)])
         if not cubin.startswith(b"\x7fELF"):
             raise ValueError("NVCC did not produce an ELF CUBIN")
-        manifest_bytes = json.dumps(
-            manifest.as_dict(), sort_keys=True, separators=(",", ":")
-        ).encode()
+        manifest_bytes = canonical_json_bytes(manifest.as_dict())
         payloads = {
             "authored_source": request.source,
             "ptx": ptx,
@@ -207,9 +205,7 @@ class DirectCudaEnvironment:
             json.dumps(authority_document, sort_keys=True, separators=(",", ":"))
         )
         self.canonical_sha256 = sha256(
-            json.dumps(
-                self.authority_document, sort_keys=True, separators=(",", ":")
-            ).encode()
+            canonical_json_bytes(self.authority_document)
         ).hexdigest()
 
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:

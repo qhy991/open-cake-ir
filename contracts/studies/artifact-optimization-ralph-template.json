@@ -17,7 +17,8 @@
     "estimand": null,
     "experimental_unit": "run",
     "pooling": "forbidden",
-    "scientific_inclusion": "forbidden"
+    "scientific_inclusion": "forbidden",
+    "endpoint_policy": "normal_budget_terminal_v1"
   },
   "arms": {
     "direct_cuda": {
@@ -72,7 +73,8 @@
       "tool_surface": [
         "submit_cuda"
       ],
-      "toolchain_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "toolchain_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "reference_access": "known_kernel_reproduction"
     },
     "open_cake": {
       "compiler_revision": {
@@ -128,7 +130,8 @@
       },
       "tool_surface": [
         "submit_schedule"
-      ]
+      ],
+      "reference_access": "known_kernel_reproduction"
     }
   },
   "budget": {

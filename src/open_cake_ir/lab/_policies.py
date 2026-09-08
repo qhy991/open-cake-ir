@@ -7,6 +7,7 @@ from typing import Mapping, cast
 
 from ._documents import _canonical_json_bytes
 from .pairing import native_optimization_analysis_plan, native_backend
+from .endpoints import analysis_without_endpoint_policy
 
 
 _RALPH_STUDY_FIELDS = {
@@ -84,6 +85,7 @@ _MATCHED_EVENT_KINDS_V1 = frozenset(
         "candidate_set_filtered",
         "candidate_rejected",
         "launchable_candidate_sealed",
+        "evaluation_attempt_started",
         "evaluation_attempt_completed",
         "candidate_evaluated",
         "diagnosis_routed",
@@ -175,6 +177,7 @@ def _scientific_analysis_plan_version(
 ) -> str:
     """Admit the current scientific plans for the supported comparisons."""
 
+    analysis = analysis_without_endpoint_policy(analysis)
     for arm in ("native_triton", "native_cute_dsl"):
         if analysis == native_optimization_analysis_plan(arm):
             return native_backend(arm).analysis_version

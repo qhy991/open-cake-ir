@@ -14,6 +14,7 @@ from open_cake_ir.evaluation import LaunchableCandidate, LogicalEvaluationAttemp
 from open_cake_ir.evaluation.paired import candidate_from_identity, paired_protocol
 from open_cake_ir.evidence import RunAudit
 
+from .endpoints import analysis_without_endpoint_policy
 from ._documents import _canonical_json_bytes, _digest, _name, _object
 from ._policies import (
     _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN,
@@ -27,6 +28,7 @@ from ._policies import (
 )
 from .pairing import comparison_arm, native_backend, matched_run_arms
 from .providers import ProviderTurn
+from .reference_access import validate_declarations
 from .ralph import RalphBudget
 from .selection import _EMPIRICAL_SELECTION
 from .task_package import TASK_AGENTS_RALPH_V1
@@ -102,6 +104,8 @@ class StudyContract:
         )
         for field in object_fields:
             _object(document.get(field), f"study.{field}")
+        if kind == "matched_search":
+            validate_declarations(document["arms"])
         detached = cast(Mapping[str, object], json.loads(_canonical_json_bytes(document)))
         return cls(
             document=detached,
@@ -197,6 +201,7 @@ class CampaignLock:
                 resolved.get("arm_environment_sha256"),
                 "campaign_lock.resolved_inputs.arm_environment_sha256",
             )
+            validate_declarations(arms)
             comparison = comparison_arm(arms)
             if set(arm_hashes) != set(arms):
                 raise ValueError("Campaign Lock Authoring Environment set differs")
@@ -323,11 +328,11 @@ class CampaignLock:
             raise ValueError("Campaign Lock experimental unit differs from Study kind")
         raw_estimand = analysis.get("estimand")
         if claim_scope == "system_qualification_only":
-            if analysis != _SYSTEM_QUALIFICATION_ANALYSIS_PLAN:
+            if analysis_without_endpoint_policy(analysis) != _SYSTEM_QUALIFICATION_ANALYSIS_PLAN:
                 raise ValueError("system qualification Campaign Lock Analysis Plan differs")
             estimand = None
         elif claim_scope == "artifact_optimization_only":
-            if analysis != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
+            if analysis_without_endpoint_policy(analysis) != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
                 raise ValueError("artifact optimization Campaign Lock Analysis Plan differs")
             estimand = None
         elif study_kind == "matched_search":

@@ -15,7 +15,9 @@ from open_cake_ir.evidence import EvidenceStore
 from open_cake_ir.lab.faults import ReportedProviderUsage, RunProtocolFault
 from open_cake_ir.lab.provider_events import reported_codex_usage
 from open_cake_ir.tasks.runtime import TaskLab
+from tests.contracts._contexts import enter_class_context
 from tests.contracts import test_lab as consumers
+from tests.contracts._executor_fixture import SemanticExecutorFixture
 
 THREAD = "01234567-89ab-cdef-0123-456789abcdef"
 CONTRACT = "closed_file_change_v1"
@@ -141,19 +143,20 @@ class ReportedProviderUsageTests(unittest.TestCase):
 class FailedProviderConsumerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Reuse the existing prospective source closure and explicit synthetic CUDA
-        # host. No released descriptor or real host fact is altered or admitted.
+        # Calling the consumer setup directly does not invoke its per-test setUp.
+        # Keep one explicit CPU Executor at preflight, execution and replay rather
+        # than falling through to whichever released host/closure is current.
+        cls.executor_fixture = enter_class_context(cls, SemanticExecutorFixture())
         class RuntimeFixture(consumers.EmpiricalSelectionContractTests):
             pass
         cls.fixture_type = RuntimeFixture
         RuntimeFixture.setUpClass()
+        cls.addClassCleanup(RuntimeFixture.tearDownClass)
         cls.root, cls.parent = RuntimeFixture.root, RuntimeFixture.parent
         cls.lab = TaskLab(cls.root, clock=lambda: 0.0)
         cls.lock = cls.lab.preflight(cls.root / "contracts/studies/matched-search-infrastructure-template.json")
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.fixture_type.tearDownClass()
+        if cls.lock.document["execution"]["executor_revision"] != dict(cls.executor_fixture.revision(cls.root).reference):
+            raise AssertionError("failed-provider consumer must use its explicit CPU Executor")
 
     def campaign(self, *, fault_turn=2, tokens=191499, unknown=False, mismatch=False, stage="provider",
                  returned_identity_refusal=False, missing_stdout=False):

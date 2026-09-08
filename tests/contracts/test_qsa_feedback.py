@@ -106,11 +106,11 @@ class QsaFeedbackTest(unittest.TestCase):
                 }
 
             with (
-                patch.object(evaluator.Compiler, "load", return_value=cls.compiler),
                 patch.object(cls.compiler, "check_corpus", return_value=SimpleNamespace(passed=True)),
                 patch.object(evaluator, "_compile_node", side_effect=build),
             ):
-                metrics = evaluator._compile_open_cake(root, root, candidate, root / "built")
+                metrics = evaluator._compile_open_cake(root, root, candidate, root / "built",
+                    compiler=cls.compiler, target=evaluator.Target.load(root / "compiler/targets/sm_100a.json"))
             retained = json.loads((root / "built/static-profile.json").read_text())
             if retained != {"schema_version": 1, **metrics}:
                 raise AssertionError("producer receipt differs from returned compile metrics")

@@ -38,6 +38,9 @@ class EvaluationWriter:
     run_started_at: float | None
 
     def evaluate(self, candidate: LaunchableCandidate, *, purpose: str, turn: int) -> EvaluationReceipt:
+        self.ledger.append("evaluation_attempt_started", {
+            "turn": turn, "purpose": purpose, "candidate_sha256": candidate.candidate_sha256,
+        })
         self.ralph.record_evaluation(purpose)
         attempt = self.evaluator.evaluate(candidate, case_id=self.case_id, purpose=purpose)
         receipt = attempt.final_receipt

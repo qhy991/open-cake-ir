@@ -1032,7 +1032,8 @@ class ProviderContractTests(unittest.TestCase):
 
     def test_ralph_provider_exposes_only_task_agents_and_candidate_set(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory) / "中文运行目录"
+            root.mkdir()
             executable = root / "codex"
             executable.write_bytes(b"fixture executable")
             executable.chmod(0o700)

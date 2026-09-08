@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
+
 import json
 import math
 import re
@@ -19,14 +21,6 @@ from .workload import WorkloadContract
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _plain_json(value: object) -> object:

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
 from pathlib import Path
@@ -141,7 +142,7 @@ class EvidenceContractTests(unittest.TestCase):
                     os.chmod(Path(current) / name, 0o644)
             git_like = EvidenceStore.open(root).audit_run("clone-modes")
             self.assertTrue(git_like.archive_integrity, git_like.findings)
-            self.assertTrue(git_like.filesystem_custody_verified)
+            self.assertFalse(git_like.filesystem_custody_verified)
 
             for current, directories, files in os.walk(root):
                 os.chmod(current, 0o770)
@@ -169,13 +170,13 @@ class EvidenceContractTests(unittest.TestCase):
                     authority={"kind": "fixture"},
                 )
             secrets = (
-                b"OPENAI_API_KEY=must-not-enter-cas",
-                b"Authorization: Bearer sk-abcdefghijklmno",
-                b"GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz",
-                b"openai_api_key = sk-abcdefghijklmno",
+                b"OPENAI_" + b"API_KEY=must-not-enter-cas",
+                b"Authorization: Bearer " + b"sk-" + b"abcdefghijklmno",
+                b"GITHUB_TOKEN=" + b"ghp_" + b"abcdefghijklmnopqrstuvwxyz",
+                b"openai_api_key = " + b"sk-" + b"abcdefghijklmno",
             )
             for payload in secrets:
-                with self.subTest(payload=payload), self.assertRaisesRegex(
+                with self.subTest(case=secrets.index(payload)), self.assertRaisesRegex(
                     ValueError, "secret marker"
                 ):
                     evidence.put(payload, media_type="text/plain")
@@ -296,13 +297,15 @@ class EvidenceContractTests(unittest.TestCase):
                 authority_sha256=authority_sha,
                 authority=authority,
             )
-            run.seal(
-                protocol_adherence="adhered",
-                endpoint_observation="observed",
-                endpoint={"value": 1},
-            )
-            terminal = evidence.root / "runs/seal-recovery/terminal.json"
-            terminal.unlink()
+            from open_cake_ir.evidence import store as store_module
+            publish = store_module._publish_new_at
+            def interrupted(fd, name, payload, **kwargs):
+                if name == "terminal.json":
+                    raise OSError("injected before terminal publication")
+                return publish(fd, name, payload, **kwargs)
+            with patch.object(store_module, "_publish_new_at", interrupted):
+                with self.assertRaises(OSError):
+                    run.seal(protocol_adherence="adhered", endpoint_observation="observed", endpoint={"value": 1})
 
             run.seal(
                 protocol_adherence="adhered",
@@ -478,3 +481,36 @@ class ArchiveShapeTamperTest(unittest.TestCase):
 
             audit = EvidenceStore.open(evidence.root).audit_run("sealed")
             self.assertTrue(audit.archive_integrity)
+
+
+class SecretDetectionTests(unittest.TestCase):
+    def test_shared_detector_refuses_credential_shapes_before_cas_publication(self):
+        from open_cake_ir.evidence.secret_detection import contains_forbidden_secret
+        from open_cake_ir.evidence import custody
+        # Synthetic bytes assembled at runtime; no actual credentials or matching
+        # values are printed in failures or stored in the source checkout.
+        pem = [b"-----BEGIN " + family + b"PRIVATE KEY-----" for family in
+               (b"", b"RSA ", b"OPENSSH ", b"EC ", b"DSA ", b"ENCRYPTED ")]
+        jwt = b"eyJ" + b"a" * 20 + b"." + b"b" * 20 + b"." + b"c" * 20
+        old_export_jwt = b"eyJ" + b"a" * 10 + b"." + b"b" * 10 + b"." + b"c" * 10
+        candidates = pem + [b'{"tokens":{"access_token":"' + jwt + b'"}}',
+            old_export_jwt, b"HF_TOKEN=" + b"hf_" + b"a" * 20,
+            b"ghp_" + b"a" * 30, b"github_pat_" + b"a" * 30,
+            b"Authorization: Bearer " + b"a" * 30]
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            with patch.dict(os.environ, {custody.ENVIRONMENT: str(base / "registry")}):
+                evidence = EvidenceStore.create(base / "evidence")
+                for index, payload in enumerate(candidates):
+                    with self.subTest(case=index):
+                        self.assertTrue(contains_forbidden_secret(payload))
+                        with self.assertRaisesRegex(ValueError, "forbidden secret marker"):
+                            evidence.put(payload, media_type="application/octet-stream")
+                self.assertEqual(list((evidence.root / "objects/sha256").iterdir()), [])
+
+    def test_detection_preserves_nonsecret_runtime_and_placeholder_bytes(self):
+        from open_cake_ir.evidence.secret_detection import contains_forbidden_secret
+        for payload in (b'{"usage":{"input_tokens":123,"output_tokens":456}}',
+                b'{"access_token":"REDACTED"}', b"BEGIN PUBLIC KEY", b"hf_short",
+                b"eyJshort.short.short", b"operator weight_token_count=32"):
+            self.assertFalse(contains_forbidden_secret(payload))

@@ -23,7 +23,7 @@ class PythonTaskReferenceTests(unittest.TestCase):
         self.assertEqual(frontend.parse(bound.decode()).document, prepared)
         self.assertIn(b"@cake.schedule", bound)
         self.assertIn(b"lm.reduce", bound)
-        self.assertIn("```python", _document_sections({"starter.py": bound}))
+        self.assertIn("```python", _document_sections({"schedule-starter.py": bound}, access="known_kernel_reproduction"))
 
     def test_task_preparation_cannot_silently_retarget_or_reshape_python(self):
         for key, value in (("target", "apple_gpu_family7"), ("schedule_id", "another-program")):
@@ -104,6 +104,8 @@ class PythonTaskReferenceTests(unittest.TestCase):
             for relative, contents in {
                 "starter.py": self.source, "workload.json": "{}", "target.json": "{}", "scaffold.md": "fixture",
                 "docs/PYTHON_FRONTEND.md": "Python frontend fixture",
+                "compiler/AUTHORING_CONTRACT.md": "Schedule authoring fixture",
+                "examples/python/fma.py": (ROOT / "examples/python/fma.py").read_text(),
                 "compiler.json": json.dumps({"target_definitions": {"apple_gpu_family8": {"path": "target.json"}}}),
             }.items():
                 path = root / relative; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(contents)
@@ -111,9 +113,10 @@ class PythonTaskReferenceTests(unittest.TestCase):
                 "compiler_revision": {"path": "compiler.json"}, "study": {},
                 "execution": {"target": "apple_gpu_family8"}, "evaluation_protocol": {"case_id": "primary"},
                 "resolved_inputs": {"budget": {}, "run_protocol": {}}})
-            arm = {"environment_kind": "open_cake", "input_format": "schedule_or_python_v1",
+            arm = {"environment_kind": "open_cake", "reference_access": "known_kernel_reproduction", "input_format": "schedule_or_python_v1",
                 "schedule_skeleton": {"path": "starter.py"}, "scaffold": {"path": "scaffold.md"},
                 "lowering_route": self.document["lowering"]}
+            lock.document["resolved_inputs"]["arm_environments"] = {"open_cake": arm}
             def prepare(document, workload, case_id, authority):
                 return {**document, "metadata": {"workload_contract_sha256": workload.canonical_sha256}}
             docs = build_run_reference_documents(root, lock, arm,
@@ -121,6 +124,17 @@ class PythonTaskReferenceTests(unittest.TestCase):
             self.assertIn("schedule-starter.py", docs)
             self.assertNotIn("schedule-skeleton.json", docs)
             self.assertNotIn("paired-triton-authoring.md", docs)
+            self.assertIn("python-frontend.md", docs)
+            self.assertIn("python-example.py", docs)
+            # Python-enabled arms retain their authoring surface even when the
+            # workload provides its initial Schedule as JSON.
+            (root / "starter.json").write_text(json.dumps(self.document))
+            arm["schedule_skeleton"] = {"path": "starter.json"}
+            json_starter_docs = build_run_reference_documents(root, lock, arm,
+                workload_contract=SimpleNamespace(canonical_sha256="a" * 64), prepare_schedule=prepare)
+            self.assertIn("schedule-skeleton.json", json_starter_docs)
+            self.assertEqual(json_starter_docs["python-frontend.md"], docs["python-frontend.md"])
+            self.assertEqual(json_starter_docs["python-example.py"], docs["python-example.py"])
             self.assertEqual(frontend.parse(docs["schedule-starter.py"].decode()).document["metadata"],
                              {"workload_contract_sha256": "a" * 64})
 

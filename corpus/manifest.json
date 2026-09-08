@@ -698,7 +698,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "a0bc7853e45e9ae9a3efbbd9050160f8cddac4c51ce5a5b2442b7533aa35c79b",
-        "lowering_source_sha256": "86abf3d96d9a141bb646d59dd191cafb01ef3f841b558d5811fb95c5749d6f5a"
+        "lowering_source_sha256": "46d38c7a52efe49e33223a8f959862adced8802ee38fdf2b28c36c285416f90d"
       }
     },
     {
@@ -752,7 +752,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "b0f9847fc9b21d563bd4d363a9db94d1bba1f6944cd9203da650df3da34b13d2",
-        "lowering_source_sha256": "48fa03f918cc20515d7670d6e1c6688066afe01ba8adb97f91c1ab43a41e07bb"
+        "lowering_source_sha256": "2e7985f0f6e7598d53db15dd5bfc2c5f73f9b498c5859e9e4e7a90137be511f0"
       }
     },
     {
@@ -765,7 +765,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "ae1645f4dfc0b3f3f5ed4fbfc66c95f0b9b73454df03a536fe4132b0749ba370",
-        "lowering_source_sha256": "bc1c009fbcfed421ece21989b438cf85079ca19620af70e83b9572753cb3a253"
+        "lowering_source_sha256": "038bd2e69fcc7560b21470a117a878c55ca58b6e7803eb729efdfda69086cdd6"
       }
     },
     {
@@ -778,7 +778,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "810d2b6585f7fc98f7899f4359c3cdb7619eda7b424aa6d61c36dbc432d74200",
-        "lowering_source_sha256": "20222dbb59d5bc7097094a9145f4fbcffce01b34803e240653e8917ac191b318"
+        "lowering_source_sha256": "839bffe65b566d312599abadaab8611f7fce3c3c573c371b874bac9d55ee7e1a"
       }
     },
     {
@@ -861,7 +861,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "28d3ebaa73aeb4ca2e9b9af090c8b2d19c13cc16dbaf76b0855acbb8592597f1",
-        "lowering_source_sha256": "d530fcac401ef45e69e77b951209836db12a59579c6b63984d5ee8985d3395e3"
+        "lowering_source_sha256": "72227a8cb343b0291293e311b5020a18bf2d570ea7d316f8e56f5ba6109a633d"
       }
     },
     {
@@ -1362,6 +1362,268 @@
         ],
         "schedule_sha256": "ebb45b79412f66a64cf70ab5bff118cc8f911cafb6928767e08ad8ede24a9ee1",
         "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "triton-argmin-runtime-domain-drift",
+      "schedule": "corpus/schedules/triton-argmin-runtime-domain-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TRITON_ARGMIN_DOMAIN"
+        ],
+        "schedule_sha256": "175d1cf9fe128a8f2cceb018020545b22a3522034e53028b40e9a40efd283c04",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "store-access-rank-drift",
+      "schedule": "corpus/schedules/store-access-rank-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "STORE_ACCESS_SHAPE_MISMATCH",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "8359b0066b15b5639ba9cbff3623adcbc7aeea875820d6fca541d28f9e87882a",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "triton-loop-stop-mma-drift",
+      "schedule": "corpus/schedules/triton-loop-stop-mma-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "TRITON_LOOP_STOP_UNSUPPORTED"
+        ],
+        "schedule_sha256": "2c0e7a04ef79763246d110fcc2a3a7906e5f69fc90d25162f8b72692b85fe4f0",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "tensor-columns-illegal-drift",
+      "schedule": "corpus/schedules/tensor-columns-illegal-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "ALLOCATION_TENSOR_COLUMNS_ILLEGAL",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "59244d4ba1518da71df6e014424a6fafa8300a71a1a4760af8aa758e8c0d554a",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "mma-tile-n-drift",
+      "schedule": "corpus/schedules/mma-tile-n-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_TILE_INSTRUCTION_MISMATCH",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "89be67f3852dd7650dccc8b7ab2a21a0a1b6e7f938b545020332b47655402c0b",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "residency-register-cap-drift",
+      "schedule": "corpus/schedules/residency-register-cap-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TARGET_REGISTER_CAP_LIMIT",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "0685cb93f5f5eb571210691fd0ac1fac11e26ac2df84c1a423f64fbbb0b8a6b8",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "triton-identifier-keyword-drift",
+      "schedule": "corpus/schedules/triton-identifier-keyword-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "BACKEND_IDENTIFIER_UNSAFE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "2ea3315b046c81ef71f1bbf63bc486e8319c21f7e20751306bdb768540740de1",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "triton-operation-id-control-drift",
+      "schedule": "corpus/schedules/triton-operation-id-control-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "BACKEND_IDENTIFIER_UNSAFE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "f95e4550b898d5b5079b98e6363ddcaba643119f140f7af8d57e793c305625f5",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "triton-argmin-static-tail-drift",
+      "schedule": "corpus/schedules/triton-argmin-static-tail-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TRITON_ARGMIN_DOMAIN"
+        ],
+        "schedule_sha256": "336c76a8d5bc98e4a272a77740708bd5dc2756c126359477e50541b79aa8b432",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "python-fma",
+      "schedule": "examples/python/fma.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "66a1b97fe4f0e5d255722810053c1bdb8199abc68f55cf2e1cbb3bb8da3c7e4c",
+        "lowering_source_sha256": "e9eaa09a23a135842566d6cc4a4d2a406b2bd38d39e8cf606bdc4ee732391576"
+      }
+    },
+    {
+      "case_id": "python-softmax",
+      "schedule": "examples/python/softmax.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "a22e1ef67b243a48930b772556221ed167a4e33dae3ff3be65930b019376c6cf",
+        "lowering_source_sha256": "5352fd98d5e0679b01b279bf45153e1580e705130a437fa9c34350bb5671f503"
+      }
+    },
+    {
+      "case_id": "python-kmeans-pipeline",
+      "schedule": "examples/python/kmeans_pipeline.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "535727315f6c583a9bd32a5fef29ff137f7cf7531d8ea9b8aa523aabf4edc441",
+        "lowering_source_sha256": "9aa020a5ac6173431a9073f81517c63eac3c16f34f328342b573f7ded4b05d18"
+      }
+    },
+    {
+      "case_id": "python-metal-elementwise",
+      "schedule": "examples/python/metal_elementwise.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "METAL_SIMD_EXECUTION"
+        ],
+        "schedule_sha256": "e0d2e9772e902c44a7f7bc4b8cf7da51d28d24ecc11ebc63e2df3faf4229c347",
+        "lowering_source_sha256": "f53314befa59d6e75f9ccbd110accaf7d2c09de2e33dcccb61366b0d9616f9ec"
+      }
+    },
+    {
+      "case_id": "python-metal-row-sum",
+      "schedule": "examples/python/metal_row_sum.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "METAL_SIMD_EXECUTION"
+        ],
+        "schedule_sha256": "db3a3fd8aa7cd17d39a83e3b126447d5cbbdb036accd773077fdcdc866adb129",
+        "lowering_source_sha256": "11e922effd5050ccfbaa41a86eed5e1490211d21b5b9a2ff05ebac7c5dc1d305"
+      }
+    },
+    {
+      "case_id": "python-metal-rmsnorm",
+      "schedule": "examples/python/metal_rmsnorm.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "METAL_SIMD_EXECUTION"
+        ],
+        "schedule_sha256": "a07ebf3049700c4cb8709122eb682f4983e90f56b820be335d1b72e5489d4c70",
+        "lowering_source_sha256": "e0cff9f84e70686397a95a931dc072ac0a4a46c551478523c92bd6733fe9da55"
+      }
+    },
+    {
+      "case_id": "python-b300-rmsnorm",
+      "schedule": "examples/python/b300_rmsnorm.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "e88d181cc4dbf7a33c06ba5a2565f26467e5359d7485154738738d717d5c47e4",
+        "lowering_source_sha256": "9153d34b658484511c75e4c296bb34ee4f9cd61507a6410459027930b3e30efe"
+      }
+    },
+    {
+      "case_id": "python-b300-gemm-bias",
+      "schedule": "examples/python/b300_gemm_bias.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "8f412513ff08b2cc6c2d675ad3d6ae55da7b3f7571a78850474d967388e336bf",
+        "lowering_source_sha256": "e15c1a61aafede2e162863111d20412790295e391cdffa7c419d5271f91d14c5"
+      }
+    },
+    {
+      "case_id": "python-b300-indexed-gather",
+      "schedule": "examples/python/b300_indexed_gather.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "c2249e379a44a4906d3dad7c30cb2510a5d509a9864f53ccf30ae02598c286c0",
+        "lowering_source_sha256": "7cec0ae3e20ee08865e01b22fb786d8b7b1bb73a8c7047011c554e5bc42f2b39"
+      }
+    },
+    {
+      "case_id": "python-cast",
+      "schedule": "examples/python/cast.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "d7f01dd46d769e5f6520bbfde68af61c907e8b9357ff2dcaba09c7b59b25b310",
+        "lowering_source_sha256": "92e6357cedf5b463a19f0dc857a881b65b2d6ccfaed12b6a5c31ae1ae044b9bb"
+      }
+    },
+    {
+      "case_id": "python-mixed-dtype",
+      "schedule": "examples/python/mixed_dtype.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "73bd27d8c081437159b964ab14851e5e8e7528d3816d2339c7e9c95b46054e34",
+        "lowering_source_sha256": "3e50d5b1b0b1369fc435298be86574434261bedf9f5eb995f660109da0480218"
       }
     }
   ]

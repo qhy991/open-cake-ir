@@ -111,6 +111,7 @@ class CommandBrokerSubmitter:
         protocol_sha256: str,
         cwd: str | Path,
         executor: ExecutorRevision,
+        compiler_reference: Mapping[str, object],
         service_user: str,
         service_group: str,
         timeout_seconds: int = 1800,
@@ -126,6 +127,9 @@ class CommandBrokerSubmitter:
         self._workload_sha256 = workload_sha256
         self._protocol_sha256 = protocol_sha256
         self._cwd = Path(cwd).resolve(strict=True)
+        from .bindings import load_compiler_reference
+        load_compiler_reference(executor.project_root, compiler_reference, "broker.compiler_revision")
+        self._compiler_reference = json.loads(_canonical_json_bytes(compiler_reference))
         self._executor = executor
         self._service_uid = pwd.getpwnam(service_user).pw_uid
         self._service_gid = grp.getgrnam(service_group).gr_gid
@@ -221,6 +225,7 @@ class CommandBrokerSubmitter:
                 "purpose": purpose,
                 "attempt": attempt,
                 "executor_revision": dict(self._executor.reference),
+                "compiler_revision": self._compiler_reference,
             }
             if self._protocol is not None:
                 evaluator_arguments['evaluation_protocol'] = self._protocol
@@ -260,6 +265,7 @@ class CommandBrokerSubmitter:
                     "broker_fault",
                     str(error),
                     artifact_payloads={
+                        "evaluator_request": _canonical_json_bytes(evaluator_arguments),
                         "broker_stdout": error.stdout,
                         "broker_stderr": error.stderr,
                     },
@@ -269,6 +275,7 @@ class CommandBrokerSubmitter:
                     "broker_fault",
                     f"evaluator command exited {completed.returncode} without a result",
                     artifact_payloads={
+                        "evaluator_request": _canonical_json_bytes(evaluator_arguments),
                         "broker_stdout": completed.stdout,
                         "broker_stderr": completed.stderr,
                     },
@@ -291,6 +298,7 @@ class CommandBrokerSubmitter:
                     "broker_fault",
                     f"evaluator/broker command exited {completed.returncode}",
                     artifact_payloads={
+                        "evaluator_request": _canonical_json_bytes(evaluator_arguments),
                         "broker_stdout": completed.stdout,
                         "broker_stderr": completed.stderr,
                         "broker_result": worker_result_bytes,
@@ -403,6 +411,7 @@ class CommandBrokerSubmitter:
                 fallback_calls=int(counters["fallback_calls"]),
                 receipt=receipt,
                 artifact_payloads={
+                    "evaluator_request": _canonical_json_bytes(evaluator_arguments),
                     "broker_record": result_bytes,
                     "evaluator_result": worker_result_bytes,
                     "stdout": completed.stdout,

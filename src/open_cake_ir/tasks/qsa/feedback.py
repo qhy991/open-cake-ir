@@ -255,16 +255,12 @@ def qsa_evaluation_feedback(
     }
     if outcome == "rejected":
         declared_route = compiler.get("routed_to") if isinstance(compiler, Mapping) else None
-        destination = (
-            str(declared_route)
-            if declared_route in {CANDIDATE, VERIFIER, "ir_vocabulary"}
-            else (VERIFIER if stage == "compile" else CANDIDATE)
-        )
-        feedback["routed_to"] = destination
-        feedback["routing_reason"] = (
-            "Compiler gates admitted the program but the toolchain rejected it"
-            if destination == VERIFIER
-            else f"the candidate failed the common {stage} gate"
-        )
+        route = route_rejection({"stage": stage}, arm=arm)
+        if declared_route in {CANDIDATE, VERIFIER, "ir_vocabulary"}:
+            feedback["routed_to"] = declared_route
+            feedback["routing_reason"] = str(compiler.get("routing_reason", "retained Compiler diagnosis"))
+        else:
+            feedback["routed_to"] = route.destination
+            feedback["routing_reason"] = route.reason
         feedback["summary"] = summary
     return _freeze(feedback)
