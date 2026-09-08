@@ -17,6 +17,7 @@ from open_cake_ir.compiler import Compiler, CorpusGateReport
 from open_cake_ir.compiler.performance.empirical_cost import EmpiricalCostModel
 from open_cake_ir.evaluation import EvaluationReceipt, LaunchableCandidate, LogicalEvaluationAttempt
 from open_cake_ir.evaluation.artifacts import executable_role, required_build_roles
+from open_cake_ir.evaluation.attempts import valid_job_mode
 from open_cake_ir.evaluation.core import _plain_json as _evaluation_plain_json
 from open_cake_ir.evidence import EvidenceStore, RunAudit
 
@@ -49,6 +50,7 @@ from .providers import (
 from .ralph import RalphBudget, RalphController, derive_ralph_stop_reason
 from .python_reference import read_skeleton
 from .provider_policy import provider_configuration, provider_harness
+from .claude import CLAUDE_EVENT_CONTRACT, parse_claude_turn_events
 from .pairing import matched_run_arms
 from .task_package import TASK_AGENTS_RALPH_V1, render_task_package
 
@@ -566,10 +568,8 @@ def _replay_broker_attempt_ledger(
             raise ValueError("broker attempt raw counters differ")
         if (
             not isinstance(attempt.get("job_id"), str)
-            or re.fullmatch(r"gpuq-[0-9a-f]{12}", cast(str, attempt["job_id"]))
-            is None
+            or not valid_job_mode(cast(str, attempt["job_id"]), cast(str, attempt.get("mode")))
             or not isinstance(attempt.get("admitted"), bool)
-            or attempt.get("mode") != "exclusive"
             or (
                 attempt.get("error") is not None
                 and not isinstance(attempt.get("error"), str)
@@ -641,7 +641,7 @@ def _replay_broker_attempt_ledger(
             raise ValueError("evaluator result is not JSON") from error
         if evaluator_result.get("job_id") not in {
             result.get("job_id"),
-            "gpuq-000000000000",
+            "gpuq-000000000000" if str(result.get("job_id", "")).startswith("gpuq-") else result.get("job_id"),
         }:
             raise ValueError("worker and broker job identities differ")
         normalized_evaluator_result = dict(evaluator_result)
@@ -668,7 +668,8 @@ def _replay_broker_attempt_ledger(
     if len(attempts) == 2:
         first = _object(attempts[0], "broker_attempts[0]")
         if (
-            first.get("admitted") is not False
+            first.get("mode") != "exclusive"
+            or first.get("admitted") is not False
             or first.get("error") != "gpu_admission_differs"
             or first.get("receipt_sha256") is not None
             or any(first.get(field) != 0 for field in counter_fields)
@@ -1765,7 +1766,7 @@ class Lab:
             if (
                 anchor.get("schema_version") != 1
                 or anchor.get("kind")
-                != "codex_provider_qualification_evidence_anchor"
+                != ("provider_qualification_evidence_anchor" if provider_harness(provider) == "claude-code" else "codex_provider_qualification_evidence_anchor")
                 or not isinstance(anchor.get("run_id"), str)
                 or not anchor["run_id"]
                 or not isinstance(anchor.get("evidence_root"), str)
@@ -3343,11 +3344,14 @@ class Lab:
             expected_name = (
                 "candidate-set.json"
             )
-            parsed = parse_codex_turn_events(
-                raw_events,
-                expected_terminal_message=expected_terminal,
-                event_contract=event_contract,
-            )
+            if event_contract == CLAUDE_EVENT_CONTRACT:
+                parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal)
+                if (parsed.reported_models != (provider_authority["model"],)
+                        or expected_change == "add" and parsed.write_tools[0] != "Write"):
+                    return False
+            else:
+                parsed = parse_codex_turn_events(raw_events, expected_terminal_message=expected_terminal,
+                                                event_contract=event_contract)
             turn_tokens = payload.get("turn_provider_tokens")
             if (
                 parsed.thread_id != thread_id
@@ -3356,7 +3360,7 @@ class Lab:
             ):
                 return False
             if parsed.candidate_path is not None and (
-                parsed.change_kind != expected_change
+                (event_contract != CLAUDE_EVENT_CONTRACT and parsed.change_kind != expected_change)
                 or Path(parsed.candidate_path).name != expected_name
             ):
                 return False
