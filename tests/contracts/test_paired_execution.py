@@ -481,7 +481,7 @@ class PairedExecutionTests(unittest.TestCase):
             stack.enter_context(patch('open_cake_ir.compiler.Compiler.load', return_value=draft))
             toolchain = stack.enter_context(patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler' if comparison == 'native_triton' else 'open_cake_ir.lab.cute_build.IsolatedCuTeCompiler'))
             toolchain.return_value.canonical_sha256 = 'b'*64
-            stack.enter_context(patch('open_cake_ir.lab.runtime.broker_execution_sha256', return_value='c'*64))
+            stack.enter_context(patch('open_cake_ir.lab.runtime_config.broker_execution_sha256', return_value='c'*64))
             lock = Lab(project).preflight(template, execution_bindings_path=bp)
             resolver.assert_called_once_with(project, {'binding': 'current_release'}, 'study.execution', template=True)
             self.assertEqual(lock.document['execution']['executor_revision'], executor_ref)

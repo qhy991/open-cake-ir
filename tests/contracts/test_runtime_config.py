@@ -249,13 +249,13 @@ class RuntimeEntryPointTests(unittest.TestCase):
             with self.subTest(field=location, value=value):
                 self.runtime_path.write_text(json.dumps(replace_field(runtime_document(kind), location, value)), encoding="utf-8")
                 with ExitStack() as stack:
-                    parser = stack.enter_context(patch("open_cake_ir.lab.runtime.load_runtime_config", wraps=load_runtime_config))
+                    parser = stack.enter_context(patch("open_cake_ir.lab.runtime_config.load_runtime_config", wraps=load_runtime_config))
                     stack.enter_context(patch("open_cake_ir.lab.providers.ProviderQualificationReceipt.load", return_value=object()))
                     blocked = [stack.enter_context(patch(name, side_effect=AssertionError("runtime admission must precede execution"))) for name in (
                         "open_cake_ir.lab.providers.resolve_codex_code_mode_host",
                         "open_cake_ir.lab.triton_build.IsolatedTritonCompiler",
                         "open_cake_ir.lab.bindings.resolve_executor",
-                        "open_cake_ir.lab.runtime.broker_execution_sha256",
+                        "open_cake_ir.lab.runtime_config.broker_execution_sha256",
                         "open_cake_ir.lab.bindings.load_baseline_bundle",
                     )]
                     with self.assertRaises(ValueError) as binding_error:
