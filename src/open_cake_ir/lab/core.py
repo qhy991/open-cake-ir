@@ -56,6 +56,7 @@ class Lab:
             project_root=self._root,
             workload_loader=self._load_workload,
             validate_authoring=self._validate_authoring,
+            prepare_schedule=self._prepare_schedule,
             manifest_parser=self._parse_manifest,
             empirical_cost_model_path=empirical_cost_model_path,
             execution_bindings_path=execution_bindings_path,

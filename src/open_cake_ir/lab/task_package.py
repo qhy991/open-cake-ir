@@ -12,6 +12,8 @@ from typing import Callable, Mapping, Protocol, cast
 from open_cake_ir.compiler import Compiler
 from .rubrics import derive_rubric
 from .pairing import bind_baseline, native_baseline, backend_policy, native_backend
+from .python_reference import bind_python_reference
+from open_cake_ir.compiler import frontend
 from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import WorkloadContract
 
@@ -64,6 +66,10 @@ def _plain(value: object) -> object:
 def _read_relative(root: Path, value: object, context: str) -> bytes:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{context} path differs")
+    if Path(value).is_absolute() and context in {"workload", "schedule_skeleton", "scaffold"}:
+        from .bindings import source_reference_path
+        _, path = source_reference_path(root, value, context)
+        return path.read_bytes()
     relative = PurePosixPath(value)
     if relative.is_absolute() or ".." in relative.parts or "\\" in value:
         raise ValueError(f"{context} path is unsafe")
@@ -133,22 +139,27 @@ def build_run_reference_documents(
     environment_kind = arm.get("environment_kind")
     if environment_kind == "open_cake":
         skeleton_ref = _object(arm["schedule_skeleton"], "arm.schedule_skeleton")
-        skeleton = cast(
-            dict[str, object],
-            json.loads(_read_relative(root, skeleton_ref["path"], "schedule_skeleton")),
+        skeleton_bytes = _read_relative(root, skeleton_ref["path"], "schedule_skeleton")
+        python_starter = str(skeleton_ref["path"]).endswith(".py")
+        skeleton = (
+            frontend.parse(skeleton_bytes.decode("utf-8"), filename=str(skeleton_ref["path"])).document
+            if python_starter else json.loads(skeleton_bytes)
         )
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
         skeleton = prepare_schedule(skeleton, workload_contract, case_id, arm)
-        if arm.get("input_format") == "schedule_or_python_v1":
+        if python_starter:
+            if arm.get("input_format") != "schedule_or_python_v1":
+                raise ValueError("Python starter requires the existing Python-enabled Authoring Environment")
+            documents["schedule-starter.py"] = bind_python_reference(
+                skeleton_bytes.decode("utf-8"), skeleton, filename=str(skeleton_ref["path"]))
+            documents["python-frontend.md"] = (root / "docs/PYTHON_FRONTEND.md").read_bytes()
+        else:
+            documents.update({"schedule.schema.json": schedule_schema_bytes(),
+                "schedule-authoring.md": (root / "compiler/AUTHORING_CONTRACT.md").read_bytes(),
+                "schedule-skeleton.json": _canonical_json(skeleton).encode()})
+        if arm.get("lowering_route", {}).get("backend") != "metal" and arm.get("input_format") == "schedule_or_python_v1":
             policy = backend_policy(arm["lowering_route"]["backend"])
             documents[policy.authoring_file] = (root / "docs/en" / policy.document).read_bytes()
-        documents.update(
-            {
-                "schedule.schema.json": schedule_schema_bytes(),
-                "schedule-authoring.md": (root / "compiler/AUTHORING_CONTRACT.md").read_bytes(),
-                "schedule-skeleton.json": _canonical_json(skeleton).encode(),
-            }
-        )
     elif environment_kind != "direct_cuda" and (policy := native_backend(environment_kind)) is not None:
         open_arm = _object(_object(resolved["arm_environments"], "arm_environments")["open_cake"], "open_cake")
         skeleton_ref = _object(open_arm["schedule_skeleton"], "schedule_skeleton")
@@ -188,6 +199,8 @@ def _document_sections(documents: Mapping[str, bytes]) -> str:
         language = (
             "json"
             if name.endswith(".json")
+            else "python"
+            if name.endswith(".py")
             else "cuda"
             if name.endswith((".cu", ".cuh"))
             else "markdown"
@@ -339,6 +352,12 @@ the machine Contracts bound by the CampaignLock; do not edit them or infer newer
 
 {_document_sections(documents)}
 """
+    if "schedule-starter.py" in documents:
+        task = task.replace("Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:",
+            "Author each Candidate in Python through the supplied frontend. Put its source text "
+            "in a `python_source` member; do not describe a Schedule with JSON fields. "
+            "The existing candidate envelope is transport only.\n\n"
+            "Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:")
     arm_rule = (
         "Author only Cake IR Schedules or restricted Python through the supplied frontend; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
         if arm == "open_cake" and authority.get("input_format") == "schedule_or_python_v1"

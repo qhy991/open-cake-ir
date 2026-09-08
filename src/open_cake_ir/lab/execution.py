@@ -18,7 +18,7 @@ from ._policies import (
     _LEGACY_ATTRIBUTION_EVALUATION,
     _matched_evidence_policy_version,
 )
-from .archive import _ARM_ARTIFACT_ROLES, _archive_provider_turn, _candidate_artifact_media_type
+from .archive import _arm_artifact_roles, _archive_provider_turn, _candidate_artifact_media_type
 from .evaluation_writer import EvaluationWriter
 from .execution_admission import validate_execution_bindings
 from .candidate_filter import _build_filter_candidates, record_candidate_rejections
@@ -49,6 +49,9 @@ class _SearchedCandidate:
     receipt: EvaluationReceipt
     attribution: EvaluationReceipt | None
 
+from .pairing import matched_run_arms
+from open_cake_ir.evaluation.paired import paired_protocol
+
 
 def execute_campaign(
     lock: CampaignLock,
@@ -69,7 +72,7 @@ def execute_campaign(
         evidence_root,
         role="Campaign Evidence root",
     )
-    comparison_arm(environments)
+    matched_run_arms(environments, lock.claim_scope)
     if set(environments) != set(lock.document["resolved_inputs"]["arm_environments"]):
         raise ValueError("Campaign Authoring Environment set differs")
     if lock.study_kind != "matched_search":
@@ -126,7 +129,7 @@ def execute_campaign(
         "campaign_lock.workload.canonical_sha256",
     )
     evidence = EvidenceStore.create(root)
-    record_confirmation_time = native_backend(comparison_arm(environments)) is not None
+    record_confirmation_time = native_backend(comparison_arm(environments)) is not None or paired_protocol(evaluation_protocol) is not None
     for sequence, run_id in enumerate(lock.run_order, start=1):
         run_started_at = clock() if record_confirmation_time else None
         arm = run_id.rsplit("-", 1)[0]
@@ -258,7 +261,7 @@ def execute_campaign(
                 else:
                     launchable = environment_result.launchable
                     assert launchable is not None
-                    required_roles = _ARM_ARTIFACT_ROLES[arm]
+                    required_roles = _arm_artifact_roles(arm, launchable.target)
                     if (
                         not required_roles <= set(launchable.artifact_roles)
                         or set(launchable.artifact_payloads)

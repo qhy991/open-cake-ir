@@ -25,7 +25,7 @@ from ._policies import (
     _matched_evidence_policy_version,
     _scientific_analysis_plan_version,
 )
-from .pairing import comparison_arm, native_backend
+from .pairing import comparison_arm, native_backend, matched_run_arms
 from .providers import ProviderTurn
 from .ralph import RalphBudget
 from .selection import _EMPIRICAL_SELECTION
@@ -217,7 +217,7 @@ class CampaignLock:
                 resolved.get("budget"), "campaign_lock.resolved_inputs.budget"
             )
             selection = arms["open_cake"].get("candidate_selection")
-            if "candidate_selection" in arms[comparison]:
+            if comparison is not None and "candidate_selection" in arms[comparison]:
                 raise ValueError(f"{comparison} empirical selection is unsupported")
             if "candidate_selection" in arms["open_cake"]:
                 if (
@@ -243,11 +243,7 @@ class CampaignLock:
                 evidence_policy,
                 "campaign_lock.resolved_inputs.evidence_policy",
             )
-            expected_arms = (
-                sorted([comparison, "open_cake"])
-                if claim_scope in _ONE_RUN_PER_ARM_SCOPES
-                else sorted([comparison] * 3 + ["open_cake"] * 3)
-            )
+            expected_arms = matched_run_arms(arms, claim_scope)
             if sorted(name.rsplit("-", 1)[0] for name in run_order) != expected_arms:
                 raise ValueError("matched Campaign Lock Run allocation differs")
         elif study_kind == "portfolio":
@@ -280,12 +276,14 @@ class CampaignLock:
             raise ValueError("Campaign Lock Study kind is unsupported")
         for field in ("evaluation_protocol", "execution"):
             _object(document.get(field), f"campaign_lock.{field}")
+        if study_kind == "matched_search" and comparison is None and paired_protocol(document['evaluation_protocol']) is None:
+            raise ValueError("single-environment Campaign requires a fixed-baseline paired assay")
         if paired_protocol(document['evaluation_protocol']) is not None:
             execution = document['execution']
             if set(execution) != {'target', 'executor_revision', 'broker_execution_sha256',
                                   'gpu', 'sandbox', 'fixed_baseline', 'runtime_config'}:
                 raise ValueError('paired Campaign execution fields differ')
-            if study_kind != 'matched_search' or native_backend(comparison) is None:
+            if study_kind != 'matched_search' or (comparison is not None and native_backend(comparison) is None):
                 raise ValueError('paired Campaign requires a same-backend native comparison')
             _digest(execution['broker_execution_sha256'], 'execution.broker_execution_sha256')
             executor = _object(execution['executor_revision'], 'execution.executor_revision')
@@ -420,6 +418,7 @@ class TurnRequest:
     feedback: Mapping[str, object]
     maximum_candidates_per_turn: int
     state_card: Mapping[str, object] | None = None
+
 
 
 class RunProvider(Protocol):

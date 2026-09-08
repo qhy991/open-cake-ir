@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify one Codex provider executable through a real zero-GPU two-Turn run."""
+"""Qualify an exact Codex or Claude Code harness through the existing zero-GPU two-Turn protocol."""
 
 from __future__ import annotations
 
@@ -25,6 +25,10 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     CodexProviderAdapter,
     ProviderInvocation,
     ProviderQualificationReceipt,
+)
+from open_cake_ir.lab.claude import (
+    CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, ClaudeInvocationBuilder,
+    ClaudeProviderAdapter, parse_claude_turn_events,
 )
 from open_cake_ir.lab.task_package import (  # noqa: E402
     TASK_AGENTS_RALPH_V1,
@@ -66,8 +70,13 @@ def _expected_submission(
     turn: int,
     reference_nonce: str,
     maximum_candidates_per_turn: int,
+    python_source: str | None = None,
 ) -> dict[str, object]:
-    if arm == "open_cake":
+    if arm == "open_cake" and python_source is not None:
+        members = [{"python_source": python_source +
+                    f"\n# qualification turn {turn}; candidate {index}; reference {reference_nonce}\n"}
+                   for index in range(maximum_candidates_per_turn)]
+    elif arm == "open_cake":
         members: list[object] = [
             {
                 "candidate_index": index,
@@ -128,6 +137,7 @@ def _qualification_package(
     maximum_candidates_per_turn: int,
     event_contract: str,
     tool_instruction: str,
+    python_source: str | None = None,
 ) -> TaskPackage:
     plan = {
         "candidate_path": str(candidate.absolute()),
@@ -136,7 +146,7 @@ def _qualification_package(
                 "turn": turn,
                 "change": "add" if turn == 1 else "update",
                 "submission": _expected_submission(
-                    arm, turn, reference_nonce, maximum_candidates_per_turn
+                    arm, turn, reference_nonce, maximum_candidates_per_turn, python_source
                 ),
                 "terminal_message": json.loads(
                     _terminal_message(turn, event_contract, arm=arm)
@@ -190,7 +200,20 @@ def _validate_invocation(
     *,
     executable: Path,
     workspace: Path,
+    harness: str = "codex",
 ) -> None:
+    if harness == "claude-code":
+        tools = ",".join(CLAUDE_AUTHORING_TOOLS)
+        expected_options = {"--permission-mode": "acceptEdits", "--tools": tools, "--allowedTools": tools,
+                            "--output-format": "stream-json"}
+        if (invocation.cwd != workspace or invocation.sandbox != "none"
+                or invocation.argv[:2] != (str(executable), "-p")
+                or invocation.argv.count("--safe-mode") != 1
+                or any(invocation.argv.count(flag) != 1 or
+                       invocation.argv[invocation.argv.index(flag) + 1] != value
+                       for flag, value in expected_options.items())):
+            raise ValueError("Claude qualification tools, permissions or cwd differ")
+        return
     if (
         invocation.cwd != workspace
         or invocation.sandbox != "workspace-write"
@@ -206,7 +229,17 @@ def _validate_invocation_pair(
     resumed: ProviderInvocation,
     *,
     thread_id: str,
+    harness: str = "codex",
 ) -> None:
+    if harness == "claude-code":
+        if (initial.argv[:-2] != resumed.argv[:-4] or initial.argv[-2] != "--"
+                or resumed.argv[-4:-1] != ("--resume", thread_id, "--")
+                or initial.cwd != resumed.cwd or initial.sandbox != resumed.sandbox
+                or initial.provider_revision != resumed.provider_revision
+                or initial.removed_environment != resumed.removed_environment
+                or initial.thread_id is not None or resumed.thread_id != thread_id):
+            raise ValueError("Claude initial and resume environments differ")
+        return
     if (
         initial.argv[:2] != (initial.argv[0], "exec")
         or resumed.argv[:3] != (resumed.argv[0], "exec", "resume")
@@ -222,6 +255,16 @@ def _validate_invocation_pair(
         raise ValueError("Codex initial and resume environments differ")
 
 
+def _reported_models(turn, *, harness: str, requested_model: str) -> list[str]:
+    if harness != "claude-code":
+        return []
+    parsed = parse_claude_turn_events(turn.raw_events, expected_terminal_message=turn.terminal_message)
+    if set(parsed.reported_models) != {requested_model}:
+        raise RunProtocolFault("provider_fault", "Claude reported model differs from the exact requested model",
+                               artifact_payloads={"provider_stdout": turn.raw_events})
+    return list(parsed.reported_models)
+
+
 def _validate_workspace(
     workspace: Path,
     candidate: Path,
@@ -233,12 +276,12 @@ def _validate_workspace(
     if task_files:
         expected.update({workspace / "TASK.md", workspace / "AGENTS.md"})
     if set(entries) != expected or candidate.is_symlink() or not candidate.is_file():
-        raise ValueError("Codex qualification workspace custody differs")
+        raise ValueError("Provider qualification workspace custody differs")
     if task_files and any(
         path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o222
         for path in (workspace / "TASK.md", workspace / "AGENTS.md")
     ):
-        raise ValueError("Codex qualification task-file custody differs")
+        raise ValueError("Provider qualification task-file custody differs")
 
 
 def _invocation_document(invocation: ProviderInvocation) -> dict[str, object]:
@@ -257,7 +300,15 @@ def _put_json(evidence: EvidenceStore, value: object) -> EvidenceObject:
 
 
 def _new_path(value: Path) -> Path:
-    return value.parent.resolve(strict=True) / value.name
+    """Keep qualification outputs outside every enclosing or linked checkout."""
+    if not value.is_absolute():
+        raise ValueError("qualification output paths must be absolute")
+    parent = value.parent.resolve(strict=True)
+    for directory in {value.parent, *value.parent.parents, parent, *parent.parents}:
+        marker = directory / ".git"
+        if marker.exists() or marker.is_symlink():
+            raise ValueError("qualification outputs must be outside Git checkouts")
+    return parent / value.name
 
 
 def _write_anchor(
@@ -267,6 +318,7 @@ def _write_anchor(
     audit: object,
     authority_sha256: str,
     qualification_receipt_sha256: str | None,
+    harness: str = "codex",
 ) -> dict[str, object]:
     terminal_seal = getattr(audit, "terminal_seal_sha256", None)
     if (
@@ -274,10 +326,10 @@ def _write_anchor(
         or getattr(audit, "filesystem_custody_verified", False) is not True
         or terminal_seal is None
     ):
-        raise ValueError("Codex provider qualification Evidence audit failed")
+        raise ValueError("Provider qualification Evidence audit failed")
     anchor = {
         "schema_version": 1,
-        "kind": "codex_provider_qualification_evidence_anchor",
+        "kind": "codex_provider_qualification_evidence_anchor" if harness == "codex" else "provider_qualification_evidence_anchor",
         "run_id": getattr(audit, "run_id"),
         "evidence_root": str(evidence.root),
         "authority_sha256": authority_sha256,
@@ -293,6 +345,9 @@ def _write_anchor(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
+    parser.add_argument("--fixture-only", action="store_true", help="never issue a live qualification for executable test doubles")
+    parser.add_argument("--python-source", type=Path, help="Workload Python starter required for single-arm artifact qualification")
     parser.add_argument("--executable", type=Path, required=True)
     parser.add_argument("--provider-revision", required=True)
     parser.add_argument("--output-schema", type=Path, required=True)
@@ -301,7 +356,7 @@ def main() -> int:
     parser.add_argument("--anchor-output", type=Path, required=True)
     parser.add_argument("--evidence-root", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--model", default="gpt-5.6-sol")
+    parser.add_argument("--model", required=True)
     parser.add_argument(
         "--reasoning-effort",
         required=True,
@@ -313,7 +368,7 @@ def main() -> int:
         "--maximum-candidates-per-turn",
         type=int,
         default=3,
-        help="maximum candidates in the Ralph envelope for both arms",
+        help="maximum candidates in each qualified arm's Ralph envelope",
     )
     parser.add_argument(
         "--feature-policy",
@@ -340,14 +395,32 @@ def main() -> int:
     schema = json.loads(output_schema.read_text(encoding="utf-8"))
     arm_schema = schema.get("properties", {}).get("arm", {})
     arms = arm_schema.get("enum")
-    if not isinstance(arms, list) or len(arms) != 2 or arms[0] != "open_cake":
-        raise ValueError("qualification output schema must declare one supported arm pair")
+    single_arm = arms == ["open_cake"]
+    if not isinstance(arms, list) or len(arms) not in {1, 2} or arms[0] != "open_cake":
+        raise ValueError("qualification output schema must declare one supported arm pair or single Open Cake arm")
     try:
         comparison_arm(dict.fromkeys(arms))
     except ValueError as error:
-        raise ValueError("qualification output schema must declare one supported arm pair") from error
+        raise ValueError("qualification output schema must declare one supported arm pair or single Open Cake arm") from error
+    if single_arm and (args.feature_policy != "provider_defaults_optimization" or args.python_source is None):
+        raise ValueError("single-arm artifact qualification requires provider defaults and --python-source")
+    if args.harness == "claude-code" and (not single_arm or args.service_tier != "default"):
+        raise ValueError("Claude qualification requires a single artifact-only arm and no service-tier override")
+    if not single_arm and args.python_source is not None:
+        raise ValueError("Python source qualification requires the single artifact-only arm")
+    python_source = None
+    if args.python_source is not None:
+        python_source = args.python_source.resolve(strict=True).read_text(encoding="utf-8")
+        if not python_source.strip():
+            raise ValueError("qualification Python source is empty")
+        compile(python_source, str(args.python_source), "exec")
     qualification_arms = tuple(arms)
-    if args.feature_policy == "closed_research":
+    if args.harness == "claude-code":
+        disabled_features = ()
+        event_contract = CLAUDE_EVENT_CONTRACT
+        tool_instruction = "Use Read for the task files and Write/Edit for candidate-set.json; only Read, Write, Edit, Glob and Grep are permitted."
+        receipt_scope = "live_two_turn_tool_rich_provider"
+    elif args.feature_policy == "closed_research":
         disabled_features = CODEX_DISABLED_FEATURES
         event_contract = "closed_file_change_v1"
         tool_instruction = "Do not invoke auxiliary tools."
@@ -360,6 +433,8 @@ def main() -> int:
             "invoking a network/GPU operation."
         )
         receipt_scope = "live_two_turn_tool_rich_provider"
+    if args.fixture_only:
+        receipt_scope = "zero_gpu_contract_fixture_only"
     if (
         not executable.is_file()
         or not os.access(executable, os.X_OK)
@@ -379,7 +454,7 @@ def main() -> int:
             and args.maximum_candidates_per_turn <= 0
         )
     ):
-        raise ValueError("Codex qualification input custody differs")
+        raise ValueError("Provider qualification input custody differs")
     workspace.mkdir(mode=0o750)
     workspaces = {}
     for arm in qualification_arms:
@@ -387,7 +462,8 @@ def main() -> int:
         arm_workspace.mkdir(mode=0o750)
         workspaces[arm] = arm_workspace
     executable_sha256 = sha256(executable.read_bytes()).hexdigest()
-    code_mode_host = resolve_codex_code_mode_host(executable, removed_environment=removed_environment)
+    code_mode_host = (resolve_codex_code_mode_host(executable, removed_environment=removed_environment)
+                      if args.harness == "codex" else None)
     output_schema_sha256 = sha256(output_schema.read_bytes()).hexdigest()
     reference_nonce = sha256(
         _canonical_json_bytes(
@@ -406,7 +482,7 @@ def main() -> int:
         package = _qualification_package(
             f"{args.run_id}-{arm}", arm, arm_workspace / "candidate-set.json",
             reference_nonce, maximum_candidates_per_turn, event_contract,
-            tool_instruction,
+            tool_instruction, python_source,
         )
         materialize_task_package(arm_workspace, package)
         task_packages[arm] = package
@@ -426,26 +502,28 @@ def main() -> int:
     reference_bundle_sha256 = sha256(reference_bundle.encode()).hexdigest()
     authority = {
         "schema_version": 1,
-        "kind": "codex_provider_two_turn_qualification",
+        "kind": "codex_provider_two_turn_qualification" if args.harness == "codex" else "provider_two_turn_qualification",
         "provider_revision": args.provider_revision,
+        "harness": args.harness,
+        "qualification_scope": receipt_scope,
         "executable_sha256": executable_sha256,
-        "code_mode_host": code_mode_host,
         "model": args.model,
         "reasoning_effort": args.reasoning_effort,
-        "service_tier": args.service_tier,
         "output_schema_sha256": output_schema_sha256,
         "removed_environment": list(removed_environment),
         "reference_bundle_sha256": reference_bundle_sha256,
         "disabled_features": list(disabled_features),
         "event_contract": event_contract,
         "feature_policy": args.feature_policy,
-        "sandbox": "workspace-write",
+        "sandbox": "workspace-write" if args.harness == "codex" else "none",
         "cwd_policy": "same_new_task_workspace",
         "reference_visibility": "workspace_task_files",
         "agent_interface": TASK_AGENTS_RALPH_V1,
         "turns": ["initial_add", "same_thread_resume_update"],
         "gpu_execution_authorized": False,
     }
+    if args.harness == "codex":
+        authority.update(code_mode_host=code_mode_host, service_tier=args.service_tier)
     authority["submission_contract"] = submission_contract
     if event_contract == "closed_file_change_v1":
         authority["web_search"] = "disabled"
@@ -463,30 +541,28 @@ def main() -> int:
         authority=authority,
     )
     try:
-        adapter = CodexProviderAdapter(timeout_seconds=args.timeout_seconds)
+        adapter_type = CodexProviderAdapter if args.harness == "codex" else ClaudeProviderAdapter
+        adapter = adapter_type(timeout_seconds=args.timeout_seconds)
         observations: dict[str, dict[str, object]] = {}
         configuration_sha256s: set[str] = set()
         for arm in qualification_arms:
             arm_workspace = workspaces[arm]
             candidate = arm_workspace / "candidate-set.json"
             package = task_packages[arm]
-            builder = CodexInvocationBuilder(
-                executable=executable,
-                code_mode_host=code_mode_host,
-                provider_revision=args.provider_revision,
-                model=args.model,
-                reasoning_effort=args.reasoning_effort,
-                service_tier=args.service_tier,
-                workspace=arm_workspace,
-                output_schema=output_schema,
-                removed_environment=removed_environment,
-                disabled_features=disabled_features,
-                event_contract=event_contract,
-                submission_contract=submission_contract,
-                cwd_policy="independent_task_workspace",
-                reference_visibility="workspace_task_files",
-            )
-            configuration_sha256s.add(builder.configuration_sha256)
+            common_builder_args = dict(executable=executable, provider_revision=args.provider_revision,
+                model=args.model, reasoning_effort=args.reasoning_effort, workspace=arm_workspace,
+                removed_environment=removed_environment)
+            if args.harness == "claude-code":
+                builder = ClaudeInvocationBuilder(**common_builder_args)
+            else:
+                builder = CodexInvocationBuilder(**common_builder_args,
+                    code_mode_host=code_mode_host, service_tier=args.service_tier,
+                    output_schema=output_schema, disabled_features=disabled_features,
+                    event_contract=event_contract, submission_contract=submission_contract,
+                    cwd_policy="independent_task_workspace", reference_visibility="workspace_task_files")
+            configuration_sha256s.add(sha256(json.dumps(
+                builder.configuration, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest())
             initial_plan = _planned_turn(package, 1)
             verify_task_package(arm_workspace, package)
             initial_prompt, initial_projection = render_task_request(package, {"turn": 1})
@@ -497,7 +573,7 @@ def main() -> int:
             _validate_invocation(
                 initial_invocation,
                 executable=executable,
-                workspace=arm_workspace,
+                workspace=arm_workspace, harness=args.harness,
             )
             initial = adapter.execute(
                 initial_invocation,
@@ -509,6 +585,7 @@ def main() -> int:
                 arm=arm,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
+            initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model)
             _validate_workspace(
                 arm_workspace, candidate, task_files=True
             )
@@ -516,7 +593,7 @@ def main() -> int:
             if (
                 initial.candidates != _planned_candidates(arm, initial_plan)
             ):
-                raise ValueError("Codex initial candidate bytes differ")
+                raise ValueError("Provider initial candidate bytes differ")
 
             resumed_plan = _planned_turn(package, 2)
             resumed_prompt, resumed_projection = render_task_request(package, {"turn": 2})
@@ -527,12 +604,12 @@ def main() -> int:
             _validate_invocation(
                 resumed_invocation,
                 executable=executable,
-                workspace=arm_workspace,
+                workspace=arm_workspace, harness=args.harness,
             )
             _validate_invocation_pair(
                 initial_invocation,
                 resumed_invocation,
-                thread_id=initial.thread_id,
+                thread_id=initial.thread_id, harness=args.harness,
             )
             resumed = adapter.execute(
                 resumed_invocation,
@@ -544,6 +621,7 @@ def main() -> int:
                 arm=arm,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
+            resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model)
             _validate_workspace(
                 arm_workspace, candidate, task_files=True
             )
@@ -571,9 +649,10 @@ def main() -> int:
                 )
             ):
                 raise ValueError(
-                    "Codex two-Turn identity, usage, or candidate lifecycle differs"
+                    "Provider two-Turn identity, usage, or candidate lifecycle differs"
                 )
             observations[arm] = {
+                "reported_models": [initial_models, resumed_models],
                 "builder": builder,
                 "candidate": candidate,
                 "initial": initial,
@@ -607,11 +686,12 @@ def main() -> int:
                 )
             )
         ):
-            raise ValueError("Codex provider qualification authority changed")
+            raise ValueError("Provider qualification authority changed")
 
-        resolve_codex_code_mode_host(
-            executable, expected=code_mode_host, removed_environment=removed_environment,
-        )
+        if args.harness == "codex":
+            resolve_codex_code_mode_host(
+                executable, expected=code_mode_host, removed_environment=removed_environment,
+            )
         receipt = ProviderQualificationReceipt(
             provider_revision=args.provider_revision,
             executable_sha256=executable_sha256,
@@ -677,6 +757,7 @@ def main() -> int:
                     for index, candidate in enumerate(turn.candidates)
                 )
             arm_payloads[arm] = {
+                "reported_models": observation["reported_models"],
                 "thread_id": initial.thread_id,
                 "initial_provider_tokens": initial.provider_tokens,
                 "resumed_provider_tokens": resumed.provider_tokens,
@@ -724,6 +805,8 @@ def main() -> int:
             "reference_visibility_observed": True,
             "gpu_execution_authorized": False,
             "feature_policy": args.feature_policy,
+            "qualification_scope": receipt_scope,
+            "harness": args.harness,
             "event_contract": event_contract,
         }
         endpoint["submission_contract"] = submission_contract
@@ -765,7 +848,7 @@ def main() -> int:
             evidence=evidence,
             audit=evidence.audit_run(args.run_id),
             authority_sha256=authority_sha256,
-            qualification_receipt_sha256=None,
+            qualification_receipt_sha256=None, harness=args.harness,
         )
         raise
 
@@ -776,7 +859,7 @@ def main() -> int:
         or audit.protocol_adherence != "adhered"
         or audit.terminal_seal_sha256 is None
     ):
-        raise ValueError("Codex provider qualification Evidence audit failed")
+        raise ValueError("Provider qualification Evidence audit failed")
     with receipt_output.open("xb") as stream:
         stream.write(_canonical_json_bytes(receipt.document) + b"\n")
     receipt_output.chmod(0o644)
@@ -785,7 +868,7 @@ def main() -> int:
         evidence=evidence,
         audit=audit,
         authority_sha256=authority_sha256,
-        qualification_receipt_sha256=receipt.canonical_sha256,
+        qualification_receipt_sha256=receipt.canonical_sha256, harness=args.harness,
     )
     sys.stdout.write(
         json.dumps(

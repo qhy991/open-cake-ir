@@ -41,7 +41,7 @@ from .runtime_config import (
 
 
 _BROKER_JOB_OBSERVATION = re.compile(
-    rb"(?m)^\[gpu-run\] accepted job (gpuq-[0-9a-f]{12})\b"
+    rb"(?m)^(?:\[gpu-run\] accepted job (?=gpuq-)|\[metal-run\] accepted job (?=metal-))((?:gpuq|metal)-[0-9a-f]{12})\b"
 )
 
 _WORKER_JOB_PLACEHOLDER = "gpuq-000000000000"
@@ -313,7 +313,7 @@ class CommandBrokerSubmitter:
             if len(job_observations) != 1:
                 raise ValueError("broker job observation coverage differs")
             observed_job_id = job_observations[0].decode("ascii")
-            if result.get("job_id") not in {observed_job_id, _WORKER_JOB_PLACEHOLDER}:
+            if result.get("job_id") not in {observed_job_id, _WORKER_JOB_PLACEHOLDER if observed_job_id.startswith("gpuq-") else observed_job_id}:
                 raise ValueError("worker and broker job identities differ")
             result = dict(result)
             result["job_id"] = observed_job_id

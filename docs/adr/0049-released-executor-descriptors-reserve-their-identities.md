@@ -55,3 +55,12 @@ Replay of that Lab release uses its original complete Git tree and original desc
 Its v65 successor at `3c6123d4a86fc035d539f97dd3cf7ef2088403c9` is retained as well. Both
 histories stay in integration ancestry; the combined CuTe and refactored Lab source requires
 another cycle-derived Executor, not a replacement of either v64 descriptor.
+
+Metal integration on 2026-09-08 also retains divergent v63, v64 and v65 descriptors.
+Main at `4a39ed8` keeps each original filename; the Metal branch at
+`20120f425cb7df45586f15b9174c029298a20884` is preserved unchanged in the corresponding
+`open-cake-ir-b200-v63-metal.json`, `open-cake-ir-b200-v64-metal.json` and
+`open-cake-ir-b200-v65-metal.json` files. Their Executor ids are unchanged. Replay uses
+the complete original Metal Git tree and original filenames, not these current sources.
+Both histories remain in merge ancestry. The combined Lab needs a cycle-derived successor
+with an explicitly verified host; these archives transfer neither host admission nor GPU evidence.

@@ -17,6 +17,8 @@ _SOURCE_ROOTS = (
 _SOURCE_FILES = (
     "compiler/targets/sm_100a.json",
     "compiler/targets/sm_103a.json",
+    "compiler/targets/apple_gpu_family7.json",
+    "compiler/targets/apple_gpu_family8.json",
     "src/open_cake_ir/compiler/target.py",
     "docs/en/PAIRED_TRITON.md",
     "docs/en/PAIRED_CUTE.md",
@@ -45,6 +47,7 @@ def _source_paths(root: Path) -> list[Path]:
     paths = [root / value for value in _SOURCE_FILES]
     for value in _SOURCE_ROOTS:
         paths.extend((root / value).rglob("*.py"))
+        paths.extend((root / value).rglob("*.swift"))
     resolved = sorted({path.resolve(strict=True) for path in paths})
     if any(root not in path.parents or path.is_symlink() for path in resolved):
         raise ValueError("Executor source custody differs")

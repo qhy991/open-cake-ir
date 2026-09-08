@@ -66,8 +66,8 @@ def backend_policy(backend: str) -> NativeBackend:
     raise ValueError("unsupported paired lowering backend")
 
 
-def native_backend(comparison: str) -> NativeBackend | None:
-    if comparison == "direct_cuda":
+def native_backend(comparison: str | None) -> NativeBackend | None:
+    if comparison in {None, "direct_cuda"}:
         return None
     for policy in _NATIVE_BACKENDS:
         if policy.arm == comparison:
@@ -91,7 +91,9 @@ def native_block(requirements: Mapping[str, object]) -> list[int]:
             if policy.backend == "triton" else list(requirements["block"]))
 
 
-def comparison_arm(arms: Mapping[str, object]) -> str:
+def comparison_arm(arms: Mapping[str, object]) -> str | None:
+    if set(arms) == {"open_cake"}:
+        return None
     if set(arms) == {'open_cake', 'direct_cuda'}:
         return 'direct_cuda'
     for policy in _NATIVE_BACKENDS:
@@ -100,7 +102,7 @@ def comparison_arm(arms: Mapping[str, object]) -> str:
     raise ValueError('matched_search requires Open Cake and one explicitly declared comparison environment')
 
 
-def bind_baseline(schedule: Mapping[str, object], workload, case_id: str) -> dict:
+def bind_baseline(schedule: Mapping[str, object], workload, case_id: str, *, backend: str | None = None) -> dict:
     """Bind an already shaped baseline; the Workload ABI is the only tensor owner."""
     document = json.loads(json.dumps(schedule))
     if document.get('target') != workload.document['semantics'].get('target'):
@@ -110,7 +112,9 @@ def bind_baseline(schedule: Mapping[str, object], workload, case_id: str) -> dic
     if [(b['name'], tuple(b['shape']), b['dtype'], b['mode']) for b in buffers] != [
             (arg.name, arg.shape, arg.dtype, arg.mode) for arg in abi]:
         raise ValueError('baseline Schedule must already match the selected Workload ABI; use baseline preparation for another shape')
-    backend_policy(document.get('lowering', {}).get('backend'))
+    backend = backend or document.get('lowering', {}).get('backend')
+    if backend not in {'triton', 'metal', 'cutlass_cute_dsl'} or document.get('lowering', {}).get('backend') != backend:
+        raise ValueError('baseline differs from the explicitly requested lowering backend')
     document['metadata']['workload_contract_sha256'] = workload.canonical_sha256
     return document
 
@@ -161,3 +165,14 @@ def native_optimization_analysis_plan(comparison: str) -> dict:
 def triton_optimization_analysis_plan() -> dict:
     """Preserve the historical public Triton analysis contract."""
     return native_optimization_analysis_plan("native_triton")
+
+
+def matched_run_arms(arms: Mapping[str, object], claim_scope: str) -> list[str]:
+    """The single authoring environment is confined to non-comparative optimization."""
+    comparison = comparison_arm(arms)
+    if comparison is None:
+        if claim_scope != "artifact_optimization_only":
+            raise ValueError("one Authoring Environment requires artifact_optimization_only")
+        return ["open_cake"]
+    names = [comparison, "open_cake"]
+    return sorted(names if claim_scope in {"artifact_optimization_only", "system_qualification_only"} else names * 3)

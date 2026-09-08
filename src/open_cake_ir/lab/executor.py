@@ -186,6 +186,10 @@ class ExecutorRevision:
 
     @staticmethod
     def _validate_host_document(host: Mapping[str, object]) -> None:
+        if host.get("kind") == "metal":
+            from .metal_host import validate_metal_host
+            validate_metal_host(host)
+            return
         legacy_fields = {
             "python",
             "packages",
@@ -281,14 +285,14 @@ class ExecutorRevision:
         )
 
     def admit_host(self) -> object:
-        """Verify the pinned host and return its admitted CUPTI helper."""
+        """Verify the pinned host and return its declared native runtime admission."""
 
         return admit_host_environment(
             cast(Mapping[str, object], self.document["host_environment"])
         )
 
     def admit_profiler(self) -> Mapping[str, object]:
-        """Verify and return the optional exact NCU executable for attribution."""
+        """Verify the declared native observation executable for attribution."""
 
         return admit_profiler_environment(
             cast(Mapping[str, object], self.document["host_environment"])
@@ -298,6 +302,9 @@ class ExecutorRevision:
 def admit_host_environment(host: Mapping[str, object]) -> object:
     """Admit a schema-validated host environment and return its CUPTI helper."""
 
+    if host.get("kind") == "metal":
+        from .metal_host import admit_metal_host
+        return admit_metal_host(host)
     python = cast(Mapping[str, object], host["python"])
     expected_invocation = Path(str(python["invocation_path"])).absolute()
     observed_invocation = Path(sys.executable).absolute()
@@ -364,8 +371,12 @@ def admit_host_environment(host: Mapping[str, object]) -> object:
 
 
 def admit_profiler_environment(host: Mapping[str, object]) -> Mapping[str, object]:
-    """Verify and return the optional exact NCU executable for attribution."""
+    """Verify the declared native observation executable for attribution."""
 
+    if host.get("kind") == "metal":
+        from .metal_host import admit_metal_executable, validate_metal_host
+        validate_metal_host(host)
+        return admit_metal_executable(host["observer_executable"], "Metal observer")
     if "nsight_compute" not in host:
         raise ValueError("Executor Revision does not pin Nsight Compute")
     profiler = cast(Mapping[str, object], host["nsight_compute"])

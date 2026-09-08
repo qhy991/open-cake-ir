@@ -24,6 +24,25 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.lab import ExecutorRevision  # noqa: E402
 
 
+def _synthetic_cuda_host() -> dict:
+    """Schema-only CPU fixture, following the existing paired/Flash fixtures.
+
+    These deliberately nonexistent runtime paths must never be admitted as a
+    real host. The fixture tests source binding and CUDA advisory contracts,
+    independently of whichever hardware owns the current released Executor.
+    """
+    return {
+        "python": {"invocation_path": "/SYNTHETIC/not-an-executable/python",
+                   "version": "SYNTHETIC", "resolved_sha256": "0" * 64},
+        "packages": {"triton": "SYNTHETIC"},
+        "cupti_python": {"site_packages_path": "/SYNTHETIC/no-runtime", "distribution": "SYNTHETIC",
+                         "version": "SYNTHETIC", "files": [
+                             {"path": "not-a-runtime", "sha256": "0" * 64, "size_bytes": 1}]},
+        "flashinfer_helper": {"path": "/SYNTHETIC/not-a-helper", "distribution": "SYNTHETIC",
+                              "version": "SYNTHETIC", "sha256": "0" * 64, "size_bytes": 1},
+    }
+
+
 class ExecutorRevisionContractTests(unittest.TestCase):
     def test_inventory_observation_plans_keep_bound_executor_bytes_resolvable(self) -> None:
         bindings: list[tuple[str, str]] = []
@@ -75,10 +94,12 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                 ROOT / "src/open_cake_ir/evidence",
                 ROOT / "src/open_cake_ir/tasks",
             )
-            for path in directory.rglob("*.py")
+            for path in directory.rglob("*") if path.suffix in {".py", ".swift"}
         } | {
             "compiler/targets/sm_100a.json",
             "compiler/targets/sm_103a.json",
+            "compiler/targets/apple_gpu_family7.json",
+            "compiler/targets/apple_gpu_family8.json",
             "src/open_cake_ir/compiler/target.py",
             "docs/en/PAIRED_TRITON.md",
             "docs/en/PAIRED_CUTE.md",
@@ -97,7 +118,11 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             executor.document["host_environment"]["packages"]["torch"] = "changed"
 
     def test_current_executor_pins_the_attribution_profiler(self) -> None:
-        profiler = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR).admit_profiler()
+        executor = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR)
+        profiler = executor.admit_profiler()
+        if executor.document["host_environment"].get("kind") == "metal":
+            self.assertEqual(dict(profiler), dict(executor.document["host_environment"]["observer_executable"]))
+            return  # This observer has no --version command; do not dispatch it.
         completed = subprocess.run(
             [str(profiler["path"]), "--version"], check=True, capture_output=True,
             text=True, timeout=30,
@@ -225,6 +250,9 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             archived.parent.mkdir(parents=True)
             document = json.loads(CURRENT_EXECUTOR.read_text())
             document["executor_id"] = "open-cake-ir-b200-v46"
+            # Exercise id reservation with an explicit CPU-only CUDA schema;
+            # the current release may bind a real Metal host and must not leak in.
+            document["host_environment"] = _synthetic_cuda_host()
             archived.write_text(json.dumps(document))
             preserved[archived] = archived.read_bytes()
             inventory_path = root / "inventory/EXECUTOR_REVISIONS.json"
@@ -237,8 +265,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                 "current": previous, "archives": [], "superseded": [],
             }))
             host = document["host_environment"]
-            host["python"]["invocation_path"] = "/verified/executor/python"
-            host_path = root / "verified-host.json"
+            host_path = root / "synthetic-host.json"
             host_path.write_text(json.dumps(host))
             runtime_log = root.parent / "runtime-invocations"
             selected_python = root.parent / "selected python"

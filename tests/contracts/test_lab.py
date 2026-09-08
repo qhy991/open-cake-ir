@@ -3845,23 +3845,23 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
         from open_cake_ir.evaluation import WorkloadContract
         from open_cake_ir.lab.selection import _empirical_context
         from tests.contracts.test_authoring_environment import _headline_schedule, _synthetic_flash_model
+        from tests.contracts.test_executor import _synthetic_cuda_host
 
         cls.temporary = tempfile.TemporaryDirectory(prefix="empirical-selection-contract-")
         cls.parent = Path(cls.temporary.name).resolve()
         cls.root = cls.parent / "prospective-project"
         shutil.copytree(ROOT, cls.root, ignore=shutil.ignore_patterns(".git", "__pycache__"))
         # Exercise the current event branch with a cycle-derived prospective Revision
-        # in this disposable project. The copied host document is a synthetic contract
-        # fixture: no host admission or provider/GPU qualification is performed.
+        # in this disposable project. CUDA advisory context comes from an explicit
+        # synthetic host, not from the hardware of the current released Executor.
+        # No host admission or provider/GPU qualification is performed.
         inventory_path = cls.root / "inventory/EXECUTOR_REVISIONS.json"
-        inventory = json.loads(inventory_path.read_text())
-        descriptor = json.loads((cls.root / inventory["current"]["path"]).read_text())
         host_fixture = cls.parent / "synthetic-host-environment.json"
-        host_fixture.write_text(json.dumps(descriptor["host_environment"]))
+        host_fixture.write_text(json.dumps(_synthetic_cuda_host()))
         prepared = subprocess.run(
             ["bash", str(cls.root / "tools/release_executor_cycle.sh"), "--host-environment", str(host_fixture)],
             cwd=cls.root, env={**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"], "PYTHONDONTWRITEBYTECODE": "1"},
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60,
         )
         if prepared.returncode:
             raise RuntimeError(prepared.stdout.decode() + prepared.stderr.decode())

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded Apple M2 correctness only; requires an approved released Compiler."""
+"""Bounded exact-target Apple Metal correctness only; requires an approved released Compiler."""
 from __future__ import annotations
 
 import argparse
@@ -26,11 +26,11 @@ DISTRIBUTIONS = ("zero", "uniform", "alternating", "mixed_magnitude")
 from tools.metal.numerics import f32, values, compare
 
 
-def schedule_document(operator: str, rows: int, columns: int) -> dict:
+def schedule_document(operator: str, rows: int, columns: int, target: str = "apple_gpu_family8") -> dict:
     """Vary the annotated shapes while retaining the same Python authoring path."""
     example = "row_sum" if operator == "row_max" else operator
     path = ROOT / "examples/python" / f"metal_{example}.py"
-    text = path.read_text()
+    text = path.read_text().replace("apple_gpu_family8", target)
     if operator == "elementwise":
         text = text.replace("(3, 37)", f"({rows}, {columns})")
     elif operator in {"row_sum", "row_max"}:
@@ -38,7 +38,7 @@ def schedule_document(operator: str, rows: int, columns: int) -> dict:
         if operator == "row_max":
             text = text.replace('op="sum"', 'op="max"').replace("row_sum", "row_max").replace("row-sum", "row-max")
     elif operator == "rmsnorm":
-        return rmsnorm.document(rows, columns)
+        return rmsnorm.document(rows, columns, target=target)
     else:
         raise ValueError("unknown oracle operator")
     return frontend.parse(text, filename=str(path)).document
@@ -76,7 +76,7 @@ def fresh_receipt(output_root: Path, *, prefix: str = "metal-correctness-") -> P
     return Path(tempfile.mkdtemp(prefix=prefix, dir=output_root))
 
 
-def released_compiler(receipt: Path) -> tuple[Compiler, dict, list[str]]:
+def released_compiler(receipt: Path, target_id: str = "apple_gpu_family8") -> tuple[Compiler, dict, list[str]]:
     lock_path = ROOT / "compiler/revision.lock.json"
     lock = json.loads(lock_path.read_text())
     if lock.get("state") != "released":
@@ -93,9 +93,9 @@ def released_compiler(receipt: Path) -> tuple[Compiler, dict, list[str]]:
     if check.returncode:
         raise ValueError("reviewed release verification failed; see release-verification.log")
     compiler = Compiler.load(ROOT, lock_path)
-    target_ref = lock["target_definitions"].get("apple_gpu_family8")
+    target_ref = lock["target_definitions"].get(target_id)
     if target_ref is None:
-        raise ValueError("released Compiler does not bind apple_gpu_family8")
+        raise ValueError(f"released Compiler does not bind {target_id}")
     target = json.loads((ROOT / target_ref["path"]).read_text())
     return compiler, lock, target["device_names"]
 
@@ -125,6 +125,12 @@ def prepare_case(compiler, document, inputs, oracles, directory, device_names, c
     if not assessment.accepted or not assessment.lowering_eligible:
         (directory / "assessment.json").write_text(json.dumps(case, indent=2) + "\n")
         raise ValueError("Compiler refused the candidate; see assessment findings")
+    ranked, unranked = compiler.rank([assessment])
+    case["pre_gpu_cost_ranking"] = {
+        "ranked_count": len(ranked), "unranked_schedule_ids": list(unranked),
+        "coverage": "unavailable" if unranked else "calibrated",
+        "domain": "no Apple occupancy, physical registers, spill, bandwidth or latency estimate",
+    }
     lowering = compiler.lower(assessment)
     launch = manifest(assessment, lowering, inputs, directory, device_names=device_names)
     (directory / "source-map.json").write_text(json.dumps(dict(lowering.source_map)) + "\n")
@@ -155,6 +161,8 @@ def evaluate_case(compiler, binary, document, inputs, oracles, directory, device
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--target", choices=("apple_gpu_family7", "apple_gpu_family8"),
+                        default="apple_gpu_family8", help="exact target; no device fallback")
     args = parser.parse_args()
     receipt = fresh_receipt(args.output_root)
     summary = {"started_at": datetime.now(timezone.utc).isoformat(),
@@ -164,8 +172,9 @@ def main() -> int:
         summary["runtime_source"] = runtime_source()
         if not summary["runtime_source"]["tracked"] or not summary["runtime_source"]["clean"]:
             raise ValueError("correctness requires committed, clean runtime and example sources")
-        compiler, lock, device_names = released_compiler(receipt)
+        compiler, lock, device_names = released_compiler(receipt, args.target)
         summary["compiler_revision_id"] = lock["revision_id"]
+        summary["target"] = args.target
         binary = compile_runner(receipt)
         for operator in ("elementwise", "row_sum", "row_max", "rmsnorm"):
             shapes = rmsnorm.CORRECTNESS_SHAPES if operator == "rmsnorm" else SHAPES
@@ -174,7 +183,7 @@ def main() -> int:
                     name = f"{operator}-{rows}x{columns}-{distribution}"
                     directory = receipt / name
                     directory.mkdir()
-                    document = schedule_document(operator, rows, columns)
+                    document = schedule_document(operator, rows, columns, args.target)
                     if operator == "rmsnorm":
                         inputs, oracles = rmsnorm.inputs_and_oracle(rows, columns, distribution)
                     else:

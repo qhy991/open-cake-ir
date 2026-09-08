@@ -13,6 +13,7 @@ from .replay_attempts import _replay_evaluation_attempt_event
 from .replay_artifacts import _replay_evaluation_receipt, _replay_launchable_candidate
 from .contracts import CampaignLock
 from .pairing import comparison_arm, native_backend
+from open_cake_ir.evaluation.paired import paired_protocol
 from .routing import route_rejection
 
 
@@ -165,7 +166,7 @@ def _replay_candidates(
                 (set(payload) != ({
                     "turn", "purpose", "candidate_sha256", "objects",
                 } | ({"elapsed_wall_seconds"} if purpose == "confirmatory" and
-                     native_backend(comparison_arm(lock.document["resolved_inputs"]["arm_environments"])) is not None else set())))
+                     (native_backend(comparison_arm(lock.document["resolved_inputs"]["arm_environments"])) is not None or paired_protocol(lock.document["evaluation_protocol"]) is not None) else set())))
                 or
                 not isinstance(turn, int)
                 or isinstance(turn, bool)

@@ -17,6 +17,8 @@ from .providers import (
 )
 from .task_package import TASK_AGENTS_RALPH_V1, TaskPackage
 
+from .claude import CLAUDE_EVENT_CONTRACT, parse_claude_turn_events
+
 
 def _replay_provider_turns(
     *,
@@ -220,11 +222,14 @@ def _replay_provider_turns(
         expected_name = (
             "candidate-set.json"
         )
-        parsed = parse_codex_turn_events(
-            raw_events,
-            expected_terminal_message=expected_terminal,
-            event_contract=event_contract,
-        )
+        if event_contract == CLAUDE_EVENT_CONTRACT:
+            parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal)
+            if (parsed.reported_models != (provider_authority["model"],)
+                    or expected_change == "add" and parsed.write_tools[0] != "Write"):
+                return False
+        else:
+            parsed = parse_codex_turn_events(raw_events, expected_terminal_message=expected_terminal,
+                                            event_contract=event_contract)
         turn_tokens = payload.get("turn_provider_tokens")
         if (
             parsed.thread_id != thread_id
@@ -233,7 +238,7 @@ def _replay_provider_turns(
         ):
             return None
         if parsed.candidate_path is not None and (
-            parsed.change_kind != expected_change
+            (event_contract != CLAUDE_EVENT_CONTRACT and parsed.change_kind != expected_change)
             or Path(parsed.candidate_path).name != expected_name
         ):
             return None

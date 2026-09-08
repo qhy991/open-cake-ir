@@ -155,6 +155,7 @@
     "corpus/schedules/b300-cute-register-tail-reused.json",
     "corpus/schedules/b300-cute-register-target-drift.json",
     "src/open_cake_ir/compiler/backends/cutedsl_register.py",
-    "src/open_cake_ir/compiler/cute_toolchain.py"
+    "src/open_cake_ir/compiler/cute_toolchain.py",
+    "compiler/targets/apple_gpu_family7.json"
   ]
 }

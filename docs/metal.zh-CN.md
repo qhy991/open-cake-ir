@@ -1,104 +1,80 @@
-# 用 Python 编写和测量 Apple Metal 程序
+# 通过 TaskLab 运行 Apple Metal 任务
 
-编写 Python Schedule，读取定位到程序区域的编译器反馈，再检查生成的 Metal。
-精确支持目标为 `apple_gpu_family8` / `Apple M2`；Python 与 JSON 使用同一个规范 Schedule，
-其他 GPU 不会自动成为替代目标。
+Compiler 支持精确目标 `Apple M1 Pro` / `apple_gpu_family7` 和 `Apple M2` /
+`apple_gpu_family8`。当前任务入口仅接入 **M1 Pro**，参数为 `--backend metal-m1-pro`。
+它核对精确设备、OS、工具链和已发布 Executor，不自动替换设备，也不借用其他 Apple GPU 的成本校准。
 
-[逐元素示例](../examples/python/metal_elementwise.py)、[行归约](../examples/python/metal_row_sum.py)
-和[带权重 RMSNorm](../examples/python/metal_rmsnorm.py) 都使用现有张量前端。
-RMSNorm 由 square、sum、标量算术、rsqrt 和乘法组合而成：
+内置任务为 `rmsnorm`、`layernorm`（带仿射参数、中心化总体方差）和 `residual_rmsnorm`
+（先将残差加法舍入到 FP32，再归一化）。[任务自己的 Workload 与 oracle](../src/open_cake_ir/tasks/normalization/workload.py)
+固定 rank-2 FP32 ABI、epsilon、输入范围、种子和容差。每个 Workload 只覆盖一个形状，
+包含 primary、零值、近零值、交替符号和混合幅度五类必测输入；全部通过后才测量 primary。
+不同形状属于不同 Workload，单形状结果不构成 portfolio 或框架集成结论。
 
-```python
-from open_cake_ir.compiler import Compiler, frontend
+## 启动一个任务
 
-compiler = Compiler.load(".", "compiler/revision.lock.json")
-source = frontend.read_schedule("examples/python/metal_rmsnorm.py")
-assessment = compiler.assess(source.document)
-for finding in assessment.findings:
-    print(finding.code, finding.path, finding.message)
-    print(source.location_for(finding.path))
-if assessment.lowering_eligible:
-    lowered = compiler.lower(assessment)
-    print(lowered.source)
-    print(dict(lowered.toolchain_requirements))
-```
+需要已有的 Apple Silicon/macOS 15+ 环境，以及经审查发布且通过完整 Corpus Gate 的 Compiler。
+当前发布的 Executor 必须为 Metal Executor，其 Python、Swift、SDK、设备/OS 与原生 helper
+必须和本机一致。入口会报告缺失或不匹配的条件，不自动安装、修复环境或发布版本。
 
-Agent 修改公式或具体调度决定，读取 Findings，修正对应声明，再检查下一次 lowering。
-Source map 将生成代码中的操作关联回 Schedule。静态接受、成功编译、输出正确性和测量资格
-分别记录，不互相替代。
-
-## 执行和数值范围
-
-当前 lowering 将每个展平元素分配给 `index % 32` 对应的 lane，私有槽位为 `index // 32`。
-32 个 lane 均参与受支持的 SIMD 集合操作，包括尾部；program 坐标继续拥有互不重叠的输出区域。
-`(1,)` 标量结果可以参与张量算术，奇数宽度无须调用方补齐。编译器检查其支持的访存、形状、
-存储、广播与归约承诺，对未实现的声明返回定位明确的拒绝。每 lane 存储分析只是建模结果，
-不代表实测寄存器、spill、驻留量或带宽。
-
-[通用 Swift runner](../tools/metal/runner.swift) 消费当前 SIMD 启动元数据及明确的串行参考/回放接口，
-不依据算子名称选择执行逻辑。[Python 边界](../tools/metal/adapter.py) 从已评估的 Schedule 推导
-缓冲区形状、类型、大小和启动信息。Runner 检查精确设备与 pipeline 限制，在同一进程复用
-设备、队列、pipeline 和缓冲区，在计时外重置输出为 NaN，采用串行 dispatch 顺序并检查完成状态。
-
-源码通过 `MTLDevice.makeLibrary` 编译，显式使用 MSL 2.3、安全数学、精确数学函数并关闭
-contraction。需要 Apple Silicon、macOS 15+ 和已有的 `xcrun swiftc`，不依赖独立的 `xcrun metal`。
-Metal 仍允许非规格化数清零和不同 FP32 舍入行为，不能据此宣称 IEEE/PTX 位级等价。
-参见 Apple [编译选项](https://developer.apple.com/documentation/metal/mtlcompileoptions)及
-[MSL 规范](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf)。
-主机可执行文件统一使用 `swiftc -O` 构建一次、供所有比较臂复用；
-`swift-build-command.json` 记录实际构建参数。Metal 数学选项保持独立。
-
-## 正确性和测量
-
-独立发布审查与适用的本机 GPU 授权完成后，在 checkout 中运行；输出根目录必须是所有项目
-worktree 之外的绝对路径：
+在 checkout 中，使用 Executor 声明的 Python 执行：
 
 ```sh
-env PYTHONPATH=src python3 tools/metal/check_correctness.py \
-  --output-root /absolute/external/metal-correctness
-env PYTHONPATH=src python3 tools/metal/benchmark.py \
-  --output-root /absolute/external/metal-measurements
+PYTHONPATH=src python3 tools/launch_task.py \
+  --task rmsnorm --backend metal-m1-pro \
+  --harness codex --model "<exact-model-id>" --effort high \
+  --workspace "$HOME/.local/share/open-cake-ir/runs/metal-rmsnorm-example" \
+  --rows 128 --columns 1024 --turns 4 --token-budget 150000
 ```
 
-每次调用先验证已审查发布的 Compiler 与已提交、清洁的运行时源码，再创建新的外部 receipt。
-正确性保留 60 个逐元素/sum/max 组合，新增 35 个 RMSNorm 组合。
-[RMSNorm 契约](../tools/metal/rmsnorm.py) 统一拥有公式、输入范围、种子、epsilon、容差和形状，
-覆盖零值、受限正常范围输入、epsilon 主导的小输入、负权重与零权重，以及宽度
-1、7、32、65、257、1024、4096。独立高精度 CPU oracle 的 RMSNorm 容差固定为 `atol=rtol=2e-5`。
+将模型占位符替换为实际配置的精确模型。Claude Code 使用 `--harness claude-code`，
+并填写它的精确模型标识和支持的 effort。harness、模型和 effort 均为必填实验条件，
+不会静默使用别名或替代模型；Claude 原生事件报告的模型必须与请求一致。
 
-[测量协议](../tools/metal/benchmark.py) 在固定主形状 `(128, 1024)` 上比较三种等价公式 DAG。
-手写串行与 SIMD 参考具有明确源码来源，使用相同输入字节和 oracle；它们不冒充 Compiler
-生成的产物或旧 Compiler 的 RMSNorm 结果，因为旧串行后端无法 lowering rsqrt。
-本轮属于允许查看已知实现的复现/优化。
+`--workspace` 必须是所有 Git checkout（包括父仓库）之外的新绝对路径。
+actor 工作区只创建一次，Ralph 各轮保留它并继续同一个 provider 会话。
+重复使用已有任务根目录会拒绝，不会重置历史状态。可通过 `--provider-executable` 指定 CLI；
+省略时按 harness 在 PATH 中查找 `codex` 或 `claude`。已知的 Codex npm wrapper 会解析到
+它自己安装包中的原生可执行文件，不替换为另一份安装。
 
-所有 treatment 在同一进程中准备。仅使用参考程序的 pilot 从有限的 2 次幂中选择批量 dispatch 数，
-随后固定这个数量，完成一次随机匹配搜索和两次独立匹配确认。A/A 对照使用独立构建的同源参考
-pipeline/缓冲区，经过与 A/B 相同的选择、绑定和调度路径。数据保持 warm，不执行 cache flush，
-也不继承 NVIDIA CUPTI 测量语义。
+[薄入口](../tools/launch_task.py) 在该目录写入 Workload、可读的 `starter.py`、Study 模板和
+运行时绑定，然后通过公共 Open Cake 环境准备封存基线，取得或验证真实 provider 资格，
+执行 `TaskLab.preflight`，保存 `campaign-lock.json`，再调用现有
+[TaskLab composer](../src/open_cake_ir/tasks/compose.py)。候选过滤、反馈、确认、token/时间记账
+和停止条件始终由 Ralph 管理。
 
-| 字段 | 实际区间 |
-| --- | --- |
-| 冷构建 | Swift 主机构建、设备/队列创建、主机准备及 library/pipeline 构建；可能命中系统缓存 |
-| Warmed host call | encode、提交到完成等待；不含输出重置、oracle 检查和文件 I/O |
-| GPU command buffer | 命令完成后的 `GPUEndTime - GPUStartTime` |
-| 摊销 dispatch | command-buffer 区间除以实际 dispatch 数，不是纯 kernel latency |
+已有封存基线和资格时，可传入外部路径参数 `--fixed-baseline-bundle`、`--qualification` 和
+`--qualification-anchor`，由 preflight 核对绑定。`--preflight-only` 在保存 Campaign Lock 后停止；
+它仍可能编译基线和调用 provider 资格验证，因此不是离线测试选项。
 
-预先固定的工程资格规则要求 A/A 配对中位数比率位于 `[0.95, 1.05]`，相关各臂相对 IQR
-不超过 10%，且搜索与两次确认中的增益均超过 5%；否则报告 inconclusive 或无实质增益。
-保留全部原始样本、顺序、warmup 和批量数量，不裁剪样本。计时器、执行或正确性失败返回非零退出码。
-每个 pilot 和普通批量样本都附带自身的输出/输入验证；验证在计时外、下一次 dispatch 覆盖缓冲区前完成，
-并与 profile 的验证分开记录。
-参见 Apple 的 [GPU command-buffer 时间戳](https://developer.apple.com/documentation/metal/mtlcommandbuffer/gpustarttime)。
+## 资格和评测边界
 
-普通计时结束后，单独采集设备支持的 compute-stage `GPUTimestamp` 观察，记录实际能力枚举、
-解析出的原始计数和缺失/失败原因。计数不转换成主机时间，也不称作 kernel cycles；不推导
-occupancy、带宽或指令计数。参见 [Apple counter 采样](https://developer.apple.com/documentation/metal/sampling-gpu-data-into-counter-sample-buffers)。
+公共 [provider 资格入口](../tools/qualify_codex_provider.py) 使用同一份不可变 TASK.md/AGENTS.md，
+实际观察两轮操作：新增包含 Python 源码的候选 envelope，再于同一工作区、同一会话更新。
+它保留原生事件、实际 token 用量和受保护文件检查。可执行测试替身必须使用 `--fixture-only`，
+其收据不能授权真实任务。
 
-`feedback.json` 提供候选处置、定位明确的 Findings、搜索/确认结果，并复用现有 Lab 的拒绝路由词汇。
-本阶段没有经过校准的 Apple ranker，不推断 ranking inversion。这些是本机产物评估，不构成
-完整 Study/provider campaign、框架集成、serving 或端到端结果。以下可移植测试不提交 GPU 工作：
+公共 Evaluation 只接收已封存的 Metal binary archive 和明确的 Workload 启动 ABI，
+严格命中 archive 后加载，不编译候选源码。[本地 broker](../src/open_cake_ir/evaluation/local_broker.py)
+串行化本项目的作业，但不声称其他应用没有使用 GPU。
+
+[任务 Study 策略](../src/open_cake_ir/tasks/normalization/study.py) 明确声明十组交替的候选/基线配对，
+每个 cohort 先 warmup 三次、再采集 25 个样本，CV 上限 0.05、materiality ratio 1.05、
+方向判定要求六组获胜。这些是工程测量规则，不是目标校准，也不预设加速。
+计时区间为完成后的 Metal command buffer，不是纯 kernel latency，不继承 CUPTI/L2 flush 语义。
+Profiler 单独采集 compute-stage 时间戳；缺少原生能力仍会拒绝，不推导物理寄存器、spill、
+occupancy、带宽或指令数量。
+
+静态 lowering 使用 32-lane 条带映射、安全 MSL 2.3 数学和显式启动元数据。
+CPU 语义、原生编译、设备正确性、稳定计时和框架验收是不同证据域。
+目前没有经校准的 Apple 成本排名模型，GPU 前的过滤会保留未排名原因。
+
+以下可移植检查既不调用真实 provider，也不执行 GPU：
 
 ```sh
-env PYTHONPATH=src python3 -m unittest \
-  tests.contracts.test_metal_runtime tests.contracts.test_metal_benchmark
+PYTHONPATH=src python3 -m unittest \
+  tests.contracts.test_normalization_tasks tests.contracts.test_task_launch \
+  tests.contracts.test_metal_task_composition tests.contracts.test_harness_qualification
 ```
+
+生成代码体通过已有 C++ 编译器执行 CPU 语义检查，资格测试使用明确的可执行替身。
+真实 Campaign 资格与性能结论仍需经审查发布的版本和实际设备执行。

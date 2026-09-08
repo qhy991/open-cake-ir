@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PRIMARY_SHAPE = (128, 1024)
 CORRECTNESS_SHAPES = ((1, 1), (3, 7), (2, 32), (5, 65), (3, 257), (128, 1024), (2, 4096))
 DISTRIBUTIONS = ("zero", "uniform", "alternating", "mixed_magnitude", "epsilon_dominated")
-FORMULAS = ("canonical", "weight_first", "prescaled_square")
+FORMULAS = ("canonical", "weight_first", "prescaled_square", "scale_weights")
 CONTRACT = {
     "operator": "weighted_fp32_rmsnorm", "primary_shape": list(PRIMARY_SHAPE),
     "equation": "out[r,c] = x[r,c] * rsqrt(sum_j(x[r,j]^2)/C + 1e-5) * weight[c]",
@@ -33,15 +33,20 @@ CONTRACT = {
 }
 
 
-def source(rows: int, columns: int, formula: str = "canonical") -> str:
+def source(rows: int, columns: int, formula: str = "canonical", *, target: str = "apple_gpu_family8") -> str:
     if formula not in FORMULAS or type(rows) is not int or type(columns) is not int or rows <= 0 or columns <= 0:
         raise ValueError("unsupported RMSNorm formula or shape")
-    text = (ROOT / "examples/python/metal_rmsnorm.py").read_text()
+    if target not in {"apple_gpu_family7", "apple_gpu_family8"}:
+        raise ValueError("unsupported exact Metal target")
+    text = (ROOT / "examples/python/metal_rmsnorm.py").read_text().replace("apple_gpu_family8", target)
     text = text.replace("(128, 1024)", f"({rows}, {columns})").replace("(1024,)", f"({columns},)")
     text = text.replace("total / 1024.0", f"total / {float(columns)!r}")
     if formula == "weight_first":
         text = text.replace("normalized = values * inverse\n        result = normalized * weights",
                             "normalized = values * weights\n        result = normalized * inverse")
+    elif formula == "scale_weights":
+        text = text.replace("normalized = values * inverse\n        result = normalized * weights",
+                            "normalized = weights * inverse\n        result = values * normalized")
     elif formula == "prescaled_square":
         text = text.replace('squared = lm.square(values, id="square")',
                             f'scaled = values * {1 / math.sqrt(columns)!r}\n        squared = lm.square(scaled, id="square")')
@@ -49,8 +54,8 @@ def source(rows: int, columns: int, formula: str = "canonical") -> str:
     return text.replace('name="metal-rmsnorm"', f'name="metal-rmsnorm-{formula}"')
 
 
-def document(rows: int, columns: int, formula: str = "canonical") -> dict:
-    return frontend.parse(source(rows, columns, formula), filename=f"metal_rmsnorm:{formula}").document
+def document(rows: int, columns: int, formula: str = "canonical", *, target: str = "apple_gpu_family8") -> dict:
+    return frontend.parse(source(rows, columns, formula, target=target), filename=f"metal_rmsnorm:{formula}").document
 
 
 def inputs_and_oracle(rows: int, columns: int, distribution: str) -> tuple[dict, dict]:
@@ -72,10 +77,10 @@ def inputs_and_oracle(rows: int, columns: int, distribution: str) -> tuple[dict,
 
 
 def reference(rows: int, columns: int, execution: str, inputs: dict,
-              directory: Path, device_names: list[str]) -> dict:
+              directory: Path, device_names: list[str], *, target: str = "apple_gpu_family8") -> dict:
     if execution not in {"serial", "simd"}:
         raise ValueError("unknown reference execution")
-    schedule = Schedule.from_dict(document(rows, columns))
+    schedule = Schedule.from_dict(document(rows, columns, target=target))
     route = replace(schedule.lowering, entry_point=f"reference_{execution}")
     schedule = replace(schedule, lowering=route)
     path = ROOT / "tools/metal/rmsnorm_reference.metal"
