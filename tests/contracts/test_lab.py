@@ -489,7 +489,7 @@ class LabContractTests(unittest.TestCase):
             report = lab.audit(campaign)
         self.assertTrue(report.archive_integrity_passed)
         self.assertTrue(report.semantic_replay_passed)
-        self.assertEqual(evaluator.calls, [])
+        self.assertEqual(evaluator.calls, 0)
 
     def test_execute_refuses_evidence_inside_the_checkout_before_side_effects(self) -> None:
         lock = TaskLab(ROOT).preflight(ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json")
