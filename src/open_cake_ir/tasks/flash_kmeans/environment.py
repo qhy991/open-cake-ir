@@ -8,7 +8,7 @@ from typing import Mapping,cast
 from open_cake_ir.compiler.toolchain import compile_triton
 from open_cake_ir.evaluation import LaunchableCandidate
 from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
-from open_cake_ir.lab.environments import BuildRequest,ToolchainBuilder,EnvironmentResult,_ptxas_finding_rows
+from open_cake_ir.lab.environments import BuildRequest,CandidateSubmission,ToolchainBuilder,EnvironmentResult,_ptxas_finding_rows
 from open_cake_ir.lab.faults import CandidateCompileRejected,RunProtocolFault
 from open_cake_ir.lab.process import run_supervised,sanitized_environment,SupervisedProcessTimeout,SupervisedProcessOutputLimit
 from .cuda_manifest import CudaLaunchManifest,parse_cuda_launch_manifest

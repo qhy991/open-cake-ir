@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+from tests.contracts._parent_validator_fixture import write_parent_validator_fixture
+
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -26,6 +28,9 @@ class AkaExpressibilityCodexRunnerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.source_temporary = tempfile.TemporaryDirectory()
         self.work_temporary = tempfile.TemporaryDirectory()
+        self.parent_validator = write_parent_validator_fixture(
+            Path(self.work_temporary.name) / "parent-validator-fixture.py"
+        )
         self.source_root = Path(self.source_temporary.name) / "source"
         self.dataset = self.source_root / "cuda_kernel_dataset_test"
         self.work_root = Path(self.work_temporary.name) / "work"
@@ -130,6 +135,7 @@ print(json.dumps({'type': 'turn.completed', 'argv': arguments}))
             limit=limit,
             timeout_seconds=60,
             codex_bin=self.fake_codex,
+                   parent_validator=self.parent_validator,
         )
 
     def test_fixed_sol_max_treatment_runs_one_case_and_checks_it(self) -> None:
@@ -165,6 +171,14 @@ print(json.dumps({'type': 'turn.completed', 'argv': arguments}))
             template_source,
         )
 
+    def test_runner_refuses_rebinding_the_parent_validator(self) -> None:
+        self.run_campaign()
+        self.parent_validator = write_parent_validator_fixture(
+            Path(self.work_temporary.name) / "different-validator.py"
+        )
+        with self.assertRaisesRegex(RunnerError, "different parent validator"):
+            self.run_campaign()
+
     def test_runner_refuses_to_adopt_a_preexisting_review_queue(self) -> None:
         self.run_campaign(limit=1)
         second_root = Path(self.work_temporary.name) / "second-work"
@@ -178,6 +192,7 @@ print(json.dumps({'type': 'turn.completed', 'argv': arguments}))
             work_root=self.work_root,
             source_revision=self.revision,
             record_format="aka_v1_operator_sft",
+            parent_validator=self.parent_validator,
         )
         materialize(self.work_root, "case-000001")
         case_root = self.work_root / "cases/case-000001"

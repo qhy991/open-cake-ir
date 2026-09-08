@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+import importlib.util
+
 import json
 import sys
 import unittest
 from pathlib import Path
 
-import torch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from kernel_oracles import ORACLE_BY_ENTRY_POINT  # noqa: E402
-from observe_lowered_kernel import measure_correctness  # noqa: E402
 
 
 class ObservationInstrumentTest(unittest.TestCase):
@@ -118,7 +117,11 @@ class ObservationInstrumentTest(unittest.TestCase):
         self.assertFalse(record["performance_measured"])
         self.assertFalse(record["scientific_claim_authorized"])
 
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires optional Torch for CPU tensor/oracle checks")
     def test_tie_audit_flattens_every_batch_row_without_losing_distance_axis(self) -> None:
+        import torch
+        from observe_lowered_kernel import measure_correctness
+
         distance = torch.zeros((2, 3, 4), dtype=torch.float32)
         reference = torch.zeros((2, 3), dtype=torch.int32)
         observed = torch.ones((2, 3), dtype=torch.int32)
@@ -131,7 +134,11 @@ class ObservationInstrumentTest(unittest.TestCase):
         self.assertEqual(measured, {"max_chosen_distance_excess": 0.0})
         self.assertTrue(passed)
 
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires optional Torch for CPU tensor/oracle checks")
     def test_gemm_oracle_zero_extends_a_masked_short_bias(self) -> None:
+        import torch
+        from kernel_oracles import ORACLE_BY_ENTRY_POINT
+
         a = torch.tensor([[1.0, 2.0]], dtype=torch.bfloat16)
         b = torch.tensor(
             [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=torch.bfloat16
@@ -146,7 +153,11 @@ class ObservationInstrumentTest(unittest.TestCase):
         self.assertIsNone(distance)
         torch.testing.assert_close(observed, torch.tensor([[11.0, 22.0, 3.0]]))
 
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires optional Torch for CPU tensor/oracle checks")
     def test_kda_combine_oracle_masks_sentinel_then_weights_and_sums(self) -> None:
+        import torch
+        from kernel_oracles import ORACLE_BY_ENTRY_POINT
+
         expert_rows = torch.tensor(
             [[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]],
             dtype=torch.bfloat16,

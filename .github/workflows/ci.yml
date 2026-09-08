@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.12']
+        python-version: ['3.10', '3.11', '3.12']
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -24,78 +24,7 @@ jobs:
         run: python -m pip install -e '.[test]'
       - name: Verify released corpus
         run: python -m open_cake_ir.cli compiler check-corpus --revision compiler/revision.lock.json
-      - name: Run portable CPU contracts
-        run: >-
-          python -m unittest
-          tests.contracts.test_ir
-          tests.contracts.test_verifier
-          tests.contracts.test_verifier_architecture
-          tests.contracts.test_compiler_revision_architecture
-          tests.contracts.test_compiler_convergence
-          tests.contracts.test_backend_boundaries
-          tests.contracts.test_performance_architecture
-          tests.contracts.test_runtime_config
-          tests.contracts.test_freeze_live_matched_study
-          tests.contracts.test_cuda_driver
-          tests.contracts.test_analysis
-          tests.contracts.test_emit_triton
-          tests.contracts.test_emit_cutedsl
-          tests.contracts.test_cutedsl_register
-          tests.contracts.test_cute_toolchain
-          tests.contracts.test_cute_build
-          tests.contracts.test_python_frontend
-          tests.contracts.test_cli
-          tests.contracts.test_documentation
-          tests.contracts.test_lab
-          tests.contracts.test_lab_rubrics
-          tests.contracts.test_lab_core_architecture
-          tests.contracts.test_task_boundaries
-          tests.contracts.test_workload
-          tests.contracts.test_qsa_workload
-          tests.contracts.test_qsa_cuda_program
-          tests.contracts.test_qsa_launcher
-          tests.contracts.test_authoring_environment
-          tests.contracts.test_qsa_feedback
-          tests.contracts.test_qsa_component_timing
-          tests.contracts.test_routing
-          tests.contracts.test_release_approval
-          tests.contracts.test_compiler.FindingFeedbackContractTests
-          tests.contracts.test_compiler.CompilerContractTests.test_release_cycle_prepares_but_cannot_write_its_own_approval
-          tests.contracts.test_executor.ExecutorRevisionContractTests.test_release_cycle_preserves_released_ids_without_local_run_witnesses
-          tests.contracts.test_executor_host_capture
-          tests.contracts.test_release_runtime
-          tests.contracts.test_compiled_resources
-          tests.contracts.test_empirical_cost
-          tests.contracts.test_profile_model
-          tests.contracts.test_profile_report
-          tests.contracts.test_empirical_cost_calibration
-          tests.contracts.test_empirical_cost_fitter
-          tests.contracts.test_flash_cost_calibration
-          tests.contracts.test_metal
-          tests.contracts.test_metal_runtime
-          tests.contracts.test_tile_workloads
-          tests.contracts.test_triton_loop_scopes
-          tests.contracts.test_native_triton_pairing
-          tests.contracts.test_native_cute_pairing
-          tests.contracts.test_paired_execution
-          tests.contracts.test_provider
-          tests.contracts.test_provider_fault_usage
-          tests.contracts.test_provider_runtime
-          tests.contracts.test_provider_qualification
-          tests.contracts.test_metal_benchmark
-          tests.contracts.test_tile_gpu_worker
-          tests.contracts.test_b300
-          tests.contracts.test_python_gather
-          tests.contracts.test_claude_provider
-          tests.contracts.test_metal_artifacts
-          tests.contracts.test_metal_executor
-          tests.contracts.test_metal_evaluation
-          tests.contracts.test_normalization_tasks
-          tests.contracts.test_harness_qualification
-          tests.contracts.test_metal_preflight
-          tests.contracts.test_metal_task_composition
-          tests.contracts.test_task_launch
-          tests.contracts.test_provider_policy
-          tests.contracts.test_single_authoring_environment
-          tests.contracts.test_local_metal_broker
-          tests.contracts.test_python_task_reference
+      - name: Check undefined names
+        run: python -m ruff check --select F821 src tools tests
+      - name: Discover and run all contract tests
+        run: python -m pytest tests/contracts -ra

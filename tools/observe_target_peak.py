@@ -37,6 +37,8 @@ Run under the broker in exclusive mode: this is a timing measurement.
 
 from __future__ import annotations
 
+from functools import partial
+
 import argparse
 import json
 import os
@@ -185,7 +187,7 @@ def main() -> int:
     b = torch.empty(elements, dtype=torch.float32, device="cuda").uniform_(-1, 1)
     c = torch.empty_like(a)
     moved = 3 * elements * 4  # two reads and one write of fp32
-    samples = _cohort(lambda: torch.add(a, b, out=c), torch)
+    samples = _cohort(partial(torch.add, a, b, out=c), torch)
     bandwidth, bandwidth_summary = derive_rate(float(moved), samples)
     measurements["memory_bandwidth"] = {
         "probe": "fp32 triad c = a + b",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import os
 import subprocess
 import sys
@@ -20,6 +21,8 @@ from open_cake_ir.lab.environments import _ptxas_finding_rows  # noqa: E402
 
 
 class EnvironmentContractTests(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None,
+                         "qualification CLI requires installed Torch metadata; Triton compilation is an executable fixture")
     def test_triton_qualification_externally_anchors_the_compile_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

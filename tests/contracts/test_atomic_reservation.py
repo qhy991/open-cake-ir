@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import ast
 import copy
 import json
@@ -10,7 +12,6 @@ import unittest
 from pathlib import Path
 
 import jsonschema
-import torch
 
 from open_cake_ir.compiler.backends.cutedsl import preflight as cute_preflight
 from open_cake_ir.compiler.backends.triton import emit, preflight
@@ -32,7 +33,6 @@ SCHEDULE = ROOT / "corpus" / "schedules" / "atomic-reservation-b8-smoke.json"
 TARGET_PATH = ROOT / "compiler" / "targets" / "sm_100a.json"
 sys.path.insert(0, str(ROOT / "tools"))
 
-from kernel_oracles import MEASURE_BY_ENTRY_POINT  # noqa: E402
 
 
 def _document() -> dict:
@@ -188,7 +188,11 @@ class AtomicReservationContractTest(unittest.TestCase):
         )
         self.assertIn("        maxnreg=64,", source)
 
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires optional Torch for CPU tensor/oracle checks")
     def test_contention_is_judged_as_a_permutation_not_lane_order(self) -> None:
+        import torch
+        from kernel_oracles import MEASURE_BY_ENTRY_POINT
+
         expert_ids = torch.tensor(
             [[0, 0, -1, 1], [1, 0, 1, 0]], dtype=torch.int32
         )

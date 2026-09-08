@@ -427,6 +427,7 @@ def materialize_portable_completion(
     portable_dataset: PurePosixPath,
     source_dataset: PurePosixPath,
     entry: PortableEntry,
+    parent_validator: Path | None = None,
 ) -> Path:
     if not entry.review_ready:
         raise PortableParentError(
@@ -495,7 +496,7 @@ def materialize_portable_completion(
     validated = subprocess.run(
         [
             sys.executable,
-            str(DEFAULT_PARENT_VALIDATOR),
+            str(parent_validator or DEFAULT_PARENT_VALIDATOR),
             str(completion_path),
             "--finalize",
         ],
@@ -560,6 +561,7 @@ def run_portable_queue(
     start_after: str | None = None,
     expected_count: int | None = None,
     only_portable_case_id: str | None = None,
+    parent_validator: Path | None = None,
 ) -> dict[str, object]:
     if limit <= 0 or timeout_seconds <= 0:
         raise PortableParentError("limit and timeout must be positive")
@@ -576,9 +578,10 @@ def run_portable_queue(
             for root in (ROOT, repository, completion_root if label == "review root" else review_root)
         ):
             raise PortableParentError(f"{label} must be outside source and review roots")
-    if not DEFAULT_PARENT_VALIDATOR.is_file():
+    parent_validator = (parent_validator or DEFAULT_PARENT_VALIDATOR).resolve(strict=True)
+    if not parent_validator.is_file():
         raise PortableParentError(
-            f"complete-kernel-parent validator is unavailable: {DEFAULT_PARENT_VALIDATOR}"
+            f"complete-kernel-parent validator is unavailable: {parent_validator}"
         )
     discovered = shutil.which("codex") if codex_bin is None else str(codex_bin)
     if not discovered:
@@ -657,6 +660,7 @@ def run_portable_queue(
             portable_dataset=portable_relative,
             source_dataset=source_relative,
             entry=entry,
+            parent_validator=parent_validator,
         )
         review = run_queue(
             work_root=review_root,
@@ -669,6 +673,7 @@ def run_portable_queue(
             codex_bin=command_path,
             case_ids=[entry.queue_case_id],
             parent_completions={entry.queue_case_id: completion},
+            parent_validator=parent_validator,
         )
         processed.append(
             {
@@ -714,6 +719,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--start-after")
     parser.add_argument("--expected-count", type=int)
     parser.add_argument("--only-portable-case-id")
+    parser.add_argument("--parent-validator", type=Path)
     return parser
 
 
@@ -731,6 +737,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             start_after=arguments.start_after,
             expected_count=arguments.expected_count,
             only_portable_case_id=arguments.only_portable_case_id,
+            parent_validator=arguments.parent_validator,
         )
     except (OSError, PortableParentError, RunnerError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

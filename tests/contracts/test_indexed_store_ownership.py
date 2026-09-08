@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import ast
 import json
 import sys
@@ -9,7 +11,6 @@ import unittest
 from pathlib import Path
 
 import jsonschema
-import torch
 
 from open_cake_ir.compiler.backends.triton import emit
 from open_cake_ir.compiler.ir import OperationKind, Schedule
@@ -22,7 +23,6 @@ SCHEDULE = ROOT / "corpus" / "schedules" / "reservation-owned-store-b8-smoke.jso
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
 sys.path.insert(0, str(ROOT / "tools"))
 
-from kernel_oracles import MEASURE_BY_ENTRY_POINT, ORACLE_BY_ENTRY_POINT  # noqa: E402
 
 
 def _document() -> dict:
@@ -184,7 +184,11 @@ class ReservationOwnedIndexedStoreContractTest(unittest.TestCase):
         self.assertIn("(position_tile < D_DISPATCHED_1)", source)
         self.assertIn("payload_tile,", source)
 
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires optional Torch for CPU tensor/oracle checks")
     def test_oracle_judges_unordered_payload_sets_and_untouched_capacity(self) -> None:
+        import torch
+        from kernel_oracles import MEASURE_BY_ENTRY_POINT
+
         expert_ids = torch.tensor([[0, 0, -1], [1, 0, 1]], dtype=torch.int32)
         payloads = torch.tensor([[11, 12, 13], [14, 15, 16]], dtype=torch.int32)
         initial_counts = torch.tensor([1, 2], dtype=torch.int32)
@@ -225,7 +229,11 @@ class ReservationOwnedIndexedStoreContractTest(unittest.TestCase):
         self.assertGreater(mismatch, 0)
         self.assertFalse(passed)
 
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires optional Torch for CPU tensor/oracle checks")
     def test_oracle_declares_its_exact_set_domain_before_launch(self) -> None:
+        import torch
+        from kernel_oracles import ORACLE_BY_ENTRY_POINT
+
         expert_ids = torch.tensor([[0, 0]], dtype=torch.int32)
         payloads = torch.tensor([[11, 12]], dtype=torch.int32)
         counts = torch.tensor([1], dtype=torch.int32)

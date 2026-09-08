@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests.contracts._parent_validator_fixture import write_parent_validator_fixture
+
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -40,6 +42,9 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
     def setUp(self) -> None:
         self.source_temporary = tempfile.TemporaryDirectory()
         self.work_temporary = tempfile.TemporaryDirectory()
+        self.parent_validator = write_parent_validator_fixture(
+            Path(self.work_temporary.name) / "parent-validator-fixture.py"
+        )
         self.repository = Path(self.source_temporary.name) / "source"
         self.dataset = self.repository / "cuda_kernel_dataset_test"
         self.work_root = Path(self.work_temporary.name) / "review-work"
@@ -133,6 +138,7 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
             work_root=target,
             source_revision=revision,
             record_format=record_format,
+            parent_validator=self.parent_validator,
         )
         return target
 
@@ -743,6 +749,7 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
                 (self.work_root / "manifest.json").read_text(encoding="utf-8")
             )["source"]["revision"],
             record_format="aka_v2_review_projection",
+            parent_validator=self.parent_validator,
         )
         materialize(v2_root, "case-000002")
         v2_neutral = json.loads(
@@ -770,6 +777,17 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
         )
         self.assertEqual(v2_positive["complete_parent"]["disposition"], "unknown")
         self.assertEqual(v2_positive["delta"]["disposition"], "unknown")
+
+    def test_bound_validator_is_independent_of_the_machine_default(self) -> None:
+        self.initialize()
+        with mock.patch(
+            "tools.review_aka_expressibility.DEFAULT_PARENT_VALIDATOR",
+            Path(self.work_temporary.name) / "unavailable-private-skill.py",
+        ):
+            self.assertEqual(status(self.work_root)["checked"], 0)
+        self.parent_validator.write_text("# changed validator\n", encoding="utf-8")
+        with self.assertRaisesRegex(ReviewError, "validator identity drifted"):
+            status(self.work_root)
 
     def test_source_ref_compiler_identity_and_validator_drift_fail_closed(self) -> None:
         self.initialize()

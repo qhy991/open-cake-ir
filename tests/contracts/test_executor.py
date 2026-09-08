@@ -117,6 +117,8 @@ class ExecutorRevisionContractTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             executor.document["host_environment"]["packages"]["torch"] = "changed"
 
+    @unittest.skipUnless(os.environ.get("OPEN_CAKE_RUN_BOUND_EXECUTOR_TESTS") == "1",
+                         "requires the released Executor's exact runtime/profiler host; opt in with OPEN_CAKE_RUN_BOUND_EXECUTOR_TESTS=1")
     def test_current_executor_pins_the_attribution_profiler(self) -> None:
         executor = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR)
         profiler = executor.admit_profiler()
