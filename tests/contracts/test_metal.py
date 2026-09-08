@@ -501,11 +501,18 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
             with self.subTest(component=component):
                 result = self.compiler.assess(document)
                 self.assertFalse(result.lowering_eligible)
-                findings = [f for f in result.findings if f.code == "METAL_ACCESS_VALUE_SHAPE"]
-                self.assertEqual([f.path for f in findings], ["access_maps[2].indices"])
-                with self.assertRaisesRegex(CompilerError, "METAL_ACCESS_VALUE_SHAPE"):
+                findings = [f for f in result.findings if f.blocks_lowering]
+                self.assertEqual([(f.code, f.path) for f in findings],
+                                 [("STORE_ACCESS_SHAPE_MISMATCH", "operations[4].reads[0]")])
+                self.assertFalse(result.accepted)
+                with self.assertRaisesRegex(CompilerError, "STORE_ACCESS_SHAPE_MISMATCH"):
                     self.compiler.lower(result)
-                with self.assertRaisesRegex(metal.EmitError, "access has value shape"):
+                # The shared value-shape gate now fires before backend preflight.
+                # Independently preserve Metal's direct capability refusal too.
+                backend = metal.preflight(Schedule.from_dict(document), self.target)
+                self.assertEqual([f.path for f in backend if f.code == "METAL_ACCESS_VALUE_SHAPE"],
+                                 ["access_maps[2].indices"])
+                with self.assertRaisesRegex(metal.EmitError, r"operations\[4\].reads\[0\]: store address requires register shape"):
                     metal.emit(Schedule.from_dict(document), self.target)
 
     def test_store_owns_every_varying_program_axis(self):

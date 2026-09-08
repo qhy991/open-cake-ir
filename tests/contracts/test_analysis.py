@@ -23,6 +23,8 @@ from open_cake_ir.compiler.ir import OperationKind, Schedule
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.verifier import FindingSeverity, verify
 
+from tests.contracts._corpus_documents import corpus_document
+
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
 B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
@@ -210,7 +212,7 @@ class ReportTest(unittest.TestCase):
     def _reports(self, path: Path, target: Target = TARGET) -> dict[str, str]:
         return {
             finding.code: finding.message
-            for finding in verify(Schedule.load(path), target)
+            for finding in verify(Schedule.from_dict(corpus_document(path)), target)
             if finding.severity is FindingSeverity.REPORT
         }
 
@@ -224,7 +226,7 @@ class ReportTest(unittest.TestCase):
             )["cases"]
         ):
             with self.subTest(schedule=path.name):
-                document = json.loads(path.read_text())
+                document = corpus_document(path)
                 if document["lowering"]["backend"] == "checked_cuda_asset":
                     # Retired syntax is a parser refusal, not a resource report.
                     assessment = Compiler.load(ROOT, ROOT / "compiler/revision.json").assess(document)

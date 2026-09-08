@@ -41,7 +41,12 @@ class AccessValueShapeTests(unittest.TestCase):
                 buffer["shape"] = [1, 128]
         assessment, findings = self.decisive(value)
         self.assertFalse(assessment.accepted)
-        self.assertEqual([code for code, _ in findings], ["LOAD_ACCESS_SHAPE_MISMATCH"] * 3)
+        self.assertEqual(findings, [
+            ("LOAD_ACCESS_SHAPE_MISMATCH", "operations[0].writes[0]"),
+            ("LOAD_ACCESS_SHAPE_MISMATCH", "operations[1].writes[0]"),
+            ("LOAD_ACCESS_SHAPE_MISMATCH", "operations[2].writes[0]"),
+            ("STORE_ACCESS_SHAPE_MISMATCH", "operations[4].reads[0]"),
+        ])
 
     def test_bad_dimension_returns_a_finding_instead_of_raising(self):
         value = vector_fma()

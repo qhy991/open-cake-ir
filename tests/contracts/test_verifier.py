@@ -26,6 +26,8 @@ from open_cake_ir.compiler.verifier import (
     verify,
 )
 
+from tests.contracts._corpus_documents import corpus_document
+
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
 # The manifest is what the Corpus is; the directory also holds schedules
@@ -232,7 +234,7 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         )["target_definitions"]
         for path in paths:
             with self.subTest(schedule=path.name):
-                document = json.loads(path.read_text())
+                document = corpus_document(path)
                 if document["lowering"]["backend"] == "checked_cuda_asset":
                     with self.assertRaisesRegex(ScheduleParseError, "schedule.lowering.backend is unsupported"):
                         Schedule.from_dict(document)

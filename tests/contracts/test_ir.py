@@ -48,6 +48,8 @@ from open_cake_ir.compiler.ir import (
 )
 from open_cake_ir.compiler.schema import schedule_schema
 
+from tests.contracts._corpus_documents import corpus_document
+
 ROOT = Path(__file__).resolve().parents[2]
 # The manifest is what the Corpus is; the directory also holds schedules
 # retained as history that the current Revision no longer admits.
@@ -65,7 +67,7 @@ SWIGLU = ROOT / "corpus" / "schedules" / "swiglu-b8-smoke.json"
 
 
 def _document(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return corpus_document(path)
 
 
 def _mutated(path: Path, mutate) -> dict:
@@ -125,7 +127,7 @@ class RetainedScheduleTest(unittest.TestCase):
                     with self.assertRaisesRegex(ScheduleParseError, "schedule.lowering.backend is unsupported"):
                         Schedule.load(path)
                     continue
-                schedule = Schedule.load(path)
+                schedule = Schedule.from_dict(_document(path))
                 self.assertEqual(schedule.schema_version, 1)
                 self.assertEqual(schedule.target, _document(path)["target"])
                 self.assertTrue(schedule.operations)
@@ -151,6 +153,12 @@ class RetainedScheduleTest(unittest.TestCase):
                 )
                 if _document(path)["lowering"]["backend"] == "checked_cuda_asset":
                     self.assertEqual([tuple(error.absolute_path) for error in errors], [("lowering", "backend")])
+                    continue
+                if path.name == "triton-operation-id-control-drift.json":
+                    # This deliberate backend-name refusal is also outside the
+                    # authoring schema. Preserve its exact two rejected locations.
+                    self.assertEqual([tuple(error.absolute_path) for error in errors],
+                                     [("operations", 1, "id"), ("operations", 2, "depends_on", 0)])
                     continue
                 self.assertEqual(
                     errors,

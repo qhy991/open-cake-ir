@@ -12,6 +12,8 @@ from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 
+from tests.contracts._corpus_documents import corpus_document
+
 ROOT = Path(__file__).resolve().parents[2]
 REVISION_PATH = ROOT / "compiler/revision.lock.json"
 sys.path.insert(0, str(ROOT / "src"))
@@ -621,9 +623,7 @@ class CompilerContractTests(unittest.TestCase):
         backends: set[str] = set()
         entry_points: set[str] = set()
         for case in manifest["cases"]:
-            document = json.loads(
-                (ROOT / case["schedule"]).read_text(encoding="utf-8")
-            )
+            document = corpus_document(ROOT / case["schedule"])
             if case["expected"]["lowering_eligible"]:
                 backends.add(document["lowering"]["backend"])
                 entry_points.add(document["lowering"]["entry_point"])
