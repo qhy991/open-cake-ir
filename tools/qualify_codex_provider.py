@@ -28,7 +28,7 @@ from open_cake_ir.lab.providers import (  # noqa: E402
 )
 from open_cake_ir.lab.claude import (
     CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, ClaudeInvocationBuilder,
-    ClaudeProviderAdapter, parse_claude_turn_events,
+    ClaudeProviderAdapter, parse_claude_turn_events, terminal_schema,
 )
 from open_cake_ir.lab.task_package import (  # noqa: E402
     TASK_AGENTS_RALPH_V1,
@@ -205,7 +205,7 @@ def _validate_invocation(
     if harness == "claude-code":
         tools = ",".join(CLAUDE_AUTHORING_TOOLS)
         expected_options = {"--permission-mode": "acceptEdits", "--tools": tools, "--allowedTools": tools,
-                            "--output-format": "stream-json"}
+                            "--output-format": "stream-json", "--json-schema": _canonical_json_bytes(terminal_schema()).decode()}
         if (invocation.cwd != workspace or invocation.sandbox != "none"
                 or invocation.argv[:2] != (str(executable), "-p")
                 or invocation.argv.count("--safe-mode") != 1

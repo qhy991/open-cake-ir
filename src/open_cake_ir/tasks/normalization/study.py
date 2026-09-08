@@ -8,7 +8,7 @@ from pathlib import Path
 from open_cake_ir.compiler import frontend
 from open_cake_ir.evaluation.paired import PAIRED_METAL_KIND, paired_protocol
 from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING
-from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT
+from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, terminal_schema
 from open_cake_ir.lab._policies import _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN
 from open_cake_ir.lab.ralph import RalphBudget
 from .workload import validate_normalization_contract
@@ -67,7 +67,7 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
                 **{name: dict(CAMPAIGN_BINDING) for name in ("revision", "executable_sha256", "qualification", "qualification_anchor")}}
     if harness == "claude-code":
         provider.update(harness=harness, permission_mode="acceptEdits", sandbox="none", safe_mode=True,
-                        tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=CLAUDE_EVENT_CONTRACT)
+                        tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=CLAUDE_EVENT_CONTRACT, terminal_schema=terminal_schema())
     else:
         provider.update(sandbox="workspace-write", service_tier="default", disabled_features=[],
                         event_contract="tool_rich_candidate_v1", code_mode_host=dict(CAMPAIGN_BINDING),

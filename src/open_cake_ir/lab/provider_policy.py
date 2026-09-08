@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Mapping
 
 from .providers import CANDIDATE_SET_ENVELOPE_V1, CODEX_DISABLED_FEATURES
-from .claude import CLAUDE_EVENT_CONTRACT, CLAUDE_AUTHORING_TOOLS
+from ._documents import _canonical_json_bytes
+from .claude import CLAUDE_EVENT_CONTRACT, CLAUDE_AUTHORING_TOOLS, terminal_schema
 
 _AUTHORITY = {"revision", "qualification", "qualification_anchor", "executable_sha256"}
 _COMMON = {"model", "reasoning_effort", "removed_environment", "sandbox", "cwd_policy", "reference_visibility"}
 _CODEX = _COMMON | {"service_tier", "output_schema", "disabled_features", "code_mode_host"}
-_CLAUDE = _COMMON | {"harness", "permission_mode", "safe_mode", "tools", "event_contract"}
+_CLAUDE = _COMMON | {"harness", "permission_mode", "safe_mode", "tools", "event_contract", "terminal_schema"}
 
 
 def provider_harness(provider: Mapping[str, object]) -> str:
@@ -34,6 +35,7 @@ def provider_configuration(provider: Mapping[str, object], claim_scope: str, *, 
                 or provider.get("sandbox") != "none" or provider.get("permission_mode") != "acceptEdits"
                 or provider.get("safe_mode") is not True or provider.get("tools") != list(CLAUDE_AUTHORING_TOOLS)
                 or provider.get("event_contract") != CLAUDE_EVENT_CONTRACT
+                or _canonical_json_bytes(provider.get("terminal_schema")) != _canonical_json_bytes(terminal_schema())
                 or provider["reasoning_effort"] not in {"low", "medium", "high", "xhigh", "max"}):
             raise ValueError("Study Contract Claude provider configuration or authoring scope differs")
         return {**{name: provider[name] for name in _CLAUDE}, "submission_contract": CANDIDATE_SET_ENVELOPE_V1}

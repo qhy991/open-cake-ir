@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from open_cake_ir.evidence import EvidenceStore
-from open_cake_ir.lab.claude import ClaudeInvocationBuilder, ClaudeProviderAdapter
+from open_cake_ir.lab.claude import ClaudeInvocationBuilder, ClaudeProviderAdapter, terminal_schema
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.lab.providers import ProviderQualificationReceipt, QualifiedRunProvider
 from open_cake_ir.lab.task_package import TaskPackage
@@ -56,6 +56,7 @@ class HarnessQualificationTests(unittest.TestCase):
             assert args[args.index('--effort')+1] == 'high'
             assert args[args.index('--permission-mode')+1] == 'acceptEdits'
             assert args[args.index('--tools')+1] == 'Read,Write,Edit,Glob,Grep'
+            assert json.loads(args[args.index('--json-schema')+1]) == {terminal_schema()!r}
             projection = json.loads(args[-1].split('\\n\\n', 1)[1])
             assert projection['task_markdown'] == Path('TASK.md').read_text()
             assert projection['agents_markdown'] == Path('AGENTS.md').read_text()
@@ -85,11 +86,20 @@ class HarnessQualificationTests(unittest.TestCase):
               {{'type':'user','session_id':session,'message':{{'content':[
                  {{'type':'tool_result','tool_use_id':'write1','is_error':False,'content':'written'}}]}}}},
               {{'type':'result','subtype':'success','session_id':session,'is_error':False,
-                'result':json.dumps(entry['terminal_message']),
+                'result':'display text is not terminal authority',
+                'structured_output':entry['terminal_message'],
+                'modelUsage':{{model:{{'inputTokens':0 if {failure!r} == 'usage' else 100+turn,
+                                     'outputTokens':0 if {failure!r} == 'usage' else 10,
+                                     'cacheCreationInputTokens':0,'cacheReadInputTokens':0}},
+                              'fixture-helper-model':{{'inputTokens':5,'outputTokens':2,
+                                     'cacheCreationInputTokens':0,'cacheReadInputTokens':0}}}},
                 'usage':{{'input_tokens':0 if {failure!r} == 'usage' else 100+turn,
                          'output_tokens':0 if {failure!r} == 'usage' else 10,
                          'cache_creation_input_tokens':0,'cache_read_input_tokens':0}}}}
             ]
+            if {failure!r} == 'terminal':
+                events[-1].pop('structured_output')
+                events[-1]['result'] = '```json\\n' + json.dumps(entry['terminal_message']) + '\\n```'
             for event in events: print(json.dumps(event))
             '''))
         self.executable.chmod(0o700)
@@ -118,7 +128,7 @@ class HarnessQualificationTests(unittest.TestCase):
         self.assertEqual(set(observed['arms']), {'open_cake'})
         arm = observed['arms']['open_cake']
         self.assertEqual(arm['thread_id'], SESSION)
-        self.assertEqual((arm['initial_provider_tokens'], arm['resumed_provider_tokens']), (111,112))
+        self.assertEqual((arm['initial_provider_tokens'], arm['resumed_provider_tokens']), (118,119))
         self.assertEqual(arm['reported_models'], [[MODEL],[MODEL]])
         objects = {item['role']:item for item in observed['objects']}
         for phase, turn in (('initial',1),('resumed',2)):
@@ -160,7 +170,7 @@ class HarnessQualificationTests(unittest.TestCase):
         self.assertEqual({path.name for path in (self.root/'workspace').iterdir()}, {'open_cake'})
 
     def test_native_failures_never_issue_qualification(self):
-        for failure in ('session','usage','task','model'):
+        for failure in ('session','usage','task','model','terminal'):
             with self.subTest(failure=failure):
                 # A separate fixture root per attempted qualification preserves failure evidence.
                 self.setUp()
