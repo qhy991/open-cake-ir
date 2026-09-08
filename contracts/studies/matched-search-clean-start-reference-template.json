@@ -33,7 +33,8 @@
       "qualification_contrast": "open_cake_rate_minus_direct_cuda_rate",
       "uncertainty": "per_arm_observed_range_ms"
     },
-    "target_population": "prescheduled_runs_under_exact_campaign_lock"
+    "target_population": "prescheduled_runs_under_exact_campaign_lock",
+    "endpoint_policy": "normal_budget_terminal_v1"
   },
   "arms": {
     "direct_cuda": {

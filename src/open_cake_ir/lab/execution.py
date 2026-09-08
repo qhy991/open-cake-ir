@@ -505,6 +505,7 @@ def execute_campaign(
             observations=observations,
             protocol_adherence=protocol_adherence,
             ralph=ralph,
+            analysis=lock.analysis_plan,
         )
 
     return CampaignRef(lock=lock, evidence_root=evidence.root)

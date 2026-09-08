@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.lab import ExecutorRevision, ProviderQualificationReceipt, required_live_provider_qualification_scope, scientific_matched_analysis_plan_v2
+from open_cake_ir.lab.endpoints import analysis_without_endpoint_policy, endpoint_policy
 from open_cake_ir.lab.providers import resolve_codex_code_mode_host
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.flash_kmeans.environment import NvccToolchainBuilder
@@ -149,9 +150,10 @@ def main() -> int:
     policy = native_backend(comparison)
     if study.get("claim_scope") == "scientific_matched_search":
         expected_analysis = native_optimization_analysis_plan(comparison) if policy is not None else dict(scientific_matched_analysis_plan_v2())
-        if policy is not None and study.get("analysis_plan") != expected_analysis:
+        if policy is not None and analysis_without_endpoint_policy(study["analysis_plan"]) != expected_analysis:
             raise ValueError("same-backend native scientific analysis differs")
-        study["analysis_plan"] = expected_analysis
+        terminal_policy = endpoint_policy(study["analysis_plan"])
+        study["analysis_plan"] = {**expected_analysis, **({"endpoint_policy": terminal_policy} if terminal_policy else {})}
     _replace_artifact_feedback_budget(
         study,
         provider_token_limit=arguments.provider_token_limit,

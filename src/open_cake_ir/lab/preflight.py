@@ -11,6 +11,7 @@ from typing import Callable, Mapping, cast
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.performance.empirical_cost import EmpiricalCostModel
 
+from .endpoints import analysis_without_endpoint_policy
 from ._documents import _canonical_json_bytes, _digest, _name, _object, _project_path
 from ._policies import (
     _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN,
@@ -314,11 +315,11 @@ def preflight(
         raise ValueError("Study Contract GPU admission differs")
     analysis = _object(study.document.get("analysis_plan"), "study.analysis_plan")
     if claim_scope == "system_qualification_only":
-        if analysis != _SYSTEM_QUALIFICATION_ANALYSIS_PLAN:
+        if analysis_without_endpoint_policy(analysis) != _SYSTEM_QUALIFICATION_ANALYSIS_PLAN:
             raise ValueError("system qualification Analysis Plan differs")
         estimand = None
     elif claim_scope == "artifact_optimization_only":
-        if analysis != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
+        if analysis_without_endpoint_policy(analysis) != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
             raise ValueError("artifact optimization Analysis Plan differs")
         estimand = None
     else:

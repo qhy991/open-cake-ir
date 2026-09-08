@@ -119,23 +119,47 @@ def audit_campaign(
     filesystem_custody_verified = campaign_complete and all(
         audit.filesystem_custody_verified for audit in audits
     )
-    semantic_replay_passed = archive_integrity_passed
+    semantic_replay_by_run = {run_id: False for run_id in campaign.lock.run_order}
     evaluation_receipt_counts: dict[str, int] = {}
-    if semantic_replay_passed:
-        for audit in audits:
-            try:
-                if not replay_run(evidence, audit, campaign.lock):
-                    semantic_replay_passed = False
-                    break
-                evaluation_receipt_counts[audit.run_id] = sum(
-                    event.get("kind") == "candidate_evaluated"
-                    for event in evidence.replay_events(audit.run_id)
-                )
-            except (OSError, TypeError, ValueError, json.JSONDecodeError):
-                semantic_replay_passed = False
-                break
+    terminal_observations: dict[str, object] = {}
+    for audit in audits:
+        if not audit.archive_integrity or audit.authority_sha256 != campaign.lock.canonical_sha256:
+            continue
+        try:
+            if not replay_run(evidence, audit, campaign.lock):
+                continue
+            events = evidence.replay_events(audit.run_id)
+            semantic_replay_by_run[audit.run_id] = True
+            evaluation_receipt_counts[audit.run_id] = sum(
+                event.get("kind") == "candidate_evaluated" for event in events)
+            checkpoint = next(event["payload"] for event in events
+                              if event.get("kind") == "checkpoints_projected")
+            terminal_observations[audit.run_id] = {
+                "protocol_adherence": audit.protocol_adherence,
+                "endpoint_observation": audit.endpoint_observation,
+                "terminal_reason": checkpoint.get("ralph", {}).get("terminal_reason"),
+                "logical_evaluation_invocation_counts": checkpoint.get("ralph", {}).get("evaluation_counts"),
+                "token_limit_checkpoint_state": checkpoint["checkpoints"][-1]["state"],
+                "observation_basis": campaign.lock.analysis_plan.get("endpoint_policy", "token_limit_checkpoint"),
+                "missing_reason": ("protocol_fault" if audit.protocol_adherence != "adhered" else
+                    "token_limit_unreached" if audit.endpoint_observation == "missing" else None),
+            }
+        except (OSError, TypeError, ValueError, KeyError, StopIteration, json.JSONDecodeError):
+            semantic_replay_by_run[audit.run_id] = False
+            evaluation_receipt_counts.pop(audit.run_id, None)
+    semantic_replay_passed = campaign_complete and all(semantic_replay_by_run.values())
+    shared_descriptive = {
+        "semantic_replay_by_run": semantic_replay_by_run,
+        "evaluation_receipt_counts": evaluation_receipt_counts,
+        "terminal_observations": terminal_observations,
+        "reference_access_by_arm": {
+            arm: environment.get("reference_access")
+            for arm, environment in campaign.lock.document["resolved_inputs"]["arm_environments"].items()
+        },
+    }
     missing_run_count = len(campaign.lock.run_order) - len(audits) + sum(
         not audit.archive_integrity
+        or not semantic_replay_by_run[audit.run_id]
         or not audit.filesystem_custody_verified
         or audit.authority_sha256 != campaign.lock.canonical_sha256
         or audit.endpoint_observation == "missing"
@@ -143,14 +167,11 @@ def audit_campaign(
         for audit in audits
     )
     if campaign.lock.claim_scope == "artifact_optimization_only":
-        promoted_artifacts = (
-            {
-                audit.run_id: _promoted_artifact(evidence, audit)
-                for audit in audits
-            }
-            if semantic_replay_passed
-            else {audit.run_id: None for audit in audits}
-        )
+        promoted_artifacts = {
+            audit.run_id: (_promoted_artifact(evidence, audit)
+                           if semantic_replay_by_run[audit.run_id] else None)
+            for audit in audits
+        }
         artifact_optimization_complete = (
             campaign_complete
             and archive_integrity_passed
@@ -181,8 +202,8 @@ def audit_campaign(
             filesystem_custody_verified=filesystem_custody_verified,
             semantic_replay_passed=semantic_replay_passed,
             estimand_available=False,
-            missing_run_count=sum(
-                not audit.archive_integrity
+            missing_run_count=len(campaign.lock.run_order) - len(audits) + sum(
+                not semantic_replay_by_run[audit.run_id]
                 or not audit.filesystem_custody_verified
                 or audit.protocol_adherence != "adhered"
                 for audit in audits
@@ -190,6 +211,7 @@ def audit_campaign(
             estimate=None,
             uncertainty=None,
             descriptive={
+                **shared_descriptive,
                 "artifact_optimization_complete": artifact_optimization_complete,
                 "promoted_artifacts": promoted_artifacts,
             },
@@ -218,6 +240,7 @@ def audit_campaign(
             )
         )
         descriptive: Mapping[str, object] = {
+            **shared_descriptive,
             "prescheduled_run_count": len(campaign.lock.run_order),
             "completed_run_count": len(audits),
             "runs": [
@@ -277,6 +300,10 @@ def audit_campaign(
                     "filesystem_custody_not_verified",
                 )
             )
+        elif not semantic_replay_by_run[audit.run_id]:
+            inclusions.append(
+                AnalysisInclusion(audit.run_id, False, False, "semantic_replay")
+            )
         elif audit.protocol_adherence != "adhered":
             inclusions.append(
                 AnalysisInclusion(audit.run_id, False, False, "protocol_deviation")
@@ -291,7 +318,8 @@ def audit_campaign(
                     audit.run_id,
                     True,
                     False,
-                    "observed_no_qualified_candidate_at_checkpoint",
+                    ("observed_no_qualified_candidate_at_terminal" if campaign.lock.analysis_plan.get("endpoint_policy")
+                     else "observed_no_qualified_candidate_at_checkpoint"),
                 )
             )
         else:
@@ -378,6 +406,7 @@ def audit_campaign(
             }
         )
     descriptive = {
+        **shared_descriptive,
         "endpoint_counts": endpoint_counts,
         "qualification_rate_among_observed": qualification_rate,
         "qualification_rate_difference_among_observed": (

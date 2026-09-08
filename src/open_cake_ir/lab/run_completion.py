@@ -9,7 +9,7 @@ from open_cake_ir.evidence.store import RunLedger
 from .checkpoints import TurnObservation, project_checkpoints
 from .faults import RunProtocolFault, ReportedProviderUsage
 from .ralph import RalphController
-from .selection import _matched_endpoint_from_checkpoint
+from .endpoints import matched_endpoint
 
 
 def record_run_fault(*, error, live_stage, turn_number, cumulative_tokens, evidence, ledger,
@@ -75,6 +75,7 @@ def _seal_run(
     observations: Sequence[TurnObservation],
     protocol_adherence: str,
     ralph: RalphController,
+    analysis: Mapping[str, object] | None = None,
 ) -> None:
     if ralph_stop_reason is None:
         ralph_stop_reason = ralph.stop_reason(
@@ -108,8 +109,10 @@ def _seal_run(
     )
     ledger.append("checkpoints_projected", checkpoint_payload)
     final_checkpoint = projected[-1]
-    endpoint_observation, endpoint = _matched_endpoint_from_checkpoint(
-        final_checkpoint, protocol_adherence
+    endpoint_observation, endpoint = matched_endpoint(
+        checkpoint=final_checkpoint, observations=observations,
+        terminal_provider_tokens=cumulative_tokens, protocol_adherence=protocol_adherence,
+        terminal_reason=ralph_stop_reason, analysis=analysis or {},
     )
     ledger.seal(
         protocol_adherence=protocol_adherence,

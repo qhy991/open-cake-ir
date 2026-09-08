@@ -14,6 +14,7 @@ from open_cake_ir.evaluation import LaunchableCandidate, LogicalEvaluationAttemp
 from open_cake_ir.evaluation.paired import candidate_from_identity, paired_protocol
 from open_cake_ir.evidence import RunAudit
 
+from .endpoints import analysis_without_endpoint_policy
 from ._documents import _canonical_json_bytes, _digest, _name, _object
 from ._policies import (
     _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN,
@@ -327,11 +328,11 @@ class CampaignLock:
             raise ValueError("Campaign Lock experimental unit differs from Study kind")
         raw_estimand = analysis.get("estimand")
         if claim_scope == "system_qualification_only":
-            if analysis != _SYSTEM_QUALIFICATION_ANALYSIS_PLAN:
+            if analysis_without_endpoint_policy(analysis) != _SYSTEM_QUALIFICATION_ANALYSIS_PLAN:
                 raise ValueError("system qualification Campaign Lock Analysis Plan differs")
             estimand = None
         elif claim_scope == "artifact_optimization_only":
-            if analysis != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
+            if analysis_without_endpoint_policy(analysis) != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
                 raise ValueError("artifact optimization Campaign Lock Analysis Plan differs")
             estimand = None
         elif study_kind == "matched_search":

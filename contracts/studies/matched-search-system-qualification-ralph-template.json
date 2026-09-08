@@ -11,7 +11,8 @@
     "estimand": null,
     "experimental_unit": "run",
     "pooling": "forbidden",
-    "qualification_criterion": "all_prescheduled_runs_complete_integrity_semantic_replay_adhered_and_evaluated"
+    "qualification_criterion": "all_prescheduled_runs_complete_integrity_semantic_replay_adhered_and_evaluated",
+    "endpoint_policy": "normal_budget_terminal_v1"
   },
   "arms": {
     "direct_cuda": {

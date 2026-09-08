@@ -17,7 +17,8 @@
     "estimand": null,
     "experimental_unit": "run",
     "pooling": "forbidden",
-    "scientific_inclusion": "forbidden"
+    "scientific_inclusion": "forbidden",
+    "endpoint_policy": "normal_budget_terminal_v1"
   },
   "arms": {
     "direct_cuda": {
