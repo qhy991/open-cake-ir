@@ -79,3 +79,16 @@ jobs:
           tests.contracts.test_tile_gpu_worker
           tests.contracts.test_b300
           tests.contracts.test_python_gather
+          tests.contracts.test_claude_provider
+          tests.contracts.test_metal_artifacts
+          tests.contracts.test_metal_executor
+          tests.contracts.test_metal_evaluation
+          tests.contracts.test_normalization_tasks
+          tests.contracts.test_harness_qualification
+          tests.contracts.test_metal_preflight
+          tests.contracts.test_metal_task_composition
+          tests.contracts.test_task_launch
+          tests.contracts.test_provider_policy
+          tests.contracts.test_single_authoring_environment
+          tests.contracts.test_local_metal_broker
+          tests.contracts.test_python_task_reference
