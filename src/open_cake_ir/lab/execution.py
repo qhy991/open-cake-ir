@@ -163,7 +163,7 @@ def execute_campaign(
             evidence=evidence, ledger=ledger, evaluator=evaluator, ralph=ralph,
             case_id=case_id, workload_sha256=workload_sha256,
             protocol_sha256=expected_protocol_sha256, evaluation_protocol=evaluation_protocol,
-            fixed_baseline=lock.document['execution'].get('fixed_baseline', {}).get('candidate'),
+            execution=lock.document['execution'],
             clock=clock, run_started_at=run_started_at,
         )
         try:

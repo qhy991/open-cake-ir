@@ -460,6 +460,37 @@ class FindingRoutingContractTests(unittest.TestCase):
 
 
 class LabContractTests(unittest.TestCase):
+    def test_provider_fault_does_not_resolve_evaluation_only_fields(self) -> None:
+        class FaultProvider(FakeProvider):
+            def turn(self, request):
+                raise RunProtocolFault("provider_fault", "fixture fails before Evaluation")
+
+        lab = TaskLab(ROOT)
+        original = lab.preflight(
+            ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json"
+        )
+        document = json.loads(json.dumps(original.document))
+        # The legacy non-paired Lock permits this unused field. Its contents must
+        # not be consumed before Evaluation, including on a provider-only fault.
+        document["execution"]["fixed_baseline"] = None
+        lock = CampaignLock.from_dict(document)
+        protocol = document["evaluation_protocol"]
+        protocol_sha256 = sha256(json.dumps(
+            protocol, sort_keys=True, separators=(",", ":")
+        ).encode()).hexdigest()
+        evaluator = FakeEvaluator(protocol, protocol_sha256, document["workload"]["canonical_sha256"])
+        with tempfile.TemporaryDirectory() as directory:
+            campaign = _execute(
+                lab, lock, Path(directory) / "evidence", provider=FaultProvider(),
+                environments={name: FakeEnvironment(name, arm) for name, arm in
+                              document["resolved_inputs"]["arm_environments"].items()},
+                evaluator=evaluator,
+            )
+            report = lab.audit(campaign)
+        self.assertTrue(report.archive_integrity_passed)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertEqual(evaluator.calls, [])
+
     def test_execute_refuses_evidence_inside_the_checkout_before_side_effects(self) -> None:
         lock = TaskLab(ROOT).preflight(ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json")
         with tempfile.TemporaryDirectory(prefix=".campaign-custody-", dir=ROOT) as directory:

@@ -33,7 +33,7 @@ class EvaluationWriter:
     workload_sha256: str
     protocol_sha256: str
     evaluation_protocol: Mapping[str, object]
-    fixed_baseline: object
+    execution: Mapping[str, object]
     clock: Callable[[], float]
     run_started_at: float | None
 
@@ -60,7 +60,7 @@ class EvaluationWriter:
             case_id=self.case_id,
             purpose=purpose,
             evaluation_protocol=self.evaluation_protocol,
-            fixed_baseline=self.fixed_baseline,
+            fixed_baseline=self.execution.get("fixed_baseline", {}).get("candidate"),
         )
         references = _archive_evaluation_receipt(self.evidence, receipt)
         self.ledger.append(
