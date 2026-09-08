@@ -18,7 +18,7 @@ from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.evaluation.paired import candidate_identity
 from open_cake_ir.lab import preflight, admission
 from open_cake_ir.lab.provider_policy import provider_configuration
-from open_cake_ir.tasks.normalization.study import canonical, study_template
+from open_cake_ir.tasks.normalization.study import canonical, study_template, SCAFFOLD
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.workloads import create_task
 
@@ -85,6 +85,12 @@ class MetalPreflightTests(unittest.TestCase):
                 package=TaskLab(ROOT).task_package(lock,'open_cake-1')
                 self.assertIn('schedule-starter.py',package.task_markdown)
                 self.assertIn('```python',package.task_markdown)
+                self.assertEqual(study['arms']['open_cake']['scaffold']['path'],
+                                 'contracts/scaffolds/python-artifact-optimization-v2.md')
+                self.assertIn((ROOT/SCAFFOLD).read_text().strip(), package.task_markdown)
+                self.assertIn('warps=[0]', package.task_markdown)
+                self.assertIn('tile=1', package.task_markdown)
+                self.assertIn('coalesced=False', package.task_markdown)
                 self.assertFalse((directory/'campaign-lock.json').exists())
 
     def test_full_preflight_refuses_a_baseline_from_different_lowered_source(self):

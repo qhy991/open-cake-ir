@@ -14,7 +14,7 @@ from open_cake_ir.lab.ralph import RalphBudget
 from .workload import validate_normalization_contract
 
 OUTPUT_SCHEMA = "contracts/providers/open-cake-optimization-output-schema-v1.json"
-SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v1.md"
+SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v2.md"
 
 
 def canonical(document) -> bytes:
