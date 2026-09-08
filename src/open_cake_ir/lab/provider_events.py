@@ -17,6 +17,8 @@ from .provider_documents import (
     _canonical_json_bytes,
     _project_candidate_submission,
     _read_candidate_nofollow,
+    _unique_json_object,
+    _reject_json_constant,
 )
 
 
@@ -216,10 +218,12 @@ def _codex_usage_tokens(usage, *, allow_zero=False) -> int:
 def reported_codex_usage(raw_events: bytes, *, event_contract: str,
                          expected_thread_id: str | None = None) -> ReportedProviderUsage | None:
     """Read a complete native usage report without admitting a candidate or Turn."""
-    if event_contract not in {"closed_file_change_v1", "tool_rich_candidate_v1"}:
+    if (not isinstance(raw_events, bytes) or not isinstance(event_contract, str)
+            or event_contract not in {"closed_file_change_v1", "tool_rich_candidate_v1"}):
         return None
     try:
-        events = [json.loads(line) for line in raw_events.splitlines()]
+        events = [json.loads(line, object_pairs_hook=_unique_json_object,
+                             parse_constant=_reject_json_constant) for line in raw_events.splitlines()]
         if len(events) < 3 or any(not isinstance(event, Mapping) for event in events):
             return None
         types = [event.get("type") for event in events]
@@ -233,7 +237,7 @@ def reported_codex_usage(raw_events: bytes, *, event_contract: str,
             return None
         return ReportedProviderUsage(event_contract, thread_id,
             _codex_usage_tokens(events[-1].get("usage"), allow_zero=True))
-    except (UnicodeError, ValueError, TypeError):
+    except (UnicodeError, ValueError, TypeError, OverflowError, RecursionError):
         return None
 
 

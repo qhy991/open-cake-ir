@@ -35,7 +35,7 @@ class ReportedProviderUsageTests(unittest.TestCase):
         for tokens in (0, 191499):
             witness = reported_codex_usage(codex_report(tokens), event_contract=CONTRACT)
             self.assertEqual(witness, ReportedProviderUsage(CONTRACT, THREAD, tokens))
-        for raw in (b"", b"partial native output", codex_report(12).rsplit(b"\n", 1)[0],
+        for raw in (None, b"[" * 2000 + b"]" * 2000, b"", b"partial native output", codex_report(12).rsplit(b"\n", 1)[0],
                     codex_report(-1), codex_report(True)):
             with self.subTest(raw=raw):
                 self.assertIsNone(reported_codex_usage(raw, event_contract=CONTRACT))
@@ -45,6 +45,28 @@ class ReportedProviderUsageTests(unittest.TestCase):
             with self.subTest(value=bad), self.assertRaises(ValueError):
                 ReportedProviderUsage(CONTRACT, THREAD, bad)
 
+
+    def test_claude_fault_usage_flows_through_common_native_dispatch_and_replay(self):
+        from open_cake_ir.lab.provider_events import reported_provider_usage
+        from open_cake_ir.lab.replay_provider import replay_fault_usage
+        from tests.contracts.test_claude_provider import ClaudeProviderContracts, CLAUDE_EVENT_CONTRACT
+        fixture = ClaudeProviderContracts()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        events = fixture.events()
+        events[-1].pop("structured_output")  # Failed Turn; valid reported usage remains observable.
+        raw = fixture.raw(events)
+        provider = {"event_contract": CLAUDE_EVENT_CONTRACT, "model": "exact-requested-model"}
+        usage = reported_provider_usage(raw, provider=provider)
+        self.assertEqual(usage, ReportedProviderUsage(CLAUDE_EVENT_CONTRACT, THREAD, 205))
+        payload = {"stage": "provider", "provider_usage": {"status": "observed", **usage.document},
+                   "objects": [{"role": "provider_stdout"}]}
+        evidence = SimpleNamespace(read_object=lambda _: raw)
+        self.assertEqual(replay_fault_usage(payload=payload, evidence=evidence, provider=provider), 205)
+        self.assertIsNone(replay_fault_usage(payload=payload, evidence=evidence,
+                          provider={**provider, "model": "another-model"}))
+        self.assertIsNone(replay_fault_usage(payload=payload, evidence=evidence, provider=provider,
+                          expected_thread_id="00000000-0000-0000-0000-000000000001"))
 
     def test_codex_adapter_retains_known_usage_on_format_and_process_failures(self):
         from open_cake_ir.lab.providers import CodexProviderAdapter, ProviderInvocation
@@ -75,6 +97,7 @@ class ReportedProviderUsageTests(unittest.TestCase):
                 fixture.setUp()
                 self.addCleanup(fixture.doCleanups)
                 workspace = fixture.root / "actor"
+                workspace.mkdir()
                 package = TaskPackage("open_cake-1", "open_cake", "# CPU test\n", "# CPU test\n")
                 materialize_task_package(workspace, package)
                 builder = fixture.builder(workspace=workspace)
