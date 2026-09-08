@@ -10,6 +10,7 @@ from open_cake_ir.evaluation import (
     LaunchableCandidate,
     LogicalEvaluationAttempt,
 )
+from open_cake_ir.evaluation.artifacts import executable_role, required_build_roles
 from open_cake_ir.evaluation.core import _plain_json as _evaluation_plain_json
 from open_cake_ir.evaluation.paired import validate_receipt_policy
 from open_cake_ir.evidence import EvidenceStore

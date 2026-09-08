@@ -226,7 +226,7 @@ def _replay_provider_turns(
             parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal)
             if (parsed.reported_models != (provider_authority["model"],)
                     or expected_change == "add" and parsed.write_tools[0] != "Write"):
-                return False
+                return None
         else:
             parsed = parse_codex_turn_events(raw_events, expected_terminal_message=expected_terminal,
                                             event_contract=event_contract)

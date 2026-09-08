@@ -121,7 +121,7 @@ def resolve_execution_bindings(
     """Return resolved runtime leaves and the Executor already validated for them."""
     from .runtime import broker_execution_sha256, load_runtime_config
     from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
-    from .pairing import comparison_arm, native_backend
+    from .pairing import comparison_arm, native_backend, backend_policy
 
     document = json.loads(canonical(study.document))
     arms = document['arms']
@@ -159,7 +159,7 @@ def resolve_execution_bindings(
     anchor = json.loads(anchor_path.read_bytes())
     if single:
         route = arms["open_cake"].get("lowering_route")
-        if not isinstance(route, Mapping) or route.get("backend") not in {"metal", "triton", "cutlass_cute_dsl"}:
+        if not isinstance(route, Mapping) or route.get("backend") not in {"metal", "triton"}:
             raise ValueError("single-environment lowering route differs")
         backend = route["backend"]
     else:
@@ -184,7 +184,7 @@ def resolve_execution_bindings(
         from .metal_build import MetalArchiveHost
         toolchain = MetalArchiveHost.from_executor(executor)
     else:
-        toolchain = policy.isolated_compiler(config['toolchain'])
+        toolchain = backend_policy(backend).isolated_compiler(config['toolchain'])
         toolchain.check_executor(executor, author_workspace=config['provider']['workspace_root'])
     for arm in arms.values():
         arm['toolchain_sha256'] = toolchain.canonical_sha256

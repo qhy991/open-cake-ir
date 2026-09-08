@@ -112,7 +112,8 @@ def bind_baseline(schedule: Mapping[str, object], workload, case_id: str, *, bac
     if [(b['name'], tuple(b['shape']), b['dtype'], b['mode']) for b in buffers] != [
             (arg.name, arg.shape, arg.dtype, arg.mode) for arg in abi]:
         raise ValueError('baseline Schedule must already match the selected Workload ABI; use baseline preparation for another shape')
-    backend = backend or document.get('lowering', {}).get('backend')
+    if backend is None:
+        backend = backend_policy(document.get('lowering', {}).get('backend')).backend
     if backend not in {'triton', 'metal', 'cutlass_cute_dsl'} or document.get('lowering', {}).get('backend') != backend:
         raise ValueError('baseline differs from the explicitly requested lowering backend')
     document['metadata']['workload_contract_sha256'] = workload.canonical_sha256
