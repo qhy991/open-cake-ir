@@ -143,7 +143,7 @@ def _replay_candidates(
                 or not _artifact_outcomes_are_closed(payload)
             ):
                 return None
-            decision = route_rejection(feedback)
+            decision = route_rejection(feedback, arm=arm)
             if (
                 payload.get("routed_to") != decision.destination
                 or payload.get("routing_reason") != decision.reason

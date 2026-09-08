@@ -10,7 +10,7 @@ from hashlib import sha256
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
-from open_cake_ir.compiler import Assessment, Compiler, CompilerError
+from open_cake_ir.compiler import Assessment, Compiler, CompilerError, LoweringRefusedError
 from open_cake_ir.compiler.frontend import FrontendError, parse as parse_python_schedule
 from open_cake_ir.compiler.performance.ranking import Cost
 from open_cake_ir.compiler.toolchain import validate_triton_kernel
@@ -251,7 +251,13 @@ class OpenCakeEnvironment:
                     }
                 ),
             )
-        lowering = self._compiler.lower(assessment)
+        try:
+            lowering = self._compiler.lower(assessment)
+        except LoweringRefusedError as error:
+            return EnvironmentResult(
+                "rejected", submission.sha256, None,
+                {"stage": "lowering", "code": error.code, "error": str(error)},
+            )
         try:
             launchable = self._toolchain.build(
                 BuildRequest(

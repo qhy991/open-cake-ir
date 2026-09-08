@@ -105,12 +105,12 @@ def _build_filter_candidates(
 
 
 
-def record_candidate_rejections(*, built, evidence, ledger, turn_number):
+def record_candidate_rejections(*, built, evidence, ledger, turn_number, arm):
     """Retain every rejected member, even if another candidate survives."""
     for rejected_submission, rejected_result in built:
         if rejected_result.disposition != "rejected":
             continue
-        decision = route_rejection(rejected_result.feedback)
+        decision = route_rejection(rejected_result.feedback, arm=arm)
         rejection_payload: dict[str, object] = {
             "turn": turn_number,
             "candidate_sha256": rejected_submission.sha256,
