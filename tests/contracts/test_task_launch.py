@@ -141,6 +141,17 @@ class TaskLaunchTests(unittest.TestCase):
                 launch_task._admit_stack(ROOT,self.workspace)
             host.assert_not_called()
 
+    def test_stale_executor_refusal_names_the_required_release_boundary(self):
+        self.workspace.mkdir()
+        gate = CorpusGateReport("unit-fixture", "fixture", "not-live", True, ())
+        compiler = SimpleNamespace(state="released", check_corpus=lambda: gate)
+        with patch.object(launch_task.Compiler, "load", return_value=compiler), \
+             patch.object(launch_task, "resolve_executor", side_effect=ValueError("source differs")), \
+             patch.object(launch_task.MetalArchiveHost, "from_executor") as host:
+            with self.assertRaisesRegex(ValueError, "released Metal Executor matching this source; source differs"):
+                launch_task._admit_stack(ROOT, self.workspace)
+            host.assert_not_called()
+
     def test_qualification_uses_shared_entry_with_exact_model_effort_and_python_source(self):
         self.workspace.mkdir()
         args = SimpleNamespace(qualification=None,harness="claude-code",model="exact-test-model",effort="high",

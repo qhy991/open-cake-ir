@@ -90,7 +90,10 @@ def _admit_stack(root: Path, workspace: Path):
     _write(workspace / "compiler-gate.json", canonical(asdict(gate)))
     if compiler.state != "released" or not gate.passed:
         raise ValueError("task launch requires a released Compiler and passing full Corpus Gate")
-    executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "task.execution", template=True)
+    try:
+        executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "task.execution", template=True)
+    except ValueError as error:
+        raise ValueError(f"task launch requires a released Metal Executor matching this source; {error}") from error
     if executor.document["host_environment"].get("kind") != "metal":
         raise ValueError("task launch requires an actually released Metal Executor")
     host = MetalArchiveHost.from_executor(executor)

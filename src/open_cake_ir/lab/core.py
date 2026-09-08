@@ -1878,15 +1878,16 @@ class Lab:
             )
         )
 
-        if paired_triton:
+        if paired_triton or single_environment:
             case_id = str(_object(study.document["evaluation_protocol"], "evaluation_protocol")["case_id"])
-            baseline = bind_baseline(skeleton_document, workload, case_id)
+            baseline = self._prepare_schedule(skeleton_document, workload, case_id, open_cake)
             baseline_compiler = Compiler.load(self._root, self._root / compiler_relative)
             assessment = baseline_compiler.assess(baseline)
             if not assessment.lowering_eligible:
                 raise ValueError("paired optimization baseline is not lowerable")
             baseline_lowering = baseline_compiler.lower(assessment)
-            native_baseline(baseline_lowering)
+            if paired_triton:
+                native_baseline(baseline_lowering)
 
         allocation = _object(study.document.get("allocation"), "study.allocation")
         order = allocation.get("order")

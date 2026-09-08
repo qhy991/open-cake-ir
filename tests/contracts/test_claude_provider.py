@@ -177,7 +177,12 @@ class ClaudeProviderContracts(unittest.TestCase):
     def test_adapter_uses_existing_supervisor_and_retains_failed_streams(self):
         invocation = self.builder().build("task", thread_id=SESSION)
         adapter = ClaudeProviderAdapter(timeout_seconds=17)
-        completed = subprocess.CompletedProcess(invocation.argv, 0, self.raw(), b"")
+        events = self.events()
+        events[0]["model"] = "exact-requested-model"
+        for event in events:
+            if event.get("type") == "assistant":
+                event["message"]["model"] = "exact-requested-model"
+        completed = subprocess.CompletedProcess(invocation.argv, 0, self.raw(events), b"")
         with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed) as process:
             turn = adapter.execute(invocation, candidate_path=self.candidate, expected_change="update",
                                    expected_terminal_message=TERMINAL, arm="open_cake")
@@ -192,6 +197,15 @@ class ClaudeProviderContracts(unittest.TestCase):
         self.assertEqual(captured.exception.artifact_payloads["provider_stdout"], failure.stdout)
         self.assertEqual(captured.exception.protocol_adherence, "provider_fault")
         self.assertEqual(CLAUDE_EVENT_CONTRACT, self.builder().configuration["event_contract"])
+
+    def test_live_adapter_refuses_model_substitution_before_returning_a_candidate(self):
+        invocation = self.builder().build("task", thread_id=SESSION)
+        completed = subprocess.CompletedProcess(invocation.argv, 0, self.raw(), b"")
+        with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed):
+            with self.assertRaisesRegex(RunProtocolFault, "reported model differs") as captured:
+                ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                    expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
+        self.assertEqual(captured.exception.artifact_payloads["provider_stdout"], completed.stdout)
 
 
 if __name__ == "__main__":

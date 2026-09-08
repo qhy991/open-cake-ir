@@ -237,6 +237,10 @@ class ClaudeProviderAdapter:
         try:
             if completed.returncode != 0:
                 raise ValueError(f"Claude process failed with exit code {completed.returncode}")
+            parsed = parse_claude_turn_events(completed.stdout, expected_terminal_message=expected_terminal_message)
+            requested_model = invocation.argv[invocation.argv.index("--model") + 1]
+            if parsed.reported_models != (requested_model,):
+                raise ValueError("Claude reported model differs from the exact requested model")
             return normalize_claude_turn(completed.stdout, candidate_path=candidate_path,
                 expected_change=expected_change, expected_terminal_message=expected_terminal_message,
                 expected_thread_id=invocation.thread_id, event_contract=event_contract,
