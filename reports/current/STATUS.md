@@ -7,21 +7,21 @@
 
 ## Compiler
 
-- 版本： `open-cake-ir-sm100a-v64`
+- 版本： `open-cake-ir-sm100a-v65`
 - 状态： `released`
-- 目标： `apple_gpu_family8, sm_100a, sm_103a`
+- 目标： `apple_gpu_family7, apple_gpu_family8, sm_100a, sm_103a`
 - 语料检查： `100/100` 项符合预期
-- 绑定源码： `155` 个文件
+- 绑定源码： `156` 个文件
 - 已发布校准： `无`
 - 负责记录： [`compiler/revision.lock.json`](../../compiler/revision.lock.json)
 
 ## Executor
 
-- 版本： `open-cake-ir-b200-v67`
+- 版本： `open-cake-ir-b200-v68`
 - 状态： `released`
-- 绑定源码： `111` 个文件
+- 绑定源码： `130` 个文件
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v67.json`](../../runtime/executors/open-cake-ir-b200-v67.json)
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v68.json`](../../runtime/executors/open-cake-ir-b200-v68.json)
 
 ## 这些数字说明什么
 
