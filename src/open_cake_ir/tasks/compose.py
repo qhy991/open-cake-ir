@@ -16,7 +16,7 @@ from open_cake_ir.evaluation import LoadedCudaCandidate, WorkloadContract, obser
 from open_cake_ir.tasks.flash_kmeans.portfolio import PortfolioArtifact, PortfolioEvaluationReceipt
 from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 
-from open_cake_ir.lab.core import CampaignLock, CampaignRef
+from open_cake_ir.lab.contracts import CampaignLock, CampaignRef
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.lab.environments import BuildRequest, NativeTritonEnvironment, TritonToolchainBuilder
 from open_cake_ir.tasks.flash_kmeans.environment import DirectCudaEnvironment, NvccToolchainBuilder

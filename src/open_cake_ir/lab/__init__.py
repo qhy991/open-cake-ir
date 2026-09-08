@@ -1,8 +1,28 @@
 """Research Lab public Interface."""
 
 from .checkpoints import CheckpointObservation, TurnObservation, project_checkpoints
-from open_cake_ir.lab.core import AnalysisInclusion, CampaignLock, CampaignRef, Lab, RunEvaluator, RunProvider, StudyContract, StudyReport, TurnRequest, scientific_matched_analysis_plan_v2
-from open_cake_ir.lab.environments import AuthoringEnvironment, BuildRequest, CandidateSubmission, NativeTritonEnvironment, EnvironmentResult, OpenCakeEnvironment, ToolchainBuilder, TritonToolchainBuilder
+from open_cake_ir.lab.contracts import (
+    AnalysisInclusion,
+    CampaignLock,
+    CampaignRef,
+    RunEvaluator,
+    RunProvider,
+    StudyContract,
+    StudyReport,
+    TurnRequest,
+)
+from open_cake_ir.lab.core import Lab
+from open_cake_ir.lab._policies import scientific_matched_analysis_plan_v2
+from open_cake_ir.lab.environments import (
+    AuthoringEnvironment,
+    BuildRequest,
+    CandidateSubmission,
+    NativeTritonEnvironment,
+    EnvironmentResult,
+    OpenCakeEnvironment,
+    ToolchainBuilder,
+    TritonToolchainBuilder,
+)
 from .executor import ExecutorRevision
 from .faults import CandidateCompileRejected, RunProtocolFault
 from .providers import (

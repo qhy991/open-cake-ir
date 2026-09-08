@@ -3742,7 +3742,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
     def setUpClass(cls):
         from open_cake_ir.compiler import Compiler
         from open_cake_ir.evaluation import WorkloadContract
-        from open_cake_ir.lab.environments import _empirical_context
+        from open_cake_ir.lab.selection import _empirical_context
         from tests.contracts.test_authoring_environment import _headline_schedule, _synthetic_flash_model
 
         cls.temporary = tempfile.TemporaryDirectory(prefix="empirical-selection-contract-")
@@ -3826,7 +3826,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
             self.lab.preflight(path, empirical_cost_model_path=model_path)
 
     def test_context_and_revision_matching_is_exact(self):
-        from open_cake_ir.lab.environments import _EmpiricalSelection
+        from open_cake_ir.lab.selection import _EmpiricalSelection
         mutations = [
             ("timer", "different timer"), ("cache_protocol", "different cache"),
             ("input_scope", "different workload or case"),

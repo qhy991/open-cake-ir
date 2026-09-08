@@ -12,6 +12,8 @@ from typing import Mapping
 
 from open_cake_ir.evaluation.paired import candidate_from_identity, candidate_identity
 from .executor import ExecutorRevision
+from open_cake_ir.compiler import Compiler, CorpusGateReport
+from ._documents import _object, _digest, _project_path
 
 CAMPAIGN_BINDING = {'binding': 'campaign_lock'}
 CURRENT_RELEASE_BINDING = {'binding': 'current_release'}
@@ -168,3 +170,49 @@ def resolve_execution_bindings(
         bindings['fixed_baseline_bundle_path'], 'fixed baseline bundle')), 'candidate': candidate_identity(baseline)}
     execution['runtime_config'] = {'path': str(runtime_path), 'sha256': sha256(runtime_path.read_bytes()).hexdigest()}
     return document, executor
+
+
+def _resolve_compiler_reference(
+    root: Path,
+    value: object,
+    context: str,
+    *,
+    template: bool,
+) -> tuple[CorpusGateReport, str, dict[str, object]]:
+    """Resolve a template binding or verify one frozen Compiler reference."""
+
+    reference = _object(value, context)
+    if template:
+        if reference != CURRENT_RELEASE_BINDING:
+            raise ValueError("Study template Compiler binding differs")
+        relative = "compiler/revision.lock.json"
+        path = (root / relative).resolve(strict=True)
+    else:
+        if reference == CURRENT_RELEASE_BINDING:
+            raise ValueError("frozen Study cannot follow the current Compiler")
+        if set(reference) not in (
+            {"path", "canonical_sha256"},
+            {"path", "canonical_sha256", "revision_id"},
+        ):
+            raise ValueError("Compiler Revision reference fields differ")
+        relative, path = _project_path(root, reference["path"], f"{context}.path")
+
+    compiler = Compiler.load(root, path)
+    gate = compiler.check_corpus()
+    if compiler.state != "released" or not gate.passed:
+        raise ValueError("Study Contract requires a released gated Compiler Revision")
+    if not template and (
+        gate.compiler_revision_sha256
+        != _digest(reference["canonical_sha256"], f"{context}.canonical_sha256")
+        or (
+            "revision_id" in reference
+            and reference["revision_id"] != gate.compiler_revision_id
+        )
+    ):
+        raise ValueError("Study Contract Compiler Revision differs")
+    exact = {
+        "revision_id": gate.compiler_revision_id,
+        "path": relative,
+        "canonical_sha256": gate.compiler_revision_sha256,
+    }
+    return gate, relative, exact
