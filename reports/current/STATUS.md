@@ -17,11 +17,11 @@
 
 ## Executor
 
-- 版本： `open-cake-ir-b200-v69`
+- 版本： `open-cake-ir-b200-v70`
 - 状态： `released`
 - 绑定源码： `130` 个文件
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v69.json`](../../runtime/executors/open-cake-ir-b200-v69.json)
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v70.json`](../../runtime/executors/open-cake-ir-b200-v70.json)
 
 ## 这些数字说明什么
 
