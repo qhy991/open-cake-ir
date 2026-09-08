@@ -438,21 +438,20 @@ def _verify_register_mma(operation, instruction, buffers, path: str, out: _Colle
 
     This modeled instruction has a fixed 16x8x16 atom, K-major operands and one
     CTA. Other instruction families do not inherit its register-source contract.
-    Omitted placement retains the existing localized coverage hint.
+    Omitted placement retains its coverage hint but cannot erase the hardware
+    semantics of an explicitly named instruction.
     """
     category = FindingCategory.HARDWARE_CONFORMANCE
-    if instruction.operand_source is not OperandSource.REGISTER:
-        if (instruction.contract == _REGISTER_MMA_CONTRACT
-                and instruction.operand_source is not None):
-            out.add("MMA_OPERAND_SOURCE_MISMATCH", f"{path}.instruction.operand_source",
-                    "warp MMA reads register fragments, not shared or tensor memory",
+    if instruction.contract != _REGISTER_MMA_CONTRACT:
+        if instruction.operand_source is OperandSource.REGISTER:
+            out.add("MMA_REGISTER_CONTRACT_UNSUPPORTED", f"{path}.instruction.operand_source",
+                    "register operand placement is modeled only for the admitted BF16 warp MMA",
                     category)
         return
-    if instruction.contract != _REGISTER_MMA_CONTRACT:
-        out.add("MMA_REGISTER_CONTRACT_UNSUPPORTED", f"{path}.instruction.operand_source",
-                "register operand placement is modeled only for the admitted BF16 warp MMA",
+    if instruction.operand_source not in (None, OperandSource.REGISTER):
+        out.add("MMA_OPERAND_SOURCE_MISMATCH", f"{path}.instruction.operand_source",
+                "warp MMA reads register fragments, not shared or tensor memory",
                 category)
-        return
     for name in (*operation.reads, *operation.writes):
         buffer = buffers.get(name)
         if buffer is not None and buffer.space is not MemorySpace.REGISTER:

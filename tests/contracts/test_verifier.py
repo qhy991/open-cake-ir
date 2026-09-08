@@ -114,6 +114,22 @@ class RegisterMmaPlacementTest(unittest.TestCase):
                 document["operations"][2]["parameters"]["instruction"][field] = value
                 self.assertIn("MMA_REGISTER_ATOM_MISMATCH", _codes(self._findings(document)))
 
+    def test_omitting_source_does_not_disable_known_instruction_constraints(self):
+        for field, value in (("shape", [16, 16, 16]), ("cta_group", 2),
+                             ("operand_major", ["mn", "k"])):
+            with self.subTest(field=field):
+                document = self._document()
+                instruction = document["operations"][2]["parameters"]["instruction"]
+                del instruction["operand_source"]
+                instruction[field] = value
+                self.assertIn("MMA_REGISTER_ATOM_MISMATCH", _codes(self._findings(document)))
+        for name in ("a_tile", "b_tile", "acc"):
+            with self.subTest(buffer=name):
+                document = self._document()
+                del document["operations"][2]["parameters"]["instruction"]["operand_source"]
+                next(b for b in document["buffers"] if b["name"] == name)["space"] = "shared"
+                self.assertIn("MMA_OPERAND_SOURCE_MISMATCH", _codes(self._findings(document)))
+
 
 class FindingContractTest(unittest.TestCase):
     def test_dataclass_projection_preserves_both_blocking_dispositions(self) -> None:
