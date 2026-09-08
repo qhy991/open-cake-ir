@@ -19,7 +19,7 @@ from tests.contracts.test_authoring_environment import RecordingToolchain, _head
 
 
 class DiagnosisSeamTests(unittest.TestCase):
-    def environment(self):
+    def environment(self, *, python=False):
         # This is the explicit prospective source domain, not the stale released lock.
         draft = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         # Explicit interface double permits exercising a prospective Environment seam;
@@ -28,6 +28,8 @@ class DiagnosisSeamTests(unittest.TestCase):
         compiler.state = "released"
         workload = load_workload(ROOT / "contracts/workloads/flash-kmeans-assign-v2.json")
         study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-template.json").read_text())
+        if python:
+            study["arms"]["open_cake"]["input_format"] = "schedule_or_python_v1"
         toolchain = RecordingToolchain()
         environment = TaskOpenCakeEnvironment(compiler, toolchain,
             authority_document=study["arms"]["open_cake"], workload=workload, case_id="headline_b32")
@@ -42,6 +44,19 @@ class DiagnosisSeamTests(unittest.TestCase):
         self.assertEqual(result.feedback["stage"], "lowering")
         self.assertEqual(result.feedback["code"], "LOWERING_UNDETERMINED")
         self.assertEqual(route_rejection(result.feedback).destination, "ir_vocabulary")
+        self.assertEqual(toolchain.requests, [])
+
+    def test_actual_python_refusal_preserves_top_level_location_for_peer(self):
+        from open_cake_ir.lab.diagnoses import rejected_peer_feedback
+        _, environment, _, toolchain = self.environment(python=True)
+        submission = CandidateSubmission.seal(environment.media_type, json.dumps({"python_source": "def broken(:\n"}).encode())
+        result = environment.build(submission)
+        self.assertEqual(result.disposition, "rejected")
+        self.assertEqual(result.feedback["code"], "PYTHON_SYNTAX")
+        peer = rejected_peer_feedback([(submission, result)], arm="open_cake")[0]
+        self.assertEqual(peer["source_location"], {key: value for key, value in result.feedback["source_location"].items() if key != "filename"})
+        self.assertEqual(peer["source_location"]["line"], 1)
+        self.assertNotIn("filename", peer["source_location"])
         self.assertEqual(toolchain.requests, [])
 
     def test_unrelated_compiler_fault_is_not_candidate_rejection(self):
