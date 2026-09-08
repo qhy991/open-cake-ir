@@ -55,6 +55,66 @@ def _codes(findings: tuple[Finding, ...]) -> set[str]:
     return {finding.code for finding in findings}
 
 
+class RegisterMmaPlacementTest(unittest.TestCase):
+    """New register-source syntax is checked at the hardware boundary itself."""
+
+    def _document(self):
+        document = json.loads((ROOT / "corpus/schedules/gemm-bias-b1-smoke.json").read_text())
+        document["operations"][2]["parameters"]["instruction"] = {
+            "contract": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
+            "shape": [16, 8, 16], "cta_group": 1,
+            "operand_source": "register", "operand_major": ["k", "k"],
+        }
+        document["operations"][2]["parameters"]["tile_shape"][0] = 16
+        document["program_map"]["axes"][0]["tile"] = 16
+        for buffer in document["buffers"]:
+            if buffer["name"] in {"a_tile", "acc", "c_tile"}:
+                buffer["shape"][0] = 16
+        return document
+
+    def _findings(self, document):
+        return verify(Schedule.from_dict(document), TARGET)
+
+    def test_explicit_register_placement_has_no_mma_hardware_findings(self):
+        document = self._document()
+        schedule = Schedule.from_dict(document)
+        self.assertEqual(schedule.operations[2].parameters.instruction.operand_source.value,
+                         "register")
+        self.assertEqual([f for f in self._findings(document)
+                          if f.code.startswith("MMA_")], [])
+
+    def test_operands_and_accumulator_are_checked_even_if_other_rules_also_block(self):
+        for name in ("a_tile", "b_tile", "acc"):
+            with self.subTest(buffer=name):
+                document = self._document()
+                next(b for b in document["buffers"] if b["name"] == name)["space"] = "shared"
+                findings = [f for f in self._findings(document)
+                            if f.code == "MMA_OPERAND_SOURCE_MISMATCH"]
+                self.assertTrue(findings)
+                self.assertTrue(any(name in f.message for f in findings))
+                self.assertTrue(all(f.blocks_acceptance for f in findings))
+
+    def test_register_source_cannot_be_attached_to_another_instruction_family(self):
+        document = self._document()
+        document["operations"][2]["parameters"]["instruction"]["contract"] = "tcgen05.mma.cta_group::1.kind::f16"
+        self.assertIn("MMA_REGISTER_CONTRACT_UNSUPPORTED", _codes(self._findings(document)))
+
+    def test_warp_contract_cannot_claim_shared_or_tensor_operands(self):
+        for source in ("shared", "tensor"):
+            with self.subTest(source=source):
+                document = self._document()
+                document["operations"][2]["parameters"]["instruction"]["operand_source"] = source
+                self.assertIn("MMA_OPERAND_SOURCE_MISMATCH", _codes(self._findings(document)))
+
+    def test_register_atom_shape_group_and_major_are_hardware_constraints(self):
+        for field, value in (("shape", [16, 16, 16]), ("cta_group", 2),
+                             ("operand_major", ["mn", "k"])):
+            with self.subTest(field=field):
+                document = self._document()
+                document["operations"][2]["parameters"]["instruction"][field] = value
+                self.assertIn("MMA_REGISTER_ATOM_MISMATCH", _codes(self._findings(document)))
+
+
 class FindingContractTest(unittest.TestCase):
     def test_dataclass_projection_preserves_both_blocking_dispositions(self) -> None:
         from dataclasses import asdict, replace

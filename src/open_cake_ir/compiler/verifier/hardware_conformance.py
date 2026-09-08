@@ -38,6 +38,7 @@ _CONTRACT_DTYPES = {
 }
 
 _BLOCK_SCALE_MMA_CONTRACT = "triton.dot.fp8e4m3_block_scale_fp32"
+_REGISTER_MMA_CONTRACT = "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32"
 
 _ELEMENTWISE_INSTRUCTIONS = {
     "libdevice.tanh.f32": (ElementwiseOp.TANH, DType.FP32),
@@ -372,6 +373,7 @@ def _verify_instruction_commitments(
                         category,
                     )
             _verify_atom_placement(operation, instruction, path, out)
+            _verify_register_mma(operation, instruction, buffers, path, out)
             if (
                 instruction.shape is not None
                 and tile is not None
@@ -429,6 +431,44 @@ def _verify_instruction_commitments(
                     f"{name!r} shape {accumulator.shape[0]}x{accumulator.shape[1]}",
                     category,
                 )
+
+
+def _verify_register_mma(operation, instruction, buffers, path: str, out: _Collector) -> None:
+    """Warp MMA consumes register fragments; declaring them constrains storage.
+
+    This modeled instruction has a fixed 16x8x16 atom, K-major operands and one
+    CTA. Other instruction families do not inherit its register-source contract.
+    Omitted placement retains the existing localized coverage hint.
+    """
+    category = FindingCategory.HARDWARE_CONFORMANCE
+    if instruction.operand_source is not OperandSource.REGISTER:
+        if (instruction.contract == _REGISTER_MMA_CONTRACT
+                and instruction.operand_source is not None):
+            out.add("MMA_OPERAND_SOURCE_MISMATCH", f"{path}.instruction.operand_source",
+                    "warp MMA reads register fragments, not shared or tensor memory",
+                    category)
+        return
+    if instruction.contract != _REGISTER_MMA_CONTRACT:
+        out.add("MMA_REGISTER_CONTRACT_UNSUPPORTED", f"{path}.instruction.operand_source",
+                "register operand placement is modeled only for the admitted BF16 warp MMA",
+                category)
+        return
+    for name in (*operation.reads, *operation.writes):
+        buffer = buffers.get(name)
+        if buffer is not None and buffer.space is not MemorySpace.REGISTER:
+            out.add("MMA_OPERAND_SOURCE_MISMATCH", f"{path}.instruction.operand_source",
+                    f"warp MMA operands and accumulator must be register-resident; "
+                    f"{name!r} is {buffer.space.value}", category)
+    if (instruction.shape is not None and instruction.shape != (16, 8, 16)):
+        out.add("MMA_REGISTER_ATOM_MISMATCH", f"{path}.instruction.shape",
+                "the declared BF16 warp MMA atom has shape 16x8x16", category)
+    if instruction.cta_group is not None and instruction.cta_group != 1:
+        out.add("MMA_REGISTER_ATOM_MISMATCH", f"{path}.instruction.cta_group",
+                "warp MMA belongs to one CTA", category)
+    if (instruction.operand_major is not None
+            and tuple(mode.value for mode in instruction.operand_major) != ("k", "k")):
+        out.add("MMA_REGISTER_ATOM_MISMATCH", f"{path}.instruction.operand_major",
+                "the row/column BF16 warp MMA requires K-major A and B", category)
 
 
 def _verify_epilogue_commitments(schedule: Schedule, out: _Collector) -> None:

@@ -231,6 +231,7 @@ class OperandSource(str, Enum):
 
     SHARED = "shared"
     TENSOR = "tensor"
+    REGISTER = "register"
 
 
 class OperandMajorMode(str, Enum):
