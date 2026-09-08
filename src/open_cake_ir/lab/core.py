@@ -46,6 +46,7 @@ from .providers import (
     required_live_provider_qualification_scope,
 )
 from .ralph import RalphBudget, RalphController, derive_ralph_stop_reason
+from .python_reference import read_skeleton
 from .task_package import TASK_AGENTS_RALPH_V1, render_task_package
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -1664,7 +1665,7 @@ class Lab:
             "study.arms.open_cake.schedule_skeleton.path",
         )
         skeleton_document = _object(
-            json.loads(schedule_skeleton_path.read_text(encoding="utf-8")),
+            read_skeleton(schedule_skeleton_path),
             "study.arms.open_cake.schedule_skeleton",
         )
         if (

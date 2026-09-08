@@ -15,7 +15,7 @@ def comparison_arm(arms: Mapping[str, object]) -> str:
     raise ValueError('matched_search requires Open Cake and one explicitly declared comparison environment')
 
 
-def bind_baseline(schedule: Mapping[str, object], workload, case_id: str) -> dict:
+def bind_baseline(schedule: Mapping[str, object], workload, case_id: str, *, backend: str = "triton") -> dict:
     """Bind an already shaped baseline; the Workload ABI is the only tensor owner."""
     document = json.loads(json.dumps(schedule))
     if document.get('target') != workload.document['semantics'].get('target'):
@@ -25,8 +25,8 @@ def bind_baseline(schedule: Mapping[str, object], workload, case_id: str) -> dic
     if [(b['name'], tuple(b['shape']), b['dtype'], b['mode']) for b in buffers] != [
             (arg.name, arg.shape, arg.dtype, arg.mode) for arg in abi]:
         raise ValueError('baseline Schedule must already match the selected Workload ABI; use baseline preparation for another shape')
-    if document.get('lowering', {}).get('backend') != 'triton':
-        raise ValueError('paired baseline requires the explicit Triton lowering route')
+    if backend not in {'triton', 'metal'} or document.get('lowering', {}).get('backend') != backend:
+        raise ValueError('baseline differs from the explicitly requested lowering backend')
     document['metadata']['workload_contract_sha256'] = workload.canonical_sha256
     return document
 
