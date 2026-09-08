@@ -6,8 +6,8 @@ struct Request: Decodable {
     let action: String
     let target: String
     let expected_device_names: [String]
-    let entry_point: String
-    let archive_path: String
+    let entry_point: String?
+    let archive_path: String?
     let source_path: String?
     let expected_host: [String: String]?
 }
@@ -20,7 +20,7 @@ var report: [String: Any] = ["schema_version": 1, "status": "failed", "dispatche
 do {
     let data = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
     let request = try JSONDecoder().decode(Request.self, from: data)
-    try require(request.action == "build" || request.action == "reload", "unsupported archive action")
+    try require(["build", "reload", "inspect"].contains(request.action), "unsupported archive action")
     stage = "host_admission"
     guard let device = MTLCreateSystemDefaultDevice() else { throw Refusal(description: "Metal device unavailable") }
     let family: MTLGPUFamily
@@ -34,7 +34,24 @@ do {
                 "operating_system": ProcessInfo.processInfo.operatingSystemVersionString, "target": request.target]
     if let expected = request.expected_host { try require(host == expected, "compiled archive host admission differs") }
     report["host"] = host
-    let archiveURL = URL(fileURLWithPath: request.archive_path)
+    if request.action == "inspect" {
+        try require(request.source_path == nil && request.archive_path == nil && request.entry_point == nil,
+                    "host inspection must not receive source or archive input")
+        let stageSampling = device.supportsCounterSampling(.atStageBoundary)
+        let timestampSet = device.counterSets?.first(where: { $0.name == MTLCommonCounterSet.timestamp.rawValue })
+        let timestampAvailable = timestampSet?.counters.contains(where: { $0.name == "GPUTimestamp" }) ?? false
+        report["profiling"] = ["compute_stage_sampling": stageSampling, "gpu_timestamp_counter": timestampAvailable]
+        try require(stageSampling && timestampAvailable, "compute-stage GPUTimestamp sampling unavailable")
+        report["status"] = "completed"
+        report["stage"] = stage
+        let payload = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+        print(String(data: payload, encoding: .utf8)!)
+        exit(0)
+    }
+    guard let archivePath = request.archive_path, let entryPoint = request.entry_point else {
+        throw Refusal(description: "archive build/reload requires artifact path and entry point")
+    }
+    let archiveURL = URL(fileURLWithPath: archivePath)
     let archive: MTLBinaryArchive
     let library: MTLLibrary
     if request.action == "build" {
@@ -56,7 +73,7 @@ do {
         library = try device.makeLibrary(URL: archiveURL)
     }
     stage = "function_lookup"
-    guard let function = library.makeFunction(name: request.entry_point) else { throw Refusal(description: "archived entry point unavailable") }
+    guard let function = library.makeFunction(name: entryPoint) else { throw Refusal(description: "archived entry point unavailable") }
     let descriptor = MTLComputePipelineDescriptor()
     descriptor.computeFunction = function
     if request.action == "build" {

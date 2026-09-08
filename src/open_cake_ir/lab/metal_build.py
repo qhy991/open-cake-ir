@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import subprocess
 import tempfile
+from typing import Mapping
 
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.evaluation.core import LaunchableCandidate
@@ -34,7 +35,7 @@ def _external_root(path: Path) -> Path:
     if not path.is_absolute():
         raise ValueError("Metal build output root must be absolute")
     resolved = path.resolve()
-    if resolved == ROOT or ROOT in resolved.parents:
+    if resolved == ROOT or ROOT in resolved.parents or any((parent / ".git").exists() for parent in (resolved, *resolved.parents)):
         raise ValueError("Metal build artifacts must stay outside the checkout")
     return resolved
 
@@ -70,7 +71,24 @@ class MetalArchiveHost:
     timeout_seconds: int = 120
 
     @classmethod
-    def build(cls, output_root: Path, *, swiftc: str = "swiftc", timeout_seconds: int = 120):
+    def from_executor(cls, executor, *, timeout_seconds: int = 120):
+        """Use only the helper and toolchain facts admitted by one Executor."""
+        admitted = executor.admit_host()
+        if not isinstance(admitted, Mapping):
+            raise ValueError("Metal archive helper requires a native Metal Executor")
+        if admitted.get("kind") != "metal":
+            raise ValueError("Metal archive helper requires a native Metal Executor")
+        host = executor.document["host_environment"]
+        toolchain = {name: dict(host[name]) for name in ("swift", "sdk", "archive_executable", "host")}
+        return cls(Path(admitted["archive_executable"]), toolchain, timeout_seconds)
+
+    @property
+    def canonical_sha256(self) -> str:
+        """Identity used by the existing Lab toolchain binding, not a new catalogue."""
+        return sha256(_json(self.toolchain)).hexdigest()
+
+    @classmethod
+    def build(cls, output_root: Path, *, swiftc: str = "swiftc", sdk_path: Path | None = None, timeout_seconds: int = 120):
         root = _external_root(output_root)
         root.mkdir(parents=True, exist_ok=True)
         directory = Path(tempfile.mkdtemp(prefix="metal-host-", dir=root))
@@ -79,8 +97,18 @@ class MetalArchiveHost:
         (directory / "swift-version.stderr").write_bytes(version.stderr)
         if version.returncode:
             raise RunProtocolFault("harness_fault", "Swift toolchain version observation failed")
+        if sdk_path is None:
+            sdk = subprocess.run(["/usr/bin/xcrun", "--sdk", "macosx", "--show-sdk-path"], capture_output=True, timeout=timeout_seconds)
+            (directory / "sdk-path.stdout").write_bytes(sdk.stdout)
+            (directory / "sdk-path.stderr").write_bytes(sdk.stderr)
+            if sdk.returncode or not sdk.stdout.strip():
+                raise RunProtocolFault("harness_fault", "selected Metal SDK observation failed")
+            sdk_path = Path(sdk.stdout.decode().strip())
+        sdk_path = Path(sdk_path).resolve(strict=True)
+        if not sdk_path.is_dir():
+            raise ValueError("Metal archive host requires the selected SDK directory")
         executable = directory / "metal-archive-host"
-        command = [swiftc, "-O", str(SWIFT_SOURCE), "-o", str(executable)]
+        command = [swiftc, "-O", "-target", "arm64-apple-macosx15.0", "-sdk", str(sdk_path), str(SWIFT_SOURCE), "-o", str(executable)]
         (directory / "build-command.json").write_bytes(_json(command))
         completed = subprocess.run(command, capture_output=True, timeout=timeout_seconds)
         (directory / "build.stdout").write_bytes(completed.stdout)
@@ -132,6 +160,12 @@ class MetalToolchainBuilder:
         self.host = host
         self.target = Target.load(Path(project_root) / "compiler" / "targets" / f"{workload.target}.json")
         self.workload.tensor_abi(case_id)
+
+    @property
+    def canonical_sha256(self) -> str:
+        if self.host is None:
+            raise ValueError("Metal toolchain identity requires an admitted archive helper")
+        return self.host.canonical_sha256
 
     def _manifest(self, request: BuildRequest) -> MetalTensorLaunchManifest:
         requirements = request.toolchain_requirements

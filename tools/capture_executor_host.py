@@ -123,13 +123,48 @@ def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _capture_metal_host(arguments: argparse.Namespace, output: Path) -> dict[str, object]:
+    from open_cake_ir.compiler.target import Target
+    from open_cake_ir.lab.metal_host import command_text, inspect_metal_host, observe_sdk
+    if (arguments.target is None or arguments.swiftc is None or arguments.archive_executable is None
+            or arguments.observer_executable is None):
+        raise ValueError("Metal capture requires target, swiftc, archive executable and observer executable")
+    if any(value is not None for value in (arguments.cupti_distribution, arguments.flashinfer_distribution, arguments.ncu)):
+        raise ValueError("Metal capture must not inherit CUDA host fields")
+    for name in ("swiftc", "archive_executable", "observer_executable"):
+        path = getattr(arguments, name)
+        if (not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK)
+                or name != "swiftc" and path.is_symlink()):
+            raise ValueError(f"Metal {name} requires an explicit executable path")
+    swiftc = arguments.swiftc.absolute()
+    target = Target.load(Path(__file__).resolve().parents[1] / "compiler/targets" / f"{arguments.target}.json")
+    python = Path(sys.executable).absolute()
+    host = {"kind": "metal", "python": {
+        "invocation_path": str(python), "version": sys.version.split()[0],
+        "resolved_sha256": sha256(python.resolve(strict=True).read_bytes()).hexdigest()},
+        "packages": {name: importlib.metadata.version(name) for name in arguments.package},
+        "swift": {"invocation_path": str(swiftc), "version": command_text([str(swiftc), "--version"]),
+                  "resolved_sha256": sha256(swiftc.resolve(strict=True).read_bytes()).hexdigest()},
+        "sdk": observe_sdk(),
+        "archive_executable": _file_record(arguments.archive_executable, str(arguments.archive_executable)),
+        "observer_executable": _file_record(arguments.observer_executable, str(arguments.observer_executable))}
+    host["host"] = inspect_metal_host(arguments.archive_executable, target=arguments.target,
+        expected_device_names=list(target.device_names), directory=output.with_name(output.stem + "-inspection"))
+    return host
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--package", action="append", required=True,
+    parser.add_argument("--kind", choices=("cuda", "metal"), default="cuda")
+    parser.add_argument("--package", action="append", default=[],
                         help="installed distribution to bind; repeat for each runtime dependency")
-    parser.add_argument("--cupti-distribution", required=True)
-    parser.add_argument("--flashinfer-distribution", required=True)
-    parser.add_argument("--ncu", type=Path, required=True)
+    parser.add_argument("--cupti-distribution")
+    parser.add_argument("--flashinfer-distribution")
+    parser.add_argument("--ncu", type=Path)
+    parser.add_argument("--target", choices=("apple_gpu_family7", "apple_gpu_family8"))
+    parser.add_argument("--swiftc", type=Path)
+    parser.add_argument("--archive-executable", type=Path)
+    parser.add_argument("--observer-executable", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args(argv)
     if not arguments.output.is_absolute():
@@ -143,10 +178,18 @@ def main(argv: list[str] | None = None) -> int:
     ):
         raise ValueError("host capture output must be outside project checkouts")
 
-    host = _capture_host(arguments)
+    if arguments.kind == "cuda":
+        if not arguments.package or any(value is None for value in (arguments.cupti_distribution, arguments.flashinfer_distribution, arguments.ncu)):
+            raise ValueError("CUDA capture requires packages, CUPTI, FlashInfer and NCU")
+        if any(value is not None for value in (arguments.target, arguments.swiftc, arguments.archive_executable, arguments.observer_executable)):
+            raise ValueError("CUDA capture must not receive Metal host fields")
+        host = _capture_host(arguments)
+    else:
+        host = _capture_metal_host(arguments, output)
     ExecutorRevision._validate_host_document(host)
     admit_host_environment(host)
-    admit_profiler_environment(host)
+    if arguments.kind == "cuda":
+        admit_profiler_environment(host)
     payload = json.dumps(host, indent=2, sort_keys=True, allow_nan=False) + "\n"
     with output.open("x", encoding="utf-8") as stream:
         stream.write(payload)
