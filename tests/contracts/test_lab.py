@@ -2078,7 +2078,7 @@ class LabContractTests(unittest.TestCase):
 
 
 class EmpiricalFeedbackRepairTests(unittest.TestCase):
-    """Run the actual empirical environment and feedback consumer without a release cycle."""
+    """Run the real empirical consumer with an isolated synthetic CUDA Executor."""
 
     def test_environment_constructor_type_hints_keep_the_executor_owner(self):
         from typing import get_type_hints
@@ -2088,22 +2088,19 @@ class EmpiricalFeedbackRepairTests(unittest.TestCase):
         self.assertEqual(hints["executor"], ExecutorRevision | None)
 
     def test_empirical_filter_summary_reaches_the_next_provider_turn(self):
-        from open_cake_ir.compiler import Compiler
         from open_cake_ir.lab.selection import _EMPIRICAL_SELECTION, _empirical_context
         from open_cake_ir.tasks.flash_kmeans.authoring import prepare_flash_schedule
 
-        temporary = tempfile.TemporaryDirectory(prefix="empirical-feedback-repair-")
-        self.addCleanup(temporary.cleanup)
-        # Reuse the existing real consumer fixture, but not its cycle-owning setup.
-        fixture = EmpiricalSelectionContractTests("test_actual_search_feedback_and_fresh_process_replay")
-        fixture.parent = Path(temporary.name).resolve()
-        fixture.root = ROOT
-        fixture.lab = TaskLab(ROOT, clock=lambda: 0.0)
-        current = json.loads((ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text())["current"]
-        reference = {key: current[key] for key in ("path", "canonical_sha256", "executor_id")}
-        fixture.executor = ExecutorRevision.load_reference(ROOT, reference, "CPU feedback fixture")
-        fixture.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-        fixture.workload = load_workload(ROOT / "contracts/workloads/flash-kmeans-assign-v2.json")
+        # Reuse the existing synthetic CUDA host and disposable-project setup.
+        # A local subclass keeps its class-owned fixture state independent of the
+        # consumer suite; no current released Executor or host fact is changed.
+        class FeedbackFixture(EmpiricalSelectionContractTests):
+            pass
+
+        FeedbackFixture.setUpClass()
+        self.addCleanup(FeedbackFixture.tearDownClass)
+        fixture = FeedbackFixture("test_actual_search_feedback_and_fresh_process_replay")
+        fixture.lab = TaskLab(fixture.root, clock=lambda: 0.0)
         schedule = prepare_flash_schedule(
             json.loads((ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()),
             fixture.workload, "headline_b32",
