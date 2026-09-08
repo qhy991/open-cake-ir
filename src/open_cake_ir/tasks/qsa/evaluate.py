@@ -33,7 +33,7 @@ from open_cake_ir.tasks.qsa.feedback import qsa_compiler_feedback
 
 _STAGE_SCHEMA = "kernelinfra.stage-result.v1"
 _WORKLOAD_ID = "qsa-prefill-t32768"
-_PROGRAM_PATH = "contracts/programs/qsa-prefill-t32768-v2.json"
+_PROGRAM_PATH = "contracts/programs/qsa-prefill-t32768-v3.json"
 _WORKLOAD_PATH = "contracts/workloads/qsa-prefill-t32768-v1.json"
 _DIRECT_SOURCE = "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu"
 _DIRECT_MANIFEST = "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json"

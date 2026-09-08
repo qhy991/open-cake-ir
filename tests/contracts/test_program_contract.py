@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import json
 import unittest
 from pathlib import Path
 
@@ -30,6 +31,21 @@ class ProgramContractTest(unittest.TestCase):
     def test_current_compiler_does_not_rebind_the_frozen_program_v2(self) -> None:
         with self.assertRaisesRegex(ValueError, "program node 'score_topk' lowering differs"):
             ProgramContract.load(ROOT, self.path, self.compiler)
+
+    def test_current_program_successor_preserves_the_frozen_workload_and_composition(self) -> None:
+        path = ROOT / "contracts/programs/qsa-prefill-t32768-v3.json"
+        program = ProgramContract.load(ROOT, path, self.compiler)
+        previous = json.loads(self.path.read_text())
+        successor = json.loads(path.read_text())
+        self.assertEqual(program.program_id, successor["program_id"])
+        self.assertNotEqual(successor["program_id"], previous["program_id"])
+        successor["program_id"] = previous["program_id"]
+        old_topk = previous["nodes"][2]
+        new_topk = successor["nodes"][2]
+        self.assertEqual(new_topk["id"], "score_topk")
+        self.assertNotEqual(new_topk["lowering_source_sha256"], old_topk["lowering_source_sha256"])
+        new_topk["lowering_source_sha256"] = old_topk["lowering_source_sha256"]
+        self.assertEqual(successor, previous)
 
     def test_schedule_identity_and_dataflow_drift_fail_closed(self) -> None:
         refusals = replay_program_v2()["mutation_refusals"]
