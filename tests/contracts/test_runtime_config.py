@@ -304,7 +304,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
                              ("service_user", True), ("service_group", None)):
             arguments = {**common, field: value}
             with self.subTest(field=field, value=value):
-                with patch("open_cake_ir.lab.runtime.shutil.which", side_effect=AssertionError("unexpected executable lookup")) as which:
+                with patch("open_cake_ir.lab.runtime_config.shutil.which", side_effect=AssertionError("unexpected executable lookup")) as which:
                     with self.assertRaises(ValueError):
                         broker_execution_sha256(**arguments, project_root=self.project)
                     which.assert_not_called()

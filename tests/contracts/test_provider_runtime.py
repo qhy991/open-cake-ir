@@ -86,12 +86,12 @@ class ProviderRuntimeContractTests(unittest.TestCase):
             self.assertEqual(resolve_codex_code_mode_host(executable)["path"], str(sibling))
 
     def test_explicit_invalid_codex_home_refuses_binding_and_both_turns(self):
-        with patch("open_cake_ir.lab.providers.sanitized_environment", return_value={}):
+        with patch("open_cake_ir.lab.provider_invocation.sanitized_environment", return_value={}):
             builder = self.builder()
         for value in ("home", ".", "", str(self.root / "missing"), str(self.executable), "/bad\x00home"):
             with self.subTest(home=value), patch(
-                "open_cake_ir.lab.providers.sanitized_environment", return_value={"CODEX_HOME": value},
-            ), patch("open_cake_ir.lab.providers.os.open") as open_helper:
+                "open_cake_ir.lab.provider_invocation.sanitized_environment", return_value={"CODEX_HOME": value},
+            ), patch("open_cake_ir.lab.provider_invocation.os.open") as open_helper:
                 with self.assertRaisesRegex(ValueError, "CODEX_HOME.*absolute directory"):
                     self.builder()
                 for thread in (None, "01234567-89ab-cdef-0123-456789abcdef"):
@@ -108,7 +108,7 @@ class ProviderRuntimeContractTests(unittest.TestCase):
         workspace.mkdir()
         original_cwd = Path.cwd()
         try:
-            with patch("open_cake_ir.lab.providers.sanitized_environment",
+            with patch("open_cake_ir.lab.provider_invocation.sanitized_environment",
                        return_value={"CODEX_HOME": str(codex_home)}):
                 os.chdir(self.root)
                 builder = self.builder(executable, workspace=workspace)

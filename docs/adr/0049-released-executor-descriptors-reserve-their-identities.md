@@ -46,3 +46,12 @@ v55; this alias reserves the historical identity and is not a release for curren
 sources. Replay uses the complete `ef362329` tree and original descriptor path.
 Both Git histories and inventory records are preserved. The combined source needs
 a newly derived Executor; neither earlier review or host binding transfers to it.
+
+On 2026-09-08, CuTe integration and Lab maintainability work independently produced v64.
+The main release at `399e549` keeps `runtime/executors/open-cake-ir-b200-v64.json`.
+The Lab release at `0f5ca6cbccbbda47c50e3dd52394f74de2d66bcd` is preserved byte-for-byte as
+`runtime/executors/open-cake-ir-b200-v64-lab-maintainability.json`, with its v64 id unchanged.
+Replay of that Lab release uses its original complete Git tree and original descriptor path.
+Its v65 successor at `3c6123d4a86fc035d539f97dd3cf7ef2088403c9` is retained as well. Both
+histories stay in integration ancestry; the combined CuTe and refactored Lab source requires
+another cycle-derived Executor, not a replacement of either v64 descriptor.
