@@ -24,7 +24,7 @@ The [English guide](wiki/README.md) also links every learning page. Use the [Glo
 | Purpose | English page |
 | --- | --- |
 | Authoring Schedules in Python | [Python frontend](PYTHON_FRONTEND.md) |
-| Running and measuring FP32 elementwise, reductions and weighted RMSNorm on Apple M1 Pro / M2 | [Metal guide](../metal.md) |
+| Optimizing normalization tasks through TaskLab on Apple M1 Pro | [Metal guide](../metal.md) |
 | IR objects, implementation ownership and extension points | [IR guide](IR_GUIDE.md) |
 | Initialization, accumulation and stores in two nested TileLoops | [Triton loop scopes](TRITON_LOOP_SCOPES.md) |
 | Matched IR/native Triton optimization from one baseline | [Paired Triton](PAIRED_TRITON.md) |
@@ -41,6 +41,6 @@ The [English guide](wiki/README.md) also links every learning page. Use the [Glo
 | Current released authorities | [Generated status](../../reports/current/STATUS.md) |
 | Surveys, history, and every language pair | [Complete catalog](../README.md) |
 
-Metal uses `simd_program_tile` with 32 lanes per threadgroup and provides local correctness and matched measurement tools. Host construction, warmed host calls and GPU command-buffer intervals are recorded separately; reported gains require the recorded noise controls to pass.
+Metal uses `simd_program_tile` with 32 lanes per threadgroup and runs normalization tasks through the existing TaskLab/Ralph evaluation path. Host construction, warmed host calls and GPU command-buffer intervals are recorded separately; reported gains require the recorded noise controls to pass.
 
 Original documents retain their paths. Chinese reading companions for English originals live under zh-CN; English counterparts to Chinese originals live here. Companions simplify explanations and link full historical tables rather than creating a second authority. Dates, scope, failures, and unverified outcomes retain their original meaning. Source generation, compilation, correctness, and performance remain distinct.

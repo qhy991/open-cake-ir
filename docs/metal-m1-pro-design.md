@@ -16,9 +16,8 @@ run the full Gate and focused portable tests, then obtain independent
 Develop in an isolated successor worktree; pinned Git retains released source bytes,
 and cycle commands assign Compiler and affected Executor successor identities.
 
-The bounded local experiment compares the guide's four RMSNorm DAGs at `(128, 1024)`.
-Run three complete repetitions with unchanged inputs, tolerances and stopping rules;
-retain raw receipts and the derived report outside every checkout. Each repetition
-uses the guide's search, confirmation, noise-control and profiling protocol. Results
-must justify any further change to lane mapping, vector access, shared reductions or
-dtype support, together with its legality/analysis updates and successor review.
+Task experiments use the [TaskLab launcher](metal.md), with one fixed-shape Workload,
+all required input distributions, explicit model/harness/effort and the common Ralph
+stopping policy. No task owns a second optimization loop. Results must justify further
+changes to lane mapping, vector access, shared reductions or dtype support, together
+with their legality/analysis updates and successor review.
