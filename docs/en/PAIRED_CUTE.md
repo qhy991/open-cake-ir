@@ -22,7 +22,7 @@ identity into its metadata. The Compiler fixture carries no fabricated Workload 
 Assess it through the ordinary Compiler CLI:
 
 ```sh
-PYTHONPATH=src python -m open_cake_ir.cli compiler assess examples/python/b300_cute_gemm_bias.py
+PYTHONPATH=src python -m open_cake_ir.cli compiler assess --revision compiler/revision.lock.json examples/python/b300_cute_gemm_bias.py
 ```
 
 The Cake arm submits the existing JSON Schedule member or an object containing

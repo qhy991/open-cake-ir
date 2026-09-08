@@ -20,7 +20,7 @@ Compiler 的主 Schedule 不伪造 Workload 哈希，Lab 在使用时绑定真�
 可检查它：
 
 ```sh
-PYTHONPATH=src python -m open_cake_ir.cli compiler assess examples/python/b300_cute_gemm_bias.py
+PYTHONPATH=src python -m open_cake_ir.cli compiler assess --revision compiler/revision.lock.json examples/python/b300_cute_gemm_bias.py
 ```
 
 Cake 组提交 JSON Schedule，或含 `python_source` 的对象。受限 Python 前端只解析，
