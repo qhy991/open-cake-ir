@@ -44,3 +44,26 @@ Lab prepares TASK.md for the problem and AGENTS.md for tool rules. An external R
 Correctness, measurement stability, and application benefit are different facts. Faster operator code does not by itself make a model or service faster. Compiler changes happen between frozen Campaigns and update types, verification, analysis, and lowering together, followed by the full Corpus and independent review. Executor fixes a different closure: Lab, evaluation, evidence tools, and environment. Read the [Glossary](GLOSSARY.md) and [maintenance guide](wiki/maintaining.md) for exact ownership.
 
 Concrete implementations live under `src/open_cake_ir/tasks/`. Tasks supply contract validation, oracles and preparation; the common Lab and Evaluation never import concrete tasks. See [task ownership](TASKS.md).
+
+## Lab lifecycle ownership
+
+`lab/core.py` connects the public API and retains its six existing dependencies: project
+root, clock, workload loader, schedule preparation, authoring validation and manifest
+parser. Phase functions receive what they use directly, without a second context object.
+
+| Module | Responsibility |
+| --- | --- |
+| `contracts`, `_policies` | Public Study/Campaign/report records and existing policy |
+| `bindings`, `preflight` | Exact revision selection and preparation before execution |
+| `execution` | Live authoring, filtering, evaluation, budget and terminal recording |
+| `replay` | Independent provider, candidate, selection and terminal reconstruction |
+| `archive` | Separate artifact writers and raw receipt readers |
+| `selection` | Pure ranking, empirical context and qualification calculations |
+| `reporting` | Audited claims, missingness and descriptive threshold views |
+| `_documents` | Narrow Lab document parsing primitives |
+
+Execution records observations; replay independently checks their raw support. Shared
+pure calculations do not replace either trust boundary. A first-provider fault returns
+before task-package or empirical-model resolution. Authority checks precede Evidence
+creation, and reporting invokes replay callbacks only when needed. Concrete tasks and
+portfolio dispatch remain in `TaskLab`; public imports remain `open_cake_ir.lab`.

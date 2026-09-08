@@ -2045,6 +2045,76 @@ class LabContractTests(unittest.TestCase):
         self.assertEqual(portfolio.run_order, ("portfolio-1",))
 
 
+
+class EmpiricalFeedbackRepairTests(unittest.TestCase):
+    """Run the actual empirical environment and feedback consumer without a release cycle."""
+
+    def test_environment_constructor_type_hints_keep_the_executor_owner(self):
+        from typing import get_type_hints
+        from open_cake_ir.lab.environments import OpenCakeEnvironment
+
+        hints = get_type_hints(OpenCakeEnvironment.__init__)
+        self.assertEqual(hints["executor"], ExecutorRevision | None)
+
+    def test_empirical_filter_summary_reaches_the_next_provider_turn(self):
+        from open_cake_ir.compiler import Compiler
+        from open_cake_ir.lab.selection import _EMPIRICAL_SELECTION, _empirical_context
+        from open_cake_ir.tasks.flash_kmeans.authoring import prepare_flash_schedule
+
+        temporary = tempfile.TemporaryDirectory(prefix="empirical-feedback-repair-")
+        self.addCleanup(temporary.cleanup)
+        # Reuse the existing real consumer fixture, but not its cycle-owning setup.
+        fixture = EmpiricalSelectionContractTests("test_actual_search_feedback_and_fresh_process_replay")
+        fixture.parent = Path(temporary.name).resolve()
+        fixture.root = ROOT
+        fixture.lab = TaskLab(ROOT, clock=lambda: 0.0)
+        current = json.loads((ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text())["current"]
+        reference = {key: current[key] for key in ("path", "canonical_sha256", "executor_id")}
+        fixture.executor = ExecutorRevision.load_reference(ROOT, reference, "CPU feedback fixture")
+        fixture.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        fixture.workload = load_workload(ROOT / "contracts/workloads/flash-kmeans-assign-v2.json")
+        schedule = prepare_flash_schedule(
+            json.loads((ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()),
+            fixture.workload, "headline_b32",
+        )
+        assessment = fixture.compiler.assess(schedule)
+        fixture.compiler_ref = {"revision_id": assessment.compiler_revision_id,
+                                "canonical_sha256": assessment.compiler_revision_sha256}
+        fixture.model = {
+            "schema_version": 2, "model_id": "synthetic-feedback-repair",
+            "compiler_revision_id": fixture.compiler_ref["revision_id"],
+            "compiler_revision_sha256": fixture.compiler_ref["canonical_sha256"],
+            "target": "sm_100a",
+            "context": _empirical_context(fixture.executor,
+                workload_sha256=fixture.workload.canonical_sha256, case_id="headline_b32"),
+            "reported_evidence": {"kind": "synthetic CPU fixture; no measurements"},
+            "curves": [{"template": schedule,
+                "varying_dimensions": [{"buffer": name, "dimension": 1} for name in ("tokens", "assignments")],
+                "extent_multiple": 512,
+                "points": [{"extent": extent, "kernel_us": 20.0} for extent in (32768, 131072)],
+                "relative_error_envelope": 0.1}],
+        }
+        fixture.study = json.loads((ROOT / "contracts/studies/artifact-optimization-ralph-template.json").read_text())
+        fixture.study["arms"]["open_cake"]["candidate_selection"] = {"kind": _EMPIRICAL_SELECTION}
+        for field in ("attribution_evaluation", "search_materiality_ratio"):
+            fixture.study["evaluation_protocol"].pop(field)
+        fixture.study["evaluation_protocol"]["searches_per_turn"] = 1
+        for arm in fixture.study["arms"].values():
+            arm["feedback"].remove("profile")
+        campaign, provider, toolchain = fixture.run_campaign()
+        store = EvidenceStore.open(campaign.evidence_root)
+        events = store.replay_events("open_cake-1")
+        self.assertFalse(any(event["kind"] == "run_fault" for event in events))
+        filters = [event["payload"] for event in events if event["kind"] == "candidate_set_filtered"]
+        self.assertEqual(len(filters), 2)
+        self.assertEqual(len(toolchain.requests), 2)
+        self.assertTrue(filters[0]["order"][0]["empirical_cost"]["covered"])
+        request = next(item for item in provider.requests if item.arm == "open_cake" and item.turn == 2)
+        self.assertEqual(request.feedback["candidate_selection"],
+                         {**filters[0]["candidate_selection"], "order": filters[0]["order"]})
+        self.assertEqual(store.audit_run("open_cake-1").protocol_adherence, "adhered")
+        self.assertTrue(fixture.lab.audit(campaign).semantic_replay_passed)
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -3742,7 +3812,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
     def setUpClass(cls):
         from open_cake_ir.compiler import Compiler
         from open_cake_ir.evaluation import WorkloadContract
-        from open_cake_ir.lab.environments import _empirical_context
+        from open_cake_ir.lab.selection import _empirical_context
         from tests.contracts.test_authoring_environment import _headline_schedule, _synthetic_flash_model
 
         cls.temporary = tempfile.TemporaryDirectory(prefix="empirical-selection-contract-")
@@ -3826,7 +3896,7 @@ class EmpiricalSelectionContractTests(unittest.TestCase):
             self.lab.preflight(path, empirical_cost_model_path=model_path)
 
     def test_context_and_revision_matching_is_exact(self):
-        from open_cake_ir.lab.environments import _EmpiricalSelection
+        from open_cake_ir.lab.selection import _EmpiricalSelection
         mutations = [
             ("timer", "different timer"), ("cache_protocol", "different cache"),
             ("input_scope", "different workload or case"),

@@ -40,7 +40,7 @@ class B300ContractTests(unittest.TestCase):
 
     def test_three_b300_ralph_templates_are_stable_and_require_external_bindings(self):
         from open_cake_ir.tasks.runtime import TaskLab as Lab
-        from open_cake_ir.lab.core import StudyContract
+        from open_cake_ir.lab.contracts import StudyContract
         from open_cake_ir.lab.providers import CODEX_DISABLED_FEATURES
         for suffix in ('', '-gemm', '-gather'):
             with self.subTest(operator=suffix):

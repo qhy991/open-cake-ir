@@ -1,7 +1,8 @@
 """Composition of built-in task contracts with the common Ralph engine."""
 from __future__ import annotations
 
-from open_cake_ir.lab.core import Lab, StudyContract
+from open_cake_ir.lab.core import Lab
+from open_cake_ir.lab.contracts import StudyContract
 from .workloads import load_workload
 from .authoring import prepare_schedule, validate_authoring
 from .launch import parse_launch_manifest

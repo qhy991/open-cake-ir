@@ -30,8 +30,9 @@ from open_cake_ir.tasks.workloads import load_workload
 from open_cake_ir.compiler import Compiler, EmpiricalCostModel
 from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
 from open_cake_ir.evaluation import LaunchableCandidate, WorkloadContract, summarize_cohort
-from open_cake_ir.lab.core import _empirical_filter
-from open_cake_ir.lab.environments import CandidateSubmission, TritonToolchainBuilder, _EmpiricalSelection, _empirical_context
+from open_cake_ir.lab.selection import _empirical_filter
+from open_cake_ir.lab.environments import CandidateSubmission, TritonToolchainBuilder
+from open_cake_ir.lab.selection import _EmpiricalSelection, _empirical_context
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
 from open_cake_ir.lab.executor import ExecutorRevision, _external_file
 from open_cake_ir.lab.process import sanitized_environment

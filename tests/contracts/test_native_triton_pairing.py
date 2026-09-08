@@ -142,6 +142,26 @@ class NativePairingContractTests(unittest.TestCase):
                 self.assertEqual(result.disposition, 'launchable')
                 self.assertEqual(fixture.requests[0][1]['signature'], lowering.toolchain_requirements['signature'])
 
+    def test_native_float_constants_keep_finite_admission_and_nonfinite_refusal(self):
+        constant = next(iter(self.native['compile_constants']))
+        for value in (1.25, float('nan'), float('inf'), float('-inf')):
+            with self.subTest(value=value):
+                _, environment, fixture = self.environments()
+                member = copy.deepcopy(self.native)
+                member['compile_constants'][constant] = value
+                # Feed the invalid nonfinite token to the real admission boundary;
+                # the strict test serializer would reject it before reaching build.
+                payload = json.dumps(member, sort_keys=True).encode()
+                result = environment.build(CandidateSubmission.seal(environment.media_type, payload))
+                if value == 1.25:
+                    self.assertEqual(result.disposition, 'launchable')
+                    self.assertEqual(fixture.requests[0][1]['compile_constants'][constant], value)
+                else:
+                    self.assertEqual(result.disposition, 'rejected')
+                    self.assertEqual(result.feedback['stage'], 'source_admission')
+                    self.assertIn('compile constants/options/grid', result.feedback['error'])
+                    self.assertEqual(fixture.requests, [])
+
     def test_both_submission_paths_share_manifest_and_compilation_contract(self):
         open_env, native_env, fixture = self.environments()
         ir = open_env.build(CandidateSubmission.seal(open_env.media_type, encoded(self.schedule)))
@@ -517,11 +537,11 @@ class PairedLabFixtureTests(unittest.TestCase):
             gate = SimpleNamespace(compiler_revision_id='compiler-fixture', compiler_revision_sha256='a'*64, passed=True)
             reference = {'revision_id':'compiler-fixture','path':'compiler/revision.lock.json','canonical_sha256':'a'*64}
             executor = {'executor_id':'open-cake-ir-b200-v9000','path':'runtime/executors/fixture.json','canonical_sha256':'e'*64}
-            stack.enter_context(mock.patch('open_cake_ir.lab.core._resolve_compiler_reference', return_value=(gate, reference['path'], reference)))
+            stack.enter_context(mock.patch('open_cake_ir.lab.preflight._resolve_compiler_reference', return_value=(gate, reference['path'], reference)))
             bound_executor = SimpleNamespace(reference=executor)
-            stack.enter_context(mock.patch('open_cake_ir.lab.core.resolve_executor', return_value=bound_executor))
+            stack.enter_context(mock.patch('open_cake_ir.lab.preflight.resolve_executor', return_value=bound_executor))
             stack.enter_context(mock.patch('open_cake_ir.lab.executor.ExecutorRevision.load_reference', return_value=bound_executor))
-            stack.enter_context(mock.patch('open_cake_ir.lab.core.Compiler.load', return_value=draft))
+            stack.enter_context(mock.patch('open_cake_ir.compiler.Compiler.load', return_value=draft))
             lab = TaskLab(root)
             lock = lab.preflight(study)
             self.assertEqual(lock.analysis_plan, triton_optimization_analysis_plan())
