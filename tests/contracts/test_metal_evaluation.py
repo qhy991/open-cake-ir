@@ -6,6 +6,8 @@ from dataclasses import replace
 from hashlib import sha256
 import json
 import os
+import platform
+import subprocess
 from pathlib import Path
 import struct
 from subprocess import CompletedProcess
@@ -220,7 +222,9 @@ class MetalEvaluationContracts(unittest.TestCase):
                 'buffer_paths': {'x': 'x.bin', 'out': 'out.bin'}, 'preflight_guard_passed': True,
                 'command_buffer': {'launch_index': 0, 'completed': True, 'timed': False, 'gpu_start_seconds': 1.0, 'gpu_end_seconds': 1.001}}
             report = {'status': 'completed', 'host': HOST, 'source_library_rebuilt': False,
-                'archive_miss_policy': 'failOnBinaryArchiveMiss', 'module_loads': 1, 'launches': [row]}
+                'archive_miss_policy': 'failOnBinaryArchiveMiss', 'module_loads': 1, 'launches': [row],
+                'snapshot_persistence': {'condition': 'owned_snapshots_written_at_cohort_end',
+                    'pending_payload_limit_bytes': 64 * 1024 * 1024, 'peak_pending_payload_bytes': 0, 'failed_writes': []}}
             return CompletedProcess(command, 0, canonical(report), b'')
         with patch.object(metal_runtime.subprocess, 'run', side_effect=process):
             result = metal_runtime.observe(workload=self.workload, candidates={'candidate': self.candidate},
@@ -230,6 +234,151 @@ class MetalEvaluationContracts(unittest.TestCase):
         request = json.loads((self.root / 'observation' / 'request.json').read_text())
         self.assertNotIn('source_path', request['participants'][0])
         self.assertEqual(request['participants'][0]['archive_path'].split('.')[-1], 'metallib')
+        retained = json.loads((self.root / 'observation' / 'observer.stdout.json').read_text())
+        self.assertEqual(retained['snapshot_persistence']['condition'], 'owned_snapshots_written_at_cohort_end')
+
+
+_SNAPSHOT_ROOT = Path(__file__).resolve().parents[2]
+_SNAPSHOT_SWIFTC = Path('/Library/Developer/CommandLineTools/usr/bin/swiftc')
+_SNAPSHOT_SDK = Path('/Library/Developer/CommandLineTools/SDKs/MacOSX15.2.sdk')
+_SNAPSHOT_SOURCE = _SNAPSHOT_ROOT / 'src/open_cake_ir/evaluation/metal/observer.swift'
+
+_SNAPSHOT_HARNESS = r'''
+import Foundation
+func check(_ condition: Bool, _ message: String) throws {
+    if !condition { throw NSError(domain: message, code: 1) }
+}
+func rejected(_ operation: () throws -> Void) throws {
+    do { try operation() } catch { return }
+    throw NSError(domain: "expected refusal", code: 2)
+}
+func participant(_ role: String = "candidate", shape: [Int] = [4]) -> Participant {
+    Participant(role: role, archive_path: "unused", manifest: Manifest(target: "apple_gpu_family7", kernel_name: "unused",
+        tensor_abi: [Tensor(name: "x", shape: shape, dtype: "fp32", mode: "input"),
+                     Tensor(name: "out", shape: shape, dtype: "fp32", mode: "output")], grid: [1,1,1], block: [32,1,1]))
+}
+func launch(_ index: Int, role: String = "candidate", phase: String = "cohort", pair: Int? = 0, position: Int? = 0,
+            input: String = "primary", timed: Bool = false) -> Launch {
+    Launch(index: index, role: role, phase: phase, input_case_id: input, timed: timed,
+           profile: phase == "profile", pair_index: pair, position: position)
+}
+func capture(_ writer: OwnedSnapshots, _ bytes: [UInt8], _ name: String, deferred: Bool = true) throws {
+    _ = try bytes.withUnsafeBytes { try writer.capture($0.baseAddress!, count: bytes.count, name: name, deferred: deferred) }
+}
+let directory = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
+switch CommandLine.arguments[1] {
+case "owned":
+    var written: [String: Data] = [:]
+    let writer = OwnedSnapshots(directory: directory, limit: 16, write: { written[$1.lastPathComponent] = $0 })
+    let raw = UnsafeMutableRawPointer.allocate(byteCount: 8, alignment: 8)
+    defer { raw.deallocate() }
+    raw.storeBytes(of: UInt64(17), as: UInt64.self)
+    let first = try writer.capture(raw, count: 8, name: "first", deferred: true)
+    raw.storeBytes(of: UInt64(99), as: UInt64.self)
+    _ = try writer.capture(raw, count: 8, name: "second", deferred: true)
+    raw.storeBytes(of: UInt64(255), as: UInt64.self)
+    try check(written.isEmpty, "writes occurred inside cohort")
+    try check(first.withUnsafeBytes { $0.loadUnaligned(as: UInt64.self) } == 17, "returned snapshot aliases reused memory")
+    try writer.flush()
+    try check(written["first"]!.withUnsafeBytes { $0.loadUnaligned(as: UInt64.self) } == 17, "first snapshot was mutated")
+    try check(written["second"]!.withUnsafeBytes { $0.loadUnaligned(as: UInt64.self) } == 99, "second snapshot was mutated")
+    try check(writer.pendingBytes == 0 && writer.peakPendingBytes == 16, "snapshot payload accounting differs")
+case "boundaries":
+    let launches = [launch(0, phase: "preflight", pair: nil, position: nil),
+        launch(1), launch(2), launch(3, timed: true),
+        launch(4, role: "baseline", position: 1), launch(5, role: "baseline", position: 1, timed: true),
+        launch(6, phase: "postflight", pair: nil, position: nil),
+        launch(7, phase: "profile", pair: nil, position: nil), launch(8, pair: 1)]
+    let boundary = try snapshotFlushPlan(launches, participants: [participant(), participant("baseline")], limit: 96)
+    try check(boundary == Set([0,3,5,6,7,8]), "cohort boundary differs from existing coordinates")
+    var writes = 0
+    let writer = OwnedSnapshots(directory: directory, write: { _,_ in writes += 1 })
+    try capture(writer, [1,2], "preflight", deferred: false)
+    try capture(writer, [3,4], "profile", deferred: false)
+    try check(writes == 2 && writer.pendingBytes == 0, "non-cohort persistence was deferred")
+case "plan_refusal":
+    try rejected { _ = try snapshotFlushPlan([launch(0),launch(1),launch(2)], participants: [participant()], limit: 95) }
+    try rejected { _ = try snapshotFlushPlan([launch(0, pair: nil)], participants: [participant()], limit: 96) }
+    try rejected { _ = try snapshotFlushPlan([launch(0), launch(1, input: "another")], participants: [participant()], limit: 96) }
+    try rejected { _ = try snapshotFlushPlan([launch(0), launch(1, phase: "preflight", pair: nil, position: nil),launch(2)], participants: [participant()], limit: 96) }
+    try rejected { _ = try snapshotFlushPlan([launch(0)], participants: [participant(shape: [Int.max,2])], limit: snapshotPayloadLimit) }
+    try check(try snapshotFlushPlan([launch(0),launch(1),launch(2)], participants: [participant()], limit: 96) == Set([2]), "exact memory boundary refused")
+case "capture_refusal":
+    var writes = 0
+    let writer = OwnedSnapshots(directory: directory, limit: 4, write: { _,_ in writes += 1 })
+    try capture(writer, [1,2,3,4], "one")
+    try rejected { try capture(writer, [5], "two") }
+    try check(writer.pendingBytes == 4 && writer.peakPendingBytes == 4 && writes == 0, "bound refusal changed pending evidence")
+    try writer.flush(); try check(writes == 1, "prior snapshot was lost on memory refusal")
+case "failure_flush":
+    var writes: [String: Data] = [:]
+    let writer = OwnedSnapshots(directory: directory, write: { writes[$1.lastPathComponent] = $0 })
+    try capture(writer, [1,2], "one"); try capture(writer, [3,4], "two")
+    let original = NSError(domain: "later_dispatch", code: 17)
+    let failure = flushAfterFailure(writer, original: original)
+    try check((failure.0 as NSError).domain == "later_dispatch" && failure.1 == nil, "original dispatch failure changed")
+    try check(writes.count == 2 && writer.pendingBytes == 0, "failure did not flush previous callbacks")
+case "write_failure":
+    var attempts: [String] = []; var written: [String] = []
+    let writer = OwnedSnapshots(directory: directory, write: { _,path in
+        attempts.append(path.lastPathComponent)
+        if path.lastPathComponent == "bad" { throw NSError(domain: "disk_write", code: 5) }
+        written.append(path.lastPathComponent)
+    })
+    try capture(writer, [1], "bad"); try capture(writer, [2], "good")
+    let original = NSError(domain: "later_dispatch", code: 17)
+    let failure = flushAfterFailure(writer, original: original)
+    try check((failure.0 as NSError).domain == "later_dispatch" && (failure.1 as NSError?)?.domain == "disk_write", "flush hid original error")
+    try check(attempts == ["bad","good"] && written == ["good"] && writer.failedWrites == ["bad"], "write failure discarded other pending callbacks")
+    try writer.flush()
+    try check(attempts == ["bad","good"], "failed snapshot writes were retried")
+case "files":
+    let writer = OwnedSnapshots(directory: directory)
+    try capture(writer, [7,8], "first.bin")
+    try check(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("first.bin").path), "file persisted early")
+    try writer.flush()
+    try check(try Data(contentsOf: directory.appendingPathComponent("first.bin")) == Data([7,8]), "persisted bytes differ")
+    try capture(writer, [9], "first.bin")
+    try rejected { try writer.flush() }
+    try check(try Data(contentsOf: directory.appendingPathComponent("first.bin")) == Data([7,8]), "existing evidence overwritten")
+default: throw NSError(domain: "unknown test", code: 3)
+}
+print("CPU snapshot behavior passed")
+'''
+
+
+@unittest.skipUnless(platform.system() == 'Darwin' and _SNAPSHOT_SWIFTC.is_file() and _SNAPSHOT_SDK.is_dir(),
+                     'native Foundation snapshot tests require the declared macOS Swift/SDK tools')
+class MetalCohortSnapshotTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory(prefix='cake-snapshot-tests-')
+        directory = Path(cls.temporary.name)
+        (directory / 'main.swift').write_text(_SNAPSHOT_SOURCE.read_text() + '\n' + _SNAPSHOT_HARNESS)
+        cls.executable = directory / 'snapshot-tests'
+        command = [str(_SNAPSHOT_SWIFTC), '-sdk', str(_SNAPSHOT_SDK), '-target', 'arm64-apple-macosx15.0', '-O', '-D', 'SNAPSHOT_TESTS',
+                   str(directory / 'main.swift'), '-o', str(cls.executable)]
+        build = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        if build.returncode:
+            raise AssertionError(build.stdout + build.stderr)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temporary.cleanup()
+
+    def run_behavior(self, name):
+        with tempfile.TemporaryDirectory(prefix='cake-snapshot-files-') as directory:
+            result = subprocess.run([str(self.executable), name, directory], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('CPU snapshot behavior passed', result.stdout)
+
+    def test_reused_buffer_mutation_cannot_change_owned_snapshots(self): self.run_behavior('owned')
+    def test_existing_coordinates_define_complete_and_partial_final_cohorts(self): self.run_behavior('boundaries')
+    def test_memory_overflow_missing_coordinates_and_split_cohorts_refuse_before_dispatch(self): self.run_behavior('plan_refusal')
+    def test_capture_bound_preserves_pending_callback_bytes(self): self.run_behavior('capture_refusal')
+    def test_later_failure_flushes_all_owned_callback_bytes(self): self.run_behavior('failure_flush')
+    def test_flush_failure_preserves_original_error_and_attempts_each_file_once(self): self.run_behavior('write_failure')
+    def test_actual_files_keep_exact_bytes_and_refuse_overwrites(self): self.run_behavior('files')
 
 
 if __name__ == '__main__':
