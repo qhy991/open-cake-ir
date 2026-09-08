@@ -239,8 +239,13 @@ def replay_matched_run(
     if candidates is None:
         return False
     launchables, receipts, receipt_order, rejected = candidates
-    invocation_counts = replay_evaluation_invocations(events, receipts=receipts,
-        budget=replay_budget, protocol=lock.document["evaluation_protocol"])
+    try:
+        invocation_counts = replay_evaluation_invocations(events, receipts=receipts,
+            budget=replay_budget, protocol=lock.document["evaluation_protocol"])
+    except ValueError:
+        # The lifecycle owner retains precise exceptions for focused diagnostics;
+        # this independent replay seam has a boolean refusal contract.
+        return False
     selected = _replay_candidate_selection(
         candidate_set_turns=candidate_set_turns,
         cumulative_by_turn=cumulative_by_turn,

@@ -60,7 +60,9 @@ class LabCoreArchitectureTests(unittest.TestCase):
         instance, callbacks = self.make_lab()
         audit = SimpleNamespace(run_id="open_cake-1", protocol_adherence="harness_fault",
                                 endpoint_observation="missing", endpoint=None)
-        lock = SimpleNamespace(run_order=(audit.run_id,), document={
+        from tests.contracts._executor_fixture import compiler_reference
+        lock = SimpleNamespace(run_order=(audit.run_id,), analysis_plan={}, document={
+            "compiler_revision": compiler_reference(ROOT),
             "resolved_inputs": {
                 "evidence_policy": copy.deepcopy(_MATCHED_RALPH_EVIDENCE_POLICY_V1),
                 "budget": {"checkpoints": [80000]},
@@ -92,10 +94,13 @@ class LabCoreArchitectureTests(unittest.TestCase):
                 "endpoint_observation": "missing", "endpoint": None}},
         ]
         evidence = SimpleNamespace(replay_events=Mock(return_value=events))
-        with patch.object(public.Lab, "task_package", side_effect=AssertionError("task package eager")) as package, \
+        from open_cake_ir.lab.bindings import load_compiler_reference
+        with patch("open_cake_ir.lab.bindings.load_compiler_reference", wraps=load_compiler_reference) as compiler_dependency, \
+             patch.object(public.Lab, "task_package", side_effect=AssertionError("task package eager")) as package, \
              patch.object(replay.ExecutorRevision, "load_reference", side_effect=AssertionError("Executor eager")) as executor, \
              patch.object(replay, "_EmpiricalSelection", side_effect=AssertionError("empirical model eager")) as selection:
             self.assertTrue(instance._replay_matched_run(evidence, audit, lock))
+        compiler_dependency.assert_called_once_with(ROOT, lock.document["compiler_revision"], "replay.compiler_revision")
         package.assert_not_called()
         executor.assert_not_called()
         selection.assert_not_called()
@@ -126,7 +131,8 @@ class LabCoreArchitectureTests(unittest.TestCase):
                   "admission", "build", "candidate_filter", "evaluation_writer", "execution_admission",
                   "provider_documents", "provider_events", "provider_invocation", "providers",
                   "replay_artifacts", "replay_attempts", "replay_candidates", "replay_outcomes",
-                  "replay_provider", "replay_selection", "run_completion", "runtime", "runtime_config"}
+                  "replay_provider", "replay_selection", "run_completion", "runtime", "runtime_config",
+                  "endpoints", "evaluation_lifecycle", "diagnoses", "reference_access"}
         edges = {name: set() for name in owners}
         def runtime_imports(node):
             if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING":

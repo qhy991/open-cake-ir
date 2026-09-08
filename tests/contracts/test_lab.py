@@ -891,10 +891,12 @@ class LabContractTests(SemanticLabTestCase):
 
         self.assertEqual(len(provider.requests), 4)
         self.assertTrue(report.system_qualification_passed)
-        self.assertEqual(report.missing_run_count, 2)
+        self.assertEqual(report.missing_run_count, 0)
+        self.assertTrue(all(row["token_limit_checkpoint_state"] == "unreached"
+                            for row in report.descriptive["terminal_observations"].values()))
         self.assertTrue(
             all(
-                run["endpoint_observation"] == "missing"
+                run["endpoint_observation"] == "qualified"
                 and run["evaluation_receipt_count"] >= 1
                 for run in report.descriptive["runs"]
             )
@@ -1356,9 +1358,11 @@ class LabContractTests(SemanticLabTestCase):
         self.assertTrue(report.semantic_replay_passed)
         self.assertEqual(
             report.estimate["median_confirmed_latency_ms"],
-            {"open_cake": 1.0, "direct_cuda": 2.0},
+            {"open_cake": 0.9, "direct_cuda": 1.9},
         )
-        self.assertAlmostEqual(report.estimate["ratio_of_arm_medians"], 2.0)
+        self.assertAlmostEqual(report.estimate["ratio_of_arm_medians"], 1.9 / 0.9)
+        self.assertTrue(all(audit.endpoint["observation_basis"] == "normal_budget_terminal_v1"
+                            and audit.endpoint["budget"] == 160000 for audit in report.run_audits))
         self.assertEqual(report.estimate["qualification_rate_difference"], 0.0)
         self.assertEqual({item.reason for item in report.run_inclusion}, {"included"})
 
@@ -1734,7 +1738,7 @@ class LabContractTests(SemanticLabTestCase):
                     {"provider_fault"},
                 )
 
-    def test_r42_turn_discrete_missing_cell_keeps_estimand_unavailable(self) -> None:
+    def test_r42_summary_does_not_replace_semantic_run_evidence(self) -> None:
         lab = TaskLab(ROOT)
         lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-template.json")
         legacy = json.loads(
@@ -1783,24 +1787,32 @@ class LabContractTests(SemanticLabTestCase):
             report = lab.audit(lab.reference_campaign(lock, evidence.root))
 
         self.assertFalse(report.estimand_available)
-        self.assertEqual(report.missing_run_count, 0)
+        # Terminal-only descriptive summaries cannot substitute for provider,
+        # invocation, confirmation and checkpoint evidence in a current Run.
+        self.assertFalse(report.semantic_replay_passed)
+        self.assertEqual(report.missing_run_count, len(lock.run_order))
         self.assertIsNone(report.estimate)
         self.assertEqual(report.descriptive["paired_runs"][2]["direct_cuda_latency_ms"], None)
         inclusion = {item.run_id: item.reason for item in report.run_inclusion}
         self.assertEqual(
-            inclusion["direct_cuda-3"], "observed_no_qualified_candidate_at_checkpoint"
+            inclusion["direct_cuda-3"], "semantic_replay"
         )
         direct_three = next(
             item for item in report.run_inclusion if item.run_id == "direct_cuda-3"
         )
-        self.assertTrue(direct_three.qualification_endpoint_included)
+        self.assertFalse(direct_three.qualification_endpoint_included)
         self.assertFalse(direct_three.conditional_performance_included)
 
     def test_candidate_rejection_is_observed_and_later_turn_cannot_backfill(self) -> None:
         lab = TaskLab(ROOT)
-        lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-template.json"
-        )
+        # This test deliberately exercises the absent-policy token-checkpoint
+        # endpoint. Current active templates separately opt into vector terminals.
+        study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-template.json").read_text())
+        study["analysis_plan"].pop("endpoint_policy")
+        directory = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        path = directory / "legacy-checkpoint-semantics.json"
+        path.write_text(json.dumps(study))
+        lock = lab.preflight(path)
         resolved = lock.document["resolved_inputs"]
 
         class RejectFirst(FakeEnvironment):
@@ -1850,23 +1862,28 @@ class LabContractTests(SemanticLabTestCase):
         )
 
     def test_protocol_failures_are_intact_but_not_included(self) -> None:
+        class FaultProvider(FakeProvider):
+            def turn(self, request):
+                raise RunProtocolFault("provider_fault", "explicit CPU provider failure")
+
         lab = TaskLab(ROOT)
         lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-template.json")
+        protocol = lock.document["evaluation_protocol"]
+        protocol_sha = sha256(json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        evaluator = FakeEvaluator(protocol, protocol_sha, lock.document["workload"]["canonical_sha256"])
         with tempfile.TemporaryDirectory() as directory:
-            evidence = EvidenceStore.create(Path(directory).resolve() / "evidence")
-            for run_id in lock.run_order:
-                run = evidence.start_run(
-                    run_id,
-                    authority_sha256=lock.canonical_sha256,
-                    authority=lock.document,
-                )
-                run.seal(protocol_adherence="provider_fault", endpoint_observation="missing")
-            report = lab.audit(lab.reference_campaign(lock, evidence.root))
+            campaign = _execute(lab, lock, Path(directory).resolve() / "evidence",
+                provider=FaultProvider(), evaluator=evaluator,
+                environments={name: FakeEnvironment(name, arm) for name, arm in
+                              lock.document["resolved_inputs"]["arm_environments"].items()})
+            report = lab.audit(campaign)
 
         self.assertTrue(report.campaign_complete)
         self.assertTrue(report.archive_integrity_passed)
+        self.assertTrue(report.semantic_replay_passed)
         self.assertFalse(report.estimand_available)
         self.assertEqual(report.missing_run_count, 6)
+        self.assertEqual(evaluator.calls, 0)
         self.assertEqual({item.reason for item in report.run_inclusion}, {"protocol_deviation"})
 
     def test_contamination_uses_the_same_terminal_schema_without_replacement(self) -> None:

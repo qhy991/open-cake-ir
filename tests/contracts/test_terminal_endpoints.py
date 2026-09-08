@@ -67,7 +67,7 @@ class TerminalRunTests(unittest.TestCase):
         self.enterContext(patch.dict(os.environ, {"OPEN_CAKE_CUSTODY_DIRECTORY": str(self.directory / "registry")}))
 
     def run_campaign(self, *, policy=True, scope="scientific_matched_search", provider=None,
-                     rejected=False, clock=None, limits=None, evaluator_class=FakeEvaluator):
+                     rejected=False, reject_first=False, clock=None, limits=None, evaluator_class=FakeEvaluator):
         from open_cake_ir.lab.environments import EnvironmentResult
         directory = Path(tempfile.mkdtemp(dir=self.directory))
         template = "artifact-optimization-ralph-template.json" if scope == "artifact_optimization_only" else "matched-search-infrastructure-template.json"
@@ -106,7 +106,9 @@ class TerminalRunTests(unittest.TestCase):
         class Environment(FakeEnvironment):
             def build(self, submission):
                 return (EnvironmentResult("rejected", submission.sha256, None,
-                    {"stage": "assessment", "code": "CPU_FIXTURE_REFUSAL"}) if rejected else super().build(submission))
+                    {"stage": "assessment", "code": "CPU_FIXTURE_REFUSAL"})
+                    if rejected or (reject_first and json.loads(submission.payload)["turn"] == 1)
+                    else super().build(submission))
         protocol = lock.document["evaluation_protocol"]
         evaluator = evaluator_class(protocol, sha256(json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()).hexdigest(), lock.document["workload"]["canonical_sha256"])
         campaign = _execute(lab, lock, directory / "evidence", provider=provider,
@@ -133,6 +135,21 @@ class TerminalRunTests(unittest.TestCase):
                         self.assertEqual(observed["token_limit_checkpoint_state"], "unreached")
                     self.assertEqual(report.descriptive["reference_access_by_arm"],
                         {arm: declaration.get("reference_access") for arm, declaration in campaign.lock.document["resolved_inputs"]["arm_environments"].items()})
+
+    def test_later_confirmation_defines_terminal_without_backfilling_earlier_rejection(self):
+        lab, campaign, _ = self.run_campaign(reject_first=True)
+        report = lab.audit(campaign)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertTrue(report.estimand_available)
+        store = EvidenceStore.open(campaign.evidence_root)
+        for audit in report.run_audits:
+            self.assertEqual(audit.endpoint_observation, "qualified")
+            self.assertEqual(audit.endpoint["budget"], 160000)
+            projection = next(event["payload"]["checkpoints"] for event in store.replay_events(audit.run_id)
+                              if event["kind"] == "checkpoints_projected")
+            self.assertEqual(projection[0]["state"], "reached_no_qualified_candidate")
+            self.assertIsNone(projection[0]["best_candidate_sha256"])
+            self.assertEqual(projection[-1]["state"], "unreached")
 
     def test_actual_other_budget_axes_and_simultaneous_time_limits(self):
         class Clock:
@@ -256,8 +273,8 @@ class TerminalRunTests(unittest.TestCase):
                          {"search": 2, "confirmatory": 2, "attribution": 2})
         altered = deepcopy(original)
         altered.pop(starts[0])
-        with patch.object(store, "replay_events", return_value=tuple(altered)), self.assertRaisesRegex(ValueError, "completion lacks"):
-            lab._replay_matched_run(store, audit, campaign.lock)
+        with patch.object(store, "replay_events", return_value=tuple(altered)):
+            self.assertFalse(lab._replay_matched_run(store, audit, campaign.lock))
 
     def test_public_preflight_rejects_unknown_endpoint_policy(self):
         document = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-template.json").read_text())

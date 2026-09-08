@@ -121,7 +121,7 @@ def resolve_execution_bindings(
     project_root: str | Path, study, bindings_path: str | Path | None
 ) -> tuple[dict[str, object], ExecutorRevision | None]:
     """Return resolved runtime leaves and the Executor already validated for them."""
-    from .runtime import broker_execution_sha256, load_runtime_config
+    from .runtime_config import broker_execution_sha256, load_runtime_config
     from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
     from .pairing import comparison_arm, native_backend, backend_policy
 
