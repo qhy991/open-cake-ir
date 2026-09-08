@@ -19,7 +19,7 @@ from .core import (
     Lowering,
 )
 from .corpus import CorpusCaseReport, CorpusGateReport
-from .errors import CompilerError
+from .errors import CompilerError, LoweringRefusedError
 from .backends.common import EmitError, Emission
 from .performance.compiled_resources import CompiledResources
 from .performance.empirical_cost import EmpiricalCostModel
@@ -43,6 +43,7 @@ __all__ = [
     "FindingCategory",
     "FindingSeverity",
     "Lowering",
+    "LoweringRefusedError",
     "LoweringBackend",
     "LoweringRoute",
     "MetricEstimate",
