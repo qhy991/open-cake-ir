@@ -17,11 +17,11 @@
 
 ## Executor
 
-- 版本： `open-cake-ir-b200-v77+3a28fc7e30c45e56b903616e6cf60c63dbee810e2c627ac22542f194a9adb598`
+- 版本： `open-cake-ir-b200-v78+5708f830a03a7492a89b7a3e2cfccc85976da5393d43d7fed53acea8e698ece1`
 - 状态： `released`
 - 绑定源码： `139` 个文件
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v77+3a28fc7e30c45e56b903616e6cf60c63dbee810e2c627ac22542f194a9adb598.json`](../../runtime/executors/open-cake-ir-b200-v77+3a28fc7e30c45e56b903616e6cf60c63dbee810e2c627ac22542f194a9adb598.json)
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v78+5708f830a03a7492a89b7a3e2cfccc85976da5393d43d7fed53acea8e698ece1.json`](../../runtime/executors/open-cake-ir-b200-v78+5708f830a03a7492a89b7a3e2cfccc85976da5393d43d7fed53acea8e698ece1.json)
 
 ## 这些数字说明什么
 

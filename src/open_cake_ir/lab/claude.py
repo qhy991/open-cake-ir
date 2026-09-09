@@ -88,6 +88,18 @@ def _metadata(event: Mapping) -> bool:
                 or event["error"] not in ("authentication_failed", "oauth_org_not_allowed", "billing_error", "rate_limit",
                     "overloaded", "invalid_request", "model_not_found", "server_error", "max_output_tokens", "unknown")):
             raise ValueError("Claude API-retry observation differs")
+    elif kind == "system" and event.get("subtype") == "post_turn_summary":
+        # The CLI's own account of a finished Turn. The result event remains the only
+        # authority on whether the Turn completed; this is retained, not judged, so an
+        # unfamiliar category is preserved in Evidence instead of read as an outcome.
+        if (set(event) != {"type", "subtype", "summarizes_uuid", "status_category",
+                           "status_detail", "needs_action", "uuid", "session_id"}
+                or not isinstance(event["summarizes_uuid"], str)
+                or _THREAD_ID.fullmatch(event["summarizes_uuid"]) is None
+                or not isinstance(event["status_category"], str) or not event["status_category"]
+                or not isinstance(event["status_detail"], str)
+                or not isinstance(event["needs_action"], str)):
+            raise ValueError("Claude post-turn summary metadata differs")
     elif kind == "system" and event.get("subtype") == "thinking_tokens":
         if (set(event) != {"type", "subtype", "estimated_tokens", "estimated_tokens_delta", "uuid", "session_id"}
                 or type(event["estimated_tokens"]) is not int or type(event["estimated_tokens_delta"]) is not int
@@ -224,6 +236,9 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
         if _metadata(event):
             if event.get("subtype") == "api_retry":
                 activity.append(ProviderAuxiliaryActivity(event["uuid"], "api_retry", "observed"))
+            elif event.get("subtype") == "post_turn_summary":
+                activity.append(ProviderAuxiliaryActivity(
+                    event["uuid"], "post_turn_summary", event["status_category"]))
             continue
         if event.get("type") not in ("assistant", "user"):
             raise ValueError("Claude event is outside the declared native contract")

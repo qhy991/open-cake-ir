@@ -350,6 +350,40 @@ class ClaudeProviderContracts(unittest.TestCase):
         self.assertEqual(CLAUDE_EVENT_CONTRACT, "claude_stream_candidate_v3")
         with self.assertRaises(ValueError): self.normalize(raw, event_contract="claude_stream_candidate_v2")
 
+    def summary_event(self):
+        return {"type": "system", "subtype": "post_turn_summary", "summarizes_uuid": OTHER_SESSION,
+            "status_category": "review_ready", "status_detail": "turn 1: created candidate-set.json",
+            "needs_action": "", "uuid": OTHER_SESSION, "session_id": SESSION}
+
+    def test_native_post_turn_summary_is_retained_without_deciding_the_turn(self):
+        events = self.events(); events.insert(-1, self.summary_event())
+        raw = self.raw(events)
+        invocation = self.builder().build("one resumed turn", thread_id=SESSION)
+        completed = subprocess.CompletedProcess(invocation.argv, 0, raw, b"")
+        with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed):
+            turn = ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
+        summary, = [entry for entry in turn.tool_activity if entry.item_type == "post_turn_summary"]
+        self.assertEqual(summary.item_id, OTHER_SESSION)
+        # The category is retained as observed, not read as an outcome.
+        self.assertEqual(summary.status, "review_ready")
+        self.assertIsNone(summary.provider_tokens)
+        self.assertEqual(turn.provider_tokens, 205)
+        # An unfamiliar category and a populated action note stay admissible.
+        for change in ({"status_category": "later_unmodeled_category"}, {"needs_action": "look at the diff"}):
+            events = self.events(); events.insert(-1, {**self.summary_event(), **change})
+            with self.subTest(change=change):
+                self.normalize(self.raw(events))
+
+    def test_native_post_turn_summary_schema_fails_closed(self):
+        changes = ({"status_category": ""}, {"status_category": 3}, {"status_detail": None},
+            {"needs_action": None}, {"summarizes_uuid": "not-a-uuid"}, {"summarizes_uuid": 7},
+            {"uuid": ""}, {"session_id": OTHER_SESSION}, {"extra": 1})
+        for change in changes:
+            events = self.events(); events.insert(-1, {**self.summary_event(), **change})
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.normalize(self.raw(events))
+
     def test_native_retry_counter_and_control_schema_fail_closed(self):
         changes = ({"attempt": 0}, {"attempt": True}, {"attempt": 11}, {"max_retries": 0},
             {"max_retries": "10"}, {"retry_delay_ms": -1}, {"retry_delay_ms": 509.0},
