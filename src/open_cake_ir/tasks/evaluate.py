@@ -37,7 +37,7 @@ from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.tiles.workload import materialize_case, reference_outputs
 from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, run_supervised, sanitized_environment
 from open_cake_ir.evaluation.paired import (
-    PAIRED_KIND, PAIRED_METAL_KIND, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
+    PAIRED_KIND, PAIRED_METAL_KIND, METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
     candidate_from_identity, validate_pair_candidates,
 )
 
@@ -147,7 +147,7 @@ def _load_authority(request_path: Path) -> _Authority:
         if sha256(_canonical_json_bytes(evaluation)).hexdigest() != request['evaluation_protocol_sha256']:
             raise ValueError('worker evaluation policy identity differs')
         if paired_protocol(evaluation) is not None:
-            if isinstance(manifest, MetalTensorLaunchManifest) != (evaluation['paired_timing']['kind'] == PAIRED_METAL_KIND):
+            if isinstance(manifest, MetalTensorLaunchManifest) != (evaluation['paired_timing']['kind'] in METAL_KINDS):
                 raise ValueError('paired assay backend differs from sealed manifest')
             partner = _object(request.get('baseline'), 'request.baseline')
             paths = _object(partner.get('artifact_paths'), 'request.baseline.artifact_paths')
@@ -357,11 +357,11 @@ def _evaluate_metal_candidate(authority, result):
     import re
     from open_cake_ir.evaluation.metal_runtime import observe
     from open_cake_ir.evaluation.metal_observations import (
-        METAL_TIMER, METAL_CACHE, METAL_PROFILE_KIND, command_buffer_ms, metal_profile_summary)
+        METAL_TIMER, METAL_CACHE, METAL_PROFILE_KIND, amortized_dispatch_ms, metal_profile_summary)
 
     evaluation = authority.request['evaluation_protocol']
     protocol = paired_protocol(evaluation)
-    if protocol is None or evaluation['paired_timing']['kind'] != PAIRED_METAL_KIND:
+    if protocol is None or evaluation['paired_timing']['kind'] not in METAL_KINDS:
         raise ValueError('Metal worker requires its explicit fixed-baseline paired assay')
     cases = validation_case_ids(evaluation)
     if (cases != authority.workload.case_ids or authority.workload.document['validation'].get('all_cases_required') is not True
@@ -393,9 +393,11 @@ def _evaluate_metal_candidate(authority, result):
         inputs = task_materialize(authority.workload, case_id)
         input_cases[case_id] = {'inputs': inputs, 'expected': task_reference(authority.workload, case_id, inputs)}
     plan = []
-    def append(role, phase, case_id, *, timed=False, instrumented=False, pair_index=None, position=None):
+    def append(role, phase, case_id, *, timed=False, instrumented=False, pair_index=None, position=None,
+               dispatches=1):
         plan.append({'index': len(plan), 'role': role, 'phase': phase, 'input_case_id': case_id,
-                     'timed': timed, 'profile': instrumented, 'pair_index': pair_index, 'position': position})
+                     'timed': timed, 'profile': instrumented, 'pair_index': pair_index, 'position': position,
+                     'dispatches': dispatches})
     for role in candidates:
         for case_id in cases:
             append(role, 'preflight', case_id)
@@ -405,9 +407,12 @@ def _evaluate_metal_candidate(authority, result):
         for pair_index, order in enumerate(protocol.pair_order):
             for position, role in enumerate(order):
                 for call in range(protocol.route_calls_per_cohort):
+                    # Warmups share the sample's command shape so the timed buffers
+                    # observe an already warmed pipeline at the same dispatch count.
                     append(role, 'cohort', authority.case_id,
                            timed=call >= protocol.route_calls_per_cohort - protocol.samples_per_cohort,
-                           pair_index=pair_index, position=position)
+                           pair_index=pair_index, position=position,
+                           dispatches=protocol.dispatches_per_sample)
         for role in candidates:
             for case_id in cases:
                 append(role, 'postflight', case_id)
@@ -470,14 +475,14 @@ def _evaluate_metal_candidate(authority, result):
                 rows = [row for row in launches if row['phase'] == 'cohort' and row['pair_index'] == pair_index and row['role'] == role]
                 check = aggregate(rows, timed=True)
                 checks[role]['timed_output_checks'].append(check)
-                samples = [command_buffer_ms(row['command_buffer']) for row in rows if row['timed']]
+                samples = [amortized_dispatch_ms(row['command_buffer']) for row in rows if row['timed']]
                 measurement['arms'][role] = {'position': position,
                     'candidate_record_sha256': candidates[role].canonical_sha256,
                     'samples_ms': samples, 'summary': summarize_cohort(samples), 'route_calls': len(rows),
                     'output_check': check, 'command_buffers': [row['command_buffer'] for row in rows]}
             measurements.append(measurement)
     identities = {role: candidate_identity(candidate) for role, candidate in candidates.items()}
-    raw = {'kind': PAIRED_METAL_KIND, 'evaluation_protocol': evaluation, 'participants': identities,
+    raw = {'kind': evaluation['paired_timing']['kind'], 'evaluation_protocol': evaluation, 'participants': identities,
         'workload_sha256': authority.workload.canonical_sha256, 'case_id': authority.case_id,
         'purpose': authority.request['purpose'], 'job_id': job_id, 'device_registry_id': host['device_registry_id'],
         'host': host, 'allocation_mode': 'local_serialized', 'external_gpu_activity': 'not_excluded',

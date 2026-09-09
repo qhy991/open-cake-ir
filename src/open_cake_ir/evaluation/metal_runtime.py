@@ -101,7 +101,9 @@ def observe(*, workload, candidates: dict, manifests: dict, input_cases: dict, l
                 or launch.get("input_case_id") not in input_cases
                 or launch.get("phase") not in {"preflight", "cohort", "postflight", "profile"}
                 or type(launch.get("timed")) is not bool or type(launch.get("profile")) is not bool
-                or launch["timed"] and launch["profile"]):
+                or launch["timed"] and launch["profile"]
+                or type(launch.get("dispatches")) is not int or not 1 <= launch["dispatches"] <= 4096
+                or launch["profile"] and launch["dispatches"] != 1):
             raise ValueError("Metal declared launch plan differs")
     directory = _external_directory(directory)
     directory.mkdir(parents=True, exist_ok=False)
@@ -157,7 +159,8 @@ def observe(*, workload, candidates: dict, manifests: dict, input_cases: dict, l
             raise ValueError("Metal observer instrumentation differs from declared assay")
         command_buffer_ms(record["command_buffer"])
         if (record["command_buffer"]["launch_index"] != index
-                or record["command_buffer"]["timed"] is not planned["timed"]):
+                or record["command_buffer"]["timed"] is not planned["timed"]
+                or record["command_buffer"].get("dispatches") != planned["dispatches"]):
             raise ValueError("Metal timestamp observation belongs to another launch")
         case = input_cases[planned["input_case_id"]]
         paths = record.get("buffer_paths")

@@ -16,29 +16,31 @@ import unittest
 from unittest.mock import Mock
 
 from open_cake_ir.compiler import Compiler, frontend
-from open_cake_ir.evaluation.artifacts import executable_role, required_build_roles
+from open_cake_ir.compiler.target import Target
+from open_cake_ir.evaluation.artifacts import METAL_TARGETS, executable_role, required_build_roles
 from open_cake_ir.evaluation.core import LaunchableCandidate
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.lab.environments import BuildRequest
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
+from open_cake_ir.lab.metal_host import inspect_metal_host
 from tools.metal import rmsnorm
 from tests.contracts._executor_fixture import compiler_reference
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def abi_fixture():
+def abi_fixture(target: str = "apple_gpu_family7"):
     return WorkloadContract({"workload_id": "artifact-abi-fixture", "operator": "test_geometry",
-        "semantics": {"target": "apple_gpu_family7", "candidate_abi": {"inputs": ["x", "weight"], "outputs": ["out"]}},
+        "semantics": {"target": target, "candidate_abi": {"inputs": ["x", "weight"], "outputs": ["out"]}},
         "cases": [{"case_id": "odd", "shape": {"R": 3, "C": 7}, "seed": 7001, "mode": "uniform"}],
         "tensors": {name: {"shape": shape, "dtype": "fp32", "layout": "contiguous_row_major"}
                     for name, shape in (("x", ["R", "C"]), ("weight", ["C"]), ("out", ["R", "C"]))}})
 
 
-def request_fixture():
-    source = rmsnorm.source(3, 7, target="apple_gpu_family7")
+def request_fixture(target: str = "apple_gpu_family7"):
+    source = rmsnorm.source(3, 7, target=target)
     compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
     if compiler.state != "released":
         raise AssertionError("native test requires the existing released Compiler")
@@ -47,6 +49,23 @@ def request_fixture():
     return BuildRequest(sha256(source.encode()).hexdigest(), lowering.source.encode(), "lowered_source",
                         lowering.source_sha256, lowering.target, lowering.route.entry_point,
                         lowering.toolchain_requirements)
+
+
+def live_metal_target(executable: Path, directory: Path) -> str | None:
+    """Name the exact target of the device actually present, or None.
+
+    Each admitted target is offered to the helper, which accepts only its own exact
+    device. This identifies the host; it never substitutes another Apple GPU.
+    """
+    for target in sorted(METAL_TARGETS):
+        names = Target.load(ROOT / "compiler/targets" / f"{target}.json").device_names
+        try:
+            inspect_metal_host(executable, target=target, expected_device_names=list(names),
+                               directory=directory / f"inspect-{target}")
+        except (ValueError, RunProtocolFault):
+            continue
+        return target
+    return None
 
 
 class MetalArtifactContracts(unittest.TestCase):
@@ -132,8 +151,13 @@ class MetalArtifactContracts(unittest.TestCase):
                          "native compile-only Metal archive test requires Apple Silicon and Swift")
     def test_real_archive_build_and_source_free_strict_reload(self):
         host = MetalArchiveHost.build(self.directory)
-        builder = MetalToolchainBuilder(compiler_reference=compiler_reference(ROOT), workload=self.workload, case_id="odd", output_root=self.directory, host=host)
-        candidate = builder.build(self.request)
+        # The Apple target is a property of this host, not of the fixture's default.
+        target = live_metal_target(host.executable, self.directory)
+        if target is None:
+            self.skipTest("no admitted exact Apple Metal device is present")
+        workload, request = abi_fixture(target), request_fixture(target)
+        builder = MetalToolchainBuilder(compiler_reference=compiler_reference(ROOT), workload=workload, case_id="odd", output_root=self.directory, host=host)
+        candidate = builder.build(request)
         self.assertEqual(set(candidate.artifact_roles), required_build_roles("metal") | {"lowered_source"})
         manifest = MetalTensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads["launch_manifest"]))
         report = json.loads(candidate.artifact_payloads["metal_build_report"])

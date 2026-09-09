@@ -1,9 +1,13 @@
 # Apple Metal tasks through TaskLab
 
 The Compiler supports exact `Apple M1 Pro` / `apple_gpu_family7` and `Apple M2` /
-`apple_gpu_family8` targets. The task launcher currently admits **M1 Pro only**, using
-`--backend metal-m1-pro`. It checks the exact device, OS, toolchain and released Executor;
-there is no device fallback or borrowed Apple performance calibration.
+`apple_gpu_family8` targets. The task launcher admits both, as `--backend metal-m1-pro`
+and `--backend metal-m2`. One backend selects exactly one target and one admitted device
+name; a Workload frozen for one device never validates against the other. The launcher
+checks the exact device, OS, toolchain and released Executor, and refuses a released
+Executor bound to the other Apple GPU; there is no device fallback or borrowed Apple
+performance calibration. Running on M2 therefore requires a released Metal Executor
+captured on that M2 host, not the M1 Pro one.
 
 The built-in tasks are `rmsnorm`, `layernorm` (affine, centered population variance),
 and `residual_rmsnorm` (FP32-rounded residual addition before normalization). Their
@@ -25,7 +29,7 @@ From the checkout, using the Executor's Python executable:
 
 ```sh
 python3 tools/launch_task.py \
-  --task rmsnorm --backend metal-m1-pro \
+  --task rmsnorm --backend metal-m2 \
   --harness codex --model "<exact-model-id>" --effort high \
   --workspace "$HOME/.local/share/open-cake-ir/runs/metal-rmsnorm-example" \
   --rows 128 --columns 1024 --turns 4 --token-budget 150000
@@ -74,11 +78,23 @@ ABI. It reloads with a strict archive hit and never compiles candidate source. T
 jobs; it does not claim that other applications are absent from the GPU.
 
 The [task Study policy](../src/open_cake_ir/tasks/normalization/study.py) declares ten
-alternating candidate/baseline pairs, 25 samples per cohort after three warmups, maximum
-CV 0.05, materiality ratio 1.05 and six required pair wins. These are engineering assay
-choices, not target calibration or assumed speedups. The timer is the completed Metal
+alternating candidate/baseline pairs, 25 samples per cohort after three warmups,
+materiality ratio 1.05 and six required pair wins. These are engineering assay choices,
+not target calibration or assumed speedups. The timer is the completed Metal
 command-buffer interval; it is not pure kernel latency and does not inherit CUPTI/L2-flush
-semantics. Profiling is a separate compute-stage timestamp observation. Missing native
+semantics.
+
+`fixed_baseline_paired_metal_v2` declares two further values. `dispatches_per_sample`
+is how many dispatches each timed command buffer encodes back to back, and a sample is
+that buffer divided by them. Encode, submit and completion cost is paid once per buffer,
+so a kernel shorter than that cost is otherwise measured mostly through it; the kernel
+rewrites its whole output from unchanged inputs, so repeating it leaves the checked
+buffers identical. `maximum_relative_iqr` gates cohort dispersion on the relative
+interquartile range of the raw samples rather than their coefficient of variation, at the
+same bound. Both describe spread; this assay states that other GPU clients are not
+excluded, and an isolated disturbed sample should not veto a cohort whose bulk is stable.
+The original `fixed_baseline_paired_metal_v1` keeps its exact single-dispatch, CV-gated
+meaning, so Studies frozen against it replay unchanged. Profiling is a separate compute-stage timestamp observation. Missing native
 profiling capability remains a refusal, and physical registers, spills, occupancy,
 bandwidth and instruction counts are not inferred.
 

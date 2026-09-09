@@ -25,6 +25,7 @@ from open_cake_ir.lab.providers import ProviderQualificationReceipt
 from open_cake_ir.tasks.compose import execute_matched_from_config
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
 from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, study_template
+from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.workloads import create_task, load_workload
 from open_cake_ir.evaluation.paired import candidate_identity
@@ -84,7 +85,7 @@ def _write(path: Path, data: bytes) -> None:
         stream.write(data)
 
 
-def _admit_stack(root: Path, workspace: Path):
+def _admit_stack(root: Path, workspace: Path, target: str):
     compiler = Compiler.load(root, root / "compiler/revision.lock.json")
     gate = compiler.check_corpus()
     _write(workspace / "compiler-gate.json", canonical(asdict(gate)))
@@ -96,6 +97,10 @@ def _admit_stack(root: Path, workspace: Path):
         raise ValueError(f"task launch requires a released Metal Executor matching this source; {error}") from error
     if executor.document["host_environment"].get("kind") != "metal":
         raise ValueError("task launch requires an actually released Metal Executor")
+    released = executor.document["host_environment"].get("host", {}).get("target")
+    if released != target:
+        raise ValueError(f"released Metal Executor is bound to {released!r}, not the requested {target!r}; "
+                         "no other Apple GPU is substituted")
     host = MetalArchiveHost.from_executor(executor)
     return compiler, executor, host, {"path": "compiler/revision.lock.json",
         "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
@@ -164,19 +169,22 @@ def _campaign_exit_code(report) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", choices=("rmsnorm", "layernorm", "residual_rmsnorm"), required=True)
-    parser.add_argument("--backend", choices=("metal-m1-pro",), required=True)
+    parser.add_argument("--task", choices=("rmsnorm", "layernorm", "residual_rmsnorm", "gemm_bias"), required=True)
+    parser.add_argument("--backend", choices=tuple(BACKENDS), required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--rows", type=int, default=128)
     parser.add_argument("--columns", type=int, default=1024)
+    parser.add_argument("--depth", type=int, help="GEMM K extent; only GEMM declares one")
     parser.add_argument("--case", choices=("primary",), default="primary", help="timing case; all five input cases remain required")
     parser.add_argument("--turns", type=int, default=4)
     parser.add_argument("--token-budget", type=int, default=150000)
     parser.add_argument("--max-candidates", type=int, default=3)
     parser.add_argument("--searches-per-turn", type=int, default=2)
+    parser.add_argument("--dispatches-per-sample", type=int, default=64,
+                        help="dispatches encoded in each timed command buffer; amortizes fixed command overhead")
     parser.add_argument("--wall-seconds", type=int, default=14400)
     parser.add_argument("--provider-executable", type=Path)
     parser.add_argument("--provider-revision")
@@ -188,7 +196,8 @@ def main(argv=None) -> int:
     if (args.qualification is None) != (args.qualification_anchor is None):
         parser.error("--qualification and --qualification-anchor must be supplied together")
     workspace = _new_workspace(args.workspace)
-    document, source = create_task(args.task, backend=args.backend, rows=args.rows, columns=args.columns, case_id=args.case)
+    document, source = create_task(args.task, backend=args.backend, rows=args.rows, columns=args.columns,
+                                   depth=args.depth, case_id=args.case)
     executable = _provider_executable(args.harness, args.provider_executable)
     workspace.mkdir(mode=0o750, parents=True)
     workload_path, source_path = workspace / "workload.json", workspace / "starter.py"
@@ -197,10 +206,11 @@ def main(argv=None) -> int:
     workload = load_workload(workload_path)
     study = study_template(ROOT, workload, workload_path, source_path, harness=args.harness,
         model=args.model, effort=args.effort, turns=args.turns, token_budget=args.token_budget,
-        maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds)
+        maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
+        dispatches_per_sample=args.dispatches_per_sample)
     study_path = workspace / "study.json"
     _write(study_path, canonical(study))
-    compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace)
+    compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target)
     baseline_path = (external_file(ROOT, str(args.fixed_baseline_bundle), "fixed baseline bundle")
                      if args.fixed_baseline_bundle else _prepare_baseline(ROOT, workspace, compiler, executor, host, workload, study, source, compiler_reference))
     receipt_path, anchor_path = _qualify(ROOT, workspace, args, executable, source_path)

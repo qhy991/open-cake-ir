@@ -46,11 +46,37 @@ _UNARY = {
 }
 
 
-def _slots(buffer):
-    return (buffer.elements + 31) // 32
+SIMD_WIDTH = 32
+MAXIMUM_SIMD_GROUPS = 32
 
 
-def private_values_per_thread(schedule: Schedule) -> int:
+def lane_width(schedule: Schedule) -> int:
+    """Threads per threadgroup this schedule's single role occupies.
+
+    One SIMD group keeps the original route exactly. More groups widen the stripe,
+    which is the only way a fixed reduction width can own fewer values per lane.
+    """
+    warps = schedule.roles[0].warps if schedule.roles else (0,)
+    return SIMD_WIDTH * len(warps)
+
+
+def _slots(buffer, lanes: int = SIMD_WIDTH):
+    return (buffer.elements + lanes - 1) // lanes
+
+
+def _share_slots(schedule: Schedule, lanes: int) -> int:
+    """Threadgroup floats needed to combine SIMD groups and publish scalars."""
+    if lanes == SIMD_WIDTH:
+        return 0
+    scalars = max((sum(1 for read in operation.reads
+                       if operation.kind is OperationKind.ELEMENTWISE
+                       and next(b for b in schedule.buffers if b.name == read).is_scalar
+                       and not next(b for b in schedule.buffers if b.name == operation.writes[0]).is_scalar)
+                   for operation in schedule.operations), default=0)
+    return max(lanes // SIMD_WIDTH, scalars, 1)
+
+
+def private_values_per_thread(schedule: Schedule, lanes: int = SIMD_WIDTH) -> int:
     """Peak simultaneously live lane-owned FP32 values, without physical allocation claims.
 
     Count source and destination at their common operation boundary. No speculative
@@ -63,8 +89,8 @@ def private_values_per_thread(schedule: Schedule) -> int:
             continue
         uses = [index for index, operation in enumerate(schedule.operations)
                 if buffer.name in (*operation.reads, *operation.writes)]
-        intervals.append((uses[0], uses[-1], _slots(buffer)) if uses
-                         else (0, len(schedule.operations) - 1, _slots(buffer)))
+        intervals.append((uses[0], uses[-1], _slots(buffer, lanes)) if uses
+                         else (0, len(schedule.operations) - 1, _slots(buffer, lanes)))
     return max((sum(slots for first, last, slots in intervals if first <= index <= last)
                 for index in range(len(schedule.operations))), default=0)
 
@@ -98,14 +124,35 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
           and schedule.lowering.entry_point not in _RESERVED
           and not re.fullmatch(r"(?:bool|char|uchar|short|ushort|int|uint|long|ulong|half|float)(?:[234](?:x[234])?)", schedule.lowering.entry_point),
           "METAL_ENTRY_POINT_UNSUPPORTED", "lowering.entry_point", "Metal requires a non-reserved function identifier")
-    check(len(schedule.roles) == 1 and schedule.roles[0].warps == (0,),
-          "METAL_ROLE_UNSUPPORTED", "roles", "SIMD program tiles require one role occupying SIMD group [0]")
+    check(len(schedule.roles) == 1
+          and schedule.roles[0].warps == tuple(range(len(schedule.roles[0].warps)))
+          and 1 <= len(schedule.roles[0].warps) <= MAXIMUM_SIMD_GROUPS,
+          "METAL_ROLE_UNSUPPORTED", "roles",
+          "SIMD program tiles require one role occupying consecutive SIMD groups from [0], "
+          f"at most {MAXIMUM_SIMD_GROUPS}")
     for index, role in enumerate(schedule.roles):
         check(role.registers_per_thread is None, "METAL_REGISTER_CAP_UNSUPPORTED",
               f"roles[{index}].registers_per_thread", "Metal has no CUDA warpgroup register redistribution")
     for field in ("allocations", "pipelines", "barriers", "tile_loops"):
         check(not getattr(schedule, field), "METAL_DECLARATION_UNSUPPORTED", field,
               f"SIMD Metal lowering does not implement {field}")
+    lanes = lane_width(schedule)
+    if lanes > SIMD_WIDTH:
+        # Widening the stripe replaces every SIMD collective with a threadgroup one.
+        # Reduce and scalar broadcast are implemented; the cross-lane exchange that
+        # serves a narrower non-scalar operand is not, and is refused rather than
+        # emitted through a shuffle that only reaches one group.
+        for index, operation in enumerate(schedule.operations):
+            if operation.kind is not OperationKind.ELEMENTWISE:
+                continue
+            destination = next(b for b in schedule.buffers if b.name == operation.writes[0])
+            for read in operation.reads:
+                source = next(b for b in schedule.buffers if b.name == read)
+                check(source.shape == destination.shape or source.is_scalar,
+                      "METAL_BROADCAST_WIDTH_UNSUPPORTED", f"operations[{index}]",
+                      "multi-group Metal lowering implements matching-shape and scalar "
+                      "operands only; a narrower non-scalar operand needs a cross-group "
+                      "exchange this route does not emit")
     check(schedule.residency is None, "METAL_RESIDENCY_UNSUPPORTED", "residency",
           "Apple occupancy and register caps are not modeled or enforced")
     check(schedule.program_map is not None, "METAL_PROGRAM_MAP_REQUIRED", "program_map",
@@ -118,7 +165,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                   f"program_map.axes[{index}].tile", "this Metal route requires scalar program indices (tile=1); dimension extents may be odd")
     globals_ = [buffer for buffer in schedule.buffers if buffer.space is MemorySpace.GLOBAL]
     check(len(globals_) <= 31, "METAL_BUFFER_ARGUMENT_LIMIT", "buffers", "Metal admits at most 31 global buffer arguments")
-    private_values = private_values_per_thread(schedule)
+    private_values = private_values_per_thread(schedule, lane_width(schedule))
     check(private_values <= 1024, "METAL_PRIVATE_STORAGE_LIMIT", "buffers",
           "Metal supports at most 1024 simultaneously live lane-owned FP32 values; "
           "this backend limit is not an Apple register capacity or occupancy estimate")
@@ -235,7 +282,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     if not findings:
         findings.append(Finding(
             "METAL_SIMD_EXECUTION", "lowering",
-            "Metal stripes flattened values over 32 lanes with uniform SIMD "
+            f"Metal stripes flattened values over {lane_width(schedule)} lanes with uniform SIMD "
             "collectives and uniquely owned stores. Peak live lane-owned Buffer "
             f"storage: {private_values} FP32 values; "
             "temporary registers and spills are unmodeled. No occupancy, cost or "
@@ -276,20 +323,35 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
     grid = [1, 1, 1]
     for axis in axes.values():
         grid[axis.axis] = buffers[axis.buffer].shape[axis.dimension]
+    lanes = lane_width(schedule)
+    groups = lanes // SIMD_WIDTH
+    share_slots = _share_slots(schedule, lanes)
     lines = ["#include <metal_stdlib>", "using namespace metal;", "#pragma METAL fp contract(off)",
-             "// SIMD program tile: i belongs to lane i % 32, private slot i / 32.",
+             f"// SIMD program tile: i belongs to lane i % {lanes}, private slot i / {lanes}.",
              "// Every collective has uniform participation, including padded tail lanes.",
-             "// FP32 local-slot accumulation then SIMD sum/max; precise rsqrt; fast math disabled.",
-             f"// Peak live lane-owned Buffer values: {private_values_per_thread(schedule)} FP32; temporaries/spills unmodeled.",
-             f"kernel void {schedule.lowering.entry_point}("]
+             "// FP32 local-slot accumulation then SIMD sum/max; precise rsqrt; fast math disabled."]
+    if groups > 1:
+        lines.append(f"// {groups} SIMD groups: each collective completes in threadgroup memory "
+                     "under uniform barriers.")
+    lines += [f"// Peak live lane-owned Buffer values: {private_values_per_thread(schedule, lanes)} FP32; temporaries/spills unmodeled.",
+              f"kernel void {schedule.lowering.entry_point}("]
     for index, buffer in enumerate(globals_):
         const = "const " if buffer.mode is BufferMode.INPUT else ""
         lines.append(f"    device {const}float* {names[buffer.name]} [[buffer({index})]],")
-    lines += ["    uint3 program [[threadgroup_position_in_grid]],",
-              "    uint lane [[thread_index_in_simdgroup]]) {"]
+    lines.append("    uint3 program [[threadgroup_position_in_grid]],")
+    if groups > 1:
+        # Metal requires every position attribute in one kernel to be the same
+        # scalar or vector form, and the program position is already uint3.
+        lines += ["    uint3 thread_position [[thread_position_in_threadgroup]],",
+                  "    uint simd_lane [[thread_index_in_simdgroup]],",
+                  "    uint simd_group [[simdgroup_index_in_threadgroup]]) {",
+                  "    uint lane = thread_position.x;",
+                  f"    threadgroup float share[{share_slots}];"]
+    else:
+        lines.append("    uint lane [[thread_index_in_simdgroup]]) {")
     for buffer in schedule.buffers:
         if buffer.space is MemorySpace.REGISTER:
-            lines.append(f"    float {names[buffer.name]}[{_slots(buffer)}] = {{}};")
+            lines.append(f"    float {names[buffer.name]}[{_slots(buffer, lanes)}] = {{}};")
 
     def address(operation, global_buffer, local_buffer):
         access = accesses[(operation.op_id, global_buffer.name)]
@@ -320,14 +382,25 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
                       f"            float partial = {identity};",
                       f"            uint begin = (output / {inner}u) * {extent * inner}u;",
                       f"            uint end = begin + {extent * inner}u;",
-                      "            for (uint s = begin / 32u; s < (end + 31u) / 32u; ++s) {",
-                      "                uint i = s * 32u + lane;",
+                      f"            for (uint s = begin / {lanes}u; s < (end + {lanes - 1}u) / {lanes}u; ++s) {{",
+                      f"                uint i = s * {lanes}u + lane;",
                       f"                if (i >= begin && i < end && i % {inner}u == output % {inner}u) {{"]
             value = f"{names[src.name]}[s]"
             expression = f"partial + {value}" if parameters.op is ReduceOp.SUM else f"max(partial, {value})"
-            lines += [f"                    partial = {expression};", "                }", "            }",
-                      f"            float reduced = {intrinsic}(partial);",
-                      f"            if (lane == output % 32u) {names[dst.name]}[output / 32u] = reduced;",
+            lines += [f"                    partial = {expression};", "                }", "            }"]
+            if groups > 1:
+                combine = "reduced + share[g]" if parameters.op is ReduceOp.SUM else "max(reduced, share[g])"
+                lines += [f"            float grouped = {intrinsic}(partial);",
+                          # The first barrier retires the previous output's reads before
+                          # this one overwrites the same threadgroup slots.
+                          "            threadgroup_barrier(mem_flags::mem_threadgroup);",
+                          "            if (simd_lane == 0u) share[simd_group] = grouped;",
+                          "            threadgroup_barrier(mem_flags::mem_threadgroup);",
+                          f"            float reduced = {identity};",
+                          f"            for (uint g = 0u; g < {groups}u; ++g) {{ reduced = {combine}; }}"]
+            else:
+                lines.append(f"            float reduced = {intrinsic}(partial);")
+            lines += [f"            if (lane == output % {lanes}u) {names[dst.name]}[output / {lanes}u] = reduced;",
                       "        }", "    }"]
             continue
 
@@ -338,9 +411,18 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
             for position, read in enumerate(operation.reads):
                 if buffers[read].is_scalar and not dst.is_scalar:
                     scalar_reads[read] = f"scalar{position}"
-                    lines.append(f"        float scalar{position} = simd_broadcast({names[read]}[0], 0u);")
-        lines += [f"        for (uint s = 0u; s < {(count + 31) // 32}u; ++s) {{",
-                  "            uint i = s * 32u + lane;"]
+                    if groups > 1:
+                        # Element zero is owned by thread zero, whose SIMD group cannot
+                        # broadcast to the others; publish it to the threadgroup instead.
+                        slot = len(scalar_reads) - 1
+                        lines += ["        threadgroup_barrier(mem_flags::mem_threadgroup);",
+                                  f"        if (lane == 0u) share[{slot}] = {names[read]}[0];",
+                                  "        threadgroup_barrier(mem_flags::mem_threadgroup);",
+                                  f"        float scalar{position} = share[{slot}];"]
+                    else:
+                        lines.append(f"        float scalar{position} = simd_broadcast({names[read]}[0], 0u);")
+        lines += [f"        for (uint s = 0u; s < {(count + lanes - 1) // lanes}u; ++s) {{",
+                  f"            uint i = s * {lanes}u + lane;"]
         if operation.kind is OperationKind.LOAD:
             lines.append(f"            {names[dst.name]}[s] = i < {count}u ? {names[src.name]}[{address(operation, src, dst)}] : 0.0f;")
         elif operation.kind is OperationKind.STORE:
@@ -362,7 +444,7 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
                     # directly would select the requesting lane's slot at the source.
                     lines += [f"            uint index{position} = uint({subscript});",
                               f"            float operand{position} = 0.0f;",
-                              f"            for (uint k = 0u; k < {_slots(buffer)}u; ++k) {{",
+                              f"            for (uint k = 0u; k < {_slots(buffer, lanes)}u; ++k) {{",
                               f"                float exchanged = simd_shuffle({names[read]}[k], ushort(index{position} % 32u));",
                               f"                if (k == index{position} / 32u) operand{position} = exchanged;",
                               "            }"]
@@ -376,8 +458,8 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
     lines += ["    // CAKE_KERNEL_END", "}", ""]
     return Emission("\n".join(lines), schedule.lowering.entry_point, {}, {
         "buffer_order": [buffer.name for buffer in globals_],
-        "threadgroups_per_grid": grid, "threads_per_threadgroup": [32, 1, 1],
-        "threadgroup_memory_bytes": 0, "language_standard": "metal2.3",
+        "threadgroups_per_grid": grid, "threads_per_threadgroup": [lanes, 1, 1],
+        "threadgroup_memory_bytes": share_slots * 4, "language_standard": "metal2.3",
         "fast_math_enabled": False, "execution_model": "simd_program_tile",
-        "active_threads_per_threadgroup": 32,
+        "active_threads_per_threadgroup": lanes,
     })

@@ -1625,6 +1625,32 @@
         "schedule_sha256": "73bd27d8c081437159b964ab14851e5e8e7528d3816d2339c7e9c95b46054e34",
         "lowering_source_sha256": "3e50d5b1b0b1369fc435298be86574434261bedf9f5eb995f660109da0480218"
       }
+    },
+    {
+      "case_id": "metal-rmsnorm-simd-groups-accepted",
+      "schedule": "corpus/schedules/metal-rmsnorm-simd-groups.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "METAL_SIMD_EXECUTION"
+        ],
+        "schedule_sha256": "b49e6248e53ef4cb13937a56dda8e825b6f7bf36ca15c3cf4f2db62bd07b030e",
+        "lowering_source_sha256": "f33c2c5d8842eab1cf2f559c6ff3a7327e8d65c4deb8bdf4c4a74b915d124bf8"
+      }
+    },
+    {
+      "case_id": "metal-rmsnorm-simd-group-drift-refused",
+      "schedule": "corpus/schedules/metal-rmsnorm-simd-group-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "METAL_ROLE_UNSUPPORTED"
+        ],
+        "schedule_sha256": "03ee5fbc689a3939a9a02ddf61bf0f69bf8225d36a0b10dfbb20f3c2124d0aa6",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

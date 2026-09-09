@@ -70,7 +70,9 @@ def fake_observe(**kwargs):
     for row in kwargs['launch_plan']:
         start = 100.0 + row['index']
         command = {'launch_index': row['index'], 'completed': True, 'timed': row['timed'],
-                   'gpu_start_seconds': start, 'gpu_end_seconds': start + (0.001 if row['role'] == 'candidate' else 0.002)}
+                   'dispatches': row['dispatches'],
+                   'gpu_start_seconds': start,
+                   'gpu_end_seconds': start + row['dispatches'] * (0.001 if row['role'] == 'candidate' else 0.002)}
         observed = {**row, 'passed': True, 'metrics': {'output_mismatches': 0, 'max_abs_error': 0.0, 'inputs_unchanged': True}, 'command_buffer': command}
         if row['profile']:
             observed['profile_raw'] = {'counter_set': 'Timestamp', 'counter': 'GPUTimestamp', 'sampling_boundary': 'compute_stage',
@@ -227,17 +229,38 @@ class MetalEvaluationContracts(unittest.TestCase):
             run.assert_not_called()
         self.assertFalse(output.exists())
 
+    def test_launch_plan_must_declare_a_usable_dispatch_count(self):
+        executable = self.root / 'observer-double'; executable.write_bytes(b'explicit test double; never executed')
+        inputs = {'primary': {'inputs': {'x': [1.0, 2.0]}, 'expected': {'out': [1.0, 2.0]}}}
+        base = {'index': 0, 'role': 'candidate', 'phase': 'cohort', 'input_case_id': 'primary',
+                'timed': True, 'profile': False, 'pair_index': 0, 'position': 0, 'dispatches': 8}
+        rejected = ({k: v for k, v in base.items() if k != 'dispatches'},
+                    {**base, 'dispatches': 0}, {**base, 'dispatches': 4097},
+                    {**base, 'dispatches': 1.0}, {**base, 'dispatches': True},
+                    {**base, 'timed': False, 'profile': True, 'dispatches': 2})
+        for plan_row in rejected:
+            with self.subTest(dispatches=plan_row.get('dispatches')), \
+                 patch.object(metal_runtime.subprocess, 'run') as process:
+                with self.assertRaisesRegex(ValueError, 'declared launch plan differs'):
+                    metal_runtime.observe(workload=self.workload, candidates={'candidate': self.candidate},
+                        manifests={'candidate': self.manifest}, input_cases=inputs, launch_plan=[plan_row],
+                        observer_executable=executable, expected_host=HOST,
+                        directory=self.root / f'plan-{id(plan_row)}')
+                process.assert_not_called()
+
     def test_observer_binary_snapshots_are_checked_by_independent_common_oracle(self):
         executable = self.root / 'observer-double'; executable.write_bytes(b'explicit test double; never executed')
         inputs = {'primary': {'inputs': {'x': [1.0, 2.0]}, 'expected': {'out': [1.0, 2.0]}}}
-        plan = [{'index': 0, 'role': 'candidate', 'phase': 'preflight', 'input_case_id': 'primary', 'timed': False, 'profile': False}]
+        plan = [{'index': 0, 'role': 'candidate', 'phase': 'preflight', 'input_case_id': 'primary', 'timed': False,
+                 'profile': False, 'dispatches': 1}]
         def process(command, **kwargs):
             request = json.loads(Path(command[1]).read_text()); directory = Path(request['output_directory'])
             (directory / 'x.bin').write_bytes(struct.pack('<2f', 1.0, 2.0))
             (directory / 'out.bin').write_bytes(struct.pack('<2f', 1.0, 2.0))
             row = {'index': 0, 'role': 'candidate', 'phase': 'preflight', 'input_case_id': 'primary',
                 'buffer_paths': {'x': 'x.bin', 'out': 'out.bin'}, 'preflight_guard_passed': True,
-                'command_buffer': {'launch_index': 0, 'completed': True, 'timed': False, 'gpu_start_seconds': 1.0, 'gpu_end_seconds': 1.001}}
+                'command_buffer': {'launch_index': 0, 'completed': True, 'timed': False, 'dispatches': 1,
+                                   'gpu_start_seconds': 1.0, 'gpu_end_seconds': 1.001}}
             report = {'status': 'completed', 'host': HOST, 'source_library_rebuilt': False,
                 'archive_miss_policy': 'failOnBinaryArchiveMiss', 'module_loads': 1, 'launches': [row],
                 'snapshot_persistence': {'condition': 'owned_snapshots_written_at_cohort_end',
@@ -272,12 +295,13 @@ func rejected(_ operation: () throws -> Void) throws {
 func participant(_ role: String = "candidate", shape: [Int] = [4]) -> Participant {
     Participant(role: role, archive_path: "unused", manifest: Manifest(target: "apple_gpu_family7", kernel_name: "unused",
         tensor_abi: [Tensor(name: "x", shape: shape, dtype: "fp32", mode: "input"),
-                     Tensor(name: "out", shape: shape, dtype: "fp32", mode: "output")], grid: [1,1,1], block: [32,1,1]))
+                     Tensor(name: "out", shape: shape, dtype: "fp32", mode: "output")], grid: [1,1,1], block: [32,1,1],
+        threadgroup_memory_bytes: 0))
 }
 func launch(_ index: Int, role: String = "candidate", phase: String = "cohort", pair: Int? = 0, position: Int? = 0,
-            input: String = "primary", timed: Bool = false) -> Launch {
+            input: String = "primary", timed: Bool = false, dispatches: Int = 1) -> Launch {
     Launch(index: index, role: role, phase: phase, input_case_id: input, timed: timed,
-           profile: phase == "profile", pair_index: pair, position: position)
+           profile: phase == "profile", pair_index: pair, position: position, dispatches: dispatches)
 }
 func capture(_ writer: OwnedSnapshots, _ bytes: [UInt8], _ name: String, deferred: Bool = true) throws {
     _ = try bytes.withUnsafeBytes { try writer.capture($0.baseAddress!, count: bytes.count, name: name, deferred: deferred) }

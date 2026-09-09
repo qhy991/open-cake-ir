@@ -40,7 +40,11 @@ def _external_root(path: Path) -> Path:
     return resolved
 
 
-def _validate_report(report: object, target: str, expected_names: tuple[str, ...], *, rebuilt: bool) -> dict:
+_MAXIMUM_THREADGROUP_BYTES = 32768
+
+
+def _validate_report(report: object, target: str, expected_names: tuple[str, ...], *, rebuilt: bool,
+                     threads: int = 32, threadgroup_memory_bytes: int = 0) -> dict:
     if not isinstance(report, dict) or report.get("status") != "completed":
         raise RunProtocolFault("harness_fault", "Metal archive helper did not complete")
     host, pipeline = report.get("host"), report.get("pipeline")
@@ -57,8 +61,13 @@ def _validate_report(report: object, target: str, expected_names: tuple[str, ...
             or set(pipeline) != {"thread_execution_width", "max_total_threads_per_threadgroup", "static_threadgroup_memory_bytes"}
             or type(pipeline.get("thread_execution_width")) is not int or pipeline["thread_execution_width"] != 32
             or type(pipeline.get("max_total_threads_per_threadgroup")) is not int
-            or pipeline["max_total_threads_per_threadgroup"] < 32
-            or type(pipeline.get("static_threadgroup_memory_bytes")) is not int or pipeline["static_threadgroup_memory_bytes"] != 0):
+            or pipeline["max_total_threads_per_threadgroup"] < threads
+            or type(pipeline.get("static_threadgroup_memory_bytes")) is not int
+            # Metal rounds a threadgroup allocation up, so the pipeline may hold more
+            # than the kernel declares. Declaring none must still allocate none.
+            or not (threadgroup_memory_bytes
+                    <= pipeline["static_threadgroup_memory_bytes"] <= _MAXIMUM_THREADGROUP_BYTES)
+            or (threadgroup_memory_bytes == 0) != (pipeline["static_threadgroup_memory_bytes"] == 0)):
         raise RunProtocolFault("harness_fault", "Metal archive helper observations differ from the admitted pipeline")
     return report
 
@@ -144,7 +153,9 @@ class MetalArchiveHost:
             "expected_host": expected_host}, directory)
         if report.get("status") != "completed":
             raise RunProtocolFault("harness_fault", f"sealed Metal archive refused strict reload: {report.get('error')}")
-        report = _validate_report(report, manifest.target, expected_device_names, rebuilt=False)
+        report = _validate_report(report, manifest.target, expected_device_names, rebuilt=False,
+                                  threads=manifest.block_threads,
+                                  threadgroup_memory_bytes=manifest.threadgroup_memory_bytes)
         if report["host"] != expected_host:
             raise RunProtocolFault("harness_fault", "Metal archive reload host differs")
         return report
@@ -173,20 +184,27 @@ class MetalToolchainBuilder:
 
     def _manifest(self, request: BuildRequest) -> MetalTensorLaunchManifest:
         requirements = request.toolchain_requirements
+        block = requirements.get("threads_per_threadgroup")
+        shared = requirements.get("threadgroup_memory_bytes")
+        threads = block[0] if isinstance(block, list) and len(block) == 3 and type(block[0]) is int else 0
         expected = {"source_language": "metal", "compiler": "MTLDevice.makeLibrary", "target": self.workload.target,
-            "language_standard": "metal2.3", "fast_math_enabled": False, "threadgroup_memory_bytes": 0,
-            "execution_model": "simd_program_tile", "active_threads_per_threadgroup": 32,
+            "language_standard": "metal2.3", "fast_math_enabled": False,
+            "execution_model": "simd_program_tile", "active_threads_per_threadgroup": threads,
             "buffer_order": [arg.name for arg in self.workload.tensor_abi(self.case_id)],
-            "threads_per_threadgroup": [32, 1, 1]}
-        if (set(requirements) != set(expected) | {"threadgroups_per_grid"}
+            "threads_per_threadgroup": [threads, 1, 1]}
+        # The Compiler's own target is the authority on how much threadgroup storage a
+        # device admits; a single SIMD group still declares none.
+        if (set(requirements) != set(expected) | {"threadgroups_per_grid", "threadgroup_memory_bytes"}
                 or any(requirements.get(key) != value for key, value in expected.items())
                 or type(requirements.get("fast_math_enabled")) is not bool
-                or type(requirements.get("threadgroup_memory_bytes")) is not int
-                or type(requirements.get("active_threads_per_threadgroup")) is not int
+                or type(shared) is not int or not 0 <= shared <= self.target.resource_limits.maximum_shared_memory_bytes
+                or (threads == 32) != (shared == 0)
+                or threads % 32 or not 32 <= threads <= self.target.resource_limits.maximum_threads_per_cta
                 or request.target != self.workload.target or request.source_role != "lowered_source"):
             raise ValueError("Metal builder requires the exact admitted Compiler lowering and Workload ABI")
         return MetalTensorLaunchManifest.for_workload(self.workload, self.case_id, target=request.target,
-            kernel_name=request.entry_point, grid=requirements["threadgroups_per_grid"], block=requirements["threads_per_threadgroup"])
+            kernel_name=request.entry_point, grid=requirements["threadgroups_per_grid"],
+            block=requirements["threads_per_threadgroup"], threadgroup_memory_bytes=shared)
 
     def build(self, request: BuildRequest) -> LaunchableCandidate:
         manifest = self._manifest(request)
@@ -204,7 +222,9 @@ class MetalToolchainBuilder:
             if report.get("stage") in {"source_compile", "function_lookup", "archive_serialize", "strict_pipeline_load"}:
                 raise CandidateCompileRejected(str(report.get("error")), artifact_payloads={"metal_build_report": _json(report)})
             raise RunProtocolFault("harness_fault", f"Metal build host refused: {report.get('error')}")
-        _validate_report(report, request.target, self.target.device_names, rebuilt=True)
+        _validate_report(report, request.target, self.target.device_names, rebuilt=True,
+                         threads=manifest.block_threads,
+                         threadgroup_memory_bytes=manifest.threadgroup_memory_bytes)
         if not archive.is_file() or not archive.stat().st_size:
             raise RunProtocolFault("harness_fault", "Metal builder produced no binary archive")
         replay = self.host.reload(archive, manifest, expected_device_names=self.target.device_names,

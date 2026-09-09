@@ -86,8 +86,12 @@ do {
     descriptor.binaryArchives = [archive]
     let pipeline = try device.makeComputePipelineState(descriptor: descriptor,
         options: [.failOnBinaryArchiveMiss], reflection: nil)
+    // The SIMD width stays 32. Consecutive groups raise the threadgroup size and bring
+    // their own static threadgroup storage; Python checks both against the manifest.
     try require(pipeline.threadExecutionWidth == 32 && pipeline.maxTotalThreadsPerThreadgroup >= 32
-                && pipeline.staticThreadgroupMemoryLength == 0, "pipeline resources differ from admitted SIMD launch")
+                && pipeline.staticThreadgroupMemoryLength >= 0
+                && pipeline.staticThreadgroupMemoryLength <= 32768,
+                "pipeline resources differ from admitted SIMD launch")
     report["pipeline"] = ["thread_execution_width": pipeline.threadExecutionWidth,
         "max_total_threads_per_threadgroup": pipeline.maxTotalThreadsPerThreadgroup,
         "static_threadgroup_memory_bytes": pipeline.staticThreadgroupMemoryLength]

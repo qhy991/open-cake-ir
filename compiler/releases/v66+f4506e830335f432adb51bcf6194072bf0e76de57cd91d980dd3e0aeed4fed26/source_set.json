@@ -1,5 +1,4 @@
 {
-  "schema_version": 1,
   "paths": [
     "compiler/AUTHORING_CONTRACT.md",
     "docs/PYTHON_FRONTEND.md",
@@ -129,8 +128,6 @@
     "src/open_cake_ir/compiler/performance/empirical_cost.py",
     "examples/python/metal_rmsnorm.py",
     "corpus/schedules/metal-rmsnorm-primary.json",
-    "corpus/schedules/metal-rmsnorm-simd-groups.json",
-    "corpus/schedules/metal-rmsnorm-simd-group-drift.json",
     "corpus/schedules/metal-rmsnorm-tail.json",
     "corpus/schedules/triton-global-scalar-storage-refusal.json",
     "compiler/targets/sm_103a.json",
@@ -170,5 +167,6 @@
     "corpus/schedules/triton-argmin-static-tail-drift.json",
     "examples/python/cast.py",
     "examples/python/mixed_dtype.py"
-  ]
+  ],
+  "schema_version": 1
 }

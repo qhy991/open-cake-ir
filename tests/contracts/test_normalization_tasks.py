@@ -23,8 +23,8 @@ class NormalizationTaskTests(unittest.TestCase):
     def setUpClass(cls):
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
 
-    def task(self, name="rmsnorm", rows=2, columns=7):
-        document, source = create_task(name, rows=rows, columns=columns)
+    def task(self, name="rmsnorm", rows=2, columns=7, backend="metal-m1-pro"):
+        document, source = create_task(name, backend=backend, rows=rows, columns=columns)
         return WorkloadContract(document), source
 
     def test_registered_workloads_preserve_legacy_cuda_contracts(self):
@@ -36,15 +36,16 @@ class NormalizationTaskTests(unittest.TestCase):
             self.assertEqual(len(reference_outputs(workload, "tiny", inputs)["y"]), 8)
         with tempfile.TemporaryDirectory() as directory:
             for name in normalization.TASKS:
-                document, _ = create_task(name, rows=2, columns=7)
-                path = Path(directory) / f"{name}.json"
-                path.write_text(json.dumps(document))
-                workload = load_workload(path)
-                self.assertEqual(workload.target, "apple_gpu_family7")
-                self.assertEqual(workload.case_ids, tuple(normalization.CASES))
-                self.assertTrue(workload.document["validation"]["all_cases_required"])
-                for case_id in workload.case_ids:
-                    self.assertEqual(workload.tensor_abi(case_id), workload.tensor_abi("primary"))
+                for backend, device in normalization.BACKENDS.items():
+                    document, _ = create_task(name, backend=backend, rows=2, columns=7)
+                    path = Path(directory) / f"{name}-{backend}.json"
+                    path.write_text(json.dumps(document))
+                    workload = load_workload(path)
+                    self.assertEqual(workload.target, device["target"])
+                    self.assertEqual(workload.case_ids, tuple(normalization.CASES))
+                    self.assertTrue(workload.document["validation"]["all_cases_required"])
+                    for case_id in workload.case_ids:
+                        self.assertEqual(workload.tensor_abi(case_id), workload.tensor_abi("primary"))
 
     def test_frozen_contract_rejects_target_domain_or_case_drift(self):
         document, _ = create_task("rmsnorm", rows=2, columns=7)
@@ -72,10 +73,32 @@ class NormalizationTaskTests(unittest.TestCase):
             change(changed)
             with self.subTest(document=changed), self.assertRaises(ValueError):
                 normalization.validate_normalization_contract(changed)
-        for options in ({"backend": "metal"}, {"backend": "cuda"}, {"rows": True},
-                        {"columns": 0}, {"rows": 2**30, "columns": 1}):
+        for options in ({"backend": "metal"}, {"backend": "cuda"}, {"backend": "metal-m3"},
+                        {"rows": True}, {"columns": 0}, {"rows": 2**30, "columns": 1}):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 create_task("rmsnorm", **options)
+
+    def test_each_backend_freezes_one_device_and_never_mixes_with_another(self):
+        documents = {backend: create_task("rmsnorm", backend=backend, rows=2, columns=7)[0]
+                     for backend in normalization.BACKENDS}
+        self.assertEqual(len({document["workload_id"] for document in documents.values()}), len(documents))
+        for backend, document in documents.items():
+            with self.subTest(backend=backend):
+                device = normalization.BACKENDS[backend]
+                self.assertEqual(document["semantics"]["target"], device["target"])
+                self.assertEqual(normalization.device_name(device["target"]), device["device_name"])
+                self.assertIn(backend, document["workload_id"])
+                normalization.validate_normalization_contract(document)
+        # Only the whole frozen document admits a backend; no field may be swapped alone.
+        for backend, other in (("metal-m1-pro", "metal-m2"), ("metal-m2", "metal-m1-pro")):
+            for field in ("workload_id", "provenance"):
+                changed = deepcopy(documents[backend])
+                changed[field] = deepcopy(documents[other][field])
+                with self.subTest(backend=backend, field=field), self.assertRaises(ValueError):
+                    normalization.validate_normalization_contract(changed)
+        for target in ("sm_100a", "", None):
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                normalization.device_name(target)
 
     def test_materialization_preserves_abi_fp32_bounds_and_seed_reproducibility(self):
         for name in normalization.TASKS:
@@ -132,21 +155,32 @@ class NormalizationTaskTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 reference_outputs(workload, "primary", {"x": inputs["x"]})
 
-    def test_starter_binds_workload_and_all_case_abis_for_m1_lowering(self):
+    def test_starter_binds_workload_and_all_case_abis_for_apple_lowering(self):
         for name in normalization.TASKS:
             for width in (1, 7, 32, 65, 257, 1024, 4096):
-                with self.subTest(task=name, width=width):
-                    workload, source = self.task(name, columns=width)
-                    schedule = frontend.parse(source).document
-                    self.assertEqual(schedule["metadata"]["workload_contract_sha256"], workload.canonical_sha256)
-                    buffers = [b for b in schedule["buffers"] if b["space"] == "global"]
-                    for case_id in workload.case_ids:
-                        self.assertEqual([(b["name"], tuple(b["shape"]), b["dtype"], b["mode"]) for b in buffers],
-                                         [(a.name, a.shape, a.dtype, a.mode) for a in workload.tensor_abi(case_id)])
-                    assessment = self.compiler.assess(schedule)
-                    self.assertTrue(assessment.lowering_eligible, assessment.findings)
-                    self.assertEqual(self.compiler.lower(assessment).toolchain_requirements["target"], workload.target)
-                    self.assertFalse(assessment.calibration_available)
+                lowered = {}
+                for backend in normalization.BACKENDS:
+                    with self.subTest(task=name, width=width, backend=backend):
+                        workload, source = self.task(name, columns=width, backend=backend)
+                        schedule = frontend.parse(source).document
+                        self.assertEqual(schedule["metadata"]["workload_contract_sha256"], workload.canonical_sha256)
+                        buffers = [b for b in schedule["buffers"] if b["space"] == "global"]
+                        for case_id in workload.case_ids:
+                            self.assertEqual([(b["name"], tuple(b["shape"]), b["dtype"], b["mode"]) for b in buffers],
+                                             [(a.name, a.shape, a.dtype, a.mode) for a in workload.tensor_abi(case_id)])
+                        assessment = self.compiler.assess(schedule)
+                        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+                        lowering = self.compiler.lower(assessment)
+                        self.assertEqual(lowering.toolchain_requirements["target"], workload.target)
+                        self.assertFalse(assessment.calibration_available)
+                        lowered[backend] = (dict(lowering.toolchain_requirements), lowering.source)
+                # Only the target commitment separates the Apple backends here, so the
+                # CPU semantic contracts below stay valid for one emitted body.
+                (first, *rest) = lowered.values()
+                for requirements, source in rest:
+                    self.assertEqual(source, first[1])
+                    self.assertEqual({name: value for name, value in requirements.items() if name != "target"},
+                                     {name: value for name, value in first[0].items() if name != "target"})
 
     def test_generated_starters_match_all_input_case_oracles_on_cpu(self):
         from tests.contracts import test_metal as cpu_contracts

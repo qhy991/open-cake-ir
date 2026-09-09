@@ -26,6 +26,24 @@ def command_buffer_ms(observation: Mapping) -> float:
     return (end - start) * 1000.0
 
 
+def dispatch_count(observation: Mapping) -> int:
+    """Dispatches encoded in one command buffer; absent means the original one."""
+    value = observation.get("dispatches", 1)
+    if type(value) is not int or not 1 <= value <= 4096:
+        raise ValueError("Metal command-buffer dispatch count differs")
+    return value
+
+
+def amortized_dispatch_ms(observation: Mapping) -> float:
+    """One command buffer's time divided by the dispatches it actually encoded.
+
+    Fixed encode/submit/complete cost is paid once per command buffer, so a single
+    dispatch per sample charges it to the kernel. Amortizing is what makes a short
+    kernel's samples comparable; it is not a pure kernel latency.
+    """
+    return command_buffer_ms(observation) / dispatch_count(observation)
+
+
 def validate_host(host: object) -> dict:
     fields = {"device_name", "device_registry_id", "operating_system", "target"}
     if (not isinstance(host, Mapping) or set(host) != fields
@@ -48,14 +66,17 @@ def validate_launch_sequence(commands: list[Mapping]) -> None:
         previous_end = row['gpu_end_seconds']
 
 
-def validate_command_samples(record: Mapping, *, route_calls: int, sample_count: int) -> None:
+def validate_command_samples(record: Mapping, *, route_calls: int, sample_count: int,
+                            dispatches_per_sample: int = 1) -> None:
     commands = record.get("command_buffers")
     if not isinstance(commands, list) or len(commands) != route_calls:
         raise ValueError("Metal raw command-buffer coverage differs")
     observed = []
     seen = set()
     for index, command in enumerate(commands):
-        value = command_buffer_ms(command)
+        if dispatch_count(command) != dispatches_per_sample:
+            raise ValueError("Metal command-buffer dispatch count differs from the declared assay")
+        value = amortized_dispatch_ms(command)
         if command["launch_index"] in seen:
             raise ValueError("Metal command-buffer launch identity is duplicated")
         seen.add(command["launch_index"])
@@ -103,9 +124,9 @@ def load_metal_profile(payload: bytes, *, expected_candidate_sha256: str, expect
             or document.get("separate_instrumented_launch") is not True
             or document.get("archive_miss_policy") != "failOnBinaryArchiveMiss"):
         raise ValueError("Metal attribution profile identity differs")
-    from .paired import paired_protocol, validation_case_ids, PAIRED_METAL_KIND
+    from .paired import paired_protocol, validation_case_ids, METAL_KINDS
     evaluation = document.get("evaluation_protocol")
-    if (paired_protocol(evaluation) is None or evaluation["paired_timing"]["kind"] != PAIRED_METAL_KIND
+    if (paired_protocol(evaluation) is None or evaluation["paired_timing"]["kind"] not in METAL_KINDS
             or evaluation.get("case_id") != expected_case_id
             or evaluation.get("attribution_evaluation") not in {"correctness_then_profile", "correctness_then_profile_each_search_survivor"}):
         raise ValueError("Metal attribution Evaluation policy differs")

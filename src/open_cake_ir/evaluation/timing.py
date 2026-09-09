@@ -44,6 +44,14 @@ class PairedTimingProtocol:
     maximum_cv: float
     materiality_ratio: float
     required_pair_wins: int
+    # Dispatches encoded in each timed command buffer. One keeps the original
+    # regime, where fixed command overhead is charged to every sample.
+    dispatches_per_sample: int = 1
+    # When set, cohort dispersion is gated on the relative interquartile range of the
+    # raw samples instead of their coefficient of variation. Both describe spread; only
+    # the first survives the isolated samples a shared GPU produces, and this assay
+    # already records that external GPU activity is not excluded. None keeps CV.
+    maximum_relative_iqr: float | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -57,6 +65,13 @@ class PairedTimingProtocol:
             or not math.isfinite(self.materiality_ratio)
             or self.materiality_ratio <= 1
             or not 1 <= self.required_pair_wins <= len(self.pair_order)
+            or type(self.dispatches_per_sample) is not int
+            or not 1 <= self.dispatches_per_sample <= 4096
+            or self.maximum_relative_iqr is not None
+            and (not isinstance(self.maximum_relative_iqr, (int, float))
+                 or isinstance(self.maximum_relative_iqr, bool)
+                 or not math.isfinite(self.maximum_relative_iqr)
+                 or not 0 < self.maximum_relative_iqr < 1)
         ):
             raise ValueError("paired timing protocol is invalid")
 
@@ -72,6 +87,19 @@ class PairedTimingObservation:
     pooled_medians_ms: Mapping[str, float]
     speedup: float
     classification: str
+
+
+def relative_iqr(samples: Sequence[float]) -> float:
+    """Interquartile range over the median: the spread of the samples' middle half.
+
+    Uses the same inclusive quartiles and relative form the retained local benchmark
+    protocol already applies to its own command-buffer samples.
+    """
+    values = sorted(float(value) for value in samples)
+    if len(values) < 2:
+        raise ValueError("relative interquartile range needs at least two samples")
+    first, _, third = statistics.quantiles(values, n=4, method="inclusive")
+    return _canonical((third - first) / statistics.median(values))
 
 
 def _object(value: object, context: str) -> Mapping[str, object]:
@@ -131,9 +159,11 @@ def derive_paired_timing(
                 raise ValueError(f"measurements[{pair_index}] route calls differ")
             pooled[arm].extend(values)
             medians[arm] = cast(float, summary["median_ms"])
-            measurement_quality_passed = (
-                measurement_quality_passed and cast(float, summary["cv"]) <= protocol.maximum_cv
-            )
+            if protocol.maximum_relative_iqr is None:
+                stable = cast(float, summary["cv"]) <= protocol.maximum_cv
+            else:
+                stable = relative_iqr(values) <= protocol.maximum_relative_iqr
+            measurement_quality_passed = measurement_quality_passed and stable
         if medians[first_arm] < medians[second_arm]:
             pair_wins[first_arm] += 1
         elif medians[second_arm] < medians[first_arm]:

@@ -446,11 +446,61 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
         expected = [float((x[row * 11 + col] + y[row * 11 + col]) * 2) for row in range(2) for col in range(2, 9)]
         self.assertEqual(observed["out"], expected)
 
+    def test_consecutive_simd_groups_widen_the_stripe_and_own_their_barriers(self):
+        """One group is unchanged; more groups finish every collective in threadgroup memory."""
+        single = frontend.parse(make_rms_source(rows=2, width=1024)).document
+        _, base = self.lower(single)
+        self.assertEqual(base.toolchain_requirements["threads_per_threadgroup"], [32, 1, 1])
+        self.assertEqual(base.toolchain_requirements["threadgroup_memory_bytes"], 0)
+        self.assertNotIn("threadgroup_barrier", base.source)
+        widths = {}
+        for groups in (2, 4, 8):
+            document = json.loads(json.dumps(single))
+            document["roles"][0]["warps"] = list(range(groups))
+            with self.subTest(groups=groups):
+                _, lowering = self.lower(document)
+                threads = 32 * groups
+                self.assertEqual(lowering.toolchain_requirements["threads_per_threadgroup"], [threads, 1, 1])
+                self.assertEqual(lowering.toolchain_requirements["active_threads_per_threadgroup"], threads)
+                # Only the groups need a shared slot each; the scalar reuses slot zero.
+                self.assertEqual(lowering.toolchain_requirements["threadgroup_memory_bytes"], groups * 4)
+                self.assertIn(f"threadgroup float share[{groups}];", lowering.source)
+                self.assertIn("uint lane = thread_position.x;", lowering.source)
+                self.assertIn("float grouped = simd_sum(partial);", lowering.source)
+                self.assertNotIn("simd_broadcast", lowering.source)
+                self.assertEqual(lowering.source.count("threadgroup_barrier(mem_flags::mem_threadgroup);"), 4)
+                self.assertIn(f"uint i = s * {threads}u + lane;", lowering.source)
+                widths[groups] = metal.private_values_per_thread(
+                    Schedule.from_dict(document), metal.lane_width(Schedule.from_dict(document)))
+        # A fixed 1024-wide reduction owns fewer values per lane as the stripe widens.
+        # Scalars keep their single slot at every width, so the fall is not proportional.
+        self.assertEqual(widths, {2: 49, 4: 25, 8: 13})
+        self.assertEqual(metal.private_values_per_thread(Schedule.from_dict(single)), 97)
+
+    def test_multi_group_refuses_the_exchange_it_does_not_emit(self):
+        document = make_document(rows=4, width=64, operation="elementwise")
+        # A narrower non-scalar operand needs a cross-group exchange; one group shuffles.
+        document["buffers"][1]["shape"] = [64]
+        for access in document["access_maps"]:
+            if access["buffer"] == "y":
+                access["indices"] = [{"dimension": 1, "source": "dimension"}]
+        for operation in document["operations"]:
+            if operation["kind"] == "elementwise" and set(operation["reads"]) == {"a", "b"}:
+                operation["parameters"]["broadcast_axis"] = 1
+        single = self.compiler.assess(json.loads(json.dumps(document)))
+        document["roles"][0]["warps"] = [0, 1]
+        widened = self.compiler.assess(document)
+        codes = {finding.code for finding in widened.findings if finding.blocks_lowering}
+        if single.lowering_eligible:
+            self.assertIn("METAL_BROADCAST_WIDTH_UNSUPPORTED", codes)
+        else:
+            self.skipTest("this fixture does not reach the single-group exchange path")
+
     def test_localized_backend_refusals_never_reach_emission(self):
         mutations = [
             (lambda d: d["operations"][-1]["parameters"].update(coalesced=True), "METAL_COALESCING_UNSUPPORTED", "operations[4].parameters.coalesced"),
             (lambda d: d["operations"][0]["parameters"].update(reuse="streamed"), "METAL_LOAD_UNSUPPORTED", "operations[0].parameters"),
-            (lambda d: d["roles"][0].update(warps=[0, 1]), "METAL_ROLE_UNSUPPORTED", "roles"),
+            (lambda d: d["roles"][0].update(warps=[1]), "METAL_ROLE_UNSUPPORTED", "roles"),
             (lambda d: d.update(residency={"registers_per_thread": 64}), "METAL_RESIDENCY_UNSUPPORTED", "residency"),
             (lambda d: d["operations"][3]["parameters"].update(scalar=1e100), "METAL_SCALAR_RANGE_UNSUPPORTED", "operations[3].parameters.scalar"),
             (lambda d: d["operations"][3].update(id="bad\nmarker"), "METAL_OPERATION_ID_UNSUPPORTED", None),

@@ -6,7 +6,7 @@ import json
 from hashlib import sha256
 from typing import cast
 
-from open_cake_ir.evaluation.paired import paired_protocol, PAIRED_METAL_KIND, validation_case_ids
+from open_cake_ir.evaluation.paired import paired_protocol, METAL_KINDS, validation_case_ids
 
 from ._documents import _canonical_json_bytes, _digest, _name, _object
 from ._policies import _ATTRIBUTION_EVALUATION, _ONE_RUN_PER_ARM_SCOPES
@@ -226,11 +226,11 @@ def validate_evaluation(
     if single_environment and assay is None:
         raise ValueError("single-environment optimization requires an explicit fixed-baseline paired assay")
     if route["backend"] == "metal":
-        if (not single_environment or evaluation.get("paired_timing", {}).get("kind") != PAIRED_METAL_KIND
+        if (not single_environment or evaluation.get("paired_timing", {}).get("kind") not in METAL_KINDS
                 or validation_case_ids(evaluation) != tuple(workload.case_ids)
                 or attribution_evaluation != _ATTRIBUTION_EVALUATION):
             raise ValueError("Metal optimization must bind its paired assay, all Workload cases and attribution")
-    elif evaluation.get("paired_timing", {}).get("kind") == PAIRED_METAL_KIND:
+    elif evaluation.get("paired_timing", {}).get("kind") in METAL_KINDS:
         raise ValueError("Metal paired assay cannot evaluate a different backend")
     # How many candidates a Turn search-evaluates. Checked here because a Study that
     # asks for none, or for a word, would otherwise fault partway through a run --

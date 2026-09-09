@@ -5,6 +5,7 @@ import Metal
 struct Tensor: Decodable { let name: String; let shape: [Int]; let dtype: String; let mode: String }
 struct Manifest: Decodable {
     let target: String; let kernel_name: String; let tensor_abi: [Tensor]; let grid: [Int]; let block: [Int]
+    let threadgroup_memory_bytes: Int
 }
 struct Participant: Decodable { let role: String; let archive_path: String; let manifest: Manifest }
 struct OraclePaths: Decodable { let expected: String; let tolerance: String }
@@ -12,6 +13,10 @@ struct InputCase: Decodable { let id: String; let inputs: [String: String]; let 
 struct Launch: Decodable {
     let index: Int; let role: String; let phase: String; let input_case_id: String; let timed: Bool; let profile: Bool
     let pair_index: Int?; let position: Int?
+    // Dispatches encoded back to back in this launch's single serial command buffer.
+    // The kernel rewrites its whole output from unchanged inputs, so repeating it
+    // leaves the observed buffers identical and amortizes fixed command overhead.
+    let dispatches: Int
 }
 struct Request: Decodable {
     let expected_host: [String: String]; let participants: [Participant]; let cases: [InputCase]
@@ -129,7 +134,11 @@ final class Prepared {
     let oracles: [String: [String: ([Double], [Double])]]
     init(_ participant: Participant, cases: [InputCase], device: MTLDevice) throws {
         self.device = device; manifest = participant.manifest
-        try require(manifest.block == [32, 1, 1] && manifest.grid.count == 3 && manifest.grid.allSatisfy { $0 > 0 }, "launch geometry differs")
+        // One SIMD group keeps [32, 1, 1]; consecutive groups widen the first extent
+        // only, and the kernel's own static threadgroup storage needs no host length.
+        try require(manifest.block.count == 3 && manifest.block[1] == 1 && manifest.block[2] == 1
+                    && manifest.block[0] % 32 == 0 && manifest.block[0] >= 32 && manifest.block[0] <= 1024
+                    && manifest.grid.count == 3 && manifest.grid.allSatisfy { $0 > 0 }, "launch geometry differs")
         let archiveURL = URL(fileURLWithPath: participant.archive_path)
         let descriptor = MTLBinaryArchiveDescriptor(); descriptor.url = archiveURL
         let archive = try device.makeBinaryArchive(descriptor: descriptor)
@@ -138,7 +147,14 @@ final class Prepared {
         let pipelineDescriptor = MTLComputePipelineDescriptor()
         pipelineDescriptor.computeFunction = function; pipelineDescriptor.binaryArchives = [archive]
         pipeline = try device.makeComputePipelineState(descriptor: pipelineDescriptor, options: [.failOnBinaryArchiveMiss], reflection: nil)
-        try require(pipeline.threadExecutionWidth == 32 && pipeline.maxTotalThreadsPerThreadgroup >= 32 && pipeline.staticThreadgroupMemoryLength == 0, "pipeline SIMD resources differ")
+        // The SIMD width stays 32. A wider threadgroup brings its own static storage,
+        // which Metal may round up; declaring none must still allocate none.
+        try require(pipeline.threadExecutionWidth == 32
+                    && pipeline.maxTotalThreadsPerThreadgroup >= manifest.block[0]
+                    && pipeline.staticThreadgroupMemoryLength >= manifest.threadgroup_memory_bytes
+                    && pipeline.staticThreadgroupMemoryLength <= 32768
+                    && (manifest.threadgroup_memory_bytes == 0) == (pipeline.staticThreadgroupMemoryLength == 0),
+                    "pipeline SIMD resources differ")
         var allInputs: [String: [String: MTLBuffer]] = [:]
         var allBytes: [String: [String: Data]] = [:]
         var allOracles: [String: [String: ([Double], [Double])]] = [:]
@@ -195,14 +211,17 @@ final class Prepared {
         guard let command = queue.makeCommandBuffer(), let encoder = command.makeComputeCommandEncoder(descriptor: computePass) else { throw Refusal(description: "Metal encoder creation failed") }
         encoder.setComputePipelineState(pipeline)
         for (index, buffer) in buffers.enumerated() { encoder.setBuffer(buffer, offset: 0, index: index) }
-        encoder.dispatchThreadgroups(MTLSize(width: manifest.grid[0], height: manifest.grid[1], depth: manifest.grid[2]),
-                                    threadsPerThreadgroup: MTLSize(width: 32, height: 1, depth: 1))
+        for _ in 0..<launch.dispatches {
+            encoder.dispatchThreadgroups(MTLSize(width: manifest.grid[0], height: manifest.grid[1], depth: manifest.grid[2]),
+                                        threadsPerThreadgroup: MTLSize(width: manifest.block[0], height: 1, depth: 1))
+        }
         encoder.endEncoding(); command.commit(); command.waitUntilCompleted()
         try require(command.status == .completed && command.error == nil, "Metal command did not complete")
         try require(command.gpuStartTime.isFinite && command.gpuEndTime.isFinite
                     && command.gpuStartTime > 0 && command.gpuEndTime > command.gpuStartTime, "invalid observed command timestamps")
         let commandObservation: [String: Any] = ["launch_index": launch.index, "completed": true,
-            "gpu_start_seconds": command.gpuStartTime, "gpu_end_seconds": command.gpuEndTime, "timed": launch.timed]
+            "gpu_start_seconds": command.gpuStartTime, "gpu_end_seconds": command.gpuEndTime, "timed": launch.timed,
+            "dispatches": launch.dispatches]
         var paths: [String: String] = [:]; var passed = true
         for (tensor, buffer) in zip(manifest.tensor_abi, buffers) {
             let length = tensor.shape.reduce(1, *) * 4
@@ -259,6 +278,9 @@ do {
     var preflightPassed = true
     for (index, launch) in request.launches.enumerated() {
         try require(launch.index == index, "declared launch sequence differs")
+        try require(launch.dispatches >= 1 && launch.dispatches <= 4096
+                    && !(launch.profile && launch.dispatches != 1),
+                    "declared launch dispatch count differs")
         if launch.phase != "preflight" && !preflightPassed { continue }
         guard let participant = prepared[launch.role] else { throw Refusal(description: "unknown launch participant") }
         let observation = try participant.observe(launch, queue: queue, snapshots: snapshotWriter)

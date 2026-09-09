@@ -71,10 +71,17 @@ def _project(schedule: Schedule, source: str, tc: dict, inputs: Mapping[str, byt
     }, "exact Metal target/device names differ")
     expected = {"target": schedule.target, "source_language": "metal",
                 "compiler": "MTLDevice.makeLibrary", "language_standard": "metal2.3",
-                "fast_math_enabled": False, "threadgroup_memory_bytes": 0}
-    _require(set(tc) == set(expected) | {"buffer_order", "threads_per_threadgroup",
+                "fast_math_enabled": False}
+    _require(set(tc) == set(expected) | {"buffer_order", "threads_per_threadgroup", "threadgroup_memory_bytes",
                                        "threadgroups_per_grid", "execution_model", "active_threads_per_threadgroup"},
              "unsupported or missing Metal toolchain commitment")
+    threads = tc["threads_per_threadgroup"]
+    _require(isinstance(threads, list) and len(threads) == 3 and threads[1:] == [1, 1]
+             and type(threads[0]) is int and threads[0] % 32 == 0 and 32 <= threads[0] <= 1024
+             and type(tc["threadgroup_memory_bytes"]) is int
+             and 0 <= tc["threadgroup_memory_bytes"] <= 32768
+             and (threads[0] == 32) == (tc["threadgroup_memory_bytes"] == 0),
+             "unsupported Metal threadgroup shape or storage")
     for name, value in expected.items():
         _require(type(tc[name]) is type(value) and tc[name] == value,
                  f"unsupported Metal {name}")

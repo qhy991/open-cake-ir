@@ -1,4 +1,4 @@
-"""Exact M1 Pro normalization Workloads, deterministic inputs and independent math.
+"""Exact Apple-device normalization Workloads, deterministic inputs and independent math.
 
 Each generated contract binds one shape and five required input distributions. The Ralph engine owns search
 and evaluation; these functions neither import candidates nor launch a device.
@@ -13,8 +13,9 @@ from collections.abc import Mapping, Sequence
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.tiles.workload import _checked_inputs, _round
 from open_cake_ir.tasks.tiles.workload import reference_outputs as tile_reference_outputs
+# Every Apple task shares one backend registry; these names stay importable here.
+from open_cake_ir.tasks.apple import BACKENDS, backend_for_target, device_name  # noqa: F401
 
-TARGET = "apple_gpu_family7"
 TASKS = {
     "rmsnorm": ("rmsnorm_fp32", "3"),
     "layernorm": ("layernorm_fp32", "1"),
@@ -33,8 +34,9 @@ EPSILON = 1e-5
 def workload_document(task_name: str, *, rows: int = 128, columns: int = 1024,
                       backend: str = "metal-m1-pro") -> dict:
     """Create a reusable frozen Workload document; callers persist it outside source."""
-    if not isinstance(task_name, str) or task_name not in TASKS or backend != "metal-m1-pro":
+    if not isinstance(task_name, str) or task_name not in TASKS or backend not in BACKENDS:
         raise ValueError("unsupported normalization task/backend")
+    device = BACKENDS[backend]
     if (type(rows) is not int or type(columns) is not int or rows <= 0 or columns <= 0
             or rows * columns * 4 > 2**31 - 1):
         raise ValueError("normalization shape must fit the FP32 Metal buffer ABI")
@@ -64,16 +66,16 @@ def workload_document(task_name: str, *, rows: int = 128, columns: int = 1024,
         arithmetic["residual_addition"] = "round_to_nearest_ties_to_even_fp32_before_normalization"
     return {
         "schema_version": 1,
-        "workload_id": f"{operator.replace('_', '-')}-metal-m1-pro-r{rows}-c{columns}-v{revision}",
+        "workload_id": f"{operator.replace('_', '-')}-{backend}-r{rows}-c{columns}-v{revision}",
         "revision": revision, "state": "frozen", "operator": operator,
         "provenance": [{"kind": "task_mathematical_specification",
                         "path": "src/open_cake_ir/tasks/normalization/workload.py",
-                        "scope": "rank2_FP32_M1_Pro_local_artifact_evaluation"}],
+                        "scope": f"rank2_FP32_{device['provenance_token']}_local_artifact_evaluation"}],
         "cases": [{"case_id": name, "shape": {"R": rows, "C": columns}, "seed": seed, "mode": mode}
                   for name, (mode, seed) in CASES.items()],
         "tensors": tensors,
         "semantics": {
-            "definition": definitions[task_name], "target": TARGET,
+            "definition": definitions[task_name], "target": device["target"],
             "candidate_abi": {"inputs": inputs, "outputs": ["out"]},
             "input_effects": "unchanged", "output_storage": "fresh_contiguous_nonaliasing",
             "arithmetic": arithmetic, "epsilon": EPSILON,
@@ -102,16 +104,18 @@ def workload_document(task_name: str, *, rows: int = 128, columns: int = 1024,
 
 
 def validate_normalization_contract(document: Mapping[str, object]) -> None:
-    """Admit only this exact typed task, ABI, numerical domain and case protocol."""
+    """Admit only this exact typed task, backend, ABI, numerical domain and case protocol."""
     workload = WorkloadContract(document)
     task_name = next((name for name, (operator, revision) in TASKS.items()
                       if document.get("operator") == operator and document.get("revision") == revision), None)
-    if task_name is None or workload.case_ids != tuple(CASES):
-        raise ValueError("normalization operator/revision or required input cases differ")
+    semantics = document.get("semantics")
+    backend = backend_for_target(semantics.get("target") if isinstance(semantics, Mapping) else None)
+    if task_name is None or backend is None or workload.case_ids != tuple(CASES):
+        raise ValueError("normalization operator/revision, backend or required input cases differ")
     shape = workload.case("primary")["shape"]
     if set(shape) != {"R", "C"}:
         raise ValueError("normalization case requires R/C dimensions")
-    expected = workload_document(task_name, rows=shape["R"], columns=shape["C"])
+    expected = workload_document(task_name, rows=shape["R"], columns=shape["C"], backend=backend)
     # Canonical JSON equality distinguishes bools from integers and forbids extra fields.
     if json.dumps(document, sort_keys=True, allow_nan=False) != json.dumps(expected, sort_keys=True):
         raise ValueError("normalization frozen semantic/ABI/input/validation contract differs")

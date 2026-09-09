@@ -11,7 +11,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 from open_cake_ir.compiler.corpus import CorpusGateReport
-from open_cake_ir.evaluation.paired import PAIRED_METAL_KIND, paired_protocol
+from open_cake_ir.compiler.target import Target
+from open_cake_ir.evaluation.paired import PAIRED_METAL_BATCHED_KIND, paired_protocol
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.lab.contracts import StudyContract
 from open_cake_ir.tasks.normalization.study import study_template
@@ -111,7 +112,10 @@ class TaskLaunchTests(unittest.TestCase):
                 self.assertEqual(study["arms"]["open_cake"]["provider"]["qualification"], {"binding":"campaign_lock"})
                 policy = study["evaluation_protocol"]
                 assay = paired_protocol(policy)
-                self.assertEqual(policy["paired_timing"]["kind"], PAIRED_METAL_KIND)
+                self.assertEqual(policy["paired_timing"]["kind"], PAIRED_METAL_BATCHED_KIND)
+                # Amortization is declared, so a sample is one dispatch of a batched buffer.
+                self.assertEqual(policy["paired_timing"]["dispatches_per_sample"], 64)
+                self.assertEqual(assay.dispatches_per_sample, 64)
                 self.assertEqual(policy["validation_case_ids"], list(workload.case_ids))
                 self.assertEqual((len(assay.pair_order), assay.samples_per_cohort, assay.route_calls_per_cohort), (10,25,28))
                 self.assertEqual((assay.maximum_cv, assay.materiality_ratio, assay.required_pair_wins), (0.05,1.05,6))
@@ -125,7 +129,7 @@ class TaskLaunchTests(unittest.TestCase):
         with patch.object(launch_task.Compiler, "load", return_value=compiler), \
              patch.object(launch_task, "resolve_executor") as executor:
             with self.assertRaisesRegex(ValueError, "full Corpus Gate"):
-                launch_task._admit_stack(ROOT, self.workspace)
+                launch_task._admit_stack(ROOT, self.workspace, "apple_gpu_family7")
             executor.assert_not_called()
         self.assertFalse(json.loads((self.workspace/"compiler-gate.json").read_text())["passed"])
 
@@ -138,7 +142,7 @@ class TaskLaunchTests(unittest.TestCase):
              patch.object(launch_task,"resolve_executor",return_value=executor), \
              patch.object(launch_task.MetalArchiveHost,"from_executor") as host:
             with self.assertRaisesRegex(ValueError,"released Metal Executor"):
-                launch_task._admit_stack(ROOT,self.workspace)
+                launch_task._admit_stack(ROOT,self.workspace,"apple_gpu_family7")
             host.assert_not_called()
 
     def test_stale_executor_refusal_names_the_required_release_boundary(self):
@@ -149,8 +153,43 @@ class TaskLaunchTests(unittest.TestCase):
              patch.object(launch_task, "resolve_executor", side_effect=ValueError("source differs")), \
              patch.object(launch_task.MetalArchiveHost, "from_executor") as host:
             with self.assertRaisesRegex(ValueError, "released Metal Executor matching this source; source differs"):
-                launch_task._admit_stack(ROOT, self.workspace)
+                launch_task._admit_stack(ROOT, self.workspace, "apple_gpu_family7")
             host.assert_not_called()
+
+    def test_executor_for_another_apple_gpu_is_refused_before_archive_helper_admission(self):
+        self.workspace.mkdir()
+        gate = CorpusGateReport("unit-fixture", "fixture", "not-live", True, ())
+        compiler = SimpleNamespace(state="released", check_corpus=lambda: gate)
+        executor = SimpleNamespace(document={"host_environment": {"kind": "metal",
+                                                                 "host": {"target": "apple_gpu_family7"}}})
+        with patch.object(launch_task.Compiler, "load", return_value=compiler), \
+             patch.object(launch_task, "resolve_executor", return_value=executor), \
+             patch.object(launch_task.MetalArchiveHost, "from_executor") as host:
+            with self.assertRaisesRegex(ValueError, "apple_gpu_family7.*not the requested 'apple_gpu_family8'"):
+                launch_task._admit_stack(ROOT, self.workspace, "apple_gpu_family8")
+            host.assert_not_called()
+
+    def test_each_backend_binds_its_own_exact_target_and_admitted_device(self):
+        expected = {"metal-m1-pro": ("apple_gpu_family7", "Apple M1 Pro"),
+                    "metal-m2": ("apple_gpu_family8", "Apple M2")}
+        self.assertEqual(set(launch_task.BACKENDS), set(expected))
+        for backend, (target, device) in expected.items():
+            with self.subTest(backend=backend):
+                document, source = create_task("rmsnorm", backend=backend, rows=2, columns=7)
+                workload_path = self.directory / f"{backend}-workload.json"
+                starter = self.directory / f"{backend}-starter.py"
+                workload_path.write_text(json.dumps(document))
+                starter.write_text(source)
+                workload = WorkloadContract(document)
+                self.assertEqual(workload.target, target)
+                self.assertIn(backend, workload.workload_id)
+                self.assertIn(f'target="{target}"', source)
+                study = study_template(ROOT, workload, workload_path, starter, harness="claude-code",
+                                       model="exact-model", effort="high", turns=2, token_budget=12000)
+                self.assertEqual(study["execution"]["target"], target)
+                self.assertEqual(study["execution"]["gpu"], {"name": device, "count": 1, "mode": "local_serialized"})
+                # The Compiler target is the independent authority preflight checks this against.
+                self.assertEqual(Target.load(ROOT / "compiler/targets" / f"{target}.json").device_names, (device,))
 
     def test_qualification_uses_shared_entry_with_exact_model_effort_and_python_source(self):
         self.workspace.mkdir()

@@ -62,14 +62,25 @@ func loadManifest(_ manifestPath: String) throws -> (Manifest, [Data?]) {
     let manifest = try JSONDecoder().decode(Manifest.self, from: data)
     try require(["apple_gpu_family7", "apple_gpu_family8"].contains(manifest.target) && manifest.source_language == "metal" &&
                 manifest.compiler == "MTLDevice.makeLibrary", "unsupported exact Metal route")
+    let simdThreads = manifest.threads_per_threadgroup.first ?? 0
+    // Consecutive SIMD groups widen the first extent and declare their own static
+    // threadgroup storage; one group still declares none.
     try require(manifest.language_standard == "metal2.3" && !manifest.fast_math_enabled &&
-                manifest.threadgroup_memory_bytes == 0 &&
-                ((manifest.execution_model == "serial_program_tile" && manifest.active_threads_per_threadgroup == 1) ||
-                 (manifest.execution_model == "simd_program_tile" && manifest.active_threads_per_threadgroup == 32)),
+                manifest.threadgroup_memory_bytes >= 0 && manifest.threadgroup_memory_bytes <= 32768 &&
+                ((manifest.execution_model == "serial_program_tile" && manifest.active_threads_per_threadgroup == 1
+                  && manifest.threadgroup_memory_bytes == 0) ||
+                 (manifest.execution_model == "simd_program_tile"
+                  && manifest.active_threads_per_threadgroup == simdThreads
+                  && (simdThreads == 32) == (manifest.threadgroup_memory_bytes == 0))),
                 "unsupported Metal language, math, memory or execution commitment")
     _ = try size(manifest.threadgroups_per_grid, "threadgroups_per_grid")
     _ = try size(manifest.threads_per_threadgroup, "threads_per_threadgroup")
-    try require(manifest.threads_per_threadgroup == [32, 1, 1], "unsupported role mapping")
+    try require(manifest.threads_per_threadgroup.count == 3 && manifest.threads_per_threadgroup[1] == 1
+                && manifest.threads_per_threadgroup[2] == 1
+                && (manifest.execution_model == "serial_program_tile"
+                    ? simdThreads == 1
+                    : simdThreads % 32 == 0 && simdThreads >= 32 && simdThreads <= 1024),
+                "unsupported role mapping")
     try require(!manifest.device_names.isEmpty && !manifest.device_names.contains(""),
                 "exact device names are required")
     try require(manifest.source_path.hasPrefix("/") && !manifest.entry_point.isEmpty,

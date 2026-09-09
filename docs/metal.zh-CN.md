@@ -1,8 +1,12 @@
 # 通过 TaskLab 运行 Apple Metal 任务
 
 Compiler 支持精确目标 `Apple M1 Pro` / `apple_gpu_family7` 和 `Apple M2` /
-`apple_gpu_family8`。当前任务入口仅接入 **M1 Pro**，参数为 `--backend metal-m1-pro`。
-它核对精确设备、OS、工具链和已发布 Executor，不自动替换设备，也不借用其他 Apple GPU 的成本校准。
+`apple_gpu_family8`，任务入口两者都已接入，参数分别为 `--backend metal-m1-pro`
+和 `--backend metal-m2`。一个 backend 只对应一个精确目标和一个已认定设备名；
+为某台设备封存的 Workload 不会在另一台上通过校验。入口核对精确设备、OS、工具链和已发布
+Executor，若已发布 Executor 绑定的是另一块 Apple GPU 会直接拒绝，不自动替换设备，
+也不借用其他 Apple GPU 的成本校准。因此在 M2 上运行需要一份在该 M2 主机上采集并发布的
+Metal Executor，M1 Pro 的那份不能复用。
 
 内置任务为 `rmsnorm`、`layernorm`（带仿射参数、中心化总体方差）和 `residual_rmsnorm`
 （先将残差加法舍入到 FP32，再归一化）。[任务自己的 Workload 与 oracle](../src/open_cake_ir/tasks/normalization/workload.py)
@@ -20,7 +24,7 @@ Compiler 支持精确目标 `Apple M1 Pro` / `apple_gpu_family7` 和 `Apple M2` 
 
 ```sh
 python3 tools/launch_task.py \
-  --task rmsnorm --backend metal-m1-pro \
+  --task rmsnorm --backend metal-m2 \
   --harness codex --model "<exact-model-id>" --effort high \
   --workspace "$HOME/.local/share/open-cake-ir/runs/metal-rmsnorm-example" \
   --rows 128 --columns 1024 --turns 4 --token-budget 150000
@@ -62,9 +66,18 @@ bootstrap 启动，无需外部 `PYTHONPATH`。继承的 `PYTHONPATH`、`PYTHONH
 串行化本项目的作业，但不声称其他应用没有使用 GPU。
 
 [任务 Study 策略](../src/open_cake_ir/tasks/normalization/study.py) 明确声明十组交替的候选/基线配对，
-每个 cohort 先 warmup 三次、再采集 25 个样本，CV 上限 0.05、materiality ratio 1.05、
-方向判定要求六组获胜。这些是工程测量规则，不是目标校准，也不预设加速。
+每个 cohort 先 warmup 三次、再采集 25 个样本，materiality ratio 1.05、方向判定要求六组获胜。
+这些是工程测量规则，不是目标校准，也不预设加速。
 计时区间为完成后的 Metal command buffer，不是纯 kernel latency，不继承 CUPTI/L2 flush 语义。
+
+`fixed_baseline_paired_metal_v2` 另外声明两个值。`dispatches_per_sample` 是每个计时
+command buffer 连续编码的 dispatch 数量，一个样本等于该 buffer 的时间除以它。编码、提交
+和完成的开销每个 buffer 只付一次，因此比这个开销更短的 kernel 否则主要是在测量该开销；
+kernel 从未被修改的输入重写全部输出，重复执行不改变被校验的缓冲区。`maximum_relative_iqr`
+在同一个数值上，把 cohort 离散度的判定从变异系数换成原始样本的相对四分位距。两者都描述
+离散度；本测量明确声明未排除其他 GPU 客户端，而个别被干扰的样本不应否决一个主体稳定的
+cohort。原有的 `fixed_baseline_paired_metal_v1` 保持其精确的单次 dispatch、CV 判定语义，
+已冻结的 Study 照常重放。
 Profiler 单独采集 compute-stage 时间戳；缺少原生能力仍会拒绝，不推导物理寄存器、spill、
 occupancy、带宽或指令数量。
 

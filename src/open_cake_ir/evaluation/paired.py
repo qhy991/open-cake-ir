@@ -18,7 +18,16 @@ from .artifacts import executable_role
 
 PAIRED_KIND = 'fixed_baseline_paired_cupti_v1'
 PAIRED_METAL_KIND = 'fixed_baseline_paired_metal_v1'
-PAIRED_KINDS = {PAIRED_KIND, PAIRED_METAL_KIND}
+# The successor declares how many dispatches each timed command buffer encodes, so a
+# kernel shorter than the fixed command overhead is not measured through it. v1 keeps
+# its exact single-dispatch meaning; frozen Studies replay unchanged.
+PAIRED_METAL_BATCHED_KIND = 'fixed_baseline_paired_metal_v2'
+METAL_KINDS = {PAIRED_METAL_KIND, PAIRED_METAL_BATCHED_KIND}
+PAIRED_KINDS = {PAIRED_KIND, *METAL_KINDS}
+_BASE_FIELDS = {
+    'kind', 'arms', 'pair_order', 'samples_per_cohort', 'route_calls_per_cohort',
+    'maximum_cv', 'materiality_ratio', 'required_pair_wins',
+}
 
 
 def _plain(value):
@@ -40,12 +49,13 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     value = evaluation.get('paired_timing')
     if value is None:
         return None
-    if not isinstance(value, Mapping) or set(value) != {
-        'kind', 'arms', 'pair_order', 'samples_per_cohort', 'route_calls_per_cohort',
-        'maximum_cv', 'materiality_ratio', 'required_pair_wins',
-    } or value.get('kind') not in PAIRED_KINDS or value.get('arms') != ['candidate', 'baseline']:
+    kind = value.get('kind') if isinstance(value, Mapping) else None
+    successor = {'dispatches_per_sample', 'maximum_relative_iqr'}
+    expected_fields = _BASE_FIELDS | (successor if kind == PAIRED_METAL_BATCHED_KIND else set())
+    if (not isinstance(value, Mapping) or set(value) != expected_fields
+            or kind not in PAIRED_KINDS or value.get('arms') != ['candidate', 'baseline']):
         raise ValueError('fixed-baseline paired policy fields or roles differ')
-    backend = 'metal' if value['kind'] == PAIRED_METAL_KIND else 'cupti'
+    backend = 'metal' if kind in METAL_KINDS else 'cupti'
     if (evaluation.get('search_evaluation') != f'correctness_then_paired_{backend}'
         or evaluation.get('confirmatory_evaluation') != f'fresh_fixed_candidate_correctness_then_paired_{backend}'):
         raise ValueError('paired policy requires search and fresh confirmation')
@@ -54,13 +64,17 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
         or any(type(value[k]) is not int for k in ('samples_per_cohort', 'route_calls_per_cohort', 'required_pair_wins'))
         or any(type(value[k]) not in (int, float) for k in ('maximum_cv', 'materiality_ratio'))):
         raise ValueError('fixed-baseline paired policy value types differ')
+    dispatches = value.get('dispatches_per_sample', 1)
+    spread = value.get('maximum_relative_iqr')
+    if type(dispatches) is not int or (spread is not None and type(spread) not in (int, float)):
+        raise ValueError('fixed-baseline paired policy value types differ')
     protocol = PairedTimingProtocol(tuple(value['arms']), tuple(tuple(p) for p in order),
         value['samples_per_cohort'], value['route_calls_per_cohort'], value['maximum_cv'],
-        value['materiality_ratio'], value['required_pair_wins'])
+        value['materiality_ratio'], value['required_pair_wins'], dispatches, spread)
     # This is the retained helper's existing invocation contract, not another engine.
     if value['kind'] == PAIRED_KIND and protocol.route_calls_per_cohort != 6 + 11 + protocol.samples_per_cohort:
         raise ValueError('paired policy differs from retained CUPTI callback contract')
-    if value['kind'] == PAIRED_METAL_KIND:
+    if kind in METAL_KINDS:
         if protocol.route_calls_per_cohort <= protocol.samples_per_cohort:
             raise ValueError('Metal assay requires declared warmup calls before timestamp samples')
         validation_case_ids(evaluation)
@@ -135,13 +149,15 @@ def paired_summary(raw):
             or type(record.get('position')) is not int for record in arms.values()):
             raise ValueError('paired position must be an integer')
     kind = raw['evaluation_protocol']['paired_timing']['kind']
-    if kind == PAIRED_METAL_KIND:
+    if kind in METAL_KINDS:
         from .metal_observations import METAL_TIMER, METAL_CACHE, validate_command_samples
         if raw.get('timer') != METAL_TIMER or raw.get('cache_policy') != METAL_CACHE:
             raise ValueError('Metal timer/cache observation differs')
         for row in measurements:
             for record in row['arms'].values():
-                validate_command_samples(record, route_calls=protocol.route_calls_per_cohort, sample_count=protocol.samples_per_cohort)
+                validate_command_samples(record, route_calls=protocol.route_calls_per_cohort,
+                                         sample_count=protocol.samples_per_cohort,
+                                         dispatches_per_sample=protocol.dispatches_per_sample)
     observation = derive_paired_timing(measurements, protocol)
     return {'kind': kind,
         'measurement_quality_passed': observation.measurement_quality_passed,
@@ -177,7 +193,7 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
         raise ValueError('paired receipt participant or allocation identity differs')
     if raw['kind'] != raw['evaluation_protocol']['paired_timing']['kind']:
         raise ValueError('paired raw kind differs from the declared assay')
-    if raw['kind'] == PAIRED_METAL_KIND:
+    if raw['kind'] in METAL_KINDS:
         from .metal_observations import validate_host
         host = validate_host(raw.get('host'))
         if (re.fullmatch(r'metal-[0-9a-f]{12}', raw['job_id']) is None or raw['job_id'] == 'metal-000000000000'
@@ -220,7 +236,7 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
             check = value[phase]
             if not isinstance(check, Mapping) or type(check.get('passed')) is not bool:
                 raise ValueError('paired oracle check is missing')
-            if raw['kind'] == PAIRED_METAL_KIND:
+            if raw['kind'] in METAL_KINDS:
                 validate_metal_correctness_checks(check, validation_case_ids(raw['evaluation_protocol']))
             oracle_check(check, check.get('metrics'))
             passed = passed and check['passed']
@@ -232,11 +248,11 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
                 or check['checked_launches'] != protocol.route_calls_per_cohort
                 or type(check.get('passed')) is not bool):
                 raise ValueError('paired fresh-output callback coverage differs')
-            if raw['kind'] == PAIRED_METAL_KIND:
+            if raw['kind'] in METAL_KINDS:
                 validate_metal_correctness_checks(check, (receipt.case_id,) * protocol.route_calls_per_cohort, timed=True)
             oracle_check(check, check)
             passed = passed and check['passed']
-    if raw['kind'] == PAIRED_METAL_KIND:
+    if raw['kind'] in METAL_KINDS:
         from .metal_observations import validate_launch_sequence
         commands = [row['command_buffer'] for role in protocol.arms for row in checks[role]['preflight']['launches']]
         if measured:
@@ -261,7 +277,7 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
                     raise ValueError('paired cohort participant identity differs')
                 if record.get('output_check') != checks[role]['timed_output_checks'][i]:
                     raise ValueError('paired cohort oracle check differs')
-                if raw['kind'] == PAIRED_METAL_KIND and record.get('command_buffers') != [
+                if raw['kind'] in METAL_KINDS and record.get('command_buffers') != [
                         check['command_buffer'] for check in record['output_check']['launches']]:
                     raise ValueError('Metal timing and correctness launch observations differ')
     elif (raw.get('measurements') != [] or receipt.correctness_passed
@@ -321,7 +337,7 @@ def validate_paired_broker(receipt, job_id, counters):
         return
     protocol = paired_protocol(raw['evaluation_protocol'])
     cohorts = len(protocol.pair_order) * 2 if receipt.timing is not None else 0
-    cases = len(validation_case_ids(raw['evaluation_protocol'])) if raw['kind'] == PAIRED_METAL_KIND else 1
+    cases = len(validation_case_ids(raw['evaluation_protocol'])) if raw['kind'] in METAL_KINDS else 1
     correctness_calls = (4 if cohorts else 2) * cases
     expected = {'compiler_invocations': 0, 'module_loads': 2, 'preflight_calls': 2 * cases,
         'kernel_calls': correctness_calls + cohorts * protocol.route_calls_per_cohort,
