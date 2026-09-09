@@ -289,10 +289,30 @@ class CommandBrokerSubmitter:
                 or metadata.st_size <= 0
                 or metadata.st_size > 16 * 1024 * 1024
             ):
-                raise ValueError("evaluator result metadata differs")
+                # The broker's own output is the only account of why its result is
+                # unusable, so it is retained here exactly as the exit paths do.
+                raise RunProtocolFault(
+                    "broker_fault",
+                    f"evaluator result metadata differs: mode={stat.S_IFMT(metadata.st_mode):#o} "
+                    f"links={metadata.st_nlink} uid={metadata.st_uid} gid={metadata.st_gid} "
+                    f"size={metadata.st_size}",
+                    artifact_payloads={
+                        "evaluator_request": _canonical_json_bytes(evaluator_arguments),
+                        "broker_stdout": completed.stdout,
+                        "broker_stderr": completed.stderr,
+                    },
+                )
             worker_result_bytes = result_path.read_bytes()
             if len(worker_result_bytes) != metadata.st_size:
-                raise ValueError("evaluator result changed during read")
+                raise RunProtocolFault(
+                    "broker_fault",
+                    f"evaluator result changed during read: {metadata.st_size} then {len(worker_result_bytes)} bytes",
+                    artifact_payloads={
+                        "evaluator_request": _canonical_json_bytes(evaluator_arguments),
+                        "broker_stdout": completed.stdout,
+                        "broker_stderr": completed.stderr,
+                    },
+                )
             if completed.returncode != 0:
                 raise RunProtocolFault(
                     "broker_fault",

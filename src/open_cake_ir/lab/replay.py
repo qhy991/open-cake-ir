@@ -20,6 +20,24 @@ from .replay_outcomes import _replay_terminal
 from .replay_provider import _replay_provider_turns, replay_fault_usage
 from .replay_selection import _replay_candidate_selection
 
+_REQUIRED_FAULT_FIELDS = frozenset({
+    "fault", "exception_type", "turn", "stage", "terminal_provider_tokens",
+})
+# `exception_message` is optional, so evidence sealed before it replays unchanged.
+_OPTIONAL_FAULT_FIELDS = frozenset({
+    "objects", "artifact_rejections", "provider_usage", "terminal_provider_tokens_scope",
+    "provider_usage_witness_mismatch", "exception_message",
+})
+
+
+def _fault_message_is_closed(payload) -> bool:
+    """The harness's own account of a fault: absent, or bounded readable text."""
+    if "exception_message" not in payload:
+        return True
+    message = payload["exception_message"]
+    return message is None or isinstance(message, str) and 0 < len(message) <= 2048
+
+
 
 def replay_matched_run(
     evidence: EvidenceStore,
@@ -172,20 +190,15 @@ def replay_matched_run(
     fault_terminal_tokens: int | None = None
     if faults:
         fault_payload = _object(faults[0].get("payload"), "run_fault.payload")
-        required_fault_fields = {
-            "fault",
-            "exception_type",
-            "turn",
-            "stage",
-            "terminal_provider_tokens",
-        }
+        required_fault_fields = set(_REQUIRED_FAULT_FIELDS)
         if (
             not required_fault_fields <= set(fault_payload)
             or set(fault_payload)
             - required_fault_fields
-            - {"objects", "artifact_rejections", "provider_usage", "terminal_provider_tokens_scope", "provider_usage_witness_mismatch"}
+            - _OPTIONAL_FAULT_FIELDS
             or not isinstance(fault_payload.get("exception_type"), str)
             or not fault_payload.get("exception_type")
+            or not _fault_message_is_closed(fault_payload)
             or not _artifact_outcomes_are_closed(fault_payload)
         ):
             return False
@@ -292,13 +305,7 @@ def _replay_provider_fault(
     checkpoint_payload = _object(
         checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
     )
-    required_fault_fields = {
-        "fault",
-        "exception_type",
-        "turn",
-        "stage",
-        "terminal_provider_tokens",
-    }
+    required_fault_fields = set(_REQUIRED_FAULT_FIELDS)
     if (
         [event.get("kind") for event in events]
         != [
@@ -310,9 +317,10 @@ def _replay_provider_fault(
         or not required_fault_fields <= set(fault_payload)
         or set(fault_payload)
         - required_fault_fields
-        - {"objects", "artifact_rejections", "provider_usage", "terminal_provider_tokens_scope", "provider_usage_witness_mismatch"}
+        - _OPTIONAL_FAULT_FIELDS
         or not isinstance(fault_payload.get("exception_type"), str)
         or not fault_payload.get("exception_type")
+        or not _fault_message_is_closed(fault_payload)
         or not _artifact_outcomes_are_closed(fault_payload)
         or set(checkpoint_payload)
         != ({"checkpoints", "ralph"})

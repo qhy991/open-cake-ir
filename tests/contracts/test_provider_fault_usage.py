@@ -222,12 +222,27 @@ class FailedProviderConsumerTests(unittest.TestCase):
         fault = next(event["payload"] for event in events if event["kind"] == "run_fault")
         self.assertEqual((fault["fault"], fault["exception_type"], fault["stage"]),
                          ("provider_fault", "ValueError", "provider"))
+        # A type alone cannot be acted on; the harness's own account is retained.
+        self.assertIsInstance(fault["exception_message"], str)
+        self.assertTrue(fault["exception_message"])
+        self.assertLessEqual(len(fault["exception_message"]), 2048)
         self.assertEqual(fault["terminal_provider_tokens"], 286257)
         self.assertEqual(fault["provider_usage"]["provider_tokens"], 191499)
         self.assertNotIn("provider_usage_witness_mismatch", fault)
         self.assertEqual([event["payload"]["turn"] for event in events if event["kind"] == "provider_turn_completed"], [1])
         self.assertFalse(any(event["payload"].get("turn") == 2 and event["kind"] != "run_fault" for event in events))
         self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
+
+    def test_retained_fault_message_is_bounded_and_optional_for_older_evidence(self):
+        from open_cake_ir.lab.replay import _fault_message_is_closed
+        # Evidence sealed before the field replays unchanged.
+        self.assertTrue(_fault_message_is_closed({"fault": "broker_fault"}))
+        for message in (None, "evaluator result metadata differs", "x" * 2048):
+            with self.subTest(message=type(message)):
+                self.assertTrue(_fault_message_is_closed({"exception_message": message}))
+        for message in ("", "x" * 2049, 7, ["text"]):
+            with self.subTest(message=message if isinstance(message, int) else type(message)):
+                self.assertFalse(_fault_message_is_closed({"exception_message": message}))
 
     def test_resumed_fault_without_stdout_does_not_reuse_the_prior_turn_raw_usage(self):
         campaign, store, events = self.campaign(missing_stdout=True)

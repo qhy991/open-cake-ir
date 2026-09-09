@@ -26,9 +26,14 @@ def record_run_fault(*, error, live_stage, turn_number, cumulative_tokens, evide
             "evaluation": "broker_fault",
         }[live_stage]
     )
+    # The type alone cannot be acted on. A Run that faults has already spent the
+    # provider and GPU time this Lab exists to gate, so the harness's own account of
+    # why is retained, bounded, next to the stage that produced it.
+    message = str(error).strip()
     fault_payload: dict[str, object] = {
         "fault": fault,
         "exception_type": type(error).__name__,
+        "exception_message": message[:2048] if message else None,
         "turn": turn_number,
         "stage": live_stage,
         "terminal_provider_tokens": cumulative_tokens,
