@@ -1,0 +1,270 @@
+{
+ "access_maps": [
+  {
+   "boundary": "mask_tiled_axes",
+   "buffer": "x",
+   "indices": [
+    {
+     "name": "row",
+     "source": "program"
+    },
+    {
+     "dimension": 1,
+     "source": "dimension"
+    }
+   ],
+   "operation": "load_x"
+  },
+  {
+   "boundary": "mask_tiled_axes",
+   "buffer": "out",
+   "indices": [
+    {
+     "name": "row",
+     "source": "program"
+    },
+    {
+     "dimension": 1,
+     "source": "dimension"
+    }
+   ],
+   "operation": "store_out"
+  }
+ ],
+ "allocations": [],
+ "barriers": [],
+ "buffers": [
+  {
+   "dtype": "fp32",
+   "mode": "input",
+   "name": "x",
+   "shape": [
+    3,
+    37
+   ],
+   "space": "global"
+  },
+  {
+   "dtype": "fp32",
+   "mode": "output",
+   "name": "out",
+   "shape": [
+    3,
+    37
+   ],
+   "space": "global"
+  },
+  {
+   "dtype": "fp32",
+   "mode": "scratch",
+   "name": "values",
+   "shape": [
+    37
+   ],
+   "space": "register"
+  },
+  {
+   "dtype": "fp32",
+   "mode": "scratch",
+   "name": "row_max",
+   "shape": [
+    1
+   ],
+   "space": "register"
+  },
+  {
+   "dtype": "fp32",
+   "mode": "scratch",
+   "name": "shifted",
+   "shape": [
+    37
+   ],
+   "space": "register"
+  },
+  {
+   "dtype": "fp32",
+   "mode": "scratch",
+   "name": "weights",
+   "shape": [
+    37
+   ],
+   "space": "register"
+  },
+  {
+   "dtype": "fp32",
+   "mode": "scratch",
+   "name": "total",
+   "shape": [
+    1
+   ],
+   "space": "register"
+  },
+  {
+   "dtype": "fp32",
+   "mode": "scratch",
+   "name": "temporary_0",
+   "shape": [
+    37
+   ],
+   "space": "register"
+  }
+ ],
+ "lowering": {
+  "backend": "metal",
+  "entry_point": "cake_softmax_fp32"
+ },
+ "metadata": {},
+ "operations": [
+  {
+   "id": "load_x",
+   "kind": "load",
+   "parameters": {
+    "movement": "global"
+   },
+   "reads": [
+    "x"
+   ],
+   "role": "compute",
+   "writes": [
+    "values"
+   ]
+  },
+  {
+   "depends_on": [
+    "load_x"
+   ],
+   "id": "max_x",
+   "kind": "reduce",
+   "parameters": {
+    "across_loop": false,
+    "axis": 0,
+    "op": "max",
+    "scope": "cta"
+   },
+   "reads": [
+    "values"
+   ],
+   "role": "compute",
+   "writes": [
+    "row_max"
+   ]
+  },
+  {
+   "depends_on": [
+    "max_x"
+   ],
+   "id": "shifted",
+   "kind": "elementwise",
+   "parameters": {
+    "op": "sub"
+   },
+   "reads": [
+    "values",
+    "row_max"
+   ],
+   "role": "compute",
+   "writes": [
+    "shifted"
+   ]
+  },
+  {
+   "depends_on": [
+    "shifted"
+   ],
+   "id": "exp",
+   "kind": "elementwise",
+   "parameters": {
+    "op": "exp"
+   },
+   "reads": [
+    "shifted"
+   ],
+   "role": "compute",
+   "writes": [
+    "weights"
+   ]
+  },
+  {
+   "depends_on": [
+    "exp"
+   ],
+   "id": "sum_exp",
+   "kind": "reduce",
+   "parameters": {
+    "across_loop": false,
+    "axis": 0,
+    "op": "sum",
+    "scope": "cta"
+   },
+   "reads": [
+    "weights"
+   ],
+   "role": "compute",
+   "writes": [
+    "total"
+   ]
+  },
+  {
+   "depends_on": [
+    "sum_exp"
+   ],
+   "id": "elementwise_temporary_0",
+   "kind": "elementwise",
+   "parameters": {
+    "op": "div"
+   },
+   "reads": [
+    "weights",
+    "total"
+   ],
+   "role": "compute",
+   "writes": [
+    "temporary_0"
+   ]
+  },
+  {
+   "depends_on": [
+    "elementwise_temporary_0"
+   ],
+   "id": "store_out",
+   "kind": "store",
+   "parameters": {
+    "coalesced": false
+   },
+   "reads": [
+    "temporary_0"
+   ],
+   "role": "compute",
+   "writes": [
+    "out"
+   ]
+  }
+ ],
+ "outputs": [
+  "out"
+ ],
+ "pipelines": [],
+ "program_map": {
+  "axes": [
+   {
+    "axis": 0,
+    "buffer": "x",
+    "dimension": 0,
+    "name": "row",
+    "tile": 1
+   }
+  ]
+ },
+ "roles": [
+  {
+   "name": "compute",
+   "warps": [
+    0
+   ]
+  }
+ ],
+ "schedule_id": "metal-softmax",
+ "schema_version": 1,
+ "target": "apple_gpu_family8",
+ "tile_loops": []
+}

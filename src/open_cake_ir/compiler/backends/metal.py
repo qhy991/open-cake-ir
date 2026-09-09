@@ -39,10 +39,15 @@ threadgroup constant device throw true try typedef typeid typename uchar uint ul
 union unsigned ushort using virtual void volatile wchar_t while xor xor_eq half
 sampler texture2d array vector matrix INFINITY NAN
 """.split())
+# Transcendentals use the precise namespace for the same reason rsqrt does: fast math
+# is disabled, so the emitted body must name the accurate function rather than inherit
+# a relaxed default. Metal rounding stays Metal's; no PTX RN equivalence is implied.
 _UNARY = {
     ElementwiseOp.SQUARE: "({x} * {x})",
     ElementwiseOp.RELU: "max({x}, 0.0f)",
     ElementwiseOp.RSQRT: "precise::rsqrt({x})",
+    ElementwiseOp.EXP: "precise::exp({x})",
+    ElementwiseOp.TANH: "precise::tanh({x})",
 }
 
 
@@ -225,7 +230,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
         elif operation.kind is OperationKind.ELEMENTWISE:
             check(parameters.op in _BINARY or parameters.op in _UNARY,
                   "METAL_ELEMENTWISE_UNSUPPORTED", path + ".parameters.op",
-                  "Metal supports add/sub/mul/div/square/relu/rsqrt; PTX FMA and other transcendental contracts are not implemented")
+                  "Metal supports add/sub/mul/div/square/relu/rsqrt/exp/tanh; PTX FMA and other contracts are not implemented")
             check(parameters.instruction is None, "METAL_INSTRUCTION_UNSUPPORTED", path + ".parameters.instruction", "Metal does not implement a CUDA/PTX instruction contract")
             check(parameters.scalar is None or abs(parameters.scalar) <= 3.4028234663852886e38,
                   "METAL_SCALAR_RANGE_UNSUPPORTED", path + ".parameters.scalar", "literal must be representable as finite FP32")

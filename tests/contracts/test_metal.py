@@ -97,7 +97,11 @@ using uint = unsigned int;
 using ushort = unsigned short;
 using ulong = unsigned long;
 struct uint3 { uint x,y,z; };
-namespace precise { float rsqrt(float value) { return 1.0f / sqrt(value); } }
+namespace precise {
+    float rsqrt(float value) { return 1.0f / sqrt(value); }
+    float exp(float value) { return ::expf(value); }
+    float tanh(float value) { return ::tanhf(value); }
+}
 struct CpuGroup {
     float values[32];
     uint sources[32];

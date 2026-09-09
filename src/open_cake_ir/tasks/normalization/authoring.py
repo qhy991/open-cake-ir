@@ -11,8 +11,14 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
     operator = workload.document["operator"]
     args = workload.tensor_abi(case_id)
     width = args[0].shape[-1]
-    declarations = [f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
-                    + (', mode="output")' if arg.mode == "output" else ')') for arg in args]
+    if operator == "softmax_fp32":
+        return _emit(workload, operator, args, [
+            'values = lm.load(x[row, :], id="load_x")',
+            'row_max = lm.reduce(values, op="max", axis=0, scope="cta", across_loop=False, id="max_x")',
+            'shifted = values - row_max',
+            'weights = lm.exp(shifted, id="exp")',
+            'total = lm.reduce(weights, op="sum", axis=0, scope="cta", across_loop=False, id="sum_exp")',
+            'lm.store(out[row, :], weights / total, coalesced=False, id="store_out")'])
     body = ['values = lm.load(x[row, :], id="load_x")',
             'weights = lm.load(weight[:], id="load_weight")']
     operand = "values"
@@ -35,6 +41,13 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
         body.append('result = weighted + biases')
         result = "result"
     body.append(f'lm.store(out[row, :], {result}, coalesced=False, id="store_out")')
+    return _emit(workload, operator, args, body)
+
+
+def _emit(workload: WorkloadContract, operator: str, args, body: list[str]) -> str:
+    """Render one readable Schedule around a task's own operation body."""
+    declarations = [f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
+                    + (', mode="output")' if arg.mode == "output" else ')') for arg in args]
     return ('from open_cake_ir.compiler import frontend as cake\n\n'
             f'@cake.schedule(name="{workload.workload_id}", target="{workload.target}",\n'
             f'               backend="metal", entry_point="cake_{operator}",\n'

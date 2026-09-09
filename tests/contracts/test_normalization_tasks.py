@@ -47,6 +47,46 @@ class NormalizationTaskTests(unittest.TestCase):
                     for case_id in workload.case_ids:
                         self.assertEqual(workload.tensor_abi(case_id), workload.tensor_abi("primary"))
 
+    def test_softmax_owns_no_affine_parameter_epsilon_or_shared_tolerance(self):
+        document, source = create_task("softmax", backend="metal-m2", rows=4, columns=7)
+        workload = WorkloadContract(document)
+        self.assertEqual([arg.name for arg in workload.tensor_abi("primary")], ["x", "out"])
+        self.assertNotIn("epsilon", document["semantics"])
+        self.assertEqual(document["semantics"]["arithmetic"]["shift"],
+                         "subtract_row_maximum_before_exponentiation")
+        # A distribution needs a tighter absolute bound than the scale-normalizing tasks.
+        self.assertEqual((document["validation"]["atol"], document["validation"]["rtol"]), (2e-6, 2e-5))
+        for other in ("rmsnorm", "layernorm", "residual_rmsnorm"):
+            with self.subTest(task=other):
+                sibling, _ = create_task(other, backend="metal-m2", rows=4, columns=7)
+                self.assertIn("weight", sibling["tensors"])
+                self.assertIn("epsilon", sibling["semantics"])
+                self.assertEqual(sibling["validation"]["atol"], 2e-5)
+        schedule = frontend.parse(source).document
+        assessment = self.compiler.assess(schedule)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        self.assertIn("precise::exp", self.compiler.lower(assessment).source)
+
+    def test_softmax_oracle_is_an_independent_shifted_fsum_distribution(self):
+        workload, _ = self.task("softmax", rows=3, columns=17)
+        for case_id in workload.case_ids:
+            inputs = materialize_case(workload, case_id)
+            out = reference_outputs(workload, case_id, inputs)["out"]
+            self.assertEqual(len(out), 3 * 17)
+            for start in range(0, len(out), 17):
+                row = out[start:start + 17]
+                self.assertTrue(all(0.0 <= value <= 1.0 for value in row))
+                self.assertAlmostEqual(math.fsum(row), 1.0, places=5)
+            for m in range(3):
+                source_row = inputs["x"][m * 17:(m + 1) * 17]
+                shift = max(source_row)
+                weights = [math.exp(v - shift) for v in source_row]
+                total = math.fsum(weights)
+                for n, weight in enumerate(weights):
+                    self.assertEqual(out[m * 17 + n], _round(weight / total, "fp32"))
+        with self.assertRaises(ValueError):
+            reference_outputs(workload, "primary", {"x": [float("nan")] * 51})
+
     def test_frozen_contract_rejects_target_domain_or_case_drift(self):
         document, _ = create_task("rmsnorm", rows=2, columns=7)
         changes = (
@@ -114,8 +154,9 @@ class NormalizationTaskTests(unittest.TestCase):
                         bound = workload.document["tensors"][arg.name]["max_abs"]
                         self.assertTrue(all(math.isfinite(value) and abs(value) <= bound
                                             and _round(value, "fp32") == value for value in inputs[arg.name]))
-                    self.assertEqual(inputs["weight"][16], 0.0)
-                    self.assertTrue(any(value < 0 for value in inputs["weight"]))
+                    if "weight" in inputs:  # Softmax owns no affine parameter.
+                        self.assertEqual(inputs["weight"][16], 0.0)
+                        self.assertTrue(any(value < 0 for value in inputs["weight"]))
                     if case_id == "zeros":
                         self.assertTrue(all(value == 0 for value in inputs["x"]))
                     elif case_id == "near_zero":
@@ -152,8 +193,9 @@ class NormalizationTaskTests(unittest.TestCase):
                                 [True] * 14, [0.1] * 14, [512.0] * 14):
                 with self.subTest(task=name, replacement=replacement), self.assertRaises(ValueError):
                     reference_outputs(workload, "primary", {**inputs, "x": replacement})
-            with self.assertRaises(ValueError):
-                reference_outputs(workload, "primary", {"x": inputs["x"]})
+            if len(inputs) > 1:  # Softmax's only input is already the complete set.
+                with self.subTest(task=name, missing=sorted(set(inputs) - {"x"})), self.assertRaises(ValueError):
+                    reference_outputs(workload, "primary", {"x": inputs["x"]})
 
     def test_starter_binds_workload_and_all_case_abis_for_apple_lowering(self):
         for name in normalization.TASKS:

@@ -54,7 +54,12 @@ class EvaluationWriter:
             },
         )
         if receipt is None:
-            raise RuntimeError(f"{purpose} Evaluation has no final receipt")
+            # The broker already said why it produced none. Repeating it here keeps the
+            # fault readable without reopening the archived attempts.
+            last = attempt.attempts[-1] if attempt.attempts else None
+            reason = (f"admitted={last.admitted} error={last.error!r} job_id={last.job_id!r}"
+                      if last is not None else "no broker attempt was made")
+            raise RuntimeError(f"{purpose} Evaluation has no final receipt: {reason}")
         _validate_receipt_authority(
             receipt,
             candidate=candidate,

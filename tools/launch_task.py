@@ -169,7 +169,7 @@ def _campaign_exit_code(report) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", choices=("rmsnorm", "layernorm", "residual_rmsnorm", "gemm_bias"), required=True)
+    parser.add_argument("--task", choices=("rmsnorm", "layernorm", "residual_rmsnorm", "softmax", "gemm_bias"), required=True)
     parser.add_argument("--backend", choices=tuple(BACKENDS), required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)

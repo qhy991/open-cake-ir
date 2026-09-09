@@ -1651,6 +1651,19 @@
         "schedule_sha256": "03ee5fbc689a3939a9a02ddf61bf0f69bf8225d36a0b10dfbb20f3c2124d0aa6",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "metal-softmax-odd-accepted",
+      "schedule": "corpus/schedules/metal-softmax-odd.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "METAL_SIMD_EXECUTION"
+        ],
+        "schedule_sha256": "caef570d1516a48370cf49d5b3a1298a267f81ef5ce242eed9fdb3a0ea7ce933",
+        "lowering_source_sha256": "2bfe67429742c5708a4b3dc3ccdb33e3b94d2e0b5bc7eb8d0e45914968abb991"
+      }
     }
   ]
 }

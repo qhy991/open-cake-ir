@@ -28,6 +28,7 @@ _TASKS = {
     "indexed_gather_bf16": (validate_tile_contract, WorkloadContract),
     "layernorm_fp32": (normalization_math.validate_normalization_contract, WorkloadContract),
     "residual_rmsnorm_fp32": (normalization_math.validate_normalization_contract, WorkloadContract),
+    "softmax_fp32": (normalization_math.validate_normalization_contract, WorkloadContract),
     "gemm_bias_fp32": (gemm_math.validate_gemm_contract, WorkloadContract),
 }
 
@@ -62,7 +63,7 @@ def load_workload(path) -> WorkloadContract:
 def _tensor_math(workload: WorkloadContract):
     """Task-owned routing for the common tensor Evaluation input/oracle interface."""
     operator = workload.document["operator"]
-    if (operator in {"layernorm_fp32", "residual_rmsnorm_fp32"}
+    if (operator in {"layernorm_fp32", "residual_rmsnorm_fp32", "softmax_fp32"}
             or operator == "rmsnorm_fp32" and workload.document["revision"] == "3"):
         return normalization_math
     if operator == "gemm_bias_fp32":

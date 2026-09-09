@@ -20,6 +20,9 @@ TASKS = {
     "rmsnorm": ("rmsnorm_fp32", "3"),
     "layernorm": ("layernorm_fp32", "1"),
     "residual_rmsnorm": ("residual_rmsnorm_fp32", "1"),
+    # Softmax normalizes a row to a distribution rather than by its scale, so it owns
+    # no affine parameter and no epsilon.
+    "softmax": ("softmax_fp32", "1"),
 }
 CASES = {
     "primary": ("uniform", 7001),
@@ -41,10 +44,9 @@ def workload_document(task_name: str, *, rows: int = 128, columns: int = 1024,
             or rows * columns * 4 > 2**31 - 1):
         raise ValueError("normalization shape must fit the FP32 Metal buffer ABI")
     operator, revision = TASKS[task_name]
-    tensors = {
-        "x": {"shape": ["R", "C"], "max_abs": 256.0},
-        "weight": {"shape": ["C"], "max_abs": 1.5},
-    }
+    tensors = {"x": {"shape": ["R", "C"], "max_abs": 256.0}}
+    if task_name != "softmax":
+        tensors["weight"] = {"shape": ["C"], "max_abs": 1.5}
     if task_name == "layernorm":
         tensors["bias"] = {"shape": ["C"], "max_abs": 1.5}
     elif task_name == "residual_rmsnorm":
@@ -57,10 +59,15 @@ def workload_document(task_name: str, *, rows: int = 128, columns: int = 1024,
         "rmsnorm": "out[r,c] = x[r,c] * weight[c] / sqrt(mean_j(x[r,j]^2) + epsilon)",
         "layernorm": "mu[r] = mean_j(x[r,j]); out[r,c] = (x[r,c]-mu[r]) * weight[c] / sqrt(mean_j((x[r,j]-mu[r])^2) + epsilon) + bias[c]",
         "residual_rmsnorm": "z[r,c] = round_fp32(x[r,c]+residual[r,c]); out[r,c] = z[r,c] * weight[c] / sqrt(mean_j(z[r,j]^2) + epsilon)",
+        "softmax": "m[r] = max_j(x[r,j]); out[r,c] = exp(x[r,c]-m[r]) / sum_j(exp(x[r,j]-m[r]))",
     }
     arithmetic = {"intermediates": "fp32", "reduction_order": "backend_defined_within_tolerance",
                   "rsqrt": "backend_approximation_within_tolerance", "output": "fp32"}
-    if task_name == "layernorm":
+    if task_name == "softmax":
+        arithmetic = {"intermediates": "fp32", "reduction_order": "backend_defined_within_tolerance",
+                      "exp": "backend_approximation_within_tolerance",
+                      "shift": "subtract_row_maximum_before_exponentiation", "output": "fp32"}
+    elif task_name == "layernorm":
         arithmetic["variance"] = "centered_population_variance"
     elif task_name == "residual_rmsnorm":
         arithmetic["residual_addition"] = "round_to_nearest_ties_to_even_fp32_before_normalization"
@@ -78,7 +85,8 @@ def workload_document(task_name: str, *, rows: int = 128, columns: int = 1024,
             "definition": definitions[task_name], "target": device["target"],
             "candidate_abi": {"inputs": inputs, "outputs": ["out"]},
             "input_effects": "unchanged", "output_storage": "fresh_contiguous_nonaliasing",
-            "arithmetic": arithmetic, "epsilon": EPSILON,
+            "arithmetic": arithmetic,
+            **({} if task_name == "softmax" else {"epsilon": EPSILON}),
             "materialization": {
                 "generator": "python_random_Random_per_input_case_seed_plus_10000_times_ABI_index",
                 "uniform": "round_fp32_uniform[-2,2]", "zeros": "alternating_signed_zero",
@@ -96,9 +104,17 @@ def workload_document(task_name: str, *, rows: int = 128, columns: int = 1024,
         },
         "validation": {
             "primary_case": "primary", "all_cases_required": True, "equal_nan": False,
-            "comparison": "elementwise_atol_rtol", "atol": 2e-5, "rtol": 2e-5,
+            "comparison": "elementwise_atol_rtol",
+            **({"atol": 2e-6, "rtol": 2e-5} if task_name == "softmax" else {"atol": 2e-5, "rtol": 2e-5}),
             "qualification": "all_input_cases_at_fixed_shape_no_framework_or_cross_shape_claim",
-            "tolerance_rationale": "Predeclared FP32 reduction and rsqrt allowance against the mathematical oracle; not device calibration.",
+            "tolerance_rationale": (
+                "Row-maximum shift keeps every exponent at most zero, and the measured worst "
+                "sequential-FP32 departure from the fsum oracle over these distributions is "
+                "3.1e-9 absolute and 1.2e-6 relative; the allowance also covers a backend "
+                "exponential that differs from the oracle's by a few units in the last place. "
+                "Not device calibration."
+                if task_name == "softmax" else
+                "Predeclared FP32 reduction and rsqrt allowance against the mathematical oracle; not device calibration."),
         },
     }
 
@@ -156,6 +172,20 @@ def reference_outputs(workload: WorkloadContract, case_id: str,
     validate_normalization_contract(workload.document)
     if workload.document["operator"] == "rmsnorm_fp32":
         return tile_reference_outputs(workload, case_id, inputs)
+    if workload.document["operator"] == "softmax_fp32":
+        args = tuple(arg for arg in workload.tensor_abi(case_id) if arg.mode == "input")
+        values, = _checked_inputs(workload, args, inputs)
+        width = args[0].shape[-1]
+        result = []
+        for start in range(0, len(values), width):
+            row = values[start:start + width]
+            # The row maximum is exact in FP32, so shifting introduces no rounding of
+            # its own and keeps every exponent at most zero.
+            shift = max(row)
+            weights = [math.exp(value - shift) for value in row]
+            total = math.fsum(weights)
+            result.extend(_round(weight / total, "fp32") for weight in weights)
+        return {"out": result}
     abi = workload.tensor_abi(case_id)
     args = tuple(arg for arg in abi if arg.mode == "input")
     checked = dict(zip((arg.name for arg in args), _checked_inputs(workload, args, inputs)))
