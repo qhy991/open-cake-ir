@@ -25,10 +25,21 @@ from open_cake_ir.lab.providers import ProviderQualificationReceipt
 from open_cake_ir.tasks.compose import execute_matched_from_config
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
 from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, study_template
+from open_cake_ir.tasks.activation.workload import TASKS as _ACTIVATION_TASKS
+from open_cake_ir.tasks.rowwise.workload import TASKS as _ROWWISE_TASKS
+from open_cake_ir.tasks.reductions.workload import TASKS as _REDUCTION_TASKS
+from open_cake_ir.tasks.optimizers.workload import TASKS as _OPTIMIZER_TASKS
 from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.workloads import create_task, load_workload
 from open_cake_ir.evaluation.paired import candidate_identity
+
+# The launcher offers whatever the activation family registers, so a migrated AKA
+# parent becomes launchable by being added to that one table.
+ACTIVATION_TASKS = tuple(_ACTIVATION_TASKS)
+ROWWISE_TASKS = tuple(_ROWWISE_TASKS)
+REDUCTION_TASKS = tuple(_REDUCTION_TASKS)
+OPTIMIZER_TASKS = tuple(_OPTIMIZER_TASKS)
 
 
 def _provider_executable(harness: str, requested: Path | None) -> Path:
@@ -169,7 +180,9 @@ def _campaign_exit_code(report) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", choices=("rmsnorm", "layernorm", "residual_rmsnorm", "softmax", "gemm_bias"), required=True)
+    parser.add_argument("--task", choices=("rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
+                                          *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS,
+                                          *OPTIMIZER_TASKS, "gemm_bias"), required=True)
     parser.add_argument("--backend", choices=tuple(BACKENDS), required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)

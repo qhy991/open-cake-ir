@@ -100,6 +100,7 @@ struct uint3 { uint x,y,z; };
 namespace precise {
     float rsqrt(float value) { return 1.0f / sqrt(value); }
     float exp(float value) { return ::expf(value); }
+    float exp2(float value) { return ::exp2f(value); }
     float tanh(float value) { return ::tanhf(value); }
 }
 struct CpuGroup {
@@ -296,6 +297,50 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
                 y = [fp32((index % 7 - 3) / 16) for index in range(rows * width)]
                 observed = self.execute_body(make_document(rows, width), {"x": x, "y": y})
                 self.assertEqual(observed["out"], [fp32(fp32(a + b) * 2) for a, b in zip(x, y)])
+
+    def test_every_admitted_unary_primitive_executes_or_names_why_it_cannot(self):
+        """The emitter's unary map and this CPU shim must not drift apart.
+
+        `exp2` was admitted into the vocabulary and mapped to `precise::exp2` while the
+        shim still had three names, so no portable semantic check could reach it. `tanh`
+        was mapped and unreachable for longer: the IR requires it to name an instruction
+        contract and no Apple Target admitted one, so it names the Metal contract here.
+        """
+        from open_cake_ir.compiler.backends.metal import _UNARY
+        from open_cake_ir.compiler.ir.vocabulary import ElementwiseOp
+
+        expected = {ElementwiseOp.SQUARE: lambda v: fp32(v * v),
+                    ElementwiseOp.RELU: lambda v: max(v, 0.0),
+                    # The shim rounds the square root before the divide, as the emitted float does.
+                    ElementwiseOp.RSQRT: lambda v: fp32(1.0 / fp32(math.sqrt(v))),
+                    ElementwiseOp.EXP: lambda v: fp32(math.exp(v)),
+                    ElementwiseOp.EXP2: lambda v: fp32(2.0 ** v),
+                    ElementwiseOp.RECIPROCAL: lambda v: fp32(1.0 / v),
+                    ElementwiseOp.TANH: lambda v: fp32(math.tanh(v))}
+        self.assertEqual(set(_UNARY), set(expected))
+        values = [0.5, 1.0, 2.0, 3.25, 0.125, 4.0, 1.5, 2.75]
+        for op, reference in expected.items():
+            source = f'''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="unary-{op.value}", target="apple_gpu_family8", backend="metal", entry_point="cake_unary")
+def candidate(lm, x: cake.Tensor((2, 4), "fp32"), out: cake.Tensor((2, 4), "fp32", mode="output")):
+    compute = lm.role(warps=[0])
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        values = lm.load(x[row, :], id="load_x")
+        result = lm.{op.value}(values, id="unary")
+        lm.store(out[row, :], result, coalesced=False, id="store_out")
+'''
+            with self.subTest(op=op.value):
+                if op is ElementwiseOp.TANH:
+                    with self.assertRaisesRegex(frontend.FrontendError,
+                                                "instruction is required for tanh"):
+                        frontend.parse(source)
+                    source = source.replace(
+                        "lm.tanh(values,",
+                        f'lm.tanh(values, instruction={{"contract": "{metal._METAL_TANH_CONTRACT}"}},')
+                document = frontend.parse(source).document
+                self.assertEqual(self.execute_body(document, {"x": values})["out"],
+                                 [reference(value) for value in values])
 
     def test_sum_and_negative_max_use_scalar_buffer_convention(self):
         for operation in ("sum", "max"):

@@ -27,9 +27,16 @@
       "z": 4294967295
     }
   },
-  "instruction_contracts": [],
+  "instruction_contracts": [
+    "metal.precise.tanh.f32"
+  ],
   "synchronization_contracts": [],
   "citations": [
+    {
+      "kind": "toolchain_api",
+      "source": "https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf",
+      "locator": "metal::precise::tanh(float) is the named-precision hyperbolic tangent; the fast:: namespace is a different, cheaper function, so a Schedule that wants either names which one it means"
+    },
     {
       "kind": "device_specification",
       "source": "https://developer.apple.com/documentation/metal/mtlgpufamily/apple7",

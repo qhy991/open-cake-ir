@@ -51,6 +51,11 @@ _UNARY = {
     ElementwiseOp.RECIPROCAL: "(1.0f / {x})",
     ElementwiseOp.TANH: "precise::tanh({x})",
 }
+# The one instruction contract this backend implements. `precise::tanh` and `fast::tanh`
+# are different functions with different cost, so the Schedule names which it means; the
+# IR requires a contract for tanh and refusing every contract made the mapping above
+# unreachable from any Apple Target.
+_METAL_TANH_CONTRACT = "metal.precise.tanh.f32"
 
 
 SIMD_WIDTH = 32
@@ -234,7 +239,11 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                   "METAL_ELEMENTWISE_UNSUPPORTED", path + ".parameters.op",
                   "Metal supports add/sub/mul/div/square/relu/rsqrt/exp/exp2/reciprocal/tanh; "
                   "PTX FMA and other contracts are not implemented")
-            check(parameters.instruction is None, "METAL_INSTRUCTION_UNSUPPORTED", path + ".parameters.instruction", "Metal does not implement a CUDA/PTX instruction contract")
+            check(parameters.instruction is None
+                  or (parameters.op is ElementwiseOp.TANH
+                      and parameters.instruction.contract == _METAL_TANH_CONTRACT),
+                  "METAL_INSTRUCTION_UNSUPPORTED", path + ".parameters.instruction",
+                  f"Metal implements only {_METAL_TANH_CONTRACT}, not a CUDA/PTX instruction contract")
             check(parameters.scalar is None or abs(parameters.scalar) <= 3.4028234663852886e38,
                   "METAL_SCALAR_RANGE_UNSUPPORTED", path + ".parameters.scalar", "literal must be representable as finite FP32")
         elif operation.kind is OperationKind.REDUCE:

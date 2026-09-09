@@ -42,6 +42,9 @@ _REGISTER_MMA_CONTRACT = "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32"
 
 _ELEMENTWISE_INSTRUCTIONS = {
     "libdevice.tanh.f32": (ElementwiseOp.TANH, DType.FP32),
+    # Metal's own named-precision spelling. tanh requires a contract, so without one
+    # here no Metal Schedule could reach the emitter's precise::tanh at all.
+    "metal.precise.tanh.f32": (ElementwiseOp.TANH, DType.FP32),
     "ptx.fma.rn.f32": (ElementwiseOp.FMA, DType.FP32),
 }
 

@@ -15,6 +15,14 @@ from .normalization import workload as normalization_math
 from .normalization.authoring import starter_source
 from .gemm import workload as gemm_math
 from .gemm.authoring import starter_source as gemm_starter_source
+from .activation import workload as activation_math
+from .activation.authoring import starter_source as activation_starter_source
+from .rowwise import workload as rowwise_math
+from .rowwise.authoring import starter_source as rowwise_starter_source
+from .reductions import workload as reductions_math
+from .reductions.authoring import starter_source as reductions_starter_source
+from .optimizers import workload as optimizers_math
+from .optimizers.authoring import starter_source as optimizers_starter_source
 
 _TASKS = {
     "flash_kmeans_assign": (_validate_flash_contract, FlashWorkloadContract),
@@ -30,6 +38,14 @@ _TASKS = {
     "residual_rmsnorm_fp32": (normalization_math.validate_normalization_contract, WorkloadContract),
     "softmax_fp32": (normalization_math.validate_normalization_contract, WorkloadContract),
     "gemm_bias_fp32": (gemm_math.validate_gemm_contract, WorkloadContract),
+    **{operator: (activation_math.validate_activation_contract, WorkloadContract)
+       for operator, _ in activation_math.TASKS.values()},
+    **{operator: (rowwise_math.validate_rowwise_contract, WorkloadContract)
+       for operator, _ in rowwise_math.TASKS.values()},
+    **{operator: (reductions_math.validate_reductions_contract, WorkloadContract)
+       for operator, _ in reductions_math.TASKS.values()},
+    **{operator: (optimizers_math.validate_optimizers_contract, WorkloadContract)
+       for operator, _ in optimizers_math.TASKS.values()},
 }
 
 def _registered_task(document: Mapping[str, object]):
@@ -68,6 +84,14 @@ def _tensor_math(workload: WorkloadContract):
         return normalization_math
     if operator == "gemm_bias_fp32":
         return gemm_math
+    if operator in {name for name, _ in activation_math.TASKS.values()}:
+        return activation_math
+    if operator in {name for name, _ in rowwise_math.TASKS.values()}:
+        return rowwise_math
+    if operator in {name for name, _ in reductions_math.TASKS.values()}:
+        return reductions_math
+    if operator in {name for name, _ in optimizers_math.TASKS.values()}:
+        return optimizers_math
     if operator in {"rmsnorm_fp32", "gemm_bias_bf16_fp32", "indexed_gather_bf16"}:
         validate_tile_contract(workload.document)
         return tile_math
@@ -100,6 +124,22 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
         return document, gemm_starter_source(WorkloadContract(document), case_id)
     if depth is not None:
         raise ValueError("only GEMM declares a K extent")
+    if task_name in optimizers_math.TASKS:
+        document = optimizers_math.workload_document(task_name, backend=backend, rows=rows,
+                                                     columns=columns)
+        return document, optimizers_starter_source(WorkloadContract(document), case_id)
+    if task_name in reductions_math.TASKS:
+        document = reductions_math.workload_document(task_name, backend=backend, rows=rows,
+                                                     columns=columns)
+        return document, reductions_starter_source(WorkloadContract(document), case_id)
+    if task_name in rowwise_math.TASKS:
+        document = rowwise_math.workload_document(task_name, backend=backend, rows=rows,
+                                                    columns=columns)
+        return document, rowwise_starter_source(WorkloadContract(document), case_id)
+    if task_name in activation_math.TASKS:
+        document = activation_math.workload_document(task_name, backend=backend, rows=rows,
+                                                     columns=columns)
+        return document, activation_starter_source(WorkloadContract(document), case_id)
     document = normalization_math.workload_document(task_name, backend=backend, rows=rows, columns=columns)
     workload = WorkloadContract(document)
     return document, starter_source(workload, case_id)
