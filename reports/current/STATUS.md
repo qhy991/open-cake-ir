@@ -7,21 +7,21 @@
 
 ## Compiler
 
-- 版本： `open-cake-ir-sm100a-v68+60c0f71f8e43e57f441b02e41d1be8d9afc4c3a92f162b39e9050f803e48daf7`
+- 版本： `open-cake-ir-sm100a-v70+4a4473c555dfa1a0fe825d9a7159b4c308ebd769c78db4811421cb135260f541`
 - 状态： `released`
 - 目标： `apple_gpu_family7, apple_gpu_family8, sm_100a, sm_103a`
-- 语料检查： `123/123` 项符合预期
-- 绑定源码： `170` 个文件
+- 语料检查： `124/124` 项符合预期
+- 绑定源码： `171` 个文件
 - 已发布校准： `无`
 - 负责记录： [`compiler/revision.lock.json`](../../compiler/revision.lock.json)
 
 ## Executor
 
-- 版本： `open-cake-ir-b200-v80+46c47d527da5033aa3b24aa421912923f77606c0401e2bbe0569f23e798f4242`
+- 版本： `open-cake-ir-b200-v81+ef7b8c52d8e7ae00c00721248687966f8843683e46058d94a312c898339a8908`
 - 状态： `released`
 - 绑定源码： `139` 个文件
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v80+46c47d527da5033aa3b24aa421912923f77606c0401e2bbe0569f23e798f4242.json`](../../runtime/executors/open-cake-ir-b200-v80+46c47d527da5033aa3b24aa421912923f77606c0401e2bbe0569f23e798f4242.json)
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v81+ef7b8c52d8e7ae00c00721248687966f8843683e46058d94a312c898339a8908.json`](../../runtime/executors/open-cake-ir-b200-v81+ef7b8c52d8e7ae00c00721248687966f8843683e46058d94a312c898339a8908.json)
 
 ## 这些数字说明什么
 

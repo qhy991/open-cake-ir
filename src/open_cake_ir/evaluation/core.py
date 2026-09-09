@@ -279,7 +279,10 @@ class EvaluationReceipt:
                 self.candidate_sha256,
             }:
                 raise ValueError("EvaluationReceipt launch candidate differs")
-            paired_raw = isinstance(timing_raw, Mapping) and timing_raw.get('kind') in {'fixed_baseline_paired_cupti_v1', 'fixed_baseline_paired_metal_v1'}
+            # The assay owns its kind vocabulary; naming the versions again here is how
+            # a successor silently falls through to the unpaired branch.
+            from .paired import PAIRED_KINDS
+            paired_raw = isinstance(timing_raw, Mapping) and timing_raw.get('kind') in PAIRED_KINDS
             if paired_raw:
                 from .paired import validate_paired_receipt
                 validate_paired_receipt(self, timing_raw, correctness_raw, launch_raw)

@@ -180,6 +180,15 @@ class OpenCakeEnvironment:
         source = None
         try:
             parsed = json.loads(submission.payload)
+            # A Python submission carries its source and nothing else. Saying so here
+            # keeps an extra envelope field from being reported as a lowering route
+            # the actor never changed, which is unactionable feedback.
+            if isinstance(parsed, Mapping) and "python_source" in parsed and set(parsed) != {"python_source"}:
+                extra = ", ".join(sorted(set(parsed) - {"python_source"}))
+                raise ValueError(
+                    "Python IR submission must carry python_source alone; "
+                    f"this envelope also declares: {extra}"
+                )
             if isinstance(parsed, Mapping) and set(parsed) == {"python_source"}:
                 if not self._python_enabled or not isinstance(parsed["python_source"], str):
                     raise ValueError("Python IR submission is outside the admitted Authoring Environment")

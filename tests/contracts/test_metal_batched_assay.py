@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import unittest
+from pathlib import Path
 
 from open_cake_ir.evaluation.metal_observations import (
     amortized_dispatch_ms, command_buffer_ms, dispatch_count, validate_command_samples,
@@ -89,6 +90,24 @@ class BatchedMetalAssayTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_command_samples({**record, "samples_ms": [0.080] * 3},
                                      route_calls=4, sample_count=3, dispatches_per_sample=8)
+
+    def test_every_declared_paired_kind_reaches_the_paired_receipt_check(self):
+        """A successor kind that is not routed here falls through to the unpaired branch.
+
+        That is exactly how `fixed_baseline_paired_metal_v2` first reached a live
+        Campaign and failed at turn 5 with "EvaluationReceipt timing samples differ":
+        one module named the versions again instead of using the assay's vocabulary.
+        """
+        from open_cake_ir.evaluation import core
+        from open_cake_ir.evaluation.paired import PAIRED_KINDS
+        source = Path(core.__file__).read_text(encoding="utf-8")
+        for kind in PAIRED_KINDS:
+            with self.subTest(kind=kind):
+                # The receipt must not carry its own copy of the vocabulary.
+                self.assertNotIn(f"'{kind}'", source)
+                self.assertNotIn(f'"{kind}"', source)
+        self.assertIn("in PAIRED_KINDS", source)
+        self.assertIn(PAIRED_METAL_BATCHED_KIND, PAIRED_KINDS)
 
     def test_relative_iqr_describes_the_bulk_where_cv_reports_one_disturbance(self):
         steady = [10.00 + 0.01 * (index % 3) for index in range(24)]

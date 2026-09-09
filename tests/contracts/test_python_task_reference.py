@@ -93,6 +93,17 @@ class PythonTaskReferenceTests(unittest.TestCase):
         result = environment.build(CandidateSubmission.seal(environment.media_type,
             json.dumps({"python_source": bound.decode()}).encode()))
         self.assertEqual(result.disposition, "launchable")
+        # A richer envelope is refused for what it actually is. Reporting it as a
+        # lowering route the actor never changed cost a live Campaign three Turns.
+        rejected = environment.build(CandidateSubmission.seal(environment.media_type,
+            json.dumps({"python_source": bound.decode(), "candidate_id": "a",
+                        "hypothesis": "shorter scalar tail"}).encode()))
+        self.assertNotEqual(rejected.disposition, "launchable")
+        message = json.dumps(dict(rejected.feedback))
+        self.assertIn("python_source alone", message)
+        self.assertIn("candidate_id", message)
+        self.assertIn("hypothesis", message)
+        self.assertNotIn("lowering route", message)
         self.assertEqual(len(observed), 1)
         self.assertEqual(observed[0].target, "apple_gpu_family7")
         self.assertEqual(observed[0].source_role, "lowered_source")

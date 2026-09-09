@@ -171,6 +171,11 @@ class ElementwiseOp(str, Enum):
     SQUARE = "square"
     RSQRT = "rsqrt"
     EXP = "exp"
+    # A base-2 exponential and a reciprocal are the two cheaper primitives a
+    # transcendental-bound epilogue is otherwise forced to spell as exp and div.
+    # Three tasks reached for them before this vocabulary admitted either.
+    EXP2 = "exp2"
+    RECIPROCAL = "reciprocal"
     RELU = "relu"
     TANH = "tanh"
     ADD = "add"
@@ -190,6 +195,8 @@ class ElementwiseOp(str, Enum):
                 ElementwiseOp.SQUARE,
                 ElementwiseOp.RSQRT,
                 ElementwiseOp.EXP,
+                ElementwiseOp.EXP2,
+                ElementwiseOp.RECIPROCAL,
                 ElementwiseOp.RELU,
                 ElementwiseOp.TANH,
             )

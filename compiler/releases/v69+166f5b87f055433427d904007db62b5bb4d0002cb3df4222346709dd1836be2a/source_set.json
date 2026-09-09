@@ -1,5 +1,4 @@
 {
-  "schema_version": 1,
   "paths": [
     "compiler/AUTHORING_CONTRACT.md",
     "docs/PYTHON_FRONTEND.md",
@@ -172,5 +171,6 @@
     "corpus/schedules/triton-argmin-static-tail-drift.json",
     "examples/python/cast.py",
     "examples/python/mixed_dtype.py"
-  ]
+  ],
+  "schema_version": 1
 }

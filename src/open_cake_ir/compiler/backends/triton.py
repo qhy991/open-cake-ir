@@ -310,6 +310,15 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
     )
     for index, operation in enumerate(schedule.operations):
         if operation.kind is OperationKind.ELEMENTWISE:
+            # The arithmetic vocabulary is closed but not frozen. An unmapped member is
+            # a refusal this emitter owns, not a KeyError raised out of preflight.
+            add(
+                operation.parameters.op in _TritonEmitter._ELEMENTWISE_TEXT
+                or operation.parameters.op is ElementwiseOp.TANH,
+                "TRITON_ELEMENTWISE_UNSUPPORTED",
+                f"operations[{index}].parameters.op",
+                f"the Triton backend does not implement {operation.parameters.op.value!r}",
+            )
             # Global arguments are pointers; _operand only names already-produced
             # values. Arithmetic does not implement access maps or memory effects.
             for edge in ("reads", "writes"):
@@ -1258,6 +1267,10 @@ class _TritonEmitter:
         ElementwiseOp.SQUARE: "{a} * {a}",
         ElementwiseOp.RSQRT: "tl.rsqrt({a})",
         ElementwiseOp.EXP: "tl.exp({a})",
+        ElementwiseOp.EXP2: "tl.exp2({a})",
+        # Spelled as an explicit divide so the emitted body carries no approximation
+        # this backend has not measured.
+        ElementwiseOp.RECIPROCAL: "1.0 / {a}",
         ElementwiseOp.RELU: "tl.maximum({a}, 0.0)",
         ElementwiseOp.ADD: "{a} + {b}",
         ElementwiseOp.SUB: "{a} - {b}",

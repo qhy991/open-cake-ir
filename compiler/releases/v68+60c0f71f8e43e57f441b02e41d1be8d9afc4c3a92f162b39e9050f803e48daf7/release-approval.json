@@ -1,0 +1,14 @@
+{
+  "schema_version": 3,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "df9090989f84d4687e681d4886a0aa123f7630bd160a3b669957f22da1b9a28d"
+  },
+  "reviewer": {
+    "kind": "human",
+    "name": "qhy991"
+  },
+  "review_record": "owner authorization given in the Claude Code session that prepared this change; no separate reviewer record was produced",
+  "approval_basis": "Owner-authorized release admitting exp and tanh to the Metal elementwise emitter. This approval was written by the author session at the owner's explicit instruction; no independent reviewer session inspected the change, so it does not carry the independent-review basis of approvals made under ADR 0052 by a distinct session. What the author session did verify, with receipts retained in the session: the Corpus Gate was rebuilt from source and matched 123/123 cases over 170 bound sources for draft open-cake-ir-sm100a-v68-draft; all 122 pre-existing corpus expectations are unchanged and one new case was added (metal-softmax-odd-accepted); emitted source is byte-identical for every schedule that uses neither operation, which required reverting a header comment that would otherwise have altered all nine pinned Metal lowerings; and the new operations were exercised on an actual Apple M2 through a softmax Workload whose five required input cases all matched an independent shifted-fsum oracle with a worst absolute error of 7.0e-10 against a declared allowance of 2e-6. Both operations use the precise namespace for the same reason rsqrt does, since fast math stays disabled; Metal rounding remains Metal's and no PTX RN equivalence is implied. Measured on that device, the softmax baseline at 128x1024 moves 1 MiB in 94.4us, which is 11.1 GB/s on a machine that reaches roughly 96 GB/s for a memory-bound kernel: this kernel is bound by the transcendental, and no performance claim is approved here. This approves the Compiler successor only; it approves no Executor release, no framework acceptance and no scientific arm comparison."
+}
