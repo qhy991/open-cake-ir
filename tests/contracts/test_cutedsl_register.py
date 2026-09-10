@@ -231,7 +231,7 @@ class RegisterCuTeTests(unittest.TestCase):
             (lambda d: d["buffers"][1]["shape"].__setitem__(1, 7), "CUTE_REGISTER_SHAPE"),
             (lambda d: d["buffers"][4].__setitem__("stages", 2), "CUTE_REGISTER_BUFFER_OPTIONS"),
             (lambda d: d["buffers"][0].__setitem__("byte_offset", 2), "CUTE_REGISTER_BUFFER_OPTIONS"),
-            (lambda d: d["buffers"][2].__setitem__("mode", "state"), "CUTE_REGISTER_BUFFER"),
+            (lambda d: d["buffers"][2].__setitem__("mode", "state"), "CUTE_STATE_UNSUPPORTED"),
             (lambda d: d["roles"][0].__setitem__("warps", [0, 1]), "CUTE_REGISTER_ROLE"),
             (lambda d: d.__setitem__("residency", {"registers_per_thread": 128}), "CUTE_REGISTER_RESIDENCY"),
             (lambda d: d["access_maps"].pop(), "CUTE_REGISTER_ACCESS"),
