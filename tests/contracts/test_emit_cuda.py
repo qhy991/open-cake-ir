@@ -355,6 +355,21 @@ class NativeCudaContracts(unittest.TestCase):
         op['parameters']['reuse']='streamed'
         self.refuses_backend_only(d,'NATIVE_LOAD_REFINEMENT')
 
+    def test_direct_emission_preserves_canonical_verifier_and_entrypoint(self):
+        d=document();target=Target.load(ROOT/'compiler/targets/sm_100a.json')
+        s=Schedule.from_dict(d)
+        self.assertEqual(emit(s,target).source,
+                         emit(s,target,entry_point=s.lowering.entry_point).source)
+        for name in ('different_kernel','invalid\nsource'):
+            with self.subTest(entry_point=name),self.assertRaisesRegex(EmitError,'canonical route'):
+                emit(s,target,entry_point=name)
+        op=next(op for op in d['operations'] if op['id']=='read_acc')
+        op['parameters']['source_atom']['op']='not_a_tmem_load'
+        s=Schedule.from_dict(d)
+        self.assertIn('TMEM_LOAD_ATOM',[f.code for f in verify(s,target)])
+        self.refuses(d,'TMEM_LOAD_ATOM')
+        with self.assertRaisesRegex(EmitError,'TMEM_LOAD_ATOM'):emit(s,target)
+
     def test_missing_output_writer_fails_public_contract(self):
         d=document();d['operations'].pop();d['access_maps'].pop()
         self.refuses(d,'OUTPUT_UNWRITTEN')

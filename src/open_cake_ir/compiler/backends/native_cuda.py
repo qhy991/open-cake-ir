@@ -17,6 +17,7 @@ from ..ir import (
     OperationKind, Schedule, Swizzle,
 )
 from ..target import Target
+from ..verifier import verify
 
 SUPPORTED_DTYPES = frozenset({DType.BF16, DType.FP16, DType.FP32, DType.INT32})
 SUPPORTED_OPERATION_KINDS = frozenset({OperationKind.LOAD, OperationKind.MMA,
@@ -841,7 +842,10 @@ __device__ __forceinline__ void cake_commit(uint64_t* p) {
 
 
 def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) -> Emission:
-    failures = preflight(schedule, target)
+    failures = [finding for finding in (*verify(schedule,target),*preflight(schedule,target))
+                if finding.blocks_lowering or finding.blocks_acceptance]
     if failures:
         raise EmitError('; '.join(f'{f.code} at {f.path}: {f.message}' for f in failures))
-    return _Emitter(schedule,target,entry_point or schedule.lowering.entry_point).emit()
+    if entry_point is not None and entry_point != schedule.lowering.entry_point:
+        raise EmitError('Entry point differs from the canonical route.')
+    return _Emitter(schedule,target,schedule.lowering.entry_point).emit()
