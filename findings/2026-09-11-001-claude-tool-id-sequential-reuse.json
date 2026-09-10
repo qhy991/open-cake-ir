@@ -22,5 +22,5 @@
   "decision": "accepted",
   "implemented_in": "open-cake-ir-b200-v101+295b7e4580b3531055f2167e57303ce527deb7d281a6da1806eeac8847c9b059",
   "verification_plan": "Replay the retained layernorm stream through the corrected parser, exercise completed reuse and overlapping-reuse counterexamples in the contract suite, publish an Executor successor, then rerun layernorm in a fresh campaign workspace.",
-  "verified_by": null
+  "verified_by": "/Users/haiyan-mini/.local/share/open-cake-ir/runs/m4-kimi-k3-pilot5-layernorm-v74-v101/campaign-evidence/runs/open_cake-1"
 }

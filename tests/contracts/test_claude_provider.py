@@ -459,9 +459,33 @@ class ClaudeProviderContracts(unittest.TestCase):
         wrong = copy.deepcopy(events); wrong[-3]["message"]["content"][0]["input"]["turn"] = 9
         with self.assertRaisesRegex(ValueError, "schema terminal tool"): self.normalize(self.raw(wrong))
         wrong = copy.deepcopy(events); wrong[-2]["message"]["content"][0]["is_error"] = True
-        with self.assertRaisesRegex(ValueError, "tool completion"): self.normalize(self.raw(wrong))
+        with self.assertRaisesRegex(ValueError, "terminal tool did not recover"): self.normalize(self.raw(wrong))
         wrong = copy.deepcopy(events); wrong.pop(-2)
         with self.assertRaisesRegex(ValueError, "lifecycle"): self.normalize(self.raw(wrong))
+
+    def test_schema_rejected_terminal_tool_must_recover_with_an_exact_success(self):
+        events = self.events()
+        failed = {"type": "assistant", "session_id": SESSION, "message": {
+            "model": "exact-requested-model", "content": [{"type": "tool_use",
+                "id": "terminal-tool", "name": "StructuredOutput",
+                "input": {"arm": "open_cake", "turn": 1, "candidate_written": True}}]}}
+        failed_result = {"type": "user", "session_id": SESSION, "message": {"content": [{
+            "type": "tool_result", "tool_use_id": "terminal-tool", "is_error": True,
+            "content": "Output does not match required schema"}]}}
+        succeeded = copy.deepcopy(failed)
+        succeeded["message"]["content"][0]["input"] = json.loads(TERMINAL)
+        succeeded_result = copy.deepcopy(failed_result)
+        succeeded_result["message"]["content"][0].update(
+            is_error=False, content="Structured output provided successfully")
+        events[-1:-1] = [failed, failed_result, succeeded, succeeded_result]
+        parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        activity = [item for item in parsed.tool_activity if item.item_id == "terminal-tool"]
+        self.assertEqual([item.status for item in activity], ["error_recovered", "completed"])
+
+        unrecovered = copy.deepcopy(events)
+        del unrecovered[-3:-1]
+        with self.assertRaisesRegex(ValueError, "terminal tool did not recover"):
+            self.normalize(self.raw(unrecovered))
 
     def test_schema_is_bound_and_identical_on_initial_and_resume(self):
         builder = self.builder()

@@ -48,4 +48,5 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-10-010 — contraction regime shows material headroom over three campaigns; instability traced away from dispatch count to un-excluded external GPU activity (behavior, gemm)
 - F-2026-09-10-013 — Apple M4 has no exact family9 Compiler target or Executor admission path (capacity, closed in Compiler v74 and verified by an M4 campaign under Executor v100)
 - F-2026-09-10-014 — Claude same-model internal activity can make aggregate modelUsage exceed the main-turn counters (protocol, closed in Executor v100 and verified by live kimi-k3 qualification)
-- F-2026-09-11-001 — Claude gateway tool ids may be reused only after the prior invocation completes (protocol, active-lifecycle fix pending Executor release)
+- F-2026-09-11-001 — Claude gateway tool ids may be reused only after the prior invocation completes (protocol, closed in Executor v101 and verified by a fresh layernorm campaign)
+- F-2026-09-11-002 — a schema-rejected StructuredOutput call can recover through a later exact success (protocol, guarded recovery fix pending Executor release)

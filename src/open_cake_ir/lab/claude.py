@@ -268,6 +268,8 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
     writes: list[tuple[str, str]] = []
     models: list[str] = []
     activity: list[ProviderAuxiliaryActivity] = []
+    terminal_tool_failed = False
+    terminal_tool_completed = False
     # Where each invocation's auxiliary record sits, so a later errored result can restate
     # that one entry rather than adding a second record for the same item.
     errors: dict[str, int] = {}
@@ -305,9 +307,6 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                 active_tools[identity] = dict(block)
                 errors[identity] = len(activity)
                 activity.append(ProviderAuxiliaryActivity(identity, "tool_use", "completed", tool=name))
-                if name == CLAUDE_TERMINAL_TOOL:
-                    if not _terminal(arguments) or _canonical_json_bytes(arguments) != _canonical_json_bytes(expected):
-                        raise ValueError("Claude schema terminal tool differs")
                 if name in {"Write", "Edit"}:
                     path = arguments.get("file_path")
                     if not isinstance(path, str) or not path:
@@ -335,11 +334,17 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                 # a turn that did not recover cannot pass. Refusing here instead spent two
                 # campaigns and roughly 7M provider tokens on probes the author survived.
                 if (not isinstance(identity, str) or identity not in active_tools
-                        or not isinstance(errored, bool)
-                        # The terminal tool is not an authoring probe: it is how the Turn
-                        # declares its own completion, so an error there stays fatal.
-                        or errored and active_tools[identity].get("name") == CLAUDE_TERMINAL_TOOL):
+                        or not isinstance(errored, bool)):
                     raise ValueError("Claude tool completion differs")
+                invocation = active_tools[identity]
+                if invocation.get("name") == CLAUDE_TERMINAL_TOOL:
+                    if errored:
+                        terminal_tool_failed = True
+                    elif (not _terminal(invocation.get("input"))
+                            or _canonical_json_bytes(invocation["input"]) != _canonical_json_bytes(expected)):
+                        raise ValueError("Claude schema terminal tool differs")
+                    else:
+                        terminal_tool_completed = True
                 del active_tools[identity]
                 if errored:
                     activity[errors[identity]] = replace(
@@ -361,6 +366,8 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                 raise ValueError("Claude content is outside the declared event contract")
     if active_tools or not writes or len({path for path, _ in writes}) != 1:
         raise ValueError("Claude candidate write lifecycle is incomplete")
+    if terminal_tool_failed and not terminal_tool_completed:
+        raise ValueError("Claude schema terminal tool did not recover")
     if len(models) != 1 or models[0] != initial.get("model"):
         raise ValueError("Claude main conversation model identity differs")
     tokens, model_activity = claude_model_usage(terminal, models[0])
