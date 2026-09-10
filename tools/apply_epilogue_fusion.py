@@ -31,10 +31,11 @@ def main() -> int:
         private_intermediate=args.private_intermediate, schedule_id=args.schedule_id, entry_point=args.entry_point)
     output.mkdir(parents=True)
     report = {'applied':result.applied, 'reason':result.reason, 'message':result.message,
-              'compiler_revision_id':compiler.revision_id,
+              'compiler_revision_path':str(ROOT/'compiler/revision.lock.json'),
               'producer':str(args.producer.resolve()),'epilogue':str(args.epilogue.resolve()),
               'scope':'explicit_private_composition; static_only; no_GPU_or_performance_qualification'}
     if result.applied:
+        report['compiler_revision_id'] = result.assessment.compiler_revision_id
         lowered = compiler.lower(result.assessment)
         (output/'schedule.json').write_text(json.dumps(result.schedule,indent=2)+'\n')
         (output/'lowered.py').write_text(lowered.source)
