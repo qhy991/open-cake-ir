@@ -46,3 +46,5 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-10-012 — checkout-local Executor ordinals silently mint duplicate ids (bug, observed; plus the single current pointer)
 - F-2026-09-10-011 — saved forward outputs declared with impossible signs (bug, 3 tasks; found by the first B300 sweep, closed in Executor v91)
 - F-2026-09-10-010 — contraction regime shows material headroom over three campaigns; instability traced away from dispatch count to un-excluded external GPU activity (behavior, gemm)
+- F-2026-09-10-013 — auto-compact window clamped to the CLI's assumed model context for unrecognized models; the bare status compaction notices reached the contract unnamed (protocol, gemm + pairwise_sqdist; closed in Executor v99)
+- F-2026-09-10-014 — launcher's elementwise shape defaults overrode the contraction contract's extents, so every contraction task's baseline was refused on Metal (bug, 4 tasks; closed in Executor v99)
