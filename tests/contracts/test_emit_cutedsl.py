@@ -268,11 +268,11 @@ class BackendCoverageTest(unittest.TestCase):
                     )
 
     def test_the_declared_coverage_is_the_dispatch(self) -> None:
-        from open_cake_ir.compiler.backends import cutedsl, cutedsl_register, triton
+        from open_cake_ir.compiler.backends import cutedsl, cutedsl_register, cutedsl_simt, triton
 
         self.assertEqual(
             cutedsl.SUPPORTED_OPERATION_KINDS,
-            frozenset(cutedsl.BODY_EMITTERS) | cutedsl_register.SUPPORTED_OPERATION_KINDS,
+            frozenset(cutedsl.BODY_EMITTERS) | cutedsl_register.SUPPORTED_OPERATION_KINDS | cutedsl_simt.SUPPORTED_OPERATION_KINDS,
         )
         self.assertEqual(
             triton.SUPPORTED_OPERATION_KINDS,

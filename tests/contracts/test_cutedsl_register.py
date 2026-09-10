@@ -9,7 +9,7 @@ from pathlib import Path
 import unittest
 
 from open_cake_ir.compiler import Compiler, EmitError
-from open_cake_ir.compiler.backends import cutedsl, cutedsl_register
+from open_cake_ir.compiler.backends import cutedsl, cutedsl_register, cutedsl_simt
 from open_cake_ir.compiler.ir import OperationKind, Schedule
 from open_cake_ir.compiler.target import Target
 
@@ -303,7 +303,7 @@ class RegisterCuTeTests(unittest.TestCase):
         document["target"] = "sm_103a"
         self.refuses(document, "CUTE_TARGET_UNSUPPORTED", "target")
         self.assertEqual(cutedsl.SUPPORTED_OPERATION_KINDS,
-                         frozenset(cutedsl.BODY_EMITTERS) | cutedsl_register.SUPPORTED_OPERATION_KINDS)
+                         frozenset(cutedsl.BODY_EMITTERS) | cutedsl_register.SUPPORTED_OPERATION_KINDS | cutedsl_simt.SUPPORTED_OPERATION_KINDS)
         self.assertIn(OperationKind.ELEMENTWISE, cutedsl.SUPPORTED_OPERATION_KINDS)
 
 

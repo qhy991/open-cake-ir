@@ -61,3 +61,26 @@ receipt、anchor、运行配置和已封存基线作为外部执行绑定交给
 指针，没有隐藏参数。原始提交、源码、诊断与产物进入现有追加式 archive。
 GPU 上继续使用统一 oracle、冷 L2 的配对 CUPTI 计时和单独 profiler。
 源码测试通过或 CPU 编译成功都不等于 GPU 正确、性能合格或 IR 更优。
+
+
+## 通用 FP32 SIMT lowering
+
+无 MMA 的 Schedule 现在可选择 `cutlass_cute_dsl`，由操作结构进入单 warp
+SIMT 路线。支持 FP32 load/store、add/sub/mul/div、square/relu/rsqrt/exp/exp2/
+reciprocal/tanh、显式广播和单 tile sum/max reduction。目标必须精确匹配
+`sm_100a` 或 `sm_103a`。这条路线可表达多输入和多输出；已有 BF16 register-MMA
+GEMM+bias 的研究合同仍由上文的 Workload 和 Study 管理。
+
+Schedule 使用一个 `warps=[0]` role、tile=1 的非 persistent ProgramMap、global
+输入/输出和 register 中间值，以及 PROGRAM/DIMENSION AccessMap。元素 i 放在
+lane i%32、slot i//32。归约先合并本 lane 的值再执行全 warp collective；跨 lane
+广播对所有 source slots 一致地 shuffle，尾部 lane 仍参与 collective。全局拷贝为
+标量，store 声明 `coalesced=false`。不支持的 cache/reuse、residency、pipeline、
+barrier、循环及存储声明会被拒绝。逻辑 live slots 上限是实现边界，不是物理寄存器
+或 spill 的预测。
+
+编译接口接受完整、有序的 FP32 pointer signature，并核对每个 PTX/CUBIN 参数的
+数量、偏移、类型对齐、地址空间及精确目标。源码准入仍限制为固定 imports 和单个
+kernel。CPU source-model 测试检查广播、各轴归约、跨 lane slot 和输出写入；它不
+模拟 CuTe 编译器、GPU 数学近似或物理资源分配。此能力的实际 SDK 编译、GPU
+correctness、timing 和 profiler 验收仍需各自的证据，不能由静态/CPU 测试代替。

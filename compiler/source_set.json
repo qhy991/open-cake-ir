@@ -199,6 +199,8 @@
     "examples/schedules/native/kmeans.json",
     "examples/schedules/native/two-mma.json",
     "examples/schedules/triton/kmeans-partials.json",
-    "src/open_cake_ir/compiler/backends/native_cuda.py"
+    "src/open_cake_ir/compiler/backends/native_cuda.py",
+    "src/open_cake_ir/compiler/backends/cutedsl_simt.py",
+    "src/open_cake_ir/compiler/backends/simt.py"
   ]
 }
