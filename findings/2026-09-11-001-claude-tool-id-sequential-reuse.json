@@ -20,7 +20,7 @@
   "observation": "The parser kept every tool id in a turn-global dictionary after completion and therefore treated a later, non-overlapping reuse as a duplicate invocation. The gateway's ids are request-local. Stream order provides an unambiguous lifecycle when a tool result closes the current invocation before the same id appears again. An overlapping reuse or a result with no active invocation remains ambiguous and must still be refused.",
   "proposed_change": "Track only active tool invocations. Admit reuse after the prior result removes that id from the active set, retain one activity row per invocation in stream order, and preserve zero tolerance for overlapping reuse, missing results, repeated results, foreign ids and malformed error flags. Do not rewrite native ids or pair a result across an active collision.",
   "decision": "accepted",
-  "implemented_in": null,
+  "implemented_in": "open-cake-ir-b200-v101+295b7e4580b3531055f2167e57303ce527deb7d281a6da1806eeac8847c9b059",
   "verification_plan": "Replay the retained layernorm stream through the corrected parser, exercise completed reuse and overlapping-reuse counterexamples in the contract suite, publish an Executor successor, then rerun layernorm in a fresh campaign workspace.",
   "verified_by": null
 }
