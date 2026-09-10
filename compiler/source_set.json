@@ -174,6 +174,8 @@
     "examples/python/mixed_dtype.py",
     "src/open_cake_ir/compiler/passes.py",
     "examples/python/epilogue_producer.py",
-    "examples/python/epilogue_consumer.py"
+    "examples/python/epilogue_consumer.py",
+    "src/open_cake_ir/compiler/backends/cutedsl_simt.py",
+    "src/open_cake_ir/compiler/backends/simt.py"
   ]
 }

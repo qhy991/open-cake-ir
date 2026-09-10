@@ -1,4 +1,4 @@
-"""Explicit-target CuTe compilation for the four-pointer register-kernel interface.
+"""Explicit-target CuTe compilation for ordered register-MMA and FP32 SIMT interfaces.
 
 Importing this module needs no SDK. Native source admission is not a sandbox;
 the Lab invokes compilation only inside its filesystem-isolated CPU worker.
@@ -38,6 +38,8 @@ _CUTE_CALLS = frozenset({
     "make_layout", "make_tensor", "local_tile", "make_identity_tensor", "make_tiled_mma",
     "make_rmem_tensor", "make_copy_atom", "copy", "gemm", "size", "rank", "cosize",
     "arch.thread_idx", "arch.block_idx", "nvgpu.CopyG2ROp", "nvgpu.CopyR2GOp",
+    "arch.shuffle_sync", "arch.warp_reduction_sum", "arch.warp_reduction_max", "arch.fmax",
+    "math.exp", "math.exp2", "math.rsqrt", "math.tanh",
 })
 _CUTE_VALUES = frozenset({
     "Pointer", "nvgpu.LoadCacheMode.ALWAYS", "nvgpu.LoadCacheMode.GLOBAL",
@@ -67,15 +69,15 @@ def validate_cute_requirements(requirements: Mapping[str, object]) -> None:
     if not isinstance(requirements, Mapping) or set(requirements) != fields:
         raise ValueError("CuTe compile requirement fields differ")
     if (requirements["compiler"] != "cutlass_cute_dsl"
-        or requirements["source_language"] != "python" or requirements["target"] != "sm_103a"):
-        raise ValueError("CuTe compilation requires the exact sm_103a target and backend")
+        or requirements["source_language"] != "python" or requirements["target"] not in {"sm_100a", "sm_103a"}):
+        raise ValueError("CuTe compilation requires an exact supported CUDA target and backend")
     name = requirements["kernel_entry_point"]
     if (not isinstance(name, str) or not name.isidentifier() or "__" in name
         or name in _RESERVED or name == "open_cake_cute_launch"):
         raise ValueError("CuTe kernel entry point differs")
     signature = requirements["signature"]
-    if not isinstance(signature, list) or len(signature) != 4:
-        raise ValueError("CuTe requires an ordered four-pointer signature")
+    if not isinstance(signature, list) or not signature:
+        raise ValueError("CuTe requires a nonempty ordered pointer signature")
     names = []
     for row in signature:
         if (not isinstance(row, Mapping) or set(row) != {"name", "dtype"}
@@ -85,8 +87,11 @@ def validate_cute_requirements(requirements: Mapping[str, object]) -> None:
             or row["dtype"] not in {"bf16", "fp32"}):
             raise ValueError("CuTe pointer signature row differs")
         names.append(row["name"])
-    if (len(set(names)) != 4 or sorted(row["dtype"] for row in signature[:3]) != ["bf16", "bf16", "fp32"]
-        or signature[-1]["dtype"] != "fp32"):
+    simt = all(row["dtype"] == "fp32" for row in signature)
+    register = (requirements["target"] == "sm_103a" and len(signature) == 4
+                and sorted(row["dtype"] for row in signature[:3]) == ["bf16", "bf16", "fp32"]
+                and signature[-1]["dtype"] == "fp32")
+    if len(set(names)) != len(names) or not (simt or register):
         raise ValueError("CuTe pointer signature order or types differ")
     grid = requirements["grid"]
     if (not isinstance(grid, list) or len(grid) != 3
@@ -124,6 +129,9 @@ def validate_cute_kernel(source: bytes, requirements: Mapping[str, object]) -> N
                  ast.Lambda, ast.Global, ast.Nonlocal, ast.With, ast.AsyncWith, ast.Try, ast.Raise,
                  ast.Delete, ast.Await, ast.Yield, ast.YieldFrom, ast.ListComp, ast.SetComp,
                  ast.DictComp, ast.GeneratorExp, ast.NamedExpr, ast.While)
+    float_shadowed = (kernel.name == 'float' or any(arg.arg == 'float' for arg in args.args)
+                      or any(isinstance(node, ast.Name) and node.id == 'float'
+                             and isinstance(node.ctx, ast.Store) for node in ast.walk(kernel)))
     for statement in kernel.body:
         for node in ast.walk(statement):
             if isinstance(node, forbidden):
@@ -155,6 +163,10 @@ def validate_cute_kernel(source: bytes, requirements: Mapping[str, object]) -> N
                 allowed = (path in {f"cute.{v}" for v in _CUTE_CALLS}
                            or path in {f"cutlass.{v}" for v in _CUTLASS_CALLS}
                            or path == "warp.MmaF16BF16Op"
+                           or (isinstance(node.func, ast.Name) and node.func.id == "float"
+                               and not float_shadowed
+                               and len(node.args) == 1 and not node.keywords
+                               and isinstance(node.args[0], ast.Constant) and node.args[0].value in {"-inf", "inf"})
                            or isinstance(node.func, ast.Attribute) and node.func.attr in _METHODS
                            and not (path and path.split('.')[0] in _RESERVED))
                 if not allowed or any(kw.arg is None for kw in node.keywords):
@@ -217,8 +229,8 @@ def _ptx_entry(ptx: bytes, requirements: Mapping[str, object]) -> str:
     rows = [row.strip() for row in parameters.split(',') if row.strip()]
     patterns = [rf"\.param\s+\.u64\s+\.ptr\s+\.global\s+\.align\s+{2 if row['dtype'] == 'bf16' else 4}\s+\w+"
                 for row in requirements["signature"]]
-    if len(rows) != 4 or any(re.fullmatch(pattern, row) is None for pattern, row in zip(patterns, rows)):
-        raise ValueError("CuTe PTX must contain exactly four raw 64-bit pointer parameters")
+    if len(rows) != len(patterns) or any(re.fullmatch(pattern, row) is None for pattern, row in zip(patterns, rows)):
+        raise ValueError("CuTe PTX raw 64-bit pointer parameters must match the complete ordered signature")
     pointer_types = {"bf16": "ptrbf16gmem", "fp32": "ptrf32gmem"}
     expected = "kernel_cutlass_" + requirements["kernel_entry_point"] + "_" + "_".join(
         pointer_types[row["dtype"]] for row in requirements["signature"]) + "_0"
@@ -229,9 +241,9 @@ def _ptx_entry(ptx: bytes, requirements: Mapping[str, object]) -> str:
     return name
 
 
-def _cubin_parameters(report: str, entry_point: str, signature: list[Mapping[str, str]]) -> list[dict[str, int]]:
+def _cubin_parameters(report: str, entry_point: str, signature: list[Mapping[str, str]], *, target: str = "sm_103a") -> list[dict[str, int]]:
     """Read the actual device ABI from cuobjdump's primary .nv.info section."""
-    if re.findall(r"(?m)^64-bit ELF:.*?\bsm=([^,\s]+)", report) != ["103a"]:
+    if re.findall(r"(?m)^64-bit ELF:.*?\bsm=([^,\s]+)", report) != [target.removeprefix("sm_")]:
         raise ValueError("CuTe CUBIN target differs")
     sections = re.findall(r"(?m)^\.nv\.info\.(\w+)\s*$\n(.*?)(?=^\S|\Z)", report, re.DOTALL)
     if len(sections) != 1 or sections[0][0] != entry_point:
@@ -247,9 +259,9 @@ def _cubin_parameters(report: str, entry_point: str, signature: list[Mapping[str
     expected = [dict(index=0, ordinal=index, offset=8 * index, size=8,
                      log_alignment=1 if row["dtype"] == "bf16" else 2, space=4)
                 for index, row in enumerate(signature)]
-    if rows != expected or body.count("EIATTR_KPARAM_INFO") != 4:
+    if rows != expected or body.count("EIATTR_KPARAM_INFO") != len(signature):
         raise ValueError("CuTe CUBIN parameter offsets, sizes or pointer spaces differ")
-    if re.findall(r"Attribute:\s*EIATTR_CBANK_PARAM_SIZE\s+Format:\s*EIFMT_HVAL\s+Value:\s*(0x[0-9a-f]+)", body) != ["0x20"]:
+    if re.findall(r"Attribute:\s*EIATTR_CBANK_PARAM_SIZE\s+Format:\s*EIFMT_HVAL\s+Value:\s*(0x[0-9a-f]+)", body) != [hex(8 * len(signature))]:
         raise ValueError("CuTe CUBIN parameter bank size differs")
     if re.findall(r"Attribute:\s*EIATTR_REQNTID\s+Format:\s*EIFMT_SVAL\s+Value:\s*(0x[0-9a-f]+)\s+(0x[0-9a-f]+)\s+(0x[0-9a-f]+)", body) != [("0x20", "0x1", "0x1")]:
         raise ValueError("CuTe CUBIN launch dimensions differ")
@@ -282,7 +294,7 @@ def validate_cute_compilation(compilation: CuTeCompilation, source: bytes,
         or any(call != "cuda.bindings.driver.cuInit" for call in report["denied_cuda_calls"])
         or report["jit_engine_created"] is not False
         or not isinstance(report["resource_report"], str) or not isinstance(report["elf_report"], str)
-        or report["device_parameters"] != _cubin_parameters(report["elf_report"], name, requirements["signature"])
+        or report["device_parameters"] != _cubin_parameters(report["elf_report"], name, requirements["signature"], target=requirements["target"])
         or report["resources"] != _parse_cuobjdump_resources(report["resource_report"], name)
         or re.findall(r"(?m)^\s*Function\s+([^\s:]+)\s*:", report["resource_report"]) != [name]):
         raise ValueError("CuTe resource or CPU-only compilation evidence differs")
@@ -316,7 +328,7 @@ def compile_cute(source: bytes, requirements: Mapping[str, object], *,
                      assumed_align=2 if row["dtype"] == "bf16" else 4)
                     for row in requirements["signature"]]
         compiled = cute.compile(module.open_cake_cute_launch, *pointers, no_jit_engine=True,
-            options=f"--gpu-arch sm_103a --keep-ptx --keep-cubin --dump-dir {output_directory}")
+            options=f"--gpu-arch {requirements['target']} --keep-ptx --keep-cubin --dump-dir {output_directory}")
         if compiled.engine is not None:
             raise RuntimeError("CuTe CPU compilation unexpectedly created a JIT engine")
         ptx, cubin = compiled.__ptx__, compiled.__cubin__
@@ -336,12 +348,12 @@ def compile_cute(source: bytes, requirements: Mapping[str, object], *,
     if re.findall(r"(?m)^\s*Function\s+([^\s:]+)\s*:", resource_text) != [name]:
         raise ValueError("CuTe CUBIN must contain exactly one kernel")
     elf_text = subprocess.check_output([cuobjdump, "--dump-elf", str(cubin_path)], text=True, timeout=30)
-    parameters = _cubin_parameters(elf_text, name, requirements["signature"])
+    parameters = _cubin_parameters(elf_text, name, requirements["signature"], target=requirements["target"])
     report = json.dumps({"compiler_version": version, "target": requirements["target"],
         "entry_point": name, "resources": resources, "resource_report": resource_text,
         "denied_cuda_calls": denied, "jit_engine_created": False,
         "device_parameters": parameters, "elf_report": elf_text}, sort_keys=True).encode()
-    result = CuTeCompilation(source, "sm_103a", name, MappingProxyType({
+    result = CuTeCompilation(source, requirements["target"], name, MappingProxyType({
         "source": expanded, "ptx": ptx, "cubin": cubin, "toolchain_resource_report": report,
     }), 32, 0, version)
     validate_cute_compilation(result, source, requirements)

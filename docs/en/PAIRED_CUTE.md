@@ -89,3 +89,28 @@ Common Evaluation performs oracle correctness, paired cold-L2 CUPTI timing and s
 profiler attribution. Source tests and successful CPU compilation do not establish GPU
 correctness, performance, or an IR advantage. Those claims require their own retained
 common Evaluation evidence and independent release gates.
+
+
+## General FP32 SIMT lowering
+
+Schedules without MMA may select `cutlass_cute_dsl` and enter a structural single-warp
+SIMT route. It supports FP32 loads/stores, add/sub/mul/div, square/relu/rsqrt/exp/exp2/
+reciprocal/tanh, explicit broadcasts and single-tile sum/max reductions, with multiple
+inputs and outputs on exact `sm_100a` or `sm_103a`. The BF16 register-MMA study above
+continues to use its own Workload and Study contracts.
+
+Declare one role with `warps=[0]`, nonpersistent scalar (tile=1) ProgramMap axes, global
+inputs/outputs, register intermediates and PROGRAM/DIMENSION AccessMaps. Element i is
+owned by lane i%32, slot i//32. Reduction folds local values then a full-warp collective;
+broadcast shuffles source slots uniformly. Padded lanes still participate. Global
+copies are scalar, with `coalesced=false` stores. Unsupported cache/reuse, residency,
+pipeline, barrier, loop and storage declarations are refused. The logical live-slot
+limit is an implementation bound, not physical register allocation or a spill estimate.
+
+Compilation accepts the complete ordered FP32 pointer signature. PTX and CUBIN checks
+bind parameter count, offsets, pointee alignment, address space and exact target.
+Source admission remains one kernel and fixed imports. CPU execution of generated source
+checks broadcasts, reduction axes, lane slots and output writes. It does not simulate
+CuTe compilation, GPU math approximations or physical allocation. Actual SDK compilation,
+GPU correctness, timing and profiling require separate evidence and remain unqualified
+by these source/CPU checks.
