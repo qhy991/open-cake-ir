@@ -317,6 +317,9 @@ class NativeCudaContracts(unittest.TestCase):
 
     def test_replicated_vector_store_has_no_unique_thread_owner(self):
         d=one_tile_document()
+        for b in d['buffers']:
+            if b['name']=='a':b['shape'][0]=128
+            if b['name']=='b':b['shape'][0]=64
         d['buffers'].append(dict(name='bias_copy',space='global',dtype='fp32',shape=[64],mode='output'))
         d['outputs'].append('bias_copy')
         d['operations'].append(dict(id='store_bias',kind='store',role='epilogue',reads=['bias_tile'],
