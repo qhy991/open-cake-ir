@@ -77,7 +77,16 @@ def _slots(buffer, lanes: int = SIMD_WIDTH):
 
 
 def _share_slots(schedule: Schedule, lanes: int) -> int:
-    """Threadgroup floats needed to combine SIMD groups and publish scalars."""
+    """Threadgroup floats needed to combine SIMD groups and publish scalars.
+
+    Two emitted constructs read `share`: a reduction folding one SIMD group's result into
+    the others, and a scalar published from lane zero because no SIMD group can broadcast
+    across the threadgroup. A Schedule with neither never touches it, so declaring it
+    anyway is a false declaration -- the Metal compiler eliminates the unused allocation,
+    the pipeline observes zero bytes, and the truthful declared-equals-observed check in
+    the Lab then faults a candidate that was correct all along (F-2026-09-10-001). The
+    declaration became truthful here rather than the check becoming looser.
+    """
     if lanes == SIMD_WIDTH:
         return 0
     scalars = max((sum(1 for read in operation.reads
@@ -85,6 +94,9 @@ def _share_slots(schedule: Schedule, lanes: int) -> int:
                        and next(b for b in schedule.buffers if b.name == read).is_scalar
                        and not next(b for b in schedule.buffers if b.name == operation.writes[0]).is_scalar)
                    for operation in schedule.operations), default=0)
+    combined = any(operation.kind is OperationKind.REDUCE for operation in schedule.operations)
+    if not combined and not scalars:
+        return 0
     return max(lanes // SIMD_WIDTH, scalars, 1)
 
 
@@ -362,8 +374,9 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
         lines += ["    uint3 thread_position [[thread_position_in_threadgroup]],",
                   "    uint simd_lane [[thread_index_in_simdgroup]],",
                   "    uint simd_group [[simdgroup_index_in_threadgroup]]) {",
-                  "    uint lane = thread_position.x;",
-                  f"    threadgroup float share[{share_slots}];"]
+                  "    uint lane = thread_position.x;"]
+        if share_slots:
+            lines.append(f"    threadgroup float share[{share_slots}];")
     else:
         lines.append("    uint lane [[thread_index_in_simdgroup]]) {")
     for buffer in schedule.buffers:

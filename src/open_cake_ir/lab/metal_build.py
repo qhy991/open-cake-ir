@@ -198,7 +198,11 @@ class MetalToolchainBuilder:
                 or any(requirements.get(key) != value for key, value in expected.items())
                 or type(requirements.get("fast_math_enabled")) is not bool
                 or type(shared) is not int or not 0 <= shared <= self.target.resource_limits.maximum_shared_memory_bytes
-                or (threads == 32) != (shared == 0)
+                # One SIMD group can never need threadgroup storage. More than one may or
+                # may not: a purely elementwise kernel crosses no group boundary and
+                # truthfully declares none (F-2026-09-10-001), so this is an implication
+                # rather than the XOR it used to be.
+                or (threads == 32 and shared != 0)
                 or threads % 32 or not 32 <= threads <= self.target.resource_limits.maximum_threads_per_cta
                 or request.target != self.workload.target or request.source_role != "lowered_source"):
             raise ValueError("Metal builder requires the exact admitted Compiler lowering and Workload ABI")
