@@ -8,7 +8,9 @@
   "target": "apple_gpu_family7",
   "executor_revision": "open-cake-ir-b200-v86+bf657e12e5886707b8be24fb35deb330fda22f34712092157cd9bb3abf4b62da",
   "compiler_revision_id": "open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578",
-  "tasks": ["momentum_sgd"],
+  "tasks": [
+    "momentum_sgd"
+  ],
   "evidence": [
     {
       "workspace": "/Users/haiyan/Documents/lab-workspaces/momentum_sgd-glm53-high-20260910b",
@@ -27,8 +29,8 @@
   ],
   "observation": "lab/claude.py's _metadata admits exactly four metadata shapes (thinking_tokens, api_retry, post_turn_summary, rate_limit_event); system/compact_boundary and system/status are unclassified, so a turn the CLI auto-compacted is refused post hoc. Unlike F-2026-09-10-003 the refused event is scientifically meaningful: compaction dropped 158,628 provider-context tokens mid-run, which changes what the author saw and bears on replication and arm comparability. The gap is policy, not strictness - the lab neither records compaction as first-class evidence with a comparability caveat nor forbids it, so a long-context task dies deterministically once its turn context crosses the CLI's auto-compact threshold.",
   "proposed_change": "Two decisions, taken together: (a) admit compact_boundary and compacting status events with strict field checks and record them as ProviderAuxiliaryActivity so compacted runs stay auditable; (b) fix the comparability rule explicitly - either flag compacted turns in the Study accounting as a context-truncated treatment, or disable CLI auto-compact at launch so oversize contexts fail fast instead of silently mutating the author's view. Do not silently swallow the events.",
-  "decision": "proposed",
-  "implemented_in": null,
-  "verified_by": null,
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v90+2ba910899f302502eb1cf486a49868f6353edab3edde386f9a04a4c40be14172",
+  "verified_by": "Replay: tests/contracts/test_claude_provider.py asserts the launch argv declares --autocompact 1M and that a compact_boundary or compacting event is refused by name. The 1M value was checked against the installed CLI, which accepts it and rejects 'off', '0', 'disable' and 'none' -- this CLI has no switch that turns compaction off, so the boundary is pushed to its maximum rather than removed. No compacted campaign was replayed, because none has been produced since the change. Landed in commit d16b1975 on main.",
   "verification_plan": "Protocol tick, replay-verified: replay the captured momentum_sgd-20260910b turn-4 stream through the successor claude.py parser; it must validate with the compaction recorded as auxiliary activity (or be refused by an explicit no-compact launch policy), never by the generic out-of-contract refusal."
 }

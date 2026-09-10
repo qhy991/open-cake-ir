@@ -34,13 +34,13 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-10-001 — multi-SIMD share DCE (bug, silu + swiglu recurrence)
-- F-2026-09-10-002 — observer cohort snapshot bound (capacity, adamw + momentum_sgd corroboration)
-- F-2026-09-10-003 — claude is_error zero-tolerance (protocol, softmax + swiglu)
+- F-2026-09-10-001 — multi-SIMD share DCE (bug, silu + swiglu recurrence; fix prepared on branch findings-batch-20260910-compiler, awaiting Compiler v73 approval)
+- F-2026-09-10-002 — observer cohort snapshot bound (capacity, adamw + momentum_sgd corroboration; launcher check in Executor v90, observer charging still open)
+- F-2026-09-10-003 — claude is_error zero-tolerance (protocol, softmax + swiglu; closed in Executor v90)
 - F-2026-09-10-004 — baseline near vocabulary ceiling (behavior, 10 tasks)
 - F-2026-09-10-005 — GEMM SiLU oracle overflow (bug, CPU oracle replay; fixed in Executor v88)
 - F-2026-09-10-006 — explicit private epilogue fusion (capacity, implemented in Compiler v72; campaign verification pending)
-- F-2026-09-10-007 — relative-path Write outside envelope (protocol, momentum_sgd)
-- F-2026-09-10-008 — CLI auto-compact outside event contract (protocol, momentum_sgd)
+- F-2026-09-10-007 — relative-path Write outside envelope (protocol, momentum_sgd; closed in Executor v90)
+- F-2026-09-10-008 — CLI auto-compact outside event contract (protocol, momentum_sgd; closed in Executor v90)
 - F-2026-09-10-009 — Claude quota-warning contract drift (protocol, closed in Executor v89)
 - F-2026-09-10-010 — contraction regime shows material headroom, measurement not yet stable (behavior, gemm)

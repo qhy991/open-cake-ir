@@ -8,7 +8,10 @@
   "target": "apple_gpu_family7",
   "executor_revision": "open-cake-ir-b200-v86+bf657e12e5886707b8be24fb35deb330fda22f34712092157cd9bb3abf4b62da",
   "compiler_revision_id": "open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578",
-  "tasks": ["softmax", "swiglu"],
+  "tasks": [
+    "softmax",
+    "swiglu"
+  ],
   "evidence": [
     {
       "workspace": "/Users/haiyan/Documents/lab-workspaces/softmax-glm53-high-20260909b",
@@ -39,8 +42,8 @@
   ],
   "observation": "lab/claude.py:275-279 rejects any tool_result whose is_error is truthy, whose id was never registered, or that repeats a completion - and the check replays the whole captured stream after the CLI exits. Both softmax failures were authoring probes (nonexistent path; binary artifact) that the provider visibly recovered from within the same turn, yet each killed the campaign post hoc. Two campaigns and ~7M provider tokens were spent before a clean third attempt. The swiglu-20260910b recurrence generalizes the trigger beyond Read to any tool: a malformed Grep pattern rejected by ripgrep kills the run the same way.",
   "proposed_change": "Route a self-recovered is_error completion to turn-local feedback instead of a campaign-fatal fault: either count it against the turn's protocol adherence report without terminating, or reject only completions that break pairing (unregistered id, duplicate completion) while letting recovered is_error results pass with the fact recorded in ProviderAuxiliaryActivity. This keeps zero tolerance for structural mismatches and stops spending campaigns on probes the provider already survived.",
-  "decision": "proposed",
-  "implemented_in": null,
-  "verified_by": null,
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v90+2ba910899f302502eb1cf486a49868f6353edab3edde386f9a04a4c40be14172",
+  "verified_by": "Replay: tests/contracts/test_claude_provider.py asserts a turn whose tool completion carries is_error now parses, records the fact as error_recovered exactly once for that invocation, and still normalizes end to end; and that an unregistered id, a repeated completion, a non-boolean flag and an error on the StructuredOutput terminal tool each still raise. The cited campaign streams are not re-processed here, so this verifies the contract, not those two workspaces. Landed in commit d16b1975 on main.",
   "verification_plan": "Protocol tick, replay-verified: replay the captured stdout streams from the softmax-20260909b and -c evidence objects through the successor claude.py parser; both must parse to an adhered turn with the probe recorded as auxiliary activity."
 }

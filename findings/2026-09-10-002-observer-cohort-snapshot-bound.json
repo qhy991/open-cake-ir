@@ -8,7 +8,10 @@
   "target": "apple_gpu_family7",
   "executor_revision": "open-cake-ir-b200-v86+bf657e12e5886707b8be24fb35deb330fda22f34712092157cd9bb3abf4b62da",
   "compiler_revision_id": "open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578",
-  "tasks": ["adamw", "momentum_sgd"],
+  "tasks": [
+    "adamw",
+    "momentum_sgd"
+  ],
   "evidence": [
     {
       "workspace": "/Users/haiyan/Documents/lab-workspaces/adamw-glm53-high-20260909c",
@@ -30,9 +33,9 @@
     }
   ],
   "observation": "evaluation/metal/observer.swift:70-72 charges the full tensor ABI of the participant for every launch in a contiguous cohort, and tasks/normalization/study.py:40 schedules 28 route calls per cohort under fixed_baseline_paired_metal_v2. adamw's 7-tensor ABI at 128x1024 fp32 is 3.5 MiB per launch, so a cohort accumulates ~98 MiB against the observer's hard 64 MiB admission bound and is refused before any dispatch. Any multi-buffer optimizer task at default shape fails deterministically at first evaluation. Safe bound at v2 defaults: rows*columns <= 85,600 per 7-tensor ABI (columns=512 gives 49 MiB).",
-  "proposed_change": "Charge cohort snapshots for what correctness actually needs (outputs plus input integrity), or dedupe repeated identical input payloads within a cohort, so the bound scales with what is verified rather than with launches times ABI. Until then, register per-task shape limits in the workload notes so launcher defaults stay inside the bound.",
-  "decision": "proposed",
-  "implemented_in": null,
-  "verified_by": null,
+  "proposed_change": "Charge cohort snapshots for what correctness actually needs (outputs plus input integrity), or dedupe repeated identical input payloads within a cohort, so the bound scales with what is verified rather than with launches times ABI. Until then, register per-task shape limits in the workload notes so launcher defaults stay inside the bound. Interim only. The finding's primary proposal -- charge a cohort for what correctness needs, or dedupe identical input payloads -- lives in evaluation/metal/observer.swift, whose bytes the Executor host environment pins by digest, so changing it rebuilds a native artifact and invalidates the host baseline every existing piece of evidence was collected against. This takes the finding's own stated interim path and leaves that work open.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v90+2ba910899f302502eb1cf486a49868f6353edab3edde386f9a04a4c40be14172",
+  "verified_by": "Replay: tests/contracts/test_reduction_and_optimizer_tasks.py reproduces the recorded arithmetic exactly -- adamw at the launcher default 128x1024 is refused naming 98.0 MiB against the 64 MiB bound, and the columns=512 this finding identified as safe is admitted -- and asserts every optimizer task at that shape stays inside the bound. The launcher runs the same check before a campaign starts. The observer's bound itself is unchanged and untested here because it was not touched. Landed in commit d16b1975 on main.",
   "verification_plan": "Capability tick, campaign-verified: an adamw campaign at the default 128x1024 shape must reach evaluation and complete under the successor revision; no CLI shape shrink required."
 }
