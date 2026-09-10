@@ -495,6 +495,39 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
         expected = [float((x[row * 11 + col] + y[row * 11 + col]) * 2) for row in range(2) for col in range(2, 9)]
         self.assertEqual(observed["out"], expected)
 
+    def test_a_multigroup_kernel_that_crosses_no_group_declares_no_shared_bytes(self):
+        """F-2026-09-10-001: the declaration has to be true, or the Lab faults a good kernel.
+
+        `share` is read by exactly two emitted constructs: a reduction folding one SIMD
+        group into the others, and a scalar published from lane zero. A purely elementwise
+        kernel has neither, so declaring the allocation anyway is false -- Metal eliminates
+        it, the sealed pipeline observes zero bytes, and the truthful declared-equals-
+        observed check then kills a candidate that was correct. This recurred on silu and
+        swiglu. The fix is the declaration, not the check.
+        """
+        source = '''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="wide-elementwise", target="apple_gpu_family8", backend="metal", entry_point="cake_wide")
+def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024), "fp32", mode="output")):
+    compute = lm.role(warps=[0, 1, 2, 3])
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        values = lm.load(x[row, :], id="load_x")
+        lm.store(out[row, :], lm.relu(values, id="relu") * 2.0, coalesced=False, id="store_out")
+'''
+        document = frontend.parse(source).document
+        _, lowering = self.lower(document)
+        self.assertEqual(lowering.toolchain_requirements["threads_per_threadgroup"], [128, 1, 1])
+        self.assertEqual(lowering.toolchain_requirements["threadgroup_memory_bytes"], 0)
+        self.assertNotIn("threadgroup float share", lowering.source)
+        self.assertNotIn("share[", lowering.source)
+        # A reduction in the same multi-group shape still declares what it uses, so the
+        # change narrowed the declaration rather than removing it.
+        reducing = frontend.parse(make_rms_source(rows=2, width=1024)).document
+        reducing["roles"][0]["warps"] = [0, 1, 2, 3]
+        _, reduced = self.lower(reducing)
+        self.assertEqual(reduced.toolchain_requirements["threadgroup_memory_bytes"], 16)
+        self.assertIn("threadgroup float share[4];", reduced.source)
+
     def test_consecutive_simd_groups_widen_the_stripe_and_own_their_barriers(self):
         """One group is unchanged; more groups finish every collective in threadgroup memory."""
         single = frontend.parse(make_rms_source(rows=2, width=1024)).document

@@ -22,10 +22,16 @@ keeps this table from drifting away from it.
 """
 from __future__ import annotations
 
+import math
+
 from open_cake_ir.tasks.apple import BACKENDS as _APPLE
 
 # The largest `tl.arange` span the Triton backend admits, from its own refusal text.
 TRITON_MAXIMUM_TILE = 1 << 20
+# `snapshotPayloadLimit` in evaluation/metal/observer.swift. The native observer charges a
+# participant's whole tensor ABI for every launch it holds in one snapshot cohort, so the
+# cohort's pending payload is that ABI times the cohort's route calls.
+SNAPSHOT_PAYLOAD_LIMIT = 64 * 1024 * 1024
 
 BACKENDS = {
     "metal-m1-pro": {"target": "apple_gpu_family7", "device_name": "Apple M1 Pro",
@@ -69,3 +75,33 @@ def admit_width(backend: str, columns: int) -> None:
         raise ValueError(
             f"{backend} tiles a row with tl.arange, which requires a positive power-of-two "
             f"span no larger than {TRITON_MAXIMUM_TILE}; {columns} is not one")
+
+
+def admit_cohort_payload(workload, case_id: str, route_calls_per_cohort: int) -> None:
+    """Refuse a shape whose snapshot cohort cannot fit the observer's payload bound.
+
+    The bound is enforced inside the pinned native observer, which refuses the cohort
+    before a single dispatch. A task that exceeds it therefore fails deterministically at
+    its first evaluation, after the campaign has already spent provider tokens authoring
+    candidates for it -- which is what F-2026-09-10-002 recorded for every multi-buffer
+    optimizer task at the launcher's default shape. Checking the same arithmetic here
+    turns that into a refusal at launch, naming the shape that would fit.
+
+    This does not change the bound. Charging a cohort for what correctness actually needs
+    is the real fix and it lives in the observer, whose bytes are pinned by the Executor
+    host environment; until that happens this keeps campaigns from paying to discover it.
+    """
+    if type(route_calls_per_cohort) is not int or route_calls_per_cohort <= 0:
+        raise ValueError("cohort route-call count must be a positive integer")
+    tensors = workload.tensor_abi(case_id)
+    elements = sum(math.prod(argument.shape) for argument in tensors)
+    per_launch = elements * 4
+    pending = per_launch * route_calls_per_cohort
+    if pending > SNAPSHOT_PAYLOAD_LIMIT:
+        admissible = SNAPSHOT_PAYLOAD_LIMIT // (len(tensors) * 4 * route_calls_per_cohort)
+        raise ValueError(
+            f"snapshot cohort would hold {pending / 2**20:.1f} MiB against the observer's "
+            f"{SNAPSHOT_PAYLOAD_LIMIT // 2**20} MiB bound: this Workload declares "
+            f"{len(tensors)} FP32 tensors of {elements // len(tensors)} elements and the "
+            f"protocol holds {route_calls_per_cohort} route calls per cohort. At this ABI "
+            f"the largest admissible tensor is {admissible} elements")
