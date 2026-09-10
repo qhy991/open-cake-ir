@@ -13,7 +13,7 @@ from .common import Emission, EmitError, refusal, vocabulary_findings
 from ..diagnostics import Finding
 from ..ir import (
     AccessIndexKind, BarrierMechanism, BufferMode, DType, ElementwiseOp,
-    LoadMovement, MemorySpace, OperandMajorMode, OperandSource,
+    LoadMovement, LoweringBackend, MemorySpace, OperandMajorMode, OperandSource,
     OperationKind, Schedule, Swizzle,
 )
 from ..target import Target
@@ -90,6 +90,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
     def check(ok, code, path, message):
         if not ok:
             failures.append(refusal(code, path, message))
+    check(s.lowering.backend is LoweringBackend.NATIVE_CUDA,
+          'NATIVE_ROUTE_UNSUPPORTED', 'lowering.backend',
+          'native CUDA emission requires the canonical native_cuda route')
     check(s.target in _TARGETS and target.target_id == s.target
           and target.compute_capability == _TARGETS.get(s.target),
           'NATIVE_TARGET_UNSUPPORTED', 'target',
@@ -842,10 +845,11 @@ __device__ __forceinline__ void cake_commit(uint64_t* p) {
 
 
 def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) -> Emission:
-    failures = [finding for finding in (*verify(schedule,target),*preflight(schedule,target))
-                if finding.blocks_lowering or finding.blocks_acceptance]
-    if failures:
-        raise EmitError('; '.join(f'{f.code} at {f.path}: {f.message}' for f in failures))
+    for check in (verify,preflight):
+        failures = [finding for finding in check(schedule,target)
+                    if finding.blocks_lowering or finding.blocks_acceptance]
+        if failures:
+            raise EmitError('; '.join(f'{f.code} at {f.path}: {f.message}' for f in failures))
     if entry_point is not None and entry_point != schedule.lowering.entry_point:
         raise EmitError('Entry point differs from the canonical route.')
     return _Emitter(schedule,target,schedule.lowering.entry_point).emit()

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from open_cake_ir.compiler import Compiler, CompilerError, Schedule, Target
 from open_cake_ir.compiler.backends.native_cuda import emit, preflight
@@ -368,7 +369,12 @@ class NativeCudaContracts(unittest.TestCase):
         s=Schedule.from_dict(d)
         self.assertIn('TMEM_LOAD_ATOM',[f.code for f in verify(s,target)])
         self.refuses(d,'TMEM_LOAD_ATOM')
-        with self.assertRaisesRegex(EmitError,'TMEM_LOAD_ATOM'):emit(s,target)
+        with patch('open_cake_ir.compiler.backends.native_cuda.preflight',
+                   side_effect=AssertionError('preflight ran before canonical refusal')):
+            with self.assertRaisesRegex(EmitError,'TMEM_LOAD_ATOM'):emit(s,target)
+        d=document();d['lowering']['backend']='cutlass_cute_dsl'
+        with self.assertRaisesRegex(EmitError,'NATIVE_ROUTE_UNSUPPORTED'):
+            emit(Schedule.from_dict(d),target)
 
     def test_missing_output_writer_fails_public_contract(self):
         d=document();d['operations'].pop();d['access_maps'].pop()
