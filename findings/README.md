@@ -51,5 +51,5 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-10-015 — Apple M4 has no exact family9 Compiler target or Executor admission path (capacity, closed in Compiler v74 and verified by an M4 campaign under Executor v100)
 - F-2026-09-10-016 — Claude same-model internal activity can make aggregate modelUsage exceed the main-turn counters (protocol, closed in Executor v100 and verified by live kimi-k3 qualification)
 - F-2026-09-11-001 — Claude gateway tool ids may be reused only after the prior invocation completes (protocol, closed in Executor v101 and verified by a fresh layernorm campaign)
-- F-2026-09-11-002 — CLI tool-progress heartbeat outside the native contract shadowed the named compaction refusal (protocol, gemm v99 retry; source fix on main, successor mint pending cross-lane ordinal reconciliation)
+- F-2026-09-11-002 — CLI tool-progress heartbeat outside the native contract shadowed the named compaction refusal (protocol, gemm v99 retry; closed in Executor v103)
 - F-2026-09-11-003 — a schema-rejected StructuredOutput call can recover through a later exact success (protocol, closed in Executor v102)
