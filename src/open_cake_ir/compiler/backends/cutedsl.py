@@ -116,13 +116,13 @@ def _barrier_signaller_scopes(schedule: Schedule, barrier: Barrier) -> set[str |
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     """Target-independent backend requirements, including unsupported vocabulary."""
-    if cutedsl_simt.applies(schedule):
-        return cutedsl_simt.requirements(schedule)
-    if cutedsl_register.applies(schedule):
-        return cutedsl_register.requirements(schedule)
     state = tuple(refusal("CUTE_STATE_UNSUPPORTED", f"buffers[{i}].mode",
         "CuTe lowering does not implement mutable state buffers")
         for i, buffer in enumerate(schedule.buffers) if buffer.mode is BufferMode.STATE)
+    if cutedsl_simt.applies(schedule):
+        return state + cutedsl_simt.requirements(schedule)
+    if cutedsl_register.applies(schedule):
+        return state + cutedsl_register.requirements(schedule)
     common = vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS) + tuple(
         refusal(
             "CUTE_MMA_K_RANGES_UNSUPPORTED",

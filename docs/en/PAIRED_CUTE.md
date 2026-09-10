@@ -83,7 +83,7 @@ the source checkout. The stable template is not rewritten by the frozen-Study he
 `OpenCakeEnvironment` and `NativeCuTeEnvironment` use the same `CuTeToolchainBuilder`
 and `IsolatedCuTeCompiler` from `open_cake_ir.lab.cute_build`. The compiled SDK symbol
 may differ from the authored Python name; the sealed TensorLaunchManifest uses the
-observed symbol and exactly four pointers, with no hidden parameters. Raw submissions,
+observed symbol and, for this GEMM study, exactly four pointers with no hidden parameters. Raw submissions,
 source, compiler diagnostics and artifacts remain in the ordinary append-only archive.
 Common Evaluation performs oracle correctness, paired cold-L2 CUPTI timing and separate
 profiler attribution. Source tests and successful CPU compilation do not establish GPU

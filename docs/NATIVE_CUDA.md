@@ -109,6 +109,23 @@ public boundary. It covers the two uses, multiple MMA nodes, tail staging, targe
 stage/tile changes and localized refusals. The full Corpus Gate also covers native
 positive and deliberately invalid Schedules while retaining prior backend expectations.
 
+The CPU evaluation contracts run with
+`PYTHONPATH=src python3 -m unittest discover -s tests/native_cuda -v` and require NumPy
+and CPU PyTorch. They exercise metadata, retained-input replay, exact assignment IDs,
+preparation consistency and simulated timing/profiler process boundaries. The separate
+`tools/native_cuda_evaluate.py` qualification interface uses `prepare`, `compile`,
+`run` and `verify` with one external `--evidence-root`. Its current 12-case contract
+binds `sm_103a`; `prepare` requires a released Compiler, and compilation/device execution
+need their own authorization and target environment.
+
+KMeans preparation verification decodes retained BF16 centroids and FP32 norms exactly.
+It requires exact normal FP32 squares and sufficient summation overflow headroom, then
+checks exact sums where representable or the derived FP32 addition error bound. It
+refuses domains outside this model. This checks numerical consistency without imposing
+CPU/GPU reduction-tree bit equality; it does not attest a specific CUDA summation tree.
+The task-owned input producer and exact INT32 assignment oracle remain unchanged.
+A verifier change requires fresh source-bound GPU evidence and cannot qualify an old run.
+
 The initial store mapping is row-owned and explicitly declares `coalesced=false`.
 A pipeline producer can get up to the declared stage count ahead. Its consumed barrier
 is signalled only after all same-thread MMA readers finish. A different issuing role

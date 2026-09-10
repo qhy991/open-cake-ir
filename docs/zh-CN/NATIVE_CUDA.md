@@ -84,6 +84,19 @@ PYTHONPATH=src python3 -m unittest tests.contracts.test_emit_cuda -v
 负责一行，store 如实声明 `coalesced=false`。不支持的布局、角色预算、循环选项或精度
 会返回带位置的 Finding，不会静默忽略或换成另一条指令。
 
+评测工具的 CPU 合同测试是
+`PYTHONPATH=src python3 -m unittest discover -s tests/native_cuda -v`，需要 NumPy 和
+CPU PyTorch。它检查参数、保存的输入、精确下标、准备值，以及模拟的计时和 profiler
+进程边界。`tools/native_cuda_evaluate.py` 使用 `prepare`、`compile`、`run`、`verify`
+四步，共用 checkout 外的 `--evidence-root`。当前 12 个规定用例绑定 `sm_103a`；
+准备阶段要求已发布 Compiler，实际编译和设备运行另需对应授权与环境。
+
+KMeans 的准备检查从保存的 BF16 质心和 FP32 平方和字节恢复精确数值。
+它先确认每项平方可在正常 FP32 范围内精确表示，且求和不会溢出，再检查可精确求和
+情形或由 FP32 加法推导的误差界；超出模型范围会明确拒绝。该检查不要求 CPU/GPU
+采用相同求和树，也不证明某个 CUDA 求和顺序。输入生成方法与精确 INT32 下标 oracle
+保持原合同。验证器变化后需要新的源码绑定 GPU 证据，不能把旧运行改记为通过。
+
 检查通过、编译成功、GPU 算对、计时有效、profiler 有证据是不同结果。完整 Workload 的
 所有规定输入仍要经过外部 oracle。当前交付状态由 checkout 外的 delivery ledger 负责，
 本页不保存第二份进度或性能结论。

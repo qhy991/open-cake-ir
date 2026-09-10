@@ -57,7 +57,7 @@ receipt、anchor、运行配置和已封存基线作为外部执行绑定交给
 `lab preflight --execution-bindings`。所有新 lock、证据和报告放在源码目录外。
 
 两组共用 `open_cake_ir.lab.cute_build` 的 `CuTeToolchainBuilder` 和
-`IsolatedCuTeCompiler`。最终 launch manifest 使用 SDK 实际生成的符号，只有四个
+`IsolatedCuTeCompiler`。最终 launch manifest 使用 SDK 实际生成的符号；此 GEMM Study 只有四个
 指针，没有隐藏参数。原始提交、源码、诊断与产物进入现有追加式 archive。
 GPU 上继续使用统一 oracle、冷 L2 的配对 CUPTI 计时和单独 profiler。
 源码测试通过或 CPU 编译成功都不等于 GPU 正确、性能合格或 IR 更优。
