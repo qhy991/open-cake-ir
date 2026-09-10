@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-009",
+  "kind": "protocol",
+  "title": "The Claude CLI's rate_limit_event grew a utilization fraction and an allowed_warning status the pinned contract refused, stranding every campaign on this host",
+  "date": "2026-09-10",
+  "backend": "metal-m2",
+  "target": "apple_gpu_family8",
+  "executor_revision": "open-cake-ir-b200-v89+bfd98aa760d3b65fdb7712931279508c0a6ae84eb246b1ba68c3cd27a072e21d",
+  "compiler_revision_id": "open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578",
+  "tasks": [
+    "gemm"
+  ],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan-infiniai/Documents/lab-workspaces/gemm-contraction-preflight-20260910b",
+      "note": "provider qualification refused at qualification.stderr with 'Claude quota is rejected or metadata differs'; the model requested there (glm-5.3) is separately unavailable on this host, so this workspace shows the model fault, not the quota one"
+    },
+    {
+      "workspace": "/Users/haiyan-infiniai/Documents/lab-workspaces/gemm-contraction-sonnet-20260910-preflight",
+      "note": "same refusal with an available model, which isolates the quota contract as the cause: 'Claude quota is rejected or metadata differs' raised from _metadata before any turn was scored"
+    },
+    {
+      "workspace": "/Users/haiyan-infiniai/Documents/lab-workspaces/gemm-contraction-sonnet-20260910-pf2",
+      "note": "after admitting the two observed shapes the quota guard passes and the run advances to the next guard, 'Claude reported model differs from the exact requested model' -- a separate and correct refusal of the alias 'sonnet' in place of the resolved 'claude-sonnet-5'"
+    },
+    {
+      "workspace": "/Users/haiyan-infiniai/Documents/lab-workspaces/gemm-contraction-sonnet-20260910-pf3",
+      "note": "preflight completes and writes campaign-lock.json with the exact model name on Executor v89; this is the replay that verifies the change"
+    }
+  ],
+  "observation": "The pinned Claude event contract admits a rate_limit_event whose rate_limit_info carries exactly {status, resetsAt, rateLimitType} plus a closed optional set, and requires status to equal 'allowed'. The CLI installed on this host emits {\"status\": \"allowed_warning\", \"resetsAt\": 1789455600, \"rateLimitType\": \"seven_day\", \"utilization\": 0.55, \"isUsingOverage\": false}. Two things about that payload are outside the contract: the status is a warning rather than the bare 'allowed', and 'utilization' is a field the optional set does not name. Either alone fails the guard. The turn carrying the event was served normally -- the warning reports how much of a seven-day window the account has consumed, it does not withhold work -- so the refusal was the harness declining a turn the provider had already completed. Every campaign on this host was blocked at provider qualification before any turn could be scored.",
+  "proposed_change": "Admit the statuses under which the CLI still serves the request ('allowed' and 'allowed_warning') and admit 'utilization' as an optional fraction in [0, 1], while leaving everything else failing closed: 'rejected' is still refused, a status this contract does not name is still refused, a utilization outside [0, 1] or of the wrong type is still refused, and a field the CLI has not been observed to emit is still refused. The guard exists so a campaign does not start against a quota that will not serve it; a warning is not that condition.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v89+bfd98aa760d3b65fdb7712931279508c0a6ae84eb246b1ba68c3cd27a072e21d",
+  "verification_plan": "Protocol tick, so verification is by replay rather than by campaign: rerun provider qualification against the same CLI on the successor Revision and observe it advance past the quota guard. Contract tests cover the shapes directly, including the ones that must still fail.",
+  "verified_by": "Replay on Executor v89: the pf3 workspace above completes preflight and writes its campaign lock, where the two workspaces before it were refused at the quota guard on the same host with the same CLI. tests/contracts/test_claude_provider.py asserts both served statuses with their utilization fraction and asserts that an unnamed status, an out-of-range or wrongly typed utilization, and an unobserved field each still raise."
+}

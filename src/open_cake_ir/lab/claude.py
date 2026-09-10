@@ -62,6 +62,12 @@ def _terminal(value: object) -> bool:
         and type(value["turn"]) is int and value["turn"] > 0)
 
 
+# Quota statuses under which the CLI still serves the request. A warning reports how much
+# of the window is gone; it does not withhold the turn, so refusing it would strand a
+# campaign on an account that is merely over halfway through its quota.
+_QUOTA_SERVED = ("allowed", "allowed_warning")
+
+
 def _metadata(event: Mapping) -> bool:
     """Admit the explicit native metadata shapes, not arbitrary system events."""
     kind = event.get("type")
@@ -70,9 +76,18 @@ def _metadata(event: Mapping) -> bool:
             raise ValueError("Claude quota metadata fields differ")
         info = event["rate_limit_info"]
         required = {"status", "resetsAt", "rateLimitType"}
-        optional = {"overageStatus", "overageDisabledReason", "isUsingOverage"}
+        # `utilization` is the fraction of the window the account has consumed. The CLI
+        # began reporting it alongside `allowed_warning`, which is a heads-up about that
+        # fraction and not a refusal: the request it accompanies is served normally.
+        # Both are admitted; `rejected` and any status this does not name still fail
+        # closed, as does any field the CLI adds after these.
+        optional = {"overageStatus", "overageDisabledReason", "isUsingOverage", "utilization"}
         if (not isinstance(info, Mapping) or not required <= set(info) <= required | optional
-                or info.get("status") != "allowed" or type(info.get("resetsAt")) is not int or info["resetsAt"] < 0
+                or info.get("status") not in _QUOTA_SERVED
+                or "utilization" in info and (isinstance(info["utilization"], bool)
+                    or not isinstance(info["utilization"], (int, float))
+                    or not 0.0 <= info["utilization"] <= 1.0)
+                or type(info.get("resetsAt")) is not int or info["resetsAt"] < 0
                 or not isinstance(info.get("rateLimitType"), str) or not info["rateLimitType"]
                 or "isUsingOverage" in info and type(info["isUsingOverage"]) is not bool
                 or "overageStatus" in info and info["overageStatus"] not in ("allowed", "rejected")

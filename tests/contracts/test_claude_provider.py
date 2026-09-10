@@ -232,6 +232,13 @@ class ClaudeProviderContracts(unittest.TestCase):
             lambda rows: rows[1]["rate_limit_info"].update(status="rejected"),
             lambda rows: rows[1]["rate_limit_info"].update(isUsingOverage=True),
             lambda rows: rows[1]["rate_limit_info"].update(status=["allowed"]),
+            # A status this contract does not name still fails closed.
+            lambda rows: rows[1]["rate_limit_info"].update(status="allowed_soon"),
+            lambda rows: rows[1]["rate_limit_info"].update(utilization=1.5),
+            lambda rows: rows[1]["rate_limit_info"].update(utilization=True),
+            lambda rows: rows[1]["rate_limit_info"].update(utilization="0.55"),
+            # And so does a field the CLI has not been observed to emit.
+            lambda rows: rows[1]["rate_limit_info"].update(unobserved=1),
             lambda rows: rows[2].update(estimated_tokens=True),
             lambda rows: rows[2].update(session_id=OTHER_SESSION),
             lambda rows: rows[2].update(subtype="api_retry"),
@@ -241,6 +248,25 @@ class ClaudeProviderContracts(unittest.TestCase):
             changed = copy.deepcopy(events); mutation(changed)
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 self.normalize(self.raw(changed))
+
+    def test_a_quota_warning_is_served_and_carries_its_observed_utilization(self):
+        """The live CLI reports `allowed_warning` with a `utilization` fraction.
+
+        Refusing it would strand a campaign on an account that is merely partway through
+        its window, because the turn that carries the warning is served normally.
+        """
+        for served in ("allowed", "allowed_warning"):
+            events = self.events(); events[1:1] = self.metadata()
+            events[1]["rate_limit_info"].update(status=served, utilization=0.55,
+                                                rateLimitType="seven_day")
+            with self.subTest(status=served):
+                self.assertEqual(self.normalize(self.raw(events)).provider_tokens, 205)
+        # The boundaries of the observed fraction are admitted; nothing outside them is.
+        for utilization in (0, 0.0, 1, 1.0):
+            events = self.events(); events[1:1] = self.metadata()
+            events[1]["rate_limit_info"].update(status="allowed_warning", utilization=utilization)
+            with self.subTest(utilization=utilization):
+                self.assertEqual(self.normalize(self.raw(events)).provider_tokens, 205)
 
     def test_all_reported_model_usage_is_charged_once_and_auxiliary_models_stay_separate(self):
         events = self.events(); events[1:1] = self.metadata()
