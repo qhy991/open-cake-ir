@@ -27,8 +27,8 @@
   ],
   "observation": "The released Compiler admits only Apple GPU families 7 and 8, the task registry exposes only metal-m1-pro and metal-m2, and the native archive and observation helpers refuse family 9. The M4 host was reached as haiyan-mini@haiyan-Mac-mini.local. Its Apple M4 GPU reports support for families 7, 8 and 9 and not family 10; Apple's Metal Feature Set Tables place the M4 series in Apple9. Reusing the M2 target would violate exact target and device admission even though the M4 retains older-family capabilities. The host's selected Xcode 16.0 is incompatible with macOS 26.6.2, while the separately installed Command Line Tools 26.5 toolchain compiled the preparation-only helper when selected explicitly. That environment fact remains a launch prerequisite, not a Compiler fallback.",
   "proposed_change": "Add apple_gpu_family9 as an exact Apple M4 Target with Apple9 limits and no borrowed occupancy, peak or cost calibration. Extend the existing compositional Metal backend, artifact roles, archive/observer host admission and TaskLab registry without adding an IR primitive or changing the lowering of families 7 and 8. Preserve an unsupported-target corpus near-miss by moving it to family 10. This satisfies P1-P5 and P8 by reusing the canonical Schedule and making the hardware commitment explicit; P6-P7 require the focused contracts and full unchanged-expectation Corpus Gate. A released Compiler successor and a host-captured M4 Executor remain separate gates before any campaign or GPU acceptance work.",
-  "decision": "proposed",
-  "implemented_in": null,
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-sm100a-v74+daffd43042484dc2b6a0769e387c31abc6b4217b01cc2b4844dfffd577da3d45",
   "verification_plan": "After independent review releases the Compiler successor and the M4 host has a released Executor captured from its exact Swift/SDK/helpers, run the common Metal correctness matrix across shapes and input distributions, then an end-to-end target-framework evaluation. Report timing-model coverage as unavailable until M4-specific calibration exists.",
   "verified_by": null
 }

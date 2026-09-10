@@ -87,11 +87,12 @@ class MetalArtifactContracts(unittest.TestCase):
         self.assertEqual(set(legacy.artifact_roles), {"cubin"})
         self.assertEqual(executable_role("sm_103a"), "cubin")
         self.assertEqual(executable_role("apple_gpu_family7"), "metal_binary_archive")
+        self.assertEqual(executable_role("apple_gpu_family9"), "metal_binary_archive")
         self.assertEqual(required_build_roles("metal"), {"metal_binary_archive", "metal_build_report", "launch_manifest"})
         self.assertNotIn("lowered_source", required_build_roles("metal"))
         self.assertEqual(required_build_roles("triton"), {"compiler_expanded_source", "ptx", "cubin", "launch_manifest"})
         with self.assertRaises(ValueError):
-            executable_role("apple_gpu_family9")
+            executable_role("apple_gpu_family10")
 
     def test_wrong_backend_executable_roles_and_missing_executables_refuse(self):
         payload = b"synthetic role-contract bytes"
