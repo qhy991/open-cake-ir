@@ -26,6 +26,8 @@ from .optimizers import workload as optimizers_math
 from .optimizers.authoring import starter_source as optimizers_starter_source
 from .contraction import workload as contraction_math
 from .contraction.authoring import starter_source as contraction_starter_source
+from .aka_v3 import workload as aka_v3_math
+from .deepseek_v4 import workload as deepseek_v4_math
 
 _TASKS = {
     add_rmsnorm.TASK: (add_rmsnorm.validate_contract, WorkloadContract),
@@ -42,6 +44,10 @@ _TASKS = {
     "residual_rmsnorm_fp32": (normalization_math.validate_normalization_contract, WorkloadContract),
     "softmax_fp32": (normalization_math.validate_normalization_contract, WorkloadContract),
     "gemm_bias_fp32": (gemm_math.validate_gemm_contract, WorkloadContract),
+    **{operator: (aka_v3_math.validate_aka_v3_contract, WorkloadContract)
+       for operator, _, _, _ in aka_v3_math.TASKS.values()},
+    **{operator: (deepseek_v4_math.validate_deepseek_v4_contract, WorkloadContract)
+       for operator, _ in deepseek_v4_math.TASKS.values()},
     **{operator: (activation_math.validate_activation_contract, WorkloadContract)
        for operator, _ in activation_math.TASKS.values()},
     **{operator: (rowwise_math.validate_rowwise_contract, WorkloadContract)
@@ -102,6 +108,10 @@ def _tensor_math(workload: WorkloadContract):
         return optimizers_math
     if operator in {name for name, _ in contraction_math.TASKS.values()}:
         return contraction_math
+    if operator in {name for name, _, _, _ in aka_v3_math.TASKS.values()}:
+        return aka_v3_math
+    if operator in {name for name, _ in deepseek_v4_math.TASKS.values()}:
+        return deepseek_v4_math
     if operator in {"rmsnorm_fp32", "gemm_bias_bf16_fp32", "indexed_gather_bf16"}:
         validate_tile_contract(workload.document)
         return tile_math

@@ -1,0 +1,34 @@
+{
+  "cases": [
+    {"case_id": "primary", "mode": "uniform", "seed": 9101, "shape": {"C": 256, "R": 8}},
+    {"case_id": "zeros", "mode": "zeros", "seed": 9102, "shape": {"C": 256, "R": 8}},
+    {"case_id": "near_zero", "mode": "near_zero", "seed": 9103, "shape": {"C": 256, "R": 8}},
+    {"case_id": "alternating", "mode": "alternating", "seed": 9104, "shape": {"C": 256, "R": 8}},
+    {"case_id": "mixed_magnitude", "mode": "mixed_magnitude", "seed": 9105, "shape": {"C": 256, "R": 8}}
+  ],
+  "operator": "aka_residual_layernorm_fp32",
+  "oracle": {"callable": "open_cake_ir.tasks.aka_v3.workload.reference_outputs", "implementation": "independent_standard_library_math_no_compiler_or_generated_source", "kind": "real_residual_layernorm_standard_library_reference", "output_rounding": "round_to_nearest_ties_to_even"},
+  "provenance": [
+    {"case_id": "normalization__normalization_layernorm__analysis__l000016_b200_v1__directderived_sol_ultra_v2_b200_claude_opus5_high_aug_v1", "derived_parent_id": "fused_residual_layernorm_rowwise_fp32", "kind": "aka_qualified_mechanism_v3_record", "path": "AKA/datasets/curated/cuda_kernel_mechanism_qualified_v3/records.jsonl", "scope": "semantic_source_only; historical_B200_evidence_does_not_transfer"},
+    {"kind": "standalone_derived_contract", "path": "src/open_cake_ir/tasks/aka_v3/workload.py", "scope": "fixed_shape_FP32_B200_workload_semantics_and_CPU_oracle"}
+  ],
+  "revision": "1", "schema_version": 1, "state": "frozen",
+  "semantics": {
+    "arithmetic": {"intermediates": "fp32", "output": "fp32", "variance": "centered_population"},
+    "candidate_abi": {"inputs": ["input_a", "input_b", "weight", "bias"], "outputs": ["residual", "normalized", "mean", "reciprocal_stddev"]},
+    "definition": "residual[r,c] = round_fp32(input_a[r,c] + input_b[r,c]); mean[r] = mean_j(residual[r,j]); reciprocal_stddev[r] = 1/sqrt(mean_j((residual[r,j]-mean[r])^2)+epsilon); normalized[r,c] = (residual[r,c]-mean[r])*reciprocal_stddev[r]*weight[c]+bias[c]",
+    "epsilon": 1e-05, "exclusions": "no_framework_ABI_or_cross_shape_equivalence; no_current_GPU_or_performance_claim", "input_effects": "unchanged", "materialization": "deterministic_standard_library_FP32_or_int32_per_case_seed", "output_storage": "fresh_contiguous_nonaliasing", "target": "sm_100a"
+  },
+  "tensors": {
+    "bias": {"dtype": "fp32", "finite_only": true, "layout": "contiguous_row_major", "max_abs": 1.5, "shape": ["C"]},
+    "input_a": {"dtype": "fp32", "finite_only": true, "layout": "contiguous_row_major", "max_abs": 2.0, "shape": ["R", "C"]},
+    "input_b": {"dtype": "fp32", "finite_only": true, "layout": "contiguous_row_major", "max_abs": 2.0, "shape": ["R", "C"]},
+    "mean": {"dtype": "fp32", "finite_only": true, "layout": "contiguous_row_major", "shape": ["R"]},
+    "normalized": {"dtype": "fp32", "finite_only": true, "layout": "contiguous_row_major", "shape": ["R", "C"]},
+    "reciprocal_stddev": {"dtype": "fp32", "finite_only": true, "layout": "contiguous_row_major", "shape": ["R"]},
+    "residual": {"dtype": "fp32", "finite_only": true, "layout": "contiguous_row_major", "shape": ["R", "C"]},
+    "weight": {"dtype": "fp32", "finite_only": true, "layout": "contiguous_row_major", "max_abs": 1.5, "shape": ["C"]}
+  },
+  "validation": {"all_cases_required": true, "atol": 2e-05, "comparison": "elementwise_atol_rtol", "equal_nan": false, "performance_domain": "future_B200_protocol_must_use_four_workloads_spanning_at_least_1000x_work", "primary_case": "primary", "qualification": "CPU_oracle_only; Open-Cake_B200_compile_correctness_sanitizer_timing_profile_pending", "rtol": 2e-05},
+  "workload_id": "aka-residual-layernorm-fp32-triton-b200-v1"
+}
