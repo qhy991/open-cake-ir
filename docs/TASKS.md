@@ -42,3 +42,6 @@ Ralph 控制器是下一轮 StateCard 和 TurnRequest 的唯一生成路径。
 
 K-means 的 portfolio 是该任务的验证流程，其固定 B/N/K/D 形状、seed、dispatcher、
 旧结果解析和运行组合都在该任务目录中。通用层没有为它保留特例实现。
+
+LLM 推理任务的后续设计见 [Projection、MLP 与 Attention 任务设计](LLM_INFERENCE_TASK_DESIGN.md)。
+该设计是提案，不表示任务已注册或通过 GPU 资格验证。
