@@ -224,7 +224,7 @@ noncausal self-attention、D=64、Sq/Sk=37/65/129 的非整 tile 情形进入正
 T6 待 T5 与页表执行能力通过后展开，至少覆盖乱序页、共享前缀、重复页和部分尾页。
 
 主矩阵54个 cell是后续扩展范围，不是一开始就启动的实验预算。首个 pilot 只取8个：
-Qwen3 的 QKV-M8、O-M1、gate_up-M512、LM-head-M1、T3-M512，加 MHA decode-small、
+Qwen3 的 QKV-M8、O-M1、down-M1、LM-head-M1、T3-M512，加 MHA decode-small、
 GQA-g7 prefill、MQA decode-batched。它同时覆盖用户要求的角色、head-sharing 和不同工作量。
 
 ## 4. 正确性、计时与失败语义
@@ -277,7 +277,7 @@ workspace 清理；不允许通过缓存上次结果或只写部分输出取胜�
 
 两个必须先解决的 Evaluation 依赖：
 
-- 当前共同 CUDA 评测要求一次 sealed kernel launch。T2 的独立基线和 T4 的完整 MLP
+- 当前共同 CUDA 评测要求一次 sealed kernel launch。T2/T3 的独立基线和 T4 的完整 MLP
   可能需要多个 kernel。应建立有确切入口、顺序、workspace 和 side effects 的封存执行
   序列并计时整个边界，复用现有 Program/评测经验；不能把隐藏多次 launch 的 wrapper
   报成 kernel_calls=1。该边界未通过前，T4 标为 implementation-blocked，不运行假基线。
