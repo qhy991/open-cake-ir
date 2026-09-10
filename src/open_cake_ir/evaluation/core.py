@@ -495,12 +495,25 @@ def compare_tile_outputs(workload, before, expected, observed, after):
     """One comparison owner for fresh and already-recorded tensor launches."""
     import struct
     validation = workload.document['validation']
+    comparisons = None
+    if validation['comparison'] == 'per_output':
+        comparisons = validation.get('outputs')
+        if not isinstance(comparisons, Mapping) or set(comparisons) != set(expected):
+            raise ValueError('per-output comparison must cover every output exactly')
+        for rule in comparisons.values():
+            if (not isinstance(rule, Mapping) or set(rule) != {'comparison', 'atol', 'rtol'}
+                or rule['comparison'] not in {'bitwise_bf16', 'elementwise_atol_rtol'}
+                or any(type(rule[k]) not in {int, float} or not math.isfinite(rule[k]) or rule[k] < 0
+                       for k in ('atol', 'rtol'))
+                or (rule['comparison'] == 'bitwise_bf16' and (rule['atol'] != 0 or rule['rtol'] != 0))):
+                raise ValueError('per-output comparison rule differs')
     mismatch = 0
     maximum_error = 0.0
     if not isinstance(observed, Mapping) or set(observed) != set(expected):
         mismatch += 1
     else:
         for name, values in expected.items():
+            rule = comparisons[name] if comparisons is not None else validation
             actual = observed[name]
             if not isinstance(actual, (list, tuple)) or len(actual) != len(values):
                 mismatch += 1
@@ -513,10 +526,10 @@ def compare_tile_outputs(workload, before, expected, observed, after):
                     continue
                 error = abs(value - reference)
                 maximum_error = max(maximum_error, error)
-                if validation['comparison'] == 'bitwise_bf16':
+                if rule['comparison'] == 'bitwise_bf16':
                     mismatch += (abs(value) > 3.4028234663852886e38 or struct.pack('>f', value) != struct.pack('>f', reference))
                 else:
-                    mismatch += error > validation['atol'] + validation['rtol'] * abs(reference)
+                    mismatch += error > rule['atol'] + rule['rtol'] * abs(reference)
     unchanged = after == before and all(
         struct.pack('>d', float(a)) == struct.pack('>d', float(b))
         for name in before for a, b in zip(after[name], before[name], strict=True)

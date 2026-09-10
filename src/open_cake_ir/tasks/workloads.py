@@ -9,6 +9,7 @@ from .tinygemm.contract import _validate_tinygemm_contract
 from .qsa.workload import _validate_qsa_contract
 from .dsa.contract import _validate_dsa_contract
 from .kda.contract import _validate_kda_fused_decode_contract, _validate_kda_decode_megaop_b200_contract
+from . import add_rmsnorm
 from .tiles import workload as tile_math
 from .tiles.workload import validate_tile_contract
 from .normalization import workload as normalization_math
@@ -25,6 +26,7 @@ from .optimizers import workload as optimizers_math
 from .optimizers.authoring import starter_source as optimizers_starter_source
 
 _TASKS = {
+    add_rmsnorm.TASK: (add_rmsnorm.validate_contract, WorkloadContract),
     "flash_kmeans_assign": (_validate_flash_contract, FlashWorkloadContract),
     "tinygemm2_bf16_linear": (_validate_tinygemm_contract, WorkloadContract),
     "qsa_prefill": (_validate_qsa_contract, WorkloadContract),
@@ -79,6 +81,8 @@ def load_workload(path) -> WorkloadContract:
 def _tensor_math(workload: WorkloadContract):
     """Task-owned routing for the common tensor Evaluation input/oracle interface."""
     operator = workload.document["operator"]
+    if operator == add_rmsnorm.TASK:
+        return add_rmsnorm
     if (operator in {"layernorm_fp32", "residual_rmsnorm_fp32", "softmax_fp32"}
             or operator == "rmsnorm_fp32" and workload.document["revision"] == "3"):
         return normalization_math
@@ -116,6 +120,11 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
     of which case is selected for authoring; all five have the same tensor ABI. GEMM
     owns a third extent because its output column count is unrolled by the Schedule.
     """
+    if task_name == add_rmsnorm.TASK:
+        if depth is not None:
+            raise ValueError("add-RMSNorm does not declare K")
+        document = add_rmsnorm.workload_document(rows=rows, columns=columns, backend=backend)
+        return document, add_rmsnorm.starter_source(WorkloadContract(document), case_id)
     if task_name in gemm_math.TASKS:
         if depth is None:
             raise ValueError("GEMM requires its declared K extent")
