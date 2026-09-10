@@ -287,7 +287,15 @@ def reference_outputs(workload: WorkloadContract, case_id: str,
             for column in range(columns):
                 total = math.fsum(left[base + k] * right[k * columns + column]
                                   for k in range(depth)) + biases[column]
-                result.append(_round(total / (1.0 + math.exp(-total)) if gated else total, "fp32"))
+                if gated:
+                    # exp(-total) overflows for valid negative contractions. Both
+                    # branches implement the same SiLU without changing its contract.
+                    if total >= 0:
+                        total = total / (1.0 + math.exp(-total))
+                    else:
+                        decay = math.exp(total)
+                        total = total * decay / (1.0 + decay)
+                result.append(_round(total, "fp32"))
         return {"out": result}
     if operator == "contraction_pairwise_sqdist_fp32":
         points, centroids = checked["x"], checked["c"]

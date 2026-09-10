@@ -53,7 +53,7 @@ def workload_document(*, rows: int = 128, columns: int = 2560,
                            "normalization_input": "the_same_rounded_residual_as_residual_out",
                            "reduction": "fp32_backend_order_within_tolerance",
                            "output": "bf16_round_to_nearest_ties_even"},
-            "materialization": "task_owned_seeded_bf16_inputs_with_ties_cancellation_and_mixed_magnitudes",
+            "materialization": "task_owned_seeded_bf16_inputs_with_ties_cancellation_and_mixed_magnitudes_weight0_one_every_17th_zero",
         },
         "oracle": {"kind": "bf16_residual_then_independent_fsum_rmsnorm",
                    "callable": "open_cake_ir.tasks.add_rmsnorm.reference_outputs",
@@ -104,7 +104,7 @@ def materialize_case(workload: WorkloadContract, case_id: str) -> dict[str, list
         else:
             d, r = rng.uniform(-2, 2), rng.uniform(-2, 2)
         delta.append(_round(d, "bf16")); residual.append(_round(r, "bf16"))
-    weights = [_round(0.0 if i % 17 == 0 else rng.uniform(-1.5, 1.5), "bf16")
+    weights = [_round(1.0 if i == 0 else (0.0 if (i + 1) % 17 == 0 else rng.uniform(-1.5, 1.5)), "bf16")
                for i in range(case["shape"]["C"])]
     return {"delta": delta, "residual": residual, "weight": weights}
 

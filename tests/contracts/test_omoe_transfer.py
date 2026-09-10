@@ -157,3 +157,51 @@ class OmoeCommonEvaluationTests(unittest.TestCase):
         inputs = worker.materialize_case(workload, 'rounding_ties')
         self.assertEqual(inputs, materialize_case(workload, 'rounding_ties'))
         self.assertEqual(worker.reference_outputs(workload, 'rounding_ties',inputs)['residual_out'][0],1.0)
+
+
+class TransferRepairTests(unittest.TestCase):
+    def test_every_width_rejects_a_constant_zero_normalization_mutant(self):
+        for width in (1, 7, 17, 2560):
+            document, _ = create_task('add_rmsnorm_bf16', rows=3, columns=width, backend='triton-b200')
+            workload = WorkloadContract(document)
+            rejected = []
+            for case in workload.case_ids:
+                inputs = materialize_case(workload, case)
+                self.assertEqual(inputs['weight'][0], 1.0)
+                expected = reference_outputs(workload, case, inputs)
+                mutant = {**expected, 'out': [0.0]*len(expected['out'])}
+                rejected.append(not compare_tile_outputs(workload, inputs, expected, mutant, inputs)[0])
+            self.assertTrue(any(rejected), f'zero-output mutant passed every case at C={width}')
+
+    def test_gemm_silu_oracle_is_finite_for_admitted_saturated_inputs(self):
+        for backend in ('triton-b200', 'metal-m2'):
+            document, _ = create_task('gemm_silu', rows=1, depth=256, columns=2, backend=backend)
+            workload = WorkloadContract(document)
+            for sign in (-1, 1):
+                inputs = {'a': [sign*2.0]*256, 'b': [2.0]*512, 'bias': [0.0, 0.0]}
+                output = reference_outputs(workload, 'primary', inputs)['out']
+                self.assertEqual(output, [-0.0, -0.0] if sign < 0 else [1024.0,1024.0])
+                self.assertTrue(all(math.isfinite(v) for v in output))
+
+    def test_steps_keeps_restrictions_that_exist_only_in_source_metadata(self):
+        from tools.prepare_omoe_transfer import recipe_parts, project_steps
+        original = """---
+id: example
+op: gemm.projection
+model-scope: ONLY dense-transformer
+bottleneck: compute-bound
+hardware: sm_100
+verdict: CONDITIONAL
+effect: operator-only result
+evidence: archived/result.md
+source: original-commit
+supersedes: obsolete-procedure
+future-condition: requires-the-second-consumer
+---
+The mechanism body does not repeat the header restrictions.
+"""
+        fields, body = recipe_parts(original)
+        projected = project_steps(fields, body)
+        for important in ('ONLY dense-transformer', 'gemm.projection', 'compute-bound',
+                          'obsolete-procedure', 'requires-the-second-consumer', body.strip()):
+            self.assertIn(important, projected)

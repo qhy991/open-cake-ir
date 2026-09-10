@@ -43,8 +43,12 @@ def recipe_parts(source: str) -> tuple[dict[str, str], str]:
 
 def project_steps(fields: dict, body: str) -> str:
     """Reorder quoted source sections; never synthesize new applicability or results."""
-    applicability = '\n'.join(f'- **{key}:** {fields[key]}' for key in
-        ('hardware', 'regime', 'preconditions', 'failure-modes', 'transfer') if fields.get(key))
+    priority = ('op', 'technique', 'model-scope', 'hardware', 'regime', 'bottleneck',
+                'preconditions', 'failure-modes', 'transfer')
+    evidence_keys = ('verdict', 'effect', 'evidence', 'source')
+    # Header-only scope and future metadata remain part of the source contract too.
+    keys = (*priority, *(k for k in fields if k not in {*priority, *evidence_keys, 'id'}))
+    applicability = '\n'.join(f'- **{key}:** {fields[key]}' for key in keys if fields.get(key))
     evidence = '\n'.join(f'- **{key}:** {fields[key]}' for key in ('verdict', 'effect', 'evidence', 'source'))
     return (f"## {fields['id']}\n\nCheck the source's conditions before proposing a candidate:\n\n"
             f"{applicability}\n\nOriginal mechanism and procedure (including corrections):\n\n{body.strip()}"

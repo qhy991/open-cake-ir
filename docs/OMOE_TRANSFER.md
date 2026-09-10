@@ -52,6 +52,7 @@ Case-vs-Skill 因果实验。
 4. `out` 使用预声明的数值容差，不能把该容差用于 `residual_out`。
 
 五组输入覆盖一般分布、带符号零、BF16 舍入中点、抵消及混合幅值。
+每个宽度的第一个权重固定为 1，避免 C=1 时零权重让恒零输出错误通过。
 输入保持不变，两个输出都是新分配且不别名。这里提取的是 OMOE 算子的值语义；
 OMOE 的原地 buffer 更新需要在将来的模型接入层另行验证。
 
@@ -67,8 +68,9 @@ Compiler 仍使用现有 load/cast/add/reduce/rsqrt/store。新增的 `per_outpu
 ## GEMM epilogue 衔接与后续任务
 
 准备工具使用 `tasks.workloads.create_task` 作为唯一任务选择入口，没有复制在建的
-contraction 实现。`gemm_silu` 在该任务正式集成后可直接使用同一工具：
-`--task gemm_silu --rows 128 --depth 128 --columns 64`。它没有注册时会拒绝，
+contraction 实现。本迁移分支通过独立依赖提交接入了原工作区的 contraction 源码快照，
+没有修改原工作区。`gemm_silu` 可直接使用同一工具：
+`--task gemm_silu --rows 128 --depth 128 --columns 64`。它其他 checkout 没有注册时会拒绝，
 不会悄悄换成其他 GEMM。当前已有 `gemm_bias` 可用于相同接口的非融合控制。
 
 SiLU 只消费一个累加器；SwiGLU 需要成对 gate/up 累加器和相应写回安排。因此
