@@ -140,15 +140,39 @@ def _admit_stack(root: Path, workspace: Path, target: str, route: str = "metal")
         "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
 
 
+def _triton_runtime_roots(interpreter: Path) -> list[str]:
+    """Directories the jail must carry for the admitted interpreter to run inside it.
+
+    The interpreter the Executor pins may be a venv whose `bin/python` is a symlink into
+    another prefix, so mounting the venv alone leaves the jail without the real binary or
+    its standard library. Both the named prefix and the resolved one are mounted, and the
+    system directories that hold the ELF interpreter and shared libraries alongside them.
+    Duplicates and nested paths are dropped so bwrap is not handed the same mount twice.
+    """
+    roots = [Path("/usr"), Path("/lib"), Path("/lib64"), Path("/opt")]
+    for candidate in (interpreter, Path(os.path.realpath(interpreter))):
+        # `.../prefix/bin/python` -> `.../prefix`
+        roots.append(candidate.parents[1])
+    admitted: list[Path] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        if any(root == kept or kept in root.parents for kept in admitted):
+            continue
+        admitted = [kept for kept in admitted if root not in kept.parents]
+        admitted.append(root)
+    return [str(root) for root in admitted]
+
+
 def _triton_builder(executor, workload):
     """Bind the isolated compiler to the exact runtime the Executor host admits."""
     host = executor.document["host_environment"]
+    interpreter = Path(str(host["python"]["invocation_path"]))
     return TritonToolchainBuilder(
         workload=workload, case_id="primary",
         isolated_compiler=IsolatedTritonCompiler(
-            python=str(host["python"]["invocation_path"]),
-            bubblewrap="/usr/bin/bwrap",
-            runtime_roots=["/usr", "/lib", "/lib64", "/opt", str(Path(host["python"]["invocation_path"]).parents[1])],
+            python=str(interpreter), bubblewrap="/usr/bin/bwrap",
+            runtime_roots=_triton_runtime_roots(interpreter),
             triton_version=host["packages"]["triton"]))
 
 

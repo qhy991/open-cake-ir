@@ -14,6 +14,19 @@ set -euo pipefail
 source "$(dirname "$0")/release_runtime.sh"
 cd "$(dirname "$0")/.."
 export PYTHONPATH=src
+
+# The next id is derived from the largest one visible in this checkout, which is only
+# correct if this checkout has seen every released descriptor. Establish that before
+# minting; two checkouts that had not exchanged descriptors once minted the same ordinal
+# over different bytes, and a reserved identity cannot be un-reserved
+# (F-2026-09-10-012). Pass --acknowledge-isolated REASON through when the ledger's remote
+# genuinely cannot be reached, so the gap is stated rather than assumed away.
+LEDGER_ARGS=()
+if [ "${OPEN_CAKE_LEDGER_ISOLATED:-}" != "" ]; then
+  LEDGER_ARGS+=(--acknowledge-isolated "$OPEN_CAKE_LEDGER_ISOLATED")
+fi
+echo "--- verify the released Executor ledger is complete here ---"
+"$OPEN_CAKE_PYTHON" tools/check_executor_ledger.py --project-root . "${LEDGER_ARGS[@]+"${LEDGER_ARGS[@]}"}"
 EXECUTOR_RELEASE_TMP=$(mktemp -d)
 export EXECUTOR_RELEASE_TMP
 trap 'rm -r -- "$EXECUTOR_RELEASE_TMP"' EXIT

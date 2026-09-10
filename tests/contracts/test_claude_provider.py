@@ -388,6 +388,31 @@ class ClaudeProviderContracts(unittest.TestCase):
             with self.subTest(subtype=subtype), self.assertRaisesRegex(ValueError, "compacted"):
                 parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
 
+    def test_a_cli_synthetic_continuation_is_recorded_and_an_unmarked_one_is_not(self):
+        """The CLI writes its own user turn when a response had no visible output.
+
+        Providers that answer with thinking alone trigger it routinely, so refusing it
+        would strand those campaigns; but it is content the Lab did not author and it
+        changes what the author saw, so it is retained as observed activity rather than
+        passed over. Only the CLI's own marked turn is admitted -- an unmarked user text
+        block is someone injecting into the conversation and stays fatal.
+        """
+        nudge = {"type": "user", "session_id": SESSION, "uuid": OTHER_SESSION,
+                 "isSynthetic": True, "parent_tool_use_id": None,
+                 "message": {"content": [{"type": "text", "text":
+                     "[Your previous response had no visible output. Please continue.]"}]}}
+        events = self.events(); events[1:1] = [nudge]
+        parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        self.assertEqual([(a.item_type, a.status) for a in parsed.tool_activity
+                          if a.item_type == "synthetic_continuation"],
+                         [("synthetic_continuation", "observed")])
+        for mutation in (lambda row: row.pop("isSynthetic"),
+                         lambda row: row.update(isSynthetic=False),
+                         lambda row: row.update(isSynthetic="yes")):
+            changed = copy.deepcopy(events); mutation(changed[1])
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, "event contract"):
+                parse_claude_turn_events(self.raw(changed), expected_terminal_message=TERMINAL)
+
     def test_native_schema_tool_has_only_exact_terminal_arguments_and_closed_success(self):
         events = self.events()
         events[-1:-1] = [

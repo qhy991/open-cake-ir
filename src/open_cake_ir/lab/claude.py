@@ -342,6 +342,16 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                         activity[errors[identity]], status="error_recovered")
             elif event["type"] == "assistant" and kind in ("text", "thinking", "redacted_thinking"):
                 continue
+            elif event["type"] == "user" and kind == "text" and event.get("isSynthetic") is True:
+                # The CLI writes a turn of its own when a response carried no visible
+                # output, which providers that answer with thinking alone trigger often.
+                # It is content the Lab did not author, so it is retained as observed
+                # activity rather than passed over: a run where the provider had to be
+                # prompted to speak is not the same run as one where it did not. Only the
+                # CLI's own synthetic turn is admitted here; an unmarked user text block
+                # would still be someone injecting into the conversation, and stays fatal.
+                activity.append(ProviderAuxiliaryActivity(
+                    event["uuid"], "synthetic_continuation", "observed"))
             else:
                 raise ValueError("Claude content is outside the declared event contract")
     if set(tools) != completed or not writes or len({path for path, _ in writes}) != 1:
