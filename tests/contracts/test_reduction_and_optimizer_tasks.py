@@ -16,7 +16,7 @@ import unittest
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.evaluation.core import compare_tile_outputs
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.tasks.devices import BACKENDS
+from open_cake_ir.tasks.devices import BACKENDS, SNAPSHOT_PAYLOAD_LIMIT, admit_cohort_payload
 from open_cake_ir.tasks.optimizers import workload as optimizers
 from open_cake_ir.tasks.reductions import workload as reductions
 from open_cake_ir.tasks.workloads import create_task, materialize_case, reference_outputs
@@ -219,6 +219,38 @@ class OptimizerTaskTests(unittest.TestCase):
                             workload, inputs, expected, {k: outputs[k] for k in expected},
                             {k: outputs[k] for k in inputs})
                         self.assertTrue(passed, metrics)
+
+    def test_a_shape_the_observer_cannot_hold_is_refused_before_the_campaign(self):
+        """F-2026-09-10-002: multi-buffer tasks died at first evaluation, tokens spent.
+
+        The native observer charges a participant's whole tensor ABI for every launch it
+        holds in one snapshot cohort and refuses the cohort before dispatching. AdamW's
+        seven-tensor ABI at the launcher's default 128x1024 needs 98 MiB against a 64 MiB
+        bound, so the task failed deterministically only after a campaign had already paid
+        to author candidates for it. The same arithmetic is now checked at launch.
+        """
+        from open_cake_ir.tasks.normalization.study import _ROUTE_CALLS_PER_COHORT
+
+        # The default shape the finding recorded, and the one it identified as fitting.
+        oversized = WorkloadContract(create_task("adamw", rows=128, columns=1024)[0])
+        with self.assertRaisesRegex(ValueError, "98.0 MiB against the observer's 64 MiB"):
+            admit_cohort_payload(oversized, "primary", _ROUTE_CALLS_PER_COHORT)
+        admit_cohort_payload(WorkloadContract(create_task("adamw", rows=128, columns=512)[0]),
+                             "primary", _ROUTE_CALLS_PER_COHORT)
+        # The refusal names a shape that fits, and that shape really does.
+        for name in optimizers.TASKS:
+            workload = WorkloadContract(create_task(name, rows=128, columns=512)[0])
+            tensors = workload.tensor_abi("primary")
+            with self.subTest(task=name):
+                admit_cohort_payload(workload, "primary", _ROUTE_CALLS_PER_COHORT)
+                held = sum(math.prod(a.shape) for a in tensors) * 4 * _ROUTE_CALLS_PER_COHORT
+                self.assertLessEqual(held, SNAPSHOT_PAYLOAD_LIMIT)
+        # A single-output family at the same shape was never near the bound.
+        admit_cohort_payload(WorkloadContract(create_task("silu", rows=128, columns=1024)[0]),
+                             "primary", _ROUTE_CALLS_PER_COHORT)
+        for bad in (0, -1, True):
+            with self.subTest(route_calls=bad), self.assertRaises(ValueError):
+                admit_cohort_payload(oversized, "primary", bad)
 
     def test_hyperparameters_are_frozen_by_the_contract(self):
         for name in optimizers.TASKS:

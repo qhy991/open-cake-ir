@@ -37,7 +37,7 @@ def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sa
         "paired_timing": {
             "kind": PAIRED_METAL_BATCHED_KIND, "arms": ["candidate", "baseline"],
             "pair_order": [["candidate", "baseline"], ["baseline", "candidate"]] * 5,
-            "samples_per_cohort": 25, "route_calls_per_cohort": 28,
+            "samples_per_cohort": 25, "route_calls_per_cohort": _ROUTE_CALLS_PER_COHORT,
             "maximum_cv": 0.05, "materiality_ratio": 1.05, "required_pair_wins": 6,
             # Fixed encode/submit/complete cost is paid once per command buffer. A
             # kernel shorter than that cost is otherwise measured mostly through it.
@@ -51,6 +51,12 @@ def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sa
         policy["search_materiality_ratio"] = 1.05
     paired_protocol(policy)
     return policy
+
+
+# How many launches the native observer holds in one snapshot cohort. Named because the
+# launcher checks this same number against the observer's payload bound before a campaign
+# starts, and the two must not drift (F-2026-09-10-002).
+_ROUTE_CALLS_PER_COHORT = 28
 
 
 def study_template(root: Path, workload, workload_path: Path, starter_path: Path, *,

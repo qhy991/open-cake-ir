@@ -25,6 +25,7 @@ from open_cake_ir.lab.providers import ProviderQualificationReceipt
 from open_cake_ir.tasks.compose import execute_matched_from_config
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
 from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, study_template
+from open_cake_ir.tasks.devices import admit_cohort_payload
 from open_cake_ir.tasks.activation.workload import TASKS as _ACTIVATION_TASKS
 from open_cake_ir.tasks.rowwise.workload import TASKS as _ROWWISE_TASKS
 from open_cake_ir.tasks.reductions.workload import TASKS as _REDUCTION_TASKS
@@ -222,6 +223,11 @@ def main(argv=None) -> int:
     _write(workload_path, canonical(document))
     _write(source_path, source.encode())
     workload = load_workload(workload_path)
+    # F-2026-09-10-002: the native observer refuses an oversized snapshot cohort before it
+    # dispatches anything, so a shape that exceeds the bound dies at the first evaluation
+    # with the campaign's authoring tokens already spent. Check the same arithmetic here.
+    admit_cohort_payload(workload, args.case,
+                         study_template.__globals__["_ROUTE_CALLS_PER_COHORT"])
     study = study_template(ROOT, workload, workload_path, source_path, harness=args.harness,
         model=args.model, effort=args.effort, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,

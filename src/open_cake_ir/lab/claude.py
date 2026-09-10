@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Mapping
@@ -37,6 +37,9 @@ from ._documents import _canonical_json_bytes
 CLAUDE_EVENT_CONTRACT = "claude_stream_candidate_v3"
 CLAUDE_TERMINAL_TOOL = "StructuredOutput"
 CLAUDE_AUTHORING_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep")
+# The largest auto-compact window this CLI admits. It has no value that turns compaction
+# off, so the boundary is pushed past any Turn context a campaign is expected to reach.
+CLAUDE_AUTOCOMPACT_WINDOW = "1M"
 CLAUDE_USAGE_FIELDS = (
     "input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens",
 )
@@ -66,6 +69,8 @@ def _terminal(value: object) -> bool:
 # of the window is gone; it does not withhold the turn, so refusing it would strand a
 # campaign on an account that is merely over halfway through its quota.
 _QUOTA_SERVED = ("allowed", "allowed_warning")
+# Subtypes that mean the CLI rewrote the conversation the author was working in.
+_CONTEXT_MUTATIONS = ("compact_boundary", "compacting")
 
 
 def _metadata(event: Mapping) -> bool:
@@ -95,6 +100,15 @@ def _metadata(event: Mapping) -> bool:
                     and not isinstance(info["overageDisabledReason"], str)
                 or info.get("isUsingOverage") is True and info.get("overageStatus") != "allowed"):
             raise ValueError("Claude quota is rejected or metadata differs")
+    elif kind == "system" and event.get("subtype") in _CONTEXT_MUTATIONS:
+        # Identified by subtype alone and refused. The declared window above should keep
+        # this unreachable; if it fires anyway the Turn ran on a context the Lab cannot
+        # reconstruct, so it is reported as exactly that instead of as an unclassified
+        # event. No field schema is asserted here because none has been observed -- a
+        # guessed one would be a new campaign-fatal path of the kind this finding is about.
+        raise ValueError(
+            "Claude compacted the Turn context mid-run, so what the author saw is not "
+            "reconstructible and the Turn is not comparable")
     elif kind == "system" and event.get("subtype") == "api_retry":
         if (set(event) != {"type", "subtype", "attempt", "max_retries", "retry_delay_ms", "error_status", "error", "uuid", "session_id"}
                 or any(type(event[key]) is not int for key in ("attempt", "max_retries", "retry_delay_ms"))
@@ -231,6 +245,13 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
             terminal.get("is_error") is not False or terminal.get("permission_denials", []) != []
             or terminal.get("api_error_status") is not None):
         raise ValueError("Claude Turn did not complete under the declared event contract")
+    # The envelope check below is about containment, so a write has to be judged at the
+    # path the CLI actually resolves, not at its spelling. The init event reports the cwd
+    # it ran in; a turn that does not report one admits absolute paths only.
+    working_directory = initial.get("cwd")
+    if working_directory is not None and (not isinstance(working_directory, str)
+                                          or not Path(working_directory).is_absolute()):
+        raise ValueError("Claude reported working directory differs")
     thread_id = initial.get("session_id")
     if (not isinstance(thread_id, str) or _THREAD_ID.fullmatch(thread_id) is None or
             terminal.get("session_id") != thread_id or any(
@@ -245,6 +266,9 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
     writes: list[tuple[str, str]] = []
     models: list[str] = []
     activity: list[ProviderAuxiliaryActivity] = []
+    # Where each invocation's auxiliary record sits, so a later errored result can restate
+    # that one entry rather than adding a second record for the same item.
+    errors: dict[str, int] = {}
     if isinstance(initial.get("model"), str) and initial["model"]:
         models.append(initial["model"])
     for event in events[1:-1]:
@@ -277,22 +301,45 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                         name not in (*CLAUDE_AUTHORING_TOOLS, CLAUDE_TERMINAL_TOOL) or not isinstance(arguments, Mapping)):
                     raise ValueError("Claude tool invocation differs")
                 tools[identity] = dict(block)
+                errors[identity] = len(activity)
                 activity.append(ProviderAuxiliaryActivity(identity, "tool_use", "completed", tool=name))
                 if name == CLAUDE_TERMINAL_TOOL:
                     if not _terminal(arguments) or _canonical_json_bytes(arguments) != _canonical_json_bytes(expected):
                         raise ValueError("Claude schema terminal tool differs")
                 if name in {"Write", "Edit"}:
                     path = arguments.get("file_path")
-                    if (not isinstance(path, str) or not Path(path).is_absolute() or
-                            ".." in Path(path).parts or Path(path).name != "candidate-set.json"):
+                    if not isinstance(path, str) or not path:
                         raise ValueError("Claude write is outside the candidate envelope")
-                    writes.append((path, name))
+                    resolved = Path(path)
+                    if not resolved.is_absolute() and working_directory is not None:
+                        resolved = Path(working_directory) / resolved
+                    # Containment and identity are checked on the resolved path; a `..`
+                    # anywhere in the spelling is still refused outright rather than
+                    # normalized away, so no write can climb out of the envelope.
+                    if (not resolved.is_absolute() or ".." in resolved.parts
+                            or resolved.name != "candidate-set.json"):
+                        raise ValueError("Claude write is outside the candidate envelope")
+                    writes.append((str(resolved), name))
             elif event["type"] == "user" and kind == "tool_result":
                 identity = block.get("tool_use_id")
-                if (not isinstance(identity, str) or identity not in tools or identity in completed or
-                        block.get("is_error", False) is not False):
+                errored = block.get("is_error", False)
+                # Pairing is still zero-tolerance: an unregistered id, a repeated
+                # completion or a non-boolean flag is a structural mismatch and fatal.
+                # A tool that reported an error is not. The provider sees that result and
+                # keeps working inside the same turn, and the lifecycle checks below still
+                # require every invocation to complete and the candidate to be written, so
+                # a turn that did not recover cannot pass. Refusing here instead spent two
+                # campaigns and roughly 7M provider tokens on probes the author survived.
+                if (not isinstance(identity, str) or identity not in tools
+                        or identity in completed or not isinstance(errored, bool)
+                        # The terminal tool is not an authoring probe: it is how the Turn
+                        # declares its own completion, so an error there stays fatal.
+                        or errored and tools[identity].get("name") == CLAUDE_TERMINAL_TOOL):
                     raise ValueError("Claude tool completion differs")
                 completed.add(identity)
+                if errored:
+                    activity[errors[identity]] = replace(
+                        activity[errors[identity]], status="error_recovered")
             elif event["type"] == "assistant" and kind in ("text", "thinking", "redacted_thinking"):
                 continue
             else:
@@ -371,7 +418,13 @@ class ClaudeInvocationBuilder:
         if thread_id is not None and (not isinstance(thread_id, str) or _THREAD_ID.fullmatch(thread_id) is None):
             raise ValueError("Claude resume session id differs")
         tools = ",".join(CLAUDE_AUTHORING_TOOLS)
+        # F-2026-09-10-008: auto-compact silently drops provider context mid-turn, which
+        # changes what the author saw and breaks comparability between arms. This CLI has
+        # no off switch -- `--autocompact` takes only `auto` or a 100k..1M window -- so the
+        # boundary is pinned at the maximum it accepts and a compaction that still happens
+        # is refused below rather than absorbed.
         arguments = (str(self.executable), "-p", "--output-format", "stream-json", "--verbose", "--safe-mode",
+                     "--autocompact", CLAUDE_AUTOCOMPACT_WINDOW,
                      "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", self._model, "--effort", self._effort, "--permission-mode", "acceptEdits",
                      "--tools", tools, "--allowedTools", tools)
         if thread_id is not None:

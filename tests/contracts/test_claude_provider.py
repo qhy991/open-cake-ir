@@ -104,6 +104,8 @@ class ClaudeProviderContracts(unittest.TestCase):
             self.assertEqual(argv[argv.index("--effort") + 1], "high")
             self.assertEqual(argv[argv.index("--permission-mode") + 1], "acceptEdits")
             self.assertIn("--safe-mode", argv)
+            # F-2026-09-10-008: the compaction boundary is declared at launch.
+            self.assertEqual(argv[argv.index("--autocompact") + 1], "1M")
             self.assertEqual(argv[-2], "--")
             self.assertFalse(any("bypass" in value or "skip-permissions" in value for value in argv))
             self.assertNotIn("--fallback-model", argv)
@@ -136,7 +138,6 @@ class ClaudeProviderContracts(unittest.TestCase):
         failed = self.events(); failed[-1]["is_error"] = True; variants.append(failed)
         wrong = self.events(); wrong[-1]["session_id"] = OTHER_SESSION; variants.append(wrong)
         duplicate = self.events(); duplicate.insert(3, copy.deepcopy(duplicate[2])); variants.append(duplicate)
-        failed_tool = self.events(); failed_tool[2]["message"]["content"][0]["is_error"] = True; variants.append(failed_tool)
         forbidden = self.events(); forbidden[1]["message"]["content"][0]["name"] = "Bash"; variants.append(forbidden)
         outside = self.events(); outside[1]["message"]["content"][0]["input"]["file_path"] = str(self.workspace / "AGENTS.md"); variants.append(outside)
         child = self.events(); child[1]["parent_tool_use_id"] = "parent"; variants.append(child)
@@ -315,6 +316,77 @@ class ClaudeProviderContracts(unittest.TestCase):
             changed = copy.deepcopy(events); changed[-1]["structured_output"] = value
             with self.assertRaises(ValueError): self.normalize(self.raw(changed))
         with self.assertRaises(ValueError): self.normalize(event_contract="claude_stream_candidate_v1")
+
+    def test_a_recovered_tool_error_is_turn_local_and_the_terminal_tool_is_not(self):
+        """F-2026-09-10-003: an authoring probe the provider survived is not fatal.
+
+        The turn's own lifecycle still decides: every invocation must complete and the
+        candidate must be written. What changed is that a tool reporting an error, which
+        the author reads and works around inside the same turn, no longer kills the
+        campaign after the fact. Refusing it spent two campaigns and roughly 7M provider
+        tokens. The fact is retained rather than dropped, so a run stays auditable.
+        """
+        events = self.events(); events[2]["message"]["content"][0]["is_error"] = True
+        parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        recovered = [a for a in parsed.tool_activity if a.status == "error_recovered"]
+        self.assertEqual([(a.item_id, a.item_type, a.tool) for a in recovered],
+                         [("toolu_write", "tool_use", "Write")])
+        # Exactly one record per invocation; the error restates it, never duplicates it.
+        self.assertEqual(len([a for a in parsed.tool_activity if a.item_id == "toolu_write"]), 1)
+        # And the turn still normalizes end to end.
+        self.normalize(self.raw(events))
+        # Pairing stays zero-tolerance, and so does a non-boolean flag.
+        for mutation in (lambda rows: rows[2]["message"]["content"][0].update(tool_use_id="ghost"),
+                         lambda rows: rows[2]["message"]["content"][0].update(is_error="yes"),
+                         lambda rows: rows[2]["message"]["content"][0].update(is_error=1)):
+            changed = copy.deepcopy(events); mutation(changed)
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, "tool completion"):
+                parse_claude_turn_events(self.raw(changed), expected_terminal_message=TERMINAL)
+
+    def test_a_relative_write_path_is_judged_where_the_cli_resolves_it(self):
+        """F-2026-09-10-007: the envelope check is containment, not spelling.
+
+        A provider that writes the cwd-relative name of the very file it is supposed to
+        write was campaign-fatal, even though the CLI resolves it to exactly the sealed
+        target. The path is now resolved against the turn's reported cwd before the same
+        containment and identity rules are applied.
+        """
+        events = self.events()
+        absolute = events[1]["message"]["content"][0]["input"]["file_path"]
+        events[0]["cwd"] = str(Path(absolute).parent)
+        events[1]["message"]["content"][0]["input"]["file_path"] = "candidate-set.json"
+        parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        self.assertEqual(parsed.candidate_path, absolute)
+        # Containment still refuses anything that resolves elsewhere or renames the file.
+        for spelling in ("../candidate-set.json", "sub/../candidate-set.json",
+                         "notes.json", "sub/notes.json"):
+            changed = copy.deepcopy(events)
+            changed[1]["message"]["content"][0]["input"]["file_path"] = spelling
+            with self.subTest(spelling=spelling), self.assertRaisesRegex(ValueError, "candidate envelope"):
+                parse_claude_turn_events(self.raw(changed), expected_terminal_message=TERMINAL)
+        # Without a reported cwd a relative spelling has nothing to resolve against.
+        changed = copy.deepcopy(events); changed[0].pop("cwd")
+        with self.assertRaisesRegex(ValueError, "candidate envelope"):
+            parse_claude_turn_events(self.raw(changed), expected_terminal_message=TERMINAL)
+        # A reported cwd that is not an absolute path is itself a contract breach.
+        changed = copy.deepcopy(events); changed[0]["cwd"] = "relative/dir"
+        with self.assertRaisesRegex(ValueError, "working directory"):
+            parse_claude_turn_events(self.raw(changed), expected_terminal_message=TERMINAL)
+
+    def test_a_compacted_turn_is_refused_by_name_rather_than_absorbed(self):
+        """F-2026-09-10-008: compaction rewrites the context the author was working in.
+
+        The launch pins the window at the largest value this CLI admits -- it has no off
+        switch -- so this should be unreachable. If it fires anyway the Turn ran on a
+        context the Lab cannot reconstruct, and it is reported as that rather than as an
+        unclassified event or, worse, silently accepted.
+        """
+        for subtype in ("compact_boundary", "compacting"):
+            events = self.events()
+            events[1:1] = [{"type": "system", "subtype": subtype, "session_id": SESSION,
+                            "uuid": OTHER_SESSION}]
+            with self.subTest(subtype=subtype), self.assertRaisesRegex(ValueError, "compacted"):
+                parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
 
     def test_native_schema_tool_has_only_exact_terminal_arguments_and_closed_success(self):
         events = self.events()
