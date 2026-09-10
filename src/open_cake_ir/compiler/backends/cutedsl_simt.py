@@ -49,6 +49,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
             findings.append(refusal(code, path, message))
     check(schedule.lowering.backend is LoweringBackend.CUTLASS_CUTE_DSL
           and schedule.target == target.target_id
+          and target.target_id in {'sm_100a','sm_103a'}
           and target.compute_capability == {'sm_100a': (10,0), 'sm_103a': (10,3)}.get(target.target_id),
           'CUTE_SIMT_TARGET', 'target', 'CuTe SIMT requires the exact SM100a or SM103a Target.')
     check(len(schedule.roles)==1 and schedule.roles[0].warps==(0,), 'CUTE_SIMT_ROLE','roles',

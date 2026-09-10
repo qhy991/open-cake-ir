@@ -408,13 +408,7 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             access = s.access_map(op.op_id, dst.name)
             check(access is not None, 'NATIVE_ACCESS_REQUIRED', path,
                   'every global store requires an explicit AccessMap')
-            producer = writers.get(src.name)
-            # An invalid argmin domain has no row result to publish. Its producer
-            # owns that refusal; do not duplicate it as a downstream store hazard.
-            row_domain_known = not (producer is not None
-                                   and producer.kind is OperationKind.REDUCE_ARGMIN
-                                   and s.argmin_domain(producer) is None)
-            if access is not None and s.program_map is not None and row_domain_known:
+            if access is not None and s.program_map is not None:
                 owned = {component.name for component in access.indices
                          if component.source in (AccessIndexKind.PROGRAM,AccessIndexKind.PROGRAM_TILE)}
                 missing = [axis.name for axis in s.program_map.axes

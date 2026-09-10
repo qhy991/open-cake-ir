@@ -2,13 +2,16 @@
   "schema_version": 1,
   "id": "F-2026-09-10-012",
   "kind": "bug",
-  "title": "Native and CuTe route admission omitted the owners of explicit storage, scalar, cache and state contracts",
+  "title": "Native and CuTe route admission omitted storage, scalar, cache, state and exact-target contracts",
   "date": "2026-09-10",
   "backend": [
     "native_cuda",
     "cutlass_cute_dsl"
   ],
-  "target": "sm_100a",
+  "target": [
+    "sm_100a",
+    "apple_gpu_family7"
+  ],
   "executor_revision": "open-cake-ir-b200-v91+3691c853cd6cc8612811f6cf266893ef3b6524064183b5fc78eef4e21a8afa43",
   "compiler_revision_id": "open-cake-ir-sm100a-v72-draft",
   "source_commit": "4ee9736e",
@@ -50,14 +53,18 @@
     },
     {
       "path": "/Users/haiyan-infiniai/.local/share/open-cake-ir/native-resume-20260910/integration/compiler-cycle-prepare-01.log",
-      "note": "First canonical successor preparation refused native-argmin-domain-drift because an invalid producer domain also produced a downstream store warning. Preserve this failure; the producer domain rule owns unavailable argmin results and downstream ownership analysis only examines valid results."
+      "note": "First canonical successor preparation refused native-argmin-domain-drift because the new store rule exposes an additional, independent CTA write collision. This failed preparation is retained. The independent reviewer rejected suppressing the store rule and requested a separate expectation amendment for this one newly imported case; the 124 existing cases remain unchanged."
+    },
+    {
+      "path": "/Users/haiyan-infiniai/.local/share/open-cake-ir/native-resume-20260910/cute-apple-target-before.json",
+      "note": "Root author source probe at 1bf7f6af: CuTe SIMT admitted an Apple target because both target.compute_capability and a missing map lookup were None. Public and direct tests now require explicit supported CUDA target membership."
     }
   ],
-  "observation": "Structural dispatch and row-owned native emission had narrower semantics than their preflight admission. Native arithmetic did not consume global AccessMaps, replicated vectors lacked a unique writing thread, stores could omit varying CTA coordinates, large scalar literals exceeded FP32, and streamed load hints had no emitted effect. CuTe remained blocked on state but lost its explicit state-owner diagnostic. These are source admission defects found by local public-boundary probes, not observed device failures. The named Executor is context only and was not invoked.",
-  "proposed_change": "Keep native arithmetic in FP32 registers with explicit loads; bound scalar literals to finite FP32; require row-owned stores and all varying ProgramMap coordinates; refuse unimplemented load cache/reuse hints. Keep CuTe state refusal before route dispatch. Each counterexample must be refused by its own backend rule in public assessment and direct emission. Do not widen the IR or add a kernel-specific route.",
+  "observation": "Structural dispatch and row-owned native emission had narrower semantics than their preflight admission. Native arithmetic did not consume global AccessMaps, replicated vectors lacked a unique writing thread, stores could omit varying CTA coordinates, large scalar literals exceeded FP32, and streamed load hints had no emitted effect. CuTe remained blocked on state but lost its explicit state-owner diagnostic. These are source admission defects found by local public-boundary probes, not observed device failures. The named Executor is context only and was not invoked. A separate root-author probe found CuTe SIMT exact-target admission compared None to None for an Apple target; this is an admission defect, not Apple CUDA support.",
+  "proposed_change": "Keep native arithmetic in FP32 registers with explicit loads; bound scalar literals to finite FP32; require row-owned stores and all varying ProgramMap coordinates; refuse unimplemented load cache/reuse hints. Keep CuTe state refusal before route dispatch. Each counterexample must be refused by its own backend rule in public assessment and direct emission. Do not widen the IR or add a kernel-specific route. Require explicit sm_100a/sm_103a membership before comparing CUDA capability. Retain the independent argmin-domain and store-CTA-ownership diagnostics together in the one newly imported case.",
   "decision": "proposed",
   "implemented_in": null,
   "verified_by": null,
-  "verification_plan": "Bug tick: after exact independent approval and cycle-derived Compiler release, replay the retained JSON probes through the released public Compiler and direct backend boundary, confirm owning diagnostic classes and preserve GEMM/KMeans/multi-MMA positives. Full Corpus Gate must retain all 124 prior expectations and the 21 imported native expectations. New CuTe/native capability compilation, GPU correctness, timing, profiler and framework qualification remain separate and pending.",
+  "verification_plan": "Bug tick: after exact independent approval and cycle-derived Compiler release, replay the retained JSON probes through the released public Compiler and direct backend boundary, confirm owning diagnostic classes and preserve GEMM/KMeans/multi-MMA positives. Full Corpus Gate must retain all 124 prior expectations and 21 imported native schedules; one new case gains the separately reviewed store-ownership diagnostic. New CuTe/native capability compilation, GPU correctness, timing, profiler and framework qualification remain separate and pending.",
   "experience_disposition": "Verifier/backend boundary repair only; no compiler transformation, performance tactic or capability qualification is promoted."
 }

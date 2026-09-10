@@ -1840,7 +1840,8 @@
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
-          "NATIVE_ARGMIN_DOMAIN"
+          "NATIVE_ARGMIN_DOMAIN",
+          "NATIVE_STORE_PROGRAM_OWNERSHIP"
         ],
         "schedule_sha256": "4096e2249f610e462bc37d95641004c98048d31b5a0daf31c00a49350a20bd24",
         "lowering_source_sha256": null

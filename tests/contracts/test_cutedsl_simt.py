@@ -5,8 +5,9 @@ import math
 from pathlib import Path
 import unittest
 
-from open_cake_ir.compiler import Compiler,frontend
+from open_cake_ir.compiler import Compiler,CompilerError,frontend
 from open_cake_ir.compiler.backends import cutedsl
+from open_cake_ir.compiler.backends.common import EmitError
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.cute_toolchain import validate_cute_kernel
@@ -88,6 +89,20 @@ class CuTeSimtTests(unittest.TestCase):
         self.assertIn('PERSISTENT_WITHOUT_RESIDENCY',[f.code for f in a.findings])
         findings=cutedsl.preflight(Schedule.from_dict(s),Target.load(ROOT/'compiler/targets/sm_103a.json'))
         self.assertIn('CUTE_SIMT_PROGRAM_MAP',[f.code for f in findings])
+
+    def test_non_cuda_targets_are_refused_by_the_exact_target_owner(self):
+        _,s=task('silu','activation')
+        for name in ('apple_gpu_family7','apple_gpu_family8'):
+            with self.subTest(target=name):
+                s['target']=name
+                target=Target.load(ROOT/f'compiler/targets/{name}.json')
+                a=self.compiler.assess(s)
+                self.assertTrue(a.accepted,a.findings)
+                self.assertFalse(a.lowering_eligible)
+                self.assertIn('CUTE_SIMT_TARGET',[f.code for f in a.findings])
+                with self.assertRaises(CompilerError):self.compiler.lower(a)
+                self.assertIn('CUTE_SIMT_TARGET',[f.code for f in cutedsl.preflight(Schedule.from_dict(s),target)])
+                with self.assertRaises(EmitError):cutedsl.emit(Schedule.from_dict(s),target)
 
     def test_cross_lane_slots_and_partial_final_warp(self):
         # 33 columns forces multiple per-lane slots and a partial last stripe;
