@@ -444,7 +444,13 @@ def verify(schedule: Schedule, out: _Collector) -> None:
                 f"operation {operation.op_id!r} both reads and writes {name!r}",
                 category,
             )
-        _verify_operation_shape(operation, path, buffers, out)
+        _verify_operation_shape(
+            operation,
+            path,
+            buffers,
+            out,
+            backend=schedule.lowering.backend,
+        )
 
     # ---- loop-carried lifetime --------------------------------------------
     # A register value produced inside a tile loop does not survive it: registers hold
@@ -811,7 +817,14 @@ def _verify_block_scaled_mma(operation, path: str, buffers, out: _Collector) -> 
 
 
 
-def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> None:
+def _verify_operation_shape(
+    operation,
+    path: str,
+    buffers,
+    out: _Collector,
+    *,
+    backend=None,
+) -> None:
     category = FindingCategory.DATA_CONSISTENCY
     if operation.kind is OperationKind.REDUCE_ARGMIN:
         # `reduce_argmin` is not a generic numeric reduction with an incidental
@@ -1328,14 +1341,31 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
         # operation graph unable to name those real dependencies.
         for name in operation.reads[:1]:
             buffer = buffers.get(name)
-            if buffer is not None and buffer.space is not MemorySpace.GLOBAL:
+            if buffer is not None and buffer.space is not (
+                MemorySpace.TENSOR if operation.parameters.movement is LoadMovement.TMEM
+                else MemorySpace.GLOBAL
+            ):
                 out.add(
                     "OP_LOAD_SOURCE",
                     f"{path}.reads",
                     f"load source {name!r} is {buffer.space.value}; a load moves from "
-                    "global memory",
+                    f"{'tensor' if operation.parameters.movement is LoadMovement.TMEM else 'global'} memory",
                     category,
                 )
+    if operation.kind is OperationKind.LOAD and operation.parameters.movement is LoadMovement.TMEM:
+        source = buffers.get(operation.reads[0]) if len(operation.reads) == 1 else None
+        dest = buffers.get(operation.writes[0]) if len(operation.writes) == 1 else None
+        atom = operation.parameters.source_atom
+        if (source is None or dest is None or source.space is not MemorySpace.TENSOR
+                or dest.space is not MemorySpace.REGISTER or source.dtype is not DType.FP32
+                or dest.dtype is not DType.FP32 or source.shape != dest.shape):
+            out.add("TMEM_LOAD_CONTRACT", path,
+                    "tmem load moves one FP32 tensor tile into an identical register tile",
+                    FindingCategory.DATA_CONSISTENCY)
+        if atom is None or atom.op != "tcgen05.Ld32x32b" or atom.repetition not in (1,2,4,8,16,32,64,128):
+            out.add("TMEM_LOAD_ATOM", f"{path}.parameters.source_atom",
+                    "tmem load requires an explicit 32x32b power-of-two repetition in [1,128]",
+                    FindingCategory.HARDWARE_CONFORMANCE)
     if operation.kind is OperationKind.ATOMIC_RMW:
         if not -(1 << 31) <= operation.parameters.value < (1 << 31):
             out.add(
@@ -1457,6 +1487,23 @@ def _verify_operation_shape(operation, path: str, buffers, out: _Collector) -> N
             )
         elif contract == _BLOCK_SCALE_MMA_CONTRACT:
             _verify_block_scaled_mma(operation, path, buffers, out)
+        if len(operation.writes) != 1:
+            out.add(
+                "MMA_RESULT_COUNT", f"{path}.writes",
+                "one contraction writes exactly one explicit result", category,
+            )
+        tile = operation.parameters.tile_shape
+        if tile is not None and backend is not None and backend.value in {"native_cuda", "triton"}:
+            operands = [buffers.get(name) for name in operation.reads[:2]]
+            if (len(operands) != 2
+                    or operands[0] is None or operands[1] is None
+                    or operands[0].shape != (tile[0], tile[2])
+                    or operands[1].shape != (tile[1], tile[2])):
+                out.add(
+                    "MMA_INPUT_TILE_DOMAIN", f"{path}.parameters.tile_shape",
+                    "a contraction uses the full rank-two input tile domain "
+                    "A[M,K] and B[N,K]; tile_shape must describe that input domain", category,
+                )
 
     # An arithmetic primitive takes what its op says it takes. A binary op reads two
     # buffers, or one buffer and a declared scalar; anything else is a Schedule asking

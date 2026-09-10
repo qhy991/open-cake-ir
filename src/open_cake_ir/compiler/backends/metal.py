@@ -109,7 +109,12 @@ def private_values_per_thread(schedule: Schedule, lanes: int = SIMD_WIDTH) -> in
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     """Target-independent backend requirements, including unsupported vocabulary."""
-    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS) + tuple(
+        refusal("METAL_MMA_K_RANGES_UNSUPPORTED", f"operations[{index}].parameters.k_ranges",
+                "Metal does not implement selected MMA K contributions")
+        for index, operation in enumerate(schedule.operations)
+        if operation.kind is OperationKind.MMA and operation.parameters.k_ranges is not None
+    )
 
 
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:

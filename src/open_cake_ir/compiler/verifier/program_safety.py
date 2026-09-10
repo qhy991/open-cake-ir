@@ -6,6 +6,8 @@ from ..ir import (
     AccessIndexKind,
     BarrierMechanism,
     BufferMode,
+    LoadMovement,
+    MemorySpace,
     Operation,
     OperationKind,
     Schedule,
@@ -274,18 +276,25 @@ def verify(schedule: Schedule, out: _Collector) -> None:
         if barrier.mechanism is not BarrierMechanism.MBARRIER:
             continue
         producers = signallers.get(barrier.name, [])
-        unsupported = [
-            operation
-            for operation in producers
-            if operation.produced_pipeline_kind is None
-        ]
+        # Synchronous global-to-shared stores can publish through an mbarrier too.
+        # Their storage edges establish the protocol; a pipeline tag alone cannot.
+        def thread_stage(operation):
+            return (operation.kind is OperationKind.LOAD
+                    and operation.parameters.movement is LoadMovement.GLOBAL
+                    and len(operation.reads) == len(operation.writes) == 1
+                    and buffers.get(operation.reads[0]) is not None
+                    and buffers[operation.reads[0]].space is MemorySpace.GLOBAL
+                    and buffers.get(operation.writes[0]) is not None
+                    and buffers[operation.writes[0]].space is MemorySpace.SHARED)
+        unsupported = [operation for operation in producers
+                       if operation.produced_pipeline_kind is None and not thread_stage(operation)]
         for operation in unsupported:
             operation_index = schedule.operations.index(operation)
             out.add(
                 "BARRIER_PIPELINE_PRODUCER_UNSUPPORTED",
                 f"operations[{operation_index}].signals",
                 f"operation {operation.op_id!r} cannot drive an mbarrier pipeline; "
-                "the implemented producer kinds are TMA load and MMA",
+                "the implemented producers are TMA load, global-to-shared load and MMA",
                 category,
             )
         kinds = {
@@ -293,7 +302,8 @@ def verify(schedule: Schedule, out: _Collector) -> None:
             for operation in producers
             if operation.produced_pipeline_kind is not None
         }
-        if len(kinds) > 1:
+        if len(kinds) > 1 or (any(thread_stage(op) for op in producers)
+                             and any(op.kind is OperationKind.MMA for op in producers)):
             out.add(
                 "BARRIER_PIPELINE_KIND_AMBIGUOUS",
                 path,

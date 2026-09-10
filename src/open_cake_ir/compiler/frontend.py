@@ -659,8 +659,8 @@ class _Builder:
         self.statements(function.body)
         if "grid" in self.document and not self.document["access_maps"]:
             del self.document["access_maps"]
-        Schedule.from_dict(self.document)
-        return ScheduleSource(_encode(self.document), MappingProxyType(dict(self.locations)))
+        typed = Schedule.from_dict(self.document)
+        return ScheduleSource(_encode(typed.canonical_document(self.document)), MappingProxyType(dict(self.locations)))
 
 
 def parse(source: str, *, filename: str = "<python>", line_offset: int = 0) -> ScheduleSource:

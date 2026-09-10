@@ -1,0 +1,701 @@
+{
+  "schema_version": 1,
+  "schedule_id": "native-kmeans-partials",
+  "target": "sm_103a",
+  "lowering": {
+    "backend": "native_cuda",
+    "entry_point": "cake_native_kmeans"
+  },
+  "metadata": {},
+  "roles": [
+    {
+      "name": "epilogue",
+      "warps": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "name": "mma",
+      "warps": [
+        4
+      ]
+    },
+    {
+      "name": "copy",
+      "warps": [
+        5
+      ]
+    }
+  ],
+  "allocations": [
+    {
+      "name": "operands",
+      "space": "shared",
+      "size_bytes": 49152
+    },
+    {
+      "name": "tensor",
+      "space": "tensor",
+      "size_bytes": 65536,
+      "tensor_columns": 128,
+      "allocating_role": "epilogue"
+    }
+  ],
+  "buffers": [
+    {
+      "name": "tokens",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        1,
+        257,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "centroids",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        1,
+        257,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "centroid_sq",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        1,
+        257
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "assignments",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        1,
+        257
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "a_stage",
+      "space": "shared",
+      "dtype": "bf16",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch",
+      "allocation": "operands",
+      "stages": 2,
+      "swizzle": "swizzle_128b"
+    },
+    {
+      "name": "b_stage",
+      "space": "shared",
+      "dtype": "bf16",
+      "shape": [
+        64,
+        64
+      ],
+      "mode": "scratch",
+      "allocation": "operands",
+      "byte_offset": 32768,
+      "stages": 2,
+      "swizzle": "swizzle_128b"
+    },
+    {
+      "name": "acc",
+      "space": "tensor",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch",
+      "allocation": "tensor"
+    },
+    {
+      "name": "dot",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "bias_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "distance",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "scaled",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "indices",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "acc2",
+      "space": "tensor",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch",
+      "allocation": "tensor",
+      "byte_offset": 32768
+    },
+    {
+      "name": "dot2",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "combined",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "pipelines": [
+    {
+      "name": "main",
+      "stages": 2
+    }
+  ],
+  "barriers": [
+    {
+      "name": "ready",
+      "count": 2,
+      "producers": [
+        "copy"
+      ],
+      "consumers": [
+        "mma"
+      ],
+      "pipeline": "main",
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "done",
+      "count": 1,
+      "producers": [
+        "mma"
+      ],
+      "consumers": [
+        "epilogue"
+      ],
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "done2",
+      "count": 1,
+      "producers": [
+        "mma"
+      ],
+      "consumers": [
+        "epilogue"
+      ],
+      "mechanism": "mbarrier"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_a",
+      "kind": "load",
+      "role": "copy",
+      "reads": [
+        "tokens"
+      ],
+      "writes": [
+        "a_stage"
+      ],
+      "parameters": {
+        "movement": "tma",
+        "descriptor_box": [
+          128,
+          64
+        ]
+      },
+      "signals": [
+        "ready"
+      ],
+      "pipeline": "main"
+    },
+    {
+      "id": "load_b",
+      "kind": "load",
+      "role": "copy",
+      "reads": [
+        "centroids"
+      ],
+      "writes": [
+        "b_stage"
+      ],
+      "parameters": {
+        "movement": "tma",
+        "descriptor_box": [
+          64,
+          64
+        ]
+      },
+      "signals": [
+        "ready"
+      ],
+      "pipeline": "main"
+    },
+    {
+      "id": "mma",
+      "kind": "mma",
+      "role": "mma",
+      "reads": [
+        "a_stage",
+        "b_stage"
+      ],
+      "writes": [
+        "acc"
+      ],
+      "parameters": {
+        "accumulator": "fp32",
+        "instruction": {
+          "contract": "tcgen05.mma.cta_group::1.kind::f16",
+          "shape": [
+            128,
+            64,
+            16
+          ],
+          "cta_group": 1,
+          "operand_source": "shared",
+          "operand_major": [
+            "k",
+            "k"
+          ]
+        },
+        "tile_shape": [
+          128,
+          64,
+          64
+        ],
+        "k_ranges": [
+          [
+            0,
+            16
+          ],
+          [
+            32,
+            48
+          ]
+        ]
+      },
+      "waits": [
+        "ready"
+      ],
+      "signals": [
+        "done"
+      ],
+      "pipeline": "main",
+      "depends_on": [
+        "load_a",
+        "load_b"
+      ]
+    },
+    {
+      "id": "mma2",
+      "kind": "mma",
+      "role": "mma",
+      "reads": [
+        "a_stage",
+        "b_stage"
+      ],
+      "writes": [
+        "acc2"
+      ],
+      "parameters": {
+        "accumulator": "fp32",
+        "instruction": {
+          "contract": "tcgen05.mma.cta_group::1.kind::f16",
+          "shape": [
+            128,
+            64,
+            16
+          ],
+          "cta_group": 1,
+          "operand_source": "shared",
+          "operand_major": [
+            "k",
+            "k"
+          ]
+        },
+        "tile_shape": [
+          128,
+          64,
+          64
+        ],
+        "k_ranges": [
+          [
+            16,
+            32
+          ],
+          [
+            48,
+            64
+          ]
+        ]
+      },
+      "waits": [
+        "ready"
+      ],
+      "signals": [
+        "done2"
+      ],
+      "pipeline": "main",
+      "depends_on": [
+        "load_a",
+        "load_b"
+      ]
+    },
+    {
+      "id": "read_acc",
+      "kind": "load",
+      "role": "epilogue",
+      "reads": [
+        "acc"
+      ],
+      "writes": [
+        "dot"
+      ],
+      "parameters": {
+        "movement": "tmem",
+        "source_atom": {
+          "op": "tcgen05.Ld32x32b",
+          "repetition": 16
+        }
+      },
+      "waits": [
+        "done"
+      ],
+      "depends_on": [
+        "mma"
+      ]
+    },
+    {
+      "id": "read_acc2",
+      "kind": "load",
+      "role": "epilogue",
+      "reads": [
+        "acc2"
+      ],
+      "writes": [
+        "dot2"
+      ],
+      "parameters": {
+        "movement": "tmem",
+        "source_atom": {
+          "op": "tcgen05.Ld32x32b",
+          "repetition": 16
+        }
+      },
+      "waits": [
+        "done2"
+      ],
+      "depends_on": [
+        "mma2"
+      ]
+    },
+    {
+      "id": "combine",
+      "kind": "elementwise",
+      "role": "epilogue",
+      "reads": [
+        "dot",
+        "dot2"
+      ],
+      "writes": [
+        "combined"
+      ],
+      "parameters": {
+        "op": "add"
+      },
+      "depends_on": [
+        "read_acc",
+        "read_acc2"
+      ]
+    },
+    {
+      "id": "load_bias",
+      "kind": "load",
+      "role": "epilogue",
+      "reads": [
+        "centroid_sq"
+      ],
+      "writes": [
+        "bias_tile"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "scale_dot",
+      "kind": "elementwise",
+      "role": "epilogue",
+      "reads": [
+        "combined"
+      ],
+      "writes": [
+        "scaled"
+      ],
+      "parameters": {
+        "op": "mul",
+        "scalar": -2.0
+      },
+      "depends_on": [
+        "combine"
+      ]
+    },
+    {
+      "id": "distance",
+      "kind": "elementwise",
+      "role": "epilogue",
+      "reads": [
+        "scaled",
+        "bias_tile"
+      ],
+      "writes": [
+        "distance"
+      ],
+      "parameters": {
+        "op": "add",
+        "broadcast_axis": 1
+      },
+      "depends_on": [
+        "scale_dot",
+        "load_bias"
+      ]
+    },
+    {
+      "id": "argmin",
+      "kind": "reduce_argmin",
+      "role": "epilogue",
+      "reads": [
+        "distance"
+      ],
+      "writes": [
+        "indices"
+      ],
+      "parameters": {
+        "tie_break": "lowest_index",
+        "nan_policy": "reject_input",
+        "across_loop": true
+      },
+      "depends_on": [
+        "distance"
+      ]
+    },
+    {
+      "id": "store",
+      "kind": "store",
+      "role": "epilogue",
+      "reads": [
+        "indices"
+      ],
+      "writes": [
+        "assignments"
+      ],
+      "parameters": {
+        "coalesced": false
+      },
+      "depends_on": [
+        "argmin"
+      ]
+    }
+  ],
+  "outputs": [
+    "assignments"
+  ],
+  "tile_loops": [
+    {
+      "name": "columns",
+      "iterator": "nn",
+      "buffer": "centroids",
+      "dimension": 1,
+      "tile": 64,
+      "body": [
+        "contraction",
+        "read_acc",
+        "read_acc2",
+        "combine",
+        "load_bias",
+        "scale_dot",
+        "distance",
+        "argmin"
+      ],
+      "range_options": {
+        "num_stages": 1,
+        "loop_unroll_factor": 1,
+        "flatten": false,
+        "warp_specialize": true,
+        "disallow_acc_multi_buffer": true,
+        "disable_licm": false
+      }
+    },
+    {
+      "name": "contraction",
+      "iterator": "kk",
+      "buffer": "tokens",
+      "dimension": 2,
+      "tile": 64,
+      "body": [
+        "load_a",
+        "load_b",
+        "mma",
+        "mma2"
+      ],
+      "range_options": {
+        "num_stages": 2,
+        "loop_unroll_factor": 1,
+        "flatten": false,
+        "warp_specialize": true,
+        "disallow_acc_multi_buffer": true,
+        "disable_licm": false
+      }
+    }
+  ],
+  "access_maps": [
+    {
+      "operation": "load_a",
+      "buffer": "tokens",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "program_tile",
+          "name": "rows"
+        },
+        {
+          "source": "loop_tile",
+          "name": "kk"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_b",
+      "buffer": "centroids",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "loop_tile",
+          "name": "nn"
+        },
+        {
+          "source": "loop_tile",
+          "name": "kk"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_bias",
+      "buffer": "centroid_sq",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "loop_tile",
+          "name": "nn"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store",
+      "buffer": "assignments",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "program_tile",
+          "name": "rows"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "rows",
+        "axis": 0,
+        "buffer": "tokens",
+        "dimension": 1,
+        "tile": 128
+      },
+      {
+        "name": "batch",
+        "axis": 1,
+        "buffer": "tokens",
+        "dimension": 0,
+        "tile": 1
+      }
+    ]
+  }
+}

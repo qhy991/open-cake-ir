@@ -121,7 +121,15 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     state = tuple(refusal("CUTE_STATE_UNSUPPORTED", f"buffers[{i}].mode",
         "CuTe lowering does not implement mutable state buffers")
         for i, buffer in enumerate(schedule.buffers) if buffer.mode is BufferMode.STATE)
-    common = vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+    common = vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS) + tuple(
+        refusal(
+            "CUTE_MMA_K_RANGES_UNSUPPORTED",
+            f"operations[{index}].parameters.k_ranges",
+            "CuTe-DSL does not implement selected MMA K contributions",
+        )
+        for index, operation in enumerate(schedule.operations)
+        if operation.kind is OperationKind.MMA and operation.parameters.k_ranges is not None
+    )
     if common:
         return state + common + python_name_findings(schedule)
     return state + python_name_findings(schedule) + vocabulary_findings(
