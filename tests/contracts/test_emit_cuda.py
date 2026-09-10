@@ -10,7 +10,9 @@ import tempfile
 import unittest
 
 from open_cake_ir.compiler import Compiler, CompilerError, Schedule, Target
-from open_cake_ir.compiler.backends.native_cuda import preflight
+from open_cake_ir.compiler.backends.native_cuda import emit, preflight
+from open_cake_ir.compiler.backends.common import EmitError
+from open_cake_ir.compiler.verifier import verify
 from open_cake_ir.compiler import profile_envelope
 from open_cake_ir.compiler.schema import schedule_schema
 from open_cake_ir.compiler.performance.work import work_bound
@@ -278,6 +280,41 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertFalse(self.compiler.assess(d).lowering_eligible)
         s=Schedule.from_dict(d);t=Target.load(ROOT/'compiler/targets/sm_100a.json')
         self.assertIn('NATIVE_REGISTER_ROLE_OWNERSHIP',[f.code for f in preflight(s,t)])
+
+    def test_arithmetic_global_access_requires_an_explicit_register_load(self):
+        # The original composition loads bias into registers before adding it.
+        self.lower(document())
+        d=document()
+        d['buffers'].append(dict(name='arithmetic_input',space='global',dtype='fp32',
+                                 shape=[128,64],mode='input'))
+        op=next(op for op in d['operations'] if op['id']=='add_bias')
+        op['reads']=['dot','arithmetic_input'];op['parameters']={'op':'add'}
+        d['access_maps'].append(dict(operation='add_bias',buffer='arithmetic_input',
+            boundary='mask_tiled_axes',indices=[dict(source='dimension',dimension=i) for i in range(2)]))
+        s=Schedule.from_dict(d);target=Target.load(ROOT/'compiler/targets/sm_100a.json')
+        self.assertFalse([f for f in verify(s,target) if f.blocks_lowering or f.blocks_acceptance])
+        self.refuses(d,'NATIVE_ARITHMETIC_STORAGE')
+        self.assertIn('NATIVE_ARITHMETIC_STORAGE',[f.code for f in preflight(s,target)])
+        with self.assertRaises(EmitError):emit(s,target)
+
+    def test_scalar_literals_are_valid_finite_fp32_in_public_and_direct_lowering(self):
+        target=Target.load(ROOT/'compiler/targets/sm_100a.json')
+        for value in (0,2,-2,0.25,-0.0,3.4028234663852886e38):
+            d=document();op=next(op for op in d['operations'] if op['id']=='add_bias')
+            op['reads']=['dot'];op['parameters']={'op':'mul','scalar':value}
+            with self.subTest(value=value):
+                source=self.lower(d).source
+                self.assertIn(f'__fmul_rn(b7[col],{float(value)!r}f)',source)
+                self.assertIn(f'{float(value)!r}f',emit(Schedule.from_dict(d),target).source)
+        for value in (1e300,-1e300,3.4028236e38):
+            d=document();op=next(op for op in d['operations'] if op['id']=='add_bias')
+            op['reads']=['dot'];op['parameters']={'op':'mul','scalar':value}
+            with self.subTest(value=value):
+                s=Schedule.from_dict(d)
+                self.assertFalse([f for f in verify(s,target) if f.blocks_lowering or f.blocks_acceptance])
+                self.refuses(d,'NATIVE_SCALAR_FINITE')
+                self.assertIn('NATIVE_SCALAR_FINITE',[f.code for f in preflight(s,target)])
+                with self.assertRaises(EmitError):emit(s,target)
 
     def test_missing_output_writer_fails_public_contract(self):
         d=document();d['operations'].pop();d['access_maps'].pop()

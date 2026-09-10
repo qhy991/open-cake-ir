@@ -369,13 +369,17 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             check(op.parameters.op in (ElementwiseOp.ADD, ElementwiseOp.SUB, ElementwiseOp.MUL,
                                         ElementwiseOp.DIV, ElementwiseOp.RELU, ElementwiseOp.SQUARE),
                   'NATIVE_ARITHMETIC_UNSUPPORTED', path+'.parameters.op', 'native arithmetic currently admits add/sub/mul/div/relu/square')
-            check(dst.dtype is DType.FP32 and all(buffers[n].dtype is DType.FP32 for n in op.reads)
-                  and dst.space is MemorySpace.REGISTER,
-                  'NATIVE_ARITHMETIC_DTYPE', path, 'native elementwise operations use FP32 register values')
+            check(dst.dtype is DType.FP32 and all(buffers[n].dtype is DType.FP32 for n in op.reads),
+                  'NATIVE_ARITHMETIC_DTYPE', path, 'native elementwise operations use FP32 values')
+            check(dst.space is MemorySpace.REGISTER
+                  and all(buffers[n].space is MemorySpace.REGISTER for n in op.reads),
+                  'NATIVE_ARITHMETIC_STORAGE', path,
+                  'native elementwise operations read and write row-owned registers; load global inputs explicitly')
             check(op.parameters.broadcast_axis in (None,1), 'NATIVE_BROADCAST_UNSUPPORTED', path,
                   'native row ownership currently admits trailing-column broadcasts only')
-            check(op.parameters.scalar is None or math.isfinite(op.parameters.scalar),
-                  'NATIVE_SCALAR_FINITE', path+'.parameters.scalar', 'native scalar literals must be finite')
+            check(op.parameters.scalar is None or math.isfinite(op.parameters.scalar)
+                  and abs(op.parameters.scalar) <= 3.4028234663852886e38,
+                  'NATIVE_SCALAR_FINITE', path+'.parameters.scalar', 'native scalar literals must be finite FP32 values')
         elif op.kind is OperationKind.REDUCE_ARGMIN:
             src = buffers[op.reads[0]]
             check(len(src.shape) == 2 and src.shape[0] == 128 and src.space is MemorySpace.REGISTER
@@ -697,7 +701,7 @@ class _Emitter:
             self.line('#pragma unroll')
             self.begin(f'for (int col=0; col<{_slots(self.s,dst)}; ++col)')
             x=f'{a}[{"0" if src.is_scalar else "col"}]'
-            y=f'{p.scalar!r}f' if p.scalar is not None else (f'{self.names[op.reads[1]]}[{"0" if self.b(op.reads[1]).is_scalar else "col"}]' if len(op.reads)>1 else x)
+            y=f'{float(p.scalar)!r}f' if p.scalar is not None else (f'{self.names[op.reads[1]]}[{"0" if self.b(op.reads[1]).is_scalar else "col"}]' if len(op.reads)>1 else x)
             expr={ElementwiseOp.ADD:f'__fadd_rn({x},{y})',ElementwiseOp.SUB:f'__fsub_rn({x},{y})',
                   ElementwiseOp.MUL:f'__fmul_rn({x},{y})',ElementwiseOp.DIV:f'__fdiv_rn({x},{y})',
                   ElementwiseOp.RELU:f'fmaxf({x},0.0f)',ElementwiseOp.SQUARE:f'__fmul_rn({x},{x})'}[p.op]
