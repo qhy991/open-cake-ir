@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-005",
+  "kind": "bug",
+  "title": "GEMM SiLU CPU oracle overflows on admitted negative contractions",
+  "date": "2026-09-10",
+  "backend": "metal-m2",
+  "target": "apple_gpu_family8",
+  "executor_revision": "open-cake-ir-b200-v87+15a1a332a3d81db8e20e40dcc3d818843edae4205bba69ef25eb515767052773",
+  "compiler_revision_id": "open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578",
+  "tasks": [
+    "gemm_silu"
+  ],
+  "evidence": [
+    {
+      "path": "/Users/haiyan-infiniai/.local/share/open-cake-ir/omoe-transfer-20260910/review.md",
+      "note": "Independent source/CPU probe at d76cb9ad: R1/K256/N2, a=-2, b=2, bias=0 passes contract and static lowering but math.exp(1024) raises OverflowError. Also reproduced under triton-b200; no device was dispatched."
+    },
+    {
+      "path": "/Users/haiyan-infiniai/.local/share/open-cake-ir/omoe-transfer-20260910/review-02.md",
+      "note": "Independent repair verification at 8f4fc410: totals -1024,-90,0,90,1024 finite; signed zero retained; 24 transfer/contraction tests pass."
+    }
+  ],
+  "observation": "The frozen finite-input domain permits negative dot products below -709. Direct total/(1+exp(-total)) overflows the CPU oracle even though SiLU is finite. This is an oracle implementation failure, not a candidate numerical failure or a GPU performance observation.",
+  "proposed_change": "Evaluate SiLU with a sign-stable exponential without changing the mathematical definition, input domain or tolerance.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v88+22c4903fa2f84393a9a214e6f4c7b848d6e97511109fe381a5d6cb1d00c2eaab",
+  "verified_by": "/Users/haiyan-infiniai/.local/share/open-cake-ir/omoe-transfer-20260910/review-02.md",
+  "verification_plan": "CPU replay of the admitted boundary inputs plus public oracle and transfer contract regressions. Closure covers the oracle bug only; it provides no GPU or E2E qualification."
+}

@@ -35,3 +35,5 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-10-002 — observer cohort snapshot bound (capacity, adamw)
 - F-2026-09-10-003 — claude is_error zero-tolerance (protocol, softmax)
 - F-2026-09-10-004 — baseline near vocabulary ceiling (behavior, 5 tasks)
+
+- F-2026-09-10-005 — GEMM SiLU oracle overflow (bug, CPU oracle replay; fixed in Executor v88)
