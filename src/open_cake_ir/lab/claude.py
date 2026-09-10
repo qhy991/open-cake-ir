@@ -142,10 +142,13 @@ def _metadata(event: Mapping) -> bool:
 
 
 def claude_model_usage(terminal: Mapping, main_model: str, *, allow_zero: bool = False) -> tuple[int, tuple[ProviderAuxiliaryActivity, ...]]:
-    """Charge each native modelUsage row once; top-level usage is a main-row check.
+    """Charge each native modelUsage row once; top-level usage is a lower-bound check.
 
     Estimated thinking, output-token details, cache partitions, iterations and costs
-    are never additive counters. This projection alone does not admit a Turn.
+    are never additive counters. Claude may use the requested model for internal work
+    such as session titles, so its aggregate modelUsage row may exceed the main Turn's
+    top-level usage. It may never understate that Turn. This projection alone does not
+    admit a Turn.
     """
     usage = terminal.get("usage")
     if not isinstance(usage, Mapping) or any(type(usage.get(key)) is not int or usage[key] < 0 for key in CLAUDE_USAGE_FIELDS):
@@ -171,8 +174,8 @@ def claude_model_usage(terminal: Mapping, main_model: str, *, allow_zero: bool =
                 or "costUSD" in row and (type(row["costUSD"]) not in (int, float) or not math.isfinite(row["costUSD"]) or row["costUSD"] < 0)
                 or any(key in row and (not isinstance(row[key], str) or not row[key]) for key in ("canonicalModel", "provider"))):
             raise ValueError("Claude modelUsage reports unsupported activity or malformed metadata")
-        if model == main_model and any(row[other] != usage[key] for key, other in mapping.items()):
-            raise ValueError("Claude main modelUsage differs from terminal usage")
+        if model == main_model and any(row[other] < usage[key] for key, other in mapping.items()):
+            raise ValueError("Claude main modelUsage understates terminal usage")
         tokens = sum(row[key] for key in mapping.values())
         total += tokens
         activities.append(ProviderAuxiliaryActivity(f"modelUsage[{model}]", "model_usage", "reported", model=model, provider_tokens=tokens))

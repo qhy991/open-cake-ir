@@ -294,7 +294,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         self.assertEqual(set(turn.tool_activity[0].document), {"item_id", "item_type", "status", "server", "tool"})
         self.assertEqual([dict(activity.document) for activity in parsed.tool_activity], [dict(activity.document) for activity in turn.tool_activity])
         for mutate in (
-            lambda rows: rows[-1]["modelUsage"]["exact-requested-model"].update(inputTokens=5),
+            lambda rows: rows[-1]["modelUsage"]["exact-requested-model"].update(inputTokens=3),
             lambda rows: rows[-1]["modelUsage"].pop("exact-requested-model"),
             lambda rows: rows[-1]["modelUsage"]["claude-haiku-4-5-20251001"].update(outputTokens=True),
             lambda rows: rows[3]["message"].update(model="claude-haiku-4-5-20251001"),
@@ -302,6 +302,21 @@ class ClaudeProviderContracts(unittest.TestCase):
             changed = copy.deepcopy(events); mutate(changed)
             with self.assertRaises(ValueError):
                 self.normalize(self.raw(changed))
+
+    def test_same_model_auxiliary_usage_is_charged_but_may_not_understate_terminal_usage(self):
+        events = self.events()
+        main = events[-1]["modelUsage"]["exact-requested-model"]
+        main["inputTokens"] += 2
+        main["cacheReadInputTokens"] += 1
+        parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        self.assertEqual(parsed.provider_tokens, 208)
+        activity, = [item for item in parsed.tool_activity if item.model == "exact-requested-model"]
+        self.assertEqual(activity.provider_tokens, 208)
+
+        understated = self.events()
+        understated[-1]["modelUsage"]["exact-requested-model"]["outputTokens"] -= 1
+        with self.assertRaisesRegex(ValueError, "understates terminal usage"):
+            self.normalize(self.raw(understated))
 
     def test_native_structured_terminal_is_full_typed_object_not_prose_or_fence_extraction(self):
         events = self.events()
