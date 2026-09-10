@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-10-014",
+  "id": "F-2026-09-10-016",
   "kind": "protocol",
   "title": "Claude modelUsage may conservatively exceed top-level usage when the requested model also serves internal activity",
   "date": "2026-09-10",

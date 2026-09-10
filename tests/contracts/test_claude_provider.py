@@ -411,9 +411,10 @@ class ClaudeProviderContracts(unittest.TestCase):
         """F-2026-09-10-008: compaction rewrites the context the author was working in.
 
         The launch pins the window at the largest value this CLI admits -- it has no off
-        switch -- so this should be unreachable. If it fires anyway the Turn ran on a
-        context the Lab cannot reconstruct, and it is reported as that rather than as an
-        unclassified event or, worse, silently accepted.
+        switch -- though for a model the CLI does not recognize that window is clamped
+        to the CLI's assumed model context, so it is not unreachable (F-2026-09-10-013).
+        When it fires the Turn ran on a context the Lab cannot reconstruct, and it is
+        reported as that rather than as an unclassified event or, worse, silently accepted.
         """
         for subtype in ("compact_boundary", "compacting"):
             events = self.events()
@@ -421,6 +422,58 @@ class ClaudeProviderContracts(unittest.TestCase):
                             "uuid": OTHER_SESSION}]
             with self.subTest(subtype=subtype), self.assertRaisesRegex(ValueError, "compacted"):
                 parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        # F-2026-09-10-013: this CLI also announces compaction as a bare status --
+        # `status: "compacting"` when it starts, `status: null` with `compact_result`
+        # when it lands (gemm and pairwise_sqdist turn 2 on Executor v98) -- and the
+        # subtype rule alone left those to the unclassified-event refusal. Both are
+        # refused by the same name, and an unrelated status still fails closed.
+        for status_fields in ({"status": "compacting"},
+                              {"status": None, "compact_result": "success"}):
+            events = self.events()
+            events[1:1] = [{"type": "system", "subtype": "status", **status_fields,
+                            "session_id": SESSION, "uuid": OTHER_SESSION}]
+            with self.subTest(status_fields=status_fields), self.assertRaisesRegex(ValueError, "compacted"):
+                parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        events = self.events()
+        events[1:1] = [{"type": "system", "subtype": "status", "status": "idle",
+                        "session_id": SESSION, "uuid": OTHER_SESSION}]
+        with self.assertRaisesRegex(ValueError, "outside the declared native contract"):
+            parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+
+    def test_a_tool_progress_heartbeat_is_admitted_and_any_other_shape_fails_closed(self):
+        """F-2026-09-11-015: the CLI emits a heartbeat while one tool call runs long.
+
+        Observed as two `tool_progress` events (30 s, then 60 s) around a Read of a
+        multi-megabyte single-line JSON evidence object, on gemm turn 2 under Executor
+        v99. A heartbeat rewrites nothing and carries no author-visible content, so it
+        is admitted under exactly the observed shape instead of refused: the refusal
+        killed the turn as an unclassified event before the compaction notices that
+        followed, hiding the named diagnosis three lines later. `parent_tool_use_id`
+        here names the owning tool call, not a subagent, and the heartbeat records no
+        activity of its own -- the stream retains it.
+        """
+        heartbeat = {"type": "tool_progress", "tool_use_id": "call_x-heartbeat-0",
+                     "tool_name": "Read", "parent_tool_use_id": "call_x",
+                     "elapsed_time_seconds": 30, "heartbeat": True,
+                     "session_id": SESSION, "uuid": OTHER_SESSION}
+        events = self.events(); events.insert(2, heartbeat)
+        raw = self.raw(events)
+        parsed = parse_claude_turn_events(raw, expected_terminal_message=TERMINAL)
+        self.assertEqual(parsed.provider_tokens, 205)
+        self.assertNotIn("tool_progress", {activity.item_type for activity in parsed.tool_activity})
+        self.normalize(raw)
+        for mutation in (lambda row: row.update(heartbeat=False),
+                         lambda row: row.update(heartbeat=None),
+                         lambda row: row.update(elapsed_time_seconds=True),
+                         lambda row: row.update(elapsed_time_seconds=-1),
+                         lambda row: row.update(elapsed_time_seconds=30.0),
+                         lambda row: row.update(tool_name=""),
+                         lambda row: row.update(tool_use_id=""),
+                         lambda row: row.pop("parent_tool_use_id"),
+                         lambda row: row.update(unobserved=1)):
+            changed = copy.deepcopy(events); mutation(changed[2])
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, "heartbeat"):
+                self.normalize(self.raw(changed))
 
     def test_a_cli_synthetic_continuation_is_recorded_and_an_unmarked_one_is_not(self):
         """The CLI writes its own user turn when a response had no visible output.

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-014",
+  "kind": "bug",
+  "title": "The launcher's elementwise shape defaults override the contraction contract's own extents, handing every task in that family a starter the Metal verifier must refuse",
+  "date": "2026-09-10",
+  "backend": "metal-m1-pro",
+  "target": "apple_gpu_family7",
+  "executor_revision": "open-cake-ir-b200-v98+dd038d93dc83c53042888d1d3777b8fba23968a7d756c79a6ce8eadbec72edba",
+  "compiler_revision_id": "open-cake-ir-sm100a-v73+78ea59f663387f69a0e210a9a9c8070c2e00518d6eeda32d4ff1cb7171a6ad6c",
+  "tasks": [
+    "gemm",
+    "gemm_silu",
+    "pairwise_sqdist",
+    "attention_decode"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/probe-wt-c1024/baseline-feedback.json",
+      "note": "preflight of the documented contraction command line (--depth 256, no shape flags) on a clean v98 checkout: baseline preparation refused, METAL_PRIVATE_STORAGE_LIMIT blocking at the starter's full second-operand load; the launcher's generic defaults (rows 128, columns 1024) had overridden the contract's (rows 1024, depth 128, columns 64)"
+    },
+    {
+      "path": "/private/tmp/probe-wt-c64/baseline-feedback.json",
+      "note": "same named refusal at columns 64 with depth 256: the starter materializes the whole second operand per program, so the binding constraint is the product K*N against the 1024 lane-owned FP32 bound, not the column count alone"
+    },
+    {
+      "path": "/private/tmp/probe-wt-c32/baseline-feedback.json",
+      "note": "columns 32 with depth 256 (K*N = 8192) is the admitting boundary for this starter: all four contraction tasks preflight green at r128-k256-n32, which is how the v98 batch was launched"
+    },
+    {
+      "path": "/private/tmp/probe-v99-default/workload.json",
+      "note": "replay under the successor: the same bare command line resolves to contraction-gemm-fp32-metal-m1-pro-r1024-k128-n64-v1 (the contract's own triple) and the baseline preflight admits"
+    }
+  ],
+  "observation": "Every contraction task was unlaunchable on Metal through the documented command line, while the Triton route ran the same defaults fine -- the bug is in the launcher, not the contract. The contraction contract declares its own extents precisely so the starter's materialized second operand stays inside the Metal lane-owned storage bound; launch_task.py's argparse defaults (128 x 1024, the elementwise tile) silently overrode them. The verifier's refusal was always correct, named and inspectable; the default resolution made it fire on every bare invocation. Explicit shape flags keep that named refusal, which stays the right answer for user-chosen shapes.",
+  "proposed_change": "Executor successor: absent --rows/--columns resolve per family -- contraction tasks take the contract's 1024/64, every other family keeps the elementwise 128/1024; explicit flags still win and keep the verifier's named hardware-conformance refusal.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v99+f420d07c87fa7d0cbfecd67ae30d6e6dc3ced1d6c22126b3498f87bb26960d97",
+  "verified_by": "Replay: tools/launch_task.py --task gemm --depth 128 with no shape flags under Executor v99 resolves r1024-k128-n64 and the baseline preflight admits (probe-v99-default workload.json); tests/contracts/test_task_launch.py::test_contraction_tasks_default_to_their_own_admitting_shape pins the resolution for both families and for explicit overrides; green in the 130-test launch/claude/contraction selection. Landed in the same change as this finding on main.",
+  "verification_plan": "Bug tick, replay-verified: the cited bare preflight command under the successor must build its baseline without touching the starter or the verifier; an explicit shape combination that exceeds the storage bound must keep the named METAL_PRIVATE_STORAGE_LIMIT refusal."
+}

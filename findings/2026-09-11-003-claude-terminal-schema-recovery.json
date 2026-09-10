@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-11-002",
+  "id": "F-2026-09-11-003",
   "kind": "protocol",
   "title": "A schema-rejected StructuredOutput invocation can be corrected before the exact terminal completes",
   "date": "2026-09-11",

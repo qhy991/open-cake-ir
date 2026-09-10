@@ -89,6 +89,20 @@ class TaskLaunchTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError,'no alternative installation'):
                         launch_task._provider_executable('codex',None)
 
+    def test_contraction_tasks_default_to_their_own_admitting_shape(self):
+        """F-2026-09-10-014: the elementwise tile this launcher uses by default is refused
+        by the Metal verifier for every contraction task (the starter materializes the
+        full second operand, over the lane-owned storage bound). Absent flags resolve to
+        the contraction contract's own extents; explicit flags still win, and every other
+        family keeps the elementwise tile.
+        """
+        self.assertEqual(launch_task._default_shape("gemm", None, None), (1024, 64))
+        self.assertEqual(launch_task._default_shape("attention_decode", None, None), (1024, 64))
+        self.assertEqual(launch_task._default_shape("gemm_silu", 128, 32), (128, 32))
+        self.assertEqual(launch_task._default_shape("pairwise_sqdist", 128, None), (128, 64))
+        self.assertEqual(launch_task._default_shape("layernorm", None, None), (128, 1024))
+        self.assertEqual(launch_task._default_shape("adadelta", None, 512), (128, 512))
+
     def test_stable_study_has_real_task_inputs_and_declared_metal_assay(self):
         document, source = create_task("layernorm", rows=2, columns=7)
         workload_path, starter = self.directory/"workload.json", self.directory/"starter.py"

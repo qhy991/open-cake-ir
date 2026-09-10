@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-013",
+  "kind": "protocol",
+  "title": "The pinned 1M auto-compact window is clamped to the CLI's assumed model context for unrecognized models, and the bare status shapes the CLI emits reach the contract as unclassified events",
+  "date": "2026-09-10",
+  "backend": "metal-m1-pro",
+  "target": "apple_gpu_family7",
+  "executor_revision": "open-cake-ir-b200-v98+dd038d93dc83c53042888d1d3777b8fba23968a7d756c79a6ce8eadbec72edba",
+  "compiler_revision_id": "open-cake-ir-sm100a-v73+78ea59f663387f69a0e210a9a9c8070c2e00518d6eeda32d4ff1cb7171a6ad6c",
+  "tasks": [
+    "gemm",
+    "pairwise_sqdist"
+  ],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/gemm-glm53-high-20260910n32",
+      "run": "open_cake-1",
+      "event": 18,
+      "note": "run_fault provider_fault at turn 2: 'Claude event is outside the declared native contract'; turn 1 had evaluated four candidates cleanly"
+    },
+    {
+      "path": "/Users/haiyan/Documents/lab-workspaces/gemm-glm53-high-20260910n32/campaign-evidence/objects/sha256/80/80447792a9a8735c6f6f8104ab82a86d63d34623ea40ad449c879e4d87913b9e",
+      "note": "turn-2 provider stream: system/status status='compacting', system/status status=null compact_result='success', system/compact_boundary trigger='auto' pre_tokens=187855 post_tokens=74419 cumulative_dropped_tokens=113436; the result row reports contextWindow 200000 and maxOutputTokens 32000 for glm-5.3"
+    },
+    {
+      "path": "/Users/haiyan/Documents/lab-workspaces/gemm-glm53-high-20260910n32/campaign-evidence/objects/sha256/08/089dbf616da27f2f327878d5fb2ed70fd63a63b259b7c648536429d4b1c68609",
+      "note": "74-byte provider_stderr on the very first invocation: '[claude-code:unrecognized_model] {\"model\":\"glm-5.3\",\"query_source\":\"sdk\"}' -- the CLI does not know this model and falls back to an assumed context"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/pairwise-sqdist-glm53-high-20260910n32",
+      "run": "open_cake-1",
+      "event": 13,
+      "note": "recurrence, same signature at turn 2: compaction notices pre_tokens=157747, same unrecognized_model stderr; gemm_silu and attention_decode ran four turns without crossing the ceiling, so the fault is session-size-dependent, not task-deterministic"
+    }
+  ],
+  "observation": "F-2026-09-10-008 closed on the premise that pinning --autocompact 1M pushes the boundary 'past any Turn context a campaign is expected to reach'. For a model the CLI does not recognize that premise is false: the CLI clamps the window to its assumed model context (glm-5.3 reported contextWindow 200000), and sessions crossing that ceiling compact mid-turn anyway -- at 187,855 and 157,747 tokens here, with 3M-token campaigns and contraction-sized starters. Fail-closed held (both runs died rather than silently absorbing the rewrite), but the refusal fired as the generic 'outside the declared native contract' because this CLI announces compaction as subtype 'status' with status='compacting' / compact_result, while the named context-mutation refusal matched subtypes only -- so the comparability statement a reviewer needs was not attached to the fault.",
+  "proposed_change": "Executor successor: classify the two observed status shapes as context mutations so the refusal carries the 'not reconstructible, not comparable' name (an unrelated status still fails closed); state the clamp in place of the false unreachable premise at the window constant and the launch argv. The refusal, not the window pin, is the load-bearing rule -- a compacted Turn must stay fatal.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v99+f420d07c87fa7d0cbfecd67ae30d6e6dc3ced1d6c22126b3498f87bb26960d97",
+  "verified_by": "Replay: tests/contracts/test_claude_provider.py::test_a_compacted_turn_is_refused_by_name_rather_than_absorbed now feeds both observed status shapes (status='compacting'; status=null with compact_result='success') and asserts the named 'compacted' refusal, and an unrelated status ('idle') still hits the generic out-of-contract refusal; green under Executor v99 alongside the 130-test launch/claude/contraction selection. Landed in the same change as this finding on main.",
+  "verification_plan": "Protocol tick, replay-verified: the gemm and pairwise_sqdist turn-2 stream shapes re-processed under the successor contract must be refused by the compaction name, never by the generic out-of-contract refusal, and any status that is not a compaction notice must still fail closed."
+}

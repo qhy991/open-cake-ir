@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-11-002",
+  "kind": "protocol",
+  "title": "A CLI tool-progress heartbeat is outside the declared native contract, and refusing it shadowed the named compaction diagnosis three lines later",
+  "date": "2026-09-11",
+  "backend": "metal-m1-pro",
+  "target": "apple_gpu_family7",
+  "executor_revision": "open-cake-ir-b200-v99+f420d07c87fa7d0cbfecd67ae30d6e6dc3ced1d6c22126b3498f87bb26960d97",
+  "compiler_revision_id": "open-cake-ir-sm100a-v73+78ea59f663387f69a0e210a9a9c8070c2e00518d6eeda32d4ff1cb7171a6ad6c",
+  "tasks": [
+    "gemm",
+    "pairwise_sqdist"
+  ],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/gemm-glm53-high-20260910b-n32",
+      "run": "open_cake-1",
+      "event": 18,
+      "note": "Executor v99 retry: run_fault provider_fault at turn 2 still carrying the generic 'Claude event is outside the declared native contract', so the v99 named-refusal fix appeared not to fire"
+    },
+    {
+      "path": "/Users/haiyan/Documents/lab-workspaces/gemm-glm53-high-20260910b-n32/campaign-evidence/objects/sha256/19/195c5635e06f4129634b0e341c76e9c6a24f7daa22ea39e9e3b86dc712e27b8f",
+      "note": "turn-2 provider stream: tool_progress heartbeats at stream positions 6190-6191 (elapsed 30 s and 60 s, tool Read, tool_use_id call_...-heartbeat-0/1) wrapped a Read of objects/sha256/41/4188a7942eb78c99fd6a54072ceab2ae040d0a1aff4f7823a2d171e53c032b61 -- a multi-megabyte single-line JSON evidence object -- and positions 6193-6195 are the compaction notices (pre_tokens 179,418). The parser raised on the first unclassified event, so the named 'compacted' refusal that v99 added never got to speak. The compaction recurrence itself (second gemm session over the CLI's assumed 200k context) is further confirmation of F-2026-09-10-013's clamp analysis"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/pairwise-sqdist-glm53-high-20260910b-n32",
+      "run": "open_cake-1",
+      "event": 7,
+      "note": "the same night's pairwise_sqdist retry died broker_fault, evaluator_stderr objects/sha256/d7/d79e79fb54c1ea644a5a82ef80e397e71751afa397409e7b63668a5ada88a5ca: 'Executor Revision file src/open_cake_ir/lab/claude.py differs'. This author edited that pinned source mid-run while preparing this fix; the broker's custody refusal was correct and the fault is an environment breach by this author, not a v99 defect and not tool_progress evidence. Recorded here because it is why no clean pairwise_sqdist retry exists yet"
+    }
+  ],
+  "observation": "The CLI emits a top-level tool_progress heartbeat while a single tool call runs past 30 seconds. It rewrites nothing and carries no author-visible content -- unlike a compaction notice it is not a context mutation -- so the unclassified-event refusal killed a turn that was fully reconstructible, and did so three lines before the compaction notices, hiding the diagnosis F-2026-09-10-013 added the name for. parent_tool_use_id on a heartbeat names the owning tool call (tool_use_id is '<call>-heartbeat-N'), which is not the subagent meaning the assistant/user check refuses. Admission under exactly the observed eight-field shape follows the thinking_tokens precedent: heartbeat true, integer elapsed at or above zero, non-empty ids and tool name, any added field still fails closed. A heartbeat records no activity of its own; the retained stream keeps it.",
+  "proposed_change": "Admit tool_progress in _metadata under the exact observed schema (adjoining _is_context_mutation in src/open_cake_ir/lab/claude.py); everything beyond that shape keeps the fail-closed refusal. The compaction notices remain fatal by name.",
+  "decision": "accepted",
+  "implemented_in": null,
+  "verified_by": "Replay of the captured gemm turn-2 stream: pre-fix it dies at the generic refusal, post-fix the same bytes die at 'Claude compacted the Turn context mid-run' -- one change validating both the admission and F-2026-09-10-013's named path on real evidence. tests/contracts/test_claude_provider.py::test_a_tool_progress_heartbeat_is_admitted_and_any_other_shape_fails_closed pins the observed shape and nine malformed variants; 29 tests green in the module. The source change is on main; implemented_in stays null because the successor Executor mint is blocked on cross-lane ordinal reconciliation (duplicate v99 plus locally reserved v100/v101, F-2026-09-10-012's scenario).",
+  "verification_plan": "After the two lanes reconcile and a successor Executor is minted, rerun pairwise_sqdist in a fresh workspace on that successor: a heartbeat-bearing turn must survive to its real outcome, and any compaction notice in the same stream must still die by the compacted name."
+}
