@@ -29,6 +29,7 @@ from open_cake_ir.tasks.activation.workload import TASKS as _ACTIVATION_TASKS
 from open_cake_ir.tasks.rowwise.workload import TASKS as _ROWWISE_TASKS
 from open_cake_ir.tasks.reductions.workload import TASKS as _REDUCTION_TASKS
 from open_cake_ir.tasks.optimizers.workload import TASKS as _OPTIMIZER_TASKS
+from open_cake_ir.tasks.contraction.workload import TASKS as _CONTRACTION_TASKS
 from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.workloads import create_task, load_workload
@@ -40,6 +41,8 @@ ACTIVATION_TASKS = tuple(_ACTIVATION_TASKS)
 ROWWISE_TASKS = tuple(_ROWWISE_TASKS)
 REDUCTION_TASKS = tuple(_REDUCTION_TASKS)
 OPTIMIZER_TASKS = tuple(_OPTIMIZER_TASKS)
+# The arithmetic-bound family declares a K extent, as the legacy GEMM task does.
+CONTRACTION_TASKS = tuple(_CONTRACTION_TASKS)
 
 
 def _provider_executable(harness: str, requested: Path | None) -> Path:
@@ -182,7 +185,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", choices=("rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
                                           *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS,
-                                          *OPTIMIZER_TASKS, "gemm_bias"), required=True)
+                                          *OPTIMIZER_TASKS, *CONTRACTION_TASKS,
+                                          "gemm_bias"), required=True)
     parser.add_argument("--backend", choices=tuple(BACKENDS), required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
@@ -190,7 +194,8 @@ def main(argv=None) -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--rows", type=int, default=128)
     parser.add_argument("--columns", type=int, default=1024)
-    parser.add_argument("--depth", type=int, help="GEMM K extent; only GEMM declares one")
+    parser.add_argument("--depth", type=int,
+                        help="contracted K extent; only a contraction task declares one")
     parser.add_argument("--case", choices=("primary",), default="primary", help="timing case; all five input cases remain required")
     parser.add_argument("--turns", type=int, default=4)
     parser.add_argument("--token-budget", type=int, default=150000)
