@@ -45,7 +45,8 @@ TASKS = {
     "selu": ("selu_fp32", "1"),
     # The gradient tasks read a saved forward output beside the incoming gradient.
     # They are the family's second ABI shape and its only arithmetic that is not a gate.
-    "softplus_gradient": ("softplus_gradient_fp32", "1"),
+    # Revision 2 narrows y to the range softplus can actually produce; see NONNEGATIVE.
+    "softplus_gradient": ("softplus_gradient_fp32", "2"),
     "gelu_tanh_backward": ("gelu_tanh_backward_fp32", "1"),
     # ELU is SELU with a unit outer scale, and PReLU replaces SELU's exponential arm with
     # a per-feature slope. Both reach their piecewise definition through the same ReLU
@@ -81,6 +82,17 @@ AKA_V7_RECORDS = "AKA/datasets/curated/cuda_kernel_parent_completions_v7/records
 AKA_V7_PARENTS = {
     "gelu_tanh_backward": "gelu_tanh_backward_f32_vec4_direct_v1",
     "prelu": "prelu_nchw_per_channel_contiguous_fp32_i32_block256_v1",
+}
+# Inputs whose sign is fixed by whatever produced them. A saved forward output cannot be
+# an arbitrary signed number, and admitting one is not a wider test -- it is a different
+# function. softplus(x) = log(1 + exp(x)) is strictly positive, so `y` here is too; at the
+# y = -16 revision 1 admitted, 1 - exp(-y) reaches -8.9e6 and the output reaches 1.4e8,
+# seven orders of magnitude outside the operator's real range, where the relative tolerance
+# then admits an absolute error of 2844 and the case tests nothing.
+NONNEGATIVE = {
+    "silu": (), "swiglu": (), "gelu_tanh": (), "softsign": (), "selu": (), "prelu": (),
+    "gelu_tanh_backward": (),
+    "softplus_gradient": ("y",),
 }
 CASES = {
     "primary": ("uniform", 7101),
@@ -144,6 +156,8 @@ def workload_document(task_name: str, *, rows: int = 128, columns: int = 1024,
     operator, revision = TASKS[task_name]
     inputs = INPUTS[task_name]
     tensors = {name: {"shape": list(shape), "max_abs": MAX_ABS} for name, shape in inputs}
+    for name in NONNEGATIVE[task_name]:
+        tensors[name]["nonnegative"] = True
     tensors["out"] = {"shape": ["R", "C"]}
     for tensor in tensors.values():
         tensor.update(dtype="fp32", layout="contiguous_row_major", finite_only=True)
@@ -268,9 +282,15 @@ def validate_activation_contract(document: Mapping[str, object]) -> None:
         workload.tensor_abi(case_id)
 
 
+def _task_of(document: Mapping[str, object]) -> str:
+    operator = document["operator"]
+    return next(name for name, (registered, _) in TASKS.items() if registered == operator)
+
+
 def materialize_case(workload: WorkloadContract, case_id: str) -> dict[str, list[float]]:
     """Return deterministic FP32 inputs in the contract's explicit ABI order."""
     validate_activation_contract(workload.document)
+    task_name = _task_of(workload.document)
     case = workload.case(case_id)
     result = {}
     args = [arg for arg in workload.tensor_abi(case_id) if arg.mode == "input"]
@@ -288,6 +308,8 @@ def materialize_case(workload: WorkloadContract, case_id: str) -> dict[str, list
                 value = (1 if index % 2 else -1) * 2.0 ** rng.randint(-12, 4)
             else:
                 value = rng.uniform(-2, 2)
+            if arg.name in NONNEGATIVE[task_name]:
+                value = abs(value)
             values.append(_round(value, "fp32"))
         result[arg.name] = values
     return result
@@ -300,6 +322,9 @@ def reference_outputs(workload: WorkloadContract, case_id: str,
     operator = workload.document["operator"]
     args = tuple(arg for arg in workload.tensor_abi(case_id) if arg.mode == "input")
     checked = dict(zip((arg.name for arg in args), _checked_inputs(workload, args, inputs)))
+    for name in NONNEGATIVE[_task_of(workload.document)]:
+        if any(value < 0.0 for value in checked[name]):
+            raise ValueError(f"oracle input {name} is declared non-negative")
     if operator == "gelu_tanh_fp32":
         return {"out": [_round(0.5 * value * (1.0 + math.tanh(
             GELU_INNER_SCALE * (value + GELU_CUBIC_SCALE * value ** 3))), "fp32")

@@ -67,6 +67,36 @@ class RowwiseTaskTests(unittest.TestCase):
                 self.assertEqual(any(op["parameters"].get("op") == "max" for op in reduces),
                                  name == "absmax_rescale")
 
+    def test_a_supplied_row_statistic_cannot_be_declared_with_an_impossible_sign(self):
+        """`rstd` and `rrms` are reciprocals of a root; neither can be negative.
+
+        Revision 1 declared both as freely signed. A negative one does not widen the test,
+        it flips the sign of the normalization the epilogue applies -- a different function.
+        Found by the same B300 sweep that caught the softplus gradient.
+        """
+        for name in rowwise.TASKS:
+            declared = rowwise.NONNEGATIVE[name]
+            workload, _ = self.task(name, rows=4, columns=8)
+            tensors = workload.document["tensors"]
+            with self.subTest(task=name):
+                self.assertEqual(sorted(n for n in tensors if tensors[n].get("nonnegative")),
+                                 sorted(declared))
+                for case_id in rowwise.CASES:
+                    supplied = materialize_case(workload, case_id)
+                    for tensor in declared:
+                        self.assertTrue(all(value >= 0.0 for value in supplied[tensor]))
+                if declared:
+                    supplied = materialize_case(workload, "primary")
+                    supplied[declared[0]] = [-1.0] * len(supplied[declared[0]])
+                    with self.assertRaisesRegex(ValueError, "non-negative"):
+                        reference_outputs(workload, "primary", supplied)
+        # Both narrowed contracts are distinct revisions.
+        for name in ("layernorm_backward_input", "rmsnorm_input_gradient"):
+            workload, _ = self.task(name, rows=4, columns=8)
+            stale = deepcopy(workload.document); stale["revision"] = "1"
+            with self.subTest(task=name), self.assertRaises(ValueError):
+                rowwise.validate_rowwise_contract(stale)
+
     def test_three_tensor_ranks_coexist_in_one_frozen_abi(self):
         """Per-row statistics and a per-feature scale are new shapes for a Lab task."""
         workload, _ = self.task("layernorm_backward_input", rows=3, columns=8)

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-011",
+  "kind": "bug",
+  "title": "Three task contracts declared a saved forward output as freely signed, admitting inputs the operator can never produce and inflating one output range by seven orders of magnitude",
+  "date": "2026-09-10",
+  "backend": "triton-b300",
+  "target": "sm_103a",
+  "executor_revision": "open-cake-ir-b200-v91+3691c853cd6cc8612811f6cf266893ef3b6524064183b5fc78eef4e21a8afa43",
+  "compiler_revision_id": "open-cake-ir-sm100a-v72+3cb15fb01cf5d9306b7275653236aad2a1281df3d73db8fe3f7a31a907ac47db",
+  "tasks": ["softplus_gradient", "layernorm_backward_input", "rmsnorm_input_gradient"],
+  "evidence": [
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/b300-verify/results.json",
+      "note": "first execution of all 24 Lab tasks on an NVIDIA B300 SXM6 AC through the Triton route, torch 2.11.0+cu130 and triton 3.6.0. Every task compiled and matched its oracle, but softplus_gradient reported a worst absolute error of 32 against a predeclared atol of 8e-06 and still passed, because the relative term carried it"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/b300-verify/results2.json",
+      "note": "same sweep after narrowing the three contracts: softplus_gradient's worst absolute error falls from 32 to 7.93e-07 against the same 8e-06 allowance, and all 24 still compile and match"
+    }
+  ],
+  "observation": "A pass line reading 'worst=32 atol=8e-06' is what surfaced this. The tolerance is elementwise atol plus rtol times the reference, so a large enough reference makes any absolute error admissible, and here the reference was large because the contract admitted an input the operator cannot produce. softplus_gradient computes dy * (1 - exp(-y)) where y is a saved softplus output, and softplus(x) = log(1 + exp(x)) is strictly positive. Revision 1 declared y as a freely signed value bounded by 16, so the mixed_magnitude case generated y = -16, where 1 - exp(-y) reaches -8.9e6 and the output reaches 1.4e8 against an operator range of 16 -- seven orders of magnitude. At that point rtol alone admits an absolute error of 2844, so the case verified nothing. Two more contracts carry the same defect for the same reason: layernorm_backward_input takes rstd and rmsnorm_input_gradient takes rrms, and a reciprocal standard deviation and a reciprocal root-mean-square are both strictly positive. A negative one does not widen the test, it flips the sign of the normalization the epilogue applies, which is a different function. The optimizers family already modelled exactly this with a NONNEGATIVE table for the accumulators a reciprocal square root reads; the three tasks here were written without it. This is the same class as F-2026-09-10-005, where the GEMM SiLU oracle overflowed on a contraction the frozen domain admitted but the operator never reaches.",
+  "proposed_change": "Declare the sign constraint where the producing function fixes it, generate inside it, and refuse outside it, reusing the NONNEGATIVE pattern the optimizers family already carries. Narrowing an admitted domain changes what a frozen contract means, so all three move to revision 2 and a revision-1 document is refused rather than silently reinterpreted. Worth generalising beyond these three: the defect is invisible to a pass/fail gate because the relative tolerance grows with the reference, so a task whose declared domain exceeds its operator's real range can report a meaningless allowance and still pass. A contract check that compares the oracle's output range against the tolerance it declares would catch the next one without needing a device.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v91+3691c853cd6cc8612811f6cf266893ef3b6524064183b5fc78eef4e21a8afa43",
+  "verification_plan": "Bug tick, so verification is by replay: rerun the same 24-task sweep on the same device and confirm the reported worst error becomes meaningful against its allowance, and assert in contract tests that each declared tensor is generated non-negative, that the oracle refuses a negative one, and that a revision-1 document no longer validates.",
+  "verified_by": "Replay on the same NVIDIA B300 SXM6 AC: results2.json above shows softplus_gradient at 7.93e-07 against 8e-06 where results.json showed 32, with 24/24 still compiling and matching. tests/contracts/test_activation_tasks.py and test_rowwise_tasks.py assert the declared tensors are generated non-negative in every input case, that the oracle raises on a negative one, that the softplus gradient's output now stays within the operator's range, and that a revision-1 document is refused."
+}

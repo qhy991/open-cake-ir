@@ -36,8 +36,8 @@ from open_cake_ir.tasks.devices import (  # noqa: F401
 
 TASKS = {
     "softmax_backward": ("softmax_backward_fp32", "1"),
-    "layernorm_backward_input": ("layernorm_backward_input_fp32", "1"),
-    "rmsnorm_input_gradient": ("rmsnorm_input_gradient_fp32", "1"),
+    "layernorm_backward_input": ("layernorm_backward_input_fp32", "2"),
+    "rmsnorm_input_gradient": ("rmsnorm_input_gradient_fp32", "2"),
     # The family's only maximum reduction, and its only per-row scalar output. Both
     # exist so the set asks a Schedule something the sum-shaped tasks never do.
     "absmax_rescale": ("absmax_rescale_fp32", "1"),
@@ -100,6 +100,18 @@ CASES = {
 # two or three others before it reaches the reduction, and the allowance below grows with
 # the product of those bounds.
 MAX_ABS = 2.0
+# Inputs whose sign is fixed by whatever produced them. A reciprocal standard deviation and
+# a reciprocal root-mean-square are both strictly positive, so admitting a negative one is
+# not a wider test but a different function: it flips the sign of the normalization the
+# epilogue applies. Revision 2 narrows both. The same defect in the activation family's
+# softplus gradient let its output reach 1.4e8 against an operator range of 16.
+NONNEGATIVE = {
+    "softmax_backward": (),
+    "layernorm_backward_input": ("rstd",),
+    "rmsnorm_input_gradient": ("rrms",),
+    "absmax_rescale": (),
+    "cosine_similarity": (),
+}
 # One FP32 unit in the last place at the top of the significand.
 _UNIT_ROUNDOFF = 2.0 ** -24
 # The emitted Metal body gives each of 32 lanes `columns / 32` sequential additions and
@@ -163,6 +175,8 @@ def workload_document(task_name: str, *, rows: int = 128, columns: int = 1024,
     operator, revision = TASKS[task_name]
     tensors = {name: {"shape": list(shape), "max_abs": MAX_ABS}
                for name, shape in INPUTS[task_name]}
+    for name in NONNEGATIVE[task_name]:
+        tensors[name]["nonnegative"] = True
     output_name, output_shape = OUTPUTS[task_name]
     tensors[output_name] = {"shape": list(output_shape)}
     for tensor in tensors.values():
@@ -195,10 +209,10 @@ def workload_document(task_name: str, *, rows: int = 128, columns: int = 1024,
         "saved_state": "declared_inputs_not_recomputed_forward_results",
     }
     if task_name == "layernorm_backward_input":
-        arithmetic["row_statistics"] = "supplied_per_row_mean_and_reciprocal_standard_deviation"
+        arithmetic["row_statistics"] = "supplied_per_row_mean_and_nonnegative_reciprocal_standard_deviation"
         arithmetic["normalization"] = "both_reductions_are_means_over_the_feature_extent"
     elif task_name == "rmsnorm_input_gradient":
-        arithmetic["row_statistics"] = "supplied_per_row_reciprocal_root_mean_square"
+        arithmetic["row_statistics"] = "supplied_per_row_nonnegative_reciprocal_root_mean_square"
         arithmetic["scratch"] = "c2_is_required_scratch_not_a_public_semantic_output"
     elif task_name == "absmax_rescale":
         arithmetic["absolute_value"] = "relu_of_the_operand_plus_relu_of_its_negation"
@@ -283,9 +297,15 @@ def validate_rowwise_contract(document: Mapping[str, object]) -> None:
         workload.tensor_abi(case_id)
 
 
+def _task_of(document: Mapping[str, object]) -> str:
+    operator = document["operator"]
+    return next(name for name, (registered, _) in TASKS.items() if registered == operator)
+
+
 def materialize_case(workload: WorkloadContract, case_id: str) -> dict[str, list[float]]:
     """Return deterministic FP32 inputs in the contract's explicit ABI order."""
     validate_rowwise_contract(workload.document)
+    task_name = _task_of(workload.document)
     case = workload.case(case_id)
     result = {}
     args = [arg for arg in workload.tensor_abi(case_id) if arg.mode == "input"]
@@ -303,6 +323,8 @@ def materialize_case(workload: WorkloadContract, case_id: str) -> dict[str, list
                 value = (1 if index % 2 else -1) * 2.0 ** rng.randint(-12, 1)
             else:
                 value = rng.uniform(-MAX_ABS, MAX_ABS)
+            if arg.name in NONNEGATIVE[task_name]:
+                value = abs(value)
             values.append(_round(value, "fp32"))
         result[arg.name] = values
     return result
@@ -315,6 +337,9 @@ def reference_outputs(workload: WorkloadContract, case_id: str,
     operator = workload.document["operator"]
     args = tuple(arg for arg in workload.tensor_abi(case_id) if arg.mode == "input")
     checked = dict(zip((arg.name for arg in args), _checked_inputs(workload, args, inputs)))
+    for name in NONNEGATIVE[_task_of(workload.document)]:
+        if any(value < 0.0 for value in checked[name]):
+            raise ValueError(f"oracle input {name} is declared non-negative")
     width = next(arg.shape[-1] for arg in args if len(arg.shape) == 2)
     result: list[float] = []
     if operator == "softmax_backward_fp32":

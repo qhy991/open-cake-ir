@@ -111,6 +111,45 @@ class ActivationTaskTests(unittest.TestCase):
                 self.assertEqual([entry["kind"] for entry in document["provenance"]],
                                  ["task_mathematical_specification"])
 
+    def test_a_saved_forward_output_cannot_be_declared_with_an_impossible_sign(self):
+        """A B300 run surfaced this: revision 1 admitted inputs the operator never sees.
+
+        `y` here is a saved softplus output, and softplus(x) = log(1 + exp(x)) is strictly
+        positive. Revision 1 declared it as a freely signed value bounded by 16, so
+        mixed_magnitude generated y = -16, where 1 - exp(-y) reaches -8.9e6 and the output
+        reaches 1.4e8 -- seven orders of magnitude past the operator's real range. The
+        relative tolerance then admitted an absolute error of 2844, so that case tested
+        nothing. Same class as the GEMM SiLU oracle overflow.
+        """
+        for name in activation.TASKS:
+            declared = activation.NONNEGATIVE[name]
+            workload, _ = self.task(name, rows=4, columns=8)
+            tensors = workload.document["tensors"]
+            with self.subTest(task=name):
+                self.assertEqual(sorted(n for n in tensors if tensors[n].get("nonnegative")),
+                                 sorted(declared))
+                for case_id in activation.CASES:
+                    supplied = materialize_case(workload, case_id)
+                    for tensor in declared:
+                        self.assertTrue(all(value >= 0.0 for value in supplied[tensor]))
+                if declared:
+                    supplied = materialize_case(workload, "primary")
+                    supplied[declared[0]] = [-1.0] * len(supplied[declared[0]])
+                    with self.assertRaisesRegex(ValueError, "non-negative"):
+                        reference_outputs(workload, "primary", supplied)
+        # The output now stays inside the range the operator can actually produce.
+        workload, _ = self.task("softplus_gradient", rows=4, columns=8)
+        for case_id in activation.CASES:
+            supplied = materialize_case(workload, case_id)
+            out = reference_outputs(workload, case_id, supplied)["out"]
+            with self.subTest(case=case_id):
+                self.assertLessEqual(max(map(abs, out)), activation.MAX_ABS + 1e-6)
+        # The narrowed contract is a distinct revision, so a revision-1 document is refused.
+        stale = deepcopy(workload.document)
+        stale["revision"] = "1"
+        with self.assertRaises(ValueError):
+            activation.validate_activation_contract(stale)
+
     def test_the_family_owns_no_reduction_affine_parameter_or_epsilon(self):
         for name in activation.TASKS:
             with self.subTest(task=name):
@@ -256,9 +295,11 @@ class ActivationTaskTests(unittest.TestCase):
         self.assertEqual(reference_outputs(swiglu, "primary", {"x": values, "up": second})["out"],
                          [_round(v / (1.0 + math.exp(-v)) * p, "fp32")
                           for v, p in zip(values, second)])
+        # y is a saved softplus output, so the contract admits only non-negative values.
         softplus, _ = self.task("softplus_gradient", rows=1, columns=3)
-        self.assertEqual(reference_outputs(softplus, "primary", {"y": values, "dy": second})["out"],
-                         [_round(g * (1.0 - math.exp(-v)), "fp32") for v, g in zip(values, second)])
+        saved = [0.0, 1.0, 2.0]
+        self.assertEqual(reference_outputs(softplus, "primary", {"y": saved, "dy": second})["out"],
+                         [_round(g * (1.0 - math.exp(-v)), "fp32") for v, g in zip(saved, second)])
         # PReLU's slope is per feature, so its second operand has the row's width.
         prelu, _ = self.task("prelu", rows=1, columns=3)
         self.assertEqual(reference_outputs(prelu, "primary", {"x": values, "slope": second})["out"],
