@@ -43,4 +43,4 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-10-007 — relative-path Write outside envelope (protocol, momentum_sgd; closed in Executor v90)
 - F-2026-09-10-008 — CLI auto-compact outside event contract (protocol, momentum_sgd; closed in Executor v90)
 - F-2026-09-10-009 — Claude quota-warning contract drift (protocol, closed in Executor v89)
-- F-2026-09-10-010 — contraction regime shows material headroom, measurement not yet stable (behavior, gemm)
+- F-2026-09-10-010 — contraction regime shows material headroom over three campaigns; instability traced away from dispatch count to un-excluded external GPU activity (behavior, gemm)
