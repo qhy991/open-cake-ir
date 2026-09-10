@@ -26,4 +26,3 @@ def private_values_per_thread(schedule: Schedule, lanes: int = 32) -> int:
                          else (0, len(schedule.operations) - 1, slots(buffer, lanes)))
     return max((sum(slots for first, last, slots in intervals if first <= index <= last)
                 for index in range(len(schedule.operations))), default=0)
-
