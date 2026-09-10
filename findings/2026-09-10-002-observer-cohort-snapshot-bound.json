@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-002",
+  "kind": "capacity",
+  "title": "Cohort snapshot accounting excludes multi-buffer optimizer tasks at default shapes under paired-metal v2",
+  "date": "2026-09-10",
+  "backend": "metal-m1-pro",
+  "target": "apple_gpu_family7",
+  "executor_revision": "open-cake-ir-b200-v86+bf657e12e5886707b8be24fb35deb330fda22f34712092157cd9bb3abf4b62da",
+  "compiler_revision_id": "open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578",
+  "tasks": ["adamw"],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/adamw-glm53-high-20260909c",
+      "run": "open_cake-1",
+      "event": 13,
+      "note": "run_fault broker_fault at evaluation stage, turn 2: 'search Evaluation has no final receipt: evaluator_failed', job metal-07b466973089, all counters zero"
+    },
+    {
+      "path": "/Users/haiyan/Documents/lab-workspaces/adamw-glm53-high-20260909c/campaign-evidence/objects/sha256/cb/cb11e4d107ac90bcb41a049d8b7223be44e26c43c44fc2679abec935485a4c8c",
+      "note": "observer stderr: \"ValueError: Metal observer failed or changed its admission: {'code': 1, 'description': 'cohort snapshot payload exceeds 64 MiB bound before dispatch', 'domain': 'main.Refusal'}\""
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/adamw-glm53-high-20260909d",
+      "note": "same task at columns=512 completed four turns, protocol adhered (exit 0) - the bound is shape-dependent, not model-dependent"
+    }
+  ],
+  "observation": "evaluation/metal/observer.swift:70-72 charges the full tensor ABI of the participant for every launch in a contiguous cohort, and tasks/normalization/study.py:40 schedules 28 route calls per cohort under fixed_baseline_paired_metal_v2. adamw's 7-tensor ABI at 128x1024 fp32 is 3.5 MiB per launch, so a cohort accumulates ~98 MiB against the observer's hard 64 MiB admission bound and is refused before any dispatch. Any multi-buffer optimizer task at default shape fails deterministically at first evaluation. Safe bound at v2 defaults: rows*columns <= 85,600 per 7-tensor ABI (columns=512 gives 49 MiB).",
+  "proposed_change": "Charge cohort snapshots for what correctness actually needs (outputs plus input integrity), or dedupe repeated identical input payloads within a cohort, so the bound scales with what is verified rather than with launches times ABI. Until then, register per-task shape limits in the workload notes so launcher defaults stay inside the bound.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "verification_plan": "Capability tick, campaign-verified: an adamw campaign at the default 128x1024 shape must reach evaluation and complete under the successor revision; no CLI shape shrink required."
+}

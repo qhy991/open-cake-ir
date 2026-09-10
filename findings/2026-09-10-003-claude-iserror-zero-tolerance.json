@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-003",
+  "kind": "protocol",
+  "title": "claude v3 contract is zero-tolerance for self-recovered is_error tool completions",
+  "date": "2026-09-10",
+  "backend": "metal-m1-pro",
+  "target": "apple_gpu_family7",
+  "executor_revision": "open-cake-ir-b200-v86+bf657e12e5886707b8be24fb35deb330fda22f34712092157cd9bb3abf4b62da",
+  "compiler_revision_id": "open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578",
+  "tasks": ["softmax"],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/softmax-glm53-high-20260909b",
+      "run": "open_cake-1",
+      "event": 12,
+      "note": "run_fault provider_fault at turn 2: 'Claude tool completion differs'. Trigger: a Read of a nonexistent path returned is_error; the turn's stream continues to a terminal result event, so the provider completed the turn after the probe"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/softmax-glm53-high-20260909c",
+      "run": "open_cake-1",
+      "event": 6,
+      "note": "same fault class, turn 2. Trigger (stdout stream line 13976): a Read of a binary .bin artifact refused by the CLI with is_error ('This tool cannot read binary files'); the stream again reaches a terminal result event afterwards"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/softmax-glm53-high-20260909d",
+      "note": "third attempt completed four turns, adhered, exit 0 - the probing behaviour is per-authoring-session, not deterministic"
+    }
+  ],
+  "observation": "lab/claude.py:275-279 rejects any tool_result whose is_error is truthy, whose id was never registered, or that repeats a completion - and the check replays the whole captured stream after the CLI exits. Both softmax failures were authoring probes (nonexistent path; binary artifact) that the provider visibly recovered from within the same turn, yet each killed the campaign post hoc. Two campaigns and ~7M provider tokens were spent before a clean third attempt.",
+  "proposed_change": "Route a self-recovered is_error completion to turn-local feedback instead of a campaign-fatal fault: either count it against the turn's protocol adherence report without terminating, or reject only completions that break pairing (unregistered id, duplicate completion) while letting recovered is_error results pass with the fact recorded in ProviderAuxiliaryActivity. This keeps zero tolerance for structural mismatches and stops spending campaigns on probes the provider already survived.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "verification_plan": "Protocol tick, replay-verified: replay the captured stdout streams from the softmax-20260909b and -c evidence objects through the successor claude.py parser; both must parse to an adhered turn with the probe recorded as auxiliary activity."
+}

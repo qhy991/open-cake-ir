@@ -95,6 +95,27 @@ things to do because the rules above did not stop either one.
 - Recurring failures are what become new verifier rules, IR primitives, cost-model
   calibrations and reusable tactics. A one-off failure is not evidence for a rule.
 
+## Tick-tock between campaigns and Revisions (outer loop cadence)
+
+- Campaigns run only on frozen Revisions; that is the tock. A compiler or executor change
+  is a tick that mints successor Revisions through the existing release cycles and never
+  edits a pinned source in place.
+- The unit of curation between the two is a Finding under `findings/`, append-only like
+  evidence and following that directory's record contract. A finding cites workspaces,
+  runs and event sequences by path and index -- the ledger's own hash chain settles byte
+  identity, so findings do not copy digests.
+- A finding closes only when `implemented_in` names the Revision that changed it and
+  `verified_by` names its verification. Bug-fix and protocol ticks verify by replaying
+  the cited failing evidence; capability ticks verify by new campaigns on the successor.
+- Cadence is findings-triggered, not calendar-driven: sweep tasks until the set is covered
+  or blocking findings accumulate, then tick, verify, and resume the sweep.
+- The light closure convention: a tick's commit names the finding ids it addresses, and
+  the finding's `implemented_in`/`verified_by` backfill lands in that same change.
+- Cross-version comparison anchors on a fixed baseline bundle per task, so a tick reports
+  two facts separately: baseline movement (compiler floor) and candidate-minus-baseline
+  (provider headroom). Findings name the executor Revision and target; cross-backend
+  comparison lives at the findings layer, never inside one campaign.
+
 ## The agent loop (S4)
 
 Four stages, in order. A campaign that collapses them is not running this loop.
