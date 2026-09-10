@@ -156,6 +156,23 @@ def _metadata(event: Mapping) -> bool:
                 or type(event["estimated_tokens"]) is not int or type(event["estimated_tokens_delta"]) is not int
                 or not 0 <= event["estimated_tokens_delta"] <= event["estimated_tokens"]):
             raise ValueError("Claude thinking-token metadata differs")
+    elif kind == "tool_progress":
+        # A heartbeat the CLI emits while one tool call runs long (observed at 30 s and
+        # 60 s into a Read of a multi-megabyte single-line JSON object, F-2026-09-11-015).
+        # It rewrites nothing and carries no author-visible content, so unlike a
+        # compaction notice it is admitted rather than refused. `parent_tool_use_id`
+        # here names the *owning* tool call -- `call_...-heartbeat-N` under `tool_use_id`
+        # -- which is not the subagent meaning the assistant/user check refuses. Only
+        # the observed shape passes; `heartbeat: false` or any added field fails closed.
+        if (set(event) != {"type", "tool_use_id", "tool_name", "parent_tool_use_id",
+                           "elapsed_time_seconds", "heartbeat", "session_id", "uuid"}
+                or event.get("heartbeat") is not True
+                or type(event.get("elapsed_time_seconds")) is not int
+                or event["elapsed_time_seconds"] < 0
+                or not isinstance(event.get("tool_use_id"), str) or not event["tool_use_id"]
+                or not isinstance(event.get("parent_tool_use_id"), str) or not event["parent_tool_use_id"]
+                or not isinstance(event.get("tool_name"), str) or not event["tool_name"]):
+            raise ValueError("Claude tool-progress heartbeat differs")
     else:
         return False
     if not isinstance(event.get("uuid"), str) or _THREAD_ID.fullmatch(event["uuid"]) is None:
