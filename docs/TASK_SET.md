@@ -1,4 +1,4 @@
-# The twenty-task Lab set, and why these twenty
+# The twenty-four-task Lab set, and why these twenty-four
 
 Every task here is one frozen Workload Contract: a definition, an explicit tensor ABI,
 five required input distributions, an independent oracle, and a predeclared tolerance.
@@ -7,12 +7,12 @@ Triton device, and `src/open_cake_ir/tasks/devices.py` owns the whole difference
 
 ## What the set is selected for
 
-A task earns a place by asking a Schedule something the other nineteen do not. It does
+A task earns a place by asking a Schedule something the other twenty-three do not. It does
 **not** earn one by being a different operator name: five GELU vectorization variants in
 the AKA corpus are five *Schedules* of one Workload, and the Lab already searches over
 vectorization, so admitting all five would grow the count without growing the question.
 
-The selection axis is therefore **structure**, and there are four structures the current
+The selection axis is therefore **structure**, and there are five structures the current
 IR can express on both routes. The families are named after them.
 
 | Family | Structure | Count |
@@ -21,11 +21,24 @@ IR can express on both routes. The families are named after them.
 | `rowwise` | Reduce along the row, then an epilogue that **multiplies** by the result. | 5 |
 | `reductions` | One program per *feature*, folding **down the rows**, rank-1 outputs. | 4 |
 | `optimizers` | Element-local, but writing several buffers and carrying accumulator state. | 3 |
+| `contraction` | **Contract an axis**, so one loaded operand feeds many outputs. | 4 |
+
+There is a second axis, and it separates the last family from the other four: **whether a
+Schedule has any arithmetic to trade for traffic.** Measured with the Compiler's own work
+model at the shapes they freeze, the twenty tasks in the first four families span **0.20 to
+1.50** counted FLOPs per compulsory byte. Every one of them reads its inputs, does a few
+operations per element, and writes its outputs; no Schedule for any of them can be
+arithmetic-bound, so none of them can pose a question about keeping an accumulator
+resident, tiling a contraction, or trading recomputation against bandwidth.
+
+The `contraction` family reaches **20 to 31** FLOPs per byte at its frozen shape — an order
+of magnitude past the entire rest of the set. `test_contraction_tasks.py` measures both
+sides rather than asserting them, so the separation cannot quietly rot.
 
 Within a family, each task is kept only if it stresses a different primitive, a different
 tensor rank, a different reduction operator, or a different numerical hazard.
 
-## The twenty
+## The twenty-four
 
 ### `activation` — element-local, no reduction (8)
 
@@ -87,6 +100,21 @@ buffers per element, so the Schedule owns a real store schedule; and inputs decl
 | `adamw` | `adamw_contiguous_fp32_int32_block256_v1` | Three outputs; the epsilon sits **inside** the square root, and the allowance is derived from the resulting reciprocal. |
 | `adadelta` | `derived_adadelta_update_contiguous_f32_i32_b256_v1` | Two accumulators, and a square root the vocabulary lacks, taken as `z * rsqrt(z)` with the epsilon keeping `z` strictly positive. |
 
+### `contraction` — arithmetic-bound, one operand feeding many outputs (4)
+
+The FLOP count grows as the product of three extents while the traffic grows as their sum.
+Each baseline deliberately keeps the whole contracted operand register-resident: that is
+the plain reading of the definition, and it is *why* the Metal route refuses larger shapes,
+since its 1024 live FP32 values per lane is exactly the budget a tiled contraction would
+free. Finding that trade is the search this family exists to pose.
+
+| Task | AKA parent | Why it is here |
+|---|---|---|
+| `gemm` | `dd_matmul_bias_f32_bt_oc_c_block16_v1` | The canonical contraction; the shape every other one is measured against. |
+| `gemm_silu` | `dd_matmul_bias_f32_bt_oc_c_block16_v1` | The same contraction with a **transcendental epilogue reading the accumulator** before it leaves the kernel — a fusion question the plain GEMM cannot ask. |
+| `pairwise_sqdist` | `condensed_pairwise_l2_f32_i32_block256_v1` | Contracts a **rounded difference**, not a product, so no fused multiply-accumulate instruction can serve it. Highest intensity in the set. |
+| `attention_decode` | `single_decode_attention_nhd_fp32_i32_hd128_v1` | **Two chained contractions with a data-dependent softmax between them** — four reductions in one Schedule, and the only task whose second contraction depends on the first's values. |
+
 ## What is deliberately excluded, and why
 
 These were candidates and were dropped for a stated reason, not by oversight.
@@ -103,15 +131,16 @@ These were candidates and were dropped for a stated reason, not by oversight.
 
 ## Provenance and what does not transfer
 
-Seventeen of the twenty carry an `aka_qualified_parent_lineage` provenance entry naming the
-exact parent they were migrated from. That entry records the **semantic** origin only. Each
+Twenty-one of the twenty-four carry an `aka_qualified_parent_lineage` provenance entry
+naming the exact parent they were migrated from, and a test resolves each one against the
+dataset rather than trusting the string. That entry records the **semantic** origin only. Each
 Workload is its own frozen instance: shape, input distributions and tolerance are declared
 here, and no recorded B200 correctness or performance result transfers to it on any device.
 
 ## Portability
 
-All twenty lower on all four backends (`metal-m1-pro`, `metal-m2`, `triton-b200`,
-`triton-b300`) — 80 combinations. Only three things differ between an Apple and an NVIDIA
+All twenty-four lower on all four backends (`metal-m1-pro`, `metal-m2`, `triton-b200`,
+`triton-b300`) — 96 combinations. Only three things differ between an Apple and an NVIDIA
 freeze of the same task:
 
 1. the `target=` / `backend=` the Schedule declares;

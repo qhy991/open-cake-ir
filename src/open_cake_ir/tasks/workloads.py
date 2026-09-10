@@ -24,6 +24,8 @@ from .reductions import workload as reductions_math
 from .reductions.authoring import starter_source as reductions_starter_source
 from .optimizers import workload as optimizers_math
 from .optimizers.authoring import starter_source as optimizers_starter_source
+from .contraction import workload as contraction_math
+from .contraction.authoring import starter_source as contraction_starter_source
 
 _TASKS = {
     add_rmsnorm.TASK: (add_rmsnorm.validate_contract, WorkloadContract),
@@ -48,6 +50,8 @@ _TASKS = {
        for operator, _ in reductions_math.TASKS.values()},
     **{operator: (optimizers_math.validate_optimizers_contract, WorkloadContract)
        for operator, _ in optimizers_math.TASKS.values()},
+    **{operator: (contraction_math.validate_contraction_contract, WorkloadContract)
+       for operator, _ in contraction_math.TASKS.values()},
 }
 
 def _registered_task(document: Mapping[str, object]):
@@ -96,6 +100,8 @@ def _tensor_math(workload: WorkloadContract):
         return reductions_math
     if operator in {name for name, _ in optimizers_math.TASKS.values()}:
         return optimizers_math
+    if operator in {name for name, _ in contraction_math.TASKS.values()}:
+        return contraction_math
     if operator in {"rmsnorm_fp32", "gemm_bias_bf16_fp32", "indexed_gather_bf16"}:
         validate_tile_contract(workload.document)
         return tile_math
@@ -131,8 +137,14 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
         document = gemm_math.workload_document(task_name, backend=backend, rows=rows,
                                                depth=depth, columns=columns)
         return document, gemm_starter_source(WorkloadContract(document), case_id)
+    if task_name in contraction_math.TASKS:
+        if depth is None:
+            raise ValueError("a contraction requires its declared K extent")
+        document = contraction_math.workload_document(task_name, backend=backend, rows=rows,
+                                                      depth=depth, columns=columns)
+        return document, contraction_starter_source(WorkloadContract(document), case_id)
     if depth is not None:
-        raise ValueError("only GEMM declares a K extent")
+        raise ValueError("only a contraction declares a K extent")
     if task_name in optimizers_math.TASKS:
         document = optimizers_math.workload_document(task_name, backend=backend, rows=rows,
                                                      columns=columns)
