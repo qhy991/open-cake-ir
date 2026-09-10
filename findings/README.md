@@ -45,4 +45,4 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-10-009 — Claude quota-warning contract drift (protocol, closed in Executor v89)
 - F-2026-09-10-011 — saved forward outputs declared with impossible signs (bug, 3 tasks; found by the first B300 sweep, closed in Executor v91)
 - F-2026-09-10-010 — contraction regime shows material headroom over three campaigns; instability traced away from dispatch count to un-excluded external GPU activity (behavior, gemm)
-- F-2026-09-10-012 — native/CuTe admission omitted explicit ownership, cache, scalar, state and target contracts (bug, local public-boundary probes; successor approval and replay pending)
+- F-2026-09-10-012 — native/CuTe admission omitted explicit ownership, cache, scalar, state, target and direct-entry contracts (bug, closed by released Compiler v73 source replay; SDK/GPU qualification remains separate)

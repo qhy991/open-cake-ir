@@ -64,13 +64,17 @@
       "schedule": "/Users/haiyan-infiniai/.local/share/open-cake-ir/native-resume-20260910/review/direct-invalid-tmem-atom.json",
       "generated_source": "/Users/haiyan-infiniai/.local/share/open-cake-ir/native-resume-20260910/review/direct-invalid-tmem-atom.cu",
       "note": "Independent documented direct-entry probe at c77cbe38: public Compiler refused TMEM_LOAD_ATOM while native direct preflight returned no findings and emission silently substituted tcgen05.ld. Native emission now applies canonical verification before backend preflight and preserves its declared backend/entrypoint."
+    },
+    {
+      "path": "/Users/haiyan-infiniai/.local/share/open-cake-ir/native-resume-20260910/integration/f012-released-replay-01.json",
+      "note": "Released Compiler replay passed all 9 retained or reconstructed owning-boundary probes and all 5 native example lowerings. Exact source approval is reviewer commit 0e31742a for prepared candidate 9381cd43. This closes source admission defects only; no SDK/GPU capability or performance is qualified."
     }
   ],
   "observation": "Structural dispatch and row-owned native emission had narrower semantics than their preflight admission. Native arithmetic did not consume global AccessMaps, replicated vectors lacked a unique writing thread, stores could omit varying CTA coordinates, large scalar literals exceeded FP32, and streamed load hints had no emitted effect. CuTe remained blocked on state but lost its explicit state-owner diagnostic. These are source admission defects found by local public-boundary probes, not observed device failures. The named Executor is context only and was not invoked. A separate root-author probe found CuTe SIMT exact-target admission compared None to None for an Apple target; this is an admission defect, not Apple CUDA support. Native direct emission also bypassed canonical instruction legality; an unsupported TMEM atom was silently emitted as the supported load. Public Compiler assessment had already refused that atom.",
   "proposed_change": "Keep native arithmetic in FP32 registers with explicit loads; bound scalar literals to finite FP32; require row-owned stores and all varying ProgramMap coordinates; refuse unimplemented load cache/reuse hints. Keep CuTe state refusal before route dispatch. Each counterexample must be refused by its own backend rule in public assessment and direct emission. Do not widen the IR or add a kernel-specific route. Require explicit sm_100a/sm_103a membership before comparing CUDA capability. Retain the independent argmin-domain and store-CTA-ownership diagnostics together in the one newly imported case. Apply the canonical verifier before native direct preflight and require the canonical backend/entrypoint, reusing the existing legality owner.",
-  "decision": "proposed",
-  "implemented_in": null,
-  "verified_by": null,
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-sm100a-v73+8033001ddeb8b6b2fecab8e914d82b3ca09ec8974edf9cc676d4b42710080c25",
+  "verified_by": "/Users/haiyan-infiniai/.local/share/open-cake-ir/native-resume-20260910/integration/f012-released-replay-01.json",
   "verification_plan": "Bug tick: after exact independent approval and cycle-derived Compiler release, replay the retained JSON probes through the released public Compiler and direct backend boundary, confirm owning diagnostic classes and preserve GEMM/KMeans/multi-MMA positives. Full Corpus Gate must retain all 124 prior expectations and 21 imported native schedules; one new case gains the separately reviewed store-ownership diagnostic. New CuTe/native capability compilation, GPU correctness, timing, profiler and framework qualification remain separate and pending.",
   "experience_disposition": "Verifier/backend boundary repair only; no compiler transformation, performance tactic or capability qualification is promoted."
 }
