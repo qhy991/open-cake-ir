@@ -1,0 +1,16 @@
+{
+  "schema_version": 3,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "5b0c3482db63901e2b4c8bb0685c7dfaed97227bfacb3e80ade4d9593c5e51fa"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a08943-f853-7211-92d7-58e17897f487",
+    "author_session_id": "01a08903-99d7-7b90-90ab-e70395b155e5"
+  },
+  "approval_basis": "Independent GPT-6 Astra review of cde6f56e411ebf269c7df6a6b05eac948cee871c against cf40e84b approved the bounded explicit private BF16/FP16 row-owned pointwise epilogue composition. Full canonical Corpus Gate 124/124 matches; 10 focused tests plus independent transposed/partial-row refusal, namespace, dependency, metadata, ABI and CPU-composition probes passed. No Corpus expectations changed. Existing multiple-writer rejection is distinguished from pass-specific refusal. CPU/source only; no GPU/performance/model qualification. Caller owns unseen consumers and physical nonaliasing. Two author-reported released-dependency checks require successor release; no stale-lock repair was used. Detailed basis: /Users/haiyan-infiniai/.local/share/open-cake-ir/epilogue-pass-20260910/review.md. Independent external review record: /Users/haiyan-infiniai/.local/share/open-cake-ir/epilogue-pass-20260910/review-record.json.",
+  "review_record": "/Users/haiyan-infiniai/.local/share/open-cake-ir/epilogue-pass-20260910/review-record.json"
+}
