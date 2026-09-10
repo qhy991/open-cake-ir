@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-007",
+  "kind": "protocol",
+  "title": "Candidate-envelope write check rejects a cwd-relative path whose target is the envelope file",
+  "date": "2026-09-10",
+  "backend": "metal-m1-pro",
+  "target": "apple_gpu_family7",
+  "executor_revision": "open-cake-ir-b200-v86+bf657e12e5886707b8be24fb35deb330fda22f34712092157cd9bb3abf4b62da",
+  "compiler_revision_id": "open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578",
+  "tasks": ["momentum_sgd"],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/momentum_sgd-glm53-high-20260910",
+      "run": "open_cake-1",
+      "event": 1,
+      "note": "run_fault provider_fault at turn 1: 'Claude write is outside the candidate envelope', 2,146,509 provider tokens"
+    },
+    {
+      "path": "/Users/haiyan/Documents/lab-workspaces/momentum_sgd-glm53-high-20260910/campaign-evidence/objects/sha256/0a/0a45b7ea47ce1b862c24aed856be7dcc5ab3a19b4aebacc30657541af10e9fb1",
+      "note": "turn-1 provider stream: single Write block with file_path='candidate-set.json' (cwd-relative)"
+    },
+    {
+      "path": "/Users/haiyan/Documents/lab-workspaces/momentum_sgd-glm53-high-20260910/actors/open_cake-1/candidate-set.json",
+      "note": "the write landed in the actor envelope (the CLI's cwd) with the required basename - the target was semantically the envelope file; only the path's string form differed"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/layernorm-glm53-high-20260910",
+      "note": "same-day completed run whose provider wrote the absolute envelope path - the absolute spelling is what the check admits"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/momentum_sgd-glm53-high-20260910c",
+      "note": "third attempt completed four turns, adhered, exit 0 with absolute-path writes - like F-2026-09-10-003, the deviation is per-authoring-session, and each fatal refusal costs a full campaign's tokens"
+    }
+  ],
+  "observation": "lab/claude.py:269-273 admits a Write/Edit only with an absolute file_path whose basename is candidate-set.json and containing no '..'. A provider that writes the cwd-relative spelling 'candidate-set.json' is campaign-fatal even though the CLI resolves it inside the actor envelope and the sealed target is exactly the intended file. Sibling of F-2026-09-10-003: a recoverable string-form deviation is judged post hoc as a structural envelope breach.",
+  "proposed_change": "Resolve a relative file_path against the turn's recorded cwd before the envelope checks, then apply the same containment and basename rules to the resolved path. Keep rejecting any write that resolves outside the envelope or renames the target; the check's purpose is containment, and the path's spelling is incidental to it.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "verification_plan": "Protocol tick, replay-verified: replay the captured momentum_sgd-20260910 turn-1 stream through the successor claude.py parser; the Write must validate as in-envelope, and an out-of-envelope relative path (e.g. '../../x/candidate-set.json') must still be rejected."
+}

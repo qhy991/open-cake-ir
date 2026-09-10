@@ -8,7 +8,7 @@
   "target": "apple_gpu_family7",
   "executor_revision": "open-cake-ir-b200-v86+bf657e12e5886707b8be24fb35deb330fda22f34712092157cd9bb3abf4b62da",
   "compiler_revision_id": "open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578",
-  "tasks": ["rmsnorm", "gemm_bias", "silu", "adamw", "softmax"],
+  "tasks": ["rmsnorm", "gemm_bias", "silu", "adamw", "softmax", "layernorm", "softmax_backward", "per_channel_moments", "swiglu", "momentum_sgd"],
   "evidence": [
     {
       "workspace": "/Users/haiyan/Documents/lab-workspaces/rmsnorm-glm53-high-tok3m-20260909",
@@ -29,12 +29,32 @@
     {
       "workspace": "/Users/haiyan/Documents/lab-workspaces/softmax-glm53-high-20260909d",
       "note": "4 turns, 6 evaluated candidates, adhered, no_qualified_candidate"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/layernorm-glm53-high-20260910",
+      "note": "2026-09-10 batch: 4 turns, 8 evaluated candidates, adhered, no_qualified_candidate; first affine normalization workload"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/softmax_backward-glm53-high-20260910",
+      "note": "2026-09-10 batch: 4 turns, 4 evaluated candidates, adhered, no_qualified_candidate; first backward workload"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/per_channel_moments-glm53-high-20260910",
+      "note": "2026-09-10 batch: 4 turns, 12 evaluated candidates (most active run to date), adhered, no_qualified_candidate; first reduction workload"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/swiglu-glm53-high-20260910c",
+      "note": "2026-09-10 batch: 4 turns, 8 evaluated candidates, adhered, no_qualified_candidate; first gated-activation workload, completed on its third attempt after F-001 and F-003 faults"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/momentum_sgd-glm53-high-20260910c",
+      "note": "2026-09-10 batch: columns=768 (see F-2026-09-10-002), 4 turns, 10 evaluated candidates, adhered, no_qualified_candidate; first optimizer-update workload with in-place state mutation, completed on its third attempt after F-005 and F-006 faults"
     }
   ],
-  "observation": "Across five completed campaigns on Executor v86 under fixed_baseline_paired_metal_v2 (glm-5.3 via claude-code, high effort, 4 turns, 3M token budget), protocol adherence and correctness were perfect everywhere: every evaluated candidate passed all five validation cases with inputs unchanged and max_abs_error at float rounding scale. Not one candidate reached the 1.05 materiality ratio with 6/10 pair wins; every terminal was no_qualified_candidate at maximum_turns. The fixed baseline, authored inside the same legal vocabulary, is already near the performance ceiling the vocabulary admits at these shapes.",
+  "observation": "Across ten completed campaigns on Executor v86 under fixed_baseline_paired_metal_v2 (glm-5.3 via claude-code, high effort, 4 turns, 3M token budget), protocol adherence and correctness were perfect everywhere: every evaluated candidate passed all five validation cases with inputs unchanged and max_abs_error at float rounding scale. Not one candidate reached the 1.05 materiality ratio with 6/10 pair wins; every terminal was no_qualified_candidate at maximum_turns. The fixed baseline, authored inside the same legal vocabulary, is already near the performance ceiling the vocabulary admits at these shapes. The 2026-09-10 batch extends the pattern across five workload families not previously covered (affine normalization, backward, reduction, gated activation, in-place optimizer update) with no family exception - and per_channel_moments evaluated twelve candidates without approaching materiality, so the ceiling is not a candidate-count artifact.",
   "proposed_change": "Read this as saturation of within-vocabulary optimization, not as a provider-capability result: prefer capability ticks (vocabulary/lowering coverage such as tile_loops, richer access indices, multi-stage reductions) over expecting provider-side improvement inside the current vocabulary at these shapes. Before the next sweep, freeze one fixed baseline bundle per task so successor revisions report baseline movement separately from candidate headroom.",
   "decision": "proposed",
   "implemented_in": null,
   "verified_by": null,
-  "verification_plan": "Standing observation to re-measure each tock: rerun the same five tasks on each successor revision with the frozen baseline bundles and compare the candidate-minus-baseline gap series."
+  "verification_plan": "Standing observation to re-measure each tock: rerun the same ten tasks on each successor revision with the frozen baseline bundles and compare the candidate-minus-baseline gap series."
 }

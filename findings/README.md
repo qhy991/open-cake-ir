@@ -28,12 +28,16 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - `kind` is one of `bug`, `capacity`, `behavior`, `protocol`.
 - Workspaces live outside the checkout and are never reset or deleted to make a finding
   convenient; a superseding run gets a suffixed workspace and both stay citable.
+- The `NNN` in an id is allocated in submission order per date; before minting a finding,
+  pull and take the next free number (the 2026-09-10-005 collision between two parallel
+  sessions was caught at push and renumbered).
 
 ## Index
 
-- F-2026-09-10-001 — multi-SIMD share DCE (bug, silu)
-- F-2026-09-10-002 — observer cohort snapshot bound (capacity, adamw)
-- F-2026-09-10-003 — claude is_error zero-tolerance (protocol, softmax)
-- F-2026-09-10-004 — baseline near vocabulary ceiling (behavior, 5 tasks)
-
+- F-2026-09-10-001 — multi-SIMD share DCE (bug, silu + swiglu recurrence)
+- F-2026-09-10-002 — observer cohort snapshot bound (capacity, adamw + momentum_sgd corroboration)
+- F-2026-09-10-003 — claude is_error zero-tolerance (protocol, softmax + swiglu)
+- F-2026-09-10-004 — baseline near vocabulary ceiling (behavior, 10 tasks)
 - F-2026-09-10-005 — GEMM SiLU oracle overflow (bug, CPU oracle replay; fixed in Executor v88)
+- F-2026-09-10-007 — relative-path Write outside envelope (protocol, momentum_sgd)
+- F-2026-09-10-008 — CLI auto-compact outside event contract (protocol, momentum_sgd)

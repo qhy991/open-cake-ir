@@ -8,7 +8,7 @@
   "target": "apple_gpu_family7",
   "executor_revision": "open-cake-ir-b200-v86+bf657e12e5886707b8be24fb35deb330fda22f34712092157cd9bb3abf4b62da",
   "compiler_revision_id": "open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578",
-  "tasks": ["silu"],
+  "tasks": ["silu", "swiglu"],
   "evidence": [
     {
       "workspace": "/Users/haiyan/Documents/lab-workspaces/silu-glm53-high-20260909c",
@@ -23,12 +23,26 @@
     {
       "path": "/Users/haiyan/Documents/lab-workspaces/silu-glm53-high-20260909c/builds/metal-build-bi1i7lpq/compile/stdout.json",
       "note": "compiled pipeline reports static_threadgroup_memory_bytes=0 (allocation eliminated) while the declared toolchain requirements said 128 bytes"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/swiglu-glm53-high-20260910",
+      "run": "open_cake-1",
+      "event": 2,
+      "note": "recurrence on a second workload, same fault string, turn 1: run_fault harness_fault 'Metal archive helper observations differ from the admitted pipeline'"
+    },
+    {
+      "path": "/Users/haiyan/Documents/lab-workspaces/swiglu-glm53-high-20260910/builds/metal-build-w2202xwj/lowered.metal",
+      "note": "line 18 declares 'threadgroup float share[8]' (32 bytes) which the elementwise body never references"
+    },
+    {
+      "path": "/Users/haiyan/Documents/lab-workspaces/swiglu-glm53-high-20260910/builds/metal-build-w2202xwj/compile/stdout.json",
+      "note": "compiled pipeline reports static_threadgroup_memory_bytes=0 against the 32-byte declaration - same declared!=observed XOR refusal at a different share size"
     }
   ],
-  "observation": "src/open_cake_ir/compiler/backends/metal.py:359-366 emits 'threadgroup float share[N]' unconditionally whenever SIMD groups > 1, and lab/metal_build.py:201 forces (>32 threads iff threadgroup memory declared). A purely elementwise multi-group kernel therefore declares 128 bytes it never uses; the Metal compiler eliminates the unused allocation, the sealed archive's pipeline observation reports 0, and the strict declared==observed check at lab/metal_build.py:68-71 raises a campaign-fatal harness_fault on a semantically harmless candidate.",
+  "observation": "src/open_cake_ir/compiler/backends/metal.py:359-366 emits 'threadgroup float share[N]' unconditionally whenever SIMD groups > 1, and lab/metal_build.py:201 forces (>32 threads iff threadgroup memory declared). A purely elementwise multi-group kernel therefore declares bytes it never uses; the Metal compiler eliminates the unused allocation, the sealed archive's pipeline observation reports 0, and the strict declared==observed check at lab/metal_build.py:68-71 raises a campaign-fatal harness_fault on a semantically harmless candidate. Recurs across workloads: silu (32 groups, 128 bytes) and swiglu (8 floats, 32 bytes) both produced multi-SIMD elementwise candidates the model author chose freely - this is a recurring authoring pattern, not a one-task accident.",
   "proposed_change": "Emit share[] only when the schedule actually lowers a cross-SIMD-group collective through threadgroup memory, and report threadgroup_memory_bytes from that same fact. Decouple the threads/tgmem XOR rule so a 1024-thread elementwise kernel may declare zero. Keep the declared==observed strictness in the validator unchanged - the declaration should become truthful, not the check looser.",
   "decision": "proposed",
   "implemented_in": null,
   "verified_by": null,
-  "verification_plan": "Bug-fix tick, replay-verified: re-lower the exact candidate source retained in the silu-20260909c workspace under the successor Executor/Compiler revision; the same build must pass pipeline admission."
+  "verification_plan": "Bug-fix tick, replay-verified: re-lower the exact candidate sources retained in the silu-20260909c and swiglu-20260910 workspaces under the successor Executor/Compiler revision; the same builds must pass pipeline admission."
 }
