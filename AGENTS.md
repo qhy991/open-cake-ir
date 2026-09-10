@@ -93,7 +93,36 @@ things to do because the rules above did not stop either one.
 - Changes are test-gated across the kernel corpus and require independent review under
   ADR 0052 before release or merge.
 - Recurring failures are what become new verifier rules, IR primitives, cost-model
-  calibrations and reusable tactics. A one-off failure is not evidence for a rule.
+  calibrations, explicit transformation passes and reusable tactics. A one-off failure
+  is not evidence for a rule.
+
+## Kernel–Compiler co-evolution (experience promotion)
+
+- At the end of a bounded kernel optimization or recurring-failure investigation,
+  inspect the retained evidence for a reusable mechanism and record the disposition in
+  the existing result. `No promotion` is valid. Routine edits and status checks do not
+  trigger this process; neither a new pass nor a new Finding is required for every run.
+- For a promising transformation, retain one mechanism's before/after programs,
+  applicability and anti-conditions, correctness obligations, observed effects and
+  negative/null results. Reference the original evidence; do not create a second
+  experience ledger or maintain separate facts in Case, recipe and pass descriptions.
+- Route the lesson to its owner: deterministic Schedule rewrites to Compiler passes;
+  measured choices of when/with which parameters to apply them to Lab recipes or
+  selection; missing legality checks to the verifier; missing expressibility to IR or
+  lowering; estimation errors to target-specific calibration. An unexplained one-off
+  result remains a case.
+- Promote a pass when a real second use or a stable structural invariant justifies its
+  scope. Make matching and semantic/target preconditions explicit; return a complete
+  candidate or a reason for not applying it, preserving the original. Keep performance
+  choices explicit and let Lab select them. A pass does not imply a speedup or authorize
+  broader reference access.
+- Exercise positive cases, valid-but-ineligible inputs and numerical/side-effect
+  counterexamples. Confirm that the intended guard refuses each counterexample, not an
+  unrelated rule. Test uses outside the extraction cases before claiming transfer;
+  CPU/source checks do not establish GPU correctness or performance.
+- Use the Finding and Revision cadence below for promotion, review and release. Judge
+  the mechanism by verified results on subsequent kernels under matched budgets,
+  attempts avoided and negative transfer—not by the number of passes accumulated.
 
 ## Tick-tock between campaigns and Revisions (outer loop cadence)
 
