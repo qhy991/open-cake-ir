@@ -27,6 +27,7 @@ do {
     switch request.target {
     case "apple_gpu_family7": family = .apple7
     case "apple_gpu_family8": family = .apple8
+    case "apple_gpu_family9": family = .apple9
     default: throw Refusal(description: "unsupported exact Metal target")
     }
     try require(request.expected_device_names.contains(device.name) && device.supportsFamily(family), "exact Metal device differs")

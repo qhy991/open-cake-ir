@@ -205,7 +205,8 @@ class TaskLaunchTests(unittest.TestCase):
 
     def test_each_backend_binds_its_own_exact_target_and_admitted_device(self):
         expected = {"metal-m1-pro": ("apple_gpu_family7", "Apple M1 Pro"),
-                    "metal-m2": ("apple_gpu_family8", "Apple M2")}
+                    "metal-m2": ("apple_gpu_family8", "Apple M2"),
+                    "metal-m4": ("apple_gpu_family9", "Apple M4")}
         self.assertEqual(set(launch_task.BACKENDS), set(expected))
         for backend, (target, device) in expected.items():
             with self.subTest(backend=backend):

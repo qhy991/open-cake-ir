@@ -265,8 +265,10 @@ do {
     let host = ["device_name": device.name, "device_registry_id": String(device.registryID),
                 "operating_system": ProcessInfo.processInfo.operatingSystemVersionString, "target": request.expected_host["target"] ?? ""]
     try require(host == request.expected_host, "admitted Metal host differs")
-    let family: MTLGPUFamily = host["target"] == "apple_gpu_family7" ? .apple7 : .apple8
-    try require(["apple_gpu_family7", "apple_gpu_family8"].contains(host["target"]!) && device.supportsFamily(family), "exact Metal target unsupported")
+    let families: [String: MTLGPUFamily] = ["apple_gpu_family7": .apple7,
+        "apple_gpu_family8": .apple8, "apple_gpu_family9": .apple9]
+    guard let family = families[host["target"]!] else { throw Refusal(description: "exact Metal target unsupported") }
+    try require(device.supportsFamily(family), "exact Metal target unsupported")
     report["host"] = host
     var prepared: [String: Prepared] = [:]
     for participant in request.participants {

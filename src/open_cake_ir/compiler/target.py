@@ -19,6 +19,8 @@ from typing import Any, Mapping
 
 from .ir import MemorySpace, OperationKind, ScheduleParseError, _enum, _string
 
+_APPLE_ARCHITECTURES = frozenset({"apple7", "apple8", "apple9"})
+
 
 class TargetParseError(ValueError):
     """One Target document is not admissible."""
@@ -334,9 +336,9 @@ class Target:
             or any(type(item) is not int or item < 0 for item in capability)
         ):
             raise TargetParseError("target.compute_capability must be a nonnegative integer pair")
-        if capability is None and value.get("architecture") not in {"apple7", "apple8"}:
+        if capability is None and value.get("architecture") not in _APPLE_ARCHITECTURES:
             raise TargetParseError("target.compute_capability is required for CUDA targets")
-        if value.get("architecture") in {"apple7", "apple8"} and "compute_capability" in value:
+        if value.get("architecture") in _APPLE_ARCHITECTURES and "compute_capability" in value:
             raise TargetParseError("Apple GPU targets have no CUDA compute capability")
 
         try:
@@ -351,7 +353,7 @@ class Target:
         except ScheduleParseError as error:
             raise TargetParseError(str(error)) from error
 
-        if value.get("architecture") in {"apple7", "apple8"} and ("occupancy" in value or "peak" in value):
+        if value.get("architecture") in _APPLE_ARCHITECTURES and ("occupancy" in value or "peak" in value):
             raise TargetParseError("Apple GPU targets have no admitted occupancy or peak calibration")
 
         instruction_contracts = frozenset(string_tuple("instruction_contracts", allow_empty=True))

@@ -1,12 +1,12 @@
 # 通过 TaskLab 运行 Apple Metal 任务
 
-Compiler 支持精确目标 `Apple M1 Pro` / `apple_gpu_family7` 和 `Apple M2` /
-`apple_gpu_family8`，任务入口两者都已接入，参数分别为 `--backend metal-m1-pro`
-和 `--backend metal-m2`。一个 backend 只对应一个精确目标和一个已认定设备名；
+Compiler 支持精确目标 `Apple M1 Pro` / `apple_gpu_family7`、`Apple M2` /
+`apple_gpu_family8` 和 `Apple M4` / `apple_gpu_family9`，任务入口均已接入，参数分别为
+`--backend metal-m1-pro`、`--backend metal-m2` 和 `--backend metal-m4`。一个 backend 只对应一个精确目标和一个已认定设备名；
 为某台设备封存的 Workload 不会在另一台上通过校验。入口核对精确设备、OS、工具链和已发布
 Executor，若已发布 Executor 绑定的是另一块 Apple GPU 会直接拒绝，不自动替换设备，
-也不借用其他 Apple GPU 的成本校准。因此在 M2 上运行需要一份在该 M2 主机上采集并发布的
-Metal Executor，M1 Pro 的那份不能复用。
+也不借用其他 Apple GPU 的成本校准。因此在 M2 或 M4 上运行都需要一份在对应主机上采集并发布的
+Metal Executor，其他 Apple GPU 的那份不能复用。
 
 内置任务为 `rmsnorm`、`layernorm`（带仿射参数、中心化总体方差）和 `residual_rmsnorm`
 （先将残差加法舍入到 FP32，再归一化）。[任务自己的 Workload 与 oracle](../src/open_cake_ir/tasks/normalization/workload.py)
@@ -24,7 +24,7 @@ Metal Executor，M1 Pro 的那份不能复用。
 
 ```sh
 python3 tools/launch_task.py \
-  --task rmsnorm --backend metal-m2 \
+  --task rmsnorm --backend metal-m4 \
   --harness codex --model "<exact-model-id>" --effort high \
   --workspace "$HOME/.local/share/open-cake-ir/runs/metal-rmsnorm-example" \
   --rows 128 --columns 1024 --turns 4 --token-budget 150000

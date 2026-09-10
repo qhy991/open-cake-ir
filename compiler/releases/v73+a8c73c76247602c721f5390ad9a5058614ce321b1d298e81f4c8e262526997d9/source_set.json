@@ -1,5 +1,4 @@
 {
-  "schema_version": 1,
   "paths": [
     "compiler/AUTHORING_CONTRACT.md",
     "docs/PYTHON_FRONTEND.md",
@@ -118,7 +117,6 @@
     "src/open_cake_ir/compiler/performance/compiled_resources.py",
     "src/open_cake_ir/compiler/toolchain.py",
     "compiler/targets/apple_gpu_family8.json",
-    "compiler/targets/apple_gpu_family9.json",
     "examples/python/metal_elementwise.py",
     "examples/python/metal_row_sum.py",
     "src/open_cake_ir/compiler/backends/metal.py",
@@ -176,5 +174,6 @@
     "src/open_cake_ir/compiler/passes.py",
     "examples/python/epilogue_producer.py",
     "examples/python/epilogue_consumer.py"
-  ]
+  ],
+  "schema_version": 1
 }

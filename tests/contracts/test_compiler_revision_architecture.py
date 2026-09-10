@@ -110,9 +110,12 @@ class RevisionAdmissionTests(unittest.TestCase):
 
     def test_current_draft_retains_all_exact_targets_and_zero_tmem(self):
         revision = load_revision(ROOT, ROOT / "compiler/revision.json")
-        self.assertEqual(set(revision.targets), {"sm_100a", "apple_gpu_family7", "apple_gpu_family8", "sm_103a"})
+        self.assertEqual(set(revision.targets), {
+            "sm_100a", "apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9", "sm_103a",
+        })
         for target_id, device in (("apple_gpu_family7", "Apple M1 Pro"),
-                                  ("apple_gpu_family8", "Apple M2")):
+                                  ("apple_gpu_family8", "Apple M2"),
+                                  ("apple_gpu_family9", "Apple M4")):
             with self.subTest(target=target_id):
                 target = revision.targets[target_id]
                 self.assertEqual(target.device_names, (device,))

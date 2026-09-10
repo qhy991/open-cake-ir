@@ -1,13 +1,14 @@
 # Apple Metal tasks through TaskLab
 
-The Compiler supports exact `Apple M1 Pro` / `apple_gpu_family7` and `Apple M2` /
-`apple_gpu_family8` targets. The task launcher admits both, as `--backend metal-m1-pro`
-and `--backend metal-m2`. One backend selects exactly one target and one admitted device
+The Compiler supports exact `Apple M1 Pro` / `apple_gpu_family7`, `Apple M2` /
+`apple_gpu_family8`, and `Apple M4` / `apple_gpu_family9` targets. The task launcher admits
+them as `--backend metal-m1-pro`, `--backend metal-m2`, and `--backend metal-m4`. One backend
+selects exactly one target and one admitted device
 name; a Workload frozen for one device never validates against the other. The launcher
 checks the exact device, OS, toolchain and released Executor, and refuses a released
-Executor bound to the other Apple GPU; there is no device fallback or borrowed Apple
-performance calibration. Running on M2 therefore requires a released Metal Executor
-captured on that M2 host, not the M1 Pro one.
+Executor bound to another Apple GPU; there is no device fallback or borrowed Apple
+performance calibration. Running on M2 or M4 therefore requires a released Metal Executor
+captured on that exact host, not one captured on a different Apple GPU.
 
 The built-in tasks are `rmsnorm`, `layernorm` (affine, centered population variance),
 and `residual_rmsnorm` (FP32-rounded residual addition before normalization). Their
@@ -29,7 +30,7 @@ From the checkout, using the Executor's Python executable:
 
 ```sh
 python3 tools/launch_task.py \
-  --task rmsnorm --backend metal-m2 \
+  --task rmsnorm --backend metal-m4 \
   --harness codex --model "<exact-model-id>" --effort high \
   --workspace "$HOME/.local/share/open-cake-ir/runs/metal-rmsnorm-example" \
   --rows 128 --columns 1024 --turns 4 --token-budget 150000

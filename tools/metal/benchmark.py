@@ -186,7 +186,7 @@ def invoke_batch(binary: Path, receipt: Path, job: dict, *, compile_only: bool =
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-root", type=Path, required=True)
-    parser.add_argument("--target", choices=("apple_gpu_family7", "apple_gpu_family8"),
+    parser.add_argument("--target", choices=("apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9"),
                         default="apple_gpu_family8", help="exact target; no device fallback")
     args = parser.parse_args()
     receipt = fresh_receipt(args.output_root, prefix="metal-benchmark-")

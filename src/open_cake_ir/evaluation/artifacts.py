@@ -1,7 +1,7 @@
 """Backend build products; authoring-arm policy remains in the Lab."""
 from open_cake_ir.compiler.target import cuda_architecture
 
-METAL_TARGETS = frozenset({"apple_gpu_family7", "apple_gpu_family8"})
+METAL_TARGETS = frozenset({"apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9"})
 _BUILD_ROLES = {
     "metal": frozenset({"metal_binary_archive", "metal_build_report", "launch_manifest"}),
     "triton": frozenset({"compiler_expanded_source", "ptx", "cubin", "launch_manifest"}),
