@@ -1,5 +1,7 @@
 # 文档总目录 / Documentation catalog
 
+原生 CUDA/PTX：[中文](zh-CN/NATIVE_CUDA.md) · [English](NATIVE_CUDA.md)
+
 [中文入门](zh-CN/README.md) · [English start](en/README.md) · [职责与文档归属](../CONTEXT-MAP.md)
 
 B300： [中文](B300.md) · [English](en/B300.md)

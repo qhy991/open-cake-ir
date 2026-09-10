@@ -233,6 +233,7 @@ class Compiler:
         except ScheduleParseError as error:
             return self._structural_rejection(schedule, error)
         _check_input_boundary(typed_schedule, input_error)
+        schedule = typed_schedule.canonical_document(schedule)
 
         target = typed_schedule.target
         target_definition = self._revision.targets.get(target)

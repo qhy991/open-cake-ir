@@ -10,7 +10,7 @@ from ..diagnostics import Finding
 from ..ir import DType, LoweringBackend, OperationKind, Schedule
 from ..target import Target
 from .common import Emission
-from . import cutedsl, metal, triton
+from . import cutedsl, metal, native_cuda, triton
 
 
 class BackendModule(Protocol):
@@ -30,6 +30,7 @@ class Backend:
 
 
 BACKENDS = MappingProxyType({
+    LoweringBackend.NATIVE_CUDA: Backend(native_cuda, "cuda_cpp", "nvcc"),
     LoweringBackend.METAL: Backend(metal, "metal", "MTLDevice.makeLibrary"),
     LoweringBackend.TRITON: Backend(triton, "python", "triton"),
     LoweringBackend.CUTLASS_CUTE_DSL: Backend(cutedsl, "python", "cutlass_cute_dsl"),

@@ -56,6 +56,24 @@ def rename(document: dict, old: str, new: str) -> dict:
 
 
 class RegisterCuTeTests(unittest.TestCase):
+    def test_current_register_cute_refuses_selected_ranges_at_public_boundaries(self):
+        from open_cake_ir.compiler.backends import cutedsl, cutedsl_register
+        from open_cake_ir.compiler.backends.common import EmitError
+        from open_cake_ir.compiler.target import Target
+
+        value = json.loads((ROOT / 'corpus/schedules/b300-cute-register-primary.json').read_text())
+        operation = next(op for op in value['operations'] if op['kind'] == 'mma')
+        extent = operation['parameters']['tile_shape'][2]
+        operation['parameters']['k_ranges'] = [[0, extent // 2]]
+        schedule = Schedule.from_dict(value)
+        target = Target.load(ROOT / 'compiler/targets/sm_103a.json')
+        for backend in (cutedsl, cutedsl_register):
+            with self.subTest(backend=backend.__name__):
+                self.assertIn('CUTE_MMA_K_RANGES_UNSUPPORTED', [f.code for f in backend.requirements(schedule)])
+                self.assertIn('CUTE_MMA_K_RANGES_UNSUPPORTED', [f.code for f in backend.preflight(schedule, target)])
+                with self.assertRaises(EmitError):
+                    backend.emit(schedule, target)
+
     @classmethod
     def setUpClass(cls):
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")

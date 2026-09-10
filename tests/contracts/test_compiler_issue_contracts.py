@@ -82,7 +82,7 @@ class CompilerIssueContracts(unittest.TestCase):
         assessment = self.compiler.assess(d)
         self.assertTrue(assessment.lowering_eligible, assessment.findings)
         schedule = Schedule.from_dict(d)
-        self.assertEqual(schedule.argmin_domain(schedule.operation('select')), 64)
+        self.assertEqual(schedule.argmin_domain(schedule.operation('select'))[1], 64)
         compile(self.compiler.lower(assessment).source, '<different-owner-same-domain>', 'exec')
 
     def test_actual_generated_binding_namespace_cannot_overwrite_authored_values(self):

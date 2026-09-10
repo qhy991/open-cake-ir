@@ -169,8 +169,11 @@ class _Tile:
     __radd__ = __add__
     def __mul__(self, x): return self.binary(x, operator.mul)
     __rmul__ = __mul__
+    def __sub__(self, x): return self.binary(x, operator.sub)
     def __lt__(self, x): return self.binary(x, operator.lt)
+    def __eq__(self, x): return self.binary(x, operator.eq)
     def __and__(self, x): return self.binary(x, operator.and_)
+    def __or__(self, x): return self.binary(x, operator.or_)
     def to(self, dtype): return self
 
     def __getitem__(self, indices):
@@ -189,11 +192,19 @@ class _Pointer:
 class _TL:
     """Execute source control flow and memory effects, without Triton or Torch."""
     float32 = object()
+    int32 = object()
     range = staticmethod(lambda *args, **kwargs: range(*args))
     arange = staticmethod(lambda start, stop: _Tile((stop-start,), range(start, stop)))
     full = staticmethod(lambda shape, value, dtype: _Tile(shape, itertools.repeat(value, _size(shape))))
     zeros = staticmethod(lambda shape, dtype: _TL.full(shape, 0, dtype))
     maximum = staticmethod(lambda a, b: a.binary(b, max))
+
+    @staticmethod
+    def where(condition, yes, no):
+        if not isinstance(condition, _Tile):
+            condition = _Tile((), [condition])
+        return condition.binary(yes, lambda c, y: (c, y)).binary(
+            no, lambda choice, n: choice[1] if choice[0] else n)
 
     def __init__(self):
         self.program = (0, 0, 0)
@@ -266,6 +277,16 @@ class _TL:
     @staticmethod
     def max(a, axis):
         return _TL.reduce(a, axis, max)
+
+    @staticmethod
+    def min(a, axis):
+        return _TL.reduce(a, axis, min)
+
+    @staticmethod
+    def argmin(a, axis, tie_break_left=True):
+        assert tie_break_left
+        return _TL.reduce(a, axis, lambda values: min(
+            enumerate(values), key=lambda item: (item[1], item[0]))[0])
 
     @staticmethod
     def reduce(a, axis, function):

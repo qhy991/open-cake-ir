@@ -65,8 +65,8 @@ Finding 保留具体位置、四类合同中的 `category`、`severity`，以及
 单独携带 `hint` 提示。提示不改变验收结果。CLI、Lab 和 profile 报告都会展示这些提示，
 但提示既不是 GPU 正确性证明，也不是测量结果。
 
-当前计划通过 Triton、CuTe DSL 或 Metal 生成源码，名字分别是 `triton`、
-`cutlass_cute_dsl` 和 `metal`。专用的 `checked_cuda_asset` 路线已退役：原 TinyGEMM2
+当前计划通过原生 CUDA、Triton、CuTe DSL 或 Metal 生成源码，名字分别是 `native_cuda`、
+`triton`、`cutlass_cute_dsl` 和 `metal`。专用的 `checked_cuda_asset` 路线已退役：原 TinyGEMM2
 Schedule 留作结构拒绝用例，旧固定源码结果只能在绑定的历史 Git 版本中重放。
 当前 `Lowering.generated` 为真；历史记录中该字段的原有含义保留。
 

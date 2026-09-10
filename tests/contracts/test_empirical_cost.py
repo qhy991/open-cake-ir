@@ -96,6 +96,26 @@ class EmpiricalCostTest(unittest.TestCase):
         assessment = self.compiler.assess(schedule)
         self.assertEqual(self.compiler.rank([assessment]), ((), (assessment.schedule_id,)))
 
+    def test_mma_canonical_ranges_match_but_partial_work_never_inherits_a_full_curve(self):
+        query = self.schedule('gemm-bias-b1-smoke.json')
+        op = next(op for op in query['operations'] if op['kind'] == 'mma')
+        k = op['parameters']['tile_shape'][2]
+        model = EmpiricalCostModel(self.model_document())
+        identity = dict(compiler_revision_id=self.revision_id,
+                        compiler_revision_sha256=self.revision_sha256, target='sm_100a')
+        original = model.estimate(query, **identity)
+        self.assertTrue(original['covered'])
+        op['parameters']['k_ranges'] = [[0, k // 2], [k // 2, k]]
+        self.assertEqual(model.estimate(query, **identity), original)
+        # The public model boundary must also normalize its stored template.
+        model_doc = self.model_document(); model_doc['curves'][1]['template'] = copy.deepcopy(query)
+        canonical_model = EmpiricalCostModel(model_doc)
+        self.assertEqual(canonical_model.estimate(self.schedule('gemm-bias-b1-smoke.json'), **identity), original)
+        op['parameters']['k_ranges'] = [[0, k // 2]]
+        partial = model.estimate(query, **identity)
+        self.assertFalse(partial['covered'])
+        self.assertIsNone(partial['predicted_kernel_us'])
+
     def test_wrong_revision_and_target_abstain(self):
         for field, value in [("compiler_revision_id", "other-revision"), ("compiler_revision_sha256", "0" * 64), ("target", "different-target")]:
             model = EmpiricalCostModel(self.model_document())

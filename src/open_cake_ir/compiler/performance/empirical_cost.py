@@ -61,7 +61,7 @@ class _Curve:
         template = row["template"]
         if not isinstance(template, dict):
             raise ValueError("curve template must be a Schedule object")
-        Schedule.from_dict(template)
+        template = Schedule.from_dict(template).canonical_document(template)
         if template["target"] != target:
             raise ValueError("curve template target differs from model")
         buffers = {buffer["name"]: buffer for buffer in template["buffers"]}
@@ -184,7 +184,7 @@ class EmpiricalCostModel:
             result["reason"] = "compiled artifact compiler version differs from model context"
             return result
         # Public callers get the same construction/type checks as the Compiler.
-        Schedule.from_dict(schedule)
+        schedule = Schedule.from_dict(schedule).canonical_document(schedule)
         query_bytes = _canonical(schedule)
         predictions = [prediction for curve in self._curves if (prediction := curve.predict(schedule, query_bytes)) is not None]
         if len(predictions) != 1:
