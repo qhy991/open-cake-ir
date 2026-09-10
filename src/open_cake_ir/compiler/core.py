@@ -13,6 +13,7 @@ from typing import Mapping, Sequence, cast
 
 from .backends import BACKENDS, Backend
 from .frontend import read_schedule
+from .passes import FusionResult, fuse_pointwise_epilogue
 from .backends.common import EmitError
 from .ir import (
     _SCHEDULE_OPTIONAL,
@@ -203,6 +204,13 @@ class Compiler:
         """Assess the declared Corpus through its canonical report owner."""
 
         return check_corpus(self, self._revision.corpus_path)
+
+    def fuse_pointwise_epilogue(self, producer: Mapping[str, object],
+                                epilogue: Mapping[str, object], *, private_intermediate: str,
+                                schedule_id: str, entry_point: str) -> FusionResult:
+        """Explicit composition pass; it is never invoked by assess() or lower()."""
+        return fuse_pointwise_epilogue(self, producer, epilogue,
+            private_intermediate=private_intermediate, schedule_id=schedule_id, entry_point=entry_point)
 
     def assess_file(self, path: str | Path) -> Assessment:
         """Assess a JSON or Python Schedule without executing authored Python."""

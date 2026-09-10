@@ -1,5 +1,4 @@
 {
-  "schema_version": 1,
   "paths": [
     "compiler/AUTHORING_CONTRACT.md",
     "docs/PYTHON_FRONTEND.md",
@@ -171,9 +170,7 @@
     "corpus/schedules/triton-operation-id-control-drift.json",
     "corpus/schedules/triton-argmin-static-tail-drift.json",
     "examples/python/cast.py",
-    "examples/python/mixed_dtype.py",
-    "src/open_cake_ir/compiler/passes.py",
-    "examples/python/epilogue_producer.py",
-    "examples/python/epilogue_consumer.py"
-  ]
+    "examples/python/mixed_dtype.py"
+  ],
+  "schema_version": 1
 }
