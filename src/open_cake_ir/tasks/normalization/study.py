@@ -12,7 +12,9 @@ from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRAC
 from open_cake_ir.lab._policies import _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN
 from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL
 from open_cake_ir.lab.ralph import RalphBudget
-from open_cake_ir.tasks.apple import device_name
+# The portable registry, so a Study can name an NVIDIA device as readily as an
+# Apple one; open_cake_ir.tasks.apple covers only the latter.
+from open_cake_ir.tasks.devices import device_name
 
 OUTPUT_SCHEMA = "contracts/providers/open-cake-optimization-output-schema-v1.json"
 SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v2.md"

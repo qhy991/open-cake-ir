@@ -20,12 +20,14 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.lab.bindings import external_file, resolve_executor, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.environments import CandidateSubmission
+from open_cake_ir.lab.build import TritonToolchainBuilder
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
+from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
 from open_cake_ir.lab.providers import ProviderQualificationReceipt
 from open_cake_ir.tasks.compose import execute_matched_from_config
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
 from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, study_template
-from open_cake_ir.tasks.devices import admit_cohort_payload
+from open_cake_ir.tasks.devices import BACKENDS as DEVICE_BACKENDS, admit_cohort_payload
 from open_cake_ir.tasks.activation.workload import TASKS as _ACTIVATION_TASKS
 from open_cake_ir.tasks.rowwise.workload import TASKS as _ROWWISE_TASKS
 from open_cake_ir.tasks.reductions.workload import TASKS as _REDUCTION_TASKS
@@ -100,7 +102,18 @@ def _write(path: Path, data: bytes) -> None:
         stream.write(data)
 
 
-def _admit_stack(root: Path, workspace: Path, target: str):
+# A Metal host names its kind. The CUDA host schema predates that field and carries none,
+# so a route that is not Metal is defined by the absence of that name rather than by a
+# marker of its own. Stated as "is metal" / "is not metal" so a host the capture tool has
+# never produced still lands on the right side (F-2026-09-10-012 records why one checkout
+# cannot hold both hosts at once).
+
+
+def _route_of(backend: str) -> str:
+    return DEVICE_BACKENDS[backend]["route"]
+
+
+def _admit_stack(root: Path, workspace: Path, target: str, route: str = "metal"):
     compiler = Compiler.load(root, root / "compiler/revision.lock.json")
     gate = compiler.check_corpus()
     _write(workspace / "compiler-gate.json", canonical(asdict(gate)))
@@ -110,21 +123,41 @@ def _admit_stack(root: Path, workspace: Path, target: str):
         executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "task.execution", template=True)
     except ValueError as error:
         raise ValueError(f"task launch requires a released Metal Executor matching this source; {error}") from error
-    if executor.document["host_environment"].get("kind") != "metal":
+    is_metal_host = executor.document["host_environment"].get("kind") == "metal"
+    if route == "metal" and not is_metal_host:
         raise ValueError("task launch requires an actually released Metal Executor")
-    released = executor.document["host_environment"].get("host", {}).get("target")
-    if released != target:
-        raise ValueError(f"released Metal Executor is bound to {released!r}, not the requested {target!r}; "
-                         "no other Apple GPU is substituted")
-    host = MetalArchiveHost.from_executor(executor)
+    if route != "metal" and is_metal_host:
+        raise ValueError(f"the {route!r} route requires a released Executor bound to a GPU host; "
+                         "the current one is Metal, and no host is substituted for another")
+    host = None
+    if route == "metal":
+        released = executor.document["host_environment"].get("host", {}).get("target")
+        if released != target:
+            raise ValueError(f"released Metal Executor is bound to {released!r}, not the requested "
+                             f"{target!r}; no other Apple GPU is substituted")
+        host = MetalArchiveHost.from_executor(executor)
     return compiler, executor, host, {"path": "compiler/revision.lock.json",
         "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
 
 
-def _prepare_baseline(root, workspace, compiler, executor, host, workload, study, source, compiler_reference):
-    builder = MetalToolchainBuilder(workload=workload, case_id="primary", output_root=workspace / "builds",
-                                    host=host, project_root=root,
-                                    compiler_reference=compiler_reference)
+def _triton_builder(executor, workload):
+    """Bind the isolated compiler to the exact runtime the Executor host admits."""
+    host = executor.document["host_environment"]
+    return TritonToolchainBuilder(
+        workload=workload, case_id="primary",
+        isolated_compiler=IsolatedTritonCompiler(
+            python=str(host["python"]["invocation_path"]),
+            bubblewrap="/usr/bin/bwrap",
+            runtime_roots=["/usr", "/lib", "/lib64", "/opt", str(Path(host["python"]["invocation_path"]).parents[1])],
+            triton_version=host["packages"]["triton"]))
+
+
+def _prepare_baseline(root, workspace, compiler, executor, host, workload, study, source,
+                      compiler_reference, route="metal"):
+    builder = (MetalToolchainBuilder(workload=workload, case_id="primary",
+                                     output_root=workspace / "builds", host=host, project_root=root,
+                                     compiler_reference=compiler_reference)
+               if route == "metal" else _triton_builder(executor, workload))
     environment = TaskOpenCakeEnvironment(compiler, builder, authority_document=study["arms"]["open_cake"],
                                          workload=workload, case_id="primary", executor=executor)
     submission = CandidateSubmission.seal(environment.media_type, canonical({"python_source": source}))
@@ -188,7 +221,7 @@ def main(argv=None) -> int:
                                           *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS,
                                           *OPTIMIZER_TASKS, *CONTRACTION_TASKS,
                                           "gemm_bias"), required=True)
-    parser.add_argument("--backend", choices=tuple(BACKENDS), required=True)
+    parser.add_argument("--backend", choices=tuple(DEVICE_BACKENDS), required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
@@ -234,9 +267,12 @@ def main(argv=None) -> int:
         dispatches_per_sample=args.dispatches_per_sample)
     study_path = workspace / "study.json"
     _write(study_path, canonical(study))
-    compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target)
+    route = _route_of(args.backend)
+    compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
     baseline_path = (external_file(ROOT, str(args.fixed_baseline_bundle), "fixed baseline bundle")
-                     if args.fixed_baseline_bundle else _prepare_baseline(ROOT, workspace, compiler, executor, host, workload, study, source, compiler_reference))
+                     if args.fixed_baseline_bundle else _prepare_baseline(
+                         ROOT, workspace, compiler, executor, host, workload, study, source,
+                         compiler_reference, route))
     receipt_path, anchor_path = _qualify(ROOT, workspace, args, executable, source_path)
     receipt = ProviderQualificationReceipt.load(receipt_path)
     if not receipt.qualified or receipt.scope != "live_two_turn_tool_rich_provider":

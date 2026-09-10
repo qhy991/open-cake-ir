@@ -145,6 +145,40 @@ class TaskLaunchTests(unittest.TestCase):
                 launch_task._admit_stack(ROOT,self.workspace,"apple_gpu_family7")
             host.assert_not_called()
 
+    def test_a_gpu_route_refuses_the_metal_host_and_never_builds_a_metal_archive(self):
+        """The mirror of the check above, now that a route selects the stack.
+
+        A CUDA host carries no `kind` at all, so the two routes are separated by whether
+        the host names itself Metal rather than by a marker each one owns. Both refusals
+        land before any host helper is touched.
+        """
+        gate = CorpusGateReport("unit-fixture", "fixture", "not-live", True, ())
+        compiler = SimpleNamespace(state="released", check_corpus=lambda: gate)
+        metal = SimpleNamespace(document={"host_environment": {"kind": "metal"}})
+        # Each admission writes its own gate report, so give each one a fresh workspace.
+        first, second, third = (self.workspace.parent / name for name in ("a", "b", "c"))
+        for directory in (first, second, third):
+            directory.mkdir(parents=True)
+        with patch.object(launch_task.Compiler, "load", return_value=compiler), \
+             patch.object(launch_task, "resolve_executor", return_value=metal), \
+             patch.object(launch_task.MetalArchiveHost, "from_executor") as host:
+            with self.assertRaisesRegex(ValueError, "bound to a GPU host"):
+                launch_task._admit_stack(ROOT, first, "sm_103a", "triton")
+            host.assert_not_called()
+        # And a host with no `kind` is what the CUDA capture actually writes, so the GPU
+        # route must accept it while the Metal route must not.
+        cuda = SimpleNamespace(document={"host_environment": {"packages": {}}})
+        with patch.object(launch_task.Compiler, "load", return_value=compiler), \
+             patch.object(launch_task, "resolve_executor", return_value=cuda), \
+             patch.object(launch_task.MetalArchiveHost, "from_executor") as host:
+            with self.assertRaisesRegex(ValueError, "released Metal Executor"):
+                launch_task._admit_stack(ROOT, second, "sm_103a", "metal")
+            host.assert_not_called()
+            compiler_, executor_, resolved_host, _ = launch_task._admit_stack(
+                ROOT, third, "sm_103a", "triton")
+            self.assertIsNone(resolved_host)
+            host.assert_not_called()
+
     def test_stale_executor_refusal_names_the_required_release_boundary(self):
         self.workspace.mkdir()
         gate = CorpusGateReport("unit-fixture", "fixture", "not-live", True, ())
