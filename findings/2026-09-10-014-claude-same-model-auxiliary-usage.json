@@ -22,5 +22,5 @@
   "decision": "accepted",
   "implemented_in": "open-cake-ir-b200-v100+66260acb4f9646e950a37ca859e3abb9ae2891ded456f170a6221b70865fe7f0",
   "verification_plan": "Replay the retained terminal through the corrected parser, run the Claude provider contract suite, then repeat live two-turn kimi-k3 qualification in a fresh workspace. A successful qualification must retain the larger modelUsage total and exact kimi-k3 identity before any campaign starts.",
-  "verified_by": null
+  "verified_by": "/Users/haiyan-mini/.local/share/open-cake-ir/runs/m4-kimi-k3-pilot4-rmsnorm-v74-v100/provider-qualification.json"
 }

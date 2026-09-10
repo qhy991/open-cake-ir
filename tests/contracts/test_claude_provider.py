@@ -358,6 +358,25 @@ class ClaudeProviderContracts(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, "tool completion"):
                 parse_claude_turn_events(self.raw(changed), expected_terminal_message=TERMINAL)
 
+    def test_completed_tool_id_may_be_reused_but_overlapping_reuse_is_ambiguous(self):
+        events = self.events()
+        reused = {"type": "assistant", "session_id": SESSION, "parent_tool_use_id": None,
+            "message": {"model": "exact-requested-model", "content": [{"type": "tool_use",
+                "id": "toolu_write", "name": "Read", "input": {"file_path": str(self.workspace / "TASK.md")}}]}}
+        completed = {"type": "user", "session_id": SESSION, "parent_tool_use_id": None,
+            "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_write",
+                "content": "read completed"}]}}
+        events[3:3] = [reused, completed]
+        parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        activity = [item for item in parsed.tool_activity if item.item_id == "toolu_write"]
+        self.assertEqual([(item.tool, item.status) for item in activity],
+                         [("Write", "completed"), ("Read", "completed")])
+
+        overlapping = self.events()
+        overlapping.insert(2, reused)
+        with self.assertRaisesRegex(ValueError, "tool invocation"):
+            parse_claude_turn_events(self.raw(overlapping), expected_terminal_message=TERMINAL)
+
     def test_a_relative_write_path_is_judged_where_the_cli_resolves_it(self):
         """F-2026-09-10-007: the envelope check is containment, not spelling.
 

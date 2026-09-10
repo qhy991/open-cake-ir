@@ -264,8 +264,7 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
     if not _terminal(result) or _canonical_json_bytes(result) != _canonical_json_bytes(expected):
         raise ValueError("Claude native structured terminal message differs")
 
-    tools: dict[str, dict] = {}
-    completed: set[str] = set()
+    active_tools: dict[str, dict] = {}
     writes: list[tuple[str, str]] = []
     models: list[str] = []
     activity: list[ProviderAuxiliaryActivity] = []
@@ -300,10 +299,10 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
             kind = block.get("type")
             if event["type"] == "assistant" and kind == "tool_use":
                 identity, name, arguments = block.get("id"), block.get("name"), block.get("input")
-                if (not isinstance(identity, str) or not identity or identity in tools or
+                if (not isinstance(identity, str) or not identity or identity in active_tools or
                         name not in (*CLAUDE_AUTHORING_TOOLS, CLAUDE_TERMINAL_TOOL) or not isinstance(arguments, Mapping)):
                     raise ValueError("Claude tool invocation differs")
-                tools[identity] = dict(block)
+                active_tools[identity] = dict(block)
                 errors[identity] = len(activity)
                 activity.append(ProviderAuxiliaryActivity(identity, "tool_use", "completed", tool=name))
                 if name == CLAUDE_TERMINAL_TOOL:
@@ -326,23 +325,26 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
             elif event["type"] == "user" and kind == "tool_result":
                 identity = block.get("tool_use_id")
                 errored = block.get("is_error", False)
-                # Pairing is still zero-tolerance: an unregistered id, a repeated
-                # completion or a non-boolean flag is a structural mismatch and fatal.
+                # Pairing is still zero-tolerance: an id without one active invocation,
+                # an overlapping reuse, a repeated completion or a non-boolean flag is a
+                # structural mismatch and fatal. A completed native id may be reused by a
+                # later request; stream order keeps those lifecycles unambiguous.
                 # A tool that reported an error is not. The provider sees that result and
                 # keeps working inside the same turn, and the lifecycle checks below still
                 # require every invocation to complete and the candidate to be written, so
                 # a turn that did not recover cannot pass. Refusing here instead spent two
                 # campaigns and roughly 7M provider tokens on probes the author survived.
-                if (not isinstance(identity, str) or identity not in tools
-                        or identity in completed or not isinstance(errored, bool)
+                if (not isinstance(identity, str) or identity not in active_tools
+                        or not isinstance(errored, bool)
                         # The terminal tool is not an authoring probe: it is how the Turn
                         # declares its own completion, so an error there stays fatal.
-                        or errored and tools[identity].get("name") == CLAUDE_TERMINAL_TOOL):
+                        or errored and active_tools[identity].get("name") == CLAUDE_TERMINAL_TOOL):
                     raise ValueError("Claude tool completion differs")
-                completed.add(identity)
+                del active_tools[identity]
                 if errored:
                     activity[errors[identity]] = replace(
                         activity[errors[identity]], status="error_recovered")
+                del errors[identity]
             elif event["type"] == "assistant" and kind in ("text", "thinking", "redacted_thinking"):
                 continue
             elif event["type"] == "user" and kind == "text" and event.get("isSynthetic") is True:
@@ -357,7 +359,7 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                     event["uuid"], "synthetic_continuation", "observed"))
             else:
                 raise ValueError("Claude content is outside the declared event contract")
-    if set(tools) != completed or not writes or len({path for path, _ in writes}) != 1:
+    if active_tools or not writes or len({path for path, _ in writes}) != 1:
         raise ValueError("Claude candidate write lifecycle is incomplete")
     if len(models) != 1 or models[0] != initial.get("model"):
         raise ValueError("Claude main conversation model identity differs")

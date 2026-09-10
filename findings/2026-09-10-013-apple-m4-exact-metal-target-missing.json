@@ -30,5 +30,5 @@
   "decision": "accepted",
   "implemented_in": "open-cake-ir-sm100a-v74+daffd43042484dc2b6a0769e387c31abc6b4217b01cc2b4844dfffd577da3d45",
   "verification_plan": "After independent review releases the Compiler successor and the M4 host has a released Executor captured from its exact Swift/SDK/helpers, run the common Metal correctness matrix across shapes and input distributions, then an end-to-end target-framework evaluation. Report timing-model coverage as unavailable until M4-specific calibration exists.",
-  "verified_by": null
+  "verified_by": "/Users/haiyan-mini/.local/share/open-cake-ir/runs/m4-kimi-k3-pilot4-rmsnorm-v74-v100/campaign-evidence/runs/open_cake-1"
 }

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-11-001",
+  "kind": "protocol",
+  "title": "Claude gateway tool ids are request-local and may be reused after a completed lifecycle",
+  "date": "2026-09-11",
+  "backend": "metal-m4",
+  "target": "apple_gpu_family9",
+  "executor_revision": "open-cake-ir-b200-v100+66260acb4f9646e950a37ca859e3abb9ae2891ded456f170a6221b70865fe7f0",
+  "compiler_revision_id": "open-cake-ir-sm100a-v74+daffd43042484dc2b6a0769e387c31abc6b4217b01cc2b4844dfffd577da3d45",
+  "tasks": [
+    "layernorm"
+  ],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan-mini/.local/share/open-cake-ir/runs/m4-kimi-k3-remaining28-v74-v100/layernorm",
+      "note": "The live kimi-k3 turn completed candidate authoring and reported 195,068 provider tokens, but the Lab faulted at provider parsing. Native id toolu_Read_1 first read baseline/candidate.json and completed at the immediately following tool result; 143 stream events later, a new request reused toolu_Read_1 to read examples/python/metal_row_sum.py and also completed before any further reuse. No two invocations with that id overlapped."
+    }
+  ],
+  "observation": "The parser kept every tool id in a turn-global dictionary after completion and therefore treated a later, non-overlapping reuse as a duplicate invocation. The gateway's ids are request-local. Stream order provides an unambiguous lifecycle when a tool result closes the current invocation before the same id appears again. An overlapping reuse or a result with no active invocation remains ambiguous and must still be refused.",
+  "proposed_change": "Track only active tool invocations. Admit reuse after the prior result removes that id from the active set, retain one activity row per invocation in stream order, and preserve zero tolerance for overlapping reuse, missing results, repeated results, foreign ids and malformed error flags. Do not rewrite native ids or pair a result across an active collision.",
+  "decision": "accepted",
+  "implemented_in": null,
+  "verification_plan": "Replay the retained layernorm stream through the corrected parser, exercise completed reuse and overlapping-reuse counterexamples in the contract suite, publish an Executor successor, then rerun layernorm in a fresh campaign workspace.",
+  "verified_by": null
+}

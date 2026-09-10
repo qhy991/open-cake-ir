@@ -46,5 +46,6 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-10-012 — checkout-local Executor ordinals silently mint duplicate ids (bug, observed; plus the single current pointer)
 - F-2026-09-10-011 — saved forward outputs declared with impossible signs (bug, 3 tasks; found by the first B300 sweep, closed in Executor v91)
 - F-2026-09-10-010 — contraction regime shows material headroom over three campaigns; instability traced away from dispatch count to un-excluded external GPU activity (behavior, gemm)
-- F-2026-09-10-013 — Apple M4 has no exact family9 Compiler target or Executor admission path (capacity, successor draft prepared; release and campaign verification pending)
-- F-2026-09-10-014 — Claude same-model internal activity can make aggregate modelUsage exceed the main-turn counters (protocol, conservative charging fix pending Executor release)
+- F-2026-09-10-013 — Apple M4 has no exact family9 Compiler target or Executor admission path (capacity, closed in Compiler v74 and verified by an M4 campaign under Executor v100)
+- F-2026-09-10-014 — Claude same-model internal activity can make aggregate modelUsage exceed the main-turn counters (protocol, closed in Executor v100 and verified by live kimi-k3 qualification)
+- F-2026-09-11-001 — Claude gateway tool ids may be reused only after the prior invocation completes (protocol, active-lifecycle fix pending Executor release)
