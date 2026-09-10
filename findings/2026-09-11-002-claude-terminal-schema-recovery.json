@@ -20,7 +20,7 @@
   "observation": "The parser validated terminal-tool arguments at invocation time and declared any terminal-tool error fatal. That loses the CLI's own closed-schema recovery lifecycle. The stream is unambiguous when the malformed invocation receives an error result, a later invocation receives success with the exact expected object, and the final terminal repeats that object. Accepting an error without a later exact success would weaken completion and remains invalid.",
   "proposed_change": "Defer StructuredOutput argument validation until its tool result. Record schema-rejected invocations as error_recovered only when a later exact StructuredOutput invocation completes successfully and the final structured_output remains identical. Continue refusing malformed successful invocations, unpaired results, overlapping ids, an unrecovered terminal error, or any final-terminal mismatch.",
   "decision": "accepted",
-  "implemented_in": null,
+  "implemented_in": "open-cake-ir-b200-v102+35f512866fff891c7bd862de75226fddad60aa17f4bdfe9b8e03664f49806e9f",
   "verification_plan": "Replay the retained softplus_gradient stream, exercise recovered and unrecovered terminal sequences in the contract suite, publish an Executor successor, then rerun softplus_gradient in a fresh workspace.",
   "verified_by": null
 }
