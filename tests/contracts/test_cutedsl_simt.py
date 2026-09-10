@@ -14,7 +14,7 @@ from open_cake_ir.compiler.cute_toolchain import validate_cute_kernel
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.evaluation.core import compare_tile_outputs
 from open_cake_ir.tasks.workloads import create_task,materialize_case,reference_outputs
-from tests.contracts._cute_simt_cpu import execute
+from tests.contracts._cute_simt_cpu import F32,execute,fmax
 
 ROOT=Path(__file__).resolve().parents[2]
 FAMILIES=('activation','rowwise','reductions','optimizers','contraction')
@@ -32,6 +32,24 @@ def task(name,family,*,target='sm_103a',columns=8,depth=8):
     schedule['target']=target
     schedule['lowering']['backend']='cutlass_cute_dsl'
     return WorkloadContract(document),schedule
+
+
+def reduction_tile(shape,axis,op):
+    """One complete tile per batch, independent of the task family's column mapping."""
+    output=shape[:axis]+shape[axis+1:]
+    read='batch'+', :'*len(shape);write='batch'+', :'*len(output)
+    return frontend.parse(f'''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="full-tile-reduction", target="sm_103a",
+               backend="cutlass_cute_dsl", entry_point="tile_reduce")
+def candidate(lm, x: cake.Tensor({(1,*shape)!r}, "fp32"),
+              out: cake.Tensor({(1,*output)!r}, "fp32", mode="output")):
+    compute = lm.role(warps=[0])
+    batch = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        values = lm.load(x[{read}])
+        total = lm.reduce(values, op={op!r}, axis={axis}, scope="cta", across_loop=False)
+        lm.store(out[{write}], total, coalesced=False)
+''').document
 
 
 class CuTeSimtTests(unittest.TestCase):
@@ -116,6 +134,100 @@ class CuTeSimtTests(unittest.TestCase):
             actual=execute(emission,inputs,sizes)
             passed,metrics=compare_tile_outputs(workload,inputs,expected,actual,inputs)
             self.assertTrue(passed,metrics)
+
+    def test_lane_local_contractions_preserve_oracles_and_bound_source_growth(self):
+        for name in ('gemm','gemm_silu'):
+            source_sizes=[]
+            for columns in (32,64,96):
+                with self.subTest(task=name,columns=columns):
+                    workload,s=task(name,'contraction',columns=columns)
+                    a=self.compiler.assess(s)
+                    self.assertTrue(a.lowering_eligible,a.findings)
+                    lowered=self.compiler.lower(a)
+                    validate_cute_kernel(lowered.source.encode(),dict(lowered.toolchain_requirements))
+                    self.assertIn('Lane-local reduction:',lowered.source)
+                    self.assertNotIn('warp_reduction_',lowered.source)
+                    source_sizes.append(len(lowered.source))
+                    emission=cutedsl.emit(Schedule.from_dict(s),Target.load(ROOT/'compiler/targets/sm_103a.json'))
+                    sizes={'out':2*columns}
+                    for case in ('primary','zeros','alternating'):
+                        inputs=materialize_case(workload,case)
+                        expected=reference_outputs(workload,case,inputs)
+                        actual=execute(emission,inputs,sizes)
+                        passed,metrics=compare_tile_outputs(workload,inputs,expected,actual,inputs)
+                        self.assertTrue(passed,(case,metrics))
+            # Fixed-depth contractions must not expand one reduction per output
+            # scalar or scan every source slot for every output as width grows.
+            self.assertLess(max(source_sizes)-min(source_sizes),256,source_sizes)
+
+    def test_nondivisible_reduction_strides_keep_collectives_and_numerics(self):
+        for columns in (31,33):
+            with self.subTest(columns=columns):
+                workload,s=task('gemm','contraction',columns=columns,depth=5)
+                a=self.compiler.assess(s)
+                self.assertTrue(a.lowering_eligible,a.findings)
+                lowered=self.compiler.lower(a)
+                validate_cute_kernel(lowered.source.encode(),dict(lowered.toolchain_requirements))
+                self.assertNotIn('Lane-local reduction:',lowered.source)
+                self.assertIn('warp_reduction_sum',lowered.source)
+                emission=cutedsl.emit(Schedule.from_dict(s),Target.load(ROOT/'compiler/targets/sm_103a.json'))
+                inputs=materialize_case(workload,'alternating')
+                expected=reference_outputs(workload,'alternating',inputs)
+                actual=execute(emission,inputs,{'out':2*columns})
+                passed,metrics=compare_tile_outputs(workload,inputs,expected,actual,inputs)
+                self.assertTrue(passed,metrics)
+
+    def test_lane_local_sum_max_order_identities_and_outer_axes(self):
+        for shape,axis in (((5,32),0),((2,5,64),1),((2,5,3,32),1),((1,64),0)):
+            inner=math.prod(shape[axis+1:]);extent=shape[axis]
+            count=math.prod(shape)//extent
+            for op in ('sum','max'):
+                with self.subTest(shape=shape,axis=axis,op=op):
+                    s=reduction_tile(shape,axis,op)
+                    a=self.compiler.assess(s)
+                    self.assertTrue(a.lowering_eligible,a.findings)
+                    lowered=self.compiler.lower(a)
+                    validate_cute_kernel(lowered.source.encode(),dict(lowered.toolchain_requirements))
+                    self.assertNotIn('warp_reduction_',lowered.source)
+                    self.assertIn('ordered lane-local folds',next(
+                        f.message for f in a.findings if f.code=='CUTE_SIMT_EXECUTION'))
+                    emission=cutedsl.emit(Schedule.from_dict(s),Target.load(ROOT/'compiler/targets/sm_103a.json'))
+                    patterns=((2**24,1,-2**24,2**-149,-0.0),
+                              (-3.4028234663852886e38,-1,-2**-149,-0.0,0.0),
+                              (-0.0,)*5,(0.0,)*5)
+                    values=[F32(0)]*math.prod(shape);expected=[]
+                    for output in range(count):
+                        value=F32(0 if op=='sum' else float('-inf'))
+                        for k in range(extent):
+                            x=F32(patterns[output%len(patterns)][k%5])
+                            values[(output//inner)*extent*inner+k*inner+output%inner]=x
+                            value=value+x if op=='sum' else fmax(value,x)
+                        expected.append(value)
+                    actual=execute(emission,{'x':values},{'out':count})['out']
+                    self.assertEqual(actual,expected)
+                    self.assertEqual([math.copysign(1,x) for x in actual],
+                                     [math.copysign(1,x) for x in expected])
+
+    def test_attention_decode_composes_local_and_cross_lane_reductions(self):
+        for depth in (32,64):
+            with self.subTest(depth=depth):
+                workload,s=task('attention_decode','contraction',columns=8,depth=depth)
+                a=self.compiler.assess(s)
+                self.assertTrue(a.lowering_eligible,a.findings)
+                lowered=self.compiler.lower(a)
+                validate_cute_kernel(lowered.source.encode(),dict(lowered.toolchain_requirements))
+                # Weighted values reduce [sequence, depth] along the first axis;
+                # QK dot products and softmax still require their warp reductions.
+                self.assertEqual(lowered.source.count('Lane-local reduction:'),1)
+                self.assertIn('warp_reduction_sum',lowered.source)
+                self.assertIn('warp_reduction_max',lowered.source)
+                emission=cutedsl.emit(Schedule.from_dict(s),Target.load(ROOT/'compiler/targets/sm_103a.json'))
+                for case in ('primary','zeros','alternating'):
+                    inputs=materialize_case(workload,case)
+                    expected=reference_outputs(workload,case,inputs)
+                    actual=execute(emission,inputs,{'out':2*depth})
+                    passed,metrics=compare_tile_outputs(workload,inputs,expected,actual,inputs)
+                    self.assertTrue(passed,(case,metrics))
 
     def test_prefix_collision_is_mangled_without_invalid_double_underscore(self):
         _,s=task('silu','activation')
