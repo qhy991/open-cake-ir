@@ -81,8 +81,11 @@ PYTHONPATH=src python3 -m unittest tests.contracts.test_emit_cuda -v
 ```
 
 它检查源码生成、双 MMA、尾部、stage/tile/角色变化和局部拒绝。首期一个 epilogue 线程
-负责一行，store 如实声明 `coalesced=false`。不支持的布局、角色预算、循环选项或精度
-会返回带位置的 Finding，不会静默忽略或换成另一条指令。
+负责一行，store 如实声明 `coalesced=false`。不支持的布局、角色预算、缓存/reuse 提示、
+循环选项或精度会返回带位置的 Finding，不会静默忽略或换成另一条指令。算术只读写
+FP32 寄存器值，全局输入必须先 load；标量必须能表示为有限 FP32。store 只支持每线程
+独占一行的矩阵或逐行 argmin 结果，地址必须包含全部会变化的 ProgramMap 轴。
+复制给多个线程的寄存器向量没有唯一写者，当前明确拒绝直接存储。
 
 评测工具的 CPU 合同测试是
 `PYTHONPATH=src python3 -m unittest discover -s tests/native_cuda -v`，需要 NumPy 和

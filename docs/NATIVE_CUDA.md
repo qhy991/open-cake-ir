@@ -130,7 +130,11 @@ The initial store mapping is row-owned and explicitly declares `coalesced=false`
 A pipeline producer can get up to the declared stage count ahead. Its consumed barrier
 is signalled only after all same-thread MMA readers finish. A different issuing role
 cannot share that implicit completion coverage. Unsupported role register budgets,
-residency demands, range knobs and placements are refused during assessment.
+residency demands, cache/reuse hints, range knobs and placements are refused during
+assessment. Arithmetic consumes explicit FP32 register values, so global operands need
+a load first; scalar literals must fit finite FP32. Stores require a row-owned matrix
+or one argmin result per row, and their AccessMap must include every varying ProgramMap
+axis. Replicated register vectors cannot be stored without a unique writer declaration.
 
 Static/source success, exact compilation, device correctness, matched timing and profiler
 are separate evidence. No native speedup, calibration or framework acceptance follows

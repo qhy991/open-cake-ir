@@ -13,7 +13,7 @@ from .common import Emission, EmitError, refusal, vocabulary_findings
 from ..diagnostics import Finding
 from ..ir import (
     AccessIndexKind, BarrierMechanism, BufferMode, DType, ElementwiseOp,
-    LoadMovement, LoadReuse, MemorySpace, OperandMajorMode, OperandSource,
+    LoadMovement, MemorySpace, OperandMajorMode, OperandSource,
     OperationKind, Schedule, Swizzle,
 )
 from ..target import Target
@@ -325,8 +325,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
 
         elif op.kind is OperationKind.LOAD:
             p = op.parameters; src = buffers[op.reads[0]]
-            check(len(op.reads) == 1 and p.reuse in (None, LoadReuse.STREAMED),
-                  'NATIVE_LOAD_REFINEMENT', path, 'native loads use one source and no reuse promise beyond streamed')
+            check(len(op.reads) == 1 and p.reuse is None,
+                  'NATIVE_LOAD_REFINEMENT', path,
+                  'native loads use one source without cache/reuse refinements; no cache policy is emitted')
             if dst.space is MemorySpace.SHARED:
                 scope = _scope(s, op)
                 check(op.pipeline is not None and (scope is None or scope.name in pipe_loops),
@@ -395,13 +396,28 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             check(dst.space is MemorySpace.REGISTER and buffers[op.reads[0]].space is MemorySpace.REGISTER,
                   'NATIVE_CAST_SPACE', path, 'cast preserves row-owned register storage')
         elif op.kind is OperationKind.STORE:
-            check(dst.space is MemorySpace.GLOBAL and buffers[op.reads[0]].space is MemorySpace.REGISTER
-                  and dst.dtype == buffers[op.reads[0]].dtype,
+            src = buffers[op.reads[0]]
+            check(dst.space is MemorySpace.GLOBAL and src.space is MemorySpace.REGISTER
+                  and dst.dtype == src.dtype,
                   'NATIVE_STORE_CONTRACT', path, 'native stores preserve register dtype to global output')
+            check(len(src.shape) == 2 and src.shape[0] == 128 or _scalar_row(s,src),
+                  'NATIVE_STORE_ROLE_OWNERSHIP', path+'.reads',
+                  'native stores require a row-owned matrix or one argmin result per row; replicated vectors have no unique writing thread')
             check(not op.parameters.coalesced, 'NATIVE_STORE_COALESCING', path+'.parameters.coalesced',
                   'row-owned native stores require an explicit coalesced=false commitment')
-            check(s.access_map(op.op_id, dst.name) is not None, 'NATIVE_ACCESS_REQUIRED', path,
+            access = s.access_map(op.op_id, dst.name)
+            check(access is not None, 'NATIVE_ACCESS_REQUIRED', path,
                   'every global store requires an explicit AccessMap')
+            if access is not None and s.program_map is not None:
+                owned = {component.name for component in access.indices
+                         if component.source in (AccessIndexKind.PROGRAM,AccessIndexKind.PROGRAM_TILE)}
+                missing = [axis.name for axis in s.program_map.axes
+                           if (owner := s.buffer(axis.buffer)) is not None
+                           and axis.dimension < len(owner.shape)
+                           and axis.tile_count(owner.shape[axis.dimension]) > 1
+                           and axis.name not in owned]
+                check(not missing, 'NATIVE_STORE_PROGRAM_OWNERSHIP', path,
+                      f'native store omits varying program axes {missing}, allowing different CTAs to write the same output')
     for i, b in enumerate(s.barriers):
         check(b.name in owned_barriers, 'NATIVE_BARRIER_UNSUPPORTED', f'barriers[{i}]',
               'native barriers belong to a TMA stage or an MMA completion')
@@ -701,7 +717,7 @@ class _Emitter:
             self.line('#pragma unroll')
             self.begin(f'for (int col=0; col<{_slots(self.s,dst)}; ++col)')
             x=f'{a}[{"0" if src.is_scalar else "col"}]'
-            y=f'{float(p.scalar)!r}f' if p.scalar is not None else (f'{self.names[op.reads[1]]}[{"0" if self.b(op.reads[1]).is_scalar else "col"}]' if len(op.reads)>1 else x)
+            y=f'{p.scalar!r}f' if p.scalar is not None else (f'{self.names[op.reads[1]]}[{"0" if self.b(op.reads[1]).is_scalar else "col"}]' if len(op.reads)>1 else x)
             expr={ElementwiseOp.ADD:f'__fadd_rn({x},{y})',ElementwiseOp.SUB:f'__fsub_rn({x},{y})',
                   ElementwiseOp.MUL:f'__fmul_rn({x},{y})',ElementwiseOp.DIV:f'__fdiv_rn({x},{y})',
                   ElementwiseOp.RELU:f'fmaxf({x},0.0f)',ElementwiseOp.SQUARE:f'__fmul_rn({x},{x})'}[p.op]

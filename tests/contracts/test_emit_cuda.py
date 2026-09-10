@@ -103,6 +103,13 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertTrue(f.path)
         return f
 
+    def refuses_backend_only(self,d,code):
+        s=Schedule.from_dict(d);target=Target.load(ROOT/'compiler/targets/sm_100a.json')
+        self.assertFalse([f for f in verify(s,target) if f.blocks_lowering or f.blocks_acceptance])
+        self.refuses(d,code)
+        self.assertIn(code,[f.code for f in preflight(s,target)])
+        with self.assertRaises(EmitError):emit(s,target)
+
     def test_distinct_uses_and_two_mmas_pass_public_path(self):
         for name in ('gemm-bias','gemm-bias-k65-tail','two-mma','kmeans'):
             with self.subTest(name=name):
@@ -291,11 +298,7 @@ class NativeCudaContracts(unittest.TestCase):
         op['reads']=['dot','arithmetic_input'];op['parameters']={'op':'add'}
         d['access_maps'].append(dict(operation='add_bias',buffer='arithmetic_input',
             boundary='mask_tiled_axes',indices=[dict(source='dimension',dimension=i) for i in range(2)]))
-        s=Schedule.from_dict(d);target=Target.load(ROOT/'compiler/targets/sm_100a.json')
-        self.assertFalse([f for f in verify(s,target) if f.blocks_lowering or f.blocks_acceptance])
-        self.refuses(d,'NATIVE_ARITHMETIC_STORAGE')
-        self.assertIn('NATIVE_ARITHMETIC_STORAGE',[f.code for f in preflight(s,target)])
-        with self.assertRaises(EmitError):emit(s,target)
+        self.refuses_backend_only(d,'NATIVE_ARITHMETIC_STORAGE')
 
     def test_scalar_literals_are_valid_finite_fp32_in_public_and_direct_lowering(self):
         target=Target.load(ROOT/'compiler/targets/sm_100a.json')
@@ -310,11 +313,44 @@ class NativeCudaContracts(unittest.TestCase):
             d=document();op=next(op for op in d['operations'] if op['id']=='add_bias')
             op['reads']=['dot'];op['parameters']={'op':'mul','scalar':value}
             with self.subTest(value=value):
-                s=Schedule.from_dict(d)
-                self.assertFalse([f for f in verify(s,target) if f.blocks_lowering or f.blocks_acceptance])
-                self.refuses(d,'NATIVE_SCALAR_FINITE')
-                self.assertIn('NATIVE_SCALAR_FINITE',[f.code for f in preflight(s,target)])
-                with self.assertRaises(EmitError):emit(s,target)
+                self.refuses_backend_only(d,'NATIVE_SCALAR_FINITE')
+
+    def test_replicated_vector_store_has_no_unique_thread_owner(self):
+        d=one_tile_document()
+        d['buffers'].append(dict(name='bias_copy',space='global',dtype='fp32',shape=[64],mode='output'))
+        d['outputs'].append('bias_copy')
+        d['operations'].append(dict(id='store_bias',kind='store',role='epilogue',reads=['bias_tile'],
+            writes=['bias_copy'],depends_on=['load_bias'],parameters={'coalesced':False}))
+        d['access_maps'].append(dict(operation='store_bias',buffer='bias_copy',boundary='mask_tiled_axes',
+            indices=[dict(source='dimension',dimension=0)]))
+        # All ProgramMap axes have one tile, isolating the within-CTA writer hazard.
+        self.refuses_backend_only(d,'NATIVE_STORE_ROLE_OWNERSHIP')
+        self.assertNotIn('NATIVE_STORE_PROGRAM_OWNERSHIP',
+                         [f.code for f in preflight(Schedule.from_dict(d),Target.load(ROOT/'compiler/targets/sm_100a.json'))])
+
+    def test_row_owned_store_must_include_every_varying_program_axis(self):
+        d=document()
+        d['buffers'].append(dict(name='tile_copy',space='global',dtype='fp32',shape=[128,64],mode='output'))
+        d['outputs'].append('tile_copy')
+        d['operations'].append(dict(id='store_tile',kind='store',role='epilogue',reads=['sum'],
+            writes=['tile_copy'],depends_on=['add_bias'],parameters={'coalesced':False}))
+        d['access_maps'].append(dict(operation='store_tile',buffer='tile_copy',boundary='mask_tiled_axes',
+            indices=[dict(source='dimension',dimension=i) for i in range(2)]))
+        self.refuses_backend_only(d,'NATIVE_STORE_PROGRAM_OWNERSHIP')
+        self.assertNotIn('NATIVE_STORE_ROLE_OWNERSHIP',
+                         [f.code for f in preflight(Schedule.from_dict(d),Target.load(ROOT/'compiler/targets/sm_100a.json'))])
+        # Omitted coordinates are legal when their axes cannot vary.
+        for b in d['buffers']:
+            if b['name']=='a':b['shape'][0]=128
+            if b['name']=='b':b['shape'][0]=64
+        self.lower(d)
+        self.lower(document('kmeans'))  # One row-owned argmin result per token remains supported.
+
+    def test_load_reuse_is_refused_instead_of_ignored(self):
+        self.lower(document())
+        d=document();op=next(op for op in d['operations'] if op['id']=='load_bias')
+        op['parameters']['reuse']='streamed'
+        self.refuses_backend_only(d,'NATIVE_LOAD_REFINEMENT')
 
     def test_missing_output_writer_fails_public_contract(self):
         d=document();d['operations'].pop();d['access_maps'].pop()
