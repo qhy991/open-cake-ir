@@ -377,9 +377,10 @@ class ClaudeProviderContracts(unittest.TestCase):
         """F-2026-09-10-008: compaction rewrites the context the author was working in.
 
         The launch pins the window at the largest value this CLI admits -- it has no off
-        switch -- so this should be unreachable. If it fires anyway the Turn ran on a
-        context the Lab cannot reconstruct, and it is reported as that rather than as an
-        unclassified event or, worse, silently accepted.
+        switch -- though for a model the CLI does not recognize that window is clamped
+        to the CLI's assumed model context, so it is not unreachable (F-2026-09-10-013).
+        When it fires the Turn ran on a context the Lab cannot reconstruct, and it is
+        reported as that rather than as an unclassified event or, worse, silently accepted.
         """
         for subtype in ("compact_boundary", "compacting"):
             events = self.events()
@@ -387,6 +388,23 @@ class ClaudeProviderContracts(unittest.TestCase):
                             "uuid": OTHER_SESSION}]
             with self.subTest(subtype=subtype), self.assertRaisesRegex(ValueError, "compacted"):
                 parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        # F-2026-09-10-013: this CLI also announces compaction as a bare status --
+        # `status: "compacting"` when it starts, `status: null` with `compact_result`
+        # when it lands (gemm and pairwise_sqdist turn 2 on Executor v98) -- and the
+        # subtype rule alone left those to the unclassified-event refusal. Both are
+        # refused by the same name, and an unrelated status still fails closed.
+        for status_fields in ({"status": "compacting"},
+                              {"status": None, "compact_result": "success"}):
+            events = self.events()
+            events[1:1] = [{"type": "system", "subtype": "status", **status_fields,
+                            "session_id": SESSION, "uuid": OTHER_SESSION}]
+            with self.subTest(status_fields=status_fields), self.assertRaisesRegex(ValueError, "compacted"):
+                parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        events = self.events()
+        events[1:1] = [{"type": "system", "subtype": "status", "status": "idle",
+                        "session_id": SESSION, "uuid": OTHER_SESSION}]
+        with self.assertRaisesRegex(ValueError, "outside the declared native contract"):
+            parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
 
     def test_a_cli_synthetic_continuation_is_recorded_and_an_unmarked_one_is_not(self):
         """The CLI writes its own user turn when a response had no visible output.

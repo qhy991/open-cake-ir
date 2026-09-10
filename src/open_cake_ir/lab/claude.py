@@ -38,7 +38,11 @@ CLAUDE_EVENT_CONTRACT = "claude_stream_candidate_v3"
 CLAUDE_TERMINAL_TOOL = "StructuredOutput"
 CLAUDE_AUTHORING_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep")
 # The largest auto-compact window this CLI admits. It has no value that turns compaction
-# off, so the boundary is pushed past any Turn context a campaign is expected to reach.
+# off, so the boundary is pinned at the maximum. For a model the CLI does not recognize
+# (it logs claude-code:unrecognized_model) the CLI clamps even this window to its assumed
+# model context -- glm-5.3 reported contextWindow 200000 and compacted at 187,855 tokens
+# (F-2026-09-10-013) -- so a session crossing that ceiling is refused below, not
+# prevented here.
 CLAUDE_AUTOCOMPACT_WINDOW = "1M"
 CLAUDE_USAGE_FIELDS = (
     "input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens",
@@ -73,6 +77,23 @@ _QUOTA_SERVED = ("allowed", "allowed_warning")
 _CONTEXT_MUTATIONS = ("compact_boundary", "compacting")
 
 
+def _is_context_mutation(event: Mapping) -> bool:
+    """A compaction notice, by subtype or by the bare status shapes the CLI emits.
+
+    This CLI also announces compaction as subtype "status" -- `status: "compacting"`
+    when it starts, `status: null` with `compact_result` when it lands -- which the
+    subtype rule alone leaves to the unclassified-event refusal (F-2026-09-10-013,
+    gemm and pairwise_sqdist turn 2 on Executor v98). Both shapes are the same
+    context rewrite. Any other status still fails closed below.
+    """
+    if event.get("type") != "system":
+        return False
+    if event.get("subtype") in _CONTEXT_MUTATIONS:
+        return True
+    return event.get("subtype") == "status" and (
+        event.get("status") == "compacting" or "compact_result" in event)
+
+
 def _metadata(event: Mapping) -> bool:
     """Admit the explicit native metadata shapes, not arbitrary system events."""
     kind = event.get("type")
@@ -100,12 +121,13 @@ def _metadata(event: Mapping) -> bool:
                     and not isinstance(info["overageDisabledReason"], str)
                 or info.get("isUsingOverage") is True and info.get("overageStatus") != "allowed"):
             raise ValueError("Claude quota is rejected or metadata differs")
-    elif kind == "system" and event.get("subtype") in _CONTEXT_MUTATIONS:
-        # Identified by subtype alone and refused. The declared window above should keep
-        # this unreachable; if it fires anyway the Turn ran on a context the Lab cannot
-        # reconstruct, so it is reported as exactly that instead of as an unclassified
-        # event. No field schema is asserted here because none has been observed -- a
-        # guessed one would be a new campaign-fatal path of the kind this finding is about.
+    elif kind == "system" and _is_context_mutation(event):
+        # Identified by subtype or by the observed status shapes above and refused. The
+        # declared window should keep this unreachable; if it fires anyway the Turn ran
+        # on a context the Lab cannot reconstruct, so it is reported as exactly that
+        # instead of as an unclassified event. No field schema is asserted here because
+        # none has been observed -- a guessed one would be a new campaign-fatal path of
+        # the kind this finding is about.
         raise ValueError(
             "Claude compacted the Turn context mid-run, so what the author saw is not "
             "reconstructible and the Turn is not comparable")
@@ -432,7 +454,10 @@ class ClaudeInvocationBuilder:
         # changes what the author saw and breaks comparability between arms. This CLI has
         # no off switch -- `--autocompact` takes only `auto` or a 100k..1M window -- so the
         # boundary is pinned at the maximum it accepts and a compaction that still happens
-        # is refused below rather than absorbed.
+        # is refused below rather than absorbed. F-2026-09-10-013: for a model the CLI
+        # does not recognize, that window is clamped to the CLI's assumed model context
+        # (glm-5.3: 200k), so a long session can still compact -- the refusal is the
+        # load-bearing rule, not this pin.
         arguments = (str(self.executable), "-p", "--output-format", "stream-json", "--verbose", "--safe-mode",
                      "--autocompact", CLAUDE_AUTOCOMPACT_WINDOW,
                      "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", self._model, "--effort", self._effort, "--permission-mode", "acceptEdits",
