@@ -48,7 +48,10 @@ def uncommitted_descriptors(root: Path) -> list[str]:
     """Released descriptors that exist here and nowhere else yet."""
     result = _git(root, ["status", "--porcelain=v1", "--untracked-files=all", "--", EXECUTORS])
     if result.returncode:
-        raise SystemExit(f"cannot inspect {EXECUTORS}: {result.stderr.strip()}")
+        # Not a working tree at all, so there is no committed state to compare against.
+        # That is the least complete view there is, and it is handled by the remote check
+        # below refusing rather than by pretending nothing is pending here.
+        return []
     names = []
     for line in result.stdout.splitlines():
         path = line[3:].strip().strip('"')
@@ -63,6 +66,8 @@ def unseen_on_remote(root: Path, remote: str, branch: str) -> tuple[list[str], s
     Returns the missing names and, when the remote could not be consulted at all, the
     reason. An unreachable remote is not evidence of completeness.
     """
+    if _git(root, ["rev-parse", "--git-dir"]).returncode:
+        return [], "not a git working tree, so there is no ledger to compare against"
     fetched = _git(root, ["fetch", "--quiet", remote, branch], timeout=180)
     if fetched.returncode:
         return [], (fetched.stderr.strip().splitlines() or ["remote unreachable"])[-1]

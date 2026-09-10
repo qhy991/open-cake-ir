@@ -234,7 +234,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             shutil.copytree(ROOT / "src", root / "src", ignore=shutil.ignore_patterns("__pycache__"))
             for relative in (
                 *_SOURCE_FILES, "tools/release_executor.py", "tools/release_executor_cycle.sh",
-                "tools/release_runtime.sh",
+                "tools/release_runtime.sh", "tools/check_executor_ledger.py",
             ):
                 destination = root / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -285,6 +285,10 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             environment["OPEN_CAKE_PYTHON"] = "./selected python"
             environment["PATH"] = str(commands) + os.pathsep + environment["PATH"]
             environment.pop("OPEN_CAKE_REUSE_VERIFIED_HOST", None)
+            # This fixture has no remote, so the ledger guard cannot establish that the
+            # released set is complete. That is exactly the condition it refuses on, and
+            # the acknowledgement is how an isolated host proceeds deliberately.
+            environment["OPEN_CAKE_LEDGER_ISOLATED"] = "release fixture has no ledger remote"
             command = [
                 "bash", str(root / "tools/release_executor_cycle.sh"),
                 "--host-environment", str(host_path),
@@ -317,6 +321,13 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                     self.assertEqual(path.read_bytes(), raw)
                 preserved[released] = released.read_bytes()
                 if version == 47:
+                    # What the ledger guard does and does not reach, asserted rather than
+                    # assumed. A peer that cannot see the descriptor just released here
+                    # still mints the same ordinal over different bytes: nothing can see
+                    # another working tree's untracked files, so the window between
+                    # releasing and publishing is not closed by any local check. This is
+                    # the residual gap named in F-2026-09-10-012, and it is the shape that
+                    # actually happened between an Apple and a B300 checkout.
                     other_command = ["bash", str(other_root / "tools/release_executor_cycle.sh"),
                                      "--host-environment", str(host_path)]
                     other = subprocess.run(other_command, cwd=root.parent, env=environment,
@@ -325,6 +336,24 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                     other_id = json.loads((other_root / "inventory/EXECUTOR_REVISIONS.json").read_text())["current"]["executor_id"]
                     self.assertRegex(other_id, r"^open-cake-ir-b200-v47\+[0-9a-f]{64}$")
                     self.assertNotEqual(other_id, identity)
+                    # What the guard does close: this checkout cannot mint again while it
+                    # still holds an unpublished descriptor, so the window above cannot be
+                    # left open indefinitely by the host that opened it. The source has to
+                    # change for a successor to be wanted at all -- verifying an unchanged
+                    # release mints nothing and is deliberately not gated.
+                    held_source = root / "src/open_cake_ir/cli.py"
+                    original = held_source.read_text()
+                    held_source.write_text(original + "\n# Mint-attempt fixture.\n")
+                    held = subprocess.run(command, cwd=root.parent, env=environment,
+                                          capture_output=True, text=True, timeout=30)
+                    self.assertNotEqual(held.returncode, 0, held.stdout)
+                    self.assertIn("not committed", held.stderr)
+                    self.assertIn("v47", held.stderr)
+                    held_source.write_text(original)
+                    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+                    subprocess.run(["git", "-C", str(root), "-c", "user.name=Release Fixture",
+                                    "-c", "user.email=release@test.invalid", "commit", "-qm",
+                                    "released v47"], check=True)
                     proposal = root.parent / "duplicate-proposal.json"
                     proposal.write_text(json.dumps({"schema_version": 1,
                         "executor_id": "open-cake-ir-b200-v47", "state": "draft",
