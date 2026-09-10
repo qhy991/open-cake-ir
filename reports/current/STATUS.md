@@ -7,11 +7,11 @@
 
 ## Compiler
 
-- 版本： `open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578`
+- 版本： `open-cake-ir-sm100a-v72+3cb15fb01cf5d9306b7275653236aad2a1281df3d73db8fe3f7a31a907ac47db`
 - 状态： `released`
 - 目标： `apple_gpu_family7, apple_gpu_family8, sm_100a, sm_103a`
 - 语料检查： `124/124` 项符合预期
-- 绑定源码： `171` 个文件
+- 绑定源码： `174` 个文件
 - 已发布校准： `无`
 - 负责记录： [`compiler/revision.lock.json`](../../compiler/revision.lock.json)
 

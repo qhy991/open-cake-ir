@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-006",
+  "kind": "capacity",
+  "title": "Expose an explicit private low-precision epilogue composition pass",
+  "date": "2026-09-10",
+  "backend": "triton",
+  "target": "sm_100a",
+  "executor_revision": "open-cake-ir-b200-v88+22c4903fa2f84393a9a214e6f4c7b848d6e97511109fe381a5d6cb1d00c2eaab",
+  "compiler_revision_id": "open-cake-ir-sm100a-v72+3cb15fb01cf5d9306b7275653236aad2a1281df3d73db8fe3f7a31a907ac47db",
+  "evidence": [
+    {
+      "path": "/Users/haiyan-infiniai/.local/share/open-cake-ir/epilogue-pass-20260910/review.md",
+      "note": "Independent review at cde6f56e: typed and emitted-source CPU composition checks, valid-but-ineligible access probes and 124/124 unchanged Corpus Gate. No device execution."
+    },
+    {
+      "path": "/Users/haiyan-infiniai/.local/share/open-cake-ir/epilogue-pass-20260910/demo-02/result.json",
+      "note": "Released Compiler applies the explicit composition to two real example Schedules; metadata is unbound and no GPU qualification is claimed."
+    }
+  ],
+  "observation": "The existing IR expresses the two stages and their fused result. A Compiler-owned explicit pass can remove a private BF16/FP16 store/reload while preserving the authored cast, without importing Lab or OMOE policies. No full program graph is supplied: the caller owns the private-composition and nonaliasing contract.",
+  "proposed_change": "Provide the bounded explicit pass and retain refusal reasons; do not enable an implicit optimizer or add a general graph/pass registry.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-sm100a-v72+3cb15fb01cf5d9306b7275653236aad2a1281df3d73db8fe3f7a31a907ac47db",
+  "verified_by": null,
+  "verification_plan": "Capability verification remains pending: run new properly admitted campaigns on the successor with a composed Workload, independent oracle, fixed baseline and profiler. CPU/source checks establish implementation behavior only; do not close this capability finding as GPU/performance qualified."
+}

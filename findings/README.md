@@ -37,3 +37,5 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-10-004 — baseline near vocabulary ceiling (behavior, 5 tasks)
 
 - F-2026-09-10-005 — GEMM SiLU oracle overflow (bug, CPU oracle replay; fixed in Executor v88)
+
+- F-2026-09-10-006 — explicit private epilogue fusion (capacity, implemented in Compiler v72; campaign verification pending)
