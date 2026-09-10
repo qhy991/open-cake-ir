@@ -3,14 +3,12 @@
   "decision": "approved",
   "gate_report": {
     "path": "compiler/corpus-gate-report.json",
-    "canonical_sha256": "5b0c3482db63901e2b4c8bb0685c7dfaed97227bfacb3e80ade4d9593c5e51fa"
+    "canonical_sha256": "cae4422144a30b3b583b113c7c7dcfcedef03e7302abb5f474414818964b2951"
   },
   "reviewer": {
-    "kind": "agent_session",
-    "model": "gpt-6-astra",
-    "session_id": "01a08943-f853-7211-92d7-58e17897f487",
-    "author_session_id": "01a08903-99d7-7b90-90ab-e70395b155e5"
+    "kind": "human",
+    "name": "qhy991"
   },
-  "approval_basis": "Independent GPT-6 Astra review of cde6f56e411ebf269c7df6a6b05eac948cee871c against cf40e84b approved the bounded explicit private BF16/FP16 row-owned pointwise epilogue composition. Full canonical Corpus Gate 124/124 matches; 10 focused tests plus independent transposed/partial-row refusal, namespace, dependency, metadata, ABI and CPU-composition probes passed. No Corpus expectations changed. Existing multiple-writer rejection is distinguished from pass-specific refusal. CPU/source only; no GPU/performance/model qualification. Caller owns unseen consumers and physical nonaliasing. Two author-reported released-dependency checks require successor release; no stale-lock repair was used. Detailed basis: /Users/haiyan-infiniai/.local/share/open-cake-ir/epilogue-pass-20260910/review.md. Independent external review record: /Users/haiyan-infiniai/.local/share/open-cake-ir/epilogue-pass-20260910/review-record.json.",
-  "review_record": "/Users/haiyan-infiniai/.local/share/open-cake-ir/epilogue-pass-20260910/review-record.json"
+  "approval_basis": "Repository owner authorization for F-2026-09-10-001, given explicitly after being shown the exact change and this Gate digest. The change is three functional lines in src/open_cake_ir/compiler/backends/metal.py: _share_slots returns zero when a Schedule has neither a REDUCE nor a scalar publish, and the emitter omits the threadgroup declaration when there are no slots. Those two constructs are the only readers of `share`, so a purely elementwise multi-SIMD-group kernel was declaring storage it never touched; Metal eliminated the unused allocation, the sealed pipeline observed zero bytes, and the truthful declared-equals-observed check then faulted a correct candidate. It recurred on silu at 32 groups and swiglu at 8. The declaration was made truthful rather than the check made looser: metal_build.py:68-71 is unchanged, and the neighbouring threads/tgmem rule moved from an XOR to an implication so one SIMD group still cannot declare threadgroup storage while more than one may truthfully declare none. Full canonical Corpus Gate 124/124 over 174 sources with no expectation regenerated, and refresh_corpus_expectations.py reports the pinned lowerings already match, so no existing emitted source moved -- expected, because the corpus holds no multi-group kernel that crosses no group boundary. This records owner authorization only: no independent reviewer session inspected the change, and the author session prepared the release it is approving.",
+  "review_record": "Owner reviewed the diff and Gate in the authoring session and stated approval there. No separate reviewer session, model or transcript exists for this decision."
 }

@@ -8,7 +8,10 @@
   "target": "apple_gpu_family7",
   "executor_revision": "open-cake-ir-b200-v86+bf657e12e5886707b8be24fb35deb330fda22f34712092157cd9bb3abf4b62da",
   "compiler_revision_id": "open-cake-ir-sm100a-v71+dc56bd4e7cb3ede9c82214eba6d64cf29a5ab3303248db1bd18a53cfd8057578",
-  "tasks": ["silu", "swiglu"],
+  "tasks": [
+    "silu",
+    "swiglu"
+  ],
   "evidence": [
     {
       "workspace": "/Users/haiyan/Documents/lab-workspaces/silu-glm53-high-20260909c",
@@ -41,8 +44,8 @@
   ],
   "observation": "src/open_cake_ir/compiler/backends/metal.py:359-366 emits 'threadgroup float share[N]' unconditionally whenever SIMD groups > 1, and lab/metal_build.py:201 forces (>32 threads iff threadgroup memory declared). A purely elementwise multi-group kernel therefore declares bytes it never uses; the Metal compiler eliminates the unused allocation, the sealed archive's pipeline observation reports 0, and the strict declared==observed check at lab/metal_build.py:68-71 raises a campaign-fatal harness_fault on a semantically harmless candidate. Recurs across workloads: silu (32 groups, 128 bytes) and swiglu (8 floats, 32 bytes) both produced multi-SIMD elementwise candidates the model author chose freely - this is a recurring authoring pattern, not a one-task accident.",
   "proposed_change": "Emit share[] only when the schedule actually lowers a cross-SIMD-group collective through threadgroup memory, and report threadgroup_memory_bytes from that same fact. Decouple the threads/tgmem XOR rule so a 1024-thread elementwise kernel may declare zero. Keep the declared==observed strictness in the validator unchanged - the declaration should become truthful, not the check looser.",
-  "decision": "proposed",
-  "implemented_in": null,
-  "verified_by": null,
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-sm100a-v73+a8c73c76247602c721f5390ad9a5058614ce321b1d298e81f4c8e262526997d9",
+  "verified_by": "Replay rather than campaign, because the failure was a static declaration mismatch. tests/contracts/test_metal.py asserts both directions at once: a four-group purely elementwise kernel now declares zero threadgroup bytes and emits no `share` symbol, and a four-group reduction at the same shape still declares its sixteen -- so the fix narrowed the declaration rather than removing it. The full canonical Corpus Gate ran 124/124 over 174 sources with no expectation regenerated, and refresh_corpus_expectations.py reports the pinned lowerings already match, which establishes that no existing emitted source moved. The cited silu and swiglu campaign workspaces were not re-run, so what is verified is the declaration and the corpus, not those two runs. The regression test does not execute the kernel: the portable CPU shim models a single SIMD group and cannot run a multi-group body.",
   "verification_plan": "Bug-fix tick, replay-verified: re-lower the exact candidate sources retained in the silu-20260909c and swiglu-20260910 workspaces under the successor Executor/Compiler revision; the same builds must pass pipeline admission."
 }

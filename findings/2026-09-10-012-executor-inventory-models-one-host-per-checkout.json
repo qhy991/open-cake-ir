@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-012",
+  "kind": "capacity",
+  "title": "The Executor inventory carries a single current pointer, so one checkout cannot serve a Metal and a CUDA host at the same time",
+  "date": "2026-09-10",
+  "backend": "triton-b300",
+  "target": "sm_103a",
+  "executor_revision": "open-cake-ir-b200-v92+e752cbc1a69be0066648376f93d7773fc2f1b4047bc1535fa3b94067f0b5dcda",
+  "compiler_revision_id": "open-cake-ir-sm100a-v72+3cb15fb01cf5d9306b7275653236aad2a1281df3d73db8fe3f7a31a907ac47db",
+  "tasks": [],
+  "evidence": [
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/open-cake-ir-repo",
+      "note": "B300 checkout after releasing Executor v92 against the captured CUDA host: inventory/EXECUTOR_REVISIONS.json now names v92 as current with 91 superseded, and host_admitted and profiler_admitted are both true"
+    },
+    {
+      "workspace": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir",
+      "note": "Apple checkout, unchanged at v91 (metal). Its launch path reads tools/launch_task.py:110-113, which resolves CURRENT_RELEASE_BINDING and then requires the resolved host kind to be metal; adopting v92 as current here would refuse every Metal campaign"
+    }
+  ],
+  "observation": "A Study template may bind only CURRENT_RELEASE_BINDING, and lab/bindings.py resolves that to inventory/EXECUTOR_REVISIONS.json's single current entry. A frozen Study instead names one exact Executor by id, path and digest. Both are right for one execution host, which is what the Lab had. With an Apple M2 and an NVIDIA B300 in use at once there is no value of current that serves both: the Apple launcher refuses a host whose kind is not metal, and a CUDA campaign needs the CUDA host to be current. The file is tracked, so the two checkouts diverge permanently in a version-controlled artifact, and every sync has to reconcile a pointer by hand. This is a property of the model rather than a defect in either host: nothing is silently wrong today, and both checkouts are internally consistent.",
+  "proposed_change": "Resolve the Executor by what the requested backend needs rather than by a single global pointer -- the route a backend declares already implies its host kind, so a template binding could name a route and the inventory could carry one current per host kind. That changes the Study template contract in lab/bindings.py and needs the frozen-Study semantics thought through, so it is deliberately not being done alongside a campaign bring-up. Recorded now so the interim does not become permanent by omission.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Capacity finding, verified by construction rather than by campaign: one checkout resolves a Metal Executor for a Metal backend and a CUDA Executor for a Triton backend in the same working tree, with no hand edit of the inventory between them, and both hosts' campaigns start.",
+  "verified_by": null
+}
