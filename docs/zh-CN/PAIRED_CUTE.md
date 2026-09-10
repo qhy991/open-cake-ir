@@ -73,8 +73,16 @@ GEMM+bias 的研究合同仍由上文的 Workload 和 Study 管理。
 
 Schedule 使用一个 `warps=[0]` role、tile=1 的非 persistent ProgramMap、global
 输入/输出和 register 中间值，以及 PROGRAM/DIMENSION AccessMap。元素 i 放在
-lane i%32、slot i//32。归约先合并本 lane 的值再执行全 warp collective；跨 lane
-广播对所有 source slots 一致地 shuffle，尾部 lane 仍参与 collective。全局拷贝为
+lane i%32、slot i//32。设归约轴之后各维度的乘积为 `inner`。当 `inner` 是 32
+的倍数时，每个归约项已与对应输出处在同一 lane。后端生成按输出 slot 和归约长度
+嵌套的 constexpr 循环，源 slot 为
+`(outslot // (inner//32)) * extent * (inner//32) + outslot % (inner//32) + k * (inner//32)`。
+每个 lane 按 `k` 递增顺序合并，sum 从 FP32 零开始，max 从负无穷开始。该分支
+无需跨 lane 归约，也不会为每个输出元素展开一套标量归约。它直接由固定条带映射
+推导，不增加 Schedule 控制项、变换 pass 或可选归约算法。`CUTE_SIMT_EXECUTION`
+诊断说明两条路径，局部归约的源码注释记录尾部跨度。其他跨度（包括 31 和 33）
+保留本 lane 合并后执行全 warp collective 的原路径。跨 lane 广播对所有 source
+slots 一致地 shuffle，尾部 lane 仍参与这些 collective。全局拷贝为
 标量，store 声明 `coalesced=false`。不支持的 cache/reuse、residency、pipeline、
 barrier、循环及存储声明会被拒绝。逻辑 live slots 上限是实现边界，不是物理寄存器
 或 spill 的预测。

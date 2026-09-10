@@ -1,7 +1,8 @@
 """Compositional FP32 CuTe SIMT lowering for one-warp program tiles.
 
 Value i belongs to lane i % 32, slot i // 32. Cross-lane broadcasts iterate source
-slots uniformly; reductions fold local slots then a full-warp shuffle tree. The
+slots uniformly. Reductions with a trailing stride divisible by 32 fold each lane's
+own slots in reduction-axis order; other reductions also use a full-warp tree. The
 mapping is compiler-owned and inspectable, not a new author-visible layout language.
 No tensor-core acceleration or physical register residency is implied.
 """
@@ -138,7 +139,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                 check(not missing,'CUTE_SIMT_STORE_OWNERSHIP',path,f'Store omits varying program axes {missing}.')
     if not findings:
         findings.append(Finding('CUTE_SIMT_EXECUTION','lowering',
-            f'FP32 SIMT stripe: value i belongs to lane i%32, slot i//32; {pressure} peak live declared slots per lane. Uniform warp shuffle/reduction, scalar global copies, no Tensor Core claim; allocation/spills and latency need compiled/device evidence.',
+            f'FP32 SIMT stripe: value i belongs to lane i%32, slot i//32; {pressure} peak live declared slots per lane. Reductions with trailing stride divisible by 32 use ordered lane-local folds; other reductions use uniform warp collectives. Broadcasts use uniform warp shuffles; global copies are scalar. No Tensor Core claim; allocation/spills and latency need compiled/device evidence.',
             FindingCategory.HARDWARE_CONFORMANCE,FindingSeverity.REPORT))
     return tuple(findings)
 
@@ -193,6 +194,21 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None=None) ->
         if op.kind is OperationKind.REDUCE:
             extent=src.shape[op.parameters.axis];inner=math.prod(src.shape[op.parameters.axis+1:])
             identity='0.0' if op.parameters.op is ReduceOp.SUM else "float('-inf')"
+            if inner % 32 == 0:
+                # Full trailing stripes keep every contributor on its output lane.
+                # The slot expression is constexpr, including nonzero outer axes;
+                # retain the original local fold's identity and increasing K order.
+                stripe=inner//32;k=v('k');partial=v(f'p{oi}')
+                source_slot=f'({slot} // {stripe}) * {extent*stripe} + ({slot} % {stripe}) + {k} * {stripe}'
+                line(f'# Lane-local reduction: trailing stride {inner} is divisible by 32.')
+                line(f'for {slot} in cutlass.range_constexpr({slots(dst)}):')
+                line(f'{partial} = cutlass.Float32({identity})',2)
+                line(f'for {k} in cutlass.range_constexpr({extent}):',2)
+                val=f'{names[src.name]}[{source_slot}]'
+                expr=f'{partial} + {val}' if op.parameters.op is ReduceOp.SUM else f'cute.arch.fmax({partial}, {val})'
+                line(f'{partial} = {expr}',3)
+                line(f'{names[dst.name]}[{slot}] = {partial}',2)
+                continue
             # Loops are uniform across the warp, including lanes with padded values.
             for output in range(dst.elements):
                 partial=v(f'p{oi}_{output}');begin=(output//inner)*extent*inner;end=begin+extent*inner
