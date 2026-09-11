@@ -24,6 +24,13 @@
 - 绑定源码： `156` 个文件
 - 描述文件： [`runtime/executors/open-cake-ir-b200-v104+68dcdffc7bc2df2e383fdbe2cb1e47fd5c20dd417282d8f600179d77ab139d74.json`](../../runtime/executors/open-cake-ir-b200-v104+68dcdffc7bc2df2e383fdbe2cb1e47fd5c20dd417282d8f600179d77ab139d74.json)
 
+### `sm_103a`
+
+- 版本： `open-cake-ir-b200-v105+5fde80e61ed902af2fdbc8af1ead5cf06987800a91fd7662623b5ef85ada0ae9`
+- 状态： `released`
+- 绑定源码： `156` 个文件
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v105+5fde80e61ed902af2fdbc8af1ead5cf06987800a91fd7662623b5ef85ada0ae9.json`](../../runtime/executors/open-cake-ir-b200-v105+5fde80e61ed902af2fdbc8af1ead5cf06987800a91fd7662623b5ef85ada0ae9.json)
+
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 
 ## 这些数字说明什么
