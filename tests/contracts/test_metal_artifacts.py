@@ -130,6 +130,41 @@ class MetalArtifactContracts(unittest.TestCase):
             with self.assertRaises(ValueError):
                 MetalTensorLaunchManifest.from_dict(document)
 
+    def test_a_multigroup_elementwise_build_declares_no_shared_bytes(self):
+        """F-2026-09-10-001, second copy: both sides of the build seam must agree.
+
+        The v73 tick relaxed the emitter and lab/metal_build.py but left the XOR in
+        evaluation/metal_manifest.py, so a truthful multi-group elementwise lowering
+        (threads > 32, zero threadgroup bytes) was refused at manifest construction --
+        one gate earlier than the original fault, and uncaught. The silu campaign's
+        1024-thread/32-group candidate hit exactly this.
+        """
+        manifest = MetalTensorLaunchManifest.for_workload(self.workload, "odd", target="apple_gpu_family7",
+            kernel_name=self.request.entry_point, grid=[3, 1, 1], block=[128, 1, 1],
+            threadgroup_memory_bytes=0)
+        self.assertEqual(manifest.block_threads, 128)
+        self.assertEqual(manifest.threadgroup_memory_bytes, 0)
+        self.assertEqual(MetalTensorLaunchManifest.from_dict(manifest.as_dict()), manifest)
+        # A single SIMD group can never need threadgroup storage; declaring some is
+        # still false and still refused on both spellings of the seam.
+        with self.assertRaises(ValueError):
+            MetalTensorLaunchManifest.for_workload(self.workload, "odd", target="apple_gpu_family7",
+                kernel_name=self.request.entry_point, grid=[3, 1, 1], block=[32, 1, 1],
+                threadgroup_memory_bytes=4)
+        builder = MetalToolchainBuilder(compiler_reference=compiler_reference(ROOT), workload=self.workload,
+            case_id="odd", output_root=self.directory / "multi-group", host=Mock())
+        requirements = {key: (list(value) if isinstance(value, tuple) else value)
+                        for key, value in dict(self.request.toolchain_requirements).items()}
+        requirements.update(threads_per_threadgroup=[128, 1, 1], active_threads_per_threadgroup=128,
+                            threadgroup_memory_bytes=0)
+        built = builder._manifest(replace(self.request, toolchain_requirements=requirements))
+        self.assertEqual(built.block_threads, 128)
+        self.assertEqual(built.threadgroup_memory_bytes, 0)
+        requirements.update(threads_per_threadgroup=[32, 1, 1], active_threads_per_threadgroup=32,
+                            threadgroup_memory_bytes=4)
+        with self.assertRaises(ValueError):
+            builder._manifest(replace(self.request, toolchain_requirements=requirements))
+
     def test_builder_refuses_bad_requirements_before_host_or_filesystem_work(self):
         host = Mock()
         root = self.directory / "new-build-root"

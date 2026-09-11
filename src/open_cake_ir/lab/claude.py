@@ -154,7 +154,13 @@ def claude_model_usage(terminal: Mapping, main_model: str, *, allow_zero: bool =
         raise ValueError("Claude main usage must be positive")
     rows = terminal.get("modelUsage")
     mapping = dict(zip(CLAUDE_USAGE_FIELDS, ("inputTokens", "outputTokens", "cacheCreationInputTokens", "cacheReadInputTokens")))
-    optional = {"webSearchRequests", "costUSD", "contextWindow", "maxOutputTokens", "canonicalModel", "provider"}
+    # Descriptive fields a row may carry beside the four additive counters. CLI 2.1.267
+    # added thinkingTokens and costBasis where 2.1.226 had neither, so a newer CLI was
+    # refused for reporting more about the same Turn. thinkingTokens belongs here and not
+    # in the additive set for the reason stated above: it is a component of the output
+    # already counted, and adding it would charge those tokens twice.
+    optional = {"webSearchRequests", "costUSD", "contextWindow", "maxOutputTokens",
+                "canonicalModel", "provider", "thinkingTokens", "costBasis"}
     if (not isinstance(rows, Mapping) or main_model not in rows
             or any(not isinstance(model, str) or not model for model in rows)):
         raise ValueError("Claude modelUsage lacks the exact main model")

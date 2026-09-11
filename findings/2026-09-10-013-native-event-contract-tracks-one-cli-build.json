@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-013",
+  "kind": "protocol",
+  "title": "The native Claude event contract is pinned to one CLI build, so a newer CLI or a thinking-heavy provider is refused for describing the same Turn differently",
+  "date": "2026-09-10",
+  "backend": "triton-b300",
+  "target": "sm_103a",
+  "executor_revision": "open-cake-ir-b200-v98+cfd93a0b5cb2108d8cd2edf1fa6d02acae33ff9c579952e1e7edb0246d3de132",
+  "compiler_revision_id": "open-cake-ir-sm100a-v73+a8c73c76247602c721f5390ad9a5058614ce321b1d298e81f4c8e262526997d9",
+  "tasks": ["gemm"],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan-infiniai/Documents/lab-workspaces/gemm-contraction-preflight-20260910b",
+      "note": "F-2026-09-10-009: rate_limit_info arrived as status allowed_warning carrying a utilization fraction where the contract named only allowed and a closed field set. Blocked every campaign on the Apple host at provider qualification"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/lab/gemm-k3-pf3",
+      "note": "the CLI wrote a user turn of its own, marked isSynthetic, reading '[Your previous response had no visible output. Please continue...]', because kimi-k3 answered with thinking and no text. The contract admitted user events only as tool_result"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/lab/gemm-k3-pf4",
+      "note": "modelUsage rows carried thinkingTokens and costBasis. CLI 2.1.226 on the Apple host emits neither and matches the contract exactly; CLI 2.1.267 on the B300 emits both, so the newer build was refused for reporting more about the same Turn"
+    }
+  ],
+  "observation": "Four refusals in one day share a cause rather than being four defects. The contract in lab/claude.py enumerates the exact event shapes one CLI build produced, and every departure is fatal by construction, which is the right default for a harness that must not silently accept a Turn it cannot account for. What it does not distinguish is a provider or CLI that has changed how it describes work it still performed correctly. Each of the four was of that kind: a quota warning on a served request, a compaction the CLI performed on its own, a continuation turn the CLI wrote because a thinking-only response had no visible output, and two additional descriptive counters on an unchanged usage row. None indicated a Turn that had gone wrong, and all four were campaign-fatal after the provider tokens were already spent, because the check replays the captured stream once the CLI has exited. The cost is concentrated where it is least visible: F-2026-09-10-003 alone accounted for roughly 7M provider tokens across two campaigns before a clean third attempt. Two properties made this compound. The refusals arrive only at qualification or later, so each one costs a full authoring turn to discover. And the contract is version-blind: it neither records which CLI build it was written against nor reports a mismatch as a version fact, so each new field reads as an unclassifiable event rather than as drift.",
+  "proposed_change": "Treat this as one maintenance problem rather than continuing to patch symptoms. The contract should record the CLI builds it has been reconciled against, so a refusal can say whether the stream is malformed or merely newer than the contract, which are different situations needing different responses. Separately, the admitted shapes want a stated principle rather than a list: the four resolutions applied the same one -- admit what the provider still served, retain anything the CLI authored on its own as auxiliary activity so a run stays auditable, and keep structural mismatches fatal -- and writing that down would let the next field be classified rather than rediscovered. A cheap qualification that exercises the event contract before a campaign spends authoring tokens would move the cost of drift from a campaign to a smoke test; today the first turn of a real campaign is the smoke test.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Protocol finding, verified by replay: a captured stream from each reconciled CLI build parses, and a stream from a build the contract has not seen is refused with a message naming the version gap rather than the event. The four individual reconciliations are already closed against their own revisions; what is unverified here is that the maintenance path exists at all.",
+  "verified_by": null
+}

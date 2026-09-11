@@ -413,6 +413,33 @@ class ClaudeProviderContracts(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, "event contract"):
                 parse_claude_turn_events(self.raw(changed), expected_terminal_message=TERMINAL)
 
+    def test_a_newer_cli_may_describe_a_row_more_without_being_refused(self):
+        """CLI 2.1.267 reports thinkingTokens and costBasis; 2.1.226 reported neither.
+
+        The Turn is the same Turn. What changed is how much the CLI says about it, so the
+        row is admitted -- but thinkingTokens stays out of the additive set, because those
+        tokens are a component of the output already counted and summing them would charge
+        them twice. A field no observed CLI emits is still refused.
+        """
+        events = self.events()
+        usage = {"input_tokens": 4, "output_tokens": 40, "cache_creation_input_tokens": 0,
+                 "cache_read_input_tokens": 0}
+        row = {"inputTokens": 4, "outputTokens": 40, "cacheCreationInputTokens": 0,
+               "cacheReadInputTokens": 0, "webSearchRequests": 0, "costUSD": 0.3,
+               "contextWindow": 200000, "maxOutputTokens": 32000, "thinkingTokens": 17,
+               "canonicalModel": "exact-requested-model", "provider": "firstParty",
+               "costBasis": "unknown"}
+        events[-1]["usage"] = usage
+        events[-1]["modelUsage"] = {"exact-requested-model": row}
+        parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        # 4 + 40 charged once; the 17 thinking tokens are inside the 40, not beside them.
+        self.assertEqual(parsed.provider_tokens, 44)
+        for unknown in ({"unobservedField": 1}, {"costBasis": "unknown", "extra": "x"}):
+            changed = copy.deepcopy(events)
+            changed[-1]["modelUsage"]["exact-requested-model"].update(unknown)
+            with self.subTest(unknown=unknown), self.assertRaisesRegex(ValueError, "modelUsage"):
+                parse_claude_turn_events(self.raw(changed), expected_terminal_message=TERMINAL)
+
     def test_native_schema_tool_has_only_exact_terminal_arguments_and_closed_success(self):
         events = self.events()
         events[-1:-1] = [

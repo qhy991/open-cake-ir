@@ -63,7 +63,13 @@ class MetalTensorLaunchManifest:
         shared = document["threadgroup_memory_bytes"]
         if (block[1:] != (1, 1) or threads % 32 or not 32 <= threads <= 1024
                 or type(shared) is not int or not 0 <= shared <= MAXIMUM_THREADGROUP_BYTES
-                or (threads == 32) != (shared == 0)
+                # One SIMD group can never need threadgroup storage. More than one may or
+                # may not: a purely elementwise kernel crosses no group boundary and
+                # truthfully declares none (F-2026-09-10-001), so this is an implication
+                # rather than the XOR it used to be. This mirrors the same rule in
+                # lab/metal_build.py; both sides of the build seam must agree, and when
+                # only one was relaxed a v73 lowering was refused here before reaching it.
+                or (threads == 32 and shared != 0)
                 or document["execution_model"] != "simd_program_tile"
                 or type(document["active_threads_per_threadgroup"]) is not int
                 or document["active_threads_per_threadgroup"] != threads
