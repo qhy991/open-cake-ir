@@ -15,7 +15,7 @@ from .providers import (
     ProviderQualificationReceipt,
     required_live_provider_qualification_scope,
 )
-from .pairing import native_source, native_block, matched_run_arms
+from .pairing import native_source, native_block, matched_run_arms, backend_policy
 from .ralph import RalphBudget
 
 from .provider_policy import provider_configuration, provider_harness
@@ -232,6 +232,11 @@ def validate_evaluation(
             raise ValueError("Metal optimization must bind its paired assay, all Workload cases and attribution")
     elif evaluation.get("paired_timing", {}).get("kind") in METAL_KINDS:
         raise ValueError("Metal paired assay cannot evaluate a different backend")
+    elif ("validation_case_ids" in evaluation
+          or single_environment and workload.document["validation"].get("all_cases_required") is True):
+        if (validation_case_ids(evaluation) != tuple(workload.case_ids)
+                or workload.document["validation"].get("all_cases_required") is not True):
+            raise ValueError("CUDA validation case projection differs from Workload validation")
     # How many candidates a Turn search-evaluates. Checked here because a Study that
     # asks for none, or for a word, would otherwise fault partway through a run --
     # and a run that faults has already spent the GPU time this Lab exists to gate.
@@ -296,7 +301,7 @@ def validate_evaluation(
             observed_source = native_source(source, requirements)
             source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
             grid, block = requirements['grid'], tuple(native_block(requirements))
-            if manifest.hidden_null_pointer_parameters != policy.hidden_null_pointer_parameters:
+            if manifest.hidden_null_pointer_parameters != backend_policy(route["backend"]).hidden_null_pointer_parameters:
                 raise ValueError('fixed baseline hidden pointer commitments differ')
         if (fixed['candidate'] != candidate_identity(sealed_baseline) or not source_matches
                 or list(manifest.grid) != list(grid) or manifest.block != block):

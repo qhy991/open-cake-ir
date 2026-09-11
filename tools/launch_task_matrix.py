@@ -57,8 +57,12 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
         "--workspace", str(workspace), "--turns", str(args.turns),
         "--token-budget", str(args.token_budget), "--max-candidates", str(args.max_candidates),
         "--searches-per-turn", str(args.searches_per_turn),
-        "--dispatches-per-sample", str(args.dispatches_per_sample),
         "--wall-seconds", str(args.wall_seconds)]
+    if args.dispatches_per_sample is not None:
+        command.extend(("--dispatches-per-sample", str(args.dispatches_per_sample)))
+    for flag, value in (("--gpu-run", args.gpu_run), ("--broker-socket", args.broker_socket)):
+        if value is not None:
+            command.extend((flag, str(value)))
     for flag, value in (("--rows", args.rows), ("--columns", args.columns)):
         if value is not None:
             command.extend((flag, str(value)))
@@ -93,7 +97,9 @@ def main(argv=None) -> int:
     parser.add_argument("--token-budget", type=int, default=150000)
     parser.add_argument("--max-candidates", type=int, default=3)
     parser.add_argument("--searches-per-turn", type=int, default=2)
-    parser.add_argument("--dispatches-per-sample", type=int, default=64)
+    parser.add_argument("--dispatches-per-sample", type=int, help="Metal only; default: 64")
+    parser.add_argument("--gpu-run", type=Path)
+    parser.add_argument("--broker-socket", type=Path)
     parser.add_argument("--wall-seconds", type=int, default=14400)
     args = parser.parse_args(argv)
 
@@ -104,6 +110,16 @@ def main(argv=None) -> int:
         parser.error(str(error))
     if type(args.depth) is not int or args.depth <= 0:
         parser.error("--depth must be a positive integer")
+    # Every factory owns its supported backends and shape contract. Resolve the
+    # whole requested subset before writing a workspace or spending provider work;
+    # do not silently omit an explicitly requested unsupported operator.
+    for task in selected:
+        rows, columns = launch_task._default_shape(task, args.rows, args.columns)
+        try:
+            launch_task.create_task(task, backend=args.backend, rows=rows, columns=columns,
+                                    depth=args.depth if task in DEPTH_TASKS else None, case_id="primary")
+        except (TypeError, ValueError) as error:
+            parser.error(f"task {task!r} cannot run on {args.backend!r}: {error}; select an explicit supported subset")
     root.mkdir(mode=0o750, parents=True)
     summary_path = root / "task-results.jsonl"
     _write(root / "matrix.json", json.dumps({

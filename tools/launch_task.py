@@ -165,16 +165,59 @@ def _triton_runtime_roots(interpreter: Path) -> list[str]:
     return [str(root) for root in admitted]
 
 
-def _triton_builder(executor, workload):
-    """Bind the isolated compiler to the exact runtime the Executor host admits."""
+def _triton_toolchain_config(executor):
+    """One explicit configuration for baseline preparation and the runtime builder."""
     host = executor.document["host_environment"]
     interpreter = Path(str(host["python"]["invocation_path"]))
+    return {"python": str(interpreter), "bubblewrap": "/usr/bin/bwrap",
+            "runtime_roots": _triton_runtime_roots(interpreter),
+            "triton_version": host["packages"]["triton"], "timeout_seconds": 600}
+
+
+def _triton_builder(executor, workload):
+    """Bind the isolated compiler to the exact runtime the Executor host admits."""
     return TritonToolchainBuilder(
         workload=workload, case_id="primary",
-        isolated_compiler=IsolatedTritonCompiler(
-            python=str(interpreter), bubblewrap="/usr/bin/bwrap",
-            runtime_roots=_triton_runtime_roots(interpreter),
-            triton_version=host["packages"]["triton"]))
+        isolated_compiler=IsolatedTritonCompiler(**_triton_toolchain_config(executor)))
+
+
+def _runtime_config(workspace, executor, executable, route, *, gpu_run=None, broker_socket=None):
+    """Use the existing allocator and worker for each declared backend route."""
+    from open_cake_ir.evaluation.source_bootstrap import module_command
+    python = executor.document["host_environment"]["python"]["invocation_path"]
+    if route == "metal":
+        if gpu_run is not None or broker_socket is not None:
+            raise ValueError("CUDA broker options require the Triton route")
+        toolchain = {"output_root": str(workspace / "builds")}
+        command = module_command(python, "open_cake_ir.evaluation.local_broker",
+                                 "--worker-module", "open_cake_ir.tasks.evaluate")
+        timeout = 1800
+    elif route == "triton":
+        discovered = shutil.which(str(gpu_run) if gpu_run is not None else "gpu-run")
+        if discovered is None:
+            raise ValueError("Triton execution requires the existing gpu-run allocator")
+        command = [str(Path(discovered).resolve(strict=True))]
+        if broker_socket is not None:
+            if not broker_socket.is_absolute():
+                raise ValueError("broker socket must be an absolute path")
+            command.extend(("--socket", str(broker_socket)))
+        # Queue and execution are separate broker budgets. The supervisor also
+        # allows the broker to finish and retain its terminal result after either.
+        queue_seconds = run_seconds = 1800
+        command.extend(("--label", "open-cake-task-evaluation", "--mode", "exclusive",
+                        "--gpu-count", "1", "--cwd", str(ROOT), "--estimate", "unknown",
+                        "--queue-timeout", f"{queue_seconds}s", "--run-timeout", f"{run_seconds}s", "--"))
+        command.extend(module_command(python, "open_cake_ir.tasks.evaluate"))
+        toolchain = _triton_toolchain_config(executor)
+        timeout = queue_seconds + run_seconds + 60
+    else:
+        raise ValueError("task execution route is unsupported")
+    return {"schema_version": 1,
+            "provider": {"executable": str(executable), "workspace_root": str(workspace / "actors")},
+            "toolchain": toolchain,
+            "broker": {"command": command, "cwd": str(ROOT), "timeout_seconds": timeout,
+                       "service_user": pwd.getpwuid(os.getuid()).pw_name,
+                       "service_group": grp.getgrgid(os.getgid()).gr_name}}
 
 
 def _prepare_baseline(root, workspace, compiler, executor, host, workload, study, source,
@@ -273,8 +316,10 @@ def main(argv=None) -> int:
     parser.add_argument("--token-budget", type=int, default=150000)
     parser.add_argument("--max-candidates", type=int, default=3)
     parser.add_argument("--searches-per-turn", type=int, default=2)
-    parser.add_argument("--dispatches-per-sample", type=int, default=64,
-                        help="dispatches encoded in each timed command buffer; amortizes fixed command overhead")
+    parser.add_argument("--dispatches-per-sample", type=int,
+                        help="Metal only: dispatches per timed command buffer (default: 64)")
+    parser.add_argument("--gpu-run", type=Path, help="existing CUDA broker client (default: gpu-run on PATH)")
+    parser.add_argument("--broker-socket", type=Path, help="CUDA broker socket; omit to use the client's default")
     parser.add_argument("--wall-seconds", type=int, default=14400)
     parser.add_argument("--provider-executable", type=Path)
     parser.add_argument("--provider-revision")
@@ -295,19 +340,22 @@ def main(argv=None) -> int:
     _write(workload_path, canonical(document))
     _write(source_path, source.encode())
     workload = load_workload(workload_path)
-    # F-2026-09-10-002: the native observer refuses an oversized snapshot cohort before it
+    route = _route_of(args.backend)
+    # F-2026-09-10-002: the Metal observer refuses an oversized snapshot cohort before it
     # dispatches anything, so a shape that exceeds the bound dies at the first evaluation
     # with the campaign's authoring tokens already spent. Check the same arithmetic here.
-    admit_cohort_payload(workload, args.case,
-                         study_template.__globals__["_ROUTE_CALLS_PER_COHORT"])
+    if route == "metal":
+        admit_cohort_payload(workload, args.case,
+                             study_template.__globals__["_ROUTE_CALLS_PER_COHORT"])
     study = study_template(ROOT, workload, workload_path, source_path, harness=args.harness,
         model=args.model, effort=args.effort, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
         dispatches_per_sample=args.dispatches_per_sample)
     study_path = workspace / "study.json"
     _write(study_path, canonical(study))
-    route = _route_of(args.backend)
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
+    runtime = _runtime_config(workspace, executor, executable, route,
+                              gpu_run=args.gpu_run, broker_socket=args.broker_socket)
     baseline_path = (external_file(ROOT, str(args.fixed_baseline_bundle), "fixed baseline bundle")
                      if args.fixed_baseline_bundle else _prepare_baseline(
                          ROOT, workspace, compiler, executor, host, workload, study, source,
@@ -316,15 +364,6 @@ def main(argv=None) -> int:
     receipt = ProviderQualificationReceipt.load(receipt_path)
     if not receipt.qualified or receipt.scope != "live_two_turn_tool_rich_provider":
         raise ValueError("task execution requires an actual live artifact-optimization provider qualification")
-    from open_cake_ir.evaluation.source_bootstrap import module_command
-    runtime = {"schema_version": 1,
-        "provider": {"executable": str(executable), "workspace_root": str(workspace / "actors")},
-        "toolchain": {"output_root": str(workspace / "builds")},
-        "broker": {"command": module_command(executor.document["host_environment"]["python"]["invocation_path"],
-                    "open_cake_ir.evaluation.local_broker", "--worker-module", "open_cake_ir.tasks.evaluate"),
-                   "cwd": str(ROOT), "timeout_seconds": 1800,
-                   "service_user": pwd.getpwuid(os.getuid()).pw_name,
-                   "service_group": grp.getgrgid(os.getgid()).gr_name}}
     runtime_path = workspace / "runtime.json"
     _write(runtime_path, canonical(runtime))
     bindings_path = workspace / "execution-bindings.json"

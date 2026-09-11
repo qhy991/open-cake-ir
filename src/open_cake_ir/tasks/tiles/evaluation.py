@@ -8,11 +8,24 @@ from open_cake_ir.evaluation.workload import WorkloadContract
 def evaluate_tile_workload(candidate: LaunchableCandidate, workload: WorkloadContract,
                            protocol: EvaluationProtocol, launcher) -> EvaluationReceipt:
     """Common correctness assay: Workload data/oracle, sealed launch, every output."""
+    return _evaluate_tile(candidate, workload, protocol, launcher, validation_case=False)
+
+
+def evaluate_tile_validation_case(candidate: LaunchableCandidate, workload: WorkloadContract,
+                                  protocol: EvaluationProtocol, launcher) -> EvaluationReceipt:
+    """Check a required same-ABI distribution under the unchanged primary artifact."""
+    return _evaluate_tile(candidate, workload, protocol, launcher, validation_case=True)
+
+
+def _evaluate_tile(candidate, workload, protocol, launcher, *, validation_case):
     from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
     if protocol.workload_sha256 != workload.canonical_sha256 or protocol.timing != 'none' or protocol.purpose == 'attribution':
         raise ValueError('tile correctness Evaluation protocol differs')
     manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
-    manifest.check_workload(workload, protocol.case_id)
+    if validation_case:
+        manifest.check_validation_case(workload, protocol.case_id)
+    else:
+        manifest.check_workload(workload, protocol.case_id)
     if (candidate.launch_spec_sha256 != manifest.canonical_sha256
         or candidate.target != manifest.target or candidate.entry_point != manifest.kernel_name):
         raise ValueError('sealed tensor manifest differs')

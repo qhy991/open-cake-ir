@@ -21,8 +21,7 @@ from open_cake_ir.evaluation.core import EvaluationReceipt, LaunchableCandidate,
 from open_cake_ir.evaluation.paired import (
     candidate_identity, paired_protocol, paired_summary, validate_pair_candidates, validate_receipt_policy, validate_paired_broker,
 )
-from open_cake_ir.tasks.tiles.workload import reference_outputs
-from open_cake_ir.tasks.workloads import load_workload
+from open_cake_ir.tasks.workloads import load_workload, materialize_case, reference_outputs
 from open_cake_ir.tasks.runtime import TaskLab as Lab
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.evidence import EvidenceStore
@@ -63,6 +62,7 @@ def sealed(workload, role, *, case_id='tiny'):
 class PairedExecutionTests(unittest.TestCase):
     def setUp(self):
         self.workload = load_workload(ROOT / 'contracts/workloads/rmsnorm-fp32-v2.json')
+        self.case_id = 'tiny'
         self.candidate, self.manifest = sealed(self.workload, 'candidate')
         self.baseline, _ = sealed(self.workload, 'baseline')
         self.directory = tempfile.TemporaryDirectory()
@@ -74,6 +74,11 @@ class PairedExecutionTests(unittest.TestCase):
         self.benchmarks = []
         self.bad_role = None
         self.bad_call = None
+        self.bad_case = None
+        self.created, self.closed = [], []
+        self.fail_load_at = self.fail_close_at = None
+        self.load_error = RuntimeError('test-only load failure')
+        self.close_error = RuntimeError('test-only close failure')
         self.callback_count = 42
         self.latencies = {'candidate': 1.0, 'baseline': 1.0}
 
@@ -81,10 +86,13 @@ class PairedExecutionTests(unittest.TestCase):
         owner = self
         class FakeLoaded:
             def __init__(self, candidate, manifest, inputs, admission):
+                if len(owner.created) == owner.fail_load_at:
+                    raise owner.load_error
+                owner.created.append(self)
                 self.candidate = candidate
                 self.role = candidate.entry_point
                 self.inputs = copy.deepcopy(inputs)
-                self.expected = reference_outputs(owner.workload, 'tiny', inputs)
+                self.expected = reference_outputs(owner.workload, owner.case_id, inputs)
                 self.loaded = SimpleNamespace(launch_calls=0, resources={'fixture': True})
             def fresh_argument_sets(self, count):
                 return [{'outputs': {key: [float('nan')] * len(values) for key, values in self.expected.items()}}
@@ -94,6 +102,9 @@ class PairedExecutionTests(unittest.TestCase):
                 owner.events.append(self.role)
                 values['outputs'] = copy.deepcopy(self.expected)
                 if owner.bad_role == self.role and self.loaded.launch_calls == owner.bad_call:
+                    next(iter(values['outputs'].values()))[0] = float('nan')
+                if (owner.bad_role == self.role and owner.bad_case is not None
+                        and self.inputs == materialize_case(owner.workload, owner.bad_case)):
                     next(iter(values['outputs'].values()))[0] = float('nan')
             def snapshot(self, values):
                 owner.snapshots.append(self.role)
@@ -105,7 +116,9 @@ class PairedExecutionTests(unittest.TestCase):
                 return observed, after, {'candidate_sha256': candidate.candidate_sha256,
                     'kernel_calls': 1, 'fallback_calls': 0}
             def close(self):
-                pass
+                owner.closed.append(self)
+                if owner.created.index(self) == owner.fail_close_at:
+                    raise owner.close_error
         class Helper:
             def bench_gpu_time_with_cupti(self, callback, **kwargs):
                 owner.benchmarks.append(kwargs)
@@ -118,7 +131,7 @@ class PairedExecutionTests(unittest.TestCase):
                 raise AssertionError('graph fallback')
         authority = worker._Authority({'purpose': 'search', 'evaluation_protocol': self.protocol},
             self.output, None, self.workload, self.manifest, self.candidate,
-            self.candidate.artifact_payloads, 'tiny', self.baseline)
+            self.candidate.artifact_payloads, self.case_id, self.baseline)
         result = worker._base_result('gpuq-123456789abc')
         admission = SimpleNamespace(broker_job_id='gpuq-123456789abc', gpu_uuid='GPU-CPU-fixture')
         with patch.object(worker, 'LoadedTorchTensorCandidate', FakeLoaded):
@@ -131,9 +144,117 @@ class PairedExecutionTests(unittest.TestCase):
         if payloads is None:
             payloads = {role: (self.output / path).read_bytes() for role, path in values['artifacts'].items()}
         return EvaluationReceipt(self.candidate.candidate_sha256, self.workload.canonical_sha256,
-            sha256(encoded(self.protocol)).hexdigest(), 'search', 'tiny', values['correctness_passed'],
+            sha256(encoded(self.protocol)).hexdigest(), 'search', self.case_id, values['correctness_passed'],
             values['correctness'], 1, 0, sha256(payloads['launch_receipt']).hexdigest(),
             values['timing'] if timing is None else timing, payloads)
+
+    def use_all_case_task(self):
+        from open_cake_ir.tasks.workloads import create_task
+        from open_cake_ir.tasks.normalization.study import evaluation_policy
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        document, _ = create_task('silu', backend='triton-b300', rows=2, columns=8)
+        self.workload = WorkloadContract(document)
+        self.case_id = 'primary'
+        self.candidate, self.manifest = sealed(self.workload, 'candidate', case_id=self.case_id)
+        self.baseline, _ = sealed(self.workload, 'baseline', case_id=self.case_id)
+        self.protocol = evaluation_policy(self.workload)
+
+    def test_cuda_task_checks_every_case_but_times_only_the_primary_loaded_owner(self):
+        self.use_all_case_task()
+        receipt = self.execute()
+        self.assertTrue(receipt.correctness_passed)
+        self.assertTrue(receipt.timing['measurement_quality_passed'])
+        correctness = json.loads(receipt.artifact_payloads['correctness_output'])
+        for role in ('candidate', 'baseline'):
+            for phase in ('preflight', 'postflight'):
+                self.assertEqual([row['input_case_id'] for row in correctness['participants'][role][phase]['launches']],
+                                 list(self.workload.case_ids))
+        self.assertEqual(self.result['counters']['module_loads'], 10)
+        self.assertEqual(self.result['counters']['preflight_calls'], 10)
+        self.assertEqual(self.result['counters']['kernel_calls'], 860)
+        self.assertEqual(self.result['counters']['timing_samples'], 500)
+        self.assertEqual(sorted(x.loaded.launch_calls for x in self.created), [2]*8+[422]*2)
+        self.assertEqual(self.closed, self.created)
+        validate_paired_broker(receipt, 'gpuq-123456789abc', self.result['counters'])
+        raw = json.loads(receipt.artifact_payloads['timing_samples'])
+        self.assertEqual(raw['kind'], 'fixed_baseline_paired_cupti_v1')
+        self.assertEqual(raw['case_id'], 'primary')
+        self.assertNotIn('command_buffers', raw['measurements'][0]['arms']['candidate'])
+
+    def test_cuda_multicase_receipt_refuses_missing_duplicate_reordered_and_forged_checks(self):
+        self.use_all_case_task()
+        receipt = self.execute()
+        original = json.loads(receipt.artifact_payloads['correctness_output'])
+        for phase in ('preflight', 'postflight'):
+            for change in ('missing', 'duplicate', 'reordered', 'metrics'):
+                with self.subTest(phase=phase, change=change):
+                    raw = copy.deepcopy(original)
+                    rows = raw['participants']['candidate'][phase]['launches']
+                    if change == 'missing': rows.pop()
+                    elif change == 'duplicate': rows[1] = copy.deepcopy(rows[0])
+                    elif change == 'reordered': rows.reverse()
+                    else: rows[-1]['metrics']['output_mismatches'] = 1
+                    with self.assertRaisesRegex(ValueError, 'CUDA'):
+                        self.receipt(payloads={**receipt.artifact_payloads, 'correctness_output': encoded(raw)})
+        for field in ('module_loads', 'preflight_calls', 'kernel_calls'):
+            with self.subTest(counter=field), self.assertRaisesRegex(ValueError, 'work counters'):
+                validate_paired_broker(receipt, 'gpuq-123456789abc',
+                                      {**self.result['counters'], field: self.result['counters'][field]-1})
+
+    def test_nonprimary_cuda_failure_retains_all_preflight_cases_and_never_times(self):
+        self.use_all_case_task()
+        self.bad_role, self.bad_case = 'candidate', 'alternating'
+        receipt = self.execute()
+        self.assertFalse(receipt.correctness_passed)
+        self.assertIsNone(receipt.timing)
+        self.assertFalse(self.benchmarks)
+        self.assertEqual(self.result['counters']['module_loads'], 10)
+        self.assertEqual(self.result['counters']['kernel_calls'], 10)
+        correctness = json.loads(receipt.artifact_payloads['correctness_output'])
+        for role in ('candidate', 'baseline'):
+            self.assertEqual([row['input_case_id'] for row in correctness['participants'][role]['preflight']['launches']],
+                             list(self.workload.case_ids))
+        self.assertEqual(self.closed, self.created)
+        validate_paired_broker(receipt, 'gpuq-123456789abc', self.result['counters'])
+
+    def test_cuda_multicase_projection_and_abi_are_checked_before_loading(self):
+        self.use_all_case_task()
+        self.protocol['validation_case_ids'] = list(self.workload.case_ids[:-1])
+        with self.assertRaisesRegex(ValueError, 'case projection'):
+            self.execute()
+        self.assertFalse(self.created)
+        self.protocol['validation_case_ids'] = list(self.workload.case_ids)
+        changed = json.loads(encoded(self.workload.document))
+        changed['cases'][-1]['shape']['R'] += 1
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        self.workload = WorkloadContract(changed)
+        self.candidate, self.manifest = sealed(self.workload, 'candidate', case_id=self.case_id)
+        self.baseline, _ = sealed(self.workload, 'baseline', case_id=self.case_id)
+        with self.assertRaises(ValueError):
+            self.execute()
+        self.assertFalse(self.created)
+
+    def test_validation_case_admission_does_not_relabel_or_relax_the_primary_seal(self):
+        self.use_all_case_task()
+        original = self.candidate.artifact_payloads['launch_manifest']
+        with self.assertRaisesRegex(ValueError, 'sealed launch ABI'):
+            self.manifest.check_workload(self.workload, 'zeros')
+        for case_id in self.workload.case_ids:
+            self.manifest.check_validation_case(self.workload, case_id)
+        self.assertEqual(self.manifest.case_id, 'primary')
+        self.assertEqual(self.candidate.artifact_payloads['launch_manifest'], original)
+        with self.assertRaises(ValueError):
+            self.manifest.check_validation_case(self.workload, 'unlisted')
+
+    def test_cuda_multicase_cleanup_attempts_every_owner_and_preserves_primary_error(self):
+        self.use_all_case_task()
+        self.fail_load_at, self.fail_close_at = 4, 1
+        with self.assertRaises(RuntimeError) as caught:
+            self.execute()
+        self.assertIs(caught.exception, self.load_error)
+        self.assertIs(caught.exception.__cause__, self.close_error)
+        self.assertEqual(len(self.created), 4)
+        self.assertEqual(self.closed, self.created)
 
     def test_actual_launcher_order_fresh_outputs_both_oracles_and_close_null(self):
         receipt = self.execute()

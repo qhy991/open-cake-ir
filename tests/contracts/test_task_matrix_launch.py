@@ -31,7 +31,7 @@ class TaskMatrixLaunchTests(unittest.TestCase):
             model="m", effort="high", turns=1, token_budget=10, max_candidates=1,
             searches_per_turn=1, dispatches_per_sample=64, wall_seconds=10,
             rows=2, columns=8, depth=17, provider_executable=None,
-            provider_revision=None))()
+            provider_revision=None, gpu_run=None, broker_socket=None))()
         ordinary = matrix._command(args, "rmsnorm", self.root / "a", None)
         contraction = matrix._command(args, "gemm", self.root / "b", None)
         legacy = matrix._command(args, "gemm_bias", self.root / "c", None)
@@ -75,6 +75,25 @@ class TaskMatrixLaunchTests(unittest.TestCase):
     def test_duplicate_task_selection_refuses_before_creating_the_root(self):
         with self.assertRaises(SystemExit), patch.object(matrix.subprocess, "run") as run:
             matrix.main(self.args("rmsnorm", "rmsnorm"))
+        run.assert_not_called()
+        self.assertFalse(self.root.exists())
+
+    def test_explicit_cuda_broker_options_are_forwarded_without_metal_defaults(self):
+        args = self.args('silu')
+        args[args.index('--backend')+1] = 'triton-b300'
+        args += ['--gpu-run','/unit-test/gpu-run','--broker-socket','/unit-test/gpu.sock']
+        with patch.object(matrix.subprocess,'run',return_value=subprocess.CompletedProcess([],1,b'',b'')) as run:
+            matrix.main(args)
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index('--gpu-run')+1], '/unit-test/gpu-run')
+        self.assertEqual(command[command.index('--broker-socket')+1], '/unit-test/gpu.sock')
+        self.assertNotIn('--dispatches-per-sample', command)
+
+    def test_unsupported_requested_factory_fails_before_workspace_or_provider(self):
+        args = self.args('silu','rmsnorm')
+        args[args.index('--backend')+1] = 'triton-b300'
+        with self.assertRaises(SystemExit),patch.object(matrix.subprocess,'run') as run:
+            matrix.main(args)
         run.assert_not_called()
         self.assertFalse(self.root.exists())
 
