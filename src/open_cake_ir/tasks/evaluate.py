@@ -876,10 +876,12 @@ def main() -> int:
             if (not isinstance(owner, dict) or set(owner) != {"uid", "gid"}
                     or any(type(v) is not int or v < 0 for v in owner.values())):
                 raise ValueError("profile output owner fields differ")
-            expected_uid = int(os.environ.get("SUDO_UID", os.geteuid()))
-            expected_gid = int(os.environ.get("SUDO_GID", os.getegid()))
-            if (owner["uid"], owner["gid"]) != (expected_uid, expected_gid):
-                raise ValueError("profile output owner differs from launching caller")
+            actual_owner = (os.geteuid(), os.getegid())
+            if (owner["uid"], owner["gid"]) != actual_owner:
+                if (actual_owner[0] != 0 or
+                        (owner["uid"], owner["gid"]) !=
+                        (int(os.environ.get("SUDO_UID", -1)), int(os.environ.get("SUDO_GID", -1)))):
+                    raise ValueError("profile output owner differs from launching caller")
             _PROFILE_OUTPUT_OWNER = (owner["uid"], owner["gid"])
             capability = admission_document["compute_capability"]
             if not isinstance(capability, list) or len(capability) != 2:
